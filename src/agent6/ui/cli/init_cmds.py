@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 init` command (scaffold a workspace + offer git setup)."""
+"""`agent6 init`: scaffold a workspace and offer the git setup."""
 
 from __future__ import annotations
 
@@ -26,29 +26,39 @@ _SCAFFOLD_COMMIT_MESSAGE = "chore: scaffold agent6 config"
 
 
 def _workspace_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...]:
-    """Existing *created* paths contained by *root*, relative to it."""
+    """Return the created paths that exist under the root, relative to it."""
     return tuple(
         str(p.relative_to(root)) for p in created if p.exists() and root in p.resolve().parents
     )
 
 
 def _scaffold_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...]:
-    """The repo-relative scaffold files git would record. The per-repo config
-    lives out of the workspace under the state dir, so it is never a candidate
-    here; filter to paths under root defensively, then unignored() drops
-    anything the just-written .gitignore covers so we never `git add -f`.
+    """Return the repo-relative scaffold files git would record.
 
-    A path with nothing pending is dropped too, so the commit line names what
-    the commit holds (init leaves an existing AGENTS.md alone)."""
+    The per-repo config lives under the state dir, never here. `unignored` drops what the
+    just-written .gitignore covers, so nothing is ever `git add -f`; a path with nothing
+    pending is dropped too, so the commit line names what the commit holds.
+
+    Args:
+        root: The workspace.
+        created: The paths init wrote.
+    """
     candidates = unignored(root, _workspace_rel_paths(root, created))
     return tuple(rel for rel in candidates if paths_dirty(root, (rel,)))
 
 
 def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool) -> None:
-    """Leave the repo ready for the advertised `agent6 run`: in a non-repo,
-    offer to `git init` + commit the scaffold (non-interactively just print a
-    note); in an existing repo, offer to commit the uncommitted scaffold, which
-    would otherwise make `agent6 run` refuse on a dirty tree."""
+    """Leave the repo ready for `agent6 run`.
+
+    In a non-repo, offer to `git init` and commit the scaffold (non-interactively, print the
+    commands); in a repo, offer to commit the uncommitted scaffold, which would otherwise
+    make `agent6 run` refuse on a dirty tree.
+
+    Args:
+        root: The workspace.
+        created: The paths init wrote.
+        interactive: Ask before acting.
+    """
     if is_git_repo(root):
         _offer_scaffold_commit(root, created, interactive=interactive)
         return
@@ -87,18 +97,22 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
 
 
 def _offer_scaffold_commit(root: Path, created: tuple[Path, ...], *, interactive: bool) -> None:
-    """*root* is already a git repo, so the scaffold init wrote sits uncommitted
-    and `agent6 run` refuses a dirty tree. Offer to commit it (auto-yes when
-    non-interactive, i.e. --yes); when declined or the commit fails, print the
-    exact command so the advertised next step works."""
+    """Offer to commit the scaffold in an existing repo.
+
+    Auto-yes when non-interactive; when declined or the commit fails, print the exact
+    command so the advertised next step works.
+
+    Args:
+        root: The repo.
+        created: The paths init wrote.
+        interactive: Ask before committing.
+    """
     rel = _scaffold_rel_paths(root, created)
     if not rel:
         return
     try:
         if not paths_dirty(root, rel):
-            # Scaffold already committed; nothing to commit for these paths.
-            # (Whole-tree is_clean would false-trigger on unrelated WIP and then
-            # fail the path-limited commit with "nothing to commit".)
+            # Already committed; a whole-tree check would false-trigger on unrelated work.
             return
     except GitError:
         return
@@ -119,8 +133,15 @@ def _offer_scaffold_commit(root: Path, created: tuple[Path, ...], *, interactive
 
 
 def _print_next_steps(cwd: Path, config_path: Path | None) -> None:
-    """The commands still between this repo and a first run: connect and model
-    only while the effective config lacks a provider or a worker model."""
+    """Print the commands still between this repo and a first run.
+
+    `connect` and `model` appear only while the effective config lacks a provider or a
+    worker model.
+
+    Args:
+        cwd: The repo.
+        config_path: The `--config` file, if any.
+    """
     try:
         cfg: Config | None = load_effective(cwd, config_path).config
     except ConfigError:
@@ -137,17 +158,27 @@ def _print_next_steps(cwd: Path, config_path: Path | None) -> None:
 
 
 def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | None = None) -> int:
+    """Scaffold the workspace, offer the git setup, and print the next steps.
+
+    Args:
+        ecosystem: The language ecosystem the scaffold targets.
+        assume_yes: Take every default without a TTY.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The exit code; 2 without a TTY or `--yes`.
+
+    Raises:
+        OperatorError: The effective config is invalid; the message names the way out.
+    """
     cwd = Path.cwd()
     target = repo_config_path(cwd)
     if not assume_yes and not sys.stdin.isatty():
-        # Refuse rather than silently take every default and write files:
-        # consent comes from a TTY or --yes.
+        # Consent to write files comes from a TTY or --yes.
         error("no input. stdin is not a TTY; re-run with --yes to accept every default.")
         return 2
     interactive = not assume_yes
-    # A scaffold path init leaves untouched is the operator's file, whether or
-    # not this is a repo yet: committing it by path would put their work in
-    # agent6's scaffold commit, so it is excluded and reported instead.
+    # A scaffold path init leaves untouched is the operator's: excluded from the commit, reported.
     scaffold_all = (cwd / "AGENTS.md", cwd / ".gitignore")
     missing_before = tuple(p for p in scaffold_all if not p.exists())
     if is_git_repo(cwd):
@@ -164,21 +195,17 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
                 config_path=config_path,
             )
         except ConfigError as exc:
-            # init loads the effective config to infer a verify command; it is also
-            # the command a user runs to repair their setup, so the refusal carries
-            # the way out.
+            # init is also the command that repairs a setup, so the refusal carries the way out.
             raise OperatorError(
                 f"{exc}\nFix or delete the invalid config, following the error above,"
                 " then re-run `agent6 init`."
             ) from exc
         if rc == 0:
-            # Only the repo-tracked scaffold; the per-repo config is out of the
-            # workspace (under the state dir) and never committed.
+            # Only the repo-tracked scaffold; the per-repo config lives under the state dir.
             _offer_git_setup(
                 cwd, tuple(p for p in scaffold_all if p not in theirs), interactive=interactive
             )
-            # Only where a scaffold commit was on the table: outside a repo (and
-            # after a declined `git init`) nothing was committed to leave out of.
+            # Only where a scaffold commit was on the table: outside a repo nothing was left out.
             dirty = (
                 tuple(p for p in theirs if paths_dirty(cwd, (str(p.relative_to(cwd)),)))
                 if is_git_repo(cwd)
@@ -190,8 +217,7 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
             _print_next_steps(cwd, config_path)
         return rc
     finally:
-        # Don't leave root-owned config or newly-created repo scaffolding in the
-        # real user's trees when init ran through sudo, even on a failed step.
+        # Under sudo, nothing root-owned stays in the real user's trees, even after a failed step.
         chown_to_real_user(target.parent)
         for path in missing_before:
             if path.exists():

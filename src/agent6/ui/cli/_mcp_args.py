@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parser builder for `mcp` and its subcommands."""
+"""Build the `mcp` parser's server subcommands."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from agent6.ui.cli.completers import _complete_mcp_servers
 
 
 def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """`connect`, `remove` and `list`, added to the `mcp` group beside `serve`."""
+    """Add `connect`, `remove` and `list` to the `mcp` group beside `serve`."""
     connect = _sub(
         mcp_sub,
         "connect",
@@ -29,8 +29,7 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         ),
     )
     connect.add_argument(
-        # Not named "command": a positional's name is its dest, and the root
-        # parser's subcommand verb already owns args.command.
+        # A positional's name is its dest, and the root parser's verb already owns args.command.
         "server_command",
         nargs="*",
         metavar="COMMAND",

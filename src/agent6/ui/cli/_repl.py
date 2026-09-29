@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The interactive in-run REPL hook fired after each auto-commit: show diffs,
-recent events, MCP tools, (re)init the workspace, or steer the next step.
-"""
+"""The in-run REPL hook `agent6 run -i` fires after each auto-commit."""
 
 from __future__ import annotations
 
@@ -63,27 +61,26 @@ def build_repl_hook(
     console_view: ConsoleView | None = None,
     steer_cell: Sequence[SteerState | None] = (),
 ) -> Callable[[int, str], AutoCommitDirective]:
-    """Build the after_auto_commit hook for `agent6 run -i`.
+    """Build the after-auto-commit hook for `agent6 run -i`.
 
-    Captures the budget tracker (for `/cost`), the repo root (for
-    `/diff` and `/init`), the current run id (for `/diff` and
-    `/watch`), and the live MCP manager (for `/mcp`) in a closure
-    so Harness stays agnostic of the CLI's extra state. `/undo` is the
-    loop's own undo (take back the last message: the tree goes back and a
-    fork holds the state before it), returned as a directive. *steer_cell*
-    holds the execution's steer state once it exists: a Ctrl-C pause armed during
-    the committing step opens its menu only after this prompt, so the banner
-    says so.
+    The CLI's extra state stays in the closure, so the harness knows nothing of it.
+    `/undo` returns the harness's own undo directive.
+
+    Args:
+        root: The repo root, for `/diff` and `/init`.
+        budget: The tracker `/cost` prints.
+        session_id: The run, for `/diff` and `/watch`.
+        mcp_manager: The live MCP manager `/mcp` lists.
+        console_view: The live view, paused for the prompt.
+        steer_cell: Holds the steer state once it exists; a Ctrl-C pause armed during
+            the commit opens its menu only after this prompt, so the banner says so.
+
+    Returns:
+        The hook, taking the iteration and the commit sha.
     """
 
     def hook(iteration: int, sha: str) -> AutoCommitDirective:
-        # The whole prompt session sits inside the console-view pause: the run
-        # is waiting on the operator, and the heartbeat's per-tick line-erase
-        # would otherwise wipe the "agent6> " prompt and the typed characters,
-        # replacing them with a lying "working…" spinner (same wiring as the
-        # approval/question prompts). The whole session is an idle prompt,
-        # nested wizard questions included, so the run's escalating Ctrl-C
-        # handler stands aside for all of it.
+        # Paused, the heartbeat cannot erase the prompt; idle, Ctrl-C stands aside for all of it.
         with _pause(console_view), idle_prompt_sigint():
             return _prompt_loop(iteration, sha)
 
@@ -117,9 +114,7 @@ def build_repl_hook(
                 return "exit"
             if cmd == "/undo":
                 return "undo"
-            # The idle-prompt guard raises KeyboardInterrupt here, so one
-            # Ctrl-C cancels the command it lands in and returns to the
-            # prompt; escaping the hook would end the run as interrupted.
+            # One Ctrl-C cancels the command it lands in; escaping the hook would end the run.
             try:
                 _run_command(cmd, raw)
             except KeyboardInterrupt:
@@ -145,8 +140,7 @@ def build_repl_hook(
 
 
 def repl_run_diff(session_id: str) -> None:
-    """REPL /diff: print the run's diff (`sessions diff`), no pager: a pager
-    would take over the prompt loop's terminal."""
+    """Print the run's diff for `/diff`, with no pager to take over the prompt's terminal."""
     try:
         _cmd_diff(session_id=session_id, stat=False, paths=(), paginate=False)
     except Exception as exc:
@@ -154,16 +148,20 @@ def repl_run_diff(session_id: str) -> None:
 
 
 def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
-    """REPL /watch: snapshot the last n events from this run's logs.jsonl.
+    """Print the last n events of the run's log for `/watch`.
 
-    Not a live tail: the REPL sits between turns of the agent loop, and a tail
-    would block the next iteration. `agent6 attach` in another shell tails
-    continuously.
+    A snapshot, not a tail: the REPL sits between turns, and a tail would block the
+    next one.
+
+    Args:
+        root: The repo root.
+        session_id: The run.
+        n: How many events.
     """
     if not session_id:
         print("[agent6] /watch: no run id available", file=sys.stderr)
         return
-    # Across buckets: the REPL also runs inside an ask, whose dir is asks/.
+    # Across buckets: the REPL also runs inside an ask.
     try:
         layout = resolve_session(state_dir(root), session_id)
     except SessionIdError as exc:
@@ -187,9 +185,8 @@ def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
         except json.JSONDecodeError:
             session_start_ts = None
 
-    # The audit-log lines every other log view shows: streaming deltas and the
-    # loop's mirrors would fill the window with fragments of one turn.
     def _audit_line(raw: str) -> bool:
+        """Return whether the line is one every log view shows, not a delta or a mirror."""
         try:
             obj = json.loads(raw)
         except json.JSONDecodeError:
@@ -204,7 +201,7 @@ def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
 
 
 def repl_list_mcp(mcp_manager: MCPManager | None) -> None:
-    """REPL /mcp: print configured MCP servers + their tool surface."""
+    """Print the configured MCP servers and their tools for `/mcp`."""
     if mcp_manager is None:
         print(
             "[agent6] /mcp: no MCP servers configured (set [mcp] in your config)",
@@ -225,9 +222,7 @@ def repl_list_mcp(mcp_manager: MCPManager | None) -> None:
 
 
 def repl_run_init(root: Path) -> None:
-    """REPL /init: run the setup wizard. Prompts on a TTY (the REPL is
-    interactive) and never overwrites existing files; the ecosystem is
-    auto-detected."""
+    """Run the setup wizard for `/init`; it prompts and never overwrites a file."""
     try:
         rc = init_workspace(
             root,

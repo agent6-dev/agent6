@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 connect`, add a provider + API key."""
+"""`agent6 connect`: add a provider and its API key."""
 
 from __future__ import annotations
 
@@ -60,17 +60,19 @@ from agent6.ui.cli._common import error, refuse, warn
 def _prompt_api_key(name: str) -> str:
     """Prompt for an API key without leaking it.
 
-    On Python 3.14+ `getpass` accepts `echo_char`, so each keystroke is masked
-    with `*`: live feedback that the paste landed, without revealing the key.
-    On 3.12/3.13 input stays fully hidden and a post-entry summary prints the
-    key's length, which still tells a partial or garbled paste from a clean
+    On Python 3.14+ each keystroke is masked with `*`; on 3.12 and 3.13 input stays hidden
+    and a summary prints the key's length, which still tells a garbled paste from a clean
     one. The key itself is never logged.
+
+    Args:
+        name: The provider name, for the prompt.
+
+    Returns:
+        The key as entered.
     """
     prompt = f"API key for {name} (input hidden, blank for none): "
     if not sys.stdin.isatty():
-        # No controlling terminal (piped/scripted connect): getpass would fall
-        # back to an unmasked read and print a GetPassWarning about echo. Read a
-        # plain line instead: echo is moot without a terminal.
+        # Without a terminal getpass warns and falls back to an unmasked read; echo is moot anyway.
         try:
             return input(prompt).strip()
         except EOFError:
@@ -92,11 +94,18 @@ def _prompt_api_key(name: str) -> str:
 def _prompt_base_url(default_url: str) -> str:
     """Prompt for an OpenAI-compatible base URL and validate it.
 
-    Validates before any secret/config write so a scheme-less value (e.g. an
-    API key pasted into the wrong prompt) is rejected up front rather than
-    persisted and surfaced later as an opaque HTTP error. Raises `ValueError`
-    on an invalid URL (same check as the `OpenAIProviderEntry.base_url`
-    validator).
+    Validated before any secret or config write, so a scheme-less value (an API key pasted
+    into the wrong prompt) is rejected up front rather than surfaced later as an opaque HTTP
+    error.
+
+    Args:
+        default_url: The value an empty answer takes.
+
+    Returns:
+        The URL.
+
+    Raises:
+        ValueError: The URL is invalid, by the `OpenAIProviderEntry.base_url` check.
     """
     try:
         url = input(f"Base URL [{default_url}]: ").strip() or default_url
@@ -107,12 +116,13 @@ def _prompt_base_url(default_url: str) -> str:
 
 
 def _resolve_provider_name(provider: str) -> str | None:
-    """Resolve + validate the provider name; print an error and return None if bad.
+    """Validate the provider name and print an error when it is not a bare TOML key.
 
-    The name becomes a TOML table key `[providers.<name>]`; a non-bare-key
-    name (space, dot, bracket, …) would be written verbatim and corrupt the
-    whole config file, which `connect`, unlike `model` and `config set`, does
-    not re-validate after writing. So reject it before any write.
+    The name becomes the table key `[providers.<name>]`; `connect` does not re-validate the
+    file after writing, so a name with a space, dot or bracket would corrupt it.
+
+    Returns:
+        The name, or None after the error.
     """
     name = provider.strip()
     if not name:
@@ -134,9 +144,13 @@ def _resolve_provider_name(provider: str) -> str | None:
 def _verify_key(*, api_format: str, base_url: str, api_key: str) -> None:
     """Probe the provider's /models endpoint to confirm the key authenticates.
 
-    A read-only GET, so it does not violate connect's no-remote-execution rule.
-    Prints the outcome; never raises (a probe failure must not fail connect, the
-    key is already saved). Skipped for offline/local endpoints via --no-verify.
+    A read-only GET, within connect's no-remote-execution rule. Prints the outcome and never
+    raises: the key is already saved, so a probe failure must not fail connect.
+
+    Args:
+        api_format: The provider's API format.
+        base_url: The endpoint.
+        api_key: The key to test.
     """
     try:
         entry: ProviderEntry = (
@@ -171,11 +185,11 @@ def _verify_key(*, api_format: str, base_url: str, api_key: str) -> None:
 
 
 class _CallbackServer:
-    """One-shot localhost receiver for the OAuth redirect.
+    """A one-shot localhost receiver for the OAuth redirect.
 
-    Binds 127.0.0.1:1455 (the client registration pins the port) and serves
-    until the `/auth/callback` hit arrives; every other path 404s. The
-    authorization code is held in memory only, never logged.
+    Binds 127.0.0.1 on the port the client registration pins and serves until the
+    `/auth/callback` hit arrives; every other path 404s. The authorization code is held in
+    memory only, never logged.
     """
 
     def __init__(self, state: str, *, port: int = CALLBACK_PORT) -> None:
@@ -184,7 +198,10 @@ class _CallbackServer:
         outer = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
+            """The one request handler: the callback path, or 404."""
+
             def do_GET(self) -> None:  # BaseHTTPRequestHandler API name
+                """Take the authorization code from the callback query, checking its state."""
                 parts = urlsplit(self.path)
                 if parts.path != "/auth/callback":
                     self.send_error(404)
@@ -194,11 +211,7 @@ class _CallbackServer:
                     body = b"<html><body>Signed in. Return to the terminal.</body></html>"
                     status = 200
                 except ValueError as exc:
-                    # Escaped: the query is attacker-reachable while this
-                    # listener is up, and a reflected error_description would
-                    # otherwise run script on this localhost origin. The
-                    # terminal keeps the exact detail; the page stays generic
-                    # for the refusal text itself.
+                    # Escaped: a reflected error_description would run script on this origin.
                     body = f"<html><body>{html_module.escape(str(exc))}</body></html>".encode()
                     status = 400
                 self.send_response(status)
@@ -213,6 +226,7 @@ class _CallbackServer:
                     outer._got.set()
 
             def log_message(self, format: str, *args: object) -> None:
+                """Log nothing: the code must not reach the terminal."""
                 del format, args  # silent: the code must not reach the terminal
 
         self._server = http.server.HTTPServer(("127.0.0.1", port), Handler)
@@ -223,10 +237,15 @@ class _CallbackServer:
 
     @property
     def port(self) -> int:
+        """The bound port."""
         return int(self._server.server_address[1])
 
     def wait(self, timeout_s: float) -> str | None:
-        """The code, or None on timeout. Polls so Ctrl-C lands promptly."""
+        """Wait for the code, polling so Ctrl-C lands promptly.
+
+        Returns:
+            The code, or None on timeout.
+        """
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             if self._got.wait(0.25):
@@ -234,16 +253,16 @@ class _CallbackServer:
         return None
 
     def close(self) -> None:
+        """Stop serving and release the port."""
         self._server.shutdown()
         self._server.server_close()
 
 
 def _gui_browser_available() -> bool:
-    """Auto-open the sign-in URL only where a GUI browser can take it.
+    """Return whether a GUI browser can take the sign-in URL.
 
-    On a display-less Linux box `webbrowser.open` falls back to a console
-    browser (w3m/lynx), which takes over the very terminal the sign-in
-    prompt lives on; there the printed URL is the flow.
+    On a display-less Linux box `webbrowser.open` falls back to a console browser, which
+    takes over the terminal the sign-in prompt lives on; there the printed URL is the flow.
     """
     if sys.platform in ("darwin", "win32"):
         return True
@@ -251,8 +270,11 @@ def _gui_browser_available() -> bool:
 
 
 def _code_via_callback_server(url: str, state: str) -> str | None:
-    """The GUI path: open the browser, wait on localhost for the redirect.
-    None on timeout, Ctrl-C, or an unbindable port (the caller falls back)."""
+    """Open the browser and wait on localhost for the redirect: the GUI path.
+
+    Returns:
+        The code, or None on timeout, Ctrl-C or an unbindable port; the caller falls back.
+    """
     try:
         server = _CallbackServer(state)
     except OSError as exc:
@@ -272,10 +294,14 @@ def _code_via_callback_server(url: str, state: str) -> str | None:
 
 
 def _grant_via_device_code(issuer: str, client_id: str, provider: str) -> TokenGrant | None:
-    """The no-display path: show a short code, poll while the person enters
-    it at the issuer's device page from any browser (nothing to forward over
-    SSH). None when the issuer has the flow disabled, on refusal, or on
-    Ctrl-C; the caller falls back to pasting the callback URL."""
+    """Show a short code and poll while the person enters it at the issuer's device page.
+
+    The no-display path: nothing to forward over SSH.
+
+    Returns:
+        The grant, or None when the issuer has the flow disabled, on refusal or on Ctrl-C;
+        the caller falls back to pasting the callback URL.
+    """
     try:
         device = start_device_auth(issuer, client_id)
     except ProviderError as exc:
@@ -297,14 +323,18 @@ def _grant_via_device_code(issuer: str, client_id: str, provider: str) -> TokenG
 
 
 def _chatgpt_sign_in(name: str) -> int:
-    """The ChatGPT OAuth sign-in.
+    """Run the ChatGPT OAuth sign-in.
 
-    Three ways in, picked by the environment: a GUI machine gets the browser
-    + localhost callback; a display-less terminal gets the code-entry device
-    flow; pasting the callback URL always works (and is the whole flow for a
-    piped stdin). Never executes anything the remote returns; the only
-    inputs read back are the authorization code (state-checked) and the
-    token JSON.
+    Three ways in, picked by the environment: a GUI machine gets the browser and localhost
+    callback, a display-less terminal gets the device flow, and pasting the callback URL
+    always works (the whole flow for a piped stdin). Nothing the remote returns is executed;
+    the only inputs read back are the state-checked authorization code and the token JSON.
+
+    Args:
+        name: The provider name.
+
+    Returns:
+        The exit code.
     """
     issuer, client_id = CHATGPT_ISSUER, CHATGPT_CLIENT_ID
     verifier, challenge = pkce_pair()
@@ -360,10 +390,11 @@ def _chatgpt_sign_in(name: str) -> int:
 
 
 def _claude_code_check(name: str) -> None:
-    """No secret to store: the binary carries the operator's own login. Checked
-    now so a signed-out install is named here, not at the first run; connect
-    checks `claude` on PATH, the run preflight and `agent6 model` check
-    `[providers.<name>].binary`."""
+    """Name a signed-out `claude` install now rather than at the first run.
+
+    No secret to store: the binary carries the operator's own login. `connect` checks
+    `claude` on PATH; the run preflight and `agent6 model` check `[providers.<name>].binary`.
+    """
     err = login_status("claude")
     if err is None:
         print("Claude Code (`claude` on PATH): signed in.")
@@ -372,8 +403,11 @@ def _claude_code_check(name: str) -> None:
 
 
 def _prompt_api_format(name: str, preset_format: str) -> str | None:
-    """The api_format for *name*: the preset's, else the operator's answer;
-    None (after printing why) on no input or an unknown value."""
+    """Return the api_format for the provider: the preset's, else the operator's answer.
+
+    Returns:
+        The format, or None (after printing why) on no input or an unknown value.
+    """
     api_format = preset_format
     if not api_format:
         try:
@@ -396,11 +430,16 @@ def _prompt_api_format(name: str, preset_format: str) -> str | None:
 def _cmd_logout(name: str, api_format: str) -> int:
     """Remove a provider's stored credentials (`connect --logout`).
 
-    For a chatgpt-format provider the OAuth grant is revoked at the issuer
-    first (best effort: local removal proceeds regardless, and revoking an
-    already-dead token is a success). The `[providers.<name>]` config block
-    stays; only credentials are removed. A claude_code provider holds none
-    here: its login belongs to the binary.
+    For a chatgpt-format provider the OAuth grant is revoked at the issuer first, best
+    effort: local removal proceeds regardless, and revoking a dead token is a success. The
+    `[providers.<name>]` block stays. A claude_code provider holds no credentials here.
+
+    Args:
+        name: The provider name.
+        api_format: Its API format.
+
+    Returns:
+        The exit code, 0.
     """
     if api_format == "claude_code":
         print(
@@ -429,14 +468,21 @@ def _cmd_logout(name: str, api_format: str) -> int:
 
 
 def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: bool = False) -> int:  # noqa: PLR0911, PLR0912
-    """Interactively add a provider + API key.
+    """Interactively add a provider and its API key.
 
-    Security: this command never executes anything supplied by a remote. It
-    only prompts locally (key via getpass, hidden, or masked with `*` on
-    Python 3.14+), writes a minimal `[providers.<name>]` block, stores the
-    key in the 0600 secrets file, and (unless `verify` is False) makes one
-    read-only GET to the provider's `/models` endpoint to confirm the key
-    authenticates.
+    Nothing a remote supplies is executed. The command prompts locally (the key hidden or
+    masked), writes a minimal `[providers.<name>]` block, stores the key in the 0600 secrets
+    file, and unless `verify` is off makes one read-only GET to the provider's `/models`
+    endpoint to confirm the key authenticates.
+
+    Args:
+        provider: The provider name or preset.
+        to_repo: Write the block to the repo config instead of the global one.
+        verify: Probe the key after storing it.
+        logout: Remove the credentials instead.
+
+    Returns:
+        The exit code; 2 on a refused name, format or config edit.
     """
     name = _resolve_provider_name(provider)
     if name is None:
@@ -461,10 +507,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
     fields: dict[str, ConfigLeafValue] = {"api_format": api_format}
     if api_format == "openai" and base_url and base_url != "https://api.openai.com/v1":
         fields["base_url"] = base_url
-    # Leaf surgery, not a whole-block replace: connect is the documented
-    # add/update path, and a re-run (key rotation, base_url fix) must preserve
-    # hand-added sibling keys and comments. Revalidated before any credential
-    # is asked for or stored, so a refused provider edit changes nothing else.
+    # Leaf surgery keeps hand-added sibling keys; revalidated before any credential is stored.
     err = set_config_leaves(Path.cwd(), f"providers.{name}", fields, to_repo=to_repo)
     if err is not None:
         refuse(f"that would make the config invalid:\n{err}")
@@ -493,9 +536,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
         if verify:
             _verify_key(api_format=api_format, base_url=base_url, api_key=api_key)
     elif api_format == "anthropic":
-        # The Anthropic api_format always sends a key; a keyless block is
-        # unusable and `agent6 run` would later fail with "no API key", so say
-        # so now.
+        # The Anthropic api_format always sends a key, so a keyless block fails at the first run.
         warn(
             f"no key entered, but the Anthropic API format requires one.\n"
             f"  [providers.{name}] is written but not usable yet; rerun"

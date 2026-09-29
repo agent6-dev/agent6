@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Cross-cutting CLI helpers: run dirs, budget flags, key/root checks."""
+"""Cross-cutting CLI helpers: parser builders, session resolution, messages and styling."""
 
 from __future__ import annotations
 
@@ -33,9 +33,16 @@ def _sub(
     *,
     help: str,
 ) -> argparse.ArgumentParser:
-    """`add_parser` with *help* as the leaf's own description; the parent's
-    command list shows its first sentence, so `agent6 --help` reads as a list
-    of commands and the detail waits in `agent6 <command> --help`."""
+    """Add a subparser whose help is also its description; the parent lists its first sentence.
+
+    Args:
+        subparsers: The parent's subparsers.
+        name: The command.
+        help: The command's help.
+
+    Returns:
+        The subparser.
+    """
     summary, _, rest = help.partition(". ")
     return subparsers.add_parser(name, help=summary + "." if rest else summary, description=help)
 
@@ -47,18 +54,23 @@ SESSION_ID_HELP = f"{SESSION_ID}; omit for the newest."
 def _add_session_id(
     parser: argparse.ArgumentParser, completer: object, *, help_text: str = SESSION_ID_HELP
 ) -> None:
-    """The positional a verb acting on a session takes: an id or unambiguous
-    prefix, omitted for the newest; *completer* offers the ids the verb
-    accepts (passed in: `completers` imports this module)."""
+    """Add the session positional: an id or prefix, omitted for the newest.
+
+    Args:
+        parser: The verb's parser.
+        completer: Offers the ids the verb accepts; passed in, since `completers` imports this.
+        help_text: The argument's help.
+    """
     arg = parser.add_argument("session_id", nargs="?", default="", help=help_text)
     arg.completer = completer  # type: ignore[attr-defined]
 
 
 def _add_config_flag(parser: argparse.ArgumentParser) -> None:
-    """A subcommand's `--config FILE`. Its default is SUPPRESS, not None: the
-    subparser sets `config` only when the flag follows the subcommand, so both
-    `agent6 --config F run` and `agent6 run --config F` work and the top-level
-    flag supplies the always-present default."""
+    """Add a subcommand's `--config FILE`.
+
+    Its default is SUPPRESS, so the flag works before or after the subcommand and the
+    top-level flag supplies the default.
+    """
     parser.add_argument(
         "--config",
         type=Path,
@@ -69,7 +81,7 @@ def _add_config_flag(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
-    """The per-run budget overrides (`[budget]`)."""
+    """Add the per-run `[budget]` override flags."""
     group = parser.add_argument_group("budget")
     group.add_argument(
         "--max-usd",
@@ -107,15 +119,11 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
-    """Add the per-invocation sandbox/approval override flags (every paid
-    command carries both: run/plan/ask/resume and machine run).
+    """Add the per-invocation sandbox and approval override flags every paid command carries.
 
-    `--dangerously-disable-sandbox` runs the agent's commands unconfined on
-    the host (equivalent to a one-off `sandbox.isolation = "none"`); the env
-    `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` does the same. `--auto-approve`
-    auto-approves `run_command` for this invocation: it upgrades
-    `sandbox.run_commands` from ask to yes and never resurrects a withheld
-    no. Approval is skipped; confinement still depends on `sandbox.isolation`.
+    `--dangerously-disable-sandbox` is a one-off `sandbox.isolation = "none"`;
+    `--auto-approve` upgrades `sandbox.run_commands` from ask to yes and never
+    resurrects a withheld no.
     """
     group = parser.add_argument_group("sandbox")
     group.add_argument(
@@ -150,8 +158,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def safe_input(prompt: str) -> str | None:
-    """`input`, stripped; None on EOF or a stdin that cannot be read. An
-    interrupt is the entry point's ("agent6: interrupted.", exit 130)."""
+    """Return the stripped input, or None on EOF or an unreadable stdin; an interrupt propagates."""
     try:
         return input(prompt).strip()
     except (EOFError, OSError):
@@ -159,8 +166,7 @@ def safe_input(prompt: str) -> str | None:
 
 
 def editor_argv() -> list[str] | None:
-    """$EDITOR as argv (default: vi), or None after printing the refusal when its
-    quoting is unbalanced."""
+    """Return `$EDITOR` as argv (default vi), or None after naming its unbalanced quoting."""
     editor = os.environ.get("EDITOR", "vi")
     try:
         return shlex.split(editor) or ["vi"]
@@ -170,57 +176,43 @@ def editor_argv() -> list[str] | None:
 
 
 def sgr(text: str, code: str) -> str:
-    """Wrap *text* in an ANSI style, tty only, so piped output stays plain.
-    The one place the CLI's faded/bold hints are styled."""
+    """Return the text in an ANSI style on a tty, plain otherwise."""
     return f"\x1b[{code}m{text}\x1b[0m" if sys.stdout.isatty() else text
 
 
 def _runs_dir(repo_root: Path) -> Path:
-    """The `runs/` directory under the per-repo state dir."""
+    """Return the `runs/` directory under the per-repo state dir."""
     return bucket_dir(state_dir(repo_root), "runs")
 
 
 def _plans_dir(repo_root: Path) -> Path:
-    """The `plans/` directory under the per-repo state dir."""
+    """Return the `plans/` directory under the per-repo state dir."""
     return bucket_dir(state_dir(repo_root), "plans")
 
 
-# What a fresh install is told when it has nothing yet. One string: the same
-# first contact whichever command the operator happened to type, and it names
-# the way out rather than the directory that is missing.
-
-
 def nothing_yet(what: str = "sessions") -> str:
+    """Return the one first-contact line for a fresh install, naming the way out."""
     return f'no {what} yet. Start one with `agent6 run "<task>"`.'
 
 
-# The stderr conventions belong to app.reporter (REFUSING:, ERROR:, [agent6]
-# WARNING:); every CLI message goes through these, so the wording has one owner.
+# The stderr conventions belong to app.reporter; every CLI message goes through these.
 error = STDIO_REPORTER.error
 note = STDIO_REPORTER.note
 refuse = STDIO_REPORTER.refuse
 warn = STDIO_REPORTER.warn
 
-# The one sentence every command's id argument prints; a command whose default
-# differs appends its own clause.
+# The one sentence every command's id argument prints.
 MACHINE_ID_HELP = "Machine id (a directory under the per-repo state dir's machines/)."
 REPO_FLAG_HELP = "Write to the per-repo config instead of the global config."
 
 
 def print_nothing_yet(what: str = "sessions") -> None:
-    """Say there is nothing yet, and how to change that.
-
-    An empty state dir is not a fault, so it must not read as one: an ERROR
-    about a missing directory would tell a new operator their install is
-    broken.
-    """
+    """Print that there is nothing yet and how to change that; an empty state dir is no fault."""
     print(nothing_yet(what), file=sys.stderr)
 
 
 def print_no_session_match(query: str, state: Path) -> None:
-    """The one missing-session error, shared by every command that resolves one:
-    name the query and where it looked (never the bucket-layout internals), or
-    the same first-contact copy as `sessions` when there is nothing at all."""
+    """Print the one missing-session error: the query and where it looked, or the first contact."""
     if query:
         print(f"ERROR: no session matches {query!r} (looked under {state})", file=sys.stderr)
     else:
@@ -228,17 +220,13 @@ def print_no_session_match(query: str, state: Path) -> None:
 
 
 def session_bucket_dirs(repo_root: Path) -> list[Path]:
-    """The session bucket dirs under `sessions/` in the state
-    dir, the cross-bucket scope for latest-run resolution and history. A missing
-    bucket is still listed; iterators skip non-dirs."""
+    """Return every session bucket dir, present or not; iterators skip the missing ones."""
     state = state_dir(repo_root)
     return [bucket_dir(state, subdir) for subdir in SESSION_BUCKETS]
 
 
 def all_session_dirs(repo_root: Path) -> list[Path]:
-    """Every run directory across all SESSION_BUCKETS. So latest-run resolution and
-    history search cover every bucket, not just runs/ (a bare `attach`
-    or `history search` right after an `ask` must find that ask)."""
+    """Return every session directory across all buckets, so a bare `attach` finds an ask too."""
     dirs: list[Path] = []
     for bucket in session_bucket_dirs(repo_root):
         if bucket.is_dir():
@@ -249,20 +237,18 @@ def all_session_dirs(repo_root: Path) -> list[Path]:
 def resolve_session_layout(
     repo_root: Path, query: str, *, allow_husk: bool = False
 ) -> SessionLayout:
-    """Resolve a run id (or unique prefix) across every run-style bucket (one
-    per mode under `sessions/`), returning a `SessionLayout` with the matching
-    subdir.
+    """Resolve a session id or unique prefix across every bucket.
 
-    `agent6 run` lives under `runs/`, `plan` under `plans/`, `agent6 ask`
-    under `asks/`, and `machine create` authoring logs under
-    `sessions/machines/`; read-only commands (`sessions show`/`attach`/
-    `history search`) use this so anything
-    a listing shows is also inspectable by id. Raises `SessionIdError` if no run
-    matches in any bucket.
+    Args:
+        repo_root: The repo.
+        query: The id or prefix.
+        allow_husk: Accept a session with no manifest and no log, for `sessions rm`.
 
-    A husk (no manifest, no log: it crashed before it ever started) refuses
-    with the remedy, so every surface says the same thing. `allow_husk` is for
-    `sessions rm`, whose whole job is deleting one.
+    Returns:
+        The session's layout.
+
+    Raises:
+        SessionIdError: No session matches, several do, or the match is a husk.
     """
     layout = resolve_session(state_dir(repo_root), query)
     from agent6.viewmodel import is_session_husk  # noqa: PLC0415
@@ -276,9 +262,7 @@ def resolve_session_layout(
 
 
 def resolve_target(target: str) -> SessionLayout | None:
-    """The named session, or the newest when the operator omitted one, for a
-    verb run from the checkout: an ambiguous prefix reads as ambiguous, a husk
-    names itself, and nothing to act on prints why and returns None."""
+    """Return the named session, or the newest when none was named, printing why when neither."""
     try:
         layout = resolve_or_newest_layout(Path.cwd(), target)
     except SessionIdError as exc:
@@ -290,11 +274,7 @@ def resolve_target(target: str) -> SessionLayout | None:
 
 
 def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:
-    """The newest session across every bucket whose dir holds *child*.
-
-    `history graph` and `history transcript` resolve their session this way, so
-    one in any bucket is both listed and reachable by name.
-    """
+    """Return the newest session across every bucket whose dir holds the child, or None."""
     candidates = [d for d in all_session_dirs(repo_root) if (d / child).is_dir()]
     if not candidates:
         return None
@@ -306,14 +286,18 @@ def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:
 def resolve_or_newest_layout(
     repo_root: Path, session_id: str, *, allow_husk: bool = False
 ) -> SessionLayout | None:
-    """Resolve an explicit *session_id* across every run-style bucket, or fall back to
-    the newest run across all buckets when *session_id* is empty.
+    """Resolve an explicit session id, or the newest session when the id is empty.
 
-    Returns the resolved `SessionLayout`. Returns None only for the empty-*session_id*
-    "no sessions exist" case, so the caller phrases its own 'none yet' message. Raises
-    `SessionIdError` (`.no_match` set only when nothing matched) when an explicit id has
-    no or many matches. The one 'a run by id, or the latest' resolution behind
-    `attach` / `stop` / `sessions show`.
+    Args:
+        repo_root: The repo.
+        session_id: The id or prefix, or "".
+        allow_husk: Accept a session with no manifest and no log.
+
+    Returns:
+        The layout; None only when the id is empty and no session exists.
+
+    Raises:
+        SessionIdError: An explicit id has no match (`.no_match` set) or several.
     """
     if session_id:
         return resolve_session_layout(repo_root, session_id, allow_husk=allow_husk)
@@ -326,13 +310,16 @@ def resolve_or_newest_layout(
 
 
 def _enforce_root_policy(allow_root: bool) -> int | None:
-    """Gate running as root behind an explicit opt-in.
+    """Refuse to run as root without `--allow-root` or `AGENT6_ALLOW_ROOT=1`.
 
-    Returns a non-zero exit code (to refuse) when running as root without
-    `--allow-root` / `AGENT6_ALLOW_ROOT=1`; returns None to proceed. When
-    proceeding as root it prints a loud banner. Privileges are not dropped:
-    under sudo the LLM's verify/run commands need to run as root inside the
-    jail, so the jail is the boundary.
+    Privileges are never dropped: under sudo the jailed commands run as root, and the
+    jail is the boundary.
+
+    Args:
+        allow_root: The opt-in.
+
+    Returns:
+        The exit code to refuse with, or None to proceed (with a loud banner as root).
     """
     if not is_root():
         return None
@@ -355,8 +342,7 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
     return None
 
 
-# The ANSI SGR for each `viewmodel.format.status_level`, tty only. The TUI's
-# Rich map and the web's pill classes are the siblings.
+# The ANSI SGR per `viewmodel.format.status_level`; the TUI's Rich map is the sibling.
 _LEVEL_SGR: dict[StatusLevel, str] = {
     "ok": "32",
     "info": "35",  # magenta (mauve on the TUI/web)
@@ -370,9 +356,14 @@ _LEVEL_SGR: dict[StatusLevel, str] = {
 def styled_status(
     status: str, reason: str, *, color: bool, label: str | None = None
 ) -> tuple[str, str]:
-    """(possibly-colored label, plain label) for a listing row; the plain form
-    drives width math. *label* overrides the text (the sessions listing's
-    mode-folded cell); the colour always follows the status word."""
+    """Return a listing row's status as (styled label, plain label); the plain one drives widths.
+
+    Args:
+        status: The status word, which picks the colour.
+        reason: The status's reason, folded into the plain label.
+        color: Style the label.
+        label: Overrides the text.
+    """
     from agent6.viewmodel.format import status_label, status_level  # noqa: PLC0415
 
     text = status_label(status, reason) if label is None else label
@@ -383,13 +374,12 @@ def styled_status(
 
 
 def plural(n: int, singular: str, plural: str | None = None) -> str:
-    """'1 transition' / '3 transitions': no '1 branches' in user-facing counts."""
+    """Return the count with the right noun form."""
     word = singular if n == 1 else (plural or singular + "s")
     return f"{n} {word}"
 
 
 def home_contracted(path: str) -> str:
-    """*path* with `$HOME` shortened to `~`, only at a path boundary (a
-    sibling directory whose name merely starts with $HOME's stays whole)."""
+    """Return the path with `$HOME` shortened to `~`, only at a path boundary."""
     home = str(Path.home())
     return "~" + path[len(home) :] if path == home or path.startswith(home + "/") else path

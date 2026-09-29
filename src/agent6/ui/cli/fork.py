@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 fork`: adapt argv, materialize the fork (`agent6.app.fork`), then
-(unless `--no-run`) continue the new run from its forked turn over the resume
-path."""
+"""`agent6 fork`: adapt argv, materialize the fork, then continue it over the resume path.
+
+`--no-run` stops after `agent6.app.fork` has created the fork.
+"""
 
 from __future__ import annotations
 
@@ -35,11 +36,24 @@ def _cmd_fork(
     sandbox_overrides: SandboxOverrides | None = None,
     steer: str = "",
 ) -> int:
-    """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
+    """Create a session cloned from a source at a checkpoint, then continue it.
 
-    Default: fork from the latest checkpoint and immediately continue the new run
-    from that turn (resume-like); `--steer` seeds the fresh direction at its
-    first safe boundary. `--no-run` just creates the fork dir.
+    The default forks the latest checkpoint and continues from that turn; `--steer` seeds
+    the new direction at the first safe boundary; `--no-run` only creates the fork dir.
+
+    Args:
+        config_path: The `--config` file, if any.
+        source_session_id: The session to fork, or "" for the newest.
+        at_turn: The checkpoint turn; None takes the latest.
+        new_session_id: The fork's id; "" allocates one.
+        no_run: Create the fork without continuing it.
+        tui: Open the dashboard for the continuation.
+        budget_overrides: The budget flags.
+        sandbox_overrides: The sandbox flags.
+        steer: A steering instruction for the continuation's first safe boundary.
+
+    Returns:
+        The exit code; 2 when the flags conflict or the source already finished.
     """
     if no_run and steer.strip():
         error(
@@ -48,11 +62,7 @@ def _cmd_fork(
         )
         return 2
     if not no_run and not steer.strip() and at_turn is None:
-        # The child would continue a conversation that already ended: a paid
-        # call, a nudge, a silent finish, a new branch and a listing row
-        # offering a merge of the parent's own tree. `resume` refuses this and
-        # cannot see it here: the check reads the source, and the child's log
-        # is empty by construction.
+        # `resume` cannot see a finished parent from the child's empty log, so refuse here.
         try:
             source = resolve_or_newest_layout(Path.cwd(), source_session_id)
         except SessionIdError:
@@ -69,6 +79,7 @@ def _cmd_fork(
 
     def refuse_continuation(cfg: Config, mode: str) -> str | None:
         # The resume below would refuse the same way, after the fork existed.
+        """Return why the continuation would refuse, before the fork exists."""
         return headless_approval_refusal(
             cfg,
             tui_enabled=frontend.should_spawn_tui(tui, False, mode),
@@ -94,10 +105,7 @@ def _cmd_fork(
         print(f"  resume it with: agent6 resume {child_id}", file=sys.stderr)
         return 0
 
-    # Continue the new run from turn N by reusing the resume path. The fork just
-    # cloned the checkpoint (its head_sha) and cut agent6/<child> at that same
-    # sha, so the resume head guard passes by construction; force stays off so a
-    # real mismatch (a broken fork) still refuses.
+    # The fork's branch sits at the checkpoint's sha, so the head guard passes; force stays off.
     return resume_task(
         config_path,
         child_id,

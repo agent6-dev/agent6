@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions compare`: the advisory ranked comparison across already-run
-candidates, its own module so `sessions list` does not load the judge."""
+"""`agent6 sessions compare`: the advisory ranked comparison across already-run candidates.
+
+Its own module so `sessions list` does not load the judge.
+"""
 
 from __future__ import annotations
 
@@ -44,12 +46,19 @@ from agent6.viewmodel.format import (
 
 
 def _candidate_diff(cwd: Path, manifest: SessionManifest) -> tuple[str, bool]:
-    """The diff a run introduced (base_sha..run_branch), read-only, without
-    checking out the branch (unlike `_cmd_diff`, several candidates are compared
-    in one call, and only one can be the current checkout). A pruned branch
-    reads from the recorded merge: its merged tip while the objects exist, else
-    the commit it landed as. Returns (diff, from_merge); "" when nothing records
-    the change, which never blocks the comparison."""
+    """Return the diff a run introduced, read-only, without checking out its branch.
+
+    A pruned branch reads from the recorded merge: its merged tip while the objects exist,
+    else the commit it landed as.
+
+    Args:
+        cwd: The repo.
+        manifest: The run's manifest.
+
+    Returns:
+        `(diff, from_merge)`; the diff is "" when nothing records the change, which never
+        blocks the comparison.
+    """
     base_sha, run_branch = manifest.base_sha, manifest.run_branch or ""
     if not base_sha:
         return "", False
@@ -70,12 +79,19 @@ def _candidate_diff(cwd: Path, manifest: SessionManifest) -> tuple[str, bool]:
 def _screen_candidates(
     cwd: Path, resolved: list[tuple[SessionLayout, SessionManifest]]
 ) -> tuple[list[CandidateBrief], list[str]]:
-    """Briefs for the comparable runs, plus printed notes naming each excluded
-    one. A run without a session.end (died, or simply not there yet) has no
-    verdict to compare and a truncated (lowest) spend, so ranking it would float
-    it to first place and offer a merge, for a live run of a branch still
-    moving. The fan-out excludes such lanes; say which run was dropped rather
-    than silently shrinking the table."""
+    """Return briefs for the comparable runs and a note for each excluded one.
+
+    A run without a session end has no verdict and a truncated spend, so ranking it would
+    float it to first place and offer a merge of a branch still moving; it is excluded and
+    named rather than silently dropped.
+
+    Args:
+        cwd: The repo.
+        resolved: The runs with their manifests.
+
+    Returns:
+        The candidates and the notes to print.
+    """
     candidates: list[CandidateBrief] = []
     notes: list[str] = []
     for layout, manifest in resolved:
@@ -111,8 +127,12 @@ def _screen_candidates(
 
 
 def _fanout_lanes(cwd: Path, parallel_id: str) -> tuple[str, ...]:
-    """The lane ids of the fan-out *parallel_id* (each lane's manifest names
-    it), in lane order; empty when no run does."""
+    """Return the lane ids of a fan-out in lane order; empty when no run names it.
+
+    Args:
+        cwd: The repo.
+        parallel_id: The fan-out's id, as each lane's manifest records it.
+    """
     lanes: list[tuple[int, str]] = []
     runs = _runs_dir(cwd)
     if runs.is_dir():
@@ -127,11 +147,14 @@ def _fanout_lanes(cwd: Path, parallel_id: str) -> tuple[str, ...]:
 def _recorded_outcome(
     resolved: list[tuple[SessionLayout, SessionManifest]], candidates: list[CandidateBrief]
 ) -> RankOutcome | None:
-    """One fan-out's own stamped verdict as a `RankOutcome`, so the recorded
-    order prints through the same table a fresh ranking does.
+    """Return a fan-out's stamped verdict as a `RankOutcome`, for the ranking table.
 
-    None when any comparable candidate carries no auto-compare stamp: a
-    fan-out whose auto-compare never ran has no verdict to read, and is judged.
+    Args:
+        resolved: The runs with their manifests.
+        candidates: The comparable runs.
+
+    Returns:
+        The outcome, or None when any candidate lacks an auto-compare stamp (then it is judged).
     """
     ids = {c.session_id for c in candidates}
     stamps = {
@@ -154,22 +177,26 @@ def _recorded_outcome(
 def _cmd_compare(
     *, session_ids: tuple[str, ...], config_path: Path | None, rejudge: bool = False
 ) -> int:
-    """Advisory ranked comparison across >=2 already-run candidates: the same
-    ranked report `--parallel`'s auto-compare prints (judge via the reviewer
-    model when configured, else the mechanical verify+cost ranking), for runs
-    picked by hand, not necessarily from the same fan-out or even the same task
-    (each candidate's own manifest `user_task` is its task).
-    Read-only: no merges, no writes.
+    """Print an advisory ranking of two or more already-run candidates.
 
-    A fan-out id prints the verdict that fan-out recorded, so asking twice
-    costs nothing and answers what `sessions show` shows; ids named one by one
-    are a comparison to make, and are judged. `rejudge` judges either way,
-    which can rank differently than the stamp the listings read."""
+    The same ranked report `--parallel`'s auto-compare prints (the reviewer model as judge
+    when configured, else the mechanical verify-then-cost ranking), for runs picked by hand,
+    not necessarily from one fan-out or one task. Read-only: no merges, no stamps. A
+    fan-out id prints the verdict it recorded; ids named one by one are judged; `rejudge`
+    judges either way, and can rank differently from the stamp the listings read.
+
+    Args:
+        session_ids: Two or more run ids, or one fan-out id.
+        config_path: The `--config` file, if any.
+        rejudge: Judge afresh even for a fan-out with a recorded verdict.
+
+    Returns:
+        The exit code; 2 when the ids do not name two comparable runs.
+    """
     cwd = Path.cwd()
     by_fanout = False
     if len(session_ids) == 1:
-        # One id: a fan-out's, comparing its lanes; anything else is one run,
-        # too few.
+        # One id is a fan-out's, comparing its lanes; anything else is one run, too few.
         lanes = _fanout_lanes(cwd, session_ids[0])
         by_fanout = bool(lanes)
         session_ids = lanes or session_ids
@@ -213,15 +240,11 @@ def _cmd_compare(
         return 0
 
     reviewer = cfg.models.resolve("reviewer")
-    # `sessions compare` is advisory and stateless: it ranks + prints but never stamps
-    # a manifest (only the fan-out's auto-compare does), so `ranked_by` is unused.
+    # Advisory and stateless: only the fan-out's auto-compare stamps a manifest.
     outcome = rank(cfg, candidates, transcript_dir=state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
     print_ranked_candidates(candidates, outcome, merged_into=merged)
-    # A fresh judgment can contradict the fan-out's recorded verdict (the star in
-    # listings comes from the auto-compare stamp, which this command never
-    # rewrites); when re-judging one fan-out's own lanes, disclose the clash
-    # rather than let the two surfaces silently disagree.
+    # Re-judging one fan-out's lanes can contradict its stamp, which the listings read: say so.
     groups = {manifest.parallel.group if manifest.parallel else None for _, manifest in resolved}
     if outcome.ranking and len(groups) == 1 and None not in groups:
         stamped = next(

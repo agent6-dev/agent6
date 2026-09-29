@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `agent6 ask` Q&A flow: listing past asks, building a run
-digest for context, the interactive ask REPL, and saving ask transcripts.
-"""
+"""The `agent6 ask` flow: the seed digest, the interactive ask REPL and the transcripts."""
 
 from __future__ import annotations
 
@@ -30,8 +28,7 @@ from agent6.viewmodel import newest_session_dir
 
 
 def summarize_session_log(logs_path: Path) -> str:
-    """Compact prose summary of a run's logs.jsonl: outcome + event counts +
-    recent notable events. Used to seed `agent6 ask --from`."""
+    """Return a compact summary of a run's log: outcome, event counts and recent events."""
     if not logs_path.is_file():
         return "(no logs.jsonl for this run)"
     events: list[dict[str, Any]] = []
@@ -68,7 +65,7 @@ def summarize_session_log(logs_path: Path) -> str:
 
 
 def fmt_run_event(e: dict[str, Any]) -> str:
-    """One-line summary of a logs.jsonl event for the ask `--from` digest."""
+    """Return a one-line summary of a log event for the seed digest."""
     t = str(e.get("type", ""))
     if t == "tool.call":
         return f"tool.call {e.get('name', '')} {str(e.get('args', ''))[:80]}".rstrip()
@@ -82,11 +79,12 @@ def fmt_run_event(e: dict[str, Any]) -> str:
 
 
 def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
-    """Hardened `git diff <range>`, bytes-captured and lossy-decoded: a valid
-    diff can be non-UTF-8 (a latin-1 file), which a strict decode rejects."""
-    # operator-controlled argv, no LLM input (same as `agent6 sessions diff`).
-    # Hardening flags: a poisoned .git/config diff.external or diff.*.textconv
-    # would otherwise run on the host when the operator asks about a prior run.
+    """Return the rc, stdout and stderr of a hardened `git diff <range>`.
+
+    Bytes are decoded lossily, since a valid diff can be non-UTF-8. Fixed argv from
+    operator input; the hardening flags keep a poisoned `.git/config` from running
+    `diff.external` or a textconv on the host.
+    """
     proc = subprocess.run(
         ["git", *git_hardening_flags(cwd), "diff", *DIFF_SHOW_SAFETY_FLAGS, range_spec],
         cwd=cwd,
@@ -103,20 +101,24 @@ def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
 def _diff_via_merge_stamp(
     cwd: Path, manifest: SessionManifest, base_sha: str, run_branch: str | None
 ) -> tuple[str, int, str, str] | None:
-    """(label, rc, diff, err) via the manifest's merge stamp, for a primary
-    range that is unreachable (usually a run branch pruned after its merge,
-    though a gc'd base_sha does it with the branch still there). None without a
-    stamp. The label names which it was, since the model may go read the
-    branch."""
+    """Return the diff through the manifest's merge stamp when the primary range is unreachable.
+
+    Args:
+        cwd: The repo.
+        manifest: The session's manifest.
+        base_sha: The run's base.
+        run_branch: The run's branch, when it had one.
+
+    Returns:
+        `(label, rc, diff, err)`, the label naming the range and why; None without a stamp.
+    """
     merged = manifest.merged
     if merged is None or not run_branch or not merged.sha:
         return None
     gone = branch_tip_sha(cwd, run_branch) is None
     why = "run branch pruned" if gone else "base unreachable"
     if merged.sha == NO_MERGE_COMMIT:
-        # A merge that added nothing names no commit: the run's work is what
-        # its stamped tip holds over the base. A record with no tip names
-        # nothing to diff (an empty end would read as the base's own HEAD).
+        # A merge that added nothing names no commit; the run's work is its stamped tip's.
         if not merged.tip:
             return None
         label = f"{base_sha[:12]}..{merged.tip[:12]} ({why}; merged without a commit)"
@@ -124,9 +126,7 @@ def _diff_via_merge_stamp(
     merged_sha = merged.sha
     is_ff = merged_sha == merged.tip
     if is_ff:
-        # Fast-forwarded: the stamped commit is the run's tip, so its ^.. diff
-        # is the last commit only. The full run is base..merged, both in the
-        # base branch's history.
+        # Fast-forwarded: the full run is base..merged, both in the base branch's history.
         label = f"{base_sha[:12]}..{merged_sha[:12]} ({why}; fast-forward merge)"
         rc, diff, err = _git_diff_text(cwd, f"{base_sha}..{merged_sha}")
         if rc == 0:
@@ -145,17 +145,21 @@ class SessionSeed:
 
 
 def build_session_seed(cwd: Path, session_id: str, *, latest: bool) -> SessionSeed | None:
-    """Resolved source and markdown context for a new session, or None after
-    printing an error when the source cannot be resolved.
+    """Return the resolved source and its markdown context for a new session.
 
-    Any session kind seeds any other: a run, a plan and an ask all record the
-    same shape, and the useful direction is whichever way the operator is
-    working (an ask that worked something out, then a run to do it).
+    Any session kind seeds any other: a run, a plan and an ask record the same shape.
+
+    Args:
+        cwd: The repo.
+        session_id: The source, or "" with `latest`.
+        latest: Take the newest run or ask.
+
+    Returns:
+        The seed, or None after printing why the source could not be resolved.
     """
     state = state_dir(cwd)
     if latest:
-        # runs/ and asks/ only: a machine draft is an authoring log, not a
-        # session with a task and an outcome.
+        # A machine draft is an authoring log, not a session with a task and an outcome.
         newest = newest_session_dir([bucket_dir(state, "runs"), bucket_dir(state, "asks")])
         if newest is None:
             error(f"--from-latest: no run or ask under {state}")
@@ -180,8 +184,7 @@ def build_session_seed(cwd: Path, session_id: str, *, latest: bool) -> SessionSe
     diff_label = f"{base_sha}..{run_branch}"
     diff_body = "(no diff: the run recorded no base_sha)"
     if not run_branch:
-        # A plan and an ask cut no branch and commit nothing; diffing HEAD
-        # would label the operator's uncommitted work as the session's.
+        # A plan and an ask commit nothing; diffing HEAD would label the operator's work as theirs.
         diff_label = "(none)"
         diff_body = "(no diff: this session wrote no code)"
     elif base_sha:
@@ -191,7 +194,7 @@ def build_session_seed(cwd: Path, session_id: str, *, latest: bool) -> SessionSe
             if fallback is not None:
                 diff_label, rc, diff, err = fallback
         if rc != 0:
-            # Loud, never an empty diff block the model reads as "no changes".
+            # Loud: an empty diff block reads as "no changes".
             diff_body = f"(diff unavailable: git diff exited {rc}: {err.strip()[:300]})"
         else:
             cap = 8000
@@ -223,7 +226,7 @@ def build_session_seed(cwd: Path, session_id: str, *, latest: bool) -> SessionSe
 
 
 def seed_files(cwd: Path, files: list[str]) -> str:
-    """Wrap explicit --file seeds for an `ask` (a non-fatal, capped read)."""
+    """Return the `--file` seeds wrapped for an ask; a capped, non-fatal read each."""
     parts: list[str] = []
     for f in files:
         try:
@@ -239,12 +242,15 @@ def seed_files(cwd: Path, files: list[str]) -> str:
 
 
 def save_ask_transcript(layout: SessionLayout, *, question: str, answer: str) -> None:
-    """Write the human-readable `ask` transcript (question + markdown answer).
+    """Append the question and its markdown answer to the ask's transcript.
 
-    A resumed ask appends its own Q&A: the file exists only because an earlier
-    execution wrote it, and overwriting would drop the answer the operator already
-    has. Both halves are appended, since an answer alone under the first
-    question reads as a continuation of that answer.
+    A resumed ask appends both halves: an answer alone under the first question
+    would read as its continuation.
+
+    Args:
+        layout: The ask's layout.
+        question: The question.
+        answer: The answer.
     """
     out = layout.session_dir / "transcript.md"
     if out.is_file():
@@ -268,10 +274,17 @@ def save_ask_repl_transcript(layout: SessionLayout, conversation: list[tuple[str
 def run_ask_repl(
     wf: Harness, budget: BudgetTracker, layout: SessionLayout, *, first_question: str
 ) -> SessionResult:
-    """Interactive multi-turn ask. Each follow-up re-enters the loop with the
-    prior Q&A carried as context, reusing the one provider/jail/budget setup.
-    The agent re-reads what it needs per turn (prompt-cached); the conversation
-    text is what gives continuity."""
+    """Run a multi-turn ask, each follow-up re-entering the loop with the prior Q&A as context.
+
+    Args:
+        wf: The harness, with its provider, jail and budget set up once.
+        budget: The budget tracker.
+        layout: The ask's layout.
+        first_question: The question the command line carried.
+
+    Returns:
+        The last turn's result.
+    """
     print(
         "[agent6] ask REPL: type a follow-up, or /cost /reset /quit (Ctrl-D exits).",
         file=sys.stderr,

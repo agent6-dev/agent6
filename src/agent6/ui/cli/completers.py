@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""argcomplete completers for the CLI parser."""
+"""The argcomplete completers for the CLI parser; each offers exactly what its verb accepts."""
 
 from __future__ import annotations
 
@@ -34,23 +34,21 @@ from agent6.viewmodel.machine_state import MachineVerb, machine_verb_refusal
 
 
 def _explicit_config(kw: dict[str, object]) -> Path | None:
-    """The `--config FILE` already typed on the line being completed, so
-    completions describe the config the command will actually run under."""
+    """Return the `--config FILE` already typed on the line, so completions read that config."""
     parsed = kw.get("parsed_args")
     raw = getattr(parsed, "config", None)
     return raw if isinstance(raw, Path) else None
 
 
 def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
-    """Suggestions or nothing, never an exception.
+    """Return the completer wrapped to answer nothing on any exception.
 
-    argcomplete calls these on Tab, inside the operator's shell, where an
-    exception is a traceback dumped over the command line. Every completer that
-    touches the config or the filesystem wears this.
+    A traceback would land on the operator's command line.
     """
 
     @functools.wraps(fn)
     def guarded(*args: Any, **kwargs: Any) -> list[str]:
+        """Return the suggestions, or none."""
         try:
             return fn(*args, **kwargs)
         except Exception:
@@ -61,8 +59,7 @@ def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
 
 @_never_raises
 def _complete_providers(prefix: str, **kw: object) -> list[str]:
-    """argcomplete: connected provider names + known presets, under the
-    `--config` already typed."""
+    """Return the connected provider names and the known presets."""
     from agent6.config.write import PROVIDER_DEFAULTS  # noqa: PLC0415
     from agent6.ui.cli.model import _connected_providers  # noqa: PLC0415
 
@@ -72,15 +69,14 @@ def _complete_providers(prefix: str, **kw: object) -> list[str]:
 
 @_never_raises
 def _complete_presets(prefix: str, **kw: object) -> list[str]:
-    """argcomplete: built-in presets + configured [presets.*] names, under
-    the `--config` already typed."""
+    """Return the built-in presets and the configured `[presets.*]` names."""
     names = available_preset_names(Path.cwd(), _explicit_config(kw))
     return [n for n in names if n.startswith(prefix)]
 
 
 @_never_raises
 def _complete_skills(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: installed + extra_dirs skill names."""
+    """Return the installed and extra-dir skill names."""
     from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion  # noqa: PLC0415
 
     return [n for n in resolved_skill_names_for_completion(Path.cwd()) if n.startswith(prefix)]
@@ -88,7 +84,7 @@ def _complete_skills(prefix: str, **_kw: object) -> list[str]:
 
 @_never_raises
 def _complete_mcp_servers(prefix: str, **kw: object) -> list[str]:
-    """argcomplete: the configured MCP server names."""
+    """Return the configured MCP server names."""
     effective = load_effective(Path.cwd(), _explicit_config(kw))
     target = "repo" if getattr(kw.get("parsed_args"), "to_repo", False) else "global"
     from agent6.ui.cli.mcp_connect import _layers_holding  # noqa: PLC0415
@@ -102,8 +98,7 @@ def _complete_mcp_servers(prefix: str, **kw: object) -> list[str]:
 
 @_never_raises
 def _complete_model_routes(prefix: str, **kw: object) -> list[str]:
-    """argcomplete for `--model`: every `provider/model` the config can run
-    (`models.choices.route_choices`), under the `--config` already typed."""
+    """Return every `provider/model` route the config can run, for `--model`."""
     try:
         cfg = load_effective(Path.cwd(), _explicit_config(kw)).config
     except ConfigError:
@@ -113,35 +108,27 @@ def _complete_model_routes(prefix: str, **kw: object) -> list[str]:
 
 @_never_raises
 def _complete_parallel_models(prefix: str, **kw: object) -> list[str]:
-    """argcomplete for `run --parallel`: every `provider/model` the config can
-    run, completing the entry after the last comma so a list completes entry
-    by entry (an integer lane count is typed, not completed)."""
+    """Return the routes for `run --parallel`, completing the entry after the last comma."""
     head, sep, frag = prefix.rpartition(",")
-    lead = head + sep  # "" for the first entry, "p/m," while extending a list
+    lead = head + sep
     return [lead + r for r in _complete_model_routes(frag, **kw)]
 
 
-# Values TAB must not offer even though the schema allows them, keyed by leaf.
-# `sandbox.isolation = "none"` is the unsandboxed opt-out: TAB should not put
-# "disable the sandbox" one keystroke away. Type it explicitly to set it.
+# Values Tab must not put one keystroke away, though the schema allows them; typed explicitly.
 _WITHHELD_ENUM_VALUES: dict[str, frozenset[str]] = {"sandbox.isolation": frozenset({"none"})}
 
 
 def _config_enum_choices(config_path: Path | None = None) -> dict[str, tuple[str, ...]]:
-    """Every closed-value leaf's allowed values, read from the schema through
-    the same view the config surfaces render.
+    """Return every closed-value leaf's allowed values, through the view the config surfaces render.
 
-    A bool is as closed a set as any enum, and `config set` takes exactly
-    `true` or `false` there (`True` and `yes` are refused), so it completes
-    like one."""
+    A bool completes like an enum: `config set` takes exactly `true` or `false`.
+    """
     from agent6.viewmodel.config_view import build_config_view  # noqa: PLC0415
 
     try:
         view = build_config_view(load_effective(Path.cwd(), config_path))
     except ConfigError:
-        # A config that does not load still gets completion: the schema is
-        # what carries the choices, and a default config is all schema; the
-        # preset names still come from the raw layers.
+        # A config that does not load still completes: the schema carries the choices.
         view = build_config_view(
             EffectiveConfig(
                 config=Config(),
@@ -163,7 +150,7 @@ def _config_enum_choices(config_path: Path | None = None) -> dict[str, tuple[str
 
 
 def _config_list_keys(config_path: Path | None = None) -> set[str]:
-    """The effective schema leaves accepted by `config add/remove`."""
+    """Return the list leaves `config add` and `config remove` accept."""
     from agent6.viewmodel.config_view import build_config_view  # noqa: PLC0415
 
     effective = load_effective(Path.cwd(), config_path)
@@ -175,10 +162,11 @@ def _config_list_keys(config_path: Path | None = None) -> set[str]:
 
 
 def _user_preset_names(config_path: Path | None = None) -> list[str]:
-    """User-defined [presets.*] names only, for key completion. Built-in names
-    are absent: writing presets.ultra.* creates a user table that replaces the
-    built-in wholesale, a footgun TAB should not put one keystroke away (the
-    same rule keeps `none` out of sandbox.isolation completion)."""
+    """Return the user-defined `[presets.*]` names.
+
+    A built-in name is withheld: writing `presets.<builtin>.*` replaces the built-in
+    table wholesale.
+    """
     try:
         return [
             p.name
@@ -193,17 +181,14 @@ def _user_preset_names(config_path: Path | None = None) -> list[str]:
 def _complete_config_keys(
     prefix: str, *, settable: bool = True, sections: bool = False, **kw: object
 ) -> list[str]:
-    """argcomplete: known dotted config leaf paths (effective + enum keys).
-    From `preset` onward, also the user's presets.<name>.<leaf> paths (kept
-    out of the bare-TAB listing, which is crowded enough already).
+    """Return the dotted config keys the verb accepts.
 
-    A completer offers what its command accepts. `settable=False` for
-    `config get`, which reads effective leaves only: both the enum keys
-    (offered so `config set` can reach a leaf no layer has set yet) and
-    `[presets.*]` paths (stripped before validation) are inputs `get`
-    rejects. `sections=True` for `config show`, which takes a section prefix
-    too. `config add/remove` edit list leaves alone, and a write to a machine
-    overlay (`--machine-file`) cannot reach an operator-only leaf.
+    Args:
+        prefix: The typed prefix; from `preset` on, the user's `presets.<name>.<leaf>`
+            paths are offered too.
+        settable: Offer the enum keys and the preset paths, which `config get` rejects.
+        sections: Offer section prefixes too, for `config show`.
+        kw: argcomplete's keyword arguments.
     """
     explicit = _explicit_config(kw)
     try:
@@ -234,9 +219,7 @@ def _complete_config_keys(
     return sorted(k for k in keys if k.startswith(prefix))
 
 
-# Presets offered for any `providers.<name>.extra_body` value (the provider name
-# varies, so this is matched by suffix, not a schema enum). Each is an
-# OpenRouter backend routing preference.
+# Offered for any `providers.<name>.extra_body` value, matched by suffix; OpenRouter routing.
 _EXTRA_BODY_RECIPES: tuple[str, ...] = (
     '{ provider = { sort = "throughput" } }',
     '{ provider = { sort = "latency" } }',
@@ -248,10 +231,11 @@ _EXTRA_BODY_RECIPES: tuple[str, ...] = (
 def _complete_config_values(
     prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
 ) -> list[str]:
-    """argcomplete: the values the config key already typed accepts: its enum
-    or configured choices (the schema's literals, the preset names, the
-    configured providers), a role's provider's model ids, the extra_body
-    recipes."""
+    """Return the values the config key already typed accepts.
+
+    Its enum or configured choices, a role's provider's model ids, or the extra_body
+    recipes.
+    """
     key = getattr(parsed_args, "key", "") or ""
     if isinstance(getattr(parsed_args, "machine_file", None), Path):
         from agent6.machine import protected_overlay_key_error  # noqa: PLC0415
@@ -282,12 +266,11 @@ def _complete_config_values(
 def _complete_model_verb_values(
     prefix: str, parsed_args: argparse.Namespace | None = None, **kw: object
 ) -> list[str]:
-    """argcomplete for `agent6 model <role> [PROVIDER/]MODEL`: the provider
-    names (a name alone lists or prompts) and every `provider/model` route.
+    """Return the provider names and routes for `model <role> [PROVIDER/]MODEL`.
 
-    Only once a valid role has been typed: argcomplete bleeds every nargs='?'
-    positional's completer into the first slot, so without this gate
-    `agent6 model <TAB>` would mix providers into the role choices."""
+    Only once a valid role is typed: argcomplete bleeds every optional positional's
+    completer into the first slot.
+    """
     role = getattr(parsed_args, "role", None)
     if role not in ("planner", "worker", "reviewer", "all"):
         return []
@@ -303,19 +286,13 @@ def _complete_model_verb_values(
 
 @_never_raises
 def _complete_session_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: ids across every session bucket (runs, asks, machine
-    drafts). Offers exactly what `--from` accepts, so the two cannot drift."""
+    """Return the ids across every session bucket, what `--from` accepts."""
     return sorted(d.name for d in all_session_dirs(Path.cwd()) if d.name.startswith(prefix))
 
 
 @_never_raises
 def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: object) -> list[str]:
-    """argcomplete: the ports that session is actually listening on.
-
-    Offering every valid input rather than nothing: the whole difficulty of
-    reaching a run's dev server is not knowing its port, and only something
-    inside the run's network can see it.
-    """
+    """Return the ports the session is listening on; only something inside its network sees them."""
     target = str(getattr(parsed_args, "target", "") or "")
     from agent6.sessions.ipc import listening_ports  # noqa: PLC0415
 
@@ -327,11 +304,7 @@ def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: obje
 
 @_never_raises
 def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: ids `resume`/`fork` can actually pick up.
-
-    Every bucket whose mode is resumable, so a plan and an ask are offered,
-    though not a `machine create` draft, which resume refuses.
-    """
+    """Return the ids `resume` and `fork` pick up: every resumable bucket, not a machine draft."""
     out: list[str] = []
     from agent6.app.resume import resumable_bucket_dirs  # noqa: PLC0415
 
@@ -344,10 +317,7 @@ def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
 
 @_never_raises
 def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: the sessions the operator can still act on, for the verbs
-    that reach a running one (steer, stop, answer, exec, forward).
-    `session_is_live` is those verbs' own gate: a finished run whose worker
-    pid is still up in its teardown window is refused, so it is not offered."""
+    """Return the live sessions, through the same gate the verbs reaching a running one use."""
     return sorted(
         d.name
         for d in all_session_dirs(Path.cwd())
@@ -357,7 +327,7 @@ def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
 
 @_never_raises
 def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: plan ids (for plan show/edit)."""
+    """Return the plan ids, for `plan show` and `plan edit`."""
     plans = _plans_dir(Path.cwd())
     if not plans.is_dir():
         return []
@@ -369,7 +339,7 @@ def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
 
 
 def _machine_instance_dirs(prefix: str) -> list[Path]:
-    """The machine instance dirs under the per-repo state dir's machines/."""
+    """Return the machine instance dirs matching the prefix."""
     from agent6.sessions.layout import machines_root  # noqa: PLC0415
 
     base = machines_root(state_dir(Path.cwd()))
@@ -380,14 +350,12 @@ def _machine_instance_dirs(prefix: str) -> list[Path]:
 
 @_never_raises
 def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: every machine instance id, what `machine status`, `machine
-    replay` and `attach` take, finished instances included."""
+    """Return every machine instance id, finished ones included."""
     return sorted(p.name for p in _machine_instance_dirs(prefix))
 
 
 def _machine_ids_taking(prefix: str, verb: MachineVerb) -> list[str]:
-    """The instances *verb* acts on: `machine_verb_refusal` is the paint the
-    verb's own answer reads too, so the offer and the answer cannot drift."""
+    """Return the instances the verb acts on, through the verb's own refusal rule."""
     return sorted(
         p.name for p in _machine_instance_dirs(prefix) if not machine_verb_refusal(p, p.name, verb)
     )
@@ -395,31 +363,25 @@ def _machine_ids_taking(prefix: str, verb: MachineVerb) -> list[str]:
 
 @_never_raises
 def _complete_pokable_machine_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: the instances `machine poke` accepts, those with an open
-    wait (a signal is a wake, never a queue)."""
+    """Return the instances `machine poke` accepts: those with an open wait."""
     return _machine_ids_taking(prefix, "poke")
 
 
 @_never_raises
 def _complete_stoppable_machine_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: the instances `machine stop` has something to stop in, the
-    running ones (a stopped one answers with a note)."""
+    """Return the instances `machine stop` has something to stop in: the running ones."""
     return _machine_ids_taking(prefix, "stop")
 
 
 @_never_raises
 def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: every session id plus every machine id, what `attach`
-    accepts: it resolves a session across all buckets, so the plans and asks it
-    opens are offered with the runs."""
+    """Return every session id and every machine id, what `attach` accepts."""
     return sorted(set(_complete_session_ids(prefix) + _complete_machine_ids(prefix)))
 
 
 @_never_raises
 def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: machine `*.asm.toml` files under cwd, spelled the way
-    the prefix is (relative, `./`-relative, or absolute after a leading `/`),
-    and under the machines dir, absolute."""
+    """Return the `*.asm.toml` files under cwd, spelled as the prefix is, and the machines dir's."""
     from agent6.sessions.layout import machines_root  # noqa: PLC0415
 
     cwd = Path.cwd()

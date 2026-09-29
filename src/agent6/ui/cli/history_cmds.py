@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 history search` and the `sessions graph` / `sessions transcript` verbs."""
+"""`agent6 history search` and the `sessions graph` and `sessions transcript` verbs."""
 
 from __future__ import annotations
 
@@ -36,6 +36,16 @@ from agent6.viewmodel.transcript_render import (
 
 
 def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
+    """Search a session's record, or every session's, with rg and print the hits.
+
+    Args:
+        query: The pattern.
+        fixed: Match it literally.
+        session_id: The session, or "" for every session in every bucket.
+
+    Returns:
+        The exit code: 0 with hits, 1 with none, 2 when the session cannot be resolved.
+    """
     rg = shutil.which("rg")
     if rg is None:
         error(
@@ -52,8 +62,7 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
             error(f"{exc}")
             return 2
     else:
-        # No id: search every session across every bucket, so a
-        # search right after an `ask` finds it (matching what `agent6 sessions` lists).
+        # No id: every session in every bucket, so a search right after an `ask` finds it.
         targets = all_session_dirs(cwd)
         if not targets:
             print("[agent6] no sessions to search yet.")
@@ -71,17 +80,24 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
     return 0 if hits else 1
 
 
-# A search hit rendered readably: which session, when, the event type, and a snippet
-# windowed around the match, never the whole (possibly 400KB) JSON event line.
 @dataclass(frozen=True, slots=True)
 class _SearchHit:
+    """A search hit rendered readably: never the whole JSON event line.
+
+    Attributes:
+        session_id: The session the match file belongs to.
+        when: The short clock time, or "" when the line is not a timestamped event.
+        kind: The event type, or the file's basename for a non-event file.
+        snippet: The window around the match.
+        key: The content identity for collapsing the same text across storage encodings:
+            the whole matched JSON value (a transcript's `TASK:` prefix stripped), else the
+            snippet window, normalized.
+    """
+
     session_id: str
-    when: str  # short clock time, or "" if the line is not a timestamped event
-    kind: str  # event type, or the file's basename for non-event files
+    when: str
+    kind: str
     snippet: str
-    # Content identity for collapsing the same text across storage encodings:
-    # the whole matched JSON value (a transcript's `TASK:` prefix stripped),
-    # else the snippet window, normalized.
     key: str
 
 
@@ -89,18 +105,23 @@ _SNIPPET_HALF = 70  # chars kept either side of the match in a hit's snippet
 
 
 def _normalize(text: str) -> str:
-    """Decoded, lowercased, alphanumerics+spaces only: the normal form both
-    sides of an identity comparison reduce to."""
+    """Return the text decoded, lowercased and reduced to alphanumerics and spaces."""
     decoded = _collapse_escapes(text).lower()
     return "".join(ch for ch in decoded if ch.isalnum() or ch == " ").strip()
 
 
 def _match_core(text: str, start: int, end: int) -> str:
-    """A hit's content identity, including the whole matched JSON value.
+    """Return a hit's content identity, including the whole matched JSON value.
 
-    The same task is stored both bare and behind a `TASK:` transcript prefix,
-    which is storage syntax rather than content. A non-JSON line uses the same
-    window the operator sees, so distinct prose before a match stays distinct."""
+    The same task is stored bare and behind a `TASK:` transcript prefix, which is storage
+    syntax rather than content. A non-JSON line uses the window the operator sees, so
+    distinct prose before a match stays distinct.
+
+    Args:
+        text: The matched line.
+        start: The match's start offset.
+        end: The match's end offset.
+    """
     matched = _collapse_escapes(text[start:end])
     if matched.strip() and (event := _json_object(text)) is not None:
         for value in _strings_in(event):
@@ -116,8 +137,11 @@ def _match_core(text: str, start: int, end: int) -> str:
 
 
 def _json_object(raw: str) -> dict[object, object] | None:
-    """Decode a JSON object, or one line of a pretty-printed object (its
-    trailing comma dropped) as emitted by rg from a transcript."""
+    """Decode a JSON object, or one line of a pretty-printed object as rg emits it.
+
+    Returns:
+        The object, or None when the line is neither.
+    """
     for candidate in (raw, "{" + raw.rstrip().rstrip(",") + "}"):
         try:
             event = json.loads(candidate)
@@ -129,11 +153,14 @@ def _json_object(raw: str) -> dict[object, object] | None:
 
 
 def _strings_in(obj: object) -> Iterator[str]:
-    """Every string value nested anywhere in a decoded JSON object.
+    """Yield every string value nested anywhere in a decoded JSON object.
 
-    Iterative: json.loads accepts nesting right up to the interpreter's stack
-    ceiling, so a recursive walk over what it returns can be the thing that
-    blows up."""
+    Iterative: json.loads accepts nesting up to the interpreter's stack ceiling, so a
+    recursive walk over what it returns could be the thing that blows up.
+
+    Yields:
+        Each string, in document order.
+    """
     stack = [obj]
     while stack:
         item = stack.pop()
@@ -146,12 +173,19 @@ def _strings_in(obj: object) -> Iterator[str]:
 
 
 def _field_snippet(raw: str, start: int, end: int) -> str | None:
-    """When the matched line is a JSON object (a logs.jsonl event, a per-call
-    transcript line), window inside the string field holding the match: the
-    snippet then reads as prose instead of a raw
-    `"type": "role.thinking_delta", "text": " ...` fragment. None when the
-    line is not a JSON object or the match sits on syntax/keys (the caller
-    falls back to the raw-line window)."""
+    """Window inside the string field holding the match when the line is a JSON object.
+
+    The snippet then reads as prose instead of a raw `"type": "...", "text": " ...` fragment.
+
+    Args:
+        raw: The matched line.
+        start: The match's start offset.
+        end: The match's end offset.
+
+    Returns:
+        The window, or None when the line is not a JSON object or the match sits on syntax
+        or keys; the caller falls back to the raw-line window.
+    """
     event = _json_object(raw)
     if event is None:
         return None
@@ -166,11 +200,19 @@ def _field_snippet(raw: str, start: int, end: int) -> str | None:
 
 
 def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
-    """Turn `rg --json` output into readable hits. Each match line is parsed as a
-    logs.jsonl event when it is one (for its type + timestamp), and the snippet is
-    a whitespace-collapsed window around the first match (inside the matched
-    string field when the line is JSON), so a match buried in a huge tool/diff
-    blob prints a short prose excerpt, not the entire line."""
+    """Turn `rg --json` output into readable hits.
+
+    A match line is parsed as a logs.jsonl event when it is one, for its type and
+    timestamp; the snippet is a whitespace-collapsed window around the first match, inside
+    the matched string field when the line is JSON, so a match buried in a huge tool or
+    diff blob prints a short excerpt.
+
+    Args:
+        rg_json: The `rg --json` output.
+
+    Returns:
+        The hits, in rg's order.
+    """
     hits: list[_SearchHit] = []
     for line in rg_json.splitlines():
         try:
@@ -203,9 +245,11 @@ def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
 
 
 def _kind_rank(hit: _SearchHit) -> int:
-    """Readability order when the same content collapses across encodings: a
-    timestamped event line beats the transcript record, which beats a rendered
-    .md, which beats raw internals (manifest.json, per-call JSON)."""
+    """Return the readability order when the same content collapses across encodings.
+
+    A timestamped event line beats the transcript record, which beats a rendered .md,
+    which beats raw internals (manifest.json, per-call JSON).
+    """
     if hit.when:
         return 0
     if hit.kind == "transcript":
@@ -216,8 +260,7 @@ def _kind_rank(hit: _SearchHit) -> int:
 
 
 def _rg_bytes(field: object) -> bytes:
-    """rg --json encodes a path or line as {"text": ...}, or {"bytes": <base64>}
-    when it is not UTF-8: the bytes either way, so rg's byte offsets apply."""
+    """Return an rg `{"text": ...}` or `{"bytes": ...}` field as bytes, so rg's offsets apply."""
     if isinstance(field, dict):
         if "bytes" in field:
             return base64.b64decode(str(field["bytes"]))
@@ -226,16 +269,22 @@ def _rg_bytes(field: object) -> bytes:
 
 
 def _char_span(line: bytes, b_start: int, b_end: int) -> tuple[int, int]:
-    """rg's byte offsets as character offsets into the line decoded with
-    U+FFFD for what is not UTF-8: the prefix decodes to the same characters
-    the whole line does, so non-ASCII prose (curly quotes, ellipses) and a
-    stray byte before the match shift nothing."""
+    """Return rg's byte offsets as character offsets into the line decoded with U+FFFD.
+
+    The prefix decodes to the same characters the whole line does, so non-ASCII prose and a
+    stray byte before the match shift nothing.
+
+    Args:
+        line: The matched line.
+        b_start: The match's start byte.
+        b_end: The match's end byte.
+    """
     start = len(line[:b_start].decode("utf-8", "replace"))
     return start, start + len(line[b_start:b_end].decode("utf-8", "replace"))
 
 
 def _session_id_from_path(path: Path) -> str:
-    """The session id owning a match file: `<sessions>/<bucket>/<id>`."""
+    """Return the session id owning a match file: `<sessions>/<bucket>/<id>`."""
     parts = path.parts
     anchors = set(SESSION_BUCKETS)
     for i in range(len(parts) - 3, -1, -1):
@@ -245,10 +294,15 @@ def _session_id_from_path(path: Path) -> str:
 
 
 def _event_when_kind(path: Path, raw: str) -> tuple[str, str]:
-    """(clock-time, event-type) when the matched line is a logs.jsonl event;
-    otherwise ("", a short label) for a transcript snapshot, plan.md, etc. The
-    transcript snapshots are cumulative, so they get one shared "transcript"
-    label to collapse the same text repeated across snapshots."""
+    """Return `(clock time, event type)` when the matched line is a logs.jsonl event.
+
+    Otherwise `("", label)`: a transcript snapshot, plan.md and the like. The snapshots are
+    cumulative, so they share one "transcript" label to collapse repeated text.
+
+    Args:
+        path: The match file.
+        raw: The matched line.
+    """
     if path.name == LOGS_NAME:
         try:
             event = json.loads(raw)
@@ -264,16 +318,20 @@ def _event_when_kind(path: Path, raw: str) -> tuple[str, str]:
 
 
 def _collapse_escapes(s: str) -> str:
-    """Render a JSON-encoded fragment readably, scanning left-to-right so a real
-    escaped backslash (`\\\\`) is never mistaken for the start of a `\\n`.
+    r"""Render a JSON-encoded fragment readably.
 
-    The whitespace escapes (`\\n` `\\t` `\\r`) become spaces,
-    `\\\\` / `\\"` / `\\/` decode to their literal char, and `\\uXXXX`
-    decodes to its character (surrogate pairs combined): transcripts are
-    written ascii-escaped while logs.jsonl is raw UTF-8, and the identity key
-    must see one form or the same content never collapses. An unknown,
-    window-clipped, or lone-surrogate escape keeps its literal backslash text
-    (printing a lone surrogate would raise on encode)."""
+    Scans left to right, so an escaped backslash is never mistaken for the start of `\n`.
+    The whitespace escapes become spaces, `\\`, `\"` and `\/` decode to their character,
+    and `\uXXXX` decodes with surrogate pairs combined: transcripts are written
+    ascii-escaped while logs.jsonl is raw UTF-8, and the identity key must see one form.
+    An unknown, clipped or lone-surrogate escape keeps its literal text.
+
+    Args:
+        s: The fragment.
+
+    Returns:
+        The rendered text.
+    """
     out: list[str] = []
     i, n = 0, len(s)
     while i < n:
@@ -301,7 +359,7 @@ def _collapse_escapes(s: str) -> str:
 
 
 def _hex4(s: str, i: int) -> int | None:
-    """`int(s[i:i+4], 16)`, or None when truncated or not hex."""
+    """Return `int(s[i:i+4], 16)`, or None when truncated or not hex."""
     if i + 4 > len(s):
         return None
     try:
@@ -311,9 +369,12 @@ def _hex4(s: str, i: int) -> int | None:
 
 
 def _decode_u_escape(s: str, i: int) -> tuple[str, int] | None:
-    """Decode the `\\uXXXX` escape at `s[i]`, combining a surrogate pair
-    into its real character; None keeps the literal text (malformed hex,
-    truncated, or a lone surrogate)."""
+    r"""Decode the `\uXXXX` escape at `s[i]`, combining a surrogate pair.
+
+    Returns:
+        The character and the index after the escape, or None (the literal text is kept)
+        for malformed hex, a truncation or a lone surrogate.
+    """
     cp = _hex4(s, i + 2)
     if cp is None or 0xDC00 <= cp <= 0xDFFF:
         return None  # malformed/truncated, or a lone low surrogate
@@ -326,10 +387,15 @@ def _decode_u_escape(s: str, i: int) -> tuple[str, int] | None:
 
 
 def _window(text: str, start: int) -> str:
-    """A cleaned excerpt of *text* around byte offset *start*, capped at
-    ~2*_SNIPPET_HALF chars with leading/trailing ellipses when it was clipped.
-    JSON escapes inside transcript strings are decoded and real whitespace
-    collapses to single spaces so the snippet reads as one line."""
+    """Return a cleaned excerpt around an offset, with ellipses where it was clipped.
+
+    JSON escapes inside transcript strings are decoded and whitespace collapses to single
+    spaces, so the snippet reads as one line.
+
+    Args:
+        text: The matched line.
+        start: The match's start offset.
+    """
     lo = max(0, start - _SNIPPET_HALF)
     hi = min(len(text), start + _SNIPPET_HALF)
     excerpt = " ".join(_collapse_escapes(text[lo:hi]).split())
@@ -337,9 +403,11 @@ def _window(text: str, start: int) -> str:
 
 
 def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
-    """Group hits by session, print a faded session header once, then one line per hit.
-    Identical snippets within a session (the same system-prompt boilerplate matched
-    in every transcript) collapse to one line with an `(xN)` count."""
+    """Print the hits grouped by session, a faded header once, then one line per hit.
+
+    Identical snippets within a session (the same system-prompt boilerplate matched in
+    every transcript) collapse to one line with an `(xN)` count.
+    """
     if not hits:
         print(f"[agent6] no matches under {target}.")
         return
@@ -350,11 +418,7 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
     for i, (session_id, run_hits) in enumerate(grouped.items()):
         print("" if i == 0 else "\n", end="")
         print(sgr(session_id, "1"))
-        # Dedup by content identity, not by file kind: one task string lives in
-        # many storage encodings (session.start event, manifest, graph labels,
-        # per-call transcripts) and cumulative transcript snapshots repeat the
-        # same text; each collapses to one line, the most readable encoding
-        # (see _kind_rank), with an (xN) count.
+        # Dedup by content identity: one task string lives in many storage encodings.
         counts: dict[str, int] = {}
         best: dict[str, _SearchHit] = {}
         for hit in run_hits:
@@ -364,8 +428,7 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
                 best[hit.key] = hit
         for key, hit in best.items():
             n = counts[key]
-            # Show the timestamp only for a unique hit; a collapsed group spans
-            # several times, so a count is clearer than any one of them.
+            # A collapsed group spans several times, so it shows a count, not a timestamp.
             meta = "  ".join(p for p in (hit.when, hit.kind) if p) if n == 1 else hit.kind
             tag = f" {sgr(f'(x{n})', '2')}" if n > 1 else ""
             print(f"  {sgr(meta, '2')}  {hit.snippet}{tag}")
@@ -380,8 +443,11 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
 
 
 def _cmd_history_graph(session_id: str) -> int:
-    """Render a session's persisted TaskNode tree as a DFS-ordered listing."""
+    """Print a session's persisted task tree as a DFS-ordered listing.
 
+    Returns:
+        The exit code; 2 when the session cannot be resolved.
+    """
     cwd = Path.cwd()
     if session_id:
         # Resolve across runs/ + asks/ so an ask's graph is findable too.
@@ -415,7 +481,14 @@ def _cmd_history_graph(session_id: str) -> int:
 
 
 def _parse_seq_window(spec: str) -> tuple[int, int] | None:
-    """`""` -> None (all); `"5"` -> (5,5); `"3-7"` -> (3,7). Raises ValueError on junk."""
+    """Parse a `--seq` window: "" for all, "5" for one call, "3-7" for a range.
+
+    Returns:
+        `(first, last)`, or None for all.
+
+    Raises:
+        ValueError: The spec is junk or reversed.
+    """
     spec = spec.strip()
     if not spec:
         return None
@@ -430,8 +503,13 @@ def _parse_seq_window(spec: str) -> tuple[int, int] | None:
 
 
 def _transcript_layout(cwd: Path, session_id: str) -> SessionLayout | int:
-    """Resolve the session whose transcripts to render: by id, else the most recent
-    session that has a transcripts/ dir. An int is the exit code of a printed error."""
+    """Resolve the session whose transcripts to render.
+
+    By id, else the most recent session that has a transcripts dir.
+
+    Returns:
+        The layout, or the exit code of a printed error.
+    """
     if session_id:
         try:
             return resolve_session_layout(cwd, session_id)
@@ -451,10 +529,19 @@ def _cmd_history_transcript(
 ) -> int:
     """Render a session's full LLM conversation from its lossless per-call transcripts.
 
-    The transcripts (`<run>/transcripts/*.json`) are the complete, self-
-    contained record, needing no join with logs.jsonl. This is the conversation
-    view (assistant text/thinking + every tool call with full I/O); for the terse
-    event timeline use `agent6 attach` / `agent6 history search`.
+    The transcripts (`<run>/transcripts/*.json`) are the complete record, needing no join
+    with logs.jsonl: assistant text and thinking plus every tool call with its full I/O.
+    `agent6 attach` and `history search` are the terse event timeline.
+
+    Args:
+        session_id: The session, or "" for the newest with transcripts.
+        as_json: Print the folded turns as JSON.
+        no_thinking: Leave the thinking blocks out.
+        tools: How much of each tool call to show.
+        seq: The `--seq` call window.
+
+    Returns:
+        The exit code; 2 for a bad window or an unresolvable session.
     """
     layout = _transcript_layout(Path.cwd(), session_id)
     if isinstance(layout, int):
@@ -479,8 +566,7 @@ def _cmd_history_transcript(
         return 0
 
     if not conversation_transcripts(transcripts):
-        # e.g. a review-only dir: every round-trip is a side-call seat, so the
-        # conversation fold would print nothing at all.
+        # A review-only dir: every round-trip is a side-call seat, so the fold would print nothing.
         print(
             f"session {layout.session_id} has only side-call transcripts (review seats /"
             " compaction); --json dumps them raw.",

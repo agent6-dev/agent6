@@ -2,19 +2,16 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 exec` and `agent6 forward`: reach into a live run's session network.
 
-A run's commands share one network with no route off the box, which is what
-lets the agent start a dev server and curl it. The same property means nothing
-outside the run can reach that server, the operator included. These two
-commands are the way in, and they are the operator's, never the model's:
-`exec` runs a command the way the agent would, `forward` bridges one of the
-run's ports to a port on this machine so a browser can open it.
+A run's commands share one network with no route off the box, so nothing outside the
+run can reach a server the agent started, the operator included. These commands are the
+way in, and they are the operator's, never the model's: `exec` runs a command the way
+the agent would, `forward` bridges one of the run's ports to a port on this machine.
 
-A join goes through the holder pid the run publishes (`netns.pid`). `forward`
-always joins; `exec` joins only when the run's own commands took the session
-network, so a `host` stamp keeps it on this machine's network even while the
-run holds a netns for an MCP server scoped to it. Entering a network namespace
-needs capabilities in the user namespace that owns it, so each join takes that
-one first, exactly as the launcher does.
+A join goes through the holder pid the run publishes (`netns.pid`). `forward` always
+joins; `exec` joins only when the run's own commands took the session network, so a
+`host` stamp keeps it on this machine's network even while the run holds a netns for a
+scoped MCP server. Entering a network namespace needs capabilities in the user namespace
+that owns it, so each join takes that one first, as the launcher does.
 """
 
 from __future__ import annotations
@@ -39,8 +36,7 @@ from agent6.tools.policy import jail_policy
 from agent6.ui.cli._common import error, refuse
 from agent6.viewmodel import session_is_live, summarize_session_dir
 
-# The namespaces to enter and the `os` flag naming each; both are Linux's,
-# looked up when a join runs so the module imports on any host.
+# The namespaces to enter; the `os` flags are looked up at join time so the module imports anywhere.
 _JOIN_ORDER = (("user", "CLONE_NEWUSER"), ("net", "CLONE_NEWNET"))
 
 
@@ -49,8 +45,17 @@ class SessionNetworkUnavailableError(Exception):
 
 
 def join_session_network(session_dir: Path) -> None:
-    """Put this process in the run's session network. Irreversible: seccomp
-    is not involved, but nothing here ever leaves a namespace it entered."""
+    """Put this process in the run's session network.
+
+    Irreversible: nothing here ever leaves a namespace it entered.
+
+    Args:
+        session_dir: The run's session dir.
+
+    Raises:
+        SessionNetworkUnavailableError: The run publishes no holder, the host is not Linux, or
+            the namespaces could not be entered.
+    """
     pid = read_session_netns_pid(session_dir)
     if pid is None:
         raise SessionNetworkUnavailableError(
@@ -98,9 +103,11 @@ def _pump(a: socket.socket, b: socket.socket) -> None:
 
 
 def no_session_network_reason(layout: SessionLayout) -> str:
-    """Why `forward` finds no session network to reach into: the run is not
-    live (its network lives only while its run does), or a live run made none
-    (host network, or an isolation short of strict)."""
+    """Return why `forward` finds no session network to reach into.
+
+    The run is not live (its network lives only while it does), or a live run made none
+    (host network, or an isolation short of strict).
+    """
     if not session_is_live(layout.session_dir):
         word = summarize_session_dir(layout.session_dir).status
         return f"{layout.session_id} is {word}; a session network exists only while its run does."
@@ -115,23 +122,26 @@ def no_session_network_reason(layout: SessionLayout) -> str:
 def forward(
     layout: SessionLayout, remote_port: int, local_port: int | None, out: TextIO = sys.stderr
 ) -> int:
-    """Bridge `remote_port` inside the run to `local_port` on this machine.
+    """Bridge a port inside the run to a port on this machine.
 
-    One forked child per connection: it joins the run's network and connects
-    there, then shuttles bytes over the socket it inherited. A child cannot
-    come back out of a namespace, and the parent must stay outside to keep
-    accepting, so the fork is the bridge.
+    One forked child per connection: it joins the run's network and connects there, then
+    shuttles bytes over the socket it inherited. A child cannot come back out of a namespace,
+    and the parent must stay outside to keep accepting, so the fork is the bridge.
+
+    Args:
+        layout: The run.
+        remote_port: The port inside the run.
+        local_port: The port on this machine; None takes the same number, 0 asks for a free one.
+        out: Where the status lines go.
+
+    Returns:
+        The exit code; 2 when there is no network to join or the bind fails.
     """
-    # Refuse before binding, not per connection: the join happens in the
-    # per-connection child, so a bind-first flow prints "forwarding" and then
-    # drops every connection in silence when there is no network to join.
+    # Refuse before binding: the join happens per connection, in the child.
     if read_session_netns_pid(layout.session_dir) is None:
         print(f"REFUSING: {no_session_network_reason(layout)}", file=out)
         return 2
-    # Same number on both sides unless told otherwise: that is what `kubectl
-    # port-forward 3000`, `docker -p 3000:3000` and `ssh -L` all mean, and it is
-    # the number you are about to type into a browser. An explicit 0 asks the
-    # host for a free port, named below.
+    # The same number on both sides unless told otherwise, as `kubectl port-forward 3000` means.
     if local_port is None:
         local_port = remote_port
     with socket.socket() as listener:
@@ -146,9 +156,7 @@ def forward(
             )
             return 2
         listener.listen(16)
-        # Wake up between connections so the loop can notice the run ending: a
-        # bridge that outlives its session accepts connections and drops them,
-        # which looks exactly like a broken server on the other side.
+        # Wake between connections: a bridge outliving its run reads as a broken server.
         listener.settimeout(2.0)
         bound = listener.getsockname()[1]
         print(
@@ -174,8 +182,7 @@ def forward(
                 try:
                     child = os.fork()
                 except OSError as exc:
-                    # A process cap or memory pressure on this machine, not a
-                    # broken bridge: drop the one connection, keep accepting.
+                    # A process cap on this machine, not a broken bridge: drop the one connection.
                     print(f"[agent6] could not fork a bridge for a connection: {exc}", file=out)
                     conn.close()
                     continue
@@ -198,16 +205,19 @@ def forward(
 
 
 def _stamped_policy(layout: SessionLayout) -> tuple[str, NetworkMode | None] | None:
-    """The run's recorded (isolation, network), or None when unreadable or
-    unstamped. An unknown network word reads as unset rather than guessing."""
+    """Return the run's recorded `(isolation, network)`.
+
+    Returns:
+        The stamp, or None when unreadable or unstamped; an unknown network word reads as
+        unset rather than guessed.
+    """
     try:
         stamp = read_manifest(layout.session_dir).policy
     except ManifestError:
         return None
     if stamp.isolation not in ("strict", "hardened", "none"):
         return None
-    # "auto" (the knob) and "" (unstamped) resolve as None: jail_policy
-    # applies its own auto semantics, same as the run did.
+    # "auto" and "" (unstamped) read as None: jail_policy applies its own auto semantics.
     network: NetworkMode | None = (
         stamp.network if stamp.network in ("host", "session", "none") else None
     )
@@ -215,35 +225,34 @@ def _stamped_policy(layout: SessionLayout) -> tuple[str, NetworkMode | None] | N
 
 
 def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[str, ...]) -> int:
-    """Run *argv* the way the run's own commands run: same jail, same network.
+    """Run a command the way the run's own commands run: same jail, same network.
 
-    The operator's command, not the model's, so it is not approved or logged as
-    a tool call; it is confined identically, so what you see is what the agent
-    sees. The output prints when the command ends, and a Ctrl-C ends it with
-    none: a one-shot probe (a build, a curl at the agent's server), unbounded
-    (`timeout_s=0.0`) so the policy's default timeout cannot cut a slow one. A
-    server is the agent's to start (`run_command` with `background=true`) and
-    the operator's to reach with `agent6 forward`.
+    The operator's command, not the model's, so it is neither approved nor logged as a tool
+    call; confined identically, so what you see is what the agent sees. The output prints
+    when the command ends, and a Ctrl-C ends it with none. Unbounded (`timeout_s=0.0`), so
+    the policy's default timeout cannot cut a slow probe. A server is the agent's to start
+    and the operator's to reach with `agent6 forward`.
+
+    Args:
+        layout: The run.
+        cfg: The effective config, the fallback when the run is unstamped.
+        cwd: The workspace.
+        argv: The command.
+
+    Returns:
+        The command's exit code; 2 when the run is not live or its network is gone.
     """
-    # A live run only: the help promises the run's own jail, and a finished
-    # run's jail is gone with it (a fresh one built from its recorded policy
-    # is a different place, at today's HEAD, with none of its processes).
+    # A live run only: a finished run's jail is gone with it, and a fresh one is a different place.
     if not session_is_live(layout.session_dir):
         refuse(f"{no_session_network_reason(layout)}")
         return 2
     pid = read_session_netns_pid(layout.session_dir)
-    # The run's recorded isolation and network, not today's config: an
-    # operator who changed [sandbox] since the run started still gets the
-    # jail the run's own commands got (mounts stay config-derived; the help
-    # says so). A manifest without the stamp falls back to the current
-    # config with a warning naming the divergence risk.
+    # The run's recorded policy, not today's config; unstamped falls back with a warning.
     stamped = _stamped_policy(layout)
     if stamped is not None:
         isolation_word, network_word = stamped
         isolation = resolve_isolation(isolation_word, detect_env())
-        # The recorded word, not the holder: a run whose commands took the host
-        # network can still hold a session netns for an MCP server scoped to
-        # it. An "auto" stamp reads as None and follows the holder, as the run did.
+        # The recorded word, not the holder: a host-network run can still hold a netns for MCP.
         network = network_word if network_word is not None else ("session" if pid else None)
     else:
         print(
@@ -259,14 +268,11 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
         error(f"{exc}")
         return 2
     if policy.network == "session" and pid is None:
-        # The run recorded the session network but holds none (an isolation
-        # short of strict): refuse rather than open /proc/None.
+        # Recorded as session but holding none (an isolation short of strict): refuse.
         refuse(f"{no_session_network_reason(layout)}")
         return 2
     if policy.network == "session":
-        # The run's network belongs to the run; borrow it through the holder
-        # rather than making one of our own, which would be a different place.
-        # The holder can exit between the read above and this open.
+        # Borrowed through the holder, which can exit between the read above and this open.
         userns_fd = -1
         try:
             userns_fd = os.open(f"/proc/{pid}/ns/user", os.O_RDONLY)

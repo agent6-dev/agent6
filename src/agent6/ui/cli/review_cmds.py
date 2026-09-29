@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 review` (the freeform review and the adversarial panel), and
-`save_review`, the one writer of `<state-dir>/reviews/`, which `sessions
-review` shares."""
+"""`agent6 review`: the freeform review and the adversarial panel.
+
+`save_review` is the one writer of `<state-dir>/reviews/`, shared with `sessions review`.
+"""
 
 from __future__ import annotations
 
@@ -51,19 +52,24 @@ def _collect_review_diff(
     head: str,
     paths: tuple[str, ...],
 ) -> subprocess.CompletedProcess[str]:
-    """Collect the diff `agent6 review` reviews, leaving the index untouched.
+    """Collect the diff `agent6 review` reviews, leaving the index as it was.
 
-    With `base`: a plain `git diff base..head` (read-only). Without it:
-    working tree vs HEAD *including untracked files*. To make untracked files
-    show up, git needs intent-to-add (`git add -N`) entries, but review is
-    documented read-only, so only the currently-untracked paths are registered
-    and `git reset` afterward (in a `finally`), restoring the index exactly as
-    it was. Staged/tracked changes are never touched.
+    With a base, a plain read-only `git diff base..head`. Without one, the working tree
+    against HEAD including untracked files: git shows those only through intent-to-add
+    entries, so the currently untracked paths are registered and `git reset` afterwards, in
+    a `finally`; staged and tracked changes are never touched. Every invocation carries
+    git_ops' hardening flags plus `--no-ext-diff --no-textconv`, so a poisoned `.git/config`
+    (`diff.external`, a textconv, `core.fsmonitor`) cannot run its payload on the host.
 
-    Every invocation carries git_ops' hardening flags plus `--no-ext-diff
-    --no-textconv`: without them, a checkout with a poisoned `.git/config`
-    (`diff.external`/`diff.*.textconv`/`core.fsmonitor`) would run its
-    payload on the host the moment the operator reviews it.
+    Args:
+        git: The git binary.
+        root: The repo root.
+        base: The base rev, or "" for the working tree.
+        head: The head rev.
+        paths: The pathspecs, or empty for everything.
+
+    Returns:
+        The completed `git diff`, decoded with replacement so a non-UTF-8 file cannot crash it.
     """
     hardening = git_hardening_flags(root)
     untracked: list[str] = []
@@ -83,9 +89,7 @@ def _collect_review_diff(
         # `--end-of-options` and `--` keep a rev that is also a path a rev.
         diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, "--end-of-options", rev]
         diff_args.extend(["--", *paths])
-        # errors="replace" (implies text mode): git diff emits raw file bytes,
-        # so a changed non-UTF-8 file must not crash the review with a strict
-        # decode. Mirrors git_ops._run.
+        # git diff emits raw file bytes; a non-UTF-8 file must not crash the review.
         return subprocess.run(
             diff_args, cwd=root, capture_output=True, errors="replace", check=False
         )
@@ -97,18 +101,26 @@ def _collect_review_diff(
 
 
 def save_review(reviews_dir: Path, *, label: str, body: str) -> Path:
-    """Write one rendered review under *reviews_dir* (beside the provider
-    transcripts) and return its path: `<utc-stamp>-review.md`, a `# review:
-    <label>` line, then *body*. A later session working on a module finds
-    its review by searching the directory for the path."""
+    """Write one rendered review under the reviews dir, beside the provider transcripts.
+
+    The file is `<utc-stamp>-review.md`: a `# review: <label>` line, then the body. A later
+    session working on a module finds its review by searching the directory.
+
+    Args:
+        reviews_dir: The `<state-dir>/reviews/` directory.
+        label: What was reviewed.
+        body: The review text.
+
+    Returns:
+        The file's path.
+    """
     mkdir_for_real_user(reviews_dir)
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     content = f"# review: {label}\n\n{body.rstrip()}\n".encode()
     n = 1
     while True:
         path = reviews_dir / (f"{stamp}-review.md" if n == 1 else f"{stamp}-{n}-review.md")
-        # An exclusive create claims the name: two reviews in one second
-        # (a CLI review beside a TUI one) never replace each other.
+        # An exclusive create claims the name, so two reviews in one second never collide.
         try:
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError:
@@ -120,10 +132,16 @@ def save_review(reviews_dir: Path, *, label: str, body: str) -> Path:
 
 
 def _is_checked_out(git: str, root: Path, rev: str) -> bool:
-    """True when the checkout at *root* is *rev*: that commit, with nothing
-    uncommitted on top. An explore-tier seat's read-only tools read the
-    checkout, so anything else answers `read_file` from a tree the diff does
-    not describe."""
+    """Return whether the checkout at the root is the rev, with nothing uncommitted on top.
+
+    An explore-tier seat's read-only tools read the checkout, so anything else answers
+    `read_file` from a tree the diff does not describe.
+
+    Args:
+        git: The git binary.
+        root: The repo root.
+        rev: The reviewed head.
+    """
     checked_out = chain_tip(root, "HEAD")
     if checked_out is None or chain_tip(root, rev) != checked_out:
         return False
@@ -153,15 +171,32 @@ def _run_review_panel(
     reviews_dir: Path,
     budget: BudgetTracker,
 ) -> int:
-    """Run the grounded adversarial review panel over *diff* and print a verdict
-    + merged findings, saved under *reviews_dir* as well. Read-only. Per-seat
-    status and budget go to stderr.
+    """Run the grounded adversarial review panel over the diff and print its verdict.
 
-    The exit code carries the verdict, on `agent6 run`'s scale: 0 = PASS
-    (clean or with non-blocking findings), 1 = INCONCLUSIVE (every seat
-    abstained: the review broke), 3 = budget, 4 = BLOCK (a grounded gating
-    finding: the diff is not green). 2 stays the refusal before any seat ran,
-    so a script tells "blocked" from "not reviewed" from "could not start"."""
+    Read-only. The merged findings are saved under the reviews dir; per-seat status and the
+    budget go to stderr.
+
+    Args:
+        cfg: The effective config.
+        git: The git binary.
+        root: The repo root.
+        base: The base rev.
+        head: The head rev.
+        label: What is reviewed, for the saved file.
+        diff: The diff text.
+        agents_md: The repo's AGENTS.md text.
+        reviewers: The number of seats.
+        personas: The persona roster.
+        transcript_sink: Where the seats' transcripts go.
+        reviews_dir: The `<state-dir>/reviews/` directory.
+        budget: The invocation's budget.
+
+    Returns:
+        The verdict on `agent6 run`'s scale: 0 PASS (clean or non-blocking findings),
+        1 INCONCLUSIVE (every seat abstained), 3 budget, 4 BLOCK (a grounded gating
+        finding). 2 stays the refusal before any seat ran, so a script tells "blocked"
+        from "not reviewed" from "could not start".
+    """
     persona_tuple = tuple(p.strip() for p in personas.split(",") if p.strip())
     try:
         seats = build_review_seats(
@@ -174,8 +209,7 @@ def _run_review_panel(
     except ProviderError as exc:
         error(f"provider init failed: {exc}")
         return 2
-    # check_provider_keys reads a configured roster itself; --personas is
-    # the roster only without one.
+    # check_provider_keys reads a configured roster; --personas is the roster only without one.
     pinned = [] if cfg.review.seats else [parse_seat_spec(spec)[1] for spec in persona_tuple]
     err = check_provider_keys(cfg, extra_providers=pinned)
     if err is not None:
@@ -216,8 +250,7 @@ def _run_review_panel(
     except BudgetExceededError as exc:
         print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
         return 3
-    # One all-abstain owner, shared with the in-loop panel, so neither surface
-    # launders "nothing was reviewed" into a pass.
+    # One all-abstain owner, shared with the in-loop panel: nothing reviewed is never a pass.
     inconclusive = panel_is_inconclusive(result)
     if inconclusive:
         verdict, rc = f"INCONCLUSIVE ({inconclusive_note(result)})", 1
@@ -256,9 +289,17 @@ def _run_review_panel(
 def _reviewed_diff(
     base: str, head: str, paths: tuple[str, ...]
 ) -> tuple[str, Path, str, str] | int:
-    """The git binary, the repo root, the diff a review reads and its label;
-    else the exit code: 2 when git is missing or failed, 0 when there is
-    nothing to review (said on stderr, naming the range)."""
+    """Resolve the git binary, the repo root, the diff a review reads and its label.
+
+    Args:
+        base: The base rev, or "" for the working tree.
+        head: The head rev.
+        paths: The pathspecs.
+
+    Returns:
+        `(git, root, diff, label)`, else the exit code: 2 when git is missing or failed,
+        0 when there is nothing to review (said on stderr, naming the range).
+    """
     root = Path.cwd()
     git = shutil.which("git")
     if git is None:
@@ -279,9 +320,15 @@ def _reviewed_diff(
 
 
 def _reviewer_config(config_path: Path | None, model: str) -> Config:
-    """The effective config with `--model` (`[provider/]model`, may be empty)
-    applied to the reviewer route; raises ConfigError for a value that names
-    no configured provider or no model."""
+    """Return the effective config with `--model` applied to the reviewer route.
+
+    Args:
+        config_path: The `--config` file, if any.
+        model: The `[provider/]model` value; "" leaves the route as configured.
+
+    Raises:
+        ConfigError: The value names no configured provider or no model.
+    """
     cfg = load_effective(Path.cwd(), config_path).config
     if not model:
         return cfg
@@ -298,10 +345,23 @@ def _cmd_review(  # noqa: PLR0911
     reviewers: int = 0,
     personas: str = "",
 ) -> int:
-    """Print a code review of a diff to stdout. Read-only; no jail. With
-    `reviewers >= 1`, runs the grounded adversarial review panel instead of the
-    single freeform review. *model* is the `--model` value, `[provider/]model`,
-    applied to the reviewer route over every config layer."""
+    """Print a code review of a diff to stdout.
+
+    Read-only; no jail. With `reviewers` at 1 or more, the grounded adversarial panel runs
+    instead of the single freeform review.
+
+    Args:
+        config_path: The `--config` file, if any.
+        base: The base rev, or "" for the working tree.
+        head: The head rev.
+        paths: The pathspecs.
+        model: The `[provider/]model` value applied to the reviewer route.
+        reviewers: The number of panel seats; 0 for the freeform review.
+        personas: The panel's persona roster.
+
+    Returns:
+        The exit code: 0 reviewed or PASS, 2 refused, 3 budget, and the panel's 1 or 4.
+    """
     if not base and head not in ("", "HEAD"):
         error("--head requires --base; without --base, review uses the working tree vs HEAD.")
         return 2
@@ -351,8 +411,7 @@ def _cmd_review(  # noqa: PLR0911
 
     agents_md = agents_md_text(root)
 
-    # Reviewer-only: route the "reviewer" role per [models.reviewer]. Budget
-    # is per-invocation since this command is a one-shot.
+    # The reviewer route; the budget is per invocation, a one-shot.
     budget = budget_tracker(cfg)
     layout_root = state_dir(root) / "reviews"
     transcript_sink = TranscriptSink(layout_root)

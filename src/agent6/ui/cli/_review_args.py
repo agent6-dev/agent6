@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parser builders for `review`/`check`/`system`: read-only introspection of
-the repo (diff review, pre-flight checks) and privileged host/OS setup
-(the AppArmor profile) that a strict sandbox needs."""
+"""Build the `review`, `check` and `system` parsers."""
 
 from __future__ import annotations
 
@@ -13,6 +11,11 @@ from agent6.ui.cli.completers import _complete_model_routes
 
 
 def _reviewer_count(raw: str) -> int:
+    """Return the `--reviewers` count.
+
+    Raises:
+        ArgumentTypeError: The count is under one.
+    """
     value = int(raw)
     if value < 0:
         raise argparse.ArgumentTypeError("reviewer count must be non-negative")
@@ -20,6 +23,7 @@ def _reviewer_count(raw: str) -> int:
 
 
 def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `check`, the read-only pre-flight checks."""
     check_p = _sub(
         sub,
         "check",
@@ -40,7 +44,7 @@ def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
 
 
 def _add_system_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    # `agent6 system <component> <action>`: privileged host/OS setup (uses sudo).
+    """Add `system <component> <action>`, the privileged host setup that uses sudo."""
     system_p = _sub(
         sub,
         "system",
@@ -64,6 +68,7 @@ def _add_system_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
 
 
 def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `review`, the read-only diff review."""
     review_p = _sub(
         sub,
         "review",

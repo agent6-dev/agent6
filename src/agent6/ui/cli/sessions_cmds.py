@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions list/diff/commits/compare/stop/dir/rm` (the run-branch
-read side; `merge`/`prune` are `sessions_merge`)."""
+"""`agent6 sessions list/diff/commits/stop/dir/rm`: the run-branch read side.
+
+`merge` and `prune` are `sessions_merge`, `compare` is `sessions_compare`.
+"""
 
 from __future__ import annotations
 
@@ -76,16 +78,21 @@ from agent6.viewmodel.wire import commits_ref
 
 
 def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
-    """List this repo's sessions, newest first: updated (last-activity time),
-    status (the mode folded in when the word does not imply it, the failure
-    reason, the unmerged mark), cost, id, task. A fan-out's lanes nest under
-    its row: folded into a count, listed indented with *lanes*; the JSON row
-    nests them always.
+    """List this repo's sessions, newest first.
 
-    Every bucket, unlike the TUI/web hubs: they give `machine create` drafts
-    their own card and the CLI has none, so a draft lists here with the rest.
+    Columns: updated, status (the mode folded in when the word does not imply it, the
+    failure reason, the unmerged mark), cost, id, task. A fan-out's lanes nest under its
+    row: folded into a count, or listed indented with `lanes`; the JSON row always nests
+    them. Every bucket, unlike the TUI and web hubs, which give `machine create` drafts
+    their own card.
+
+    Args:
+        as_json: Print the rows as JSON.
+        lanes: List each fan-out's lanes.
+
+    Returns:
+        The exit code, 0.
     """
-
     cwd = Path.cwd()
     dirs = session_dirs(state_dir(cwd), SESSION_BUCKETS)
     if not dirs:
@@ -100,6 +107,7 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
     color = sys.stdout.isatty()
 
     def cells(row: ListingRow, id_cell: str) -> tuple[str, str, str, str, str, str]:
+        """Return a row's six cells with the id cell as given."""
         s = row.summary
         styled, plain = styled_status(
             s.status,
@@ -112,6 +120,7 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
     rows: list[tuple[str, str, str, str, str, str]] = []
 
     def emit(row: ListingRow, depth: int) -> None:
+        """Append the row's cells, then its lanes' when listing them."""
         s = row.summary
         id_cell = winner_id(s.session_id, winner=s.session_id in winners)
         if depth:
@@ -127,8 +136,7 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
         emit(row, 0)
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
     id_w = max(2, *(len(r[4]) for r in rows))
-    # The task column takes what a tty has left (floor 24); piped output keeps
-    # the fixed 60 the scripts around it read today.
+    # The task column takes what a tty has left (floor 24); piped output keeps a fixed 60.
     fixed = 11 + 2 + status_w + 2 + 8 + 2 + id_w + 2
     task_w = max(24, shutil.get_terminal_size().columns - fixed) if color else 60
     print(f"{'updated':<11}  {'status':<{status_w}}  {'cost':<8}  {'id':<{id_w}}  task")
@@ -140,20 +148,23 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
 
 
 def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: bool = True) -> int:
-    """Print the git diff a run produced (manifest.base_sha -> branch HEAD).
-    *paginate* False keeps git's pager out (the `run -i` REPL, whose prompt
-    loop the pager would otherwise take over).
+    """Print the git diff a run produced, from its base sha to its branch head.
 
-    Resolves the run id (or unique prefix; empty string means most-recent),
-    reads `manifest.json` for `base_sha` and `run_branch`, then shells
-    out to `git diff` with operator-controlled argv (no LLM input). The call
-    streams to the terminal, so it cannot go through git_ops._run; it carries
-    the same host-RCE hardening (`git_hardening_flags`: a poisoned
-    `.git/config` `diff.external` / `diff.*.textconv` / `core.fsmonitor`
-    / repo hook must not execute on the host) plus `DIFF_SHOW_SAFETY_FLAGS`,
-    which force the builtin diff renderer (git >= 2.53 executes even an empty
-    `diff.external` override, so the `-c` flags alone would kill the printed
-    patch) and disable the per-file textconv driver the `-c` flags do not reach.
+    Streams to the terminal, so it cannot go through git_ops; it carries the same host-RCE
+    hardening (a poisoned `.git/config` `diff.external`, textconv, `core.fsmonitor` or hook
+    must not execute on the host) plus `DIFF_SHOW_SAFETY_FLAGS`, which force the builtin
+    renderer (git 2.53 executes even an empty `diff.external` override) and disable the
+    per-file textconv driver the `-c` flags do not reach.
+
+    Args:
+        session_id: The run, or "" for the newest.
+        stat: Print `--stat` only.
+        paths: The pathspecs.
+        paginate: Let git page; off for the `run -i` REPL, whose prompt loop the pager
+            would take over.
+
+    Returns:
+        git's exit code; 2 when the run cannot be resolved or has no branch.
     """
     cwd = Path.cwd()
     res = _resolve_session_manifest(
@@ -171,8 +182,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         print(f"[agent6] {ref.reason}.")
         return 0
     if manifest.run_branch and ref.head_ref == manifest.run_branch:
-        # The branch is the source, or stands in for a pruned one: say where
-        # the work went. A chain ref that is the source diffs as itself.
+        # A branch may stand in for a pruned one: say where the work went.
         pruned = _pruned_branch_note(cwd, manifest, manifest.run_branch)
         if pruned is not None:
             print(pruned)
@@ -183,8 +193,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         return 2
 
     head_ref = ref.head_ref
-    # The logical command; printed without the -c hardening overrides (the
-    # same convention as git_ops error messages), executed with them.
+    # Printed without the -c hardening overrides, as git_ops error messages are; executed with them.
     args: list[str] = ["diff", *DIFF_SHOW_SAFETY_FLAGS]
     if stat:
         args.append("--stat")
@@ -196,9 +205,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         f"[agent6] git {' '.join(args)}  (base_branch={manifest.base_branch!r})",
         file=sys.stderr,
     )
-    # A zero-commit run would print the headers and then nothing; probe first
-    # (`--quiet` = exit 0 when identical) and say so. Probe errors (rc > 1,
-    # e.g. a missing sha) fall through so the real diff surfaces git's message.
+    # Probe first so a zero-commit run says so; a probe error falls through to git's message.
     probe_args = ["diff", *DIFF_SHOW_SAFETY_FLAGS, "--quiet", f"{base_sha}..{head_ref}"]
     if paths:
         probe_args.extend(["--", *paths])
@@ -206,10 +213,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         ["git", *git_hardening_flags(cwd), *probe_args], cwd=cwd, check=False, capture_output=True
     )
     if probe.returncode == 0:
-        # No committed changes yet. A run commits only after a verify pass, so a
-        # live run mid-work has its edits uncommitted on the worktree and this
-        # reads as "the agent did nothing". If the run branch is the current
-        # checkout and its worktree is dirty, say so instead of a bare silence.
+        # A live run mid-work has uncommitted edits on the worktree: say so, not a bare silence.
         dirty = _dirty_worktree_note(cwd, manifest.run_branch)
         print(dirty if dirty else "(no changes)")
         return 0
@@ -219,14 +223,14 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
 
 
 def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
-    """A note when the diffed run's branch is the current checkout and its
-    worktree has uncommitted work (a run commits at each editing step),
-    else "". Only speaks when the dirty files are unambiguously this run's:
-    the current branch must equal run_branch. Best-effort; git errors -> "" ."""
+    """Return a note when the diffed run's branch is checked out with uncommitted work, else "".
+
+    Only when the dirty files are unambiguously this run's: the current branch must equal
+    the run branch. Best effort; a git error reads as "".
+    """
     if not run_branch:
         return ""
-    # Same host-RCE hardening as the diff/probe above: `git status` refreshes the
-    # index and would fire a poisoned `.git/config` core.fsmonitor on the host.
+    # Hardened like the diff: `git status` would fire a poisoned core.fsmonitor on the host.
     try:
         current = subprocess.run(
             ["git", *git_hardening_flags(cwd), "rev-parse", "--abbrev-ref", "HEAD"],
@@ -258,28 +262,32 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
 
 @dataclass(frozen=True, slots=True)
 class _CommitsRef:
-    """Where a session's commits end (`base_sha..head_ref`): the run branch,
-    the hidden chain ref for a run with branch_per_run off, or "" when the
-    session made none. `reason` says why there is no ref, and is "" exactly
-    when `head_ref` is one -- so the branch verbs (commits/merge) refuse on
-    `reason` while diff reads `head_ref`."""
+    """Where a session's commits end, for `base_sha..head_ref`.
+
+    Attributes:
+        head_ref: The run branch, the hidden chain ref for a run with branch_per_run off,
+            or "" when the session made no commits.
+        reason: Why there is no ref; "" exactly when `head_ref` is one, so the branch verbs
+            refuse on it while diff reads `head_ref`.
+    """
 
     head_ref: str
     reason: str
 
 
 def _commits_ref(cwd: Path, manifest: SessionManifest) -> _CommitsRef:
-    """`commits_ref` (an existing run branch while it covers the chain, else
-    the chain ref), else the manifest's branch name while no chain exists (the
-    verbs read its absence themselves: pruned, never cut, or a lane's branch
-    still in its clone), else the reason the run has no commits."""
+    """Return where the run's commits end.
+
+    The run branch while it covers the chain, else the chain ref; else the manifest's branch
+    name while no chain exists (the verbs read its absence themselves: pruned, never cut, or
+    a lane's branch still in its clone); else the reason the run has no commits.
+    """
     if ref := commits_ref(manifest, cwd):
         return _CommitsRef(head_ref=ref, reason="")
     if manifest.run_branch and chain_tip(cwd, chain_ref_for(manifest.session_id)) is None:
         return _CommitsRef(head_ref=manifest.run_branch, reason="")
     if manifest.parked_task:
-        # A parked run never started, so `base..HEAD` is whatever the run that
-        # held the checkout committed, the one it was parked behind.
+        # A parked run never started, so `base..HEAD` is the run it was parked behind.
         return _CommitsRef(
             head_ref="", reason="this run was parked before it started, so it made no commits"
         )
@@ -300,26 +308,31 @@ def _resolve_session_manifest(
     recent_note: str = "using most recent run",
     missing_hint: str = "",
 ) -> tuple[SessionLayout, SessionManifest] | int:
-    """Resolve a run id (or '' for most-recent) to its (layout, manifest), or an exit
-    code on error. Shared by `sessions diff`/`merge`/`commits`; the two note strings vary
-    per caller."""
+    """Resolve a run id, or "" for the newest, to its layout and manifest.
+
+    Shared by `sessions diff`, `merge` and `commits`; the two note strings vary per caller.
+
+    Args:
+        cwd: The repo.
+        session_id: The run.
+        recent_note: What to print when the newest run was taken.
+        missing_hint: What to add when nothing matches.
+
+    Returns:
+        `(layout, manifest)`, or the exit code of a printed error.
+    """
     runs_dir = _runs_dir(cwd)
     if not session_id:
-        # No id: the most recent run. These verbs are about a run's branch, and
-        # a plan or an ask has none, so widening the default would answer a
-        # question the operator did not ask.
+        # No id: the most recent run; a plan or an ask has no branch for these verbs.
         latest = newest_session_dir([runs_dir]) if runs_dir.is_dir() else None
         if latest is None:
-            # Over a plan or an ask alone (sessions without a run branch) the
-            # verb says so; a fresh state dir keeps the first-contact copy.
+            # Only branchless sessions: say so; a fresh state dir keeps the first-contact copy.
             print_nothing_yet("runs" if session_dirs(state_dir(cwd)) else "sessions")
             return 2
         layout = layout_of(latest)
         print(f"[agent6] {recent_note}: {layout.session_id}", file=sys.stderr)
     else:
-        # An explicit id resolves across every bucket. A plan the operator named
-        # exists; "no session matches" would deny that, when the real answer is that
-        # it has no branch to show.
+        # Every bucket: a plan the operator named exists, it just has no branch to show.
         try:
             layout = resolve_session_layout(cwd, session_id)
         except SessionIdError as exc:
@@ -334,8 +347,7 @@ def _resolve_session_manifest(
     except ManifestError as exc:
         error(f"could not read manifest: {exc}")
         return 2
-    # A fan-out commits nothing by design: its lanes hold the work, and its
-    # record is the newest run once it ends.
+    # A fan-out commits nothing: its lanes hold the work.
     refusal = (
         f"{target_id} is a fan-out; its lanes hold the commits"
         f" (`agent6 sessions show {target_id}` lists them)"
@@ -349,18 +361,20 @@ def _resolve_session_manifest(
 
 
 def _committed_nothing(cwd: Path, session_id: str) -> bool:
-    """True when a run left no commit anywhere: the chain ref it commits to was
-    never created, so its branch was never cut either."""
+    """Return whether a run left no commit anywhere.
+
+    The chain ref it commits to was never created, so its branch was never cut either.
+    """
     return chain_tip(cwd, chain_ref_for(session_id)) is None
 
 
 def _pruned_branch_note(cwd: Path, manifest: SessionManifest, run_branch: str) -> str | None:
-    """A friendly message when a run's branch is absent, or None when it is
-    there. Says where the work went instead of leaking a raw git fatal, and
-    separates the ways to get here: a merged-then-pruned branch (the stamp
-    covering every commit the run made), a branch deleted past its stamp or
-    with no merge recorded (the chain ref keeps the commits), and a run that
-    committed nothing, whose branch was never cut."""
+    """Return where the work went when a run's branch is absent, or None when it is there.
+
+    Separates the ways to get here: a merged-then-pruned branch (the stamp covering every
+    commit), a branch deleted past its stamp or with no merge recorded (the chain ref keeps
+    the commits), and a run that committed nothing.
+    """
     if branch_exists(cwd, run_branch):
         return None
     stamp = covering_stamp(cwd, manifest)
@@ -384,8 +398,11 @@ def _pruned_branch_note(cwd: Path, manifest: SessionManifest, run_branch: str) -
 
 
 def _cmd_commits(*, session_id: str) -> int:
-    """List the per-step commits on a run's branch or chain ref
-    (manifest.base_sha -> the ref a merge reads)."""
+    """List the per-step commits on a run's branch or chain ref.
+
+    Returns:
+        The exit code; 2 when the run cannot be resolved or has no commits.
+    """
     cwd = Path.cwd()
     res = _resolve_session_manifest(cwd, session_id)
     if isinstance(res, int):
@@ -400,8 +417,7 @@ def _cmd_commits(*, session_id: str) -> int:
         error("manifest has no base_sha; nothing to list commits from")
         return 2
     head_ref = ref.head_ref
-    # The branch is the source, or stands in for a pruned one: say where the
-    # work went. A chain ref that is the source lists its own commits.
+    # A branch may stand in for a pruned one: say where the work went.
     pruned = (
         _pruned_branch_note(cwd, manifest, manifest.run_branch)
         if manifest.run_branch and head_ref == manifest.run_branch
@@ -421,11 +437,14 @@ def _cmd_commits(*, session_id: str) -> int:
 
 
 def _cmd_sessions_dir(session_id: str = "") -> int:
-    """Print the per-repo state dir (where this repo's run history lives), or the
-    named session's own directory.
+    """Print the per-repo state dir, or the named session's own directory.
 
-    One bare line so it composes (`ls "$(agent6 sessions dir)"`, or delete a bucket
-    outright). Sessions live under sessions/<bucket>/, one bucket per mode."""
+    One bare line so it composes (`ls "$(agent6 sessions dir)"`). Sessions live under
+    `sessions/<bucket>/`, one bucket per mode.
+
+    Returns:
+        The exit code; 2 when the session cannot be resolved.
+    """
     cwd = Path.cwd()
     if not session_id:
         print(state_dir(cwd))
@@ -440,8 +459,11 @@ def _cmd_sessions_dir(session_id: str = "") -> int:
 
 
 def _rm_asks(cwd: Path, session_id: str) -> int:
-    """Clear this directory's asks bucket; a deletion failure is an error,
-    never a success line over a surviving directory."""
+    """Clear this directory's asks bucket.
+
+    Returns:
+        The exit code; 1 when a deletion failed, never a success line over a surviving dir.
+    """
     if session_id:
         error("--asks clears this directory's asks; drop the run id.")
         return 2
@@ -459,11 +481,16 @@ def _rm_asks(cwd: Path, session_id: str) -> int:
 
 
 def _rm_refusal(layout: SessionLayout, worktree: Path | None, tips: tuple[str, ...]) -> str:
-    """Why this record cannot be deleted, or "". *worktree* is the fork's own
-    (None when another session shares it, and keeps it).
+    """Return why this record cannot be deleted, or "".
 
-    The record is the only thing that names a fork's worktree, so deleting one
-    that still holds work no commit has would leave nothing to find it by."""
+    The record is the only thing that names a fork's worktree, so deleting one that still
+    holds work no commit has would leave nothing to find it by.
+
+    Args:
+        layout: The session.
+        worktree: The fork's own worktree; None when another session shares and keeps it.
+        tips: The branch tips the worktree's commits must reach.
+    """
     if worker_is_alive(layout.session_dir):
         return (
             f"{layout.session_id} is still live; stop it first (agent6 stop {layout.session_id})."
@@ -478,16 +505,21 @@ def _rm_refusal(layout: SessionLayout, worktree: Path | None, tips: tuple[str, .
 
 
 def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
-    """Delete run history from the state dir, plus the run's hidden chain ref
-    (`refs/agent6/<id>/head`, the gc anchor: meaningless once the record is gone,
-    and left behind it would pin the run's objects forever) and, for a fork,
-    the worktree its manifest records, unless another session (an `/undo`
-    fork of it) still names that worktree.
+    """Delete run history from the state dir, with the run's chain ref and a fork's worktree.
 
-    The run's visible branch and its commits are git's, and are left alone
-    (`sessions prune` is the branch verb). `--asks` clears the asks made in
-    this directory: an ask is keyed by the directory it ran in, so asks made
-    elsewhere are untouched."""
+    The chain ref (`refs/agent6/<id>/head`) is the gc anchor: meaningless once the record is
+    gone, and left behind it would pin the run's objects forever. A fork's worktree goes
+    unless another session (an `/undo` fork of it) still names it. The run's visible branch
+    and its commits are git's and are left alone; `sessions prune` is the branch verb.
+    `--asks` clears the asks made in this directory; asks made elsewhere are untouched.
+
+    Args:
+        session_id: The session, or "" for the newest.
+        asks: Clear the asks bucket instead.
+
+    Returns:
+        The exit code; 1 on a partial delete, 2 on a refusal.
+    """
     cwd = Path.cwd()
     if asks:
         return _rm_asks(cwd, session_id)
@@ -520,8 +552,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     try:
         shutil.rmtree(layout.session_dir)
     except OSError as exc:
-        # A partial delete leaves a real session remnant; success here would be
-        # a lie and the chain-ref cleanup below would strand its commits.
+        # A partial delete leaves a remnant: no success line, and the chain ref stays as its anchor.
         error(f"could not remove {layout.session_dir}: {exc}")
         return 1
     went: list[str] = []  # what went with the record
@@ -541,9 +572,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
             branch = run_branch_for(layout.session_id)
             branch_kept = branch_exists(cwd, branch)
             delete_ref(cwd, chain)
-            # With no visible branch the ref was the commits' only anchor, and
-            # a chain ref has no reflog: the sha is the only way back to them,
-            # so it goes on the line that deletes it (one gc from gone).
+            # A chain ref has no reflog: the sha on the deleting line is the only way back.
             went.append(
                 "its chain ref"
                 + (

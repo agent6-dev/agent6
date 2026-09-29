@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 resume`: adapt argv and hand the lifecycle to
-`agent6.app.resume.resume_task` with the same injected presentation seam
-`agent6 run` uses (`ui.cli.run.session_frontend`)."""
+"""`agent6 resume`: adapt argv and hand the lifecycle to `agent6.app.resume.resume_task`.
+
+The presentation seam is the one `agent6 run` injects (`ui.cli.run.session_frontend`).
+"""
 
 from __future__ import annotations
 
@@ -30,7 +31,23 @@ def _cmd_resume(
     interactive: bool = False,
     model: str = "",
 ) -> int:
-    """Resume a paused/crashed run from its snapshot (see `app.resume`)."""
+    """Resume a paused or crashed run from its snapshot.
+
+    Args:
+        config_path: The `--config` file, if any.
+        session_id: The session, or "" for the newest resumable one.
+        force: Resume past a head mismatch.
+        tui: Open the dashboard.
+        budget_overrides: The budget flags.
+        sandbox_overrides: The sandbox flags.
+        preset: The `--preset` name.
+        steer: A steering instruction for the first safe boundary.
+        interactive: Stay attached for a conversation.
+        model: The `--model` override.
+
+    Returns:
+        The exit code from `app.resume.resume_task`.
+    """
     return resume_task(
         config_path,
         session_id,

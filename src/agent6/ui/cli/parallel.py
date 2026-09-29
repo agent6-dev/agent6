@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""CLI adapter for `agent6 run --parallel` and the coordinator `/parallel`
-dispatch.
+"""The CLI adapter for `agent6 run --parallel` and the coordinator `/parallel` dispatch.
 
-The fan-out / coordinator pipeline is headless in `agent6.app.parallel`; this
-module is the front-end seam. It supplies the `LaneRuntime` the pipeline drives
-(the detached process spawn from `ui.spawn`, and the reviewer provider +
-judging spinner from `_compare`), and holds the CLI-side preflight +
-refusal messages for `run --parallel`. run.py routes here; run.py / resume.py
-wire the coordinator spawner from here.
+The pipeline is headless in `agent6.app.parallel`; this module supplies the `LaneRuntime`
+it drives (the detached spawn from `ui.spawn`, the reviewer provider and judging spinner
+from `_compare`) and the CLI-side preflight and refusals. `run.py` routes here.
 """
 
 from __future__ import annotations
@@ -36,11 +32,11 @@ from agent6.ui.spawn import agent6_exe, spawn_and_locate
 
 
 def lane_runtime() -> LaneRuntime:
-    """The front-end primitives the parallel pipeline drives: the detached
-    process spawn (`ui.spawn`) and the reviewer provider + judging spinner
-    (`_compare`). Injected so `agent6.app` never imports `agent6.ui`. Lane
-    liveness/stop is the run-dir bridge, which `agent6.app.parallel` imports
-    directly (not part of this seam)."""
+    """Return the front-end primitives the parallel pipeline drives.
+
+    Injected so `agent6.app` never imports `agent6.ui`. Lane liveness and stop are the
+    run-dir bridge, which `agent6.app.parallel` imports directly.
+    """
 
     def spawn(
         argv: list[str],
@@ -50,6 +46,11 @@ def lane_runtime() -> LaneRuntime:
         list_dirs: Callable[[], list[Path]],
         env: dict[str, str],
     ) -> tuple[Path | None, str]:
+        """Spawn a detached agent6 process and locate its session dir.
+
+        Returns:
+            The session dir and an error text, from `spawn_and_locate`.
+        """
         return spawn_and_locate(
             [agent6_exe(), *argv], cwd, before=before, list_dirs=list_dirs, env=env
         )
@@ -62,11 +63,13 @@ def lane_runtime() -> LaneRuntime:
 
 
 def _parallel_approval_refusal(cfg: Config) -> str | None:
-    """Refuse `--parallel` under `ask`, naming the two coherent choices.
+    """Return why `--parallel` refuses under `ask`, naming the two coherent choices.
 
-    Lanes run detached and at the same time, so "wait for someone to approve"
-    would mean attaching a front-end to each lane in turn, most of what running
-    them in parallel was for. The decision is made once, at launch.
+    Lanes run detached at the same time, so waiting for an approver would mean attaching
+    to each lane in turn; the decision is made once, at launch.
+
+    Returns:
+        The refusal, or None when commands are not on `ask`.
     """
     if cfg.sandbox.run_commands != "ask":
         return None
@@ -90,10 +93,23 @@ def dispatch_parallel(
     auto_approve: bool = False,
     pins: Sequence[str] = (),
 ) -> int:
-    """Preflight and route `agent6 run --parallel`: refuse an unenforceable
-    --max-usd or a dirty origin (lanes clone committed HEAD only), plan the
-    lanes, then hand off to the headless `run_parallel`. Called from `run.py`.
-    `auto_approve` forwards `--auto-approve` to every lane, same as `max_usd`."""
+    """Preflight and route `agent6 run --parallel`.
+
+    Refuses an unenforceable `--max-usd` or a dirty origin (lanes clone committed HEAD
+    only), plans the lanes, then hands off to the headless `run_parallel`.
+
+    Args:
+        cfg: The effective config.
+        task: The task text.
+        spec: The `--parallel` lane spec.
+        cwd: The origin repo.
+        max_usd: The spend ceiling forwarded to every lane.
+        auto_approve: `--auto-approve`, forwarded to every lane.
+        pins: The pinned session ids.
+
+    Returns:
+        The exit code; 2 on a refusal.
+    """
     origin = cwd
     origin_state = state_dir(origin)
     for err in (budget_preflight(cfg), _parallel_approval_refusal(cfg)):
@@ -124,9 +140,7 @@ def dispatch_parallel(
     except (ConfigError, DirectiveError, ParallelError) as exc:
         refuse(f"{exc}")
         return 2
-    # Validate the named models before any clone/spawn (lanes are plain specs so
-    # far, no workdir touched): refuse a typo when a cache exists to check
-    # against, else warn and proceed (a fresh/offline machine is never blocked).
+    # Before any clone or spawn: a typo refuses when a cache can check it, else warn and proceed.
     verdict = validate_spec_models([ln.route for ln in lanes], cfg)
     if verdict.refused:
         refuse(f"{refusal_message(verdict, directive=False)}")

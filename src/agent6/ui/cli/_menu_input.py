@@ -2,26 +2,14 @@
 # Copyright 2026 Eric Lesiuta
 """A small fish-style line reader for the pause menu.
 
-Type to steer; Tab previews the matching slash commands in a menu below the
-line (with their descriptions) and cycles through them, Shift-Tab cycles
-backwards, Up/Down move the selection, Esc restores what was typed. Without
-a menu open, Up/Down recall history, and Ctrl-R searches it: matches render
-below the line like the Tab menu, typing narrows the query, Ctrl-R/arrows
-move the selection, Enter or Tab keeps the highlighted message for editing,
-Esc restores what was typed. Enter accepts, Ctrl-C stops the run, Ctrl-D on
-an empty line continues it.
-
-Hand-rolled on termios because neither readline flavor can render this: GNU
-readline's menu-complete cycles blind (no list until a second Tab, never with
-descriptions), and libedit (what uv-managed CPython 3.12 links) supports only
-plain rl_complete. A dependency would be out of proportion for one prompt.
-Unix-only: callers gate on :func:`menu_capable` and fall back to a plain prompt
-elsewhere.
-
-Rendering uses CR, erase-below, cursor-up/right, reverse and dim only, safe
-under tmux/byobu. The input row (prompt clamped, line windowed into the
-remainder) fits the terminal width so the redraw never wraps (wrapping would
-break the cursor-up arithmetic).
+Tab previews the matching slash commands with their descriptions below the line
+and cycles them; Up and Down recall history; Ctrl-R searches it with the line as
+the query; Esc restores what was typed. Enter accepts, Ctrl-C stops the run,
+Ctrl-D on an empty line continues it. Hand-rolled on termios: GNU readline's
+menu-complete cycles blind and libedit has only plain completion. Unix only;
+callers gate on `menu_capable`. The rendering uses CR, erase-below, cursor
+movement, reverse and dim only, and never wraps a row, which would break the
+cursor-up arithmetic.
 """
 
 from __future__ import annotations
@@ -34,10 +22,10 @@ from collections.abc import Callable
 from agent6.ui.cli._terminal_guard import raw_stream
 from agent6.viewmodel.transcript import scrub_terminal_controls
 
-try:  # unix only; Windows callers gate on menu_capable()
+try:
     import termios
     import tty
-except ImportError:  # pragma: no cover - exercised only on Windows
+except ImportError:  # pragma: no cover  # Windows callers gate on menu_capable()
     termios = None  # type: ignore[assignment]
     tty = None  # type: ignore[assignment]
 
@@ -74,27 +62,32 @@ _SEARCH_PROMPT = "search: "
 
 
 def menu_capable() -> bool:
-    """True when the fish-style reader can own the terminal line: termios
-    exists (Unix) and both std streams are the interactive terminal."""
+    """Return whether the reader can own the line: termios exists and both std streams are a tty."""
     return termios is not None and sys.stdin.isatty() and sys.stdout.isatty()
 
 
-class LineSuperseded(Exception):  # noqa: N818  # a signal, not an error  # a signal, not an error
-    """The line being read was answered by another route: the reader's
-    *until* held while it waited for a key."""
+class LineSuperseded(Exception):  # noqa: N818  # a signal, not an error
+    """The line being read was answered by another route: `until` held while it waited."""
 
 
 def read_line_until(fd: int, until: Callable[[], bool] | None) -> str | None:
-    """One line from *fd*, or None at EOF or once *until* holds (polled every
-    0.2 s while nothing is typed). Bytes are taken one at a time as they wait,
-    so a line already complete wins, a paste's later lines stay in the
-    descriptor for the next prompt, and a partial line is dropped once *until*
-    holds (it was aimed at a prompt that is over)."""
+    """Read one line, a byte at a time, until a newline, EOF or `until` holds.
+
+    A paste's later lines stay in the descriptor for the next prompt; a partial line
+    is dropped once `until` holds, since it was aimed at a prompt that is over.
+
+    Args:
+        fd: The descriptor to read.
+        until: Polled every 0.2 s while nothing is typed.
+
+    Returns:
+        The line, or None at EOF or once `until` held.
+    """
     line = b""
     while True:
         if select.select([fd], [], [], 0)[0]:
             byte = os.read(fd, 1)
-            if not byte:  # EOF: what was typed, or nothing
+            if not byte:
                 return line.decode("utf-8", errors="replace") if line else None
             if byte == b"\n":
                 return line.decode("utf-8", errors="replace").rstrip("\r")
@@ -106,7 +99,11 @@ def read_line_until(fd: int, until: Callable[[], bool] | None) -> str | None:
 
 
 def _read_key_until(fd: int, until: Callable[[], bool]) -> str:
-    """`_read_key`, polling *until* every 0.2 s while nothing is typed."""
+    """Return the next key, polling `until` every 0.2 s while nothing is typed.
+
+    Raises:
+        LineSuperseded: `until` held first.
+    """
     while not select.select([fd], [], [], 0.2)[0]:
         if until():
             raise LineSuperseded
@@ -114,9 +111,7 @@ def _read_key_until(fd: int, until: Callable[[], bool]) -> str:
 
 
 def _read_escape(fd: int) -> str:
-    """The rest of an ESC-initiated key: a name from the tables above, "esc"
-    for a bare Escape (or Alt-chord, whose modified key is dropped), "" for
-    sequences we ignore."""
+    """Return the rest of an ESC-initiated key: a name, "esc" for a bare Escape, "" if ignored."""
     # Distinguish a bare Esc from an escape sequence by a short poll.
     ready, _, _ = select.select([fd], [], [], 0.03)
     if not ready:
@@ -140,8 +135,7 @@ def _read_escape(fd: int) -> str:
 
 
 def _read_key(fd: int) -> str:
-    """One logical key from *fd*: a name from the tables above, `char:<c>`
-    for text (UTF-8 decoded), `""` for keys we ignore."""
+    """Return one logical key: a name from the tables, `char:<c>` for text, "" if ignored."""
     data = os.read(fd, 1)
     if not data:
         return "eof"
@@ -151,20 +145,19 @@ def _read_key(fd: int) -> str:
     if b == 0x1B:
         return _read_escape(fd)
     if b < 0x20:
-        return ""  # other control keys: ignore
-    if b >= 0xC0:  # a UTF-8 lead byte: the rest of the character
+        return ""
+    if b >= 0xC0:  # a UTF-8 lead byte
         data += _read_exactly(fd, _continuation_bytes(b))
     return "char:" + data.decode("utf-8", errors="replace")
 
 
 def _continuation_bytes(lead: int) -> int:
+    """Return how many bytes follow a UTF-8 lead byte."""
     return 1 if lead < 0xE0 else 2 if lead < 0xF0 else 3
 
 
 def _read_exactly(fd: int, n: int) -> bytes:
-    """*n* bytes from *fd*, however they arrive: a character split across
-    reads (a slow link, a paste) leaves no continuation byte behind to be
-    decoded as a key of its own. Short only at EOF."""
+    """Return exactly n bytes, so a split character leaves no byte behind; short only at EOF."""
     data = b""
     while len(data) < n:
         chunk = os.read(fd, n - len(data))
@@ -175,58 +168,52 @@ def _read_exactly(fd: int, n: int) -> bytes:
 
 
 def _width() -> int:
+    """Return the terminal width, 80 without a terminal."""
     try:
         cols = os.get_terminal_size(sys.stdout.fileno()).columns
     except OSError:
         return 80
-    # A pty can report 0x0 (no winsize set); treat it like no terminal at all.
+    # A pty with no winsize set reports 0.
     return cols if cols > 0 else 80
 
 
 class _Reader:
-    """One menu_input call's state; split from the loop so each key handler
-    stays a small method instead of one long branch pile."""
+    """One `menu_input` call's state, with one small method per key."""
 
     def __init__(self, prompt: str, commands: dict[str, str], history: list[str]) -> None:
         self.prompt = prompt
         self.commands = commands
         self.history = history
         self.line = ""
-        self.cur = 0  # cursor index into self.line
+        self.cur = 0  # the cursor's index into the line
         self.menu: list[str] | None = None
         self.sel = 0
-        self.stem = ""  # what was typed before the menu opened (Esc restores)
+        self.stem = ""  # what was typed before the menu opened; Esc restores it
         self.hist_idx = len(history)
         self.draft = ""  # the unsubmitted line saved when history recall starts
-        self.searching = False  # Ctrl-R mode: the line is the query, hits render below
+        self.searching = False  # Ctrl-R mode: the line is the query
         self.hits: list[str] = []
         self.more = 0  # matches beyond the rendered cap
-        self.saved = ""  # the line before search began (Esc restores)
-
-    # -- rendering ---------------------------------------------------------
+        self.saved = ""  # the line before search began; Esc restores it
 
     def render(self, write: Callable[[str], None]) -> None:
+        """Redraw the input row and the rows under it, never wider than the terminal."""
         width = _width()
-        # Budget the whole input row to width-1 like the menu rows: clamp the
-        # prompt first, then window the line into the remainder. A wrapped row
-        # breaks the cursor-up arithmetic and garbles the menu every keystroke.
+        # The prompt is clamped first, then the line windowed into the remainder.
         prompt = (_SEARCH_PROMPT if self.searching else self.prompt)[: width - 1]
         avail = max(0, width - 1 - len(prompt))
         start = 0 if self.cur < avail else self.cur - avail + 1
         visible = self.line[start : start + avail]
         out = ["\r\x1b[J", prompt, visible]
         rows, highlight = self._rows()
-        # A row's text is data (a history line, a command's blurb), scrubbed
-        # here: this writer bypasses the stream's scrubber for its movement.
+        # A row's text is data, scrubbed here: this writer bypasses the stream's scrubber.
         rows = [
             (scrub_terminal_controls(label), scrub_terminal_controls(dim)) for label, dim in rows
         ]
         if rows:
             pad = max(len(label) for label, _dim in rows)
             for i, (label, dim) in enumerate(rows):
-                # Clamp the visible text to one row (a wrapped row would break
-                # the cursor-up arithmetic); the SGR codes take no columns and
-                # must never be sliced through.
+                # The SGR codes take no columns and are never sliced through.
                 cell = "  " if not label else f"  {label:<{pad}}  "[: width - 1]
                 tail = dim[: max(0, width - 1 - len(cell))]
                 row = f"{cell}\x1b[2m{tail}\x1b[22m"
@@ -239,8 +226,10 @@ class _Reader:
         write("".join(out))
 
     def _rows(self) -> tuple[list[tuple[str, str]], int]:
-        """The rows under the input line as (label, dim tail) pairs, plus the
-        highlighted index (-1 none). Search markers are all-dim: empty label."""
+        """Return the rows under the input line as (label, dim tail) pairs and the highlight.
+
+        The highlight is -1 for none; a search marker is all dim, with an empty label.
+        """
         if self.searching:
             if not self.hits:
                 return [("", "(no match)")], -1
@@ -253,14 +242,11 @@ class _Reader:
         return [], -1
 
     def close_rows(self, write: Callable[[str], None]) -> None:
-        """Leave the accepted/abandoned line in scrollback with the menu erased."""
+        """Leave the accepted or abandoned line in scrollback with the menu erased."""
         write(f"\r\x1b[J{self.prompt}{self.line}\r\n")
 
-    # -- completion menu ---------------------------------------------------
-
     def open_menu(self, write: Callable[[str], None]) -> None:
-        # Same word rule as the dispatch: only the first (and only) word of a
-        # line completes; inside steer text Tab is inert.
+        """Open the completion menu for a lone command word; inside steer text Tab is inert."""
         if " " in self.line or (self.line and not self.line.startswith("/")):
             write("\a")
             return
@@ -277,21 +263,21 @@ class _Reader:
         self.select(0)
 
     def select(self, i: int) -> None:
+        """Select the i-th menu entry, wrapping, and put it on the line."""
         assert self.menu is not None
         self.sel = i % len(self.menu)
         self.line = self.menu[self.sel]
         self.cur = len(self.line)
 
     def dismiss_menu(self, *, restore: bool) -> None:
+        """Close the menu, restoring the typed stem when asked."""
         if restore:
             self.line = self.stem
             self.cur = len(self.line)
         self.menu = None
 
-    # -- history search ----------------------------------------------------
-
     def open_search(self, write: Callable[[str], None]) -> None:
-        """Ctrl-R: search history, with the line as the live query."""
+        """Start a history search with the line as the live query."""
         if not self.history:
             write("\a")
             return
@@ -304,7 +290,7 @@ class _Reader:
         self.refilter()
 
     def refilter(self) -> None:
-        """Newest-first case-insensitive substring matches; repeats collapse."""
+        """Refresh the hits: newest-first case-insensitive substring matches, repeats collapsed."""
         q = self.line.lower()
         matches = list(dict.fromkeys(h for h in reversed(self.history) if q in h.lower()))
         self.hits = matches[:_SEARCH_ROWS]
@@ -312,6 +298,7 @@ class _Reader:
         self.sel = 0
 
     def close_search(self, line: str) -> None:
+        """End the search with the given line."""
         self.line = line
         self.cur = len(line)
         self.searching = False
@@ -319,9 +306,7 @@ class _Reader:
         self.more = 0
 
     def _search_key(self, key: str) -> None:
-        """A key while searching: the line is the query. Enter/Tab keep the
-        highlighted match (the query itself when nothing matches); Esc and
-        Ctrl-D restore the pre-search line."""
+        """Apply a key while searching; Enter and Tab keep the highlighted match, Esc restores."""
         if key in ("enter", "tab"):
             self.close_search(self.hits[self.sel] if self.hits else self.line)
         elif key in ("esc", "eof"):
@@ -338,15 +323,14 @@ class _Reader:
         elif key in self._EDIT_KEYS:
             self.edit(key)
             self.refilter()
-        # anything else (redraw, unknown): repaint only
-
-    # -- editing -----------------------------------------------------------
 
     def insert(self, text: str) -> None:
+        """Insert text at the cursor."""
         self.line = self.line[: self.cur] + text + self.line[self.cur :]
         self.cur += len(text)
 
     def edit(self, key: str) -> None:
+        """Apply an editing key to the line."""
         if key == "backspace" and self.cur:
             self.line = self.line[: self.cur - 1] + self.line[self.cur :]
             self.cur -= 1
@@ -372,6 +356,7 @@ class _Reader:
             self.cur = cut
 
     def recall(self, step: int) -> None:
+        """Move through history by step, the draft saved at the newest end."""
         if not self.history:
             return
         if self.hist_idx == len(self.history):
@@ -381,8 +366,6 @@ class _Reader:
             self.draft if self.hist_idx == len(self.history) else self.history[self.hist_idx]
         )
         self.cur = len(self.line)
-
-    # -- key dispatch --------------------------------------------------------
 
     _EDIT_KEYS = (
         "backspace",
@@ -397,8 +380,19 @@ class _Reader:
     )
 
     def handle_key(self, key: str, write: Callable[[str], None]) -> bool:
-        """Apply one key. True when Enter accepted the line (in `self.line`);
-        raises KeyboardInterrupt/EOFError for Ctrl-C / Ctrl-D-on-empty."""
+        """Apply one key.
+
+        Args:
+            key: The key, as `_read_key` names it.
+            write: The terminal writer.
+
+        Returns:
+            Whether Enter accepted the line, now in `self.line`.
+
+        Raises:
+            KeyboardInterrupt: Ctrl-C.
+            EOFError: Ctrl-D on an empty line.
+        """
         if key == "interrupt":
             raise KeyboardInterrupt
         if self.searching:
@@ -420,7 +414,7 @@ class _Reader:
         return False
 
     def _apply(self, key: str, write: Callable[[str], None]) -> None:
-        """A non-terminal key: menu navigation, history recall, or an edit."""
+        """Apply a non-terminal key: menu navigation, history recall, or an edit."""
         if key == "history-search":
             self.open_search(write)
         elif key == "tab" or (key == "backtab" and self.menu is None):
@@ -442,7 +436,6 @@ class _Reader:
                 self.insert(key[5:])
             else:
                 self.edit(key)
-        # "", "esc" without a menu, "redraw": nothing to apply, just repaint
 
 
 def menu_input(
@@ -454,33 +447,43 @@ def menu_input(
     write: Callable[[str], None] | None = None,
     until: Callable[[], bool] | None = None,
 ) -> str:
-    """Read one line with a fish-style command preview.
+    """Read one line with a fish-style command preview, on `input()`'s contract.
 
-    Matches `input()`'s contract: returns the line without the newline,
-    raises EOFError on Ctrl-D at an empty line, KeyboardInterrupt on Ctrl-C
-    (via SIGINT in cbreak mode, or the `\\x03` byte where signals are off),
-    and :class:`LineSuperseded` once *until* holds while nothing is typed.
-    Accepted non-empty lines are appended to *history* (deduped against the
-    last entry); Ctrl-R searches *history* (Enter/Tab keep the highlighted
-    match for editing, Esc cancels). *read_key*/*write* are injectable for
-    tests; the real terminal is put in cbreak mode only when *read_key* is
-    None.
+    Args:
+        prompt: The prompt.
+        commands: The slash commands and their descriptions.
+        history: The recallable lines; an accepted non-empty line is appended, deduped
+            against the last entry.
+        read_key: Reads one key; the real terminal, put in cbreak mode, when None.
+        write: The terminal writer; stdout when None.
+        until: Polled while nothing is typed.
+
+    Returns:
+        The line without its newline.
+
+    Raises:
+        EOFError: Ctrl-D on an empty line.
+        KeyboardInterrupt: Ctrl-C, by SIGINT in cbreak mode or the byte where signals are off.
+        LineSuperseded: `until` held while nothing was typed.
     """
 
     def restore() -> None:
+        """Return None: nothing to put back until cbreak mode is set."""
         return None
 
     if read_key is None:
         assert termios is not None and tty is not None, "menu_input needs a Unix terminal"
-        tio, drain = termios, termios.TCSADRAIN  # narrowed bindings for the closure
+        tio, drain = termios, termios.TCSADRAIN
         fd = sys.stdin.fileno()
         old_attrs = tio.tcgetattr(fd)
         tty.setcbreak(fd, drain)
 
         def restore() -> None:
+            """Put the terminal's attributes back."""
             tio.tcsetattr(fd, drain, old_attrs)
 
         def terminal_key() -> str:
+            """Return one key from the terminal."""
             return _read_key(fd) if until is None else _read_key_until(fd, until)
 
         read_key = terminal_key
@@ -488,6 +491,7 @@ def menu_input(
     if write is None:
 
         def _stdout_write(text: str) -> None:
+            """Write and flush past stdout's scrubber."""
             out = raw_stream(sys.stdout)
             out.write(text)
             out.flush()
@@ -502,9 +506,7 @@ def menu_input(
                 return r.line
             r.render(write)
     except (KeyboardInterrupt, LineSuperseded):
-        # Ctrl-C (a signal under cbreak's ISIG, or the byte the decoder names)
-        # and a superseded line raise out of the loop: erase the menu rows once
-        # so they don't linger under whatever prints next.
+        # Erase the menu rows once, so they do not linger under whatever prints next.
         write("\r\n\x1b[J")
         raise
     finally:

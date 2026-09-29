@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 memory add/list/show/rm/decisions` commands.
 
-Store refusals (a bad name, an unreadable store) raise MemoryStoreError, an
-OperatorError the cli_main boundary presents; no per-command arms.
+Store refusals (a bad name, an unreadable store) raise `MemoryStoreError`, an
+`OperatorError` the cli_main boundary presents; no per-command arms.
 """
 
 from __future__ import annotations
@@ -27,15 +27,24 @@ from agent6.paths import state_dir
 
 
 def _cmd_memory_add(name: str, body: str) -> int:
+    """Write a memory and print its path.
+
+    Returns:
+        The exit code, 0.
+    """
     path = add(state_dir(Path.cwd()), name, body)
     print(f"wrote {path}")
     return 0
 
 
 def _cmd_memory_list() -> int:
-    """The whole index (a run's prompt gets it clipped), each entry followed
-    by its use record (who wrote it, who read it) when the harness has one,
-    then the files the index does not list."""
+    """Print the whole index, each entry's use record, then the files the index omits.
+
+    A run's prompt gets the index clipped; this prints all of it.
+
+    Returns:
+        The exit code, 0.
+    """
     state = state_dir(Path.cwd())
     text = index_text(state)
     orphans = unindexed_names(state)
@@ -58,10 +67,12 @@ def _cmd_memory_list() -> int:
 
 
 def format_use(use: MemoryUse) -> str:
-    """One line: `written <date> by <session>, edited <date> by <session>,
-    read once|N times, last <date> by <session>` or `never read`; a part the
-    record does not hold is left out (a fact it never saw created has no
-    `written`)."""
+    """Return a memory's use record as one line.
+
+    The parts are `written <date> by <session>`, `edited <date> by <session>` and
+    `read once|N times, last <date> by <session>` or `never read`; a part the record does
+    not hold is left out.
+    """
     parts: list[str] = []
     created, updated = use.created, use.updated
     if created is not None:
@@ -78,15 +89,26 @@ def format_use(use: MemoryUse) -> str:
 
 
 def _when_by(touch: Touch) -> str:
+    """Return a touch as `<date> by <session>`."""
     return f"{touch.at[:10]} by {touch.session}"
 
 
 def _cmd_memory_show(name: str) -> int:
+    """Print a memory's body.
+
+    Returns:
+        The exit code, 0.
+    """
     print(show(state_dir(Path.cwd()), name), end="")
     return 0
 
 
 def _cmd_memory_decisions() -> int:
+    """Print the harness's recorded rulings.
+
+    Returns:
+        The exit code, 0.
+    """
     state = state_dir(Path.cwd())
     path = decisions_path(state)
     try:
@@ -99,6 +121,11 @@ def _cmd_memory_decisions() -> int:
 
 
 def _cmd_memory_rm(name: str) -> int:
+    """Delete a memory and its index line.
+
+    Returns:
+        The exit code, 0.
+    """
     remove(state_dir(Path.cwd()), name)
     print(f"removed {name}")
     return 0

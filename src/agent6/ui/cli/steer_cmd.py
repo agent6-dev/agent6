@@ -2,9 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 steer`: queue a steering instruction for a live run.
 
-Wraps the one steer channel every front-end uses (`sessions.ipc.submit_steer`),
-so scripts and cron jobs can drive a running session. A session that is not
-running refuses, naming `resume --steer`.
+Wraps the one steer channel every front-end uses (`sessions.ipc.submit_steer`), so scripts
+and cron jobs can drive a running session. A session that is not running refuses, naming
+`resume --steer`.
 """
 
 from __future__ import annotations
@@ -22,6 +22,16 @@ from agent6.viewmodel.listing import summarize_session_dir
 
 
 def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
+    """Send a composer line to a live session.
+
+    Args:
+        target: The session id or prefix.
+        text: The line, as typed in a composer; `/stop` stops the session.
+        now: Interrupt the current call instead of waiting for a boundary.
+
+    Returns:
+        The exit code; 2 when the session is unknown, not live, or the line is a view command.
+    """
     try:
         layout = resolve_session_layout(Path.cwd(), target)
     except SessionIdError as exc:
@@ -44,8 +54,7 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
             f" agent6 resume {layout.session_id} --steer TEXT"
         )
         return 2
-    # The one owner of what a typed line does: a line here acts as it does in
-    # the TUI, the web and the pause menu.
+    # The one owner of what a typed line does, shared with the TUI, the web and the pause menu.
     did, said = submit_composer_line(layout.session_dir, text, now=now)
     if not did:
         error(f"{said} ({layout.session_id})")
@@ -53,9 +62,7 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
     print(f"{said} for {layout.session_id}.")
     summary = summarize_session_dir(layout.session_dir)
     if summary.status == "waiting" and summary.reason:
-        # Parked on an operator prompt: no boundaries arrive and no steer
-        # (--now included) can break that wait; only the answer can.
-        # `agent6 answer` takes a question; an approval needs a front-end.
+        # Parked on an operator prompt, only the answer ends the wait; approvals need a front-end.
         how = (
             f"agent6 answer {layout.session_id}"
             if summary.reason.startswith("question")

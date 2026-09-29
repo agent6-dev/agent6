@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parser builder for `skills` and its subcommands: install/update/list/
-enable/disable/remove operator-installed skill packs (SKILL.md)."""
+"""Build the `skills` parser and its subcommands."""
 
 from __future__ import annotations
 
@@ -12,6 +11,7 @@ from agent6.ui.cli.completers import _complete_skills
 
 
 def _add_skills_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `skills` with install, update, list, enable, disable and remove."""
     skills_p = _sub(
         sub,
         "skills",

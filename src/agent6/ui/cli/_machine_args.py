@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parser builder for `machine` and its subcommands: author-time tooling for
-agent6 state machines (.asm.toml)."""
+"""Build the `machine` parser and its subcommands."""
 
 from __future__ import annotations
 
@@ -17,6 +16,7 @@ from agent6.ui.cli.completers import (
 
 
 def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `machine` and its subcommands over `.asm.toml` state machines."""
     machine_p = _sub(
         sub,
         "machine",
@@ -89,10 +89,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " not-ready wait instead of blocking, for an external scheduler to resume."
         ),
     )
-    # --auto-approve is the operator's per-invocation run_command grant, the
-    # same flag `run` carries: an unattended machine otherwise auto-denies
-    # (machine [config] overlays must not set sandbox.*, so the grant can only
-    # come from the operator at the keyboard or the repo config).
+    # A machine's [config] overlay cannot set sandbox.*, so the grant comes from these flags.
     _add_sandbox_flags(machine_run)
     machine_status = _sub(
         machine_sub,

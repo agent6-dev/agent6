@@ -2,9 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 ps`: live agent6 sessions across every repository on this machine.
 
-`sessions list` is per-repo (the cwd's state dir); this walks the whole state
-base so a detached run is findable from anywhere, with the directory to cd to
-and the id to attach."""
+`sessions list` is per-repo; this walks the whole state base so a detached run is
+findable from anywhere, with the directory to cd to and the id to attach.
+"""
 
 from __future__ import annotations
 
@@ -23,17 +23,32 @@ from agent6.viewmodel.machine_state import summarize_machine_dir
 
 @dataclass(frozen=True, slots=True)
 class _Row:
-    directory: str | None  # None when the id does not lead back to a checkout
+    """One live session or machine instance.
+
+    Attributes:
+        directory: The checkout, or None when the id does not lead back to one.
+        repo_id: The state dir's name for the repo.
+        id: The session id or machine name.
+        mode: The session mode, or "machine".
+        status: The status word.
+        pid: The worker pid, when readable.
+        attached: A front end is live on the session.
+        coordinator: For a lane, the live coordinator row it nests under.
+        lanes: The fan-out's live lanes, nested.
+    """
+
+    directory: str | None
     repo_id: str
     id: str
     mode: str
     status: str
     pid: int | None
     attached: bool
-    coordinator: str = ""  # a lane: the live coordinator row it nests under
+    coordinator: str = ""
     lanes: tuple[_Row, ...] = ()
 
     def cells(self, id_cell: str) -> tuple[str, ...]:
+        """Return the table cells, with the id cell as given."""
         where = self.directory if self.directory is not None else f"? ({self.repo_id})"
         return (
             where,
@@ -47,16 +62,20 @@ class _Row:
 
 @dataclass(frozen=True, slots=True)
 class _Live:
-    """The live sessions (rows and summaries, by real dir) and machine rows."""
+    """The live sessions (rows and summaries, by real dir) and machine rows.
+
+    Attributes:
+        rows: The session rows by their real directory.
+        summaries: The session summaries by their real directory.
+        machines: The machine rows.
+    """
 
     rows: dict[Path, _Row]
     summaries: dict[Path, SessionSummary]
     machines: list[_Row]
 
     def nested(self) -> list[_Row]:
-        """The session rows with a fan-out's live lanes under it (the listing
-        fold, `nested_rows`), then the machines."""
-
+        """Return the session rows with a fan-out's live lanes under it, then the machines."""
         summaries_by_repo: dict[str, list[SessionSummary]] = {}
         rows_by_repo: dict[str, dict[str, _Row]] = {}
         for real, own in self.rows.items():
@@ -64,6 +83,7 @@ class _Live:
             rows_by_repo.setdefault(own.repo_id, {})[own.id] = own
 
         def tree(row: ListingRow, own_rows: dict[str, _Row]) -> _Row:
+            """Return the row with its lanes nested, from the listing fold's tree."""
             own = own_rows[row.summary.session_id]
             return replace(own, lanes=tuple(tree(lane, own_rows) for lane in row.lanes))
 
@@ -77,19 +97,16 @@ class _Live:
 
 
 def _live_rows() -> _Live:
-    """Every live session and machine instance under the state base, one row each."""
+    """Return every live session and machine instance under the state base, one row each."""
     base = state_base()
-    # Keyed on the real session dir: a fan-out lane is linked under its
-    # coordinator repo as well as its own, and the origin's view (the link)
-    # wins, so the lane lists beside the coordinator it nests under.
+    # Keyed on the real dir: a lane is linked under its coordinator's repo too, and the link wins.
     rows_by_dir: dict[Path, _Row] = {}
     summaries_by_dir: dict[Path, SessionSummary] = {}
     rows: list[_Row] = []
     if base.is_dir():
         for repo_dir in sorted(base.iterdir()):
             root = repo_root_of_id(repo_dir.name)
-            # An elided-hash id is not reversible to a path: the cell says so
-            # instead of offering a state-dir name the cd line cannot use.
+            # An elided-hash id is not reversible to a path; the cell says so.
             where = home_contracted(str(root)) if root is not None else None
             for bucket in SESSION_BUCKETS:
                 bucket_path = repo_dir / "sessions" / bucket
@@ -115,11 +132,7 @@ def _live_rows() -> _Live:
                         frontend_is_live(sdir),
                         coordinator=summary.coordinator,
                     )
-            # A machine instance is a live session too (a repo may hold only
-            # machines, and no sessions/ at all): its worker.pid sits at the
-            # instance root, one dir per machine name. Its status is the
-            # word every machine surface shows (a live worker in a wait or
-            # blocked on an approval is "waiting").
+            # A machine instance is a live session too: its worker.pid sits at the instance root.
             machines = repo_dir / "machines"
             if machines.is_dir():
                 for mdir in sorted(machines.iterdir()):
@@ -145,11 +158,19 @@ def _live_rows() -> _Live:
 
 
 def cmd_ps(*, as_json: bool = False, lanes: bool = False) -> int:
-    """Print one row per live session: directory, id, mode, status, pid, and
-    whether a front end is attached. Liveness is the worker-pid rule every
-    listing uses (a foreign-owned or reused pid reads dead). A fan-out's live
-    lanes nest under its row: folded into a count, listed indented with
-    *lanes*; the JSON row nests them always."""
+    """Print one row per live session: directory, id, mode, status, pid, front end.
+
+    Liveness is the worker-pid rule every listing uses (a foreign-owned or reused pid reads
+    dead). A fan-out's live lanes nest under its row: folded into a count, or listed
+    indented with `lanes`; the JSON row always nests them.
+
+    Args:
+        as_json: Print the rows as JSON.
+        lanes: List each fan-out's lanes.
+
+    Returns:
+        The exit code, 0.
+    """
     rows = _live_rows().nested()
     if as_json:
         print(json.dumps([asdict(r) for r in rows], indent=2))
@@ -161,6 +182,7 @@ def cmd_ps(*, as_json: bool = False, lanes: bool = False) -> int:
     cells: list[tuple[str, ...]] = []
 
     def emit(r: _Row, depth: int) -> None:
+        """Append the row's cells, then its lanes' when listing them."""
         if depth:
             cells.append(r.cells(lane_id_cell(r.id, depth)))
         else:

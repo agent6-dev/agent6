@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 # PYTHON_ARGCOMPLETE_OK
-"""agent6 command-line interface."""
+"""The agent6 command-line interface: the entry point and one dispatcher per command family."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from agent6.ui.cli.parser import _inject_default_verb, build_parser
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:
-    """First non-empty line of a markdown doc (a plan title), `#`/bullet stripped."""
+    """Return the first non-empty line of a markdown doc, heading and bullet marks stripped."""
     for raw in text.splitlines():
         line = raw.strip().lstrip("#").lstrip("-*").strip()
         if line:
@@ -34,7 +34,7 @@ def _first_markdown_line(text: str, max_len: int = 80) -> str:
 
 
 def _plan_title(plan_md: str) -> str:
-    """A plan's title: its first line, less the `# Plan: <title>` convention."""
+    """Return a plan's title: its first line, less the `# Plan: <title>` convention."""
     title = _first_markdown_line(plan_md)
     if title.lower().startswith("plan:"):
         title = title[len("plan:") :].strip() or title
@@ -42,15 +42,13 @@ def _plan_title(plan_md: str) -> str:
 
 
 def _from_plan_task(plan_md: str, session_id: str) -> str:
-    """The execution prompt for `run --from <plan>`: the plan title first, so a
-    listing (the runs table, the DAG root, attach --json) shows the plan as the
-    run's task."""
+    """Return the task for `run --from <plan>`, the plan's title first so listings show it."""
     title = _plan_title(plan_md)
     return f'Execute the prepared plan: {title}\n\n<plan id="{session_id}">\n{plan_md}\n</plan>'
 
 
 def _plan_text_for_run(plan_path: Path, session_id: str) -> str | None:
-    """A plan's non-empty markdown, or None after naming the unusable plan."""
+    """Return a plan's non-empty markdown, or None after naming the unusable plan."""
     if not plan_path.is_file():
         error(f"plan {session_id!r} has no plan.md")
         return None
@@ -62,15 +60,17 @@ def _plan_text_for_run(plan_path: Path, session_id: str) -> str | None:
 
 
 def cli_main(argv: list[str] | None = None) -> int:
-    """Console-script entry point: the boundary that sorts failures by fault.
+    """Run the CLI, sorting failures by fault.
 
-    An `OperatorError` (a bad flag value, an unreadable operator file, an
-    invalid config) prints as an `ERROR:` refusal at exit 2, no traceback.
-    Anything else is a bug in agent6: a one-line `ERROR: unexpected ...` plus
-    a pointer to a saved traceback, exit 1. Set `AGENT6_DEBUG=1` to re-raise
-    the full traceback inline (for bug reports). `main` itself is left unguarded
-    so tests see real tracebacks. argparse's `SystemExit` (bad args / --help) is
-    not an `Exception` and passes through untouched.
+    An `OperatorError` prints as a refusal at exit 2, no traceback. Anything else
+    is a bug: one line plus a saved traceback, exit 1; `AGENT6_DEBUG=1` re-raises it.
+    `main` stays unguarded so tests see real tracebacks.
+
+    Args:
+        argv: The arguments; `sys.argv[1:]` when None.
+
+    Returns:
+        The exit code.
     """
     with guarded_terminal():
         try:
@@ -81,7 +81,7 @@ def cli_main(argv: list[str] | None = None) -> int:
         except OperatorError as exc:
             error(f"{exc}")
             return 2
-        except Exception as exc:  # top-level last resort; re-raised under AGENT6_DEBUG
+        except Exception as exc:  # the last resort; re-raised under AGENT6_DEBUG
             if os.environ.get("AGENT6_DEBUG") == "1":
                 raise
             error(f"unexpected {type(exc).__name__}: {exc}")
@@ -91,7 +91,7 @@ def cli_main(argv: list[str] | None = None) -> int:
                     traceback.print_exc(file=fh)
                 print(f"  full traceback: {path}", file=sys.stderr)
             except OSError:
-                pass  # never let crash-reporting itself crash the exit path
+                pass  # crash reporting never crashes the exit path
             print(
                 "  re-run with AGENT6_DEBUG=1 to see it inline; if it persists, report it:"
                 " https://github.com/agent6-dev/agent6/issues",
@@ -101,6 +101,7 @@ def cli_main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
+    """Return the exit code of `agent6 run`: the task, a plan to execute, or the REPL."""
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
     from agent6.ui.cli._common import _plans_dir  # noqa: PLC0415
     from agent6.ui.cli._session_prompt import prompting_is_possible  # noqa: PLC0415
@@ -113,8 +114,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         error("-i cannot combine with --tui (the REPL and the TUI both want the terminal).")
         return 2
     if args.interactive and not prompting_is_possible():
-        # -i is explicit and needs the terminal its help names; without it the
-        # REPL's first read ends the run mid-task.
+        # Without a terminal the REPL's first read would end the run mid-task.
         error("-i needs a TTY in the foreground process group; drop -i for a headless run.")
         return 2
     parallel = getattr(args, "parallel", "")
@@ -129,8 +129,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         return 2
     seed_from, source_session_id = getattr(args, "seed_from", ""), ""
     if not args.task and seed_from:
-        # A plan id alone runs that plan: its text is the task, and digesting
-        # the same text as a seed would double it.
+        # A plan id alone runs that plan; seeding the same text again would double it.
         from agent6.sessions.id import SessionIdError, resolve_session  # noqa: PLC0415
 
         try:
@@ -147,10 +146,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         task, source_session_id = _from_plan_task(plan_md, layout.session_id), layout.session_id
         seed_from = ""
     elif not args.task:
-        # No task: fall back to the most recent plan run, the common
-        # "I just ran `agent6 plan`, now execute it" flow. At a TTY,
-        # confirm before editing; non-interactively, refuse (a bare
-        # `run` in a script should not silently start mutating).
+        # No task: the most recent plan, confirmed at a TTY, refused in a script.
         last_plan = _most_recent_plan_session_id(_plans_dir(Path.cwd()))
         if last_plan is None:
             error(
@@ -195,20 +191,17 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         pins=tuple(args.pins),
         model=getattr(args, "model", ""),
     )
-    # A fan-out ends in its own compare summary and the TUI owns its screen,
-    # so neither hands the terminal back to a prompt.
+    # A fan-out ends in its compare summary and the TUI owns its screen; neither prompts.
     if getattr(args, "parallel", "") or args.tui:
         return rc
     return _prompt_for_the_next_input(args, rc, session_id)
 
 
 def _minted_session_id(explicit: str, mode: str) -> str:
-    """This invocation's session id, minted here when the operator named none.
+    """Return this invocation's session id, minted before the run when the operator named none.
 
-    Through the same owner ACP mints with, and BEFORE the run: the dispatcher
-    then knows which session it created, so the end-of-session prompt offers
-    that one rather than whatever the repo's newest happens to be. Minting
-    reserves nothing on disk, so a run that refuses leaves no session behind.
+    The end-of-session prompt then offers the session this invocation created, not
+    the repo's newest. Minting reserves nothing on disk.
     """
     from agent6.kinds import session_bucket  # noqa: PLC0415
     from agent6.sessions.id import unused_session_id  # noqa: PLC0415
@@ -223,14 +216,16 @@ def _prompt_for_the_next_input(  # noqa: PLR0911
 ) -> int:
     """Ask for the next input instead of ending, when someone is there to type.
 
-    `run` and `plan` sessions end this way; `ask` does not (a one-shot question
-    that becomes a conversation is a different feature). Without a terminal the
-    session ends with the resume line already printed.
+    `run` and `plan` end this way; an ask stays a one-shot. Every follow-up runs
+    under this invocation's flags.
 
-    Only this invocation's session, and only once it exists on disk: the
-    refusal paths above return before any session is created. Every follow-up
-    execution runs under this invocation's flags (`--max-usd`, `--auto-approve`, ...),
-    the ones the operator set for the run.
+    Args:
+        args: The parsed command line.
+        rc: The execution's exit code.
+        session_id: This invocation's session.
+
+    Returns:
+        The last execution's exit code.
     """
     if rc == 2:
         return rc
@@ -250,14 +245,11 @@ def _prompt_for_the_next_input(  # noqa: PLR0911
     try:
         layout = resolve_or_newest_layout(Path.cwd(), session_id)
     except SessionIdError:
-        # A refused run discarded its husk, so its minted id matches nothing;
-        # there is no session to continue.
+        # A refused run discarded its husk, so there is no session to continue.
         return rc
     if layout is None or not layout.session_dir.is_dir():
         return rc
-    # A parked start never ran: its next step is the resume line already
-    # printed (once the checkout is free or the changes settled), not a
-    # follow-up to an execution that does not exist yet. An ask stays a one-shot.
+    # A parked start never ran; its next step is the resume line already printed.
     with contextlib.suppress(ManifestError):
         manifest = read_manifest(layout.session_dir)
         if manifest.parked_task or manifest.mode == "ask":
@@ -277,6 +269,7 @@ def _prompt_for_the_next_input(  # noqa: PLR0911
 
 
 def _dispatch_plan(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 plan` or its show and edit verbs."""
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
     from agent6.ui.cli.plan_watch import _cmd_plan_edit, _cmd_plan_show  # noqa: PLC0415
     from agent6.ui.cli.run import _cmd_run  # noqa: PLC0415
@@ -300,13 +293,14 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
         preset=getattr(args, "preset", ""),
         model=getattr(args, "model", ""),
     )
-    # The TUI owns its screen, so it does not hand the terminal back to a prompt.
+    # The TUI owns its screen; it does not prompt.
     if args.tui:
         return rc
     return _prompt_for_the_next_input(args, rc, session_id)
 
 
 def _dispatch_ask(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 ask`, one-shot or as a REPL."""
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
     from agent6.ui.cli._ask import build_session_seed, seed_files  # noqa: PLC0415
     from agent6.ui.cli._session_prompt import prompting_is_possible  # noqa: PLC0415
@@ -315,7 +309,7 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
     if args.interactive and not prompting_is_possible():
         error("-i needs a TTY in the foreground process group; drop -i for a one-shot ask.")
         return 2
-    # REPL when -i is given, or no question + an interactive foreground stdin.
+    # A REPL with -i, or with no question at an interactive foreground stdin.
     repl = args.interactive or (not args.task and prompting_is_possible())
     if not args.task and not repl:
         error("'ask' needs a question (in quotes), or -i for the REPL on a foreground terminal.")
@@ -349,6 +343,7 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
 
 
 def _dispatch_attach(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 attach`."""
     from agent6.ui.cli.watch import _cmd_watch_target  # noqa: PLC0415
 
     return _cmd_watch_target(
@@ -362,32 +357,33 @@ def _dispatch_attach(args: argparse.Namespace) -> int:
 
 
 def _dispatch_steer(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 steer`."""
     from agent6.ui.cli.steer_cmd import _cmd_steer  # noqa: PLC0415
 
     return _cmd_steer(args.target, args.text, now=args.now)
 
 
 def _dispatch_stop(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 stop`."""
     from agent6.ui.cli.stop_cmd import _cmd_stop  # noqa: PLC0415
 
     return _cmd_stop(args.session_id, all_sessions=args.all, after_step=args.after_step)
 
 
 def _dispatch_answer(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 answer`."""
     from agent6.ui.cli.answer_cmd import _cmd_answer  # noqa: PLC0415
 
     return _cmd_answer(args.target, tuple(args.answers))
 
 
 def _dispatch_exec(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 exec [SESSION --] CMD...`, run in the session's network."""
     from agent6.config import ConfigError  # noqa: PLC0415
     from agent6.config.layer import load_effective  # noqa: PLC0415
     from agent6.ui.cli.net_cmds import exec_in_session  # noqa: PLC0415
 
-    # `[SESSION --] CMD...`: only the FIRST `--` separates the optional session
-    # from the command, and the command rides verbatim (a later `--`, as in
-    # `git log -- path`, belongs to it). No `--` at all = the whole tail is the
-    # command, run in the newest session.
+    # Only the first `--` separates the optional session; a later one belongs to the command.
     rest: list[str] = list(args.rest)
     target = ""
     if "--" in rest:
@@ -416,13 +412,13 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
 
 
 def _dispatch_forward(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 forward`, a port of the session's network."""
     from agent6.sessions.ipc import listening_ports, read_session_netns_pid  # noqa: PLC0415
     from agent6.ui.cli.net_cmds import forward, no_session_network_reason  # noqa: PLC0415
 
     target, port = args.target, args.port
     if port is None and target.isdigit():
-        # `forward 8000` means "port 8000 of the newest session": a bare number
-        # is a port (the help says so; a numeric session id needs both args).
+        # A bare number is a port of the newest session; a numeric session id needs both args.
         target, port = "", int(target)
     from agent6.ui.cli._common import resolve_target  # noqa: PLC0415
 
@@ -445,6 +441,7 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
 
 
 def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
+    """Return the exit code of a `agent6 sessions` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.ui.cli.history_cmds import (  # noqa: PLC0415
         _cmd_history_graph,
         _cmd_history_transcript,
@@ -506,6 +503,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
 
 def _dispatch_tui(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 tui`: the hub, or a target's dashboard."""
     from agent6.ui.cli.plan_watch import _cmd_tui  # noqa: PLC0415
     from agent6.ui.cli.watch import _cmd_watch_target  # noqa: PLC0415
 
@@ -517,12 +515,14 @@ def _dispatch_tui(args: argparse.Namespace) -> int:
 
 
 def _dispatch_completions(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 completions`."""
     from agent6.ui.cli.completions_cmd import cmd_completions  # noqa: PLC0415
 
     return cmd_completions(args.shell, print_only=args.print_only)
 
 
 def _dispatch_web(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 web`."""
     from agent6.ui.cli.web_cmds import _cmd_web  # noqa: PLC0415
 
     return _cmd_web(
@@ -535,6 +535,7 @@ def _dispatch_web(args: argparse.Namespace) -> int:
 
 
 def _dispatch_prompt(args: argparse.Namespace) -> int:
+    """Return the exit code of a `agent6 prompt` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.ui.cli.prompt_cmds import _cmd_prompt_show  # noqa: PLC0415
 
     if args.prompt_command == "show":
@@ -543,6 +544,7 @@ def _dispatch_prompt(args: argparse.Namespace) -> int:
 
 
 def _dispatch_resume(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 resume`, on the named session or the newest resumable one."""
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
     from agent6.app.resume import resumable_bucket_dirs  # noqa: PLC0415
     from agent6.sessions.id import SessionIdError, resolve_session  # noqa: PLC0415
@@ -554,7 +556,6 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
         error("-i cannot combine with --tui (the REPL and the TUI both want the terminal).")
         return 2
     if getattr(args, "interactive", False) and not prompting_is_possible():
-        # Same terminal need as `run -i` (the REPL reads stdin).
         error("-i needs a TTY in the foreground process group; drop -i for a headless resume.")
         return 2
     session_id = args.session_id
@@ -563,11 +564,10 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
         with contextlib.suppress(SessionIdError):
             session_id = resolve_session(state, session_id).session_id
     else:
-        # "resume my last session", the common recovery case: every bucket a
-        # resumable mode writes to, so a plan or an ask is found too.
+        # Every resumable bucket, so a plan or an ask is found too.
         latest = newest_session_dir(resumable_bucket_dirs(state))
         if latest is None:
-            # An empty state dir is not a fault (see print_nothing_yet).
+            # An empty state dir is not a fault.
             print(
                 'nothing to resume yet. Start a session with `agent6 run "<task>"`.',
                 file=sys.stderr,
@@ -587,12 +587,12 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
         interactive=getattr(args, "interactive", False),
         model=getattr(args, "model", ""),
     )
-    # A resumed execution ends the way a fresh one does: asking for the next input
-    # (the TUI owns its screen).
+    # A resumed execution ends the way a fresh one does; the TUI owns its screen.
     return rc if args.tui else _prompt_for_the_next_input(args, rc, session_id)
 
 
 def _dispatch_fork(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 fork`."""
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
     from agent6.ui.cli.fork import _cmd_fork  # noqa: PLC0415
 
@@ -610,6 +610,7 @@ def _dispatch_fork(args: argparse.Namespace) -> int:
 
 
 def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
+    """Return the exit code of a `agent6 config` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.ui.cli.config_cmds import (  # noqa: PLC0415
         _cmd_config_fill,
         _cmd_config_fix,
@@ -660,12 +661,14 @@ def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
 
 def _dispatch_check(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 check`."""
     from agent6.ui.cli.check_cmds import _cmd_check  # noqa: PLC0415
 
     return _cmd_check(args.config, section=args.section)
 
 
 def _dispatch_connect(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 connect`."""
     from agent6.ui.cli.connect import _cmd_connect  # noqa: PLC0415
 
     return _cmd_connect(
@@ -674,6 +677,7 @@ def _dispatch_connect(args: argparse.Namespace) -> int:
 
 
 def _dispatch_model(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 model`."""
     from agent6.ui.cli.model import _cmd_model  # noqa: PLC0415
 
     return _cmd_model(
@@ -686,6 +690,7 @@ def _dispatch_model(args: argparse.Namespace) -> int:
 
 
 def _dispatch_memory(args: argparse.Namespace) -> int:
+    """Return the exit code of a `agent6 memory` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.ui.cli.memory_cmds import (  # noqa: PLC0415
         _cmd_memory_add,
         _cmd_memory_decisions,
@@ -708,6 +713,7 @@ def _dispatch_memory(args: argparse.Namespace) -> int:
 
 
 def _dispatch_skills(args: argparse.Namespace) -> int:
+    """Return the exit code of a `agent6 skills` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.ui.cli.skills_cmds import (  # noqa: PLC0415
         _cmd_skills_disable,
         _cmd_skills_enable,
@@ -735,12 +741,14 @@ def _dispatch_skills(args: argparse.Namespace) -> int:
 
 
 def _dispatch_ps(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 ps`."""
     from agent6.ui.cli.ps_cmd import cmd_ps  # noqa: PLC0415
 
     return cmd_ps(as_json=args.json, lanes=args.lanes)
 
 
 def _dispatch_history(args: argparse.Namespace) -> int:
+    """Return the exit code of a `agent6 history` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.ui.cli.history_cmds import _cmd_history_search  # noqa: PLC0415
 
     if args.history_command == "search":
@@ -752,12 +760,14 @@ def _dispatch_history(args: argparse.Namespace) -> int:
 
 
 def _dispatch_init(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 init`."""
     from agent6.ui.cli.init_cmds import _cmd_init  # noqa: PLC0415
 
     return _cmd_init(ecosystem=args.ecosystem, assume_yes=args.yes, config_path=args.config)
 
 
 def _dispatch_review(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 review`."""
     from agent6.ui.cli.review_cmds import _cmd_review  # noqa: PLC0415
 
     return _cmd_review(
@@ -772,6 +782,7 @@ def _dispatch_review(args: argparse.Namespace) -> int:
 
 
 def _dispatch_mcp(args: argparse.Namespace) -> int:
+    """Return the exit code of a `agent6 mcp` verb."""
     from agent6.ui.cli.mcp_connect import (  # noqa: PLC0415
         cmd_mcp_connect,
         cmd_mcp_list,
@@ -797,6 +808,7 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
 
 
 def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
+    """Return the exit code of a `agent6 machine` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.app.machine.create import create_machine  # noqa: PLC0415
     from agent6.app.machine.run import run_machine  # noqa: PLC0415
     from agent6.ui.cli.machine_check import (  # noqa: PLC0415
@@ -851,12 +863,14 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
 
 def _dispatch_acp(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 acp`."""
     from agent6.ui.acp import serve_acp  # noqa: PLC0415
 
     return serve_acp(config_path=args.config)
 
 
 def _dispatch_system(args: argparse.Namespace) -> int:
+    """Return the exit code of a `agent6 system` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.ui.cli.system_cmds import _cmd_system_apparmor  # noqa: PLC0415
 
     if args.system_command == "apparmor":
@@ -864,8 +878,7 @@ def _dispatch_system(args: argparse.Namespace) -> int:
     raise AssertionError("unreachable")  # pragma: no cover -- system subparser is required
 
 
-# command -> per-family dispatcher. Mirrors the `_*_args.py` parser grouping:
-# one handler per top-level command, each fanning out over its own subcommands.
+# One handler per top-level command, mirroring the `_*_args.py` parser grouping.
 _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "run": _dispatch_run,
     "plan": _dispatch_plan,
@@ -901,18 +914,16 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Return the handler's exit code for the command line; unguarded, so tests see tracebacks."""
     parser = build_parser()
     argcomplete.autocomplete(parser)
     raw = sys.argv[1:] if argv is None else argv
-    # Bare `agent6`: print help rather than the terse argparse
-    # "required: <command>" error.
+    # A bare `agent6` prints help rather than argparse's "required: <command>".
     if not raw:
         parser.print_help()
         return 0
     args = parser.parse_args(_inject_default_verb(raw))
-    # `agent6 system ...` is a privileged host-setup command that legitimately
-    # runs as root (it writes /etc and reloads AppArmor); it does not run the
-    # LLM, so it is exempt from the "no LLM agent as root" gate.
+    # `system` is host setup that runs as root and runs no LLM, so the root gate exempts it.
     if args.command != "system":
         root_rc = _enforce_root_policy(getattr(args, "allow_root", False))
         if root_rc is not None:
@@ -923,8 +934,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return handler(args)
     except EventWriteError as exc:
-        # A lifecycle stopped because the durable run journal could not be
-        # appended; its finally already released locks and egress. One report
-        # here beats a per-command arm in every lifecycle.
+        # The run journal could not be appended; the lifecycle's finally already cleaned up.
         error(f"{exc}")
         return 1

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parser builders for observing and driving a run: `attach` (raw tail or
-full-screen TUI on one run/machine), `steer` (queue an instruction for a
-live run), `tui` (the run/plan/ask hub), and `web` (the browser UI)."""
+"""Build the parsers that observe and drive a run: `attach`, `tui`, `web`, `steer` and kin."""
 
 from __future__ import annotations
 
@@ -17,6 +15,7 @@ from agent6.ui.cli.completers import (
 
 
 def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `attach`, a raw tail or the TUI on one run or machine."""
     watch_p = _sub(
         sub,
         "attach",
@@ -36,8 +35,7 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help=f"{SESSION_ID} or machine id; omit for the newest.",
     )
     watch_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
-    # One presentation at a time: argparse refuses the combination rather than
-    # silently picking one, which reads as the other flag being broken.
+    # One presentation at a time; argparse refuses the combination instead of picking one.
     watch_mode = watch_p.add_mutually_exclusive_group()
     watch_mode.add_argument(
         "--tui",
@@ -67,6 +65,7 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
 
 
 def _add_tui_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `tui`, the run, plan and ask hub."""
     tui_p = _sub(
         sub,
         "tui",
@@ -82,6 +81,7 @@ def _add_tui_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 
 def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `web`, the browser UI."""
     web_p = _sub(
         sub,
         "web",
@@ -127,6 +127,7 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 
 def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `steer`, which queues an instruction for a live run."""
     steer_p = _sub(
         sub,
         "steer",
@@ -160,6 +161,7 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
 
 
 def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `stop`."""
     stop_p = _sub(
         sub,
         "stop",
@@ -184,6 +186,7 @@ def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
 
 
 def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `answer`."""
     answer_p = _sub(
         sub,
         "answer",
@@ -204,10 +207,9 @@ def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
 
 
 def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """`exec` and `forward`: reach into a live run's session network.
+    """Add `exec` and `forward`, which reach into a live run's session network.
 
-    Top-level verbs, like `attach`, because they act on a running session;
-    `exec` is the word every container tool already uses for it.
+    Top-level verbs, like `attach`, because they act on a running session.
     """
     exec_p = _sub(
         sub,

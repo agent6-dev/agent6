@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parser builders for `plan` and `ask`: alternate single-loop modes (planning-
-only, Q&A) alongside the main `run`, each with its own default-verb
-subcommand tree (see `_inject_default_verb`)."""
+"""Build the `plan` and `ask` parsers, each with a default verb (`_inject_default_verb`)."""
 
 from __future__ import annotations
 
@@ -25,6 +23,7 @@ from agent6.ui.cli.completers import (
 
 
 def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `plan` with its `run`, `show` and `edit` verbs."""
     plan_p = _sub(
         sub,
         "plan",
@@ -37,10 +36,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " or `agent6 plan edit PLAN_ID`."
         ),
     )
-    # `plan <task>` is the bare planning run; `plan show/edit <id>` inspect a
-    # prior plan. `run` is the implicit default verb injected by
-    # `_inject_default_verb` when the first token isn't a known plan verb, so
-    # `plan "fix the bug"` and `plan run "fix the bug"` are the same.
+    # `run` is the default verb, so `plan "fix the bug"` and `plan run "fix the bug"` are the same.
     plan_sub = plan_p.add_subparsers(dest="plan_command", required=True, metavar="<subcommand>")
     plan_run = _sub(plan_sub, "run", help="Create a plan for a task.")
     plan_run.add_argument(
@@ -93,6 +89,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
 
 
 def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `ask` with its `query` default verb."""
     ask_p = _sub(
         sub,
         "ask",
@@ -105,9 +102,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " Saved asks appear in `agent6 sessions list`."
         ),
     )
-    # `ask <question>` runs a Q&A. `query` is the implicit default verb injected
-    # by `_inject_default_verb` when the first token isn't a known ask verb, so
-    # `ask "why ..."` == `ask query "why ..."`.
+    # `query` is the default verb, so `ask "why ..."` and `ask query "why ..."` are the same.
     ask_sub = ask_p.add_subparsers(dest="ask_command", required=True, metavar="<subcommand>")
     ask_query = _sub(ask_sub, "query", help="Ask a question.")
     ask_query.add_argument(

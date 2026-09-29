@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 skills` command family: install/update/list/enable/disable/remove.
+"""`agent6 skills`: install, update, list, enable, disable, remove.
 
-Install fetches operator-chosen skill content (a direct SKILL.md URL, a git
-repository, or a local path) into the user data dir. Nothing fetched is ever
-executed: skills are prompt text, trusted like config because the operator
-chose them. Each installed skill carries a `.origin.toml` provenance file
-(ignored by discovery) so `skills update` can re-fetch from the same source.
+Install fetches operator-chosen skill content (a direct SKILL.md URL, a git repository,
+or a local path) into the user data dir. Nothing fetched is ever executed: skills are
+prompt text, trusted like config because the operator chose them. Each installed skill
+carries a `.origin.toml` provenance file, ignored by discovery, so `skills update` can
+re-fetch from the same source.
 """
 
 from __future__ import annotations
@@ -53,12 +53,12 @@ _FETCH_MAX_BYTES = 1_048_576  # a SKILL.md is prose; 1 MiB is already generous
 
 
 def _term_width() -> int:
+    """Return the terminal width, or 80 without one."""
     return shutil.get_terminal_size((100, 24)).columns
 
 
 def _one_line(text: str, width: int) -> str:
-    """Collapse whitespace to a single line and truncate to *width* so a long
-    description can never wrap into a wall of text."""
+    """Return the text collapsed to one line and truncated to the width."""
     text = " ".join(text.split())
     if width < 12 or len(text) <= width:
         return text
@@ -66,8 +66,7 @@ def _one_line(text: str, width: int) -> str:
 
 
 def _short_source(src: str) -> str:
-    """A compact provenance label: drop the URL scheme and `.git`, contract
-    $HOME to `~`."""
+    """Return a compact provenance label: no URL scheme or `.git`, $HOME as `~`."""
     src = src.removesuffix(".git")
     for scheme in ("https://", "http://", "ssh://", "git://"):
         if src.startswith(scheme):
@@ -77,22 +76,27 @@ def _short_source(src: str) -> str:
 
 
 def _installed_dir() -> Path:
+    """Return the managed skills dir under the user data dir."""
     return data_dir() / "skills"
 
 
 def _search_dirs(repo_root: Path, config_path: Path | None = None) -> tuple[Path, ...]:
+    """Return the discovery search path: the effective config's dirs plus the managed one."""
     cfg = load_effective(repo_root, config_path).config
     return skill_search_dirs(cfg.skills.extra_dirs, _installed_dir())
 
 
 def _toml_str(value: str) -> str:
-    """A TOML basic string with backslashes and quotes escaped: a quote in a
-    source path would otherwise make the hand-built origin unparseable, and
-    `skills update` would lose its source."""
+    """Return the value as a TOML basic string with backslashes and quotes escaped.
+
+    A quote in a source path would otherwise make the hand-built origin unparseable, and
+    `skills update` would lose its source.
+    """
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def _write_origin(skill_dir: Path, *, url: str, kind: str, source_sha: str) -> None:
+    """Write the skill's `.origin.toml` provenance file."""
     digest = hashlib.sha256((skill_dir / "SKILL.md").read_bytes()).hexdigest()
     fetched = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     body = (
@@ -104,6 +108,7 @@ def _write_origin(skill_dir: Path, *, url: str, kind: str, source_sha: str) -> N
 
 
 def _read_origin(skill_dir: Path) -> dict[str, str] | None:
+    """Return the skill's recorded origin, or None when it has none or it does not parse."""
     p = skill_dir / _ORIGIN_FILE
     if not p.is_file():
         return None
@@ -115,9 +120,14 @@ def _read_origin(skill_dir: Path) -> dict[str, str] | None:
 
 
 def _fetch_url(url: str) -> str:
-    """The body of *url* as UTF-8 text through the one capped streaming read:
-    refused past `_FETCH_MAX_BYTES` while it arrives, past `_FETCH_TIMEOUT_S`
-    from its first byte, or under a content-encoding other than identity."""
+    """Return the body of the URL as UTF-8 text through the one capped streaming read.
+
+    Refused past `_FETCH_MAX_BYTES` while it arrives, past `_FETCH_TIMEOUT_S` from its
+    first byte, or under a content-encoding other than identity.
+
+    Raises:
+        OperatorError: The fetch was refused, failed, or the body is not UTF-8.
+    """
     try:
         with httpx2.stream(
             "GET",
@@ -142,13 +152,17 @@ def _fetch_url(url: str) -> str:
 
 
 def _skill_name_from_text(text: str, source: str) -> str:
+    """Return the skill's name from its SKILL.md frontmatter, gated as discovery gates it.
+
+    Raises:
+        OperatorError: The frontmatter lacks a name or description, or the name is not one
+            safe path component.
+    """
     fields, _warnings = parse_frontmatter(text)
     name, description = fields.get("name", ""), fields.get("description", "")
     if not name or not description:
         raise OperatorError(f"{source}: SKILL.md lacks required frontmatter name/description")
-    # The name becomes a path component under the skills dir (and, under --force,
-    # an rmtree target). Untrusted frontmatter must not contain `/`, `..`, or an
-    # absolute path; gate on the same rule discovery enforces.
+    # The name becomes a path component and, under --force, an rmtree target: discovery's gate.
     if not is_valid_skill_name(name):
         raise OperatorError(
             f"{source}: invalid skill name {name!r} "
@@ -158,11 +172,14 @@ def _skill_name_from_text(text: str, source: str) -> str:
 
 
 def _refuse_existing(name: str, *, force: bool) -> Path:
-    """The target dir for *name*; refuses when it exists without --force.
+    """Return the target dir for the name, refusing when it exists without `--force`.
 
-    Never clears: the old install survives until the staged replacement is
-    fully built (`_publish_staged`), so a copy or write fault cannot destroy
-    a good skill."""
+    Never clears: the old install survives until the staged replacement is fully built
+    (`_publish_staged`), so a copy or write fault cannot destroy a good skill.
+
+    Raises:
+        OperatorError: The skill is installed and `--force` was not given.
+    """
     target = _installed_dir() / name
     if target.exists() and not force:
         origin = _read_origin(target)
@@ -172,21 +189,36 @@ def _refuse_existing(name: str, *, force: bool) -> Path:
 
 
 def _publish_staged(staging: Path, target: Path) -> None:
-    """Swap the fully-built staging dir into place; the old install goes only
-    now. The dot-prefixed staging name fails the skill-name gate, so a
-    crash's leftover is invisible to discovery."""
+    """Swap the fully built staging dir into place; the old install goes only now.
+
+    The dot-prefixed staging name fails the skill-name gate, so a crash's leftover is
+    invisible to discovery.
+    """
     if target.exists():
         shutil.rmtree(target)
     staging.rename(target)
 
 
 def _install_skill_dir(src: Path, *, url: str, kind: str, source_sha: str, force: bool) -> str:
-    """Copy one skill directory (SKILL.md + supplementary files) into place.
+    """Copy one skill directory (SKILL.md plus supplementary files) into place.
 
-    `symlinks=True`: the skill comes from an untrusted source, and copying a
-    link's content turns `reference.md -> secrets.toml` into a real file
-    `use_skill` will serve. Preserved, the link stays subject to `use_skill`'s
-    containment check."""
+    `symlinks=True`: the skill comes from an untrusted source, and copying a link's content
+    would turn `reference.md -> secrets.toml` into a real file `use_skill` serves; preserved,
+    the link stays subject to `use_skill`'s containment check.
+
+    Args:
+        src: The directory to copy.
+        url: The source, for the origin file.
+        kind: The origin kind.
+        source_sha: The source's commit, or "".
+        force: Replace an existing install.
+
+    Returns:
+        The installed name.
+
+    Raises:
+        OperatorError: The copy failed or the name is already installed without `--force`.
+    """
     name = _skill_name_from_text(read_operator_file(src / "SKILL.md"), str(src))
     target = _refuse_existing(name, force=force)
     mkdir_for_real_user(target.parent)
@@ -205,7 +237,14 @@ def _install_skill_dir(src: Path, *, url: str, kind: str, source_sha: str, force
 
 
 def _install_skill_text(text: str, *, url: str, force: bool) -> str:
-    """Install a single-file skill from raw SKILL.md text."""
+    """Install a single-file skill from raw SKILL.md text.
+
+    Returns:
+        The installed name.
+
+    Raises:
+        OperatorError: The write failed or the name is already installed without `--force`.
+    """
     name = _skill_name_from_text(text, url)
     target = _refuse_existing(name, force=force)
     mkdir_for_real_user(target.parent)
@@ -224,8 +263,14 @@ def _install_skill_text(text: str, *, url: str, force: bool) -> str:
 
 
 def _git_clone(url: str, dest: Path) -> str:
-    """Shallow-clone *url* (operator-chosen, CLI-side, nothing executed) and
-    return the clone's HEAD sha."""
+    """Shallow-clone an operator-chosen URL; nothing in it is executed.
+
+    Returns:
+        The clone's HEAD sha.
+
+    Raises:
+        OperatorError: git is missing or the clone failed.
+    """
     try:
         subprocess.run(
             ["git", "clone", "--depth", "1", "--quiet", "--", url, str(dest)],
@@ -247,8 +292,10 @@ def _git_clone(url: str, dest: Path) -> str:
 
 
 def _source_declaring(candidates: list[Path], name: str) -> Path | None:
-    """The skill directory whose SKILL.md declares *name*: a skill installs
-    under its frontmatter name, which need not be its directory's."""
+    """Return the skill directory whose SKILL.md declares the name, or None.
+
+    A skill installs under its frontmatter name, which need not be its directory's.
+    """
     for d in candidates:
         try:
             declared = _skill_name_from_text(read_operator_file(d / "SKILL.md"), str(d))
@@ -260,8 +307,7 @@ def _source_declaring(candidates: list[Path], name: str) -> Path | None:
 
 
 def _repo_skill_dirs(root: Path) -> list[Path]:
-    """Skill directories inside a fetched repository: `skills/*/SKILL.md`
-    (the superpowers/caveman layout) or the repository root itself."""
+    """Return the skill directories in a fetched repository: `skills/*/SKILL.md`, or the root."""
     out = [
         p
         for p in sorted((root / "skills").glob("*"))
@@ -273,8 +319,11 @@ def _repo_skill_dirs(root: Path) -> list[Path]:
 
 
 def _refuse_any_existing(dirs: list[Path], *, force: bool) -> None:
-    """Pre-check every skill name in a multi-skill install so a conflict
-    refuses the whole install up front (never a partial install)."""
+    """Pre-check every skill name of a multi-skill install, so a conflict refuses the whole install.
+
+    Raises:
+        OperatorError: A skill is already installed and `--force` was not given.
+    """
     if force:
         return
     conflicts = [
@@ -291,7 +340,14 @@ def _refuse_any_existing(dirs: list[Path], *, force: bool) -> None:
 
 
 def _install_from_local(local: Path, *, force: bool) -> list[str]:
-    """A local SKILL.md file, one skill dir, or a repo checkout."""
+    """Install from a local SKILL.md file, one skill dir, or a repo checkout.
+
+    Returns:
+        The installed names.
+
+    Raises:
+        OperatorError: The path holds no skill, or an install refused.
+    """
     src_url = str(local.resolve())
     if local.is_file():
         return [_install_skill_text(read_operator_file(local), url=src_url, force=force)]
@@ -305,6 +361,14 @@ def _install_from_local(local: Path, *, force: bool) -> list[str]:
 
 
 def _install_from_git(url: str, *, force: bool) -> list[str]:
+    """Install every skill a git repository ships.
+
+    Returns:
+        The installed names.
+
+    Raises:
+        OperatorError: The clone failed, the repository holds no skill, or an install refused.
+    """
     with tempfile.TemporaryDirectory(prefix="agent6-skill-") as tmp:
         clone = Path(tmp) / "repo"
         sha = _git_clone(url, clone)
@@ -318,6 +382,19 @@ def _install_from_git(url: str, *, force: bool) -> list[str]:
 
 
 def _cmd_skills_install(url: str, *, force: bool, config_path: Path | None = None) -> int:
+    """Install the skills at a URL or path and print each name.
+
+    Args:
+        url: A SKILL.md URL, a git URL, or a local path.
+        force: Replace existing installs.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The exit code, 0.
+
+    Raises:
+        OperatorError: The fetch, clone or install refused.
+    """
     local = Path(url).expanduser()
     if local.exists():
         installed = _install_from_local(local, force=force)
@@ -356,8 +433,11 @@ def _cmd_skills_install(url: str, *, force: bool, config_path: Path | None = Non
 
 
 def _print_disabled_notes(installed: list[str], config_path: Path | None) -> bool:
-    """Name every installed skill a surviving `skills.state = "disabled"` leaf
-    covers; True when any did (the closing line must not read "active")."""
+    """Name every installed skill a surviving `skills.state = "disabled"` leaf covers.
+
+    Returns:
+        Whether any was named; the closing line must not then read "active".
+    """
     disabled = sorted(n for n in installed if _state_map(config_path).get(n) == "disabled")
     for name in disabled:
         print(
@@ -368,9 +448,10 @@ def _print_disabled_notes(installed: list[str], config_path: Path | None) -> boo
 
 
 def _state_map(config_path: Path | None) -> dict[str, str]:
-    """The effective `[skills.state]` map, {} when config is unreadable: the
-    notes built on it then just do not print, and the command's own work is
-    already done."""
+    """Return the effective `[skills.state]` map, or {} when config is unreadable.
+
+    The notes built on it then just do not print; the command's own work is already done.
+    """
     try:
         return dict(load_effective(Path.cwd(), config_path).config.skills.state)
     except ConfigError:
@@ -378,17 +459,23 @@ def _state_map(config_path: Path | None) -> dict[str, str]:
 
 
 def _refetch_skill(name: str, origin: dict[str, str]) -> tuple[str, str]:
-    """Re-install one skill in place from its recorded origin. Return the
-    installed name and "" on success, or *name* and a short skip note when the
-    source no longer exists.
+    """Re-install one skill in place from its recorded origin.
 
-    Dispatch on the recorded `kind`, not on whether a path happens to exist: a
-    local file or dir that was moved or deleted is a clean skip, not a failed
-    HTTP fetch of the path.
+    Dispatches on the recorded kind, not on whether a path happens to exist: a local file or
+    dir that was moved or deleted is a clean skip, not a failed HTTP fetch of the path. A
+    skillmd origin whose frontmatter declares a different name is a rename: the skill
+    installs under the new name and the old directory goes.
 
-    A skillmd origin whose frontmatter declares a different name is a rename:
-    the skill installs under the new name and the old directory goes, or the
-    update would leave two live copies while reporting one.
+    Args:
+        name: The installed skill.
+        origin: Its recorded origin.
+
+    Returns:
+        The installed name and "" on success, or the name and a short skip note when the
+        source no longer exists.
+
+    Raises:
+        OperatorError: The fetch or install refused.
     """
     url, kind = origin["url"], origin.get("kind", "skillmd")
     if kind == "git":
@@ -403,8 +490,7 @@ def _refetch_skill(name: str, origin: dict[str, str]) -> tuple[str, str]:
     if kind == "dir":
         root = Path(url)
         candidates = _repo_skill_dirs(root)
-        # A repo-style install records the repo root as the origin and finds the
-        # skill in a subdir by name; a single-dir install records the dir itself.
+        # A repo install records the repo root and finds the skill by name; a dir install, the dir.
         src = root if candidates == [root] else _source_declaring(candidates, name)
         if src is None:
             return name, "(gone from origin)"
@@ -424,6 +510,14 @@ def _refetch_skill(name: str, origin: dict[str, str]) -> tuple[str, str]:
 
 
 def _cmd_skills_update(name: str) -> int:
+    """Re-fetch one skill, or every skill with an origin, and print a row per skill.
+
+    Returns:
+        The exit code, 0.
+
+    Raises:
+        OperatorError: The named skill is not installed, or a refetch refused.
+    """
     base = _installed_dir()
     if name and not (base / name).is_dir():
         raise OperatorError(f"{name!r} is not installed")
@@ -434,6 +528,7 @@ def _cmd_skills_update(name: str) -> int:
     name_w = min(32, max(len(p.name) for p in targets))
 
     def _row(skill: str, status: str, *, dim: bool, note: str = "") -> None:
+        """Print one update row."""
         line = f"  {skill:<{name_w}}  {f'{status}  {note}'.rstrip()}"
         print(sgr(line, "2") if dim else line)
 
@@ -448,8 +543,7 @@ def _cmd_skills_update(name: str) -> int:
         try:
             installed, note = _refetch_skill(skill_dir.name, origin)
         except OperatorError as exc:
-            # Re-raise with the skill's name: an all-skills sweep otherwise
-            # names only the failing origin, not which install it belongs to.
+            # With the skill's name: an all-skills sweep otherwise names only the failing origin.
             raise OperatorError(f"{skill_dir.name}: {exc}") from exc
         if note:
             _row(skill_dir.name, "skipped", dim=True, note=note)
@@ -472,6 +566,11 @@ def _cmd_skills_update(name: str) -> int:
 
 
 def _cmd_skills_list(config_path: Path | None = None) -> int:
+    """List the installed skills grouped by origin, with their state when any is not enabled.
+
+    Returns:
+        The exit code, 0.
+    """
     repo_root = Path.cwd()
     try:
         cfg = load_effective(repo_root, config_path).config
@@ -490,10 +589,7 @@ def _cmd_skills_list(config_path: Path | None = None) -> int:
         return 0
 
     if cfg is not None and not cfg.skills.enabled:
-        # The listing is the operator's view of what a run has, and with the
-        # master switch off a run has none of it: the index is empty, use_skill
-        # is not offered, and `/name` is not a command. Its sibling `mcp list`
-        # says the same about its own switch.
+        # With the master switch off a run has none of this: the index is empty, use_skill absent.
         print(sgr("skills are DISABLED (agent6 config set skills.enabled true)", "1"))
         print("installed, but no run loads any of them:\n")
 
@@ -505,9 +601,8 @@ def _cmd_skills_list(config_path: Path | None = None) -> int:
         summary += f"  ({', '.join(detail)})"
     print(sgr(summary, "1"))
 
-    # Group by origin so a repo that ships 20 skills prints its URL once, not
-    # once per line. The state tag column only appears when some skill is not
-    # plain-enabled, so the common all-enabled listing stays tight.
+    # Grouped by origin, so a repo shipping 20 skills prints its URL once; the state column
+    # appears only when some skill is not plain-enabled.
     groups: dict[str, list[Skill]] = {}
     for s in skills:
         origin = _read_origin(s.dir)
@@ -531,11 +626,13 @@ def _cmd_skills_list(config_path: Path | None = None) -> int:
 
 
 def _known_skill_names(repo_root: Path, config_path: Path | None = None) -> tuple[str, ...]:
-    """Installed skill names; refuses when discovery itself fails.
+    """Return the installed skill names; refuses when discovery itself fails.
 
-    An empty tuple would make `skills enable/disable` answer "unknown skill
-    'x'; installed: (none)", sending the operator after a skill that is only
-    unreadable.
+    An empty tuple would make `skills enable` and `disable` answer "unknown skill", sending
+    the operator after a skill that is only unreadable.
+
+    Raises:
+        OperatorError: The installed skills could not be read.
     """
     try:
         skills, _ = discover_skills(_search_dirs(repo_root, config_path))
@@ -545,10 +642,16 @@ def _known_skill_names(repo_root: Path, config_path: Path | None = None) -> tupl
 
 
 def _state_target(repo: bool) -> Path:
+    """Return the config file a state write goes to: the repo's or the global one."""
     return repo_config_path(Path.cwd()) if repo else global_config_path()
 
 
 def _require_known(name: str, repo_root: Path, config_path: Path | None = None) -> None:
+    """Refuse a name no installed skill has.
+
+    Raises:
+        OperatorError: The skill is unknown.
+    """
     known = _known_skill_names(repo_root, config_path)
     if name not in known:
         raise OperatorError(f"unknown skill {name!r}; installed: {', '.join(known) or '(none)'}")
@@ -557,9 +660,21 @@ def _require_known(name: str, repo_root: Path, config_path: Path | None = None) 
 def _cmd_skills_enable(
     name: str, *, always: bool, repo: bool, config_path: Path | None = None
 ) -> int:
-    # A state leaf can outlive its skill (remove deletes the install, never
-    # the operator's config): clearing that leaf must not need the skill to
-    # still exist, or the entry is unreachable by the CLI that wrote it.
+    """Set a skill's state to enabled or always, clearing a plain enable.
+
+    Args:
+        name: The skill.
+        always: Include the skill in every session's prompt.
+        repo: Write to the repo config.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The exit code, 0.
+
+    Raises:
+        OperatorError: The skill is unknown.
+    """
+    # A state leaf can outlive its skill, so clearing it must not need the skill to exist.
     if not (not always and _state_map(config_path).get(name)):
         _require_known(name, Path.cwd(), config_path)
     target = _state_target(repo)
@@ -568,8 +683,7 @@ def _cmd_skills_enable(
         if always:
             upsert_toml_leaf(target, f"skills.state.{name}", "always")
             print(f'Set skills.state.{name} = "always" in {target}')
-        # Absent means enabled; removing the key reverts to the default and
-        # keeps the config free of no-op entries.
+        # Absent means enabled; removing the key keeps the config free of no-op entries.
         elif remove_toml_leaf(target, f"skills.state.{name}") if target.is_file() else False:
             print(f"Unset skills.state.{name} in {target} (enabled is the default)")
         else:
@@ -580,6 +694,14 @@ def _cmd_skills_enable(
 
 
 def _cmd_skills_disable(name: str, *, repo: bool, config_path: Path | None = None) -> int:
+    """Set a skill's state to disabled.
+
+    Returns:
+        The exit code, 0.
+
+    Raises:
+        OperatorError: The skill is unknown.
+    """
     _require_known(name, Path.cwd(), config_path)
     target = _state_target(repo)
     mkdir_for_real_user(target.parent)
@@ -592,10 +714,16 @@ def _cmd_skills_disable(name: str, *, repo: bool, config_path: Path | None = Non
 
 
 def _cmd_skills_remove(name: str, config_path: Path | None = None) -> int:
-    """Delete the installed skill *name* from the managed skills dir.
+    """Delete the installed skill from the managed skills dir.
 
-    The name becomes a path component under that dir and an rmtree target, so
-    it must be one safe component (the same gate install applies).
+    The name becomes a path component under that dir and an rmtree target, so it must be
+    one safe component, the same gate install applies.
+
+    Returns:
+        The exit code, 0.
+
+    Raises:
+        OperatorError: The name is unsafe, managed elsewhere, or not installed.
     """
     if not is_valid_skill_name(name):
         raise OperatorError(
@@ -624,11 +752,10 @@ def _cmd_skills_remove(name: str, config_path: Path | None = None) -> int:
 
 
 def resolved_skill_names_for_completion(repo_root: Path) -> list[str]:
-    """Names for argcomplete: cheap discovery, never raises.
+    """Return the skill names for argcomplete: cheap discovery, never raises.
 
-    A shell completion has nowhere to show an error and must not raise into the
-    shell, so a discovery failure is nothing at all, unlike in the
-    enable/disable commands, which a human is reading.
+    A shell completion has nowhere to show an error and must not raise into the shell, so a
+    discovery failure is nothing at all.
     """
     try:
         return list(_known_skill_names(repo_root))

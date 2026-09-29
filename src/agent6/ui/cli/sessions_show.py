@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions show`: one-shot liveness + progress of a session from its
-dir (worker.pid, the log scan, the manifest's branch facts), text or --json."""
+"""`agent6 sessions show`: one-shot liveness and progress of a session from its dir.
+
+Reads worker.pid, the log scan and the manifest's branch facts; text or `--json`.
+"""
 
 from __future__ import annotations
 
@@ -49,6 +51,7 @@ from agent6.viewmodel.listing import (
 
 
 def _fmt_dur(seconds: float | None) -> str:
+    """Return seconds as a short duration, or "?" for None."""
     if seconds is None:
         return "-"
     s = int(seconds)
@@ -60,9 +63,7 @@ def _fmt_dur(seconds: float | None) -> str:
 
 
 def _print_lineage(manifest: SessionManifest) -> None:
-    """Print where the session came from: the session `--from` seeded it from,
-    and the fork lineage and worktree of a run `agent6 fork` created (each a
-    no-op otherwise)."""
+    """Print the session `--from` seeded this one from, and a fork's lineage and worktree."""
     if manifest.source_session_id:
         print(f"seeded from: {manifest.source_session_id}")
     lineage = format_lineage(
@@ -76,10 +77,11 @@ def _print_lineage(manifest: SessionManifest) -> None:
 
 
 def _print_parallel_compare(manifest: SessionManifest) -> None:
-    """Print a lane's place in its fan-out (no-op for a non-lane run): the
-    coordinator it nests under, then the compare outcome once there is one:
-    where it placed, whether it won, judged or mechanical, and the judge's
-    rationale when there is one."""
+    """Print a lane's place in its fan-out; a no-op for any other run.
+
+    The coordinator it nests under, then the compare outcome once there is one: its place,
+    whether it won, judged or mechanical, and the judge's rationale.
+    """
     if (lineage := manifest.parallel) is not None:
         print(f"lane of:    {lineage.coordinator} (lane {lineage.lane} of group {lineage.group})")
     formatted = format_compare(manifest.compare)
@@ -94,19 +96,19 @@ def _print_parallel_compare(manifest: SessionManifest) -> None:
 def _fanout_lanes(
     layout: SessionLayout, manifest: SessionManifest, tips: Mapping[str, str]
 ) -> list[SessionSummary]:
-    """A fan-out coordinator's lanes with their unmerged marks (empty for any
-    other session)."""
+    """Return a coordinator's lanes with their unmerged marks; empty for any other session."""
     if manifest.fanout is None:
         return []
     return lanes_of(layout.state_dir, layout.session_id, branch_tips=tips)
 
 
 def _won(manifest: SessionManifest | None) -> bool:
+    """Return whether the manifest's compare stamp names it the winner."""
     return manifest is not None and manifest.compare is not None and manifest.compare.winner
 
 
 def _lane_manifests(state: Path, lanes: list[SessionSummary]) -> dict[str, SessionManifest]:
-    """Each readable lane manifest, for its route and compare stamp."""
+    """Return each readable lane manifest, for its route and compare stamp."""
     manifests: dict[str, SessionManifest] = {}
     for lane in lanes:
         lane_layout = session_layout(state, lane.session_id)
@@ -121,8 +123,7 @@ def _print_fanout(
     lanes: list[SessionSummary],
     lane_manifests: Mapping[str, SessionManifest],
 ) -> None:
-    """Print a coordinator's fan-out line and one line per lane: its place
-    (the compare rank once ranked), id, status and cost."""
+    """Print a coordinator's fan-out line and one line per lane: place, id, status, cost."""
     if manifest.fanout is None:
         return
     print(f"fan-out:    {lane_count(manifest.fanout.lanes)} (--parallel {manifest.fanout.spec})")
@@ -148,27 +149,29 @@ def _print_fanout(
 def _status_state(
     row: SessionSummary, scan: LogScan, *, last_age: float | None
 ) -> tuple[str, str, str]:
-    """This run's state as `(status, label, detail)`.
+    """Return the run's state as `(status, label, detail)`.
 
-    `status` is the listing's own word and the label its own rendering of it
-    (*row* is the listing's fold of this run), so no second rule can disagree
-    with the listing about the mode fold or the unmerged mark. `detail` is
-    this surface's diagnostic: what to do, or why the word applies. The text
-    render joins them; --json emits the three, the word included, so a script
-    never parses prose."""
+    The status is the listing's own word and the label its own rendering, so no second
+    rule can disagree with the listing about the mode fold or the unmerged mark. The detail
+    is this surface's diagnostic: what to do, or why the word applies. The text render
+    joins them; `--json` emits all three, so a script never parses prose.
+
+    Args:
+        row: The listing's fold of this run.
+        scan: The log scan.
+        last_age: Seconds since the last event, when there is one.
+    """
     word, reason = row.status, row.reason
     cell = listing_status_label(row.mode, row.status, row.reason, unmerged=row.unmerged)
     if scan.finished:
-        # The raw end reason is the diagnostic; it is not repeated when the
-        # label already carries it (an ask's word, a failure's reason).
+        # The raw end reason is the diagnostic, unless the label already carries it.
         end = "" if scan.end_reason in (word, reason) else scan.end_reason
         return word, cell, end
     detail = {
         "waiting": "needs answer; attach to respond",
         "stale": dead_run_note("stale", "")[0],
         "parked": f"{reason}; resume to start" if reason else "resume to start",
-        # A log that holds events (a worker that died launching writes
-        # preflight ones) is "never started", not "no events yet".
+        # A log holding preflight events from a worker that died launching is "never started".
         "created": "no events yet" if scan.last_type is None else "never started",
     }.get(word, "")
     if word == "running" and last_age is not None and last_age > 120:
@@ -177,14 +180,12 @@ def _status_state(
 
 
 def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
-    """The state line's worker suffix: alive, recycled, or not running."""
+    """Return the state line's worker suffix: alive, recycled, or not running."""
     if alive:
         return f"  (worker pid {pid} alive)"
     if pid is None or finished:
         return ""
-    # Liveness matches the recorded start time, so a pid the OS has since
-    # handed to something else reads dead; "not running" about a number the
-    # operator can look up would be false.
+    # Liveness matches the recorded start time, so a recycled pid reads dead, not "not running".
     return (
         f"  (worker pid {pid} was recycled)"
         if pid_alive(pid)
@@ -193,12 +194,13 @@ def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
 
 
 def _usage_line(scan: LogScan) -> str:
-    """The run's tokens and cost: `in`/`out`, the cached side when the journal
-    recorded it (the bulk of a long run's input, the run summary's columns),
-    the plan points a percent-metered execution consumed against its cap, then the
-    cost as the listing's cell spells it (blank for a clean $0, so the two
-    surfaces agree). Token counters and plan points are per execution and the cost
-    is banked across executions, so a resumed run says which is which."""
+    """Return the run's tokens and cost line.
+
+    `in` and `out`, the cached side when the journal recorded it, the plan points a
+    percent-metered execution consumed against its cap, then the cost as the listing's cell
+    spells it (blank for a clean $0). Token counters and plan points are per execution and
+    the cost is banked across executions, so a resumed run says which is which.
+    """
     tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
     if scan.cache_read_tokens is not None or scan.cache_creation_tokens is not None:
         tokens += f" cache_r={scan.cache_read_tokens or 0}"
@@ -217,13 +219,18 @@ def _usage_line(scan: LogScan) -> str:
 
 
 def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
-    """One-shot liveness + progress summary for a run, then exit (no follower).
+    """Print a one-shot liveness and progress summary for a run.
 
-    Answers "is this run still alive, and what is it doing?" from the run dir
-    alone: the worker.pid (probed with signal 0, so liveness is known even while
-    the worker is blocked in a long provider call that emits no events) plus the
-    last event, current iteration, and elapsed time from logs.jsonl. For a quick
-    or scripted check; `agent6 attach` is the live follower.
+    Answered from the run dir alone: worker.pid probed with signal 0, so liveness is known
+    even while the worker is blocked in a long provider call, plus the last event, the
+    iteration and the elapsed time from logs.jsonl. `agent6 attach` is the live follower.
+
+    Args:
+        session_id: The session, or "" for the newest.
+        as_json: Print one JSON object.
+
+    Returns:
+        The exit code; 2 when the session cannot be resolved.
     """
     layout = resolve_target(session_id)
     if layout is None:
@@ -233,8 +240,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     loaded: SessionManifest | None = None
     with contextlib.suppress(ManifestError):
         loaded = read_manifest(target)
-    # A missing/corrupt manifest still renders (defaults), but `mode` reads "?"
-    # rather than the model default so a manifest-less run isn't shown as "run".
+    # A missing manifest still renders, with `mode` as "?" rather than the model default.
     manifest = loaded or SessionManifest()
     mode_display = loaded.mode if loaded is not None else None
 
@@ -244,8 +250,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     pid = read_worker_pid(target)
     alive = worker_is_alive(target)
     last_age = (time.time() - scan.last_ep) if scan.last_ep is not None else None
-    # A live run is still elapsing (a wait on the operator writes no event);
-    # a finished or dead one stopped at its last event.
+    # A live run is still elapsing; a finished or dead one stopped at its last event.
     elapsed = (
         ((time.time() if alive and not scan.finished else scan.last_ep) - scan.start_ep)
         if scan.last_ep is not None and scan.start_ep is not None
@@ -294,8 +299,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "plan_consumed": scan.plan_consumed,
                     "plan_cap": scan.plan_cap,
                     "unattended_questions": scan.unattended_questions,
-                    # cost_usd is an under-estimate when some spend was
-                    # unpriced; the text render marks it, so the JSON must too.
+                    # An under-estimate when some spend was unpriced; the text render marks it too.
                     "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,
                     "source_session_id": manifest.source_session_id,
                     "parent_session_id": manifest.parent_session_id,
@@ -341,8 +345,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     if scan.input_tokens is not None or scan.cost_usd is not None:
         print(f"usage:      {_usage_line(scan)}")
     if n := scan.unattended_questions:
-        # Answered empty by the harness; the operator reads them in the
-        # transcript and answers with a steer on resume.
+        # Answered empty by the harness; the operator answers with a steer on resume.
         print(
             f"questions:  {n} unanswered (nobody was attached):"
             f" agent6 sessions transcript {target.name}"
@@ -360,17 +363,29 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 
 @dataclass(frozen=True, slots=True)
 class _Changes:
-    line: str  # the text row; "" for a session with no run branch
-    merged_into: str  # the base the run branch is merged into, else ""
+    """Where the run's work lives, as the text row and the merge base.
+
+    Attributes:
+        line: The text row; "" for a session with no run branch.
+        merged_into: The base the run branch is merged into, else "".
+    """
+
+    line: str
+    merged_into: str
 
 
 def _changes(session_id: str, manifest: SessionManifest, *, undone: bool) -> _Changes:
-    """Where the run's work lives, checked against git as the end-of-run
-    footer checks it: merged into the base (the stamp still describes the
-    branch), on the run branch awaiting `sessions merge`, on the hidden chain
-    ref alone (the branch deleted, the commits kept), a branch no commit
-    ever reached, or taken back by /undo (*undone*: no merge to offer, as
-    the listing marks none)."""
+    """Return where the run's work lives, checked against git as the end-of-run footer does.
+
+    Merged into the base, on the run branch awaiting `sessions merge`, on the hidden chain
+    ref alone (the branch deleted, the commits kept), a branch no commit reached, or taken
+    back by `/undo`.
+
+    Args:
+        session_id: The session.
+        manifest: Its manifest.
+        undone: `/undo` took the work back, so no merge is offered.
+    """
     run_branch = manifest.run_branch or ""
     if not run_branch:
         return _Changes("", "")
@@ -390,12 +405,10 @@ def _changes(session_id: str, manifest: SessionManifest, *, undone: bool) -> _Ch
 
 
 def _print_listening_ports(session_dir: Path) -> None:
-    """What the run is serving, and how to reach it.
+    """Print what the run is serving, and how to reach it.
 
-    A run's commands share a network with no way in from outside, so a dev
-    server the agent started is invisible here, the port it is on included.
-    This is where someone asks "what is it doing", so the answer belongs here,
-    with the command that opens it.
+    A run's commands share a network with no way in from outside, so a dev server the agent
+    started is invisible here, its port included; the line names the command that opens it.
     """
     ports = listening_ports(session_dir)
     if not ports:
@@ -406,9 +419,7 @@ def _print_listening_ports(session_dir: Path) -> None:
 
 
 def _print_task_tree(session_dir: Path) -> None:
-    """Show the run's task DAG when it decomposed into subtasks, so the plan is
-    visible for a headless run (no TUI #plan pane). A single root (no
-    decomposition) is not worth the block."""
+    """Print the run's task tree when it decomposed into subtasks; a single root is skipped."""
     from agent6.graph.storage import load_graph  # noqa: PLC0415
     from agent6.sessions.layout import layout_of  # noqa: PLC0415
     from agent6.ui.cli._task_tree import task_tree_lines  # noqa: PLC0415

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 web` command: serve the browser front-end over the `[web]` bind
-(loopback by default). Thin wrapper: resolve host/port from config, let
-`--host`/`--port` override, then hand off to `web.run_web`."""
+"""`agent6 web`: serve the browser front-end over the `[web]` bind, loopback by default.
+
+Resolves host and port from config, lets `--host` and `--port` override, and hands off to
+`web.run_web`.
+"""
 
 from __future__ import annotations
 
@@ -24,20 +26,28 @@ def _cmd_web(
     port: int | None,
     allow_non_loopback: bool,
 ) -> int:
-    """Serve the web UI. `--host`/`--port` override the `[web]` config section.
+    """Serve the web UI.
 
-    A non-loopback bind is gated the same whether it comes from `[web].host`
-    (refused at config load) or `--host` (refused here): both need the opt-in,
-    either `--allow-non-loopback` or `[web].allow_non_loopback = true`. Prefer
-    `tailscale serve` in front of a loopback bind over any raw non-loopback bind."""
+    A non-loopback bind is gated the same whether it comes from `[web].host` (refused at
+    config load) or `--host` (refused here): both need `--allow-non-loopback` or
+    `[web].allow_non_loopback = true`. Prefer `tailscale serve` in front of a loopback bind.
+
+    Args:
+        target: The session or machine to open first.
+        config_path: The `--config` file, if any.
+        host: The `--host` override.
+        port: The `--port` override.
+        allow_non_loopback: The `--allow-non-loopback` opt-in.
+
+    Returns:
+        The exit code; 2 for a bad port or an unapproved non-loopback host.
+    """
     eff = load_effective(Path.cwd(), config_path)
     web = eff.config.web
     eff_host = host if host is not None else web.host
     eff_port = port if port is not None else web.port
     try:
-        # The flag is held to the leaf's own bounds rather than a second copy of
-        # them. allow_non_loopback silences the host guard here so the friendlier
-        # one below owns that refusal.
+        # The leaf's own bounds; allow_non_loopback=True leaves the host refusal to the check below.
         WebConfig(host=eff_host, port=eff_port, allow_non_loopback=True)
     except ValidationError:
         error(f"--port {eff_port} is out of range (1-65535).")

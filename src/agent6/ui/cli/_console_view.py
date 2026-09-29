@@ -2,15 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """Render a run's event stream to a terminal as a live conversation.
 
-The CLI skin over `viewmodel.TranscriptFold`: assistant reasoning and text stream
-inline as they arrive, every tool call shows with its result, and nothing prints
-a blank block. One `ConsoleView` serves both `agent6 run` (in-process, subscribed
-to the EventSink) and `agent6 attach` (out-of-process, fed by the log tailer), so
-the two render identically.
-
-Reasoning/text deltas are streamed by this class (the live-typing feel); the
-structural steps (tool call+result, commit, verdict) come from `TranscriptFold`,
-which is shared with the TUI and web skins.
+The CLI skin over `viewmodel.TranscriptFold`: this class streams the reasoning and
+text deltas inline; the structural items (tool call and result, commit, verdict)
+come from the fold the TUI and web skins share. One `ConsoleView` serves `run`
+(subscribed to the EventSink) and `attach` (fed by the log tailer).
 """
 
 from __future__ import annotations
@@ -49,9 +44,7 @@ _ANSI = {
     "italic": "\033[3m",
 }
 
-# Semantic style name -> ANSI escape. The TUI has the sibling Rich map; both skins
-# render item_lines() (viewmodel.transcript_style), so the structure and which
-# element is coloured live in one place and can't drift.
+# Style name to ANSI escape; the TUI has the sibling Rich map over the same `item_lines()`.
 _STYLE_ANSI: dict[StyleName, str] = {
     "thinking": _ANSI["dim"],
     "think-marker": _ANSI["blue"],
@@ -74,19 +67,19 @@ _STYLE_ANSI: dict[StyleName, str] = {
     "operator": _ANSI["bold"] + _ANSI["green"],
 }
 
-_FLUSH_EVERY_S = 0.03  # coalesce streaming-delta flushes; see ConsoleView._raw
+_FLUSH_EVERY_S = 0.03  # coalesces streaming-delta flushes; see ConsoleView._raw
 _HEARTBEAT_TICK_S = 0.5  # how often the spinner refreshes
-_STALL_AFTER_S = 1.5  # show the heartbeat once output has been silent this long
-# A mid-block gap gets much longer before the spinner interrupts: drawing it
-# closes the open prose block and the next delta reopens a new bullet, visibly
-# splitting a streamed word (e.g. a file path) in two. Slow token cadence
+_STALL_AFTER_S = 1.5  # the heartbeat shows once output has been silent this long
+# Drawing the spinner mid-block splits a streamed word in two, and slow token cadence
 # routinely pauses a few seconds; only a real stall is worth that cost.
 _MID_BLOCK_STALL_S = 10.0
 
 
 class ConsoleView:
-    """Fold events to styled terminal lines. `feed`/`__call__` take one event;
-    thread-safe so it can subscribe to an EventSink that several roles emit to."""
+    """Fold events to styled terminal lines, one event per `feed` call.
+
+    Thread-safe, so it can subscribe to an EventSink several roles emit to.
+    """
 
     def __init__(
         self,
@@ -95,39 +88,26 @@ class ConsoleView:
         color: bool | None = None,
         policy: Callable[[], str] | None = None,
     ) -> None:
-        # The run's policy line (viewmodel.session_policy), printed under the
-        # task so an operator sees the model, the command setting, the sandbox
-        # and the gate without interrupting. Read when the task prints, not when
-        # the view is built: the gate is inferred and pinned between the two.
-        # None when the caller has no run dir.
+        # The policy line, read when the task prints: the gate is pinned between then and now.
         self._policy = policy
-        # Finished /btw answers waiting for a clean break. A btw completes while
-        # the run is streaming; printing it then would cut the transcript in
-        # half, so it waits for a turn boundary and lands whole.
+        # Finished /btw answers, printed whole at the next turn boundary.
         self._btw: list[str] = []
         self._out = out if out is not None else sys.stderr
         self._color = self._out.isatty() if color is None else color
         self._fold = TranscriptFold()
-        # Reentrant: the SIGINT steer handler emits an event (re-entering feed on
-        # the same thread) while a delta write may hold the lock.
+        # Reentrant: the SIGINT steer handler emits an event while a delta write holds the lock.
         self._lock = RLock()
-        self._phase: str | None = None  # None | "thinking" | "text": the open prose block
+        self._phase: str | None = None  # the open prose block: None, "thinking" or "text"
         self._text_streamed = False
         self._last_flush = 0.0
-        self._plan_count = 0  # tasks shown in the last plan block; reprint when it grows
-        # Live heartbeat: a turn can stream text then wedge mid-token (a stalled
-        # SSE stream) or pause between turns with nothing on screen. A background
-        # thread shows a spinner + "working… Ns" during silence so the run never
-        # looks hung; only on a real terminal (no spinner in a pipe or a test).
+        self._plan_count = 0  # tasks shown in the last plan block; reprinted when it grows
+        # The heartbeat thread draws a spinner during silence; only on a real terminal.
         self._last_output_at = time.monotonic()
-        # The epoch ts of the event currently being fed (None between feeds or
-        # for a ts-less event): _bump_idle anchors the idle timer to it, so
-        # `agent6 attach` replaying history measures from when the run last
-        # spoke, not from when the event arrived.
+        # The fed event's own ts anchors the idle timer, so a replay measures from the run's time.
         self._event_ep: float | None = None
-        self._active = False  # run is between session.start and session.end (a turn or a tool)
-        self._status_active = False  # a transient spinner line is on screen now
-        self._paused = False  # True while an interactive /dev/tty prompt owns the line
+        self._active = False  # between session.start and session.end
+        self._status_active = False  # a transient spinner line is on screen
+        self._paused = False  # an interactive /dev/tty prompt owns the line
         self._spin = 0
         self._stop = Event()
         self._heartbeat: Thread | None = None
@@ -136,54 +116,44 @@ class ConsoleView:
             self._heartbeat.start()
 
     def __call__(self, event: dict[str, Any]) -> None:
+        """Feed one event."""
         self.feed(event)
 
     def queue_btw(self, block: str) -> None:
-        """Hand a finished /btw answer to the view. Called from the watcher
-        thread; printed whole at the next turn boundary, never mid-stream."""
+        """Queue a finished /btw answer, printed whole at the next turn boundary."""
         with self._lock:
             self._btw.append(block)
 
     def settle_dead(self, reason: str) -> None:
-        """Render the tool calls still open as ones that never returned: the
-        worker is gone and no session.end settles them, as
-        `fold_transcript(worker_dead=True)` does for the web snapshot."""
+        """Render the open tool calls as never returned, since no session.end will settle them."""
         with self._lock:
             for item in self._fold.settle_open_calls(reason):
                 self._render(item)
 
     def _drain_btw(self) -> None:
-        """Print any finished btw answers. Caller holds the lock and has just
-        closed the open block, so this lands between turns."""
+        """Print the queued btw answers; the caller holds the lock and closed the open block."""
         for block in self._btw:
             self._line(block)
         self._btw.clear()
 
     def _bump_idle(self) -> None:
-        """Reset the idle timer to the fed event's own age (its ts), or to now
-        for a ts-less event."""
+        """Reset the idle timer to the fed event's own age, or to now for a ts-less event."""
         age = 0.0 if self._event_ep is None else max(0.0, time.time() - self._event_ep)
         self._last_output_at = time.monotonic() - age
 
-    def feed(self, event: dict[str, Any]) -> None:  # noqa: PLR0911, PLR0912 - event dispatch
+    def feed(self, event: dict[str, Any]) -> None:  # noqa: PLR0911, PLR0912  # one branch per event type
+        """Render one event."""
         etype = event.get("type", "")
         with self._lock:
-            # Anchor per event, not only per rendered line: a replay can end on
-            # an event that renders nothing yet (a tool.call whose result never
-            # came, the wedged case), and events between renders are activity.
+            # Anchored per event: a replay can end on an event that renders nothing yet.
             self._event_ep = event_epoch(event.get("ts"))
             self._bump_idle()
-            # The heartbeat spins whenever the run is active and output has gone
-            # silent: a thinking provider call, and a long tool or verify command
-            # running in the jail (which happens between role.result and the next
-            # role.call, so a role-only flag would miss it and the CLI would look
-            # frozen through a whole test suite).
+            # Active through a jailed command too, which runs between role.result and role.call.
             if etype in ("session.start", "role.call", "tool.call"):
                 self._active = True
             elif etype in ("session.end", "session.steer_requested"):
                 self._active = False
-                # A btw that lands after the last turn would otherwise sit in
-                # the queue forever: the run ending is a clean break.
+                # The run ending is a clean break for a btw that landed after the last turn.
                 self._end_block()
                 self._drain_btw()
             if etype in ("role.thinking_delta", "role.text_delta"):
@@ -192,7 +162,7 @@ class ConsoleView:
                     self._text_streamed = True
                 return
             if etype == "role.call":
-                self._end_block()  # a provider call boundary closes any open prose
+                self._end_block()
                 self._drain_btw()
                 self._text_streamed = False
                 self._fold.feed(event)
@@ -206,34 +176,28 @@ class ConsoleView:
                         self._render(item)
                 return
             if etype == "session.steer_requested":
-                # A Ctrl-C pause message is about to print to the same terminal;
-                # close any open (dim) block so it doesn't bleed into the message.
+                # A pause message is about to print; an open dim block would bleed into it.
                 self._end_block()
                 return
             if etype == "session.start":
-                # The first user-authored line, clipped: a `--from` task
-                # carries the whole plan.
+                # Clipped: a `--from` task carries the whole plan.
                 task = task_snippet(str(event.get("user_task", "")), max_chars=200)
                 self._line(self._c("bold", self._c("cyan", DONE) + " " + task) + "\n")
                 policy = self._policy() if self._policy is not None else ""
                 if policy:
                     self._line(self._c("dim", f"  {policy}") + "\n")
-                # The fold still reads the start (mode, first timestamp) for
-                # the receipt; its operator item is this headline, not printed twice.
+                # The fold reads the start for the receipt; its operator item is this headline.
                 self._fold.feed(event)
                 return
             if etype == "btw.answered":
-                # Queued, not printed: it lands whole at the next turn boundary
-                # so it can never break up a streaming turn.
+                # Queued: printed now, it would break up a streaming turn.
                 self._btw.append(str(event.get("block", "")))
                 return
             if etype == "graph.update":
                 self._render_plan(event)
                 return
             if etype == "loop.provider.retry":
-                # A retry resets the idle clock, so without a line the "working…
-                # Ns" counter restarts with nothing said and a run wedged behind
-                # provider failures reads as freshly started.
+                # A retry resets the idle clock; unsaid, a run wedged on failures reads as fresh.
                 self._end_block()
                 attempt = event.get("attempt")
                 self._line(
@@ -246,38 +210,36 @@ class ConsoleView:
                 self._end_block()
                 self._render(item)
 
-    # -- inline prose streaming --------------------------------------------
     def _stream(self, piece: str, *, thinking: bool) -> None:
-        # The piece is model text headed for a real terminal: scrub controls
-        # (OSC 52 writes the clipboard). A sequence split across deltas cannot
-        # reassemble: any piece containing its opener loses the tail from the
-        # ESC on, and the continuation prints as inert text.
+        """Write a delta inline, opening the prose block it belongs to."""
+        # A control sequence split across deltas cannot reassemble: the tail prints inert.
         piece = scrub_terminal_controls(piece)
         want = "thinking" if thinking else "text"
         if self._phase != want:
             if not piece.strip():
-                return  # never open a block on whitespace: kills empty response blocks
+                return  # never open a block on whitespace
             self._end_block()
             self._phase = want
             self._raw("  " + (self._dim() + THINK + " " if thinking else ""))
             piece = piece.lstrip()
-        self._bump_idle()  # a delta is real progress
-        # keep wrapped lines under the block's indent; dim (thinking) spans them all
+        self._bump_idle()
+        # Wrapped lines stay under the block's indent.
         self._raw(piece.replace("\n", "\n    " if thinking else "\n  "))
 
     def _end_block(self) -> None:
+        """Close the open prose block, if any."""
         if self._phase == "thinking":
             self._raw(self._reset())
         if self._phase is not None:
             self._raw("\n")
-            self._flush()  # show the completed prose block now
+            self._flush()
         self._phase = None
 
     def _render_plan(self, event: dict[str, Any]) -> None:
-        """Print the decomposed task tree when it first appears and each time it
-        grows (new subtasks as the model explores), so a headless run's plan is
-        visible in the stream, not only in the TUI pane. A single root (no
-        decomposition) is not a plan worth a block."""
+        """Print the task tree when it first appears and each time it grows.
+
+        A single root is not a plan worth a block.
+        """
         nodes = event.get("nodes", {}) or {}
         if not isinstance(nodes, dict) or len(nodes) <= 1 or len(nodes) <= self._plan_count:
             return
@@ -291,13 +253,11 @@ class ConsoleView:
         for line in lines:
             self._line(self._c("dim", "  " + line) + "\n")
 
-    # -- structural items ---------------------------------------------------
     def _render(self, item: TranscriptItem) -> None:
-        """The CLI skin over the shared item_lines(): map each span's semantic style
-        to ANSI, behind a two-space left gutter (a blank spec line stays blank).
-        An in-flight tool call prints nothing (on a tty the heartbeat shows the
-        wait; a pipe sees nothing until the result); the settled item prints
-        the call whole."""
+        """Print a fold item's lines in ANSI behind a two-space gutter.
+
+        An in-flight tool call prints nothing; the settled item prints the call whole.
+        """
         if item.kind == "tool" and item.ok is None:
             return
         for line in item_lines(item, detail="collapsed"):
@@ -309,32 +269,30 @@ class ConsoleView:
             )
             self._line(("  " + rendered if rendered else "") + "\n")
 
-    # -- output helpers -----------------------------------------------------
     def _c(self, name: str, text: str) -> str:
+        """Return the text in the named colour, when colour is on."""
         return f"{_ANSI[name]}{text}{_ANSI['reset']}" if self._color else text
 
     def _dim(self) -> str:
+        """Return the dim escape, when colour is on."""
         return _ANSI["dim"] if self._color else ""
 
     def _reset(self) -> str:
+        """Return the reset escape, when colour is on."""
         return _ANSI["reset"] if self._color else ""
 
     def _clear_status(self) -> None:
-        """Erase the transient spinner line so real output prints cleanly. Caller
-        holds the lock (or is the constructor before the thread starts)."""
+        """Erase the transient spinner line; the caller holds the lock."""
         if self._status_active:
-            raw_stream(self._out).write("\r\x1b[2K")  # carriage return + erase whole line
+            raw_stream(self._out).write("\r\x1b[2K")
             self._status_active = False
 
     def _raw(self, text: str) -> None:
-        # Low-level writer, used by streaming deltas AND internal block-closing;
-        # it clears the spinner but does not bump _last_output_at (that tracks
-        # real model output, set by _stream / _line, so closing a block from the
-        # heartbeat can't reset the idle timer and suppress the spinner).
-        # Streaming path: flush at most every _FLUSH_EVERY_S. A per-token flush on
-        # a slow terminal (SSH, a busy emulator) backpressures the SSE read in the
-        # same thread and can stall the stream; ~30ms is imperceptible and cuts
-        # thousands of flushes to a few dozen a second.
+        """Write without bumping the idle timer, flushing at most every `_FLUSH_EVERY_S`.
+
+        A per-token flush on a slow terminal backpressures the SSE read in the same
+        thread and can stall the stream.
+        """
         self._clear_status()
         self._out.write(text)
         now = time.monotonic()
@@ -343,32 +301,26 @@ class ConsoleView:
             self._last_flush = now
 
     def _line(self, text: str) -> None:
-        # Structural lines (tool call/result, commit, verdict) are discrete model
-        # progress: show them at once and reset the idle timer.
+        """Write a structural line at once and reset the idle timer."""
         self._clear_status()
         self._bump_idle()
         self._out.write(text)
         self._flush()
 
     def _heartbeat_loop(self) -> None:
-        """Refresh a transient "⠋ working… Ns" line while a turn is in flight and
-        output has gone silent (a stalled stream, or a between-turn pause), so the
-        run never looks hung. Runs only on a real terminal."""
+        """Refresh a transient "working… Ns" line while a turn is in flight and silent."""
         while not self._stop.wait(_HEARTBEAT_TICK_S):
             with self._lock:
                 if self._paused:
-                    continue  # an interactive prompt owns the terminal: draw nothing
+                    continue
                 idle = time.monotonic() - self._last_output_at
                 stall_after = _MID_BLOCK_STALL_S if self._phase is not None else _STALL_AFTER_S
                 if not self._active or idle < stall_after:
-                    # Output flowing or turn done: no spinner. The flush is the
-                    # heartbeat's own: `_raw` coalesces streaming flushes and
-                    # leaves a partial line in the buffer.
+                    # No spinner; the flush pushes out the partial line `_raw` left buffered.
                     self._clear_status()
                     self._out.flush()
                     continue
-                # Silent mid-turn: close any open prose block so the cursor sits on
-                # a clean line, then draw/refresh the spinner in place.
+                # Close any open prose block so the spinner draws on a clean line.
                 if self._phase is not None:
                     self._end_block()
                 self._spin += 1
@@ -381,9 +333,7 @@ class ConsoleView:
                 self._status_active = True
 
     def notice(self, msg: str) -> None:
-        """Print a harness notice (auto-commit, review, tool_error) on the same
-        stream as the stream/spinner, clearing the spinner first under the lock so
-        the notice can't collide with a spinner write on a shared terminal."""
+        """Print a harness notice on the view's stream, under the lock, after the spinner."""
         with self._lock:
             self._clear_status()
             self._out.write(msg if msg.endswith("\n") else msg + "\n")
@@ -391,11 +341,13 @@ class ConsoleView:
 
     @contextlib.contextmanager
     def pause(self) -> Generator[None]:
-        """Suspend the heartbeat spinner and clear its line so an interactive
-        /dev/tty prompt (ask_user, a run_command approval) can own the terminal,
-        then restore. Without this the spinner's per-tick line-erase wipes the
-        question and the operator's keystrokes. The lock is released across the
-        yield so the blocking prompt cannot stall feed()/notice()."""
+        """Suspend the spinner for the block, so an interactive prompt owns the terminal.
+
+        The lock is released across the yield, so the blocking prompt cannot stall `feed`.
+
+        Yields:
+            Nothing; the spinner is suspended for the block.
+        """
         with self._lock:
             self._paused = True
             self._clear_status()
@@ -407,8 +359,7 @@ class ConsoleView:
                 self._paused = False
 
     def close(self) -> None:
-        """Stop the heartbeat thread and clear any spinner line. Safe to call more
-        than once; the daemon thread also dies with the process."""
+        """Stop the heartbeat thread and clear any spinner line; idempotent."""
         self._stop.set()
         if self._heartbeat is not None:
             self._heartbeat.join(timeout=1.0)
@@ -417,5 +368,6 @@ class ConsoleView:
             self._out.flush()
 
     def _flush(self) -> None:
+        """Flush and record the time."""
         self._out.flush()
         self._last_flush = time.monotonic()

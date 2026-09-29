@@ -1,36 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The interactive pause menu for a foreground CLI run (Ctrl-C, then decide).
+"""The pause menu of a foreground CLI run: Ctrl-C, then decide.
 
-Line input comes from `_menu_input` on Unix: editing, history recall (Up
-recalls, Ctrl-R searches; seeded from the session journal, so it spans resumes
-and steers typed on other surfaces), and a fish-style Tab preview of the slash
-commands (Tab cycles the matches, descriptions shown). Windows has no termios,
-so it keeps the plain one-line prompt (`_steer` gates on
-:func:`agent6.ui.cli._menu_input.menu_capable`). Info commands answer from the
-run's event log and re-prompt, so the operator can inspect the run before
-steering it.
-
-Parsing rule: a command fires only when it is the whole line (one `/token`;
-a command is typed in full; Tab completes a prefix). A line with a
-space is answered here when its word is `/compact`, `/btw` or a skill; the
-loop's `/pin` and `/parallel` travel with their word lowercased; any other
-line with a space, or one not starting with `/`, is sent to the run verbatim
-as the steering instruction, so no quoting is ever needed:
-
-    /status   run status: tasks, tools, cost, ctx, preset
-    /tasks    the task graph with statuses
-    /compact  compact the context now (`/compact <focus>` steers the summary)
-    /continue resume unchanged (same as Enter)
-    /stop     stop the run now (resumable with `agent6 resume`)
-    /detach   keep the run going in the background
-
-`/parallel [spec] <task>` is a steer directive, not a menu command: it is sent
-to the run verbatim and the loop fans out a sibling lane group for it. The spec
-is an optional lane count or model list (omitted = one lane; a first token with
-a comma or slash reads as the spec, a bare model name reads as task text);
-repeat the exact `/parallel` token to queue more tasks in one message. See
-`agent6.directive.parse_directive`.
+Line input comes from `_menu_input` where termios can own the line: editing,
+history recall seeded from the session journal, and a Tab preview of the slash
+commands; elsewhere the plain one-line prompt. A command fires only when it is
+the whole line, typed in full. A line with a space is answered here when its
+word is `/compact`, `/btw` or a skill; `/pin` and `/parallel` travel with their
+word lowercased; any other line goes to the run verbatim as the steering
+instruction, so no quoting is needed. Info commands print and re-prompt.
 """
 
 from __future__ import annotations
@@ -71,13 +49,10 @@ from agent6.viewmodel.state import SessionState, context_fill, status_facts
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
-# The menu's own commands: what a composer cannot offer, because it needs the
-# run paused. `/pin` is the one shared word the menu describes differently, and
-# `MENU_ONLY_HELP` names it so the shared entries below stay verbatim copies.
+# The commands only a paused run can offer; `/pin` is the one word the menu describes differently.
 MENU_ONLY_HELP: dict[str, str] = {
     "/status": "run status: tasks, tools, cost, context, preset",
     "/tasks": "the task graph with statuses",
-    # Bare `/pin` lists here; in a composer the word takes the instruction.
     "/pin": "list pinned instructions (pin one with `/pin <text>`)",
     "/continue": "resume the run unchanged (same as Enter)",
     "/exit": "stop the run and leave (no follow-up prompt; resume later)",
@@ -85,10 +60,7 @@ MENU_ONLY_HELP: dict[str, str] = {
     "/help": "this list",
 }
 
-# Command -> one-line help. The Tab preview menu and /help both read this
-# table; a word the composers also offer takes its help from the one owner
-# (`directive.STEER_COMMANDS`), so the operator reads the same line wherever
-# they type it.
+# Command to help line, read by the Tab preview and /help; a shared word's line is the owner's.
 MENU_COMMANDS: dict[str, str] = {
     "/status": MENU_ONLY_HELP["/status"],
     "/tasks": MENU_ONLY_HELP["/tasks"],
@@ -111,23 +83,25 @@ MENU_COMMANDS: dict[str, str] = {
 
 
 def _without_btw() -> dict[str, str]:
-    """The menu minus `/btw`, for a surface with nothing to spawn one from."""
+    """Return the menu without `/btw`, for a surface with nothing to spawn one from."""
     return {cmd: help_ for cmd, help_ in MENU_COMMANDS.items() if cmd != "/btw"}
 
 
 def skill_menu_table(config_path: Path | None = None) -> dict[str, tuple[str, str]]:
-    """`/name` -> (description, full SKILL.md text) for enabled skills.
+    """Return `/name` to (description, SKILL.md text) for the enabled skills.
 
-    Built-in commands always win a name collision, so `/status` can never
-    be shadowed by a skill. A broken config or store degrades to no skill
-    commands, loudly, without breaking the pause prompt.
+    A built-in command wins a name collision. A broken config or store degrades to
+    no skill commands, loudly.
+
+    Args:
+        config_path: The invocation's `--config`.
     """
     try:
         cfg = load_effective(Path.cwd(), config_path).config
         resolved = operator_skills(
             cfg.skills.enabled, cfg.skills.extra_dirs, cfg.skills.state, data_dir() / "skills"
         )
-    except Exception as exc:  # the pause prompt must survive any config error
+    except Exception as exc:  # the pause prompt survives any config error
         print(f"[agent6] skill commands unavailable: {exc}")
         return {}
     return {
@@ -139,17 +113,13 @@ def skill_menu_table(config_path: Path | None = None) -> dict[str, tuple[str, st
 
 @dataclass(slots=True)
 class _Recall:
-    """The pause prompt's history (Up recalls, Ctrl-R searches): seeded once
-    per session from its journal, then grown with the lines accepted this
-    process."""
+    """The pause prompt's history, seeded once per session from its journal, then grown."""
 
     lines: list[str] = field(default_factory=list)
     seeded_from: str | None = None
 
     def seed(self, session_dir: Path) -> None:
-        """The task, then every steer, newlines flattened for the one-line
-        reader. A session seeds once; reseeding a later pause would drop the
-        lines accepted since."""
+        """Seed the task and every steer, once; reseeding would drop the lines accepted since."""
         if self.seeded_from == str(session_dir):
             return
         self.seeded_from = str(session_dir)
@@ -161,11 +131,12 @@ _RECALL = _Recall()
 
 
 def _fold(session_dir: Path) -> SessionState:
+    """Return the session's state, folded from its log."""
     return fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
 
 
 def _read_preset(session_dir: Path) -> str:
-    """The effective preset the run started with (manifest.json), or ""."""
+    """Return the preset the run started with, or ""."""
     try:
         return read_manifest(session_dir).harness.preset
     except ManifestError:
@@ -173,9 +144,9 @@ def _read_preset(session_dir: Path) -> str:
 
 
 def _print_status(session_dir: Path) -> None:
+    """Print the run's status line: tasks, tools, cost, context and preset."""
     s = _fold(session_dir)
-    # The dir decision, not the fold alone: an attached run's worker can be
-    # gone ("stale"), which the fold-only label reads as "running".
+    # The dir's probes too: a gone worker reads as running from the fold alone.
     label = status_label(*status_for_session_dir(session_dir, status_facts(s)))
     done = sum(1 for t in s.tasks if t.status in DONE_STATUSES)
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
@@ -199,8 +170,7 @@ def _print_status(session_dir: Path) -> None:
 
 
 def _print_pins(session_dir: Path) -> None:
-    """Bare /pin: the recorded pins (fold truth). `/pin <text>` has a space, so
-    the menu sends it verbatim as a steer and the loop's parser records it."""
+    """Print the recorded pins for a bare `/pin`; `/pin <text>` travels as a steer."""
     s = _fold(session_dir)
     if not s.pins:
         print("[agent6] no pinned instructions; pin one with `/pin <text>`")
@@ -211,13 +181,12 @@ def _print_pins(session_dir: Path) -> None:
 
 
 def _print_tasks(session_dir: Path) -> None:
+    """Print the task tree with statuses."""
     s = _fold(session_dir)
     if not s.tasks:
         print("[agent6] (no tasks yet)")
         return
-    # The fold hands over views that already carry their depth, so this walks
-    # them rather than the node dicts `task_tree_lines` takes; both lead the
-    # line with the id, which is what `/retire` names a task by.
+    # The fold's views carry their depth; the id leads the line, as `/retire` names a task.
     for tv in s.tasks:
         icon = TASK_STATUS_GLYPH.get(tv.status, "·")
         marker = "▸ " if tv.is_cursor else ""
@@ -225,6 +194,7 @@ def _print_tasks(session_dir: Path) -> None:
 
 
 def _print_help(offered: dict[str, str]) -> None:
+    """Print the offered commands and the key hints."""
     width = max(len(c) for c in offered)
     for cmd, what in offered.items():
         print(f"  {cmd:<{width}}  {what}")
@@ -232,15 +202,12 @@ def _print_help(offered: dict[str, str]) -> None:
     print("  Up recalls this session's messages · Ctrl-R searches them · Tab previews commands")
 
 
-# Starts a btw and delivers the finished answer to the console view. The menu
-# owns the grammar; the CLI owns the spawn and the delivery. None (headless,
-# tests) makes `/btw` say so rather than fail obscurely.
+# Starts a btw and delivers its answer to the console view; None makes `/btw` say so.
 BtwRunner = Callable[[str, Path], tuple[bool, str]]
 
 
 def _print_shells(session_dir: Path) -> None:
-    """The run's background commands. Read off disk, not from the dispatcher:
-    the menu answers from the same place every other surface reads."""
+    """Print the run's background commands, read off disk like every other surface."""
     lines = roster_from_dir(session_dir / SHELLS_DIR)
     if not lines:
         print("[agent6] no background commands this run")
@@ -250,6 +217,7 @@ def _print_shells(session_dir: Path) -> None:
 
 
 def _start_btw(cmd: str, session_dir: Path, runner: BtwRunner | None) -> str:
+    """Return the line to print after starting a btw through the runner."""
     question = parse_btw(cmd)
     if not question:
         return "[agent6] ask something: `/btw <question>`"
@@ -264,7 +232,7 @@ _ACTIONS: dict[str, str] = {
     "/stop": "abort",
     "/exit": "exit",
     "/detach": "detach",
-    # Verbatim: the loop parses the directive itself (fork + session.undone).
+    # Verbatim: the harness parses the directive itself.
     "/undo": "/undo",
 }
 
@@ -274,7 +242,7 @@ def _run_info_command(
     session_dir: Path,
     btw_runner: BtwRunner | None = None,
 ) -> None:
-    """Run a print-and-re-prompt command (everything not in `_ACTIONS`)."""
+    """Run a command that prints and re-prompts (everything not in `_ACTIONS`)."""
     if cmd == "/help":
         _print_help(MENU_COMMANDS if btw_runner is not None else _without_btw())
     elif cmd == "/status":
@@ -292,9 +260,7 @@ def _run_info_command(
     elif cmd.startswith("/btw"):
         print(_start_btw(cmd, session_dir, btw_runner))
     elif cmd.startswith(("/task", "/standing", "/retire")):
-        # The one owner of what a composer line does; `/btw` stays local
-        # because the menu spawns its side ask through a terminal-capable
-        # runner rather than directly.
+        # The one owner of what a composer line does; `/btw` stays local for its runner.
         _did, said = act_on_directive(session_dir, cmd) or (False, "")
         print(f"[agent6] {said}")
 
@@ -302,9 +268,13 @@ def _run_info_command(
 def _line_reader(
     session_dir: Path, offered: dict[str, str], skills: dict[str, tuple[str, str]]
 ) -> Callable[[str], str]:
-    """The terminal's line reader: the fish-style menu, polling the session's
-    steer file (the caller opens the menu only where termios can own the
-    line, `menu_capable`)."""
+    """Return the terminal's line reader: the menu, polling the session's steer file.
+
+    Args:
+        session_dir: The run's dir.
+        offered: The commands and their help.
+        skills: The skill commands.
+    """
     arrived = functools.partial(steer_answer_written, session_dir)
     _RECALL.seed(session_dir)
     display = {**offered, **{c: d[:70] for c, (d, _t) in skills.items()}}
@@ -318,16 +288,22 @@ def pause_menu(
     btw_runner: BtwRunner | None = None,
     config_path: Path | None = None,
 ) -> str | None:
-    """The interactive pause menu. Returns the canonical steer action: None/''
-    continue, 'abort' stop now, 'exit' stop-and-leave, 'detach' background, else
-    the instruction sent verbatim. A command is the whole word, typed in full
-    (Tab completes a prefix, so adding a command never re-points a habit);
-    info commands print and re-prompt.
-    EOF (Ctrl-D) continues. A steer a front-end writes while the menu is open
-    (the file bridge every composer uses) ends the menu and is the answer."""
+    """Run the pause menu until a line ends it.
+
+    A steer a front-end writes while the menu is open ends it and is the answer.
+
+    Args:
+        session_dir: The run's dir.
+        input_fn: Reads one line for a prompt; the terminal's reader when None.
+        btw_runner: Starts a btw; None withholds `/btw`.
+        config_path: The invocation's `--config`.
+
+    Returns:
+        The steer action: "" or None continues, "abort" stops, "exit" stops and leaves,
+        "detach" backgrounds, anything else is the instruction sent verbatim.
+    """
     skills = skill_menu_table(config_path)
-    # A surface that cannot spawn a sibling session never offers `/btw`: an
-    # offered command that answers "needs a live run" is not offered.
+    # A surface that cannot spawn a sibling session never offers `/btw`.
     offered = MENU_COMMANDS if btw_runner is not None else _without_btw()
     if input_fn is None:
         input_fn = _line_reader(session_dir, offered, skills)
@@ -346,13 +322,11 @@ def pause_menu(
 
 @dataclass(frozen=True, slots=True)
 class _Again:
-    """A line that printed (an info command, an unknown or ambiguous one): the
-    menu asks again, the plain prompt continues the run."""
+    """A line that printed: the menu asks again, the plain prompt continues the run."""
 
 
 AGAIN = _Again()
-# The directives the loop parses out of steer text, with case-sensitive parsers:
-# their word travels lowercased. Every other line with spaces travels verbatim.
+# Parsed out of steer text by case-sensitive parsers, so their word travels lowercased.
 _LOOP_DIRECTIVES = ("/pin", "/parallel")
 
 
@@ -362,24 +336,18 @@ def _answer_line(  # noqa: PLR0911, PLR0912
     btw_runner: BtwRunner | None,
     skills: dict[str, tuple[str, str]],
 ) -> str | _Again:
-    """One typed line, answered the same way at both prompts (see `pause_menu`
-    for the contract)."""
+    """Return one typed line's answer, the same at both prompts; `pause_menu` has the contract."""
     stripped = line.strip()
     if not stripped:
-        return ""  # Enter: continue the run unchanged
+        return ""
     if not stripped.startswith("/"):
-        return stripped  # a steering instruction, sent verbatim
+        return stripped
     first, _, args = stripped.partition(" ")
     word = first.lower()
     if word in ("/h", "/?"):
         word = "/help"
     if args:
-        # `/btw` is the menu's own (it spawns through a terminal-capable
-        # runner); every other directive belongs to the one owner every
-        # composer shares. Anything else with spaces stays a verbatim steer
-        # (the loop itself parses /pin and /parallel out of steer text).
-        # `/now` is meaningless here: the menu opens at a boundary with no call
-        # in flight to interrupt, so the steer it returns lands immediately.
+        # `/btw` is the menu's own; every other directive belongs to the owner composers share.
         if word == "/btw":
             print(_start_btw(stripped, session_dir, btw_runner))
             return AGAIN
@@ -388,25 +356,22 @@ def _answer_line(  # noqa: PLR0911, PLR0912
             print(f"[agent6] {acted[1]}")
             return AGAIN
         if word in skills:
-            # A skill command travels as typed; the loop expands it (the
-            # one owner, so every composer's `/<skill>` means the same).
+            # A skill command travels as typed; the harness expands it.
             return stripped
         if word in _LOOP_DIRECTIVES:
             return f"{word} {args.strip()}"
         if word == "/now":
-            # The menu opens at a boundary with no call in flight to interrupt:
-            # the steer lands at once, so the word adds nothing.
+            # No call is in flight at a boundary, so the steer lands at once without the word.
             return args.strip()
         return stripped
     if word == "/compact":
-        # Complete on its own: the one owner every composer shares acts on it.
+        # Complete on its own; the owner composers share acts on it.
         acted = act_on_directive(session_dir, stripped)
         assert acted is not None
         print(f"[agent6] {acted[1]}")
         return AGAIN
     if word not in MENU_COMMANDS and word not in skills:
-        # Exact commands only: a prefix drives Tab completion, never an
-        # action, so adding a command never re-points an operator's habit.
+        # A prefix drives Tab completion, never an action, so a new command re-points no habit.
         near = sorted(c for c in (*MENU_COMMANDS, *skills) if c.startswith(word) and c != word)
         hint = f"; did you mean {'  '.join(near)}?" if near else "; /help lists them"
         print(f"[agent6] unknown command {word!r}{hint} (a line with spaces is sent as a steer)")
@@ -426,8 +391,17 @@ def pause_line(
     btw_runner: BtwRunner | None = None,
     config_path: Path | None = None,
 ) -> str | None:
-    """The plain (one-shot) prompt's answer for one typed line: what the menu
-    answers, with a line that printed continuing the run. None (EOF) continues."""
+    """Return the plain prompt's answer for one line; a line that printed continues the run.
+
+    Args:
+        line: The typed line; None on EOF continues.
+        session_dir: The run's dir.
+        btw_runner: Starts a btw; None withholds `/btw`.
+        config_path: The invocation's `--config`.
+
+    Returns:
+        The steer action, as `pause_menu` returns it.
+    """
     if line is None:
         return None
     answer = _answer_line(line, session_dir, btw_runner, skill_menu_table(config_path))

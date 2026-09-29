@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 machine check/test/graph`: the offline authoring gate for a machine
-file (parse, semantics, bundle, script lint/types, mock tests, dry-run) and
-its diagram render. No provider calls, no real network."""
+"""`agent6 machine check/test/graph`: the offline authoring gate for a machine file.
+
+Parse, semantics, bundle, script lint and types, mock tests, dry-run, and the diagram
+render. No provider calls, no real network.
+"""
 
 from __future__ import annotations
 
@@ -34,7 +36,16 @@ from agent6.ui.cli._common import plural, warn
 
 
 def _fail(path: Path, problems: list[str], label: str = "") -> int:
-    """Print a FAIL header + problem bullets to stderr; always returns 1."""
+    """Print a FAIL header and problem bullets to stderr.
+
+    Args:
+        path: The machine file.
+        problems: The problems, one bullet each.
+        label: The failing stage, for the header.
+
+    Returns:
+        1, the exit code.
+    """
     suffix = f" ({label})" if label else ""
     print(f"FAIL: {path}{suffix}", file=sys.stderr)
     for problem in problems:
@@ -45,12 +56,18 @@ def _fail(path: Path, problems: list[str], label: str = "") -> int:
 def _load_validated(
     path: Path, *, config_path: Path | None = None
 ) -> tuple[MachineSpec | None, list[str], str]:
-    """Shared `check`/`test` front half: load, structural bundle validation,
-    and the effective-config overlay merge `machine run` performs, so a bad
-    `[config]` key fails here rather than first at run.
+    """Load a machine file and validate its bundle and config overlay, as `machine run` does.
 
-    Returns (spec, problems, label). spec is None when validation failed;
-    label names the failing stage for the FAIL header.
+    The shared front half of `check` and `test`, so a bad `[config]` key fails here rather
+    than first at run.
+
+    Args:
+        path: The machine file.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        `(spec, problems, label)`; the spec is None when validation failed, and the label
+        names the failing stage for the FAIL header.
     """
     try:
         spec = load_machine(path)
@@ -70,10 +87,17 @@ _SUBPROCESS_CALLS = frozenset({"run", "Popen", "call", "check_call", "check_outp
 
 
 def _script_binaries(scripts_dir: Path) -> dict[str, str]:
-    """Best effort: the literal first-argv string of each subprocess call in the
-    bundle's scripts, mapped to one script that makes it. Dynamic argv is
-    invisible to this scan, so absence proves nothing; only a hit feeds the
-    reachability warning."""
+    """Return the literal first-argv string of each subprocess call in the bundle's scripts.
+
+    Best effort: dynamic argv is invisible to this scan, so absence proves nothing; only a
+    hit feeds the reachability warning.
+
+    Args:
+        scripts_dir: The bundle's scripts directory.
+
+    Returns:
+        Each binary mapped to one script that calls it.
+    """
     out: dict[str, str] = {}
     for py in sorted(scripts_dir.glob("*.py")) if scripts_dir.is_dir() else []:
         try:
@@ -96,11 +120,16 @@ def _script_binaries(scripts_dir: Path) -> dict[str, str]:
 
 
 def _tool_reachability_warnings(spec: MachineSpec, path: Path) -> list[str]:
-    """Binaries this machine will exec that do not resolve on the jail PATH:
-    tool-state `command[0]` plus literal subprocess argv in bundle scripts.
-    Offline validation mocks subprocess, so without this probe a machine passes
-    check/test and dies on its first real state (observed: ruff, exit at
-    transition 1). Advisory: the operator may install the tool later."""
+    """Return a warning for each binary the machine execs that the jail PATH does not resolve.
+
+    Tool-state `command[0]` plus literal subprocess argv in bundle scripts. Offline
+    validation mocks subprocess, so without this probe a machine passes check and test
+    and dies on its first real state. Advisory: the operator may install the tool later.
+
+    Args:
+        spec: The machine.
+        path: The machine file.
+    """
     search = jail_search_path()
     sources: dict[str, str] = {}
     for name, state in spec.states.items():
@@ -119,6 +148,11 @@ def _tool_reachability_warnings(spec: MachineSpec, path: Path) -> list[str]:
 
 
 def _cmd_machine_check(path: Path, *, config_path: Path | None = None) -> int:
+    """Validate a machine file offline and print OK or FAIL.
+
+    Returns:
+        The exit code, 1 on FAIL.
+    """
     spec, problems, label = _load_validated(path, config_path=config_path)
     if spec is None:
         return _fail(path, problems, label)
@@ -140,14 +174,22 @@ def _cmd_machine_check(path: Path, *, config_path: Path | None = None) -> int:
 def _cmd_machine_test(
     path: Path, *, blackboard: Path | None, config_path: Path | None = None
 ) -> int:
-    # `machine test` is the offline simulation: `machine check`'s structural +
-    # bundle validation, plus running the bundle's `*_test.py` mocks in a jail
-    # (no network), plus a pure dry-run. Reuse the same load + bundle validation
-    # so a malformed machine fails the same way.
+    """Run the offline simulation: validation, script lint and types, mock tests, dry-run.
+
+    Args:
+        path: The machine file.
+        blackboard: A TOML fixture overlaid on the blackboard defaults.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The exit code, 1 on FAIL.
+
+    Raises:
+        OperatorError: The fixture is not valid TOML.
+    """
     spec, problems, label = _load_validated(path, config_path=config_path)
     if spec is None:
         return _fail(path, problems, label)
-    # Static (lint + types) then the offline mock tests in a no-network jail.
     script_problems = lint_and_typecheck(path.parent / "scripts")
     offline = run_offline_tests(path.parent, detect_env().detected_isolation)
     script_problems.extend(offline.problems)
@@ -165,8 +207,7 @@ def _cmd_machine_test(
     report = dry_run(spec, fixture)
     _print_dry_run_report(spec, report)
     if report.ok:
-        # A skip rides the verdict line, not a stderr aside: OK with tests
-        # silently unrun read as "tests ran green".
+        # A skip rides the verdict line: OK with tests silently unrun reads as tests ran green.
         skipped = (
             f"; {plural(offline.skipped, 'offline script test')} not run ({offline.skip_reason})"
             if offline.skipped
@@ -201,6 +242,11 @@ def _print_dry_run_report(spec: MachineSpec, report: DryRunReport) -> None:
 
 
 def _cmd_machine_graph(path: Path, *, fmt: str) -> int:
+    """Print the machine's diagram as DOT or Mermaid.
+
+    Returns:
+        The exit code, 1 when the file does not parse.
+    """
     try:
         spec = load_machine(path)
     except MachineError as exc:

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The end-of-session prompt: a CLI session asks for the next input before
-ending."""
+"""The end-of-session prompt: a CLI session asks for the next input before ending."""
 
 from __future__ import annotations
 
@@ -16,24 +15,17 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.cli.resume import _cmd_resume
 from agent6.viewmodel.listing import scan_session_log
 
-# Free text is the next execution's operator instruction (what `--steer` carries);
-# `/exit` finishes. No other verbs until a second one earns its place.
+# Free text is the next execution's operator instruction, as `--steer` carries it.
 _NEXT_PROMPT = "next (/exit to finish): "
 EXIT_COMMAND = "/exit"
 
 
 def prompting_is_possible() -> bool:
-    """Whether the operator is here to answer: an attended terminal this
-    process is in the foreground of.
+    """Return whether an attended terminal has this process in the foreground.
 
-    Without a terminal there is nobody to type, so the session prints the resume
-    line instead.
-
-    A tty is not enough. `agent6 run ... &` keeps one on stdin, and reading it
-    from a background process group raises SIGTTIN, which suspends the job at
-    the end instead of finishing it. The foreground check also
-    covers a tty allocated with nobody at it (`docker run -t`, some CI
-    runners), where the read would block forever.
+    A tty is not enough: `agent6 run ... &` keeps one on stdin, and a read from a
+    background process group raises SIGTTIN, suspending the job instead of finishing
+    it. The foreground check also covers a tty with nobody at it (`docker run -t`).
     """
     if not sys.stdin.isatty():
         return False
@@ -44,11 +36,12 @@ def prompting_is_possible() -> bool:
 
 
 def follow_up_on_offer(session_dir: Path) -> bool:
-    """Whether the run in *session_dir* can take a follow-up execution from here: its
-    last execution ended (a detached run went on in the background; its reattach line
-    was printed) and not by /undo (the fork it named is the continuation; its
-    resume line was printed) or /exit (the operator asked to stop and leave;
-    asking "next:" would re-open exactly what they closed)."""
+    """Return whether the run can take a follow-up execution from here.
+
+    Not after a detach (the run goes on in the background), an `/undo` (the fork it
+    named is the continuation) or an `/exit` (asking again would reopen what the
+    operator closed); each printed its own line.
+    """
     scan = scan_session_log(session_dir / LOGS_NAME)
     return scan.finished and scan.end_reason not in ("undone", "steer_exit")
 
@@ -67,13 +60,21 @@ def end_of_session_prompt(
     """Keep the session going from the terminal until `/exit`.
 
     Each answer runs one resume execution carrying that text as the operator's
-    instruction, under the invocation's own flag overrides, so continuing needs
-    no `agent6 resume <id>` retyping. `/exit` (or EOF) stops asking and prints
-    the line that picks the session back up: nothing is sealed, and a finished
-    session stays resumable like any other. An execution that refuses returns its own
-    code rather than re-prompting over the failure; an execution that detached or
-    undid the run (see `follow_up_on_offer`, checked when *session_dir* is
-    given) ends the asking, its own line already printed.
+    instruction, under the invocation's own overrides. `/exit` or EOF prints the line
+    that picks the session back up; nothing is sealed.
+
+    Args:
+        rc: The exit code of the execution that just ended.
+        session_id: The session.
+        session_dir: The session dir; when given, `follow_up_on_offer` decides whether to ask.
+        ask: Reads one answer for a prompt.
+        config_path: The invocation's `--config`.
+        budget_overrides: The invocation's budget flags.
+        sandbox_overrides: The invocation's sandbox flags.
+        model: The invocation's `--model`.
+
+    Returns:
+        The last execution's exit code; an execution that refuses returns its own.
     """
     while True:
         try:
@@ -89,9 +90,7 @@ def end_of_session_prompt(
             print(f"[agent6] {problem}", file=sys.stderr)
             continue
         if answer.startswith("/") and len(answer.split()) == 1 and answer != "/undo":
-            # A lone slash word (other than /undo, a verb the execution honours) is a
-            # composer command or a typo, not a follow-up task: sending it
-            # would spend a model call answering the literal text.
+            # A lone slash word is a composer command or a typo; sent, it would cost a model call.
             print(
                 f"[agent6] {answer!r} is not sent as a task: this prompt takes a"
                 " follow-up instruction (a new execution), /undo, or /exit; slash"

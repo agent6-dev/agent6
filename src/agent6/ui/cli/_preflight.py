@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The interactive pre-run confirm prompts `agent6 run`/`resume` inject into
-the lifecycle: run-on-run-branch and unconfined autorun. The non-interactive
-guards live in `agent6.app.preflight`."""
+"""The interactive confirm prompts `run` and `resume` inject into the lifecycle.
+
+The non-interactive guards live in `agent6.app.preflight`.
+"""
 
 from __future__ import annotations
 
@@ -14,9 +15,14 @@ from agent6.ui.cli._steer import tty_prompt
 
 
 def confirm_run_on_run_branch(base_branch: str) -> bool:
-    """The checkout is on another run's branch (agent6/<id>); a new run would branch
-    off it. Confirm before proceeding. A non-interactive caller (a detached TUI/web
-    run) has no terminal to prompt, so it warns and proceeds."""
+    """Confirm a new run on another run's branch, which it would branch off.
+
+    Args:
+        base_branch: The checked-out run branch.
+
+    Returns:
+        Whether to proceed; a non-interactive caller warns and proceeds.
+    """
     warning = (
         f"[agent6] You are on run branch '{base_branch}', so a new run branches off\n"
         "  it. Merge it (agent6 sessions merge) or switch back (git switch <base>)\n"
@@ -34,11 +40,15 @@ def confirm_run_on_run_branch(base_branch: str) -> bool:
 
 
 def confirm_replay_after_crash(iteration: int, tools: tuple[str, ...]) -> bool:
-    """Resume found a mid-turn-crash marker for the turn about to re-run: its
-    tools may have partially applied, and replaying can repeat a
-    non-idempotent effect. Interactive: ask, default no (abort and inspect).
-    Headless: warn loudly and proceed, at-least-once recovery with the risk
-    named."""
+    """Confirm replaying a turn whose tools may have partially applied before a crash.
+
+    Args:
+        iteration: The turn about to re-run.
+        tools: The tools the crashed turn had dispatched.
+
+    Returns:
+        Whether to proceed; interactive defaults to no, headless warns and proceeds.
+    """
     named = ", ".join(tools) if tools else "unknown tools"
     warning = (
         f"[agent6] The previous run died mid-turn (iteration {iteration}; {named}).\n"
@@ -57,14 +67,18 @@ def confirm_replay_after_crash(iteration: int, tools: tuple[str, ...]) -> bool:
 
 
 def confirm_unconfined_autorun(isolation: IsolationLevel, cfg: Config) -> bool:
-    """The one genuinely dangerous combination: the sandbox is off and
-    run_command is auto-approved, so the agent can run any command on the host
-    with no confinement and no prompt. Get one explicit consent at startup when
-    interactive; proceed with a loud warning when not (the explicit opt-outs
-    are already the consent, and machines/CI must not block). Not a per-command
-    guard: once unconfined, guarding individual commands would be theatre.
+    """Confirm once, at startup, a run with the sandbox off and run_command auto-approved.
 
-    Returns True to proceed, False to abort.
+    One consent when interactive, a loud warning when not: the explicit opt-outs are
+    the consent, and a machine must not block. Never per command: once unconfined,
+    guarding single commands would be theatre.
+
+    Args:
+        isolation: The resolved isolation level.
+        cfg: The run's config.
+
+    Returns:
+        Whether to proceed.
     """
     if isolation != "none" or cfg.sandbox.run_commands != "yes":
         return True

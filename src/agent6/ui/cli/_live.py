@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Live run watching: the optional dashboard TUI co-process, the
-worker stream modes, and the loop's console logger."""
+"""Watch a live run: the dashboard co-process, the stream modes and the harness's logger."""
 
 from __future__ import annotations
 
@@ -17,31 +16,27 @@ from agent6.ui.cli._console_view import ConsoleView
 
 
 def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], None]:
-    """The harness's text logger.
+    """Return the harness's text logger for the mode.
 
-    When the live ConsoleView is rendering the product stream (foreground run),
-    notices go through it (`console_view.notice`) so each clears the spinner
-    line first and writes to the same stream under the same lock; a notice
-    printed to stdout while the stderr spinner is up garbles the line. The
-    loop's internal state narration (`LOOP: LOAD_CONTEXT`, `compaction: …`,
-    `compaction thresholds: …`) is pure noise on the glyph stream (`config
-    show` prints the resolved thresholds), and these lines repeat what the
-    stream already shows: `tool_error:` (the red `└`), `auto-commit:` /
-    `final checkpoint:` (the sha on the ✎ item), the `STEER:` / `injecting
-    steering instruction` pair (the operator item), `ask answered` (the done
-    item). All are suppressed unless `AGENT6_DEBUG=1`; genuine notices (review
-    decisions, a verify adoption, a steer's abort/detach/undo) pass.
-    Headless/`ask` keep the full trace on their own stream (the log, not a
-    live stream)."""
+    With a live console view, notices go through it, under its lock and after its
+    spinner line is cleared; the loop's state narration and the lines the stream
+    already shows are suppressed unless `AGENT6_DEBUG=1`. Headless and `ask` keep
+    the full trace on their own stream.
+
+    Args:
+        mode: The session mode.
+        console_view: The live view, when the run has one.
+
+    Returns:
+        The logger.
+    """
     if console_view is None:
-        # No live console: a headless run's stdout (or ask's stderr) is
-        # block-buffered when redirected to a file/pipe, so without an explicit
-        # flush the whole LOOP trace appears only when the process exits, and a
-        # `nohup agent6 run > log` reads as a dead run for its entire duration.
+        # Redirected to a file, the stream is block-buffered; unflushed, the run reads as dead.
         return _eprint if mode == "ask" else _print_flush
     debug = os.environ.get("AGENT6_DEBUG") == "1"
 
     def _filtered(msg: str) -> None:
+        """Pass a notice to the view, dropping narration unless debugging."""
         stripped = msg.removeprefix("[agent6] ")
         narration = (
             "compaction",
@@ -60,32 +55,33 @@ def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], 
 
 
 def _print_flush(msg: str) -> None:
-    """Headless loop logger: print to stdout and flush, so a redirected log
-    (block-buffered) shows the LOOP trace live instead of only at exit."""
+    """Print to stdout and flush, so a redirected log shows the trace live."""
     print(msg, flush=True)
 
 
 def _eprint(msg: str) -> None:
-    """Loop logger that writes to stderr (used for `ask`, whose stdout is the
-    answer and must stay clean for piping). Flushes so a redirected stderr is
-    followable live, not buffered until exit."""
+    """Print to stderr and flush, for `ask`, whose stdout is the answer."""
     print(msg, file=sys.stderr, flush=True)
 
 
 def _tui_available() -> bool:
+    """Return whether textual is installed."""
     import importlib.util  # noqa: PLC0415
 
     return importlib.util.find_spec("textual") is not None
 
 
 def should_spawn_tui(*, tui: bool, interactive: bool, mode: str) -> bool:
-    """Whether `agent6 run`/`plan`/`resume` opens the dashboard TUI.
+    """Return whether the run opens the dashboard TUI, warning when `--tui` cannot run.
 
-    Headless by default (a scrolling CLI event stream); `--tui` opts into the
-    full-screen dashboard. It needs a real TTY, is for `run` and `plan` (an ask
-    stays text: its answer is the deliverable), and is mutually exclusive with
-    `-i` (the stdin REPL). When `--tui` is asked for but cannot run, warn and
-    stay headless rather than fail the run."""
+    The dashboard needs a real TTY, is for `run` and `plan` (an ask's answer is its
+    deliverable), and excludes `-i`.
+
+    Args:
+        tui: The `--tui` flag.
+        interactive: The `-i` flag.
+        mode: The session mode.
+    """
     if not tui:
         return False
     if interactive or mode not in ("run", "plan"):
@@ -107,56 +103,55 @@ def should_spawn_tui(*, tui: bool, interactive: bool, mode: str) -> bool:
 def stream_modes(*, tui_enabled: bool) -> tuple[bool, bool]:
     """Return `(stream_text, console_stream)` for the worker provider.
 
-    `stream_text` makes the provider stream and emit `role.text_delta` /
-    `role.thinking_delta` events, which every live view renders as the model's
-    reasoning + answer. `console_stream` additionally subscribes a
-    `ConsoleView` to the EventSink, rendering the live conversation (reasoning,
-    text, and every tool call with its result) to stderr.
+    `stream_text` makes the provider emit the delta events every live view renders;
+    `console_stream` also subscribes a `ConsoleView` to render them on stderr.
+    Streaming is on for a stderr TTY, under `AGENT6_FORCE_STREAM=1` (a gateway that
+    corrupts a non-streaming body), and under `AGENT6_STREAM_TO_LOG=1`, which the
+    `tui` hub sets for a run it watches on the dashboard: deltas without the echo.
 
-    Streaming is on for an interactive stderr TTY (so a plain `agent6 ask`/`plan`
-    shows live output) or when forced:
-    - `AGENT6_FORCE_STREAM=1`: bench/CI, emit and echo (the Kimi/OpenRouter
-      gateway corrupts the non-streaming body with SSE heartbeats).
-    - `AGENT6_STREAM_TO_LOG=1`: set by the `agent6 tui` hub when it spawns a run
-      detached and then watches it on the dashboard. Emit the delta events only,
-      with no console echo: a long headless run would otherwise pour its whole
-      reasoning into the hub's discarded stderr temp file.
+    Args:
+        tui_enabled: The dashboard owns the terminal.
     """
     stream_to_log = os.environ.get("AGENT6_STREAM_TO_LOG") == "1"
     stream_text = (
         sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1" or stream_to_log
     )
-    # Echo to stderr only when there is a console to read it: not while the TUI
-    # owns the terminal, and not for a hub-watched headless run (dashboard-only).
+    # Echo only when a console reads it: not under the TUI, not for a hub-watched run.
     console_stream = stream_text and not tui_enabled and not stream_to_log
     return stream_text, console_stream
 
 
 @contextlib.contextmanager
 def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
-    """Run the dashboard TUI as a co-process that owns the terminal.
+    """Run the dashboard TUI as a co-process that owns the terminal for the block.
 
-    While it is up, this process's own console chatter is redirected to
-    `<session_dir>/tui_console.log` so it doesn't fight the TUI for the terminal;
-    progress still flows through `logs.jsonl`, which the TUI tails, and approvals
-    go through the file bridge. On `session.end` the TUI holds the finished
-    dashboard until the user leaves (Ctrl+Q); we wait for that, so the terminal
-    stays theirs until they are done looking. A spawn failure degrades
-    to a normal (TUI-less) run rather than aborting."""
+    This process's console goes to `<session_dir>/tui_console.log` meanwhile; the
+    TUI tails the log and approvals cross the file bridge. The TUI holds the finished
+    dashboard until the operator leaves, and the block waits for that. A spawn
+    failure degrades to a run without the TUI.
+
+    Args:
+        session_dir: The run's dir.
+        enabled: Whether to spawn at all.
+
+    Yields:
+        Nothing; the run proceeds inside the block.
+
+    Raises:
+        KeyboardInterrupt: The operator interrupted; re-raised after the TUI is down.
+    """
     if not enabled:
         yield
         return
     try:
-        # Opened before the spawn: a failure after it would escape past the
-        # wait below, orphaning a TUI that has taken the terminal.
+        # Opened before the spawn: a failure after it would orphan a TUI holding the terminal.
         log_fh = (session_dir / "tui_console.log").open("w", encoding="utf-8")
     except OSError as exc:
         print(f"[agent6] could not start TUI ({exc}); continuing without it.", file=sys.stderr)
         yield
         return
     try:
-        # -P keeps cwd (the workspace) off sys.path: a top-level `agent6/` in
-        # the repo must not shadow the installed package in this co-process.
+        # -P keeps the workspace off sys.path, so a top-level `agent6/` there cannot shadow ours.
         proc = subprocess.Popen(
             [
                 sys.executable,
@@ -183,14 +178,8 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
         interrupted = True
         raise
     finally:
-        # The TUI holds the finished dashboard until the user leaves (Ctrl+Q),
-        # so wait for them, not a deadline. A wedged TUI is visibly wedged
-        # under the hold hint; Ctrl-C (SIGINT to the group)
-        # still tears everything down, textual restoring the terminal. Keep
-        # our own output redirected until it's gone so nothing scribbles its
-        # screen.
-        # A dashboard gone before the run ended left the terminal silent for
-        # the rest of the run (an interrupt takes both down together).
+        # Wait for the operator to leave, not a deadline; Ctrl-C still tears everything down.
+        # A dashboard gone before the run ended left the terminal silent for the rest of it.
         gone_early = not interrupted and proc.poll() is not None
         try:
             proc.wait()
@@ -206,9 +195,7 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
                     proc.kill()
                     proc.wait()
         finally:
-            # Whatever the teardown does, this process gets its console back: a
-            # second Ctrl-C lands in the wait above and leaves every later line
-            # in the log file.
+            # Whatever the teardown does, this process gets its console back.
             sys.stdout, sys.stderr = orig_out, orig_err
             with contextlib.suppress(Exception):
                 log_fh.close()

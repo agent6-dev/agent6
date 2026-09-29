@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 model`, show/set role models, with interactive prefill; a piped
-no-model invocation lists the provider's catalog instead (pipe-friendly, one
-id per line)."""
+"""`agent6 model`: show or set role models, with an interactive prefill.
+
+A piped invocation naming no model lists the provider's catalog instead, one id per line.
+"""
 
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ from agent6.ui.cli._common import error, refuse, safe_input, warn
 
 
 def _connected_providers(config_path: Path | None) -> list[str]:
-    """Provider names declared in the effective config (empty on any error)."""
+    """Return the provider names the effective config declares; empty on any error."""
     try:
         eff = load_effective(Path.cwd(), config_path)
     except ConfigError:
@@ -34,8 +35,7 @@ def _connected_providers(config_path: Path | None) -> list[str]:
 
 
 def _models_for(config_path: Path | None, provider: str) -> list[str]:
-    """Known model ids for *provider* (`models.choices.provider_model_choices`);
-    empty when the config does not load."""
+    """Return the known model ids for a provider; empty when the config does not load."""
     try:
         eff = load_effective(Path.cwd(), config_path)
     except ConfigError:
@@ -44,7 +44,7 @@ def _models_for(config_path: Path | None, provider: str) -> list[str]:
 
 
 def _prompt_for_provider(config_path: Path | None) -> str:
-    """Interactively pick a provider, defaulting to the first connected one."""
+    """Return the provider picked interactively, defaulting to the first connected one."""
     providers = _connected_providers(config_path)
     if providers:
         print("Connected providers: " + ", ".join(providers))
@@ -58,9 +58,12 @@ def _prompt_for_provider(config_path: Path | None) -> str:
 
 
 def _prompt_for_model(config_path: Path | None, provider: str) -> str | None:
-    """Interactively pick a model for *provider* from the live/configured list:
-    the model, "" when nothing was typed, None after a refusal it printed
-    (a number past the list)."""
+    """Return the model picked interactively from the provider's list.
+
+    Returns:
+        The model, "" when nothing was typed, or None after a refusal it printed (a number
+        past the list).
+    """
     options = _models_for(config_path, provider)
     if options:
         print(f"Models for {provider}:")
@@ -81,7 +84,11 @@ def _prompt_for_model(config_path: Path | None, provider: str) -> str | None:
 
 
 def _show_assignments(config_path: Path | None) -> int:
-    """Print the three role assignments with their config origin."""
+    """Print the three role assignments with their config origin.
+
+    Returns:
+        The exit code, 0.
+    """
     eff = load_effective(Path.cwd(), config_path)
     print("Role assignments (planner/reviewer fall back to worker when unset):\n")
     show_roles: tuple[RoleName, ...] = ("planner", "worker", "reviewer")
@@ -103,10 +110,19 @@ def _show_assignments(config_path: Path | None) -> int:
 
 
 def _print_catalog(config_path: Path | None, role: str, provider: str) -> int:
-    """Piped, no model named: the interactive picker cannot run, so this
-    invocation is the listing (the one non-interactive way to discover model
-    ids, e.g. for a --parallel spec): one id per line on stdout, the set-hint
-    on stderr."""
+    """Print the provider's model ids, one per line, with the set hint on stderr.
+
+    The listing for a piped invocation naming no model: the one non-interactive way to
+    discover model ids, for a `--parallel` spec among others.
+
+    Args:
+        config_path: The `--config` file, if any.
+        role: The role the hint names.
+        provider: The provider whose catalog to print.
+
+    Returns:
+        The exit code, 0.
+    """
     options = _models_for(config_path, provider)
     if not options:
         error(
@@ -121,8 +137,7 @@ def _print_catalog(config_path: Path | None, role: str, provider: str) -> int:
 
 
 def _warn_unusable_provider(config_path: Path | None, provider: str) -> None:
-    """A set naming a keyless provider succeeds (config is just config) but the
-    first run would refuse; say so now, when the fix is one command away."""
+    """Warn when a set names a keyless provider: config accepts it, the first run would refuse."""
     try:
         eff = load_effective(Path.cwd(), config_path)
     except ConfigError:
@@ -156,11 +171,24 @@ def _warn_unusable_provider(config_path: Path | None, provider: str) -> None:
 def _read_route(
     config_path: Path | None, role: str, route: str, *, interactive: bool
 ) -> tuple[str, str]:
-    """(provider, model) from a `[PROVIDER/]MODEL` value. A configured
-    provider at the first slash names the provider; any other slash stays in
-    the model id on the role's current provider. A configured provider's name
-    alone leaves the model to pick. A blank value prompts for the provider on
-    a terminal. Raises ConfigError for a value that names nothing."""
+    """Return `(provider, model)` from a `[PROVIDER/]MODEL` value.
+
+    A configured provider at the first slash names the provider; any other slash stays in
+    the model id on the role's current provider. A configured provider's name alone leaves
+    the model to pick. A blank value prompts for the provider on a terminal.
+
+    Args:
+        config_path: The `--config` file, if any.
+        role: The role being set.
+        route: The value as typed.
+        interactive: Both channels are a terminal.
+
+    Returns:
+        The provider and the model; the model is "" when left to pick.
+
+    Raises:
+        ConfigError: The value names nothing.
+    """
     raw_route = route
     route = route.strip()
     if not route:
@@ -199,16 +227,21 @@ def _cmd_model(
     effort: str,
     to_repo: bool,
 ) -> int:
-    """Show or set the model + reasoning effort for a role."""
+    """Show or set the model and reasoning effort for a role.
+
+    Args:
+        config_path: The `--config` file, if any.
+        role: `planner`, `worker`, `reviewer` or `all`; None shows the assignments.
+        route: The `[PROVIDER/]MODEL` value; "" prompts or lists.
+        effort: The reasoning effort to set.
+        to_repo: Write to the repo config instead of the global one.
+
+    Returns:
+        The exit code; 2 on a refused value.
+    """
     if not role:
         return _show_assignments(config_path)
-    # `role` is validated by argparse `choices`: planner/worker/reviewer or the
-    # pseudo-role "all" (no config field of that name, it expands to all three).
-    # The route is optional: prompt interactively when blank, prefilling the
-    # provider list from connected providers and the model list from that
-    # provider's live/configured catalog. Interactive means both channels are
-    # a tty: `agent6 model worker openrouter | grep kimi` keeps stdin a tty but
-    # must get the listing, not a prompt buried in the pipe.
+    # Interactive means both channels are a tty: a piped stdout gets the listing, not a prompt.
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     try:
         provider, model = _read_route(config_path, role, route, interactive=interactive)
@@ -217,8 +250,7 @@ def _cmd_model(
         return 2
     if not model and not interactive:
         if effort:
-            # The flag only means something for a set; a silent drop would read
-            # as applied.
+            # The flag only means something for a set; a silent drop would read as applied.
             print("note: --effort ignored (no model named; this is a listing).", file=sys.stderr)
         return _print_catalog(config_path, role, provider)
     if not model:
@@ -235,11 +267,7 @@ def _cmd_model(
     roles: tuple[RoleName, ...] = (
         ("planner", "worker", "reviewer") if role == "all" else (cast("RoleName", role),)
     )
-    # Write through the shared edit path: each [models.<role>] table is persisted,
-    # the merged config re-validated, and the file rolled back if the combination
-    # is invalid, so a bad provider/model never leaves config.toml broken (which
-    # would fail every later command). The roles get identical fields, so the first
-    # rejection rolls back with nothing partially applied.
+    # The shared edit path re-validates and rolls back, so a bad route never breaks config.toml.
     for r in roles:
         err = set_config_table(Path.cwd(), f"models.{r}", fields, to_repo=to_repo)
         if err is not None:

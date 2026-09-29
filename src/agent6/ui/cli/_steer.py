@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Mid-run steering: a SIGINT handler that lets the operator pause the loop
-and inject a one-shot instruction (or abort), plus interactive revised-prompt
-selection. Independent of the run command; run.py wires it in.
-"""
+"""Mid-run steering: the escalating Ctrl-C handler, the /dev/tty writers and the prompt review."""
 
 from __future__ import annotations
 
@@ -44,13 +41,14 @@ from agent6.viewmodel.transcript import scrub_terminal_output
 
 @contextlib.contextmanager
 def idle_prompt_sigint() -> Generator[None]:
-    """Default Ctrl-C for the duration of an idle CLI prompt (ask>, agent6>,
-    the revise_prompt choice). No step is in flight there, so the run's
-    escalating steer handler would lie ("pausing after this step"), PEP 475
-    would retry the interrupted input() (three presses to leave), and the
-    armed stage would open a phantom pause menu on the next question. The
-    escalation applies only while an execution runs; at the prompt one Ctrl-C simply
-    raises."""
+    """Restore the default Ctrl-C for the block, an idle prompt where one press simply raises.
+
+    No step is in flight there, so the escalating handler would lie, PEP 475 would
+    retry the interrupted `input()`, and the armed stage would open a phantom menu.
+
+    Yields:
+        Nothing; the handler is restored after the block.
+    """
     prev = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, signal.default_int_handler)
     try:
@@ -65,12 +63,17 @@ def select_revised_prompt(
     questions: tuple[str, ...],
     console_view: ConsoleView | None = None,
 ) -> str | None:
-    """Interactive accept/original/edit/quit prompt for prompt.revise_prompt;
-    None (quit, Ctrl-C, Ctrl-D) stops the run.
+    """Ask the operator to accept, keep, edit or quit a revised prompt.
 
-    `console_view`, when given, has its heartbeat suspended for the whole
-    exchange (the spinner's per-tick line-erase otherwise wipes the choice
-    prompt and the typed echo while the operator reads the proposal)."""
+    Args:
+        original: The prompt as typed.
+        revised: The model's revision.
+        questions: The model's open questions about the task.
+        console_view: The live view, paused for the exchange.
+
+    Returns:
+        The prompt to run; None (quit, Ctrl-C, Ctrl-D) stops the run.
+    """
     pause = console_view.pause if console_view is not None else contextlib.nullcontext
     with pause():
         return _select_revised_prompt(original, revised, questions)
@@ -81,6 +84,7 @@ def _select_revised_prompt(
     revised: str,
     questions: tuple[str, ...],
 ) -> str | None:
+    """Return the chosen prompt; see `select_revised_prompt`."""
     print("\n[agent6] prompt revision proposed:", file=sys.stderr)
     print("\n--- revised ---", file=sys.stderr)
     print(revised, file=sys.stderr)
@@ -115,10 +119,15 @@ def _select_revised_prompt(
 
 
 def _edit_in_editor(revised: str) -> str | None:
-    """*revised* after one $EDITOR round trip, or None with the reason on
-    stderr for every operator-fixable failure (a choose-again, never a
-    run-killing crash): an unparsable or missing editor, a non-zero exit, a
-    non-UTF-8 or empty save."""
+    """Return the text after one `$EDITOR` round trip.
+
+    Args:
+        revised: The text to edit.
+
+    Returns:
+        The saved text, or None with the reason on stderr for an operator-fixable
+        failure: a missing editor, a non-zero exit, a non-UTF-8 or empty save.
+    """
     argv = editor_argv()
     if argv is None:
         print("[agent6] choose again.", file=sys.stderr)
@@ -157,14 +166,12 @@ def _edit_in_editor(revised: str) -> str | None:
     return None
 
 
-# The controlling terminal, by path: a TUI redirects the std streams to its
-# console log, and the writers below reach the operator past them.
+# The controlling terminal, which the writers below reach past a TUI's stream redirect.
 TTY_PATH = "/dev/tty"
 
 
 def tty_message(text: str) -> None:
-    """Print to the controlling terminal directly, through the same scrubber
-    as stdout."""
+    """Print to the controlling terminal directly, through the same scrubber as stdout."""
     try:
         with open(TTY_PATH, "w", encoding="utf-8") as tty:  # noqa: PTH123
             tty.write(scrub_terminal_output(text))
@@ -182,24 +189,23 @@ def tty_prompt(
     plain: str | None = None,
     until: Callable[[], bool] | None = None,
 ) -> str | None:
-    """Prompt on the controlling terminal directly (see `tty_message`).
-    Falls back to stdin when there is no controlling terminal, unless the
-    caller must never consume piped stdin (`fall_back_to_stdin=False`:
-    return None); the fallback prints `plain` when given (the text without
-    terminal escapes, since stdout may be a pipe). `until` is polled while
-    the prompt waits: once it holds, the prompt ends with None and a partly
-    typed line is discarded (the answer arrived by another route)."""
+    """Prompt on the controlling terminal directly, like `tty_message`.
+
+    Args:
+        text: The prompt.
+        fall_back_to_stdin: Prompt on stdin without a controlling terminal; False
+            returns None instead, for a caller that must never consume piped stdin.
+        plain: The prompt without terminal escapes, for the stdin fallback.
+        until: Polled while the prompt waits; once it holds, a partly typed line is
+            discarded and the prompt ends.
+
+    Returns:
+        The line, or None: no terminal, EOF, or `until` held.
+    """
     try:
-        # The getpass recipe: O_RDWR on the device + an unbuffered FileIO.
-        # A plain open("/dev/tty", "r+") never works (buffered update mode
-        # requires a seekable stream, and a tty is not), leaving every
-        # /dev/tty prompt on the stdin fallback, or with no answer at all
-        # where there is no fallback.
+        # The getpass recipe: a buffered "r+" open needs a seekable stream, which a tty is not.
         fd = os.open(TTY_PATH, os.O_RDWR | os.O_NOCTTY)
-        # Discard type-ahead before prompting (the sudo/ssh rule): text typed
-        # before this prompt existed was aimed at something else: a
-        # pause-menu command typed during the "pausing after this step" window
-        # must not ride into a run_command [y/N/a/d] approval as its answer.
+        # Type-ahead was aimed at something else: a menu command must not answer an approval.
         with contextlib.suppress(Exception):
             termios.tcflush(fd, termios.TCIFLUSH)
         tty = io.TextIOWrapper(
@@ -227,15 +233,12 @@ def tty_prompt(
                 tty.write("\n")
             return line
     except OSError:
-        # The terminal vanished mid-prompt; the text already printed, so do
-        # not prompt again on stdin.
+        # The terminal vanished mid-prompt; the text already printed, so no stdin retry.
         return None
 
 
 def format_session_facts(facts: SessionFacts) -> str:
-    """The one-line status the pause banner and Ctrl-Z print: the few things a
-    CLI operator cannot otherwise see (a TUI/web viewer has widgets for them).
-    Spend first: it decides whether to interrupt now."""
+    """Return the one-line status the pause banner and Ctrl-Z print, spend first."""
     return (
         f"{format_usd(facts.spend_usd, partial=facts.spend_partial)}"
         f" · {facts.model} · commands {facts.run_commands} · {facts.isolation}"
@@ -243,8 +246,7 @@ def format_session_facts(facts: SessionFacts) -> str:
 
 
 def _status_suffix(session_facts: Callable[[], SessionFacts] | None) -> str:
-    """The indented status line under the pause banner, or nothing when the
-    lifecycle passed no facts (a detached execution has no terminal anyway)."""
+    """Return the indented status line under the pause banner, or "" without facts."""
     if session_facts is None:
         return ""
     return f"          {format_session_facts(session_facts())}\n"
@@ -258,19 +260,25 @@ _JOB_CONTROL_HINT = (
 def _install_status_signal(
     state: dict[str, Any], session_facts: Callable[[], SessionFacts] | None
 ) -> Any:
-    """Ctrl-Z: print the run's state, and stand a pause that has not opened its
-    menu back down, so checking on a run never costs it a step. Replaces
-    SIGTSTP's default: a suspended agent freezes its live provider stream, which
-    the server then kills mid-response, corrupting the run rather than pausing
-    it. The printed hint names the alternative."""
+    """Install the Ctrl-Z handler: print the run's state and stand down an unopened pause.
+
+    It replaces SIGTSTP's default: a suspended agent's live provider stream is killed
+    mid-response by the server, corrupting the run rather than pausing it.
+
+    Args:
+        state: The ladder's shared stage dict.
+        session_facts: Reads the facts the status line prints.
+
+    Returns:
+        The previous handler, or None where the signal does not exist.
+    """
     if not hasattr(signal, "SIGTSTP"):
         return None
 
     def _handler(_signum: int, _frame: Any) -> None:
+        """Print the status and cancel a pause whose menu has not opened."""
         line = _status_suffix(session_facts).strip() or "no live facts for this execution"
-        # An open pause menu stands on stage 1 (its action is the steer answer
-        # the next boundary consumes while requested() holds); only a pause
-        # that has not opened its menu is stood down.
+        # An open menu stands on stage 1: its action is the next boundary's answer.
         if state["stage"] == 1 and not state["prompting"]:
             state["stage"] = 0
             tty_message(
@@ -283,7 +291,7 @@ def _install_status_signal(
     return signal.signal(signal.SIGTSTP, _handler)
 
 
-def install_steer_sigint(  # noqa: C901, PLR0915 - a closure factory over one shared stage dict  # the SIGINT ladder's stages, in order
+def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one shared stage dict
     events: EventSink,
     session_dir: Path,
     console_view: ConsoleView | None = None,
@@ -291,37 +299,34 @@ def install_steer_sigint(  # noqa: C901, PLR0915 - a closure factory over one sh
     btw_runner: BtwRunner | None = None,
     config_path: Path | None = None,
 ) -> SteerState:
-    """Install a SIGINT handler with escalating stages.
+    """Install the escalating SIGINT handler and return the harness's steer callables.
 
-    * 1st Ctrl-C: pause at the next safe boundary (between steps; the
-      in-flight model call finishes first). Emits `session.steer_requested`;
-      the prompt is a TUI modal when the TUI is live, otherwise the
-      interactive pause menu; with redirected std streams the menu cannot
-      own the line, so a plain prompt goes to the controlling terminal
-      (`/dev/tty`) instead.
-    * 2nd Ctrl-C: interrupt the in-flight model call and prompt now.
-    * 3rd Ctrl-C (or Ctrl-C at the pause prompt itself): KeyboardInterrupt,
-      stopping the run (resumable with `agent6 resume`).
-    * Ctrl-Z prints the same one-line status without arming anything, and
-      cancels a pause that has not opened its menu, so checking on a run costs
-      it nothing. It also replaces SIGTSTP's default: a suspended agent freezes
-      its live provider stream, which the server then kills mid-response, so a
-      real suspend would corrupt the run rather than pause it. The hint it
-      prints names /detach as the way to step away.
+    The first Ctrl-C pauses at the next boundary and emits `session.steer_requested`;
+    the prompt is a front-end's modal when one is live, else the pause menu, else a
+    plain prompt on the controlling terminal. The second interrupts the in-flight
+    call and prompts now. The third, or one at the prompt itself, stops the run.
+    Ctrl-Z prints the status and cancels an unopened pause (`_install_status_signal`).
 
-    `console_view`, when given, has its heartbeat spinner suspended for the
-    prompt's duration: the spinner's per-tick line-erase otherwise wipes the
-    pause-menu line and its Tab preview.
+    Args:
+        events: Where the request is journaled.
+        session_dir: The run's dir, holding the steer files.
+        console_view: The live view, paused for the prompt.
+        session_facts: Reads the facts the pause banner prints.
+        btw_runner: Starts a btw for the menu.
+        config_path: The invocation's `--config`.
 
-    Returns callables for the harness plus a `restore` hook to put the
-    previous handler back when the run is done.
+    Returns:
+        The steer state; its `restore` puts the previous handlers back.
     """
     state: dict[str, Any] = {"stage": 0, "prompting": False}
 
     def _handler(_signum: int, _frame: Any) -> None:
-        # A boundary can be a whole model response away (a reasoning model may
-        # think for 30-60s), hence the escalation; at the pause prompt itself a
-        # Ctrl-C stops the run, as the pause banner promised.
+        """Climb one stage.
+
+        Raises:
+            KeyboardInterrupt: At the prompt, or past stage two: the run stops.
+        """
+        # A boundary can be a whole model response away, hence the escalation.
         if state["prompting"] or state["stage"] >= 2:
             raise KeyboardInterrupt
         if state["stage"] == 1:
@@ -330,15 +335,11 @@ def install_steer_sigint(  # noqa: C901, PLR0915 - a closure factory over one sh
                 tty_message("\n[agent6] interrupting this step. Ctrl-C again to stop the run.\n")
             return
         state["stage"] = 1
-        # Drop a stale answer file (one without a request marker) so it is not
-        # instantly consumed as this new prompt's answer. An answer with a
-        # pending request is a live front-end steer the loop has not consumed
-        # yet; deleting it would silently discard the operator's instruction.
+        # A stale answer file would answer this prompt; one with a pending request is a live steer.
         if not steer_request_pending(session_dir):
             clear_steer_answer(session_dir)
         events.emit("session.steer_requested", source="sigint")
-        # With the TUI up, the steer prompt is a modal, don't scribble on the
-        # terminal it owns. Otherwise tell the user a prompt is coming.
+        # A live front-end prompts in its own modal; its terminal is not scribbled on.
         if not frontend_is_live(session_dir):
             tty_message(
                 "\n[agent6] pausing after this step: Enter continues, type to steer,"
@@ -350,38 +351,27 @@ def install_steer_sigint(  # noqa: C901, PLR0915 - a closure factory over one sh
     previous_tstp = _install_status_signal(state, session_facts)
 
     def requested() -> bool:
-        # Either a Ctrl-C (any stage) or a front-end steer request marker.
+        """Return whether a Ctrl-C or a front-end's request marker asks for a pause."""
         return state["stage"] >= 1 or steer_request_pending(session_dir)
 
     def interrupt() -> bool:
-        # A double Ctrl-C aborts the in-flight call; so does a front-end steer
-        # carrying the `now` urgency (`steer --now`). A plain steer waits for
-        # the boundary: aborting wastes the streamed tokens and the step's
-        # partial work.
+        """Return whether the in-flight call is to be aborted: a double Ctrl-C or `steer --now`."""
         return state["stage"] >= 2 or steer_interrupt_pending(session_dir)
 
     def clear() -> None:
+        """Reset the stage and the steer files."""
         state["stage"] = 0
         clear_steer_answer(session_dir)
         clear_steer_request(session_dir)
 
     def prompt() -> str | None:
-        # An answer already on disk (a `resume --steer` seed, the end-of-session
-        # follow-up, a front-end's answer that landed first) is the steer: the
-        # terminal menu is for an unanswered request only.
+        """Return the steer: an answer already on disk, a front-end's, or the terminal's."""
         seeded = take_steer_answer(session_dir)
         if seeded is not None:
             return seeded
-        # TUI live: the user answers a modal; read its file-bridge result.
         if frontend_is_live(session_dir):
             answer = read_steer_answer(session_dir)
-            # A dismissed/abandoned modal yields None (read_steer_answer timed out
-            # or the TUI died). Clear the request marker on this no-answer path so a
-            # persisting `steer.request` cannot re-trigger another 600s blocking
-            # read at the very next boundary, looping the run. A genuinely-answered
-            # steer leaves clearing to the caller's clear() (with the answer already
-            # consumed). The SIGINT stage is also cleared so a stale Ctrl-C request
-            # doesn't immediately re-arm the same dead prompt.
+            # An abandoned modal: a persisting request would block again at the next boundary.
             if answer is None:
                 state["stage"] = 0
                 clear_steer_request(session_dir)
@@ -389,20 +379,18 @@ def install_steer_sigint(  # noqa: C901, PLR0915 - a closure factory over one sh
         return _menu()
 
     def _menu() -> str | None:
+        """Return the terminal's answer: the menu where termios owns the line, else a plain one."""
         pause = console_view.pause if console_view is not None else contextlib.nullcontext
         state["prompting"] = True
         try:
             with pause():
                 if menu_capable():
-                    # The interactive pause menu: line editing, history, and a
-                    # fish-style Tab preview of the slash commands.
                     return pause_menu(session_dir, btw_runner=btw_runner, config_path=config_path)
                 typed = tty_prompt(
                     "[agent6] paused: [enter] continue · type to steer · /stop · /exit · /detach: ",
                     until=lambda: steer_answer_written(session_dir),
                 )
                 if typed is None and steer_answer_written(session_dir):
-                    # A front-end's steer landed while the prompt waited.
                     tty_message("[agent6] a steer arrived from a front-end; taking it\n")
                     return take_steer_answer(session_dir)
                 return pause_line(
@@ -412,25 +400,25 @@ def install_steer_sigint(  # noqa: C901, PLR0915 - a closure factory over one sh
             state["prompting"] = False
 
     def armed() -> bool:
+        """Return whether a pause is armed."""
         return state["stage"] >= 1
 
     def prompt_now() -> None:
-        """The pause menu right after an operator prompt's answer (an operator
-        prompt counts as a boundary): the action seeds the steer answer the
-        next between-steps boundary consumes without re-prompting; an empty
-        action (continue) disarms instead."""
+        """Open the menu right after an operator prompt's answer, which counts as a boundary.
+
+        The action seeds the answer the next boundary consumes; an empty one disarms.
+        """
         action = _menu()
         if action is None or not action.strip():
             state["stage"] = 0
             return
-        # The request marker, not the in-memory stage, keeps the action
-        # alive: requested() survives a Ctrl-Z, and the next Ctrl-C does not
-        # drop it as a stale answer.
+        # The request marker keeps the action alive across a Ctrl-Z and the next Ctrl-C.
         if not submit_steer(session_dir, action):
             state["stage"] = 0
             tty_message("[agent6] could not write the steer request\n")
 
     def restore() -> None:
+        """Put the previous SIGINT and SIGTSTP handlers back."""
         with contextlib.suppress(Exception):
             signal.signal(signal.SIGINT, previous)
         if previous_tstp is not None:
@@ -438,6 +426,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915 - a closure factory over one sh
                 signal.signal(signal.SIGTSTP, previous_tstp)
 
     def reset_stage() -> None:
+        """Disarm without touching the steer files."""
         state["stage"] = 0
 
     return SteerState(
@@ -461,9 +450,16 @@ def make_steer_state(
     btw_runner: BtwRunner | None = None,
     config_path: Path | None = None,
 ) -> SteerState:
-    """Install the steer SIGINT handler when a controlling terminal exists
-    (covers run/plan/ask with or without the TUI); else steer purely over the
-    front-end file bridge (detached runs)."""
+    """Return the steer state: the SIGINT ladder with a controlling terminal, else the file bridge.
+
+    Args:
+        events: Where the request is journaled.
+        session_dir: The run's dir.
+        console_view: The live view, paused for the prompt.
+        session_facts: Reads the facts the pause banner prints.
+        btw_runner: Starts a btw for the menu.
+        config_path: The invocation's `--config`.
+    """
     try:
         with open("/dev/tty", encoding="utf-8"):  # noqa: PTH123
             pass

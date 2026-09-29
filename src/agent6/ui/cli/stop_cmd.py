@@ -15,6 +15,16 @@ from agent6.viewmodel import session_dirs, session_is_live
 
 
 def _cmd_stop(session_id: str, *, all_sessions: bool, after_step: bool) -> int:
+    """Stop a session, or every live one.
+
+    Args:
+        session_id: The session, or "" for the newest.
+        all_sessions: Stop every live session instead.
+        after_step: Stop at the end of the current step rather than now.
+
+    Returns:
+        The exit code: 1 when a stop failed, 2 when the session could not be resolved.
+    """
     cwd = Path.cwd()
     if all_sessions:
         targets = [d for d in session_dirs(state_dir(cwd)) if session_is_live(d)]

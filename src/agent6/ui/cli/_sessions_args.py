@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parser builder for `sessions` and its subcommands: list this repo's sessions,
-or inspect one (show/diff/merge/compare/review/commits/prune/transcript/graph)."""
+"""Build the `sessions` parser and its subcommands."""
 
 from __future__ import annotations
 
@@ -12,6 +11,7 @@ from agent6.ui.cli.completers import _complete_model_routes, _complete_session_i
 
 
 def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `sessions`; a bare `sessions` is `sessions list`."""
     sessions_p = _sub(
         sub,
         "sessions",
@@ -23,7 +23,6 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " to follow a live session."
         ),
     )
-    # A bare `sessions` is `sessions list` (parser._DEFAULT_VERBS).
     sessions_sub = sessions_p.add_subparsers(
         dest="sessions_command", required=True, metavar="<subcommand>"
     )

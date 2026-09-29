@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 mcp connect`, add an MCP server after proving it works.
+"""`agent6 mcp connect`: add an MCP server after proving it works.
 
-The order is the whole point: handshake, list the tools, show them, and only
-then write config. A server named in config that turns out not to answer is a
-run that starts, logs "failed to start", and quietly has fewer tools than the
-operator thinks, discovered mid-task if at all.
+The order is the point: handshake, list the tools, show them, and only then write
+config. A server named in config that does not answer is a run that starts, logs
+"failed to start", and quietly has fewer tools than the operator thinks.
 
-Nothing the server returns is ever executed. Its tool names and descriptions
-are printed as text and stored nowhere.
+Nothing the server returns is ever executed. Its tool names and descriptions are printed
+as text and stored nowhere.
 """
 
 from __future__ import annotations
@@ -37,14 +36,16 @@ from agent6.sandbox.jail import JailUnavailableError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec, MCPToolDescriptor, tool_count
 from agent6.ui.cli._common import error, warn
 
-# Long enough for a cold `npx` to fetch and boot a server, which is the slow
-# case an operator actually hits; the per-run default stays 10s.
+# Long enough for a cold `npx` to fetch and boot a server; the per-run default stays 10s.
 _CONNECT_TIMEOUT_S = 60.0
 
 
 def _probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
-    """Start the server as a run does, take its tool list, stop it. Returns
-    (tools, failure)."""
+    """Start the server as a run does, take its tool list, stop it.
+
+    Returns:
+        The tools and the failure text; one of them is empty.
+    """
     manager = MCPManager.start([spec])
     try:
         return manager.descriptors(), manager.failures[0].error if manager.failures else ""
@@ -55,9 +56,19 @@ def _probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
 def _refuse_bad_flags(
     *, name: str, command: list[str], url: str, token_env: str, pass_env: list[str], cfg: Config
 ) -> str:
-    """Why this invocation cannot be acted on, or "". Each transport owns one
-    env flag, so the wrong pairing is a mistake worth naming rather than a
-    setting that silently does nothing."""
+    """Return why this invocation cannot be acted on, or "".
+
+    Each transport owns one env flag, so the wrong pairing is named rather than silently
+    ignored.
+
+    Args:
+        name: The server name.
+        command: The stdio command.
+        url: The HTTP URL.
+        token_env: The `--token-env` flag.
+        pass_env: The `--pass-env` names.
+        cfg: The effective config.
+    """
     if bool(command) == bool(url):
         return (
             "give exactly one of a command to spawn or --url to connect to.\n"
@@ -76,9 +87,7 @@ def _refuse_bad_flags(
     keys = {str(getattr(e, "api_key_env", "")) for e in cfg.providers.values()} - {""}
     leaked = sorted(keys.intersection(pass_env))
     if leaked:
-        # An MCP server is third-party code running as the operator. A provider
-        # key is the one thing agent6 keeps out of every child it spawns, and
-        # `--pass-env` is the only way to hand one over by name.
+        # A provider key stays out of every child agent6 spawns; `--pass-env` would hand one over.
         return (
             f"{', '.join(leaked)} holds a provider API key; agent6 does not pass one"
             " to an MCP server.\n"
@@ -88,11 +97,14 @@ def _refuse_bad_flags(
 
 
 def _cleartext_token_go_ahead(url: str, token_env: str) -> bool:
-    """True to proceed past the plaintext-non-loopback confirmation.
+    """Return whether to proceed past the plaintext non-loopback confirmation.
 
-    Explicit-but-discouraged config, so the cost is named and never refused (an
-    internal-network or VPN endpoint is a real case): interactive asks, default
-    no; headless warns and proceeds.
+    Explicit but discouraged, so the cost is named and never refused (an internal-network or
+    VPN endpoint is a real case): interactive asks, default no; headless warns and proceeds.
+
+    Args:
+        url: The server URL.
+        token_env: The variable holding the token.
     """
     if not (token_env and is_cleartext_url(url) and not is_loopback_url(url)):
         return True
@@ -106,6 +118,7 @@ def _cleartext_token_go_ahead(url: str, token_env: str) -> bool:
 
 
 def _describe(spec: MCPServerSpec) -> str:
+    """Return the server's transport and target as one phrase."""
     if spec.http is not None:
         return f"connecting to {spec.http.url}"
     return f"spawning {shlex.join(spec.command)}"
@@ -114,8 +127,17 @@ def _describe(spec: MCPServerSpec) -> str:
 def _report_no_answer(
     name: str, command: list[str], isolation: IsolationLevel, failure: str
 ) -> None:
-    """The failure and the one hint that applies: a binary missing on the
-    host needs no sandbox grant; one present here but not in the jail does."""
+    """Print the failure and the one hint that applies.
+
+    A binary missing on the host needs no sandbox grant; one present here but not in the
+    jail does.
+
+    Args:
+        name: The server name.
+        command: The stdio command.
+        isolation: The isolation the probe ran under.
+        failure: The probe's failure text.
+    """
     error(f"{name} did not answer: {failure}")
     if command and shutil.which(command[0]) is None:
         head = command[0]
@@ -147,7 +169,20 @@ def cmd_mcp_connect(
     to_repo: bool,
     config_path: Path | None = None,
 ) -> int:
-    """Prove the server answers, then write it into config. Returns an exit code."""
+    """Prove the server answers, then write it into config.
+
+    Args:
+        name: The server name, a TOML table header.
+        command: The stdio command, or empty for HTTP.
+        url: The HTTP URL, or "" for stdio.
+        token_env: The variable holding the bearer token.
+        pass_env: The variables the server receives by name.
+        to_repo: Write to the repo config instead of the global one.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The exit code; 2 on a refusal or a server that gave no proof.
+    """
     effective = load_effective(Path.cwd(), config_path)
     cfg = effective.config
     refusal = _refuse_bad_flags(
@@ -171,10 +206,7 @@ def cmd_mcp_connect(
             }
         )
     except ValidationError as exc:
-        # These are operator flag values, and the entry's own rules (the URL
-        # shape above all: a dropped scheme is the likeliest typo here) live
-        # in the model, and reach the operator as one line each rather than a
-        # pydantic dump with a saved traceback.
+        # The entry's own rules (the URL shape above all) reach the operator as one line each.
         detail = "; ".join(
             f"{'.'.join(str(part) for part in issue['loc']) or 'entry'}: {issue['msg']}"
             for issue in exc.errors()
@@ -184,18 +216,14 @@ def cmd_mcp_connect(
     env = detect_env()
     isolation = resolve_isolation(cfg.sandbox.isolation, env)
     if command and isolation == "none":
-        # No jail means no read-only workspace to probe under, and a probe
-        # never runs a server unconfined in the repository: the entry is
-        # written unproved, said out loud.
+        # No jail, no read-only workspace to probe under: the entry is written unproved, said so.
         warn(f"{name} not probed: no jail ({no_jail_cause(cfg, env)}); a run starts it unconfined.")
     else:
         rc = _prove(cfg, name, entry, isolation)
         if rc is not None:
             return rc
 
-    # Values, not TOML text: `format_toml_value` serializes each one, so a
-    # list stays a list. A pre-quoted string would write an argv as one long
-    # string, which validates as a tuple of characters.
+    # Values, not TOML text: a pre-quoted argv would validate as a tuple of characters.
     fields: dict[str, ConfigLeafValue] = {"enabled": True}
     if command:
         fields["command"] = command
@@ -210,16 +238,26 @@ def cmd_mcp_connect(
         error(f"{written}")
         return 2
     print(f"\n{_written_line(effective, name, to_repo)}")
-    # The master switch is separate and off by default, so say so rather than
-    # flipping a security-relevant default on the operator's behalf.
+    # The master switch is a security default: named, never flipped on the operator's behalf.
     print(f"enable MCP for runs with:  {_enable_command(to_repo)}")
     return 0
 
 
 def _prove(cfg: Config, name: str, entry: MCPServerEntry, isolation: IsolationLevel) -> int | None:
-    """Start the server as a run would (its sandbox, the workspace bound
-    read-only: a probe never writes the repository) and print its tools; the
-    exit code when it gave no proof, else None."""
+    """Start the server as a run would and print its tools.
+
+    The probe runs under the run's sandbox with the workspace bound read-only; a probe
+    never writes the repository.
+
+    Args:
+        cfg: The effective config.
+        name: The server name.
+        entry: The config entry.
+        isolation: The isolation to probe under.
+
+    Returns:
+        The exit code when the server gave no proof, else None.
+    """
     try:
         spec = mcp_server_spec(cfg, Path.cwd(), isolation, name, entry, readonly=True)
     except JailUnavailableError as exc:
@@ -235,21 +273,19 @@ def _prove(cfg: Config, name: str, entry: MCPServerEntry, isolation: IsolationLe
         return 1
     print(f"\n{name}: {tool_count(len(tools))}")
     for tool in tools:
-        # The server chose this text. Collapsing whitespace stops a forged
-        # extra line; dropping the other control characters stops ESC
-        # sequences repainting the operator's terminal.
+        # Server-chosen text: no forged extra line, no ESC sequence repainting the terminal.
         summary = "".join(c for c in " ".join(tool.description.split()) if c.isprintable())[:80]
         print(f"  mcp__{name}__{tool.tool_name}{'  ' + summary if summary else ''}")
     return None
 
 
 def _repo_flag(to_repo: bool) -> str:
-    """The `--repo ` a command line needs to target the repo config, or ""."""
+    """Return the `--repo ` a command line needs to target the repo config, or ""."""
     return "--repo " if to_repo else ""
 
 
 def _layers_holding(effective: EffectiveConfig, name: str) -> set[str]:
-    """The config layers whose own file declares `[mcp.servers.<name>]`."""
+    """Return the config layers whose own file declares `[mcp.servers.<name>]`."""
     return {
         layer.name
         for layer in effective.layers
@@ -258,8 +294,10 @@ def _layers_holding(effective: EffectiveConfig, name: str) -> set[str]:
 
 
 def _written_line(effective: EffectiveConfig, name: str, to_repo: bool) -> str:
-    """Where the entry went, and what that means beside an entry the other
-    layer holds: the repo layer wins over the global one."""
+    """Return where the entry went, and what that means beside the other layer's entry.
+
+    The repo layer wins over the global one.
+    """
     holders = _layers_holding(effective, name)
     target, other = ("repo", "global") if to_repo else ("global", "repo")
     if target in holders:
@@ -274,15 +312,24 @@ def _written_line(effective: EffectiveConfig, name: str, to_repo: bool) -> str:
 
 
 def _enable_command(to_repo: bool) -> str:
+    """Return the command that flips `[mcp].enabled` on the layer the entry went to."""
     return f"agent6 config set {_repo_flag(to_repo)}mcp.enabled true"
 
 
 def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None = None) -> int:
     """Drop `[mcp.servers.<name>]` from the global (or `--repo`) config.
 
-    The inverse of `connect`, and the only way to drop a server: the entry is a
-    table rather than a leaf, so `config unset` cannot name it, and unsetting
-    its `command`/`url` is refused because an entry needs exactly one of them.
+    The inverse of `connect`, and the only way to drop a server: the entry is a table, so
+    `config unset` cannot name it, and unsetting its `command` or `url` is refused because
+    an entry needs exactly one of them.
+
+    Args:
+        name: The server name.
+        to_repo: Edit the repo config instead of the global one.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The exit code; 2 when the layer does not hold the entry.
     """
     effective = load_effective(Path.cwd(), config_path)
     holders = _layers_holding(effective, name)
@@ -300,9 +347,7 @@ def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None
         error(f"removing {name} left an invalid config:\n{res.error}")
         return 2
     if not res.removed:
-        # The layer declares it, but not as a `[mcp.servers.<name>]` header the
-        # line surgery can delete (a dotted key, an inline table), so the entry
-        # is still live and the operator is told so.
+        # A dotted key or inline table the line surgery cannot delete: still live, and said so.
         path = repo_config_path(Path.cwd()) if to_repo else global_config_path()
         error(
             f"{name} is not written as a [mcp.servers.{name}] table in {path};"
@@ -317,16 +362,20 @@ def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None
 
 
 def cmd_mcp_list(config_path: Path | None = None) -> int:
-    """The configured servers and how each is reached. Reads config only: it
-    never starts anything, so it answers instantly and says nothing about
-    whether a server currently works (`agent6 check mcp` does that)."""
+    """Print the configured servers and how each is reached.
+
+    Reads config only: it never starts anything, so it says nothing about whether a server
+    currently works (`agent6 check mcp` does that).
+
+    Returns:
+        The exit code, 0.
+    """
     effective = load_effective(Path.cwd(), config_path)
     cfg = effective.config
     if not cfg.mcp.servers:
         print("no MCP servers configured. Add one with `agent6 mcp connect <name> ...`.")
         return 0
-    # The switch goes where the servers are: a repo-only setup is enabled
-    # for this repository, never for every repository on the machine.
+    # The switch goes where the servers are: a repo-only setup never enables every repository.
     layers = {
         layer
         for leaf, layer in effective.sources.items()

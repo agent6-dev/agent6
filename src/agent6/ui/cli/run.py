@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 run` (and its plan/ask modes): adapt argv, build the config and the
-presentation seam, and hand the lifecycle to `agent6.app.run.run_task`."""
+"""`agent6 run`, `plan` and `ask`: adapt argv, build the config and the presentation seam.
+
+The lifecycle is `agent6.app.run.run_task`.
+"""
 
 from __future__ import annotations
 
@@ -72,7 +74,7 @@ from agent6.viewmodel import session_policy
 
 
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
-    """Resolve `--skill` names to a task-prompt prefix. Returns (prefix, error)."""
+    """Return the task-prompt prefix for the `--skill` names, and an error text or ""."""
     resolved = operator_skills(
         cfg.skills.enabled, cfg.skills.extra_dirs, cfg.skills.state, data_dir() / "skills"
     )
@@ -97,42 +99,45 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
 
 
 def _remember_steer(cell: list[SteerState | None], state: SteerState) -> SteerState:
-    """Publish the execution's SteerState for the approver's late-bound read."""
+    """Publish the execution's steer state for the approver's late-bound read.
+
+    Returns:
+        The state, unchanged.
+    """
     cell[0] = state
     return state
 
 
 def session_frontend(config_path: Path | None = None) -> SessionFrontend:
-    """Build the presentation seam `app.run.run_task` / `app.resume.resume_task`
-    drive: one per invocation (the console-view cell is run-scoped). The console
-    view is created lazily on `attach_console_view`; the builders that need it
-    close over its cell, so the lifecycle never holds a UI type. The lifecycle
-    owns egress (`app.egress`) itself; only the two exe-spawn primitives it
-    can't reach (`ui.spawn`) are injected."""
-    # Both late-bound: the lifecycle builds the approver and questioner before
-    # the execution attaches the console view or the steer state exists; they read
-    # the cells at prompt time (an operator prompt pauses the view's heartbeat
-    # and counts as a Ctrl-C boundary, see build_approver).
+    """Return the presentation seam the run and resume lifecycles drive.
+
+    One per invocation: the console-view cell is run-scoped. The console view is created
+    lazily on `attach_console_view`, and the builders that need it close over its cell, so
+    the lifecycle never holds a UI type. The lifecycle owns egress itself; only the two
+    exe-spawn primitives it cannot reach (`ui.spawn`) are injected.
+
+    Args:
+        config_path: The `--config` file, if any.
+    """
+    # Late-bound: the approver and questioner are built before the view or steer state exists.
     console_cell: list[ConsoleView | None] = [None]
     steer_cell: list[SteerState | None] = [None]
 
     def attach_console_view(events: EventSink) -> None:
-        # The sink writes into the run dir, so its path is the handle to the
-        # run's policy facts without threading the layout through the protocol.
+        """Create the console view on the run's event sink."""
+        # The sink's path is the handle to the run dir, so the layout need not cross the protocol.
         view = ConsoleView(sys.stderr, policy=lambda: session_policy(events.path.parent).line())
         console_cell[0] = view
         events.subscribe(view)
 
     def close_console_view() -> None:
+        """Close the console view, if one was attached."""
         view = console_cell[0]
         if view is not None:
             view.close()
 
     return SessionFrontend(
-        # The CLI is the surface with a terminal: it can do everything. Asking a
-        # human with no tty and no away-mode is the lifecycle's own preflight
-        # refusal, not a missing capability. The CLI asks on the terminal, so a
-        # pipe for stdin means it cannot.
+        # The CLI asks on the terminal, so a piped stdin means it cannot ask.
         capabilities=FrontendCapabilities(can_ask=sys.stdin.isatty()),
         should_spawn_tui=lambda tui, interactive, mode: should_spawn_tui(
             tui=tui, interactive=interactive, mode=mode
@@ -151,9 +156,7 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
                 session_dir,
                 console_cell[0],
                 facts,
-                # `/btw` spawns beside the run. `direct_launch` is right here: the
-                # CLI process is the one with a terminal, so it is not the confined
-                # coordinator a `/parallel` lane has to escape from.
+                # The CLI has a terminal, so `/btw` launches directly, unlike a confined lane.
                 make_btw_runner(
                     session_dir.name,
                     launch=direct_launch,
@@ -219,8 +222,12 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
 
 @dataclass(frozen=True, slots=True)
 class ComposedTask:
-    """The prompt a session starts from, and the session `--from` seeded it
-    from ("" when none)."""
+    """The prompt a session starts from.
+
+    Attributes:
+        text: The prompt.
+        source_session_id: The session `--from` seeded it from, or "".
+    """
 
     text: str
     source_session_id: str = ""
@@ -229,13 +236,23 @@ class ComposedTask:
 def _compose_task(
     task: str, cfg: Config, *, skills: tuple[str, ...], seed_from: str
 ) -> ComposedTask:
-    """The prompt the session starts from; raises OperatorError when a skill
-    or the seed cannot be resolved.
+    """Assemble the prompt the session starts from.
 
-    One place assembles it: the skills prefix, then another session's context
-    when `--from` seeds this one. `--from` starts a new session and leaves the
-    source untouched; `fork` is the verb that keeps a session's mode, while this
-    takes the mode from the command the operator typed.
+    The skills prefix, then another session's context when `--from` seeds this one.
+    `--from` starts a new session and leaves the source untouched; `fork` keeps a session's
+    mode, while this takes the mode from the command the operator typed.
+
+    Args:
+        task: The task as typed.
+        cfg: The effective config.
+        skills: The `--skill` names.
+        seed_from: The `--from` session, or "".
+
+    Returns:
+        The composed task.
+
+    Raises:
+        OperatorError: A skill or the seed cannot be resolved.
     """
     if skills:
         prefix, skills_err = _skills_task_prefix(cfg, skills)
@@ -270,13 +287,35 @@ def _cmd_run(
     pins: tuple[str, ...] = (),
     model: str = "",
 ) -> int:
-    """Adapt `agent6 run`/`plan`/`ask` argv: build the effective config, apply
-    the flag overrides, resolve skills and @file refs, route `--parallel`,
-    then drive the lifecycle (`app.run.run_task`) with the injected seam."""
-    # The not-a-git-repo wall first: run/plan need git; ask is read-only and
-    # may run outside a repo. A user in a scratch non-git dir must not clear
-    # the provider, model, and key walls serially only to discover at the end
-    # that they also need git.
+    """Adapt `agent6 run`, `plan` and `ask` argv and drive the lifecycle.
+
+    Builds the effective config, applies the flag overrides, resolves skills and `@file`
+    references, routes `--parallel`, then hands off to `app.run.run_task` with the
+    injected seam.
+
+    Args:
+        config_path: The `--config` file, if any.
+        task: The task as typed.
+        session_id: A session id to use; "" allocates one.
+        interactive: Stay attached for a conversation.
+        tui: Open the dashboard.
+        decompose: Plan first, overriding config.
+        mode: `run`, `plan` or `ask`.
+        seed_from: The `--from` session, or "".
+        source_session_id: The lineage to record when not seeded.
+        skills: The `--skill` names.
+        budget_overrides: The budget flags.
+        sandbox_overrides: The sandbox flags.
+        preset: The `--preset` name.
+        parallel_spec: The `--parallel` lane spec, or "".
+        standing_goal: The `--standing` goal, or "".
+        pins: The pinned session ids.
+        model: The `--model` override.
+
+    Returns:
+        The exit code; 2 on a refusal.
+    """
+    # The git wall first, so a scratch dir does not clear every other wall before hitting it.
     if mode != "ask" and not require_git_repo(Path.cwd()):
         return 2
     effective = load_session_config(
@@ -289,7 +328,7 @@ def _cmd_run(
         model=model,
     )
     cfg, explicit_leaves = effective.config, effective.explicit_leaves
-    if decompose:  # --decompose: plan-first for this run (overrides config)
+    if decompose:
         cfg = cfg.with_decompose("on")
     try:
         composed = _compose_task(task, cfg, skills=skills, seed_from=seed_from)
@@ -300,15 +339,10 @@ def _cmd_run(
     source_session_id = composed.source_session_id or source_session_id
     role = session_kind(mode).role
 
-    # Resolve @path references in the task string before the
-    # harness ever sees it. Lets the user write "fix the bug in @src/x.py
-    # described in @notes.md" and have those files inlined verbatim.
+    # `@path` references inline the files verbatim before the harness sees the task.
     task = expand_task_file_refs(task, Path.cwd())
 
-    # `--parallel`: fan out isolated lanes instead of a single run. Routed here,
-    # after config/skills/require_runnable, but before the single-run preflight
-    # (no branch cut, no run dir on the origin); the orchestrator clones each
-    # lane and runs its own `agent6 run`. run mode only.
+    # `--parallel` routes after the config walls and before the single-run preflight; run mode only.
     if parallel_spec and mode == "run":
         # Depth 1: a subordinate lane (AGENT6_SUBRUN) must never itself fan out.
         if os.environ.get("AGENT6_SUBRUN"):
@@ -316,9 +350,7 @@ def _cmd_run(
                 "--parallel is unavailable inside a subordinate run (parallel dispatch is depth 1)."
             )
             return 2
-        # The route preflight run_task owns, here so the fan-out refuses before
-        # cloning and its --max-usd check reads the listing the key check
-        # refreshed; each lane's own `agent6 run` repeats it (a TTL-cache hit).
+        # run_task's route preflight, early so the fan-out refuses before cloning.
         if not route_preflight(cfg, role, reporter=STDIO_REPORTER, model_flag=model):
             return 2
         return dispatch_parallel(

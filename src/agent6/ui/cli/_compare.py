@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""CLI adapter over the shared ranking core (`agent6.app.compare`).
+"""The CLI's adapter over the ranking core in `agent6.app.compare`.
 
-The rank/report core is headless in `app.compare`; this module supplies the two
-presentation pieces it cannot: the console `judging...` spinner shown while the
-judge call is in flight, and the reviewer-provider builder wired from the
-configured `reviewer` role. `rank` binds those into `app.compare.rank` for
-`sessions compare` (`sessions_compare.py`); the fan-out binds the same two into
-`app.compare.rank` through its `LaneRuntime`.
+It supplies the two pieces the headless core cannot: the `judging...` spinner
+and the reviewer-provider builder; the fan-out binds the same two through its
+`LaneRuntime`.
 """
 
 from __future__ import annotations
@@ -34,11 +31,14 @@ __all__ = ["rank"]
 
 @contextlib.contextmanager
 def _judging_status() -> Generator[None]:
-    """Show progress around the (~50-60s, otherwise silent) judge call: a real
-    terminal gets the same spinner glyphs and cadence as the run stream's
-    provider-call heartbeat (`_console_view`'s `_HEARTBEAT_TICK_S` plus the
-    shared spinner), and a non-tty (piped, detached orchestrator) gets one plain
-    line, so no animation frames reach a log file."""
+    """Show progress around the judge call, which is otherwise silent for about a minute.
+
+    A terminal gets the run stream's spinner and cadence; a non-tty gets one plain
+    line, so no animation frames reach a log file.
+
+    Yields:
+        Nothing; the spinner runs for the block.
+    """
     if not sys.stdout.isatty():
         print("judging...")
         yield
@@ -67,13 +67,21 @@ def _judging_status() -> Generator[None]:
 
 
 def _reviewer_provider(cfg: Config, sink: TranscriptSink, budget: BudgetTracker) -> Provider:
-    """Build the configured `reviewer` provider for the judge call."""
+    """Return the configured `reviewer` provider for the judge call."""
     return build_role_provider(cfg, "reviewer", transcript_sink=sink, budget=budget)
 
 
 def rank(cfg: Config, candidates: list[CandidateBrief], *, transcript_dir: Path) -> RankOutcome:
-    """Rank candidates best-first via the shared core, injecting the CLI's
-    console judging-status and reviewer-provider builder."""
+    """Rank the candidates best first through the core, with the CLI's two pieces bound.
+
+    Args:
+        cfg: The run's config.
+        candidates: The lanes' briefs.
+        transcript_dir: Where the judge's transcript goes.
+
+    Returns:
+        The core's outcome.
+    """
     return core_rank(
         cfg,
         candidates,

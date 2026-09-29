@@ -1,14 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The unified `agent6 attach <target>`: follow a run or a machine, live.
+"""`agent6 attach <target>`: follow a run or a machine, live.
 
-Resolves <target> to a run (id or unique prefix) or a machine (by name) and
-dispatches to the right viewer. A run renders its conversation, or with `--raw`
-the no-deps line tail of logs.jsonl; a machine streams its state overview and
-reasoning; `--tui` opens the full-screen dashboard instead. `--json` prints a
-one-shot snapshot of the folded state, the same wire form a web client reads. An
-empty target watches the most recent run. A target that is both a run prefix and
-a machine name resolves as the run.
+A run renders its conversation, or with `--raw` the line tail of logs.jsonl; a machine
+streams its state overview and reasoning; `--tui` opens the full-screen dashboard;
+`--json` prints one snapshot of the folded state, the same wire form a web client reads.
+An empty target watches the most recent run. A target that is both a run prefix and a
+machine name resolves as the run.
 """
 
 from __future__ import annotations
@@ -34,11 +32,17 @@ from agent6.viewmodel import (
 
 
 def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
-    """Resolve *target* against the run-style buckets (sessions/runs, /plans, /asks, /machines).
-    Returns (is_run, run_error): (True, None) it resolves; (False, None) no
-    match, so the caller may try a machine; (False, msg) an ambiguous prefix
-    or a husk, a run-intent error the caller surfaces rather than falling
-    through to machine lookup."""
+    """Resolve a target against the session buckets.
+
+    Args:
+        repo_root: The repo whose state dir holds the sessions.
+        target: The id or prefix.
+
+    Returns:
+        `(True, None)` when it resolves; `(False, None)` on no match, so the caller may try
+        a machine; `(False, message)` for an ambiguous prefix or a husk, which the caller
+        surfaces instead of falling through to machine lookup.
+    """
     try:
         resolve_session_layout(repo_root, target)
     except SessionIdError as exc:
@@ -47,7 +51,11 @@ def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
 
 
 def _machine_json_snapshot(machine_dir: Path) -> int:
-    """Print a machine's snapshot as one JSON object (`viewmodel.machine_snapshot`)."""
+    """Print a machine's snapshot as one JSON object.
+
+    Returns:
+        The exit code; 1 when the machine or its journal cannot be read.
+    """
     try:
         snap = machine_snapshot(machine_dir)
     except JournalError as exc:  # a MachineError too: the corrupt-journal wording first
@@ -62,7 +70,11 @@ def _machine_json_snapshot(machine_dir: Path) -> int:
 
 
 def _machine_watch_tui(machine_dir: Path) -> int:
-    """Open the full-screen MachineWatchScreen for a machine instance (`--tui`)."""
+    """Open the full-screen machine watch.
+
+    Returns:
+        The exit code; 3 when the TUI cannot be imported.
+    """
     source = machine_dir / "machine.asm.toml"
     try:
         spec = load_machine(source)
@@ -87,7 +99,19 @@ def _cmd_watch_target(  # noqa: PLR0911
     raw: bool,
     config_path: Path | None = None,
 ) -> int:
-    """Resolve *target* to a run or machine and follow it (or snapshot it)."""
+    """Resolve a target to a run or a machine and follow or snapshot it.
+
+    Args:
+        target: A run id or prefix, a machine name, or "" for the newest run.
+        tui: Open the full-screen dashboard.
+        json_out: Print one snapshot and exit.
+        since: Replay from this event line; `--raw` only.
+        raw: Tail the log lines instead of rendering the conversation.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The exit code; 2 when the flags conflict or nothing matches.
+    """
     if since is not None and since < 0:
         error("--since must be non-negative.")
         return 2
@@ -98,8 +122,7 @@ def _cmd_watch_target(  # noqa: PLR0911
     since = since or 0
     cwd = Path.cwd()
 
-    # An ambiguous run prefix or a husk is a run-intent error: surface it
-    # rather than falling through to machine lookup and printing "no match".
+    # An ambiguous prefix or a husk is surfaced, not fallen through to machine lookup.
     is_run, run_error = (True, None) if not target else _run_intent(cwd, target)
     if run_error is not None:
         error(f"{run_error}")

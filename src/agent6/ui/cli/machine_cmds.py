@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 machine` lifecycle subcommands: argv adaptation + console rendering.
+"""`agent6 machine` lifecycle subcommands: argv adaptation and console rendering.
 
-The read-only commands (list/status/replay/poke/stop, the watch follower) load
-+ render directly; run/create adapt argv and hand the lifecycle to
-`app.machine` behind the `MachineFrontend` seam. The interactive
-network-refusal resolver stays here (it needs a TTY). The offline authoring
-gate (check/test/graph) is `machine_check`."""
+The read-only commands (list, status, replay, poke, stop, the watch follower) load and
+render directly; run and create hand the lifecycle to `app.machine` behind the
+`MachineFrontend` seam. The interactive network-refusal resolver stays here, since it
+needs a TTY. The offline authoring gate is `machine_check`.
+"""
 
 from __future__ import annotations
 
@@ -74,9 +74,13 @@ from agent6.viewmodel.machine_state import verb_answer, wait_line
 
 
 def _cmd_machine_list() -> int:
-    """List this repo's machines (`app.machine.listing.machine_rows`, the rows
-    the TUI machines page shows): every instance newest first joined with the
-    authored `.asm.toml` that declares it, then the files no instance ran."""
+    """List this repo's machines: every instance newest first, then the files no instance ran.
+
+    The rows are `app.machine.listing.machine_rows`, the ones the TUI machines page shows.
+
+    Returns:
+        The exit code, 0.
+    """
     cwd = Path.cwd()
     machines = machine_rows(cwd, state_dir(cwd))
     if not machines:
@@ -123,12 +127,25 @@ def _resolve_network_refusal(  # noqa: PLR0911
     cwd: Path,
     overlay: dict[str, Any],
 ) -> int | tuple[Config, IsolationLevel]:
-    """Turn a hard network refusal into a choice: explain it, then
-    (interactively) offer to apply the minimal config fix and continue, simulate
-    the machine offline, or stop. Headless prints the exact fix + simulate
-    command and exits non-zero, it never relaxes a sandbox setting unattended.
-    Returns the new `(cfg, isolation)` when the fix applied and re-validates
-    clear, else an exit code."""
+    """Turn a hard network refusal into a choice.
+
+    Interactively: explain it, then offer to apply the minimal config fix and continue,
+    simulate the machine offline, or stop. Headless: print the exact fix and the simulate
+    command and exit non-zero; a sandbox setting is never relaxed unattended.
+
+    Args:
+        path: The machine file.
+        refusal: The refusal.
+        cfg: The effective config.
+        isolation: The resolved isolation.
+        tool_states: The machine's tool states.
+        cwd: The repo.
+        overlay: The machine's `[config]` overlay.
+
+    Returns:
+        The new `(cfg, isolation)` when the fix applied and re-validates clear, else the exit
+        code.
+    """
     refuse(refusal.message)
     fix = refusal.fix
     if not fix:
@@ -173,14 +190,16 @@ def _resolve_network_refusal(  # noqa: PLR0911
 
 
 def _no_instance_hint(machine_id: str, cwd: Path) -> str:
-    """A ' Did you mean ...' suffix for a missing-instance error.
+    """Return a "Did you mean" suffix for a missing-instance error, or "".
 
-    `machine run` takes a file (`greet.asm.toml`); status/replay/poke/stop and
-    `agent6 attach` take a machine id (`greet-ok`). Passing the file where an
-    id is expected otherwise dead-ends at "no machine instance at
-    .../greet.asm.toml". When the argument is an `.asm.toml` file, read its
-    `machine` name and suggest that instance id (a file that does not parse
-    is still a file); else offer the closest existing instance name."""
+    `machine run` takes a file; status, replay, poke, stop and `agent6 attach` take an
+    instance id. Given an `.asm.toml` file, its `machine` name suggests the instance id;
+    else the closest existing instance name is offered.
+
+    Args:
+        machine_id: The argument as given.
+        cwd: The repo.
+    """
     machines = machines_root(state_dir(cwd))
     existing = sorted(p.name for p in machines.iterdir() if p.is_dir()) if machines.is_dir() else []
     candidate = Path(machine_id)
@@ -204,7 +223,7 @@ def _no_instance_hint(machine_id: str, cwd: Path) -> str:
 
 
 def machine_instance_root(machine_id: str, cwd: Path) -> Path | None:
-    """The instance dir for one leaf ID, or None for a path or symlink escape."""
+    """Return the instance dir for one leaf id, or None for a path or symlink escape."""
     candidate = Path(machine_id)
     if candidate.name != machine_id:
         return None
@@ -219,7 +238,11 @@ def machine_instance_root(machine_id: str, cwd: Path) -> Path | None:
 
 
 def _existing_machine_root(machine_id: str, cwd: Path) -> Path | None:
-    """Resolve an instance ID and print the shared missing-instance error."""
+    """Resolve an instance id, printing the shared missing-instance error.
+
+    Returns:
+        The instance dir, or None after the error.
+    """
     root = machine_instance_root(machine_id, cwd)
     if root is not None and root.is_dir():
         return root
@@ -230,6 +253,11 @@ def _existing_machine_root(machine_id: str, cwd: Path) -> Path | None:
 
 
 def _cmd_machine_replay(machine_id: str) -> int:
+    """Re-run a machine's journal offline and print the result.
+
+    Returns:
+        The exit code; 1 when the replay did not end ok.
+    """
     cwd = Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
     if root is None:
@@ -253,9 +281,15 @@ def _cmd_machine_replay(machine_id: str) -> int:
 
 
 def _armed_wait_tolerant(root: Path, ms: MachineState) -> tuple[PendingWait | None, str]:
-    """(armed wait, note): a corrupt wait.json yields `(None, reason)` so the
-    readout goes on, as the shared dir word tolerates it (machine_is_parked:
-    parked, keep streaming), instead of the JournalError aborting the command."""
+    """Return the armed wait and a note; a corrupt wait.json yields the note instead.
+
+    The readout goes on, as the shared dir word tolerates it (parked, keep streaming),
+    instead of the `JournalError` aborting the command.
+
+    Args:
+        root: The instance dir.
+        ms: The machine state.
+    """
     try:
         return armed_wait(root, ms), ""
     except JournalError as exc:
@@ -263,6 +297,11 @@ def _armed_wait_tolerant(root: Path, ms: MachineState) -> tuple[PendingWait | No
 
 
 def _cmd_machine_status(machine_id: str) -> int:
+    """Print an instance's state, current wait and recent history.
+
+    Returns:
+        The exit code; 1 when the journal cannot be read.
+    """
     cwd = Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
     if root is None:
@@ -285,12 +324,7 @@ def _cmd_machine_status(machine_id: str) -> int:
 
     alive = worker_is_alive(root)
     spend, inflight_state = machine_spend(events, root, alive=alive)
-    # machine_word_for_dir is the one owner of running/waiting/stopped, shared
-    # with the watch screen, the TUI header, and the web pill: it checks `parked`
-    # before `alive`, so an alive-but-parked instance (a persisted wait written
-    # while the worker is still live, a teardown race) reads "waiting" here too,
-    # not a bare "running". A terminal end shows its ok/failed, a crashed instance
-    # "stopped", never the engine's raw "incomplete".
+    # machine_word_for_dir owns running/waiting/stopped for every surface; parked beats alive.
     word = machine_word_for_dir(ms, root)
 
     print(f"machine: {spec.machine} (v{spec.version})")
@@ -298,8 +332,7 @@ def _cmd_machine_status(machine_id: str) -> int:
         running_in = f", running {inflight_state!r}" if inflight_state else ""
         print(f"  status: running (worker pid {read_worker_pid(root)} alive){running_in}")
     else:
-        # A live worker blocked on an operator prompt: the word is "waiting"
-        # and the line names the state to answer in.
+        # A live worker blocked on an operator prompt: "waiting", naming the state to answer in.
         print(
             f"  status: {word}"
             + (
@@ -321,8 +354,7 @@ def _cmd_machine_status(machine_id: str) -> int:
         f" (in={spend.input_tokens} tok, out={spend.output_tokens} tok{cached})"
     )
     if pending is not None:
-        # The armed record is the wait a poke wakes (a foreground wait writes
-        # it before it sleeps); a timed one wakes on its own too.
+        # The armed record is the wait a poke wakes; a timed one wakes on its own too.
         print("  " + wait_line(machine_id, pending.state, pending.wake_at))
     if pending_note:
         print(f"  pending wait: unreadable ({pending_note})")
@@ -344,12 +376,21 @@ def _cmd_machine_status(machine_id: str) -> int:
 def _cmd_machine_poke(
     machine_id: str, *, data: str | None = None, message: str | None = None
 ) -> int:
+    """Send a signal to a parked machine's armed wait.
+
+    Args:
+        machine_id: The instance.
+        data: The payload as text, if any.
+        message: A message for the wake, if any.
+
+    Returns:
+        The exit code; 2 when the machine has ended or has no armed wait.
+    """
     cwd = Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
     if root is None:
         return 2
-    # An ended machine consumes no signals: a poke would sit unread, so the
-    # "it will wake on its next signal check" reply would be a lie. Refuse.
+    # An ended machine consumes no signals, so the wake reply would be a lie: refuse.
     ok, refusal = verb_answer(root, machine_id, "poke")
     if not ok or refusal:
         refuse(f"{refusal}")
@@ -378,10 +419,13 @@ def _cmd_machine_poke(
 def _cmd_machine_stop(machine_id: str) -> int:
     """Write the durable stop marker for a running machine.
 
-    The engine parks at its next transition boundary (or wakes out of a sleep)
-    without journaling an end, so the instance stays resumable. A machine that
-    is not running gets the note and exit 0, as `agent6 stop` answers, and
-    no marker that would ambush the next `machine run`."""
+    The engine parks at its next transition boundary (or wakes out of a sleep) without
+    journaling an end, so the instance stays resumable. A machine that is not running gets
+    the note and exit 0, as `agent6 stop` answers, and no marker to ambush the next run.
+
+    Returns:
+        The exit code.
+    """
     cwd = Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
     if root is None:
@@ -399,8 +443,7 @@ def _cmd_machine_stop(machine_id: str) -> int:
 
 
 def _render_overview(ms: MachineState) -> str:
-    """The state list with the current state and the visited ones marked
-    (`machine_state_mark`): the at-a-glance overview, rendered from the shared fold."""
+    """Return the state list with the current and visited states marked, from the shared fold."""
     lines = [f"machine: {ms.machine} (v{ms.version})  initial={ms.initial}", "states:"]
     for s in ms.states:
         mark = s.mark
@@ -409,13 +452,22 @@ def _render_overview(ms: MachineState) -> str:
 
 
 def _watch_liveness_exit(root: Path, machine_id: str, ms: MachineState) -> int | None:
-    """Watch's exit code when nothing will ever append to the journal: parked
-    (an armed --exit-on-wait wait, no worker) or stopped (no live worker, no
-    end, no wait: an operator stop and a crash leave the same dir, since the
-    worker clears its pid on every unwound exit). None while a live worker may
-    still write, a worker blocked in a foreground wait included. Routed through
-    machine_word_for_dir, the one owner of the running/waiting/stopped
-    distinction, so watch agrees with status/TUI/web."""
+    """Return the watch's exit code when nothing will ever append to the journal.
+
+    Parked (an armed `--exit-on-wait` wait, no worker) or stopped (no live worker, no end,
+    no wait: an operator stop and a crash leave the same dir, since the worker clears its
+    pid on every unwound exit). Routed through `machine_word_for_dir`, the one owner of the
+    running, waiting and stopped words, so watch agrees with status, the TUI and the web.
+
+    Args:
+        root: The instance dir.
+        machine_id: The instance.
+        ms: The machine state.
+
+    Returns:
+        The exit code, or None while a live worker may still write, one blocked in a
+        foreground wait included.
+    """
     word = machine_word_for_dir(ms, root)
     current = next((st.name for st in ms.states if st.is_current), "?")
     if word == "waiting" and not worker_is_alive(root):
@@ -435,10 +487,14 @@ def _watch_liveness_exit(root: Path, machine_id: str, ms: MachineState) -> int |
 
 
 def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
-    """Follow a running machine: the state overview, each transition as it lands,
-    and the current agent state's live reasoning (its per-state logs.jsonl). Exits
-    when the worker is dead (parked or crashed), when the instance ended, or on
-    Ctrl-C. Read-only."""
+    """Follow a running machine: the overview, each transition, the live reasoning.
+
+    Read-only. Exits when the worker is dead (parked or crashed), when the instance ended,
+    or on Ctrl-C.
+
+    Returns:
+        The exit code.
+    """
     cwd = Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
     if root is None:
@@ -476,21 +532,18 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
             try:
                 ms = fold_machine(spec, journal.read())
             except JournalError as exc:
-                # The same clean degradation `machine status` gives a corrupt
-                # journal; attach must not turn it into a traceback.
+                # The same degradation `machine status` gives a corrupt journal, never a traceback.
                 error(f"{exc}")
                 return 1
             for t in cursor.new_transitions(ms):
                 print(f"  {t.line}", flush=True)
             for n in cursor.new_notifications(ms):
-                # Ring the bell + fire a desktop notification (if notify-send is
-                # present) so an operator watching over ssh is alerted.
+                # The bell and a desktop notification, so an operator watching over ssh is alerted.
                 print(f"\a  🔔 [{n.level}] {n.state}: {n.message}", flush=True)
                 desktop_notify(f"agent6: {ms.machine}", n.message)
             newest, switched = cursor.advance_log(root)
             if switched:
-                # Reset the elapsed-time anchor too: each state log re-derives its
-                # own base from its first event, else states 2..N read inflated.
+                # Each state log re-derives its elapsed-time base, else states 2..N read inflated.
                 anchor = None
                 if newest is not None:
                     print(f"  -- agent state: {newest.parent.name} --", file=sys.stderr)
@@ -515,7 +568,9 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
 
 
 def _machine_frontend() -> MachineFrontend:
-    """The presentation seam `app.machine` run/create drive: stdio output plus
-    the interactive network-refusal resolver (needs a TTY, so it stays cli-side;
-    `create_machine` uses only the reporter)."""
+    """Return the presentation seam `machine run` and `machine create` drive.
+
+    Stdio output plus the interactive network-refusal resolver, which needs a TTY, so it
+    stays on the CLI side; `create_machine` uses only the reporter.
+    """
     return MachineFrontend(reporter=STDIO_REPORTER, resolve_network_fix=_resolve_network_refusal)

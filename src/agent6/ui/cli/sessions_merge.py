@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions merge/prune`: landing a run's chain on its base, and
-cleaning up the branches and chain refs already landed."""
+"""`agent6 sessions merge/prune`: land a run's chain on its base, and clean up what landed.
+
+Prune removes the branches, chain refs, fan-out clones and fork worktrees already merged.
+"""
 
 from __future__ import annotations
 
@@ -59,8 +61,18 @@ from agent6.viewmodel import tail_events, worker_models
 
 @dataclass(frozen=True, slots=True)
 class _MergePlan:
-    """A validated, mutation-ready merge: everything `_cmd_merge` needs after every
-    guard has passed. `_plan_merge` builds it without touching the repo."""
+    """A validated, mutation-ready merge: everything `_cmd_merge` needs after every guard passed.
+
+    Attributes:
+        layout: The run.
+        manifest: Its manifest.
+        run_branch: The branch or chain ref holding the work.
+        target: The branch to land on.
+        base_sha: The commit the run was cut from.
+        strategy: The merge strategy.
+        identity: The committer identity.
+        cfg: The effective config.
+    """
 
     layout: SessionLayout
     manifest: SessionManifest
@@ -80,18 +92,24 @@ def _plan_merge(  # noqa: PLR0911
     *,
     config_path: Path | None,
 ) -> _MergePlan | int:
-    """Resolve and validate everything a merge needs, or return an exit code. Pure:
-    every guard fails before `_cmd_merge` mutates the repo."""
+    """Resolve and validate everything a merge needs, without touching the repo.
+
+    Args:
+        cwd: The repo.
+        session_id: The run, or "" for the newest.
+        into: The target branch; None takes the branch the run was cut from.
+        strategy: The merge strategy; None takes `git.merge_strategy`.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The plan, or the exit code of a printed refusal: every guard fails here, before
+        `_cmd_merge` mutates anything.
+    """
     res = _resolve_session_manifest(cwd, session_id)
     if isinstance(res, int):
         return res
     layout, manifest = res
-    # A live run's chain keeps growing and its edits sit in the worktree; a
-    # merge now would land a prefix of its work and bring the operator's index
-    # forward under the worker. The gate is the raw pid, not session_is_live:
-    # after session.end the worker's finalizer may still be at work. The run's
-    # own end-of-run finalize_auto_merge is unaffected (it calls execute_merge
-    # directly, not this planner).
+    # The raw pid, not session_is_live: after session.end the finalizer may still be at work.
     if worker_is_alive(layout.session_dir):
         refuse(
             f"run {session_id!r} is still live; a merge now lands only the"
@@ -101,8 +119,7 @@ def _plan_merge(  # noqa: PLR0911
         )
         return 2
     ref = _commits_ref(cwd, manifest)
-    # execute_merge refuses a missing base_sha too (auto_merge relies on
-    # that); here both are refusals, exit 2, before anything moves.
+    # execute_merge refuses a missing base_sha too; here it is a refusal before anything moves.
     unmergeable = (
         NO_BASE_SHA
         if not manifest.base_sha
@@ -126,9 +143,7 @@ def _plan_merge(  # noqa: PLR0911
     except ConfigError as exc:
         error(f"{exc}")
         return 2
-    # An orphaned fan-out lane (coordinator died before importing it) is
-    # adopted here: fetch its branch from the lane clone and replace the
-    # live-view symlink, then merge like any run.
+    # An orphaned lane (its coordinator died before importing it) is adopted: fetched, then merged.
     try:
         adopted = adopt_orphan_lane(cwd, cfg, layout, manifest)
     except SubrunError as exc:
@@ -137,12 +152,10 @@ def _plan_merge(  # noqa: PLR0911
     if adopted is not None:
         print(f"[agent6] {adopted}")
         layout = SessionLayout(state_dir=layout.state_dir, session_id=layout.session_id)
-    # chain_tip resolves both shapes head_ref takes: a branch name and the
-    # hidden refs/agent6/<id>/head chain ref.
+    # chain_tip resolves both shapes of head_ref: a branch name and the hidden chain ref.
     if chain_tip(cwd, run_branch) is None:
         if _committed_nothing(cwd, manifest.session_id):
-            # Not a failure: the command's job is to land work, and there is
-            # none (a zero-commit branch reads the same way below).
+            # Not a failure: there is no work to land.
             print("[agent6] nothing to merge: this run committed nothing.")
             return 0
         error(
@@ -180,10 +193,12 @@ def _plan_merge(  # noqa: PLR0911
 
 
 def _manual_merge_cmd(cwd: Path, plan: _MergePlan) -> str:
-    """The by-hand merge for a plumbing conflict, from the checkout as it is: git
-    refuses to merge over modified tracked files (a finished run leaves its work
-    in the tree until merged), so a dirty tree is stashed first, and a checkout
-    on another branch moves to the target."""
+    """Return the by-hand merge for a plumbing conflict, from the checkout as it is.
+
+    Git refuses to merge over modified tracked files, and a finished run leaves its work in
+    the tree until merged, so a dirty tree is stashed first; a checkout on another branch
+    moves to the target.
+    """
     steps: list[str] = []
     with contextlib.suppress(GitError):
         st = git_status(cwd)
@@ -204,10 +219,21 @@ def _cmd_merge(
     message: str | None,
     config_path: Path | None,
 ) -> int:
-    """Land a run's work on a target branch (default: the branch the run was
-    cut from) with the chosen strategy (default: git.merge_strategy). Ref
-    plumbing only: your checkout, index, and worktree are never the medium, so
-    a worktree still carrying the run's work is no obstacle."""
+    """Land a run's work on a target branch with the chosen strategy.
+
+    Ref plumbing only: the checkout, index and worktree are never the medium, so a worktree
+    still carrying the run's work is no obstacle.
+
+    Args:
+        session_id: The run, or "" for the newest.
+        strategy: The merge strategy; None takes `git.merge_strategy`.
+        into: The target branch; None takes the branch the run was cut from.
+        message: The merge commit message; None takes the default.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The exit code: 0 landed or nothing to land, 1 a conflict, 2 a refusal.
+    """
     cwd = Path.cwd()
     plan = _plan_merge(cwd, session_id, into, strategy, config_path=config_path)
     if isinstance(plan, int):
@@ -260,9 +286,13 @@ def _cmd_merge(
 
 
 def _session_stamp(layout: SessionLayout | None) -> tuple[MergeStamp | None, str]:
-    """A session's recorded merge, and why none could be read: "no session
-    record", "unreadable manifest" (kept, never force-deleted), else "" with
-    the stamp, None when the manifest records no merge."""
+    """Return a session's recorded merge and why none could be read.
+
+    Returns:
+        `(stamp, reason)`: the reason is "no session record" or "unreadable manifest"
+        (kept, never force-deleted), else ""; the stamp is None when the manifest records no
+        merge.
+    """
     if layout is None:
         return None, "no session record"
     try:
@@ -272,16 +302,22 @@ def _session_stamp(layout: SessionLayout | None) -> tuple[MergeStamp | None, str
 
 
 def _base_gone(into: str) -> str:
+    """Return the keep reason for a merge base that no longer exists."""
     return f"base {into} is gone"
 
 
 def _squash_unconfirmed(cwd: Path, stamp: MergeStamp) -> str:
-    """Why a squash-merge stamp does not prove a force-delete content-safe,
-    "" when it does: the merged tip must be recorded, and the base must still
-    hold the commit the record names (the merge commit, or, for a merge that
-    added nothing, the base tip that already held the content), since a reset
-    or rewrite of the base after the merge leaves the branch as the content's
-    only holder."""
+    """Return why a squash-merge stamp does not prove a force-delete content-safe, or "".
+
+    The merged tip must be recorded, and the base must still hold the commit the record
+    names (the merge commit, or for a merge that added nothing, the base tip that already
+    held the content): a reset or rewrite of the base leaves the branch as the content's
+    only holder.
+
+    Args:
+        cwd: The repo.
+        stamp: The merge stamp.
+    """
     if not stamp.tip:
         return "no merge tip was recorded"
     if stamp.sha == NO_MERGE_COMMIT:
@@ -296,27 +332,33 @@ def _squash_unconfirmed(cwd: Path, stamp: MergeStamp) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Landed:
-    """How a run's commits stand against its merge stamp, for both prune loops:
-    `merged` (its tip is an ancestor of the base), `squashed` (the stamp proves
-    the base holds them and the operator asked for the force-delete), else
-    `keep` with the reason each loop prints and counts."""
+    """How a run's commits stand against its merge stamp, for both prune loops.
+
+    Attributes:
+        verdict: `merged` (its tip is an ancestor of the base), `squashed` (the stamp proves
+            the base holds them and the operator asked for the force-delete), else `keep`.
+        why: The keep reason each loop prints and counts.
+    """
 
     verdict: Literal["merged", "squashed", "keep"]
     why: str = ""
 
 
 def landed(cwd: Path, stamp: MergeStamp, tip: str | None, *, delete_squashed: bool) -> Landed:
-    """The one classification (see :class:`Landed`) of a run with a recorded
-    merge; *tip* is the branch's or chain ref's sha, None when the branch is
-    gone."""
+    """Return the one classification of a run with a recorded merge.
+
+    Args:
+        cwd: The repo.
+        stamp: The merge stamp.
+        tip: The branch's or chain ref's sha; None when the branch is gone.
+        delete_squashed: `--delete-squashed` was given.
+    """
     if not branch_exists(cwd, stamp.into):
         return Landed("keep", _base_gone(stamp.into))
     if tip is not None and is_ancestor(cwd, tip, stamp.into):
         return Landed("merged")
     if tip is not None and stamp.tip and stamp.tip != tip:
-        # A resumed run committing on after the merge: those commits are in
-        # no other ref. "squash-merged" would read as an invitation to a flag
-        # that refuses it, so each refusal is its own reason.
+        # A resumed run committed on after the merge: those commits are in no other ref.
         return Landed("keep", "advanced since the merge")
     if why := _squash_unconfirmed(cwd, stamp):
         return Landed("keep", why)
@@ -324,6 +366,7 @@ def landed(cwd: Path, stamp: MergeStamp, tip: str | None, *, delete_squashed: bo
 
 
 def _keep_branch_line(br: str, stamp: MergeStamp, why: str) -> str:
+    """Return the line naming why a run branch is kept."""
     if why == "squash-merged":
         return (
             f"[agent6] kept {br} (squash-merged into {stamp.into}, unreachable; "
@@ -337,12 +380,23 @@ def _keep_branch_line(br: str, stamp: MergeStamp, why: str) -> str:
 
 
 def _prune_branch(cwd: Path, br: str, stamp: MergeStamp, state: Landed, current: str) -> bool:
-    """Act on one run branch's classification: force-delete a proven squash
-    (with the undelete hint: the commit survives in the reflog until GC), keep
-    the rest and say why. Returns whether it was deleted."""
+    """Act on one run branch's classification.
+
+    A proven squash is force-deleted with the undelete hint (the commit survives in the
+    reflog until GC); the rest are kept and the reason said.
+
+    Args:
+        cwd: The repo.
+        br: The branch.
+        stamp: Its merge stamp.
+        state: Its classification.
+        current: The checked-out branch.
+
+    Returns:
+        Whether the branch was deleted.
+    """
     if state.verdict == "merged":
-        # Reachable-merged into its base, so `git branch -d` only refused because
-        # HEAD is not the base; deleting it cleanly needs to run from the base.
+        # `git branch -d` refused only because HEAD is not the base; delete it from there.
         print(
             f"[agent6] kept {br} (merged into {stamp.into} but not reachable from "
             f"{current!r}; re-run prune on {stamp.into}, or: git branch -D {br})"
@@ -361,20 +415,23 @@ def _prune_branch(cwd: Path, br: str, stamp: MergeStamp, state: Landed, current:
 
 
 def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None) -> int:
-    """Delete agent6/* run branches that `git branch -d` can safely remove
-    (reachable-merged into HEAD, i.e. merge/ff strategies). Report squash-merged
-    ones and unmerged ones (review first). Sweep fan-out clone dirs whose every
-    lane branch tip already exists in this repo (content-safe by commit proof;
-    a clone holding any commit this repo lacks is kept whole), and the
-    worktrees of merged forks (an unmerged fork keeps its worktree; `sessions
-    rm` removes a fork's with its record).
+    """Delete what `git branch -d` can safely remove, and sweep the merged clones and worktrees.
 
-    With `--delete-squashed` also force-delete branches and chain refs the
-    manifest confirms were squash-merged into an existing base: their content
-    is safe in that base commit, and each deletion prints the exact command to
-    undelete it (a branch's commit survives in its reflog until GC; a chain ref
-    has none, so its line carries the sha). Unmerged runs are never
-    force-deleted."""
+    Run branches reachable-merged into HEAD go; squash-merged and unmerged ones are
+    reported. Fan-out clone dirs go when every lane branch tip exists in this repo; a clone
+    holding any commit this repo lacks is kept whole. The worktree of a merged fork goes;
+    an unmerged fork keeps its worktree. With `--delete-squashed`, branches and chain refs
+    the manifest confirms were squash-merged into an existing base are force-deleted too,
+    each deletion printing the exact command to undelete it. Unmerged runs are never
+    force-deleted.
+
+    Args:
+        delete_squashed: Force-delete proven squash merges.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The exit code; 2 when git refuses.
+    """
     cwd = Path.cwd()
     if not is_git_repo(cwd):
         error("not a git repository")
@@ -393,8 +450,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
             continue
         layout = session_layout(repo_state, br.removeprefix(BRANCH_PREFIX))
         if layout is not None and worker_is_alive(layout.session_dir):
-            # The run is still committing to it, whatever git makes of its tip
-            # and whether its manifest reads.
+            # The run is still committing to it, whatever git makes of its tip.
             live_kept += 1
             print(f"[agent6] kept {br} (live)")
             continue
@@ -416,10 +472,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
             squashed_deleted += 1
         else:
             merged_kept += 1
-    # Chain refs are pruned whether or not any run branch survives: with
-    # `branch_per_run` off there is never one, and once prune has deleted the
-    # last branch the refs it kept for a later pass would be unreachable by
-    # this command forever.
+    # Chain refs are pruned whether or not a run branch survives: `branch_per_run` off has none.
     refs_deleted, refs_kept = _prune_chain_refs(cwd, repo_state, delete_squashed=delete_squashed)
     clones_note, swept_any = _sweep_workdirs(cwd, repo_state, config_path)
     if not branches and not (refs_deleted or refs_kept or swept_any):
@@ -443,9 +496,18 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
 
 
 def _sweep_workdirs(cwd: Path, state: Path, config_path: Path | None) -> tuple[str, bool]:
-    """Sweep the fan-out clones and fork worktrees under this repo's
-    `[parallel].workdir` scope, printing each keep and each worktree removal.
-    Returns (the summary-line note, whether anything was swept or kept)."""
+    """Sweep the fan-out clones and fork worktrees under `[parallel].workdir`.
+
+    Prints each keep and each worktree removal.
+
+    Args:
+        cwd: The repo.
+        state: The repo's state dir.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The summary-line note, and whether anything was swept or kept.
+    """
     try:
         cfg = load_effective(cwd, config_path).config
     except ConfigError as exc:
@@ -473,14 +535,21 @@ def _sweep_workdirs(cwd: Path, state: Path, config_path: Path | None) -> tuple[s
 def _prune_chain_refs(
     cwd: Path, repo_state: Path, *, delete_squashed: bool
 ) -> tuple[int, Counter[str]]:
-    """Drop `refs/agent6/<id>/head` chain refs whose manifest confirms the run
-    merged, under the same safety rules as branches: reachable-from-base
-    deletes outright; a squash-merge (content in the base commit, ref
-    unreachable) deletes only with --delete-squashed and only while the ref
-    still points at the recorded merged tip. Live runs, unmerged runs, and
-    refs with no run manifest (machine chains) are kept, counted by reason
-    and never named: an unmerged ref is the run's anchor.
-    Returns (deleted, kept by reason), every ref counted once."""
+    """Drop the `refs/agent6/<id>/head` chain refs whose manifest confirms the run merged.
+
+    The same safety rules as branches: reachable from the base deletes outright; a squash
+    merge deletes only with `--delete-squashed` and only while the ref still points at the
+    recorded merged tip. Live runs, unmerged runs and refs with no run manifest (machine
+    chains) are kept, counted by reason and never named: an unmerged ref is the run's anchor.
+
+    Args:
+        cwd: The repo.
+        repo_state: The repo's state dir.
+        delete_squashed: Force-delete proven squash merges.
+
+    Returns:
+        The count deleted, and the kept refs counted by reason; every ref counted once.
+    """
     refs_deleted = 0
     kept: Counter[str] = Counter()
     for sid, sha in list_chain_refs(cwd):

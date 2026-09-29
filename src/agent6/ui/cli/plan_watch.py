@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 plan`/`agent6 attach` and run-id resolution helpers."""
+"""`agent6 plan` and `agent6 attach`, and the run-id resolution they share."""
 
 from __future__ import annotations
 
@@ -49,11 +49,12 @@ from agent6.viewmodel.format import dead_run_note, status_label
 
 
 def _resolve_plan_session_id(session_id: str) -> str | None:
-    """Resolve a (possibly prefix) plan id under the per-repo state dir.
+    """Resolve a plan id or prefix under the per-repo state dir.
 
-    Prints an error and returns None on failure. Used by `plan show` and
-    `plan edit`. An empty *session_id* resolves the most recent
-    plan, matching the omit-for-latest convention of the sessions commands.
+    An empty id resolves the most recent plan, as the sessions commands do.
+
+    Returns:
+        The id, or None after printing an error.
     """
     plans_dir = _plans_dir(Path.cwd())
     if not session_id:
@@ -85,7 +86,11 @@ def _resolve_plan_session_id(session_id: str) -> str | None:
 
 
 def _cmd_plan_show(session_id: str) -> int:
-    """Print a planning run's plan.md to stdout."""
+    """Print a planning run's plan.md.
+
+    Returns:
+        The exit code; 2 when the plan cannot be resolved.
+    """
     resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
         return 2
@@ -96,8 +101,11 @@ def _cmd_plan_show(session_id: str) -> int:
 def _cmd_plan_edit(session_id: str) -> int:
     """Open a planning run's plan.md in $EDITOR (default: vi).
 
-    Operator-controlled argv (the editor name + the resolved plan path),
-    not LLM-controlled, so direct subprocess.run is allowed.
+    The argv is the operator's editor name and the resolved plan path, never LLM input, so
+    a direct subprocess is allowed.
+
+    Returns:
+        The editor's exit code; 2 when the plan cannot be resolved.
     """
     resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
@@ -118,9 +126,9 @@ def _cmd_plan_edit(session_id: str) -> int:
 
 
 def _most_recent_plan_session_id(plans_dir: Path) -> str | None:
-    """Most recently active plan dir that holds a `plan.md`.
+    """Return the most recently active plan dir that holds a `plan.md`.
 
-    Used by bare `agent6 run` (no task) to offer the latest plan for execution.
+    A bare `agent6 run` offers it for execution.
     """
     if not plans_dir.is_dir():
         return None
@@ -140,17 +148,23 @@ def _cmd_watch(
     raw: bool = False,
     config_path: Path | None = None,
 ) -> int:
-    """Read-only live view of a run directory.
+    """Follow a run directory read-only.
 
-    Default follows the run's conversation (the same render as `agent6 run`).
-    `--raw` follows the event log, one line per event; `--tui` the full-screen
-    dashboard.
+    The default follows the run's conversation, the same render as `agent6 run`; `--raw`
+    follows the event log, one line per event; `--tui` opens the full-screen dashboard.
+
+    Args:
+        session_id: The session, or "" for the newest.
+        tui: Open the dashboard.
+        since: Replay this many event lines first; `--raw` only.
+        raw: Tail the log lines.
+        config_path: The `--config` file, if any.
+
+    Returns:
+        The exit code; 2 when the session cannot be resolved, 3 when the TUI cannot load.
     """
     cwd = Path.cwd()
-    # An explicit id resolves across every run-style bucket (runs/asks/machine-
-    # drafts): a listed ask or a `machine create` draft is watchable by id too.
-    # Empty most-recent spans every bucket, so a bare `attach` after an `ask`
-    # finds it.
+    # Every run-style bucket, by id and for the newest, so a bare `attach` after an `ask` finds it.
     try:
         layout = resolve_or_newest_layout(cwd, session_id)
     except SessionIdError as exc:
@@ -168,7 +182,7 @@ def _cmd_watch(
     if not tui:
         return _cmd_watch_plain(target, since=since) if raw else _watch_transcript(target)
     try:
-        from agent6.ui.tui.app import run_tui  # noqa: PLC0415 - lazy: textual is optional
+        from agent6.ui.tui.app import run_tui  # noqa: PLC0415  # textual is optional
     except ImportError as e:
         error(f"{e}")
         print(
@@ -181,11 +195,16 @@ def _cmd_watch(
 
 
 def _cmd_tui(config_path: Path | None = None) -> int:
-    """The TUI hub (`agent6 tui`): browse runs and start new work. Loops between
-    the home screen and the run view (the conversation; Ctrl+D toggles the
-    dashboard), opening a run watches it, then returns here on close."""
+    """Run the TUI hub (`agent6 tui`): browse runs and start new work.
+
+    Loops between the home screen and the run view; opening a run watches it, then returns
+    here on close.
+
+    Returns:
+        The exit code; 3 when textual is not installed.
+    """
     try:
-        from agent6.ui.tui.app import (  # noqa: PLC0415 - lazy: textual optional
+        from agent6.ui.tui.app import (  # noqa: PLC0415  # textual is optional
             run_tui,
         )
         from agent6.ui.tui.home import run_home  # noqa: PLC0415
@@ -194,13 +213,11 @@ def _cmd_tui(config_path: Path | None = None) -> int:
         print("HINT: the TUI needs 'textual' (part of the base install).", file=sys.stderr)
         return 3
     cwd = Path.cwd()
-    # The state dir: every bucket lookup below it goes through `bucket_dir`,
-    # which appends `sessions/` itself.
+    # Every bucket lookup goes through `bucket_dir`, which appends `sessions/` itself.
     agent6_dir = state_dir(cwd)
     session_dir: Path | None = None
     while True:
-        # Esc in a run view returns here (reopen home), Run this plan hands the
-        # new run back to open next, and Ctrl+Q quits the hub.
+        # Esc in a run view reopens home, Run this plan hands the new run back, Ctrl+Q quits.
         session_dir = session_dir or run_home(agent6_dir, cwd, config_path)
         if session_dir is None:
             return 0
@@ -211,11 +228,13 @@ def _cmd_tui(config_path: Path | None = None) -> int:
 
 
 def format_plain_event(line: str, *, session_start_ts: float | None) -> str:
-    """Pretty-print one logs.jsonl line as `<elapsed> <type> key=val ...`.
+    """Return one logs.jsonl line as `<elapsed> <type> key=val ...`.
 
-    Falls back to the raw line on parse error so a corrupt event doesn't
-    abort the tail. `session_start_ts` is the wall-clock timestamp of the
-    earliest event seen so far; used to render relative elapsed seconds.
+    Falls back to the raw line on a parse error, so a corrupt event does not abort the tail.
+
+    Args:
+        line: The raw line.
+        session_start_ts: The earliest event's wall-clock time so far, for the elapsed column.
     """
     raw = line.rstrip("\n")
     try:
@@ -249,42 +268,45 @@ def format_plain_event(line: str, *, session_start_ts: float | None) -> str:
 
 
 def _standing(event: dict[str, object]) -> bool:
-    """Whether an `approval.prompt` offers a session-wide answer; absent means
-    it does, since only the scopeless gates journal False."""
+    """Return whether an `approval.prompt` offers a session-wide answer.
+
+    Absent means it does; only the scopeless gates journal False.
+    """
     return bool(event.get("standing", True))
 
 
 class _CliFrontEnd:
-    """Makes an interactive `agent6 attach` a real run front-end. When the
-    streamed log surfaces an unanswered `run_command` approval or `ask_user`
-    question, it prompts on the controlling terminal with the same CLI prompts a
-    foreground run uses and writes the answer back over the file bridge, so a
-    detached run is driven from here. The caller registers a `frontends/` claim
-    so the worker's approver bridges to it (a live front-end always wins over
-    the detach away-mode).
+    """The answering front-end an interactive `agent6 attach` becomes.
 
-    Prompt ids are deterministic counters, and the log replays from the start on
-    attach, so `_answered` (ids with an answer seen) and `_handled` (ids this
-    front-end prompted for) gate re-prompting a historical or already-answered
-    prompt."""
+    When the streamed log surfaces an unanswered `run_command` approval or `ask_user`
+    question, it prompts on the controlling terminal with the CLI prompts a foreground run
+    uses and writes the answer back over the file bridge. The caller registers a
+    `frontends/` claim, so the worker's approver bridges here: a live front-end wins over
+    the detach away-mode. Prompt ids are deterministic counters and the log replays from
+    the start on attach, so the answered and handled id sets gate re-prompting.
+    """
 
     def __init__(self, session_dir: Path, view: ConsoleView) -> None:
+        """Bind the session dir and the console view; nothing is prompted yet."""
         self._session_dir = session_dir
         self._view = view
         self._answered: set[str] = set()
         self._handled: set[str] = set()
-        # Events the attach pre-scan already decided. The follow loop re-reads
-        # logs.jsonl from the start, so it hands those same events back to
-        # `react`; replaying them must never prompt (see `react`). A count is
-        # enough because logs.jsonl is append-only: the follow can only deliver
-        # more events than the scan saw, never fewer, and the scanned ones
-        # always arrive first.
+        # How many events the pre-scan decided; the append-only log hands them to `react` first.
         self._replayed: int = 0
 
     def open_prompts_at_attach(self, events_path: Path) -> list[dict[str, object]]:
-        """Pre-scan the existing log: seed `_answered` and return the prompt
-        events that are open right now (emitted, not answered) so a run already
-        waiting at an approval when you attach is handled at once."""
+        """Pre-scan the existing log and return the prompts open right now.
+
+        Seeds the answered set, so a run already waiting at an approval when you attach is
+        handled at once.
+
+        Args:
+            events_path: The run's logs.jsonl.
+
+        Returns:
+            The prompt events emitted but not answered.
+        """
         open_prompts: dict[str, dict[str, object]] = {}
         scanned = 0
         for ev in tail_events(events_path, follow=False):
@@ -303,11 +325,12 @@ class _CliFrontEnd:
         return list(open_prompts.values())
 
     def handle(self, event: dict[str, object]) -> None:
-        """Prompt on the terminal (spinner paused) for an open `approval.prompt`
-        or `question.prompt` event and write the answer over the bridge. Marks
-        the id handled so the follow-loop replay won't re-ask it. An approval's
-        journaled `standing` rides along: False is a gate with no scope to
-        grant (`fetch`), so the prompt offers no session choice."""
+        """Prompt on the terminal for an open prompt event and write the answer over the bridge.
+
+        The spinner is paused for the prompt, and the id is marked handled so the follow-loop
+        replay does not re-ask it. An approval's journaled `standing` rides along: False is a
+        gate with no scope to grant (`fetch`), so the prompt offers no session choice.
+        """
         prompt_id = str(event.get("id", ""))
         if event.get("type") == "approval.prompt":
             with self._view.pause():
@@ -337,23 +360,19 @@ class _CliFrontEnd:
         self._handled.add(prompt_id)
 
     def _new_session(self) -> None:
-        """A session boundary (a fresh run, or a resumed execution) restarts the prompt
-        id counters at approval-1/question-1, so the prior execution's ids say nothing
-        about the new execution's."""
+        """Forget the prior execution's prompt ids.
+
+        A session boundary restarts the counters at approval-1 and question-1.
+        """
         self._answered.clear()
         self._handled.clear()
 
     def react(self, event: dict[str, object]) -> None:
-        """Live follow: answer a new unanswered prompt; a historical/answered one
-        (id in `_answered`/`_handled`) is skipped on the replay."""
+        """Answer a new unanswered prompt on the live follow; a replayed one is skipped."""
         etype = str(event.get("type", ""))
         pid = str(event.get("id", ""))
         if self._replayed > 0:
-            # Still inside the pre-scan's window: the follow loop is handing
-            # back events `open_prompts_at_attach` already ruled on, so keep the
-            # bookkeeping in step but never prompt: deciding them live would
-            # re-ask every prompt the run has already answered, since the
-            # execution-boundary clear below discards what the pre-scan knew.
+            # Inside the pre-scan's window: keep the bookkeeping in step, never prompt.
             self._replayed -= 1
             if etype in SESSION_START_EVENTS:
                 self._new_session()
@@ -373,6 +392,7 @@ class _CliFrontEnd:
 
 
 def _print_crashed_line(target: Path) -> None:
+    """Print the crashed-or-killed line for a run no session end settled."""
     print(
         f"[agent6] {target.name}: {status_label('stale', dead_run_note('stale', '')[0])};"
         f" see `agent6 sessions show {target.name}`.",
@@ -381,13 +401,19 @@ def _print_crashed_line(target: Path) -> None:
 
 
 def _render_over_session(target: Path, events_path: Path, *, finished: bool) -> int:
-    """A session no worker is driving: nothing more will be appended and no
-    answer would be read. Render the log read-only (no front-end, no re-asked
-    prompts), then say how it ended.
+    """Render the log of a session no worker is driving, then say how it ended.
 
-    *finished* separates the two ways that happens: a run that ended cleanly
-    already said its outcome, and must not read as "crashed or killed" while the
-    other surfaces show it passed.
+    Nothing more will be appended and no answer would be read, so there is no front-end and
+    no re-asked prompt.
+
+    Args:
+        target: The session dir.
+        events_path: Its logs.jsonl.
+        finished: The run ended cleanly and already said its outcome, so it must not read
+            as crashed.
+
+    Returns:
+        The exit code, 0.
     """
     view = ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
     try:
@@ -405,8 +431,12 @@ def _render_over_session(target: Path, events_path: Path, *, finished: bool) -> 
 
 
 def _install_front_end(target: Path, view: ConsoleView) -> _CliFrontEnd | None:
-    """Attach as the answering front-end on an interactive terminal (both
-    streams a tty); piped/redirected stays a pure reader (None)."""
+    """Attach as the answering front-end on an interactive terminal.
+
+    Returns:
+        The front-end, or None when a stream is piped or redirected: then attach stays a
+        pure reader.
+    """
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         print(
             f"[agent6] following {target.name}. Ctrl-C exits; agent6 stop {target.name} stops it.",
@@ -424,41 +454,36 @@ def _install_front_end(target: Path, view: ConsoleView) -> _CliFrontEnd | None:
 
 
 def _watch_transcript(target: Path) -> int:
-    """Follow a run's conversation live and, on an interactive terminal, attach
-    to it as a front-end: fold `logs.jsonl` through the same `ConsoleView` as
-    `agent6 run` and, when the run asks for a `run_command` approval or an
-    `ask_user` answer, prompt on the terminal exactly as the foreground run
-    would (see `_CliFrontEnd`). Piped/redirected (no tty) stays a pure reader.
-    Renders from the start, tails until the run ends, then returns; Ctrl-C exits.
-    A detach emits no session.end, so watching a detached run follows it to its end."""
+    """Follow a run's conversation live and, on a terminal, attach as its front-end.
+
+    Folds `logs.jsonl` through the same `ConsoleView` as `agent6 run`; when the run asks
+    for a `run_command` approval or an `ask_user` answer, prompts exactly as the foreground
+    run would. Renders from the start, tails until the run ends, then returns; Ctrl-C exits.
+    A detach emits no session end, so a detached run is followed to its end.
+
+    Returns:
+        The exit code; 1 when the worker died mid-call, 2 when the run has no log yet.
+    """
     events_path = target / LOGS_NAME
     if not events_path.is_file():
-        # Not an error: a parked submission, a `fork --no-run`, or a run still
-        # launching (egress + the ~80s verify inference run before the first log
-        # line) has no log yet. Answer with the same word the listings and
-        # `sessions show` use, plus what to do, instead of a raw filesystem message.
+        # Not an error: a parked submission, a `fork --no-run` or a launching run has no log yet.
         word, reason = status_for_session_dir(target, StatusFacts())
         print(f"{target.name}: {status_label(word, reason)}")
         if word == "starting":
-            # A live worker is mid-preflight: it is running, not resumable.
-            # Telling the operator to `resume` would refuse (or fork a second
-            # worker); it just has no log to follow yet.
+            # A live worker mid-preflight is running, not resumable; it has no log to follow yet.
             print("it is starting; run this again in a moment to follow it.")
         else:
             print(f"start it with: agent6 resume {target.name}")
         return 0
 
-    # The liveness question, answered where every other surface answers it, so
-    # attach never follows a log nothing will append to. Whether it ended is a
-    # separate fact: both stop the follow, only one is a crash.
+    # Liveness as every surface answers it; whether the run ended is a separate fact.
     if not session_is_live(target):
         scan = scan_session_log(events_path)
         return _render_over_session(target, events_path, finished=scan.finished)
 
     def worker_dead() -> bool:
-        # Per poll, so it stays O(1): once we are following, the session has
-        # started and the worker is the liveness evidence (session_is_live above
-        # folds the log once, for the parked/created distinction it needs).
+        """Return whether the worker is gone, from its pid alone."""
+        # Per poll, O(1): once following, the worker pid is the liveness evidence.
         return not worker_is_alive(target)
 
     view = ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
@@ -490,8 +515,7 @@ def _watch_transcript(target: Path) -> int:
 
 
 def _line_is_session_end(raw: bytes | str) -> bool:
-    """True if a logs.jsonl line is a `session.end` event: the follower stops
-    at the execution's end as it streams (the fold answers for a whole journal)."""
+    """Return whether a logs.jsonl line is a `session.end` event, so the follower stops there."""
     text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
     try:
         obj = json.loads(text)
@@ -501,19 +525,23 @@ def _line_is_session_end(raw: bytes | str) -> bool:
 
 
 def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per event kind the watch prints
-    """Tail `logs.jsonl` line-by-line with no extra deps.
+    """Tail `logs.jsonl` line by line with no extra deps.
 
     Polls the file with 0.25s sleeps; rotates when the inode changes.
-    Pretty-prints each event with the type and key fields. Returns 0 at
-    `session.end` or on KeyboardInterrupt, and 1 if the worker or log dies first.
+
+    Args:
+        target: The session dir.
+        since: Replay this many lines first.
+
+    Returns:
+        0 at `session.end` or on Ctrl-C, 1 when the worker or the log dies first.
     """
     events_path = target / LOGS_NAME
     if not events_path.is_file():
         error(f"no logs.jsonl in {target}")
         return 2
 
-    # Read the first event for the elapsed-time anchor. Binary readline: a
-    # torn-mid-UTF-8 first line must not crash the watch before it starts.
+    # The first event is the elapsed-time anchor; a torn first line must not crash the watch.
     session_start_ts: float | None = None
     try:
         with events_path.open("rb") as fh:
@@ -530,11 +558,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911
         file=sys.stderr,
     )
 
-    # Binary reads throughout: the writer flushes long lines in several
-    # syscalls, so a read can hit EOF mid multibyte UTF-8 sequence and a
-    # text-mode readline would raise UnicodeDecodeError. Complete lines are
-    # decoded (errors="replace"); a partial tail stays buffered until its
-    # newline arrives.
+    # Binary reads: a read can hit EOF mid UTF-8 sequence, so a partial tail stays buffered.
     try:
         fh = events_path.open("rb")
     except OSError as exc:
@@ -554,8 +578,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911
                 pending = lines.pop()
             for raw in lines[-since:]:
                 line = raw.decode("utf-8", errors="replace")
-                # flush: piped/redirected output must not lose the replay to the
-                # block buffer when the run is idle/finished (nothing else flushes).
+                # Piped output must not lose the replay to the block buffer while the run is idle.
                 print(format_plain_event(line, session_start_ts=session_start_ts), flush=True)
             if lines and scan_session_log(events_path).finished:
                 return 0  # already finished: replayed, nothing to follow
@@ -582,9 +605,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911
                 if _line_is_session_end(line):
                     return 0  # run ended: stop, like the default follower
                 continue
-            # No new data: check for rotation and sleep briefly. A vanished log
-            # is the tail's EOF only once the worker is dead: a live run
-            # recreates the path, dir included, on its next durable event.
+            # A vanished log is EOF only once the worker is dead: a live run recreates the path.
             try:
                 new_ino = events_path.stat().st_ino
             except OSError:

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions review`: a read-only review of one finished session's
-record on the reviewer role. Its own module, imported by the dispatcher for
-this verb alone, so the provider stack loads for no other `sessions` verb."""
+"""`agent6 sessions review`: a read-only review of one finished session's record.
+
+Its own module, imported by the dispatcher for this verb alone, so the provider stack loads
+for no other `sessions` verb.
+"""
 
 from __future__ import annotations
 
@@ -26,14 +28,20 @@ from agent6.viewmodel import session_is_live
 def _cmd_sessions_review(  # noqa: PLR0911
     config_path: Path | None, *, session_id: str, model: str
 ) -> int:
-    """Print a review of a session's record to stdout and save it under the
-    state dir's reviews/. Read-only; no jail. *model* is `--model`,
-    `[provider/]model`, applied to the reviewer route over every config
-    layer. Exit 0 reviewed, 2 refused, 3 budget."""
+    """Print a review of a session's record and save it under the state dir's reviews/.
+
+    Read-only; no jail.
+
+    Args:
+        config_path: The `--config` file, if any.
+        session_id: The session, or "" for the newest.
+        model: The `--model` override, `[provider/]model`, applied to the reviewer route.
+
+    Returns:
+        The exit code: 0 reviewed, 2 refused, 3 budget exceeded.
+    """
     cwd = Path.cwd()
-    # Any session by id, the newest across every bucket without one: the
-    # review reads a journal, so a plan, an ask, a fan-out and a model-git run
-    # are all records it can read (the git verbs' resolver refuses those).
+    # Every bucket: the review reads a journal, so a plan, an ask or a fan-out is a record too.
     try:
         layout = resolve_or_newest_layout(cwd, session_id)
     except SessionIdError as exc:

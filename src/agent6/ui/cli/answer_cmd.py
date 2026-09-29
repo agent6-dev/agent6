@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 answer`: answer a live run's `ask_user` question from a script.
+"""Answer a live run's `ask_user` question from a script (`agent6 answer`).
 
-The sibling of `agent6 steer` for the other operator prompt: `steer` refuses a
-run blocked on a question ("stays queued until that is answered"), and every
-other way in (`attach`, the TUI, the web composer) needs a person at a screen.
-This writes the same answer file those front-ends write, so a listener that
-forwards questions somewhere else can send the reply back.
+`steer` refuses a run blocked on a question, and every other way in needs a person
+at a screen. This writes the same answer file those front-ends write, so a listener
+that forwards questions elsewhere can send the reply back.
 """
 
 from __future__ import annotations
@@ -21,6 +19,7 @@ from agent6.viewmodel import QuestionPrompt, open_question, session_is_live
 
 
 def _print_question(session_id: str, prompt: QuestionPrompt) -> None:
+    """Print the open question and the command that answers it."""
     print(f"{session_id} is waiting on {len(prompt.questions)} question(s):")
     for i, q in enumerate(prompt.questions, start=1):
         print(f"  {i}. {q.question}")
@@ -30,8 +29,15 @@ def _print_question(session_id: str, prompt: QuestionPrompt) -> None:
 
 
 def _cmd_answer(target: str, answers: tuple[str, ...]) -> int:
-    """Answer the run's open question, or print it when no answer is given:
-    the session, its liveness, then the question."""
+    """Answer the run's open question, or print it when no answer is given.
+
+    Args:
+        target: The session id or prefix.
+        answers: One answer per question, in order.
+
+    Returns:
+        The exit code: 0 when answered or printed, 2 on a refusal.
+    """
     try:
         layout = resolve_session_layout(Path.cwd(), target)
     except SessionIdError as exc:
@@ -50,8 +56,7 @@ def _cmd_answer(target: str, answers: tuple[str, ...]) -> int:
         )
         return 2
     if not answers or len(answers) != len(prompt.questions):
-        # Answers align to the prompt's questions by index, so a short list
-        # would answer the wrong one and a long one would be silently cut.
+        # Answers align to the questions by index; a short list would answer the wrong one.
         _print_question(layout.session_id, prompt)
         if not answers:
             return 0

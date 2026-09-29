@@ -1,20 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 system`: host / OS-level setup that needs privileges.
+"""`agent6 system`: host-level setup that needs privileges.
 
-Operator-driven admin actions, not LLM-driven: every command here shells out
-with fixed argv (run directly when already root, else prefixed with `sudo`),
-never with model-supplied input. Distinct from `agent6 init` (per-repo setup).
-The first member is `apparmor` (install the bundled AppArmor profile that
-lets the strict sandbox use unprivileged user namespaces on Ubuntu 24.04+); the
-namespace is shaped to grow (e.g. a future `system service` for a systemd unit).
+Operator-driven: every command shells out with fixed argv, directly when already root,
+else through `sudo`, never with model-supplied input. `apparmor` installs the bundled
+profile that lets the strict sandbox use unprivileged user namespaces on Ubuntu 24.04+.
 
-Security review note: this writes `/etc/apparmor.d/agent6-jail` and runs
-`apparmor_parser` via sudo. The profile content is a fixed in-repo constant
-(below) and the argv is fixed; nothing here is influenced by LLM output. The
-profile grants `userns` to the agent6-jail launcher binary only (it is
-`flags=(unconfined)` because the launcher does its own sandboxing) and adds no
-other capability.
+Security review note: `apparmor` writes `/etc/apparmor.d/agent6-jail` and runs
+`apparmor_parser` via sudo. The profile is a fixed constant and the argv is fixed. The
+profile grants `userns` to the agent6-jail launcher binary only, `flags=(unconfined)`
+because the launcher does its own sandboxing, and adds no other capability.
 """
 
 from __future__ import annotations
@@ -31,10 +26,8 @@ from agent6.ui.cli._common import error, warn
 
 _APPARMOR_PROFILE_PATH = "/etc/apparmor.d/agent6-jail"
 
-# The bundled AppArmor profile. Shipped as a constant so a pip/uv/pipx install
-# carries it (no repo checkout needed). The attachment glob matches the bundled
-# launcher wherever the wheel lands (.../agent6/sandbox/_bin/agent6-jail); a
-# custom AGENT6_JAIL_BIN elsewhere needs its path added (warned at install).
+# A constant so every install carries it; the glob matches the bundled launcher wherever the
+# wheel lands, and a custom AGENT6_JAIL_BIN elsewhere needs its path added (warned at install).
 _APPARMOR_PROFILE = """\
 # AppArmor profile for the agent6-jail sandbox launcher (managed by
 # `agent6 system apparmor`). It lifts the unprivileged user-namespace
@@ -55,6 +48,7 @@ profile agent6-jail /**/agent6/sandbox/_bin/agent6-jail flags=(unconfined) {
 
 
 def _host_lsm() -> str:
+    """Return the kernel's active LSM list, or "" when unreadable."""
     try:
         return Path("/sys/kernel/security/lsm").read_text(encoding="utf-8").strip()
     except OSError:
@@ -62,15 +56,24 @@ def _host_lsm() -> str:
 
 
 def _apparmor_present() -> bool:
-    """True when this host actually uses AppArmor (so the profile is meaningful)."""
+    """Return whether this host uses AppArmor, so the profile is meaningful."""
     return "apparmor" in _host_lsm()
 
 
 def _run_priv(argv: list[str], *, what: str, required: bool = True) -> bool:
-    """Run a fixed-argv privileged command: directly if already root, else via
-    sudo. Returns True on success; an optional command may fail without an
-    error report. The argv is operator/agent6-fixed, never LLM input (so a
-    direct subprocess is within the security model)."""
+    """Run a fixed-argv privileged command, directly as root or through sudo.
+
+    The argv is agent6's own, never LLM input, so a direct subprocess is within the
+    security model.
+
+    Args:
+        argv: The command.
+        what: What it does, for the error text.
+        required: Report a failure as an error.
+
+    Returns:
+        Whether the command succeeded.
+    """
     full = argv if os.geteuid() == 0 else ["sudo", *argv]
     print(f"[agent6] {' '.join(full)}", file=sys.stderr)
     try:
@@ -85,8 +88,7 @@ def _run_priv(argv: list[str], *, what: str, required: bool = True) -> bool:
 
 
 def _discard_failed_install() -> None:
-    """Remove the partial file a failed copy left where no profile was before,
-    so `system apparmor status` does not report one installed."""
+    """Remove the partial file a failed copy left, so `status` does not report a profile."""
     _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="remove the failed install")
     if Path(_APPARMOR_PROFILE_PATH).is_file():
         warn(
@@ -101,7 +103,11 @@ def _discard_failed_install() -> None:
 
 
 def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
-    """Install / remove / report the agent6-jail AppArmor profile."""
+    """Install, remove or report the agent6-jail AppArmor profile.
+
+    Returns:
+        The exit code; 1 when the host lacks AppArmor or a step failed.
+    """
     installed = Path(_APPARMOR_PROFILE_PATH).is_file()
 
     if action == "status":
@@ -117,9 +123,7 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         if not installed:
             print(f"Nothing to remove: {_APPARMOR_PROFILE_PATH} is not present.")
             return 0
-        # Unload from the kernel first (best-effort: the profile may be on disk
-        # but not loaded, in which case -R exits non-zero harmlessly), then
-        # delete the file. Success is "the file is gone", not the -R exit.
+        # Unload first, best effort (-R fails harmlessly when not loaded); success is the file gone.
         if _apparmor_present():
             _run_priv(
                 ["apparmor_parser", "-R", _APPARMOR_PROFILE_PATH],
@@ -144,7 +148,7 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         return 1
 
     # install
-    from agent6.sandbox.jail import locate_jail_binary  # noqa: PLC0415 - avoid import cycle
+    from agent6.sandbox.jail import locate_jail_binary  # noqa: PLC0415  # an import cycle
 
     jail_bin = locate_jail_binary()
     if jail_bin is not None and "/agent6/sandbox/_bin/agent6-jail" not in str(jail_bin):
@@ -157,8 +161,7 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
     with tempfile.NamedTemporaryFile("w", suffix=".apparmor", delete=False) as fh:
         fh.write(_APPARMOR_PROFILE)
         tmp = fh.name
-    # The kernel loads the profile from the temp file first: one the parser
-    # refuses never reaches the path, so a working profile stays installed.
+    # Loaded from the temp file first, so a profile the parser refuses never reaches the path.
     try:
         ok = _run_priv(["apparmor_parser", "-r", tmp], what="load the profile") and _run_priv(
             ["cp", tmp, _APPARMOR_PROFILE_PATH], what="install the profile"

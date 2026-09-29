@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parser builders for the run/resume/fork family: start a run, resume a
-paused one from its snapshot, or fork a new run off a prior checkpoint."""
+"""Build the `run`, `resume` and `fork` parsers."""
 
 from __future__ import annotations
 
@@ -26,6 +25,7 @@ from agent6.ui.cli.completers import (
 
 
 def _add_model_flag(parser: argparse.ArgumentParser) -> None:
+    """Add `--model` with route completion."""
     arg = parser.add_argument(
         "--model",
         default="",
@@ -41,6 +41,7 @@ def _add_model_flag(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `run`."""
     run_p = _sub(sub, "run", help="Work on a coding task in a new session.")
     run_p.add_argument(
         "task",
@@ -160,6 +161,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 
 def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `resume`."""
     resume_p = _sub(
         sub, "resume", help="Continue a paused or interrupted session from its saved state."
     )
@@ -214,6 +216,7 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
 
 
 def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `fork`."""
     fork_p = _sub(
         sub,
         "fork",
@@ -263,6 +266,5 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         help="Show the forked session in the full-screen terminal interface.",
     )
     _add_budget_flags(fork_p)
-    # A fork without --no-run continues a run, so it is a paid command like the
-    # rest and carries the same approval/sandbox overrides.
+    # A fork without --no-run continues a run, so it carries the same sandbox overrides.
     _add_sandbox_flags(fork_p)

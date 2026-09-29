@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Assembles the `agent6` argparse parser (subcommands, flags, completers)."""
+"""Assemble the `agent6` argparse parser: subcommands, flags, completers."""
 
 from __future__ import annotations
 
@@ -29,13 +29,8 @@ from agent6.ui.cli._watch_args import (
 )
 from agent6.ui.cli.completers import _complete_session_ids
 
-# Commands with a default verb: `plan <task>` == `plan run <task>`, `ask <q>`
-# == `ask query <q>`, and a bare group whose obvious action is its read-only
-# listing (`skills` == `skills list`, `config` == `config show`, like a bare
-# `sessions`). _inject_default_verb rewrites argv so a bare task isn't
-# mistaken for a subcommand name. The explicit forms (`plan run`, `ask query`,
-# `history search`) cover the rare query whose first word is a verb name. A
-# test pins each verb set to the parser's real subcommands.
+# Commands with a default verb (`plan <task>` is `plan run <task>`, a bare `skills` lists); the
+# explicit form covers a query whose first word is a verb name. A test pins each verb set.
 _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
     "plan": ("run", frozenset({"run", "show", "edit"})),
     "ask": ("query", frozenset({"query"})),
@@ -77,23 +72,23 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
     ),
 }
 
-# The groups whose default verb takes no positional: a bare word after them is
-# a mistyped verb, left for argparse to name the choices.
+# Groups whose default verb takes no positional: a bare word after them is a mistyped verb.
 _BARE_DEFAULT_GROUPS: frozenset[str] = frozenset(
     {"skills", "memory", "mcp", "prompt", "machine", "sessions"}
 )
 
 
-# Top-level options that may precede the subcommand. `--config` takes a value;
-# the rest are flags. _inject_default_verb skips past these to find the command.
+# Top-level options that may precede the subcommand; `--config` takes a value, the rest are flags.
 _GLOBAL_VALUE_OPTS = frozenset({"--config"})
 _GLOBAL_FLAG_OPTS = frozenset({"--allow-root"})
 
 
 def _shell_default_help() -> str:
-    """The completions `shell` help, naming what detection resolves to, so the
-    default reads as a resolved fact. Detection walks the process tree (a fish
-    inside bash detects fish); unknown keeps generic wording."""
+    """Return the completions `shell` help, naming what detection resolves to.
+
+    Detection walks the process tree (a fish inside bash detects fish); unknown keeps the
+    generic wording.
+    """
     from agent6.ui.cli.completions_cmd import detect_shell  # noqa: PLC0415
 
     detected = detect_shell()
@@ -103,11 +98,13 @@ def _shell_default_help() -> str:
 
 
 def _command_index(argv: list[str]) -> int | None:
-    """Index of the subcommand token, skipping leading global options.
+    """Return the index of the subcommand token, skipping leading global options.
 
-    `["--config", "c.toml", "plan", ...]` -> 2. Returns None if a global help
-    or version flag appears first (argparse handles those) or no command is
-    found.
+    `["--config", "c.toml", "plan", ...]` gives 2.
+
+    Returns:
+        The index, or None when a global help or version flag comes first or no command
+        is found.
     """
     i = 0
     while i < len(argv):
@@ -128,21 +125,17 @@ def _command_index(argv: list[str]) -> int | None:
 
 
 def _inject_default_verb(argv: list[str]) -> list[str]:
-    """Insert a group's implicit verb when the next token isn't one.
+    """Return argv with a group's implicit verb inserted when the next token is not one.
 
-    `["plan", "fix the bug"]` -> `["plan", "run", "fix the bug"]`;
-    `["ask", "why?"]` -> `["ask", "query", "why?"]`. Leading global options
-    (`--config FILE`, `--allow-root`) are skipped to find the command. An
-    explicit verb or `-h`/`--help` is left untouched.
+    `["plan", "fix the bug"]` becomes `["plan", "run", "fix the bug"]`. Leading global
+    options are skipped to find the command; an explicit verb or `-h`/`--help` is left as is.
     """
     ci = _command_index(argv)
     if ci is None or argv[ci] not in _DEFAULT_VERBS:
         return argv
     default_verb, verbs = _DEFAULT_VERBS[argv[ci]]
     rest = argv[ci + 1 :]
-    # A bare `plan`/`ask` also gets the default verb so the no-task path (offer
-    # the most recent plan / start the ask REPL) still runs; only an explicit
-    # verb or -h/--help is left alone.
+    # A bare `plan` or `ask` gets the verb too, so the no-task path still runs.
     if rest and (rest[0] in verbs or rest[0] in ("-h", "--help")):
         return argv
     if rest and argv[ci] in _BARE_DEFAULT_GROUPS and not rest[0].startswith("-"):
@@ -151,11 +144,9 @@ def _inject_default_verb(argv: list[str]) -> list[str]:
 
 
 def _directories_epilog() -> str:
-    """Where agent6 keeps things, resolved, for the bottom of `--help`.
+    """Return where agent6 keeps things, resolved, for the bottom of `--help`.
 
-    Four XDG bases each hold a different kind of thing. Paths only (no file
-    contents), and each is a plain env/home lookup, so building the parser stays
-    cheap.
+    Paths only, each a plain env or home lookup, so building the parser stays cheap.
     """
     user = effective_user()
     rows = (
@@ -176,9 +167,8 @@ def _directories_epilog() -> str:
     )
 
 
-# `agent6 --help` lists the commands in these groups, in this order: the verbs
-# that start work, then those that act on a live run, the front-ends, the
-# session records, the agent's context and tools, setup.
+# The `agent6 --help` groups, in this order: start work, act on a live run, front-ends, records,
+# context and tools, setup.
 COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("work", ("run", "plan", "ask", "resume", "fork", "review", "machine")),
     ("control", ("attach", "steer", "stop", "answer", "exec", "forward")),
@@ -191,10 +181,10 @@ COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 class _GroupedCommandsHelp(argparse.RawDescriptionHelpFormatter):
-    """The top-level command list rendered by COMMAND_GROUPS, each group a
-    titled block; every other action renders as argparse does."""
+    """Render the top-level command list by `COMMAND_GROUPS`, each group a titled block."""
 
     def _format_action(self, action: argparse.Action) -> str:
+        """Return the grouped rendering for the subparsers action, argparse's for every other."""
         if not isinstance(action, argparse._SubParsersAction) or action.dest != "command":  # pyright: ignore[reportPrivateUsage]
             return super()._format_action(action)
         entries = {a.dest: a for a in action._choices_actions}  # pyright: ignore[reportPrivateUsage]
@@ -209,6 +199,7 @@ class _GroupedCommandsHelp(argparse.RawDescriptionHelpFormatter):
 
 
 def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
+    """Return the `agent6` parser."""
     parser = argparse.ArgumentParser(
         prog="agent6",
         description="Sandboxed coding agent.",
@@ -336,8 +327,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         " (nothing existing is ever overwritten).",
     )
     init_p.add_argument(
-        # Named --ecosystem: `run/plan/ask --preset` is the strategy preset
-        # (quick/ultra/...), a different concept.
+        # `--ecosystem`, since `--preset` is the strategy preset on run, plan and ask.
         "--ecosystem",
         dest="ecosystem",
         choices=("py", "rust", "node"),
@@ -402,9 +392,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     completions_p.add_argument(
         "shell",
         nargs="?",
-        # None (not ""): argparse validates a *string* default against choices,
-        # and an empty-string choice leaks into completion output as a bogus
-        # description-only candidate.
+        # None, not "": argparse checks a string default against choices; "" leaks into completion.
         default=None,
         choices=["bash", "zsh", "fish", "xonsh"],
         metavar="{bash,zsh,fish,xonsh}",

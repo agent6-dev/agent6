@@ -20,21 +20,25 @@ def _cmd_prompt_show(
     mode: Literal["run", "plan", "ask", "agent"],
     as_json: bool = False,
 ) -> int:
-    """Print everything the model receives on a run's first call here, for
-    this repo and the effective (layered) config, in the given mode: the system
-    prompt (its static blocks and the per-repo `<repo-priors>` block), the tool
-    definitions the API's `tools` field carries (name, description, input
-    schema, exactly the list this config exposes), and the first user message
-    around the task. `--json` prints the same as one object."""
+    """Print everything the model receives on a session's first call here.
+
+    The system prompt (its static blocks and the per-repo `<repo-priors>` block), the tool
+    definitions the API's `tools` field carries, and the first user message, for this repo
+    and the effective config in the given mode.
+
+    Args:
+        config_path: The `--config` file, if any.
+        mode: The session kind whose prompt to show.
+        as_json: Print one JSON object instead of text.
+
+    Returns:
+        The exit code, 0.
+    """
     cwd = Path.cwd()
     eff = load_effective(cwd, config_path)
     cfg = eff.config
     if mode in ("run", "plan") and not cfg.harness.verify_command and cfg.harness.verify_infer:
-        # A run infers its gate before assembling the prompt, and the gate
-        # decides the `<verify-command>` block, the commit rule and whether
-        # `run_verify_command` is offered at all, so the audit surface infers
-        # it the same way. The LLM tier is a run's own call (it spends), so
-        # only the deterministic ones run here.
+        # The gate shapes the prompt, so infer it as a run does; the LLM tier spends, so not here.
         inferred = infer_verify_command(cwd, read_agents_md(cwd), llm_call=None)
         if inferred is not None:
             cfg = cfg.with_verify_command(inferred.argv)
@@ -44,6 +48,7 @@ def _cmd_prompt_show(
 
 
 def _as_json(x: ModelExchange) -> str:
+    """Return the exchange as one indented JSON object."""
     return json.dumps(
         {
             "mode": x.mode,
@@ -60,6 +65,7 @@ def _as_json(x: ModelExchange) -> str:
 
 
 def _as_text(x: ModelExchange) -> str:
+    """Return the exchange as sectioned text."""
     out = [
         f"=== system prompt ({x.mode} mode, {len(x.system):,} chars) ===",
         x.system.rstrip(),

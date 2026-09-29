@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parser builders for `config`/`connect`/`model`: inspect and edit the
-layered config (global + repo + defaults + machine-file overlay), add a
-provider + API key, and assign models to roles."""
+"""Build the `config`, `connect` and `model` parsers."""
 
 from __future__ import annotations
 
@@ -23,8 +21,7 @@ from agent6.ui.cli.completers import (
 
 
 def _add_machine_file(parser: argparse.ArgumentParser, help_text: str) -> None:
-    """`--machine-file FILE`: the verb reads or writes a machine file's
-    [config] overlay instead of the global or repo config."""
+    """Add `--machine-file FILE`, redirecting the verb to a machine file's [config] overlay."""
     arg = parser.add_argument(
         "--machine-file",
         dest="machine_file",
@@ -37,6 +34,7 @@ def _add_machine_file(parser: argparse.ArgumentParser, help_text: str) -> None:
 
 
 def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `config` and its subcommands over the layered config."""
     config_p = _sub(
         sub,
         "config",
@@ -109,8 +107,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         config_sub, "get", help="Show one setting's current value and where it came from."
     )
     config_get_key = config_get.add_argument("key", help="Setting name, such as sandbox.network.")
-    # `get` reads effective leaves, and `[presets.*]` are stripped before
-    # validation, so offering them would propose an input it refuses.
+    # `get` reads effective leaves; `[presets.*]` are stripped before validation, so not offered.
     config_get_key.completer = partial(  # type: ignore[attr-defined]
         _complete_config_keys, settable=False
     )
@@ -168,6 +165,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
 
 
 def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `connect`, which adds a provider and its API key."""
     connect_p = _sub(
         sub,
         "connect",
@@ -209,17 +207,13 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
 
 
 def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `model`, which shows or assigns a role's model and effort."""
     model_p = _sub(
         sub,
         "model",
         help="Show or set the model and reasoning effort for planning, work, and review.",
     )
-    # choices gives both argparse validation and argcomplete tab-completion for
-    # free. default=None (not "") so the omitted case isn't checked against
-    # choices, argparse validates choices against a string default otherwise.
-    # metavar="role" shows `role` in usage (not the noisy `{planner,...}`); the
-    # choices stay listed in the help text. "all" is a pseudo-role (no config
-    # field of that name) that sets every role at once, see _cmd_model.
+    # default=None: argparse validates a string default against choices. "all" sets every role.
     model_p.add_argument(
         "role",
         nargs="?",
@@ -243,8 +237,7 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
             " configured PROVIDER prints its known models."
         ),
     )
-    # Role-gated (see _complete_model_verb_values) so the routes do not bleed
-    # into the first positional (role).
+    # Role-gated, so the routes do not bleed into the first positional.
     model_route.completer = _complete_model_verb_values  # type: ignore[attr-defined]
     model_p.add_argument(
         "--effort",
