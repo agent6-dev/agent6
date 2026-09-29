@@ -1,19 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Read a session's manifest.json into the typed :class:`SessionManifest`: the one
-reader and the on-disk shape, with `app.manifest` as the writer.
+"""The manifest.json shape and its one reader; `app.manifest` is the writer.
 
-A leaf beside `layout.py`: pydantic + path arithmetic, no agent6 imports, so
-app, the viewmodel, and the CLI parse a run's manifest through one owner and one
-shape.
-
-The model defaults every field and ignores unknown keys, so a partial or
-foreign-keyed manifest renders what it does carry, which is lenience for damage
-rather than a compatibility promise (the shape is liquid until 1.0; superseded keys are
-dropped, never folded). Reading is lenient: `read_manifest` degrades a corrupt
-file through `ManifestError`, which the render consumers already catch. The one
-strict contract is `session_mode`, the fork/resume privilege gate, which refuses
-an unknown mode rather than falling open to the write ("run") tools.
+Every field defaults and unknown keys are ignored, so a partial or foreign-keyed manifest
+renders what it carries: lenience for damage, not a compatibility promise (the shape is
+liquid until 1.0). The one strict contract is `session_mode`, the fork and resume privilege
+gate, which refuses an unknown mode rather than falling open to the write tools.
 """
 
 from __future__ import annotations
@@ -30,14 +22,14 @@ _MODEL_CONFIG = ConfigDict(frozen=True, extra="ignore")
 
 
 class ManifestError(Exception):
-    """A session's manifest.json is missing, unreadable, corrupt, not a JSON object,
-    does not validate, or (via `session_mode`) records an unknown privilege
-    mode. Carries the underlying cause as its message, so a caller that wants to
-    surface a detail can render it."""
+    """The manifest is missing, unreadable, corrupt, invalid, or names an unknown mode.
+
+    The message is the underlying cause.
+    """
 
 
 class ModelBrief(BaseModel):
-    """`{provider, model}` for a resolved role."""
+    """The provider and model of a resolved role."""
 
     model_config = _MODEL_CONFIG
 
@@ -46,123 +38,131 @@ class ModelBrief(BaseModel):
 
 
 class ModelsBrief(BaseModel):
-    """The models the run resolved: the one that DROVE it (the worker, or the
-    planner for a plan run) and the reviewer. Null when the role is unset."""
+    """The models the run resolved.
+
+    Attributes:
+        driver: The model that drove the run, the worker or a plan's planner; None unset.
+        reviewer: The reviewer; None unset.
+        driver_from_flag: The driver came from a `--model`, the run's or a resume's.
+    """
 
     model_config = _MODEL_CONFIG
 
     driver: ModelBrief | None = None
     reviewer: ModelBrief | None = None
-    # Whether `driver` came from a `--model` (the run's, or a resume's): a
-    # resume that sets none replays it, as a flag-selected preset is replayed.
     driver_from_flag: bool = False
 
     @property
     def replay_driver(self) -> ModelBrief | None:
-        """The driver a resumed or forked execution without its own `--model` must
-        re-apply: only a flag-selected one (the preset's rule,
-        `HarnessStamp.replay_preset`); None re-resolves from the config."""
+        """The driver a resume or fork without its own `--model` re-applies: a flag-selected one."""
         return self.driver if self.driver_from_flag else None
 
 
 class PolicyStamp(BaseModel):
-    """How the run was launched: the policy facts an operator wants to see
-    without opening config. Recorded so every surface reads them from one
-    place (the TUI and web are other processes with only the run dir), and so
-    `agent6 exec` reproduces the run's isolation and network even
-    after the config moved (mounts stay config-derived; exec's help says
-    so)."""
+    """The policy the run launched under, so every surface and `agent6 exec` read one record.
+
+    Attributes:
+        run_commands: `[sandbox].run_commands` at launch.
+        isolation: `[sandbox].isolation` at launch.
+        network: `[sandbox].network` at launch.
+        commit_per_step: `[git].commit_per_step` for the live execution; False means a dirty
+            tree at the end is the deliverable, never a stranded commit.
+    """
 
     model_config = _MODEL_CONFIG
 
     run_commands: str = ""
     isolation: str = ""
     network: str = ""
-    # [git].commit_per_step for the live execution (`stamp_execution` re-stamps it): False
-    # means nothing commits by design, so a dirty tree at the end is the
-    # deliverable, never a stranded commit.
     commit_per_step: bool = True
 
 
 class HarnessStamp(BaseModel):
-    """The in-loop strategy the run started with, so `resume` re-applies it."""
+    """The in-loop strategy the run started with, so `resume` re-applies it.
+
+    Attributes:
+        review_trigger: `[review].trigger` at launch.
+        revise_prompt: `[prompt].revise_prompt` at launch.
+        preset: The preset in force at launch.
+        verify_command: The gate the run is pinned to, so a mid-run edit to its source cannot
+            move it; on a resumed execution only operator config outranks it.
+        verify_origin: `configured` (a config file, which the model cannot write), `inferred`
+            (repo signals, which it can), `adopted` (gained mid-run by a gateless run), or ""
+            for no gate.
+        preset_from_flag: The preset came from `--preset` rather than a config file.
+    """
 
     model_config = _MODEL_CONFIG
 
     review_trigger: str = ""
     revise_prompt: str = ""
     preset: str = ""
-    # The verify gate this run is pinned to, and where it came from:
-    # "configured" (a config file, which the model cannot write), "inferred"
-    # (repo signals / AGENTS.md, which it can), "adopted" (gained mid-run by a
-    # run that started gateless), or "" for no gate at all. Pinned so a mid-run
-    # edit to the source cannot move the gate under the run -- including on a
-    # resumed execution, where only operator config outranks what is recorded here.
     verify_command: tuple[str, ...] = ()
     verify_origin: str = ""
-    # Whether `preset` was chosen by --preset rather than by a config file.
-    # The name alone is half the fact: replaying a config-selected one as a flag
-    # splices it ABOVE the repo config it originally lost to (see replay_preset).
     preset_from_flag: bool = False
 
     @property
     def replay_preset(self) -> str:
-        """The `--preset` override a resumed or forked execution must re-apply.
+        """The `--preset` override a resume or fork re-applies: a flag-selected one only.
 
-        Only a FLAG-selected preset: a config-selected one re-resolves
-        identically from the same config files, whereas handing its name back as
-        an override makes `_select_preset` call it a flag, which outranks every
-        config layer. A run whose repo config beat a global preset therefore
-        came back from resume with the preset winning instead -- gaining, for
-        example, a blocking review veto the original never had.
+        A config-selected preset re-resolves from the same files; handed back as an override
+        it would outrank every config layer, and a run whose repo config beat a global preset
+        would resume with the preset winning.
         """
         return self.preset if self.preset_from_flag else ""
 
 
-# The `sha` of a merge that added no commit: the target already held the
-# branch's content. Its own tip would name a commit that is not the run's.
+# The `sha` of a merge that added no commit; the target's own tip is not the run's.
 NO_MERGE_COMMIT = "0" * 40
 
 
 class MergeStamp(BaseModel):
-    """Recorded once a run branch is merged, so later tooling tells a merged run
-    branch from an unmerged one."""
+    """The record of the run branch's merge.
+
+    Attributes:
+        into: The base branch.
+        sha: The merge commit in the base, or NO_MERGE_COMMIT.
+        ts: When it was merged.
+        tip: The run branch tip that was merged. `sessions prune --delete-squashed` deletes
+            only while the branch still points here: a resumed run's later commits exist in
+            no other ref.
+        into_tip: For a merge that added nothing, the base's own tip at the time, the commit
+            that already held the run's content; the delete checks it as it checks `sha`.
+    """
 
     model_config = _MODEL_CONFIG
 
     into: str = ""
-    sha: str = ""  # the merge commit in `into`, or NO_MERGE_COMMIT
+    sha: str = ""
     ts: str = ""
-    # The RUN BRANCH tip that was merged (`sha` is the commit in the base).
-    # `sessions prune --delete-squashed` force-deletes only when the branch still
-    # points here: a resumed run keeps committing on the same branch under this
-    # stamp, and those commits exist in no other ref.
     tip: str = ""
-    # For a merge that added nothing (`sha` is NO_MERGE_COMMIT): the base's own
-    # tip at the time, the commit that already held the run's content. The
-    # force-delete checks it the way it checks `sha`.
     into_tip: str = ""
 
     @property
     def commit(self) -> str:
-        """The merge commit's abbreviated sha, "" for a record that names none
-        (an all-zero sha)."""
+        """The merge commit's abbreviated sha; "" for a record that names none."""
         return "" if not self.sha or self.sha == NO_MERGE_COMMIT else self.sha[:12]
 
     def landed(self) -> str:
-        """Where the merge put the run's work, one wording for every surface:
-        `merged into <base> as <sha12>`, or `already on <base>, no merge
-        commit` for a record that names none."""
+        """Return where the merge put the run's work, one wording for every surface.
+
+        Returns:
+            `merged into <base> as <sha12>`, or `already on <base>, no merge commit`.
+        """
         if self.commit:
             return f"merged into {self.into} as {self.commit}"
         return f"already on {self.into}, no merge commit"
 
 
 class ParallelLineage(BaseModel):
-    """A fan-out lane's place: the group it was dispatched in, its number in
-    that group, and the session that dispatched it (the coordinator every
-    listing nests the lane under). `run --parallel` names its group after
-    the coordinator; a `/parallel` group is `<coordinator>-p<n>`."""
+    """A fan-out lane's place.
+
+    Attributes:
+        group: The group it was dispatched in: the coordinator's id for `run --parallel`,
+            `<coordinator>-p<n>` for a `/parallel` group.
+        lane: Its number in the group.
+        coordinator: The session that dispatched it, which every listing nests it under.
+    """
 
     model_config = _MODEL_CONFIG
 
@@ -172,9 +172,14 @@ class ParallelLineage(BaseModel):
 
 
 class FanoutStamp(BaseModel):
-    """The record a `run --parallel` fan-out leaves on its own session: how
-    many lanes it dispatched and the `--parallel` argument as typed. A
-    `/parallel` group's coordinator is an ordinary run and carries none."""
+    """The record a `run --parallel` fan-out leaves on its own session.
+
+    A `/parallel` group's coordinator is an ordinary run and carries none.
+
+    Attributes:
+        lanes: How many lanes it dispatched.
+        spec: The `--parallel` argument as typed.
+    """
 
     model_config = _MODEL_CONFIG
 
@@ -183,8 +188,18 @@ class FanoutStamp(BaseModel):
 
 
 class CompareStamp(BaseModel):
-    """A fan-out lane's auto-compare placement. The lane's lineage lives in
-    the top-level `parallel`, not here."""
+    """A fan-out lane's auto-compare placement.
+
+    Attributes:
+        rank: The lane's place, 1 first.
+        of: How many lanes were ranked.
+        winner: The lane ranked first.
+        ranked_by: What ranked it.
+        rationale: The judge's reason.
+        judge_cost_usd: The judge call's cost for the whole group, recorded on every lane, so
+            summing it across lanes double-counts; 0.0 only when no judge call was made.
+        judge_cost_partial: The cost is a lower bound (an unpriced reviewer).
+    """
 
     model_config = _MODEL_CONFIG
 
@@ -193,29 +208,55 @@ class CompareStamp(BaseModel):
     winner: bool = False
     ranked_by: str = ""
     rationale: str = ""
-    # The judge call's cost for the WHOLE group, recorded on every lane like
-    # the rationale; summing it across lanes would double-count. 0.0 only when
-    # no judge call was made (a failed judge that fell back mechanically still
-    # spent); partial marks a lower bound (unpriced reviewer, no reported cost).
     judge_cost_usd: float = 0.0
     judge_cost_partial: bool = False
 
 
-# The shape this binary writes. Stamp-rewrites re-stamp it (see write_manifest)
-# so a manifest's version claim always matches the shape actually on disk.
+# Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
 MANIFEST_VERSION = 4
 MANIFEST_NAME = "manifest.json"
 
 
 class SessionManifest(BaseModel):
-    """The typed manifest.json a session starts with (and later stamps).
+    """The typed manifest.json a session starts with and later stamps.
 
-    Every field defaults and `extra="ignore"` drops keys this version does not
-    know, so a manifest missing fields or carrying foreign keys still renders;
-    the writer always emits the full shape. Known limitation: a stamp-rewrite
-    by this version drops keys only a NEWER version knows (load -> model_copy
-    -> dump cannot carry them), so the write path re-stamps `version` to keep
-    the on-disk claim truthful.
+    A stamp-rewrite by this version drops keys only a newer version knows, so the write
+    path re-stamps `version` to keep the on-disk claim truthful.
+
+    Attributes:
+        version: The manifest shape, MANIFEST_VERSION.
+        agent6_version: The agent6 that wrote it.
+        session_id: The session id.
+        mode: The session mode. No default: it is the privilege gate's only input, and a
+            manifest that lost the key must not read as the more-privileged `run`.
+        start_ts: When the session started.
+        user_task: The task, truncated for display; `parked_task` holds it verbatim.
+        base_sha: The commit the run started on.
+        base_branch: The branch the run started on.
+        run_branch: The run's own branch, or None.
+        git_control: `[git].control` at start; a `model` run has no chain or branch, and the
+            git surfaces refuse through `model_git_refusal`.
+        models: The models the run resolved.
+        harness: The strategy the run started with.
+        policy: The policy the run launched under.
+        parked_task: The verbatim task of a run submitted but never started; `agent6 resume`
+            starts it fresh and its manifest rewrite clears this.
+        parked_reason: Why it was parked: the checkout was busy, or the tree was dirty and
+            the operator chose to wait.
+        source_session_id: The `run --from` source, which contributes context but not this
+            session's mode, checkout or history.
+        parent_session_id: The fork parent, or None.
+        forked_from_turn: The turn the fork rolled back to, or None.
+        forked_from_sha: The commit the fork started on, or None.
+        worktree: The absolute path of the linked worktree `agent6 fork` added; None for a
+            session in the operator's checkout. An `/undo` fork names its source's.
+        worktree_git_dir: The repository git dir that worktree points into: the one path a
+            fork execution's jail grants beyond the workspace. Never read back from the
+            worktree's own `.git` pointer, which a jailed command can rewrite under hardened.
+        merged: The merge record, None until the run branch is merged.
+        parallel: A fan-out lane's lineage, or None.
+        compare: A fan-out lane's compare stamp, or None.
+        fanout: A fan-out's own record on its coordinator, or None.
     """
 
     model_config = _MODEL_CONFIG
@@ -223,63 +264,40 @@ class SessionManifest(BaseModel):
     version: int = MANIFEST_VERSION
     agent6_version: str = ""
     session_id: str = ""
-    # No default mode: the field is the privilege gate's only input, and a
-    # manifest that lost the key (truncated, hand-edited, foreign writer) must
-    # not read as the more-privileged "run". Display consumers show "?" for it.
     mode: str = ""
     start_ts: str = ""
     user_task: str = ""
     base_sha: str = ""
     base_branch: str = ""
     run_branch: str | None = None
-    # Who managed git for this run ([git].control at start). "model" runs have
-    # no chain/branch to diff or merge; the git surfaces refuse via
-    # `model_git_refusal`. An old manifest folds the default.
     git_control: str = "agent6"
     models: ModelsBrief = ModelsBrief()
     harness: HarnessStamp = HarnessStamp()
     policy: PolicyStamp = PolicyStamp()
-    # A parked run: submitted, never started. Holds the VERBATIM task
-    # (user_task above is the truncated display twin); non-empty means
-    # `agent6 resume <id>` starts it fresh, whose manifest rewrite clears it.
-    # `parked_reason` says why, for the operator: the checkout was busy, or the
-    # working tree had uncommitted changes and the operator chose to wait.
     parked_task: str = ""
     parked_reason: str = ""
-    # `run --from` lineage. Unlike a fork parent, the source contributes
-    # context but does not determine this session's mode, checkout, or history.
     source_session_id: str | None = None
-    # fork lineage (a non-forked run leaves these null)
     parent_session_id: str | None = None
     forked_from_turn: int | None = None
     forked_from_sha: str | None = None
-    # A fork's own checkout: the linked git worktree `agent6 fork` added,
-    # absolute. None for a session working in the operator's checkout; an
-    # `/undo` fork names its source's.
     worktree: Path | None = None
-    # The repository git dir that worktree points into, recorded when agent6
-    # added it: the one path a fork execution's jail grants beyond the workspace.
-    # Never read back from the worktree's own `.git` pointer, which a jailed
-    # command can rewrite under hardened.
     worktree_git_dir: Path | None = None
-    # merge stamp (null until the run branch is merged)
     merged: MergeStamp | None = None
-    # a fan-out lane's lineage and its compare stamp, and a fan-out's own
-    # record on its coordinator (each null outside a fan-out)
     parallel: ParallelLineage | None = None
     compare: CompareStamp | None = None
     fanout: FanoutStamp | None = None
 
     def session_mode(self) -> ResumableMode:
-        """The session's mode, refusing anything this agent6 does not know.
+        """Return the session's mode, refusing one this agent6 does not know.
 
-        Fork and resume act on this rather than the raw `mode` string, so a
-        damaged manifest never silently escalates a read-only session to the
-        privileged write ("run") tools. Pure-render consumers read `mode`
-        directly: showing an unknown value is fine, acting on one is not.
+        Fork and resume act on this rather than the raw `mode`, so a damaged manifest never
+        escalates a read-only session to the write tools; a render shows `mode` as is.
 
-        The vocabulary is `types.SESSION_KINDS`: a second list here would
-        drift from it.
+        Returns:
+            The mode.
+
+        Raises:
+            ManifestError: The mode is unknown, or its kind is not resumable.
         """
         try:
             kind = session_kind(self.mode)
@@ -292,11 +310,15 @@ class SessionManifest(BaseModel):
 
 
 def model_git_refusal(manifest: SessionManifest, verb: str) -> str | None:
-    """The one refusal for git surfaces on a model-controlled run, or None.
+    """Return the refusal a git surface gives a model-controlled run, or None.
 
-    A `git.control = "model"` run has no agent6 chain or run branch: the
-    model's own commits are the record, so there is nothing for *verb* to
-    act on."""
+    Args:
+        manifest: The session's manifest.
+        verb: The surface, for the message.
+
+    Returns:
+        The refusal when `git_control` is `model`, whose record is the model's own commits.
+    """
     if manifest.git_control != "model":
         return None
     return (
@@ -307,15 +329,17 @@ def model_git_refusal(manifest: SessionManifest, verb: str) -> str | None:
 
 
 def read_manifest(session_dir: Path) -> SessionManifest:
-    """Parse `<session_dir>/manifest.json` into a :class:`SessionManifest`, or raise
-    `ManifestError`.
+    """Parse a session's manifest.json.
 
-    Lenient by design: every field defaults, so any parseable historical manifest
-    validates and renders. A file that cannot be read (`OSError`), is not JSON
-    (any `ValueError`: a truncated JSON is a `JSONDecodeError` and a
-    torn-UTF-8 tail a `UnicodeDecodeError`, both subclasses), is not a JSON
-    object, or fails validation degrades through the one typed error the render
-    consumers already catch; the fork/resume gate turns it into a loud refusal.
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        The manifest; every field defaults, so any parseable historical manifest validates.
+
+    Raises:
+        ManifestError: The file cannot be read, is not JSON (a truncated file, a torn UTF-8
+            tail), is not a JSON object, or fails validation.
     """
     path = session_dir / MANIFEST_NAME
     try:

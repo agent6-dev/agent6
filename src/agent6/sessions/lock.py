@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One authoritative writer per session dir: the `worker.lock` flock.
+"""The writer flocks: one per session dir, one per checkout.
 
-`agent6 run`/`resume`/`fork` drive one run's shared state (loop_state.json,
-checkpoints, the curator DAG, the run branch). The run-level flock (the
-analogue of `machine_lock`) refuses a second concurrent writer.
+A second concurrent writer of one run's shared state (the snapshot, the checkpoints, the
+curator DAG, the run branch) is refused, as `machine_lock` refuses one for a machine.
 """
 
 from __future__ import annotations
@@ -20,17 +19,16 @@ from agent6.portable import lock_exclusive, lock_shared_nonblocking, unlock
 def acquire_single_writer(session_dir: Path) -> int | None:
     """Take a non-blocking exclusive lock on `<session-dir>/worker.lock`.
 
-    One session's shared state (`loop_state.json`, `checkpoints/`, the curator
-    DAG, the run branch) has exactly one authoritative writer. A second
-    `agent6 run`/`resume`/`fork` targeting the SAME run dir would spawn a
-    second curator whose independent in-memory cache silently clobbers the
-    first's parent->child links (a lost update), and would interleave commits on
-    the run branch. This is the run-level analogue of `machine_lock`.
+    A second writer of the same run dir would spawn a second curator whose in-memory cache
+    clobbers the first's parent-child links, and interleave commits on the run branch.
+    flock releases on process death, so a crashed writer leaves no lock to block a resume.
 
-    Returns the held fd on success (the caller keeps the process alive to hold
-    it, and passes it to `release_single_writer` at teardown), or `None`
-    when another live process holds it (the caller refuses). flock releases on
-    process death, so a crashed writer leaves no lock to block a resume.
+    Args:
+        session_dir: The session directory, created when absent.
+
+    Returns:
+        The held fd, passed to `release_single_writer` at teardown; None when another live
+        process holds the lock.
     """
     mkdir_for_real_user(session_dir)
     fd = os.open(session_dir / "worker.lock", os.O_CREAT | os.O_RDWR, 0o644)
@@ -43,11 +41,14 @@ def acquire_single_writer(session_dir: Path) -> int | None:
 
 
 def release_single_writer(fd: int | None) -> None:
-    """Release + close a lock fd from `acquire_single_writer` (no-op on None).
+    """Release and close a lock fd; a no-op on None.
 
-    Explicit close matters: the fd is a raw int (`os.open`), so it does not
-    self-close on GC. A leaked fd would keep the flock held and wrongly refuse a
-    later same-dir run in the same process (tests, embedding)."""
+    A raw fd does not self-close on GC, and a leaked one keeps the flock held and refuses a
+    later same-dir run in the same process.
+
+    Args:
+        fd: The fd from `acquire_single_writer` or `acquire_repo_writer`.
+    """
     if fd is None:
         return
     with contextlib.suppress(OSError):
@@ -66,27 +67,36 @@ SINGLE_WRITER_BUSY = (
 
 
 def checkout_lock_path(state_dir: Path, checkout: Path) -> Path:
-    """The writer lock of the checkout *checkout* is in (its root, wherever
-    the caller stood): `<state-dir>/locks/<checkout-id>.lock`. A repository's
-    checkouts (its working tree, each linked worktree) share one state dir
-    and hold one lock each."""
+    """Return the writer lock of the checkout a path is in.
+
+    A repository's checkouts (its working tree, each linked worktree) share one state dir
+    and hold one lock each.
+
+    Args:
+        state_dir: The repo's state dir.
+        checkout: Any path inside the checkout.
+
+    Returns:
+        `<state-dir>/locks/<checkout-id>.lock`.
+    """
     return state_dir / "locks" / f"{repo_id(checkout_root(checkout))}.lock"
 
 
 def acquire_repo_writer(state_dir: Path, checkout: Path, session_id: str) -> int | None:
-    """Take a non-blocking exclusive lock on *checkout*'s lock
-    (`checkout_lock_path`): one live `run`-mode worker per CHECKOUT.
+    """Take a non-blocking exclusive lock on a checkout: one live run-mode worker per checkout.
 
-    Run-mode workers share one working tree, and each commit stages that whole
-    tree (into a temp index, `chain_commit`), so a second concurrent run would
-    fold the other's in-flight edits into its own chain: the interleaving the
-    run-dir lock prevents for one run, at repo scope. plan/ask make no commits
-    and never take this lock.
+    Each commit stages the whole working tree, so a second concurrent run would fold the
+    other's in-flight edits into its own chain. Plan and ask make no commits and never take
+    this lock. The holder stamps its session id into the file so a refusal can name it.
 
-    The holder stamps its run id into the file so a refusal can name the live
-    run. Same crash-safety as `acquire_single_writer`: flock releases on
-    process death, so a crashed worker never wedges the checkout. Release with
-    `release_single_writer`.
+    Args:
+        state_dir: The repo's state dir.
+        checkout: Any path inside the checkout.
+        session_id: The holder's id.
+
+    Returns:
+        The held fd, passed to `release_single_writer` at teardown; None when another live
+        process holds the lock.
     """
     lock_path = checkout_lock_path(state_dir, checkout)
     mkdir_for_real_user(lock_path.parent)
@@ -102,8 +112,17 @@ def acquire_repo_writer(state_dir: Path, checkout: Path, session_id: str) -> int
 
 
 def repo_writer_holder(state_dir: Path, checkout: Path) -> str:
-    """The session id the current holder of *checkout*'s lock stamped, or ""
-    when unknown. Advisory (for refusal messages); the flock is the boundary."""
+    """Return the session id the checkout lock's holder stamped, or "".
+
+    Advisory, for a refusal message; the flock is the boundary.
+
+    Args:
+        state_dir: The repo's state dir.
+        checkout: Any path inside the checkout.
+
+    Returns:
+        The stamped id, or "" when the file is unreadable.
+    """
     try:
         return checkout_lock_path(state_dir, checkout).read_text(encoding="utf-8").strip()
     except OSError:
@@ -111,14 +130,18 @@ def repo_writer_holder(state_dir: Path, checkout: Path) -> str:
 
 
 def repo_writer_held(state_dir: Path, checkout: Path) -> bool:
-    """True when a live worker holds *checkout*'s lock.
+    """Return whether a live worker holds the checkout lock.
 
-    An advisory probe for front-end preflight (the web hub refuses a New Work
-    submission up front instead of spawning a doomed run): it takes a SHARED
-    lock, which an exclusive holder blocks and a second probe does not, so
-    asking the question never excludes the writer it asks about. The lock
-    itself is the hard boundary: a race past this probe still parks at
-    `acquire_repo_writer`.
+    An advisory probe for a front-end preflight: it takes a shared lock, which an exclusive
+    holder blocks and a second probe does not, so asking never excludes the writer asked
+    about. A race past this probe still parks at `acquire_repo_writer`.
+
+    Args:
+        state_dir: The repo's state dir.
+        checkout: Any path inside the checkout.
+
+    Returns:
+        True when the exclusive lock is held.
     """
     lock_path = checkout_lock_path(state_dir, checkout)
     if not lock_path.exists():

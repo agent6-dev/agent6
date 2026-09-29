@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Filesystem layout of one session's state directory.
+"""The filesystem layout of one session's state directory.
 
-A leaf: pure path arithmetic over the resolved state base, imported by
-the graph storage/curator stack, the CLI, and the MCP server without pulling
-in any of them.
+A leaf: path arithmetic over the resolved state base.
 """
 
 from __future__ import annotations
@@ -19,12 +17,18 @@ from agent6.sessions.manifest import MANIFEST_NAME
 
 
 def is_safe_session_id(session_id: str) -> bool:
-    """True iff *session_id* is a single path component (no separator, not `.`/`..`).
+    """Return whether an id is a single path component.
 
-    `SessionLayout.session_dir` is `<state>/sessions/<bucket>/<id>`: an unchecked id
-    with `/` or `..` traverses out of the runs dir, and pathlib treats an
-    absolute right operand as a replacement, so an externally supplied id must
-    be validated at every trust boundary before it reaches a layout."""
+    An unchecked id with `/` or `..` traverses out of the sessions dir, and pathlib treats
+    an absolute right operand as a replacement, so an external id is validated at every
+    trust boundary before it reaches a layout.
+
+    Args:
+        session_id: The id.
+
+    Returns:
+        True when it is non-empty, has no separator, and is not `.` or `..`.
+    """
     return (
         bool(session_id)
         and "/" not in session_id
@@ -33,88 +37,102 @@ def is_safe_session_id(session_id: str) -> bool:
     )
 
 
-# The event journal's filename. A reader that hardcodes the wrong one silently
-# finds nothing, which is indistinguishable from an empty session.
+# A reader hardcoding the wrong name finds nothing, indistinguishable from an empty session.
 LOGS_NAME = "logs.jsonl"
-# The files that were untracked when the run started (repo-root-relative,
-# NUL-separated). They are the operator's: every chain commit and dirty check
-# of the run leaves them out.
+# Repo-relative, NUL-separated; every chain commit and dirty check leaves these files out.
 UNTRACKED_AT_START_NAME = "untracked-at-start"
 
 
 @dataclass(frozen=True, slots=True)
 class SessionLayout:
-    """Filesystem layout for one `agent6 run`.
+    """The paths of one session's state.
 
-    `state_dir` is the repository's state dir (`$XDG_STATE_HOME/agent6/<repo-id>`,
-    `agent6.paths.state_dir`).
+    Attributes:
+        state_dir: The repository's state dir, `agent6.paths.state_dir`.
+        session_id: The session id.
+        subdir: The bucket under the sessions root, one per mode.
     """
 
     state_dir: Path
     session_id: str
-    # Top-level bucket under state_dir. "runs" for `agent6 run`/`plan`; "asks"
-    # for `agent6 ask` so Q&A sessions stay separate from real runs.
     subdir: str = "runs"
 
     @property
     def session_dir(self) -> Path:
+        """The session directory."""
         return bucket_dir(self.state_dir, self.subdir) / self.session_id
 
     @property
     def manifest_path(self) -> Path:
+        """The manifest file."""
         return self.session_dir / MANIFEST_NAME
 
     @property
     def graph_dir(self) -> Path:
+        """The task graph's node store."""
         return self.session_dir / "graph"
 
     @property
     def journal_path(self) -> Path:
+        """The task graph's journal."""
         return self.session_dir / "graph.jsonl"
 
     @property
     def cursor_path(self) -> Path:
+        """The task graph's cursor."""
         return self.session_dir / "cursor.json"
 
     @property
     def lock_path(self) -> Path:
+        """The task graph's lock file."""
         return self.session_dir / ".lock"
 
     @property
     def checkpoints_dir(self) -> Path:
-        """Append-only per-turn resume checkpoints (`<NNNN>.json`).
-
-        Each holds the same SessionSnapshot bytes as `loop_state.json` for that
-        turn (workspace `head_sha` + curator `graph_version` included), so
-        `agent6 fork` can roll a run back to turn N. `loop_state.json` stays
-        the "latest" pointer for plain `resume`.
-        """
+        """The per-turn checkpoints, `<NNNN>.json`, each the snapshot bytes of that turn."""
         return self.session_dir / "checkpoints"
 
     @property
     def transcripts_dir(self) -> Path:
+        """The provider transcripts."""
         return self.session_dir / "transcripts"
 
     @property
     def logs_path(self) -> Path:
+        """The event journal."""
         return self.session_dir / LOGS_NAME
 
     def ensure(self) -> None:
-        """Create the run dir and its subdirs through `mkdir_for_real_user`: the
-        state ancestry a first run creates is 0700 whatever the umask, and
-        under sudo it is handed back to the operator now, not at teardown (a
-        killed run must not leave a root-owned base)."""
+        """Create the session dir and its subdirs, 0700 and owned by the real operator.
+
+        Under sudo the handover is now, not at teardown: a killed run must not leave a
+        root-owned base.
+        """
         mkdir_for_real_user(self.graph_dir)
         mkdir_for_real_user(self.transcripts_dir)
         mkdir_for_real_user(self.checkpoints_dir)
 
     def checkpoint_path(self, turn: int) -> Path:
-        """Path of the checkpoint for `turn` (zero-padded to 4 digits)."""
+        """Return the checkpoint file of a turn.
+
+        Args:
+            turn: The turn index.
+
+        Returns:
+            `<checkpoints>/<NNNN>.json`.
+        """
         return self.checkpoints_dir / f"{turn:04d}.json"
 
 
 def read_untracked_at_start(session_dir: Path) -> frozenset[str]:
-    """The run's `untracked-at-start` set; empty when the run recorded none."""
+    """Read the run's `untracked-at-start` set.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        The repo-relative paths; empty when the run recorded none.
+    """
     try:
         raw = (session_dir / UNTRACKED_AT_START_NAME).read_bytes()
     except FileNotFoundError:
@@ -123,51 +141,78 @@ def read_untracked_at_start(session_dir: Path) -> frozenset[str]:
 
 
 def write_untracked_at_start(session_dir: Path, paths: Collection[str]) -> None:
+    """Write the run's `untracked-at-start` set.
+
+    Args:
+        session_dir: The session directory.
+        paths: The repo-relative paths.
+    """
     atomic_write(
         session_dir / UNTRACKED_AT_START_NAME,
         b"\0".join(p.encode("utf-8", "surrogateescape") for p in sorted(paths)),
     )
 
 
-# Every session directory lives under this one root, so the state dir's own
-# `machines/` stays the live machine INSTANCES and a machine-authoring session
-# can still be named for its mode (`sessions/machines/`).
+# Under one root, so the state dir's own `machines/` stays the live machine instances.
 SESSIONS_ROOT = "sessions"
-# One bucket per session mode, named after it (`types.session_bucket`; a test
-# pins the two together). A fact about the on-disk layout, read by both the
-# CLI's id resolution and the resume lifecycle.
+# One bucket per session mode, named after it; a test pins it to `kinds.session_bucket`.
 SESSION_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "machines")
-# What a hub lists as an ordinary session. Machine authoring is excluded: every
-# hub gives it its own card, keyed by the machine being authored. (An `agent`
-# state has no bucket at all; its sessions live inside the machine instance.)
+# A hub gives machine authoring its own card; an `agent` state's sessions live in the instance.
 HUB_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks")
 
 
 def session_has_record(session_dir: Path) -> bool:
-    """Whether a session dir holds a run's record (a manifest or a journal):
-    a dir with neither was refused before it started, or orphaned."""
+    """Return whether a session dir holds a record: a manifest or a journal.
+
+    A dir with neither was refused before it started, or orphaned.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        True when either file exists.
+    """
     return (session_dir / MANIFEST_NAME).exists() or (session_dir / LOGS_NAME).exists()
 
 
 def machines_root(state_dir: Path) -> Path:
-    """The directory of machine INSTANCES (`<state>/machines/<machine>`: source
-    copy, journal, per-state agent sessions). `machine create` drafts are
-    sessions and live under `bucket_dir(state_dir, "machines")` instead."""
+    """Return the directory of machine instances.
+
+    A `machine create` draft is a session and lives under the `machines` bucket instead.
+
+    Args:
+        state_dir: The repo's state dir.
+
+    Returns:
+        `<state>/machines`.
+    """
     return state_dir / "machines"
 
 
 def bucket_dir(state_dir: Path, bucket: str) -> Path:
-    """The directory holding sessions of one bucket: the one owner of that
-    arithmetic, so a layout change lands in one place."""
+    """Return the directory holding one bucket's sessions.
+
+    Args:
+        state_dir: The repo's state dir.
+        bucket: The bucket name.
+
+    Returns:
+        `<state>/sessions/<bucket>`.
+    """
     return state_dir / SESSIONS_ROOT / bucket
 
 
 def layout_of(session_dir: Path) -> SessionLayout:
-    """The layout of an ALREADY-RESOLVED session directory.
+    """Return the layout of a resolved session directory.
 
-    Rebuilding one from the directory's NAME loses the bucket and defaults to
-    runs/, which for a plan or an ask silently retargets a path that does not
-    exist; the callers that do it sit inside a `suppress`, so it goes unnoticed.
+    Rebuilding one from the directory's name alone loses the bucket and defaults to `runs`,
+    which retargets a plan or an ask at a path that does not exist.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        The layout.
     """
     return SessionLayout(
         state_dir=session_dir.parent.parent.parent,
@@ -179,11 +224,17 @@ def layout_of(session_dir: Path) -> SessionLayout:
 def session_matches(
     state_dir: Path, session_id: str, *, buckets: Sequence[str] = SESSION_BUCKETS
 ) -> list[SessionLayout]:
-    """Every session *session_id* names or prefixes, across *buckets* (every
-    bucket by default; a plans-only query names the plans bucket).
+    """Return every session an id names or prefixes.
 
-    Exact ids win outright: a full id that also prefixes a longer one is not
-    ambiguous. A caller reports the list; only a single match is actionable.
+    An exact id wins outright: a full id that also prefixes a longer one is not ambiguous.
+
+    Args:
+        state_dir: The repo's state dir.
+        session_id: The id or prefix.
+        buckets: The buckets to search.
+
+    Returns:
+        The exact matches, else the prefix matches; empty for an empty id.
     """
     if not session_id:
         return []
@@ -205,11 +256,14 @@ def session_matches(
 
 
 def session_layout(state_dir: Path, session_id: str) -> SessionLayout | None:
-    """The layout for *session_id* in whichever bucket holds it, or None.
+    """Return the layout an id names in whichever bucket holds it, or None.
 
-    One id-to-layout resolution, so a command that accepts a session id reaches
-    an ask the same way it reaches a run. An ambiguous prefix resolves to
-    nothing rather than a guess.
+    Args:
+        state_dir: The repo's state dir.
+        session_id: The id or prefix.
+
+    Returns:
+        The one match; None when there is none or the prefix is ambiguous.
     """
     matches = session_matches(state_dir, session_id)
     return matches[0] if len(matches) == 1 else None

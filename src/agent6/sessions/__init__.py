@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Session identity and on-disk state: friendly session ids + prefix resolution
-(`agent6.sessions.id`), the filesystem layout of one session's state directory
-(`agent6.sessions.layout`), the manifest reader (`agent6.sessions.manifest`),
-the single-writer flock (`agent6.sessions.lock`), and the front-end<->harness
-answer-file contract (`agent6.sessions.ipc`). All leaves; import the
-submodules directly."""
+"""Session identity and on-disk state.
+
+Ids and prefix resolution (`id`), the state directory layout (`layout`), the manifest
+(`manifest`), the single-writer flock (`lock`) and the answer-file contract between a
+front-end and the harness (`ipc`). All leaves; import the submodules directly.
+"""
 
 from __future__ import annotations
