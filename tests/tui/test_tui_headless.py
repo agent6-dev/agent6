@@ -640,12 +640,31 @@ def test_conversation_and_dashboard_footers_match(tmp_path: Path) -> None:
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
         app = Agent6TUI(tmp_path, from_hub=True)
+
+        async def footer_keys(pilot: Any, what: str) -> list[tuple[str, str]]:
+            """The footer's entries once it renders its screen's bindings in
+            their own order.
+
+            The first render carries every key already, in an order of its own,
+            and settles a frame later. The set, the count and two equal reads
+            all read as ready during it; the screen's own `active_bindings` is
+            the order it is settling towards, so that is what says when."""
+
+            def settled() -> bool:
+                shown = [k for k, b in app.screen.active_bindings.items() if b.binding.show]
+                keys = [fk.key for fk in app.screen.query(FooterKey)]
+                # The footer adds the command palette itself, which no binding
+                # here names: compare only the keys the screen offers.
+                return bool(shown) and [k for k in keys if k in shown] == shown
+
+            await _wait_for(pilot, settled, what)
+            return [(fk.key_display, fk.description) for fk in app.screen.query(FooterKey)]
+
         async with app.run_test(size=(120, 30)) as pilot:
-            await pilot.pause()
-            conv = [(fk.key_display, fk.description) for fk in app.screen.query(FooterKey)]
-            await pilot.press("ctrl+d")
-            await pilot.pause()
-            dash = [(fk.key_display, fk.description) for fk in app.screen.query(FooterKey)]
+            await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            conv = await footer_keys(pilot, "the conversation footer")
+            await _show_dashboard(pilot)
+            dash = await footer_keys(pilot, "the dashboard footer")
             shared = [(k, d) for k, d in conv if d != "Detail"]
             assert [k for k, _ in shared] == [k for k, _ in dash]  # same keys, same order
             assert conv[0][0] == "^d" and conv[0][1] == "Dashboard"  # leftmost toggle
