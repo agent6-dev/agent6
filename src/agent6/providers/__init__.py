@@ -1,14 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Provider package.
+"""Model providers behind one `Provider` protocol.
 
-`AnthropicProvider` (Anthropic Messages), `OpenAIProvider` (any OpenAI
-Chat Completions-compatible endpoint: OpenAI, OpenRouter, Ollama, vLLM,
-llama.cpp), `ChatGPTProvider` (the ChatGPT-subscription Codex backend), and
-`ClaudeCodeProvider` (the operator's installed Claude Code binary) all
-satisfy the `Provider` Protocol and can serve ANY sub-agent role.
-Role-to-provider routing lives in `[models.<role>]` in your config; the
-providers themselves are interchangeable from the sub-agents' point of view.
+`AnthropicProvider` (Anthropic Messages), `OpenAIProvider` (any Chat Completions
+endpoint: OpenAI, OpenRouter, Ollama, vLLM, llama.cpp), `ChatGPTProvider` (the
+ChatGPT subscription's Codex backend) and `ClaudeCodeProvider` (the installed
+Claude Code binary) are interchangeable; `[models.<role>]` routes each role.
 """
 
 from __future__ import annotations
@@ -38,15 +35,11 @@ from agent6.providers.types import (
 
 @runtime_checkable
 class Provider(Protocol):
-    """Vendor-agnostic surface used by every sub-agent.
+    """The vendor-agnostic surface every role calls.
 
-    The worker loop and the review seats pass real `tools` every turn;
-    execution itself is Python-side via `ToolDispatcher`.
-
-    `text_delta_callback` / `thinking_delta_callback` are opt-in SSE
-    streaming hooks. When either is set, providers MAY stream visible
-    text / reasoning deltas to the matching callback as they arrive. When
-    both are `None` (default), providers use the non-streaming code path.
+    Tools are declared every turn and executed Python-side by the dispatcher. The
+    delta callbacks opt into streaming: with either set a provider may stream text
+    or reasoning deltas as they arrive; with both None it uses the non-streaming path.
     """
 
     def call(
@@ -62,15 +55,43 @@ class Provider(Protocol):
         thinking_delta_callback: Callable[[str], None] | None = ...,
         should_abort: Callable[[], bool] | None = ...,
         should_interrupt: Callable[[], bool] | None = ...,
-    ) -> ProviderResponse: ...
+    ) -> ProviderResponse:
+        """Make one model call.
+
+        Args:
+            system: The system prompt.
+            messages: The conversation in the provider's message shape.
+            tools: The tools the model may call; None declares none.
+            max_tokens: The output cap.
+            temperature: The sampling temperature; None takes the provider's default.
+            reasoning_effort: The reasoning level; None takes the provider's default.
+            text_delta_callback: Receives visible text as it streams.
+            thinking_delta_callback: Receives reasoning text as it streams.
+            should_abort: Polled during the call; True abandons it with `ProviderAborted`.
+            should_interrupt: Polled during the call; True ends it early with
+                `ProviderInterrupted`.
+
+        Returns:
+            The parsed response.
+        """
+        ...
 
 
 def call_for_text(provider: Provider, *, system: str, user: str, max_tokens: int) -> str | None:
-    """One guarded text-only call: the stripped reply, or None on ANY failure.
+    """Make one text-only call for best-effort drafting.
 
-    For best-effort drafting (commit messages) where the caller holds a
-    deterministic fallback: the broad except is the point, a drafting hiccup
-    must never surface as a run error."""
+    The broad except is the point: the caller holds a deterministic fallback, and
+    a drafting failure never surfaces as a run error.
+
+    Args:
+        provider: The provider to call.
+        system: The system prompt.
+        user: The one user message.
+        max_tokens: The output cap.
+
+    Returns:
+        The stripped reply, or None on any failure or an empty reply.
+    """
     try:
         resp = provider.call(
             system=system,

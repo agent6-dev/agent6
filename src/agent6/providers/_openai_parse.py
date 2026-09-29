@@ -1,14 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""OpenAI Chat Completions response parsing.
+"""Parse a Chat Completions response into a `ProviderResponse`.
 
-The response-parsing half of the provider: choices[0].message ->
-`ProviderResponse` in agent6's canonical Anthropic shape (tool_calls ->
-tool_uses, reasoning_content -> a leading thinking block in `raw`,
-prompt_tokens normalised to fresh-input semantics). Both the non-streaming
-path and the synthesised streaming response in `providers/openai.py` call
-it; the text-embedded tool-call fallback lives in
-`providers/_openai_recovery.py`.
+The response-parsing half of the OpenAI provider, shared by its non-streaming
+path and its synthesised streaming response: tool_calls become tool_uses,
+reasoning becomes a leading thinking block in `raw`, and prompt_tokens are
+normalised to fresh-input semantics.
 """
 
 from __future__ import annotations
@@ -25,6 +22,16 @@ from agent6.providers.types import ProviderError, ProviderResponse
 
 
 def response_string(value: Any, field: str, *, empty: bool = True) -> str:
+    """Return a response field as a string.
+
+    Args:
+        value: The field's value.
+        field: The field's name, for the error.
+        empty: Whether a blank string is accepted.
+
+    Raises:
+        ProviderError: The value is not a string, or is blank when one is required.
+    """
     if not isinstance(value, str) or (not empty and not value.strip()):
         qualifier = "nonempty " if not empty else ""
         raise ProviderError(f"OpenAI response {field} was not a {qualifier}string")
@@ -32,6 +39,11 @@ def response_string(value: Any, field: str, *, empty: bool = True) -> str:
 
 
 def usage_mapping(value: Any) -> Mapping[str, Any]:
+    """Return the response's `usage` object, empty when absent.
+
+    Raises:
+        ProviderError: The value is present but not an object.
+    """
     if value is None:
         return {}
     if not isinstance(value, Mapping):
@@ -40,8 +52,19 @@ def usage_mapping(value: Any) -> Mapping[str, Any]:
 
 
 def usage_count(usage: Mapping[str, Any], field: str, *, path: str = "") -> int:
-    """A non-negative integer count, named by *path* (the field's place in the
-    body) when it is nested."""
+    """Read one non-negative integer count out of a usage object.
+
+    Args:
+        usage: The usage object.
+        field: The field's key.
+        path: The field's place in the body, for the error, when nested.
+
+    Returns:
+        The count; 0 when the field is absent.
+
+    Raises:
+        ProviderError: The value is not a non-negative integer.
+    """  # noqa: DOC501  # the TypeError is raised and caught in the same try
     name = path or field
     value = usage.get(field)
     if value is None:
@@ -63,6 +86,22 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
     tool_names: frozenset[str] = frozenset(),
     tool_schemas: dict[str, dict[str, Any]] | None = None,
 ) -> ProviderResponse:
+    """Parse one Chat Completions body.
+
+    Args:
+        data: The response body.
+        tool_names: The tools offered; a call the model wrote into its text is
+            recovered only when this is non-empty and no native call exists.
+        tool_schemas: The offered tools' input schemas, for coercing recovered
+            Qwen-XML parameter strings.
+
+    Returns:
+        The response in agent6's canonical shape.
+
+    Raises:
+        ProviderError: The body is malformed (a retryable failure, never an
+            AttributeError that would bypass the retry wrapper).
+    """
     choices = data.get("choices")
     if choices is None:
         choices = []
@@ -75,9 +114,6 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
     if choices:
         first = choices[0]
         if not isinstance(first, dict):
-            # A malformed 2xx (choices[0] null/string from a flaky local
-            # endpoint) must surface as a retryable ProviderError, not an
-            # AttributeError that bypasses the loop's retry wrapper.
             raise ProviderError(
                 f"OpenAI choices[0] is {type(first).__name__}, not an object (malformed 2xx body)"
             )
@@ -86,9 +122,7 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
             raise ProviderError("OpenAI response choices[0].message was not an object")
         raw_text = message.get("content")
         text = "" if raw_text is None else response_string(raw_text, "content")
-        # Kimi (`reasoning_content`), DeepSeek-R1 /
-        # OpenRouter (`reasoning`), and OpenAI o-series surface
-        # reasoning in a sibling field. Capture both spellings.
+        # Kimi spells it `reasoning_content`; DeepSeek-R1 and OpenRouter spell it `reasoning`.
         raw_reasoning = message.get("reasoning_content")
         if raw_reasoning is None:
             raw_reasoning = message.get("reasoning")
@@ -110,14 +144,7 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
             func = call.get("function")
             if not isinstance(func, Mapping):
                 raise ProviderError("OpenAI response tool_call.function was not an object")
-            # Small open-weight models (via some OpenRouter backends,
-            # Novita backend) sometimes emit a NATIVE tool_call with a blank
-            # `function.name`. Dispatching it yields "Unknown tool: " and, worse,
-            # echoing the blank-name call back in the next request makes strict
-            # backends reject the whole conversation with a 400
-            # invalid_request_error, killing the run. Drop the malformed call
-            # here so it never enters history; valid calls in the same turn
-            # still proceed.
+            # A blank-name native call (some open-weight backends) never enters history.
             raw_name = func.get("name") or ""
             name = response_string(raw_name, "tool_call.function.name")
             if not name.strip():
@@ -126,31 +153,14 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
             args_raw = response_string(
                 "" if raw_args is None else raw_args, "tool_call.function.arguments"
             )
-            # OpenAI returns arguments as a JSON string. Convert to dict
-            # for the Anthropic-shape input field. Malformed JSON
-            # surfaces as an empty dict + the raw string under
-            # `_raw_arguments` so debugging is possible.
-            #
-            # A degenerate tool-arg payload (tens of KB of repeated escape
-            # sequences) would be echoed in the tool_error message and re-enter
-            # the context, priming the same degeneration next turn. Cap the
-            # diagnostic at 500 chars so the
-            # repetition doesn't survive the round-trip.
+            # The `_raw_arguments` diagnostic is capped so a degenerate payload cannot re-enter.
             raw_args_cap = 500
             try:
                 parsed_input = json.loads(args_raw) if args_raw else {}
                 if not isinstance(parsed_input, dict):
                     parsed_input = {"_value": parsed_input}
             except (json.JSONDecodeError, TypeError):
-                # Before giving up, try a lenient re-parse. Weak/open models
-                # commonly emit args that strict JSON rejects: a raw newline in a
-                # multiline code/regex param, or trailing junk (a leaked
-                # `</invoke>` / prose). Recovering here means the tool just runs,
-                # instead of a wasted round-trip on a validation error. Only a
-                # parse that yields an object is accepted, so a bad guess can't
-                # feed the handler garbage; anything still unparseable becomes the
-                # `_raw_arguments` sentinel (dispatch turns that into a clear
-                # "resend valid JSON" error).
+                # A lenient re-parse saves a round-trip; dispatch turns the sentinel into an error.
                 repaired = lenient_json_object(args_raw)
                 if repaired is not None:
                     parsed_input = repaired
@@ -173,24 +183,13 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
             tool_call_ids.add(tool_call_id)
             parsed_calls.append(
                 {
-                    # Synthesise a distinct id when the backend omits one
-                    # (some open-weight models stream tool_calls with no id).
-                    # Two native tool_calls both with id="" would otherwise
-                    # collapse to ambiguous/duplicate tool_call_id pairing on
-                    # the next request, tripping a strict-backend 400. Mirrors
-                    # the call_text_{i} fallback used for recovered calls.
                     "id": tool_call_id,
                     "name": name,
                     "input": parsed_input,
                 }
             )
         tool_uses = tuple(parsed_calls)
-        # Fallback: no NATIVE tool_calls but the model leaked a tool call
-        # into its text content (small local models via Ollama/llama.cpp).
-        # Guarded by `tool_names` so this only fires when tools were offered.
-        # Every form must name one of them except the explicit `<tool_call>`
-        # tag, which keeps an unknown name for the dispatcher's error. Native
-        # calls take precedence.
+        # Native calls take precedence over a call leaked into the text.
         if not tool_uses and tool_names:
             recovered, remaining_text = coerce_text_tool_calls(text, tool_names, tool_schemas)
             if recovered:
@@ -200,46 +199,21 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
                 )
                 text = remaining_text
     usage = usage_mapping(data.get("usage"))
-    # OpenAI's cached_tokens field, when present, lives under
-    # usage.prompt_tokens_details.cached_tokens. Treat absent as 0.
-    #
-    # Provider-format asymmetry: Anthropic's `input_tokens`
-    # already EXCLUDES cache-read tokens (they're surfaced separately under
-    # `cache_read_input_tokens`). OpenAI's `prompt_tokens`, by contrast, is
-    # the TOTAL prompt size, cached + fresh. We normalise to Anthropic's
-    # semantics here so `ProviderResponse.input_tokens` consistently means
-    # "fresh, non-cached input" across providers. Without this, the
-    # BudgetTracker would charge cached tokens against the input-token cap
-    # at full rate (causing premature budget exhaustion on cache-heavy
-    # OpenAI runs) AND the cost formula in budget.py would double-count the
-    # cache portion (full input rate plus an additional 10% cache-read
-    # surcharge).
+    # `prompt_tokens` is the whole prompt; `input_tokens` means fresh input, as Anthropic counts it.
     cached = 0
     details = usage.get("prompt_tokens_details")
     if details is not None and not isinstance(details, Mapping):
         raise ProviderError("OpenAI response usage.prompt_tokens_details was not an object")
     if isinstance(details, Mapping):
         cached = usage_count(details, "cached_tokens", path="prompt_tokens_details.cached_tokens")
-    # `or 0` throughout: a gateway returning `"prompt_tokens": null` on a 2xx
-    # would make bare int(None) raise TypeError, which escapes the loop's
-    # ProviderError-only retry wrapper and kills the run.
     prompt_total = usage_count(usage, "prompt_tokens")
-    # Clamp cached to the prompt total as the SINGLE source of truth: a
-    # misbehaving upstream that reports cached > prompt would otherwise drive
-    # input_tokens negative AND leave cache_read_tokens -- billed at the 10%
-    # cache rate in budget.py -- inconsistent with it. One clamp keeps both
-    # fields consistent.
+    # The clamp keeps input_tokens non-negative when an upstream reports cached > prompt.
     cached = min(cached, prompt_total)
     fresh_input = prompt_total - cached
-    # Build a content-blocks raw payload mirroring Anthropic's response
-    # shape so callers that inspect resp.raw["content"] (the worker_loop
-    # does this to reconstruct the assistant message verbatim) see the
-    # same structure regardless of provider.
+    # `raw["content"]` mirrors Anthropic's block shape; the loop rebuilds the assistant message.
     raw_content: list[dict[str, Any]] = []
     if reasoning_text:
-        # A leading `thinking` block, so every provider yields one shape.
-        # Reasoning is NOT promoted into `text`: surfaces that echo
-        # `resp.text` (CLI logger, transcripts) would double-print it.
+        # Reasoning stays out of `text`, or every surface echoing it would print it twice.
         raw_content.append({"type": "thinking", "thinking": reasoning_text})
     if text:
         raw_content.append({"type": "text", "text": text})
@@ -253,13 +227,9 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
             }
         )
     enriched_raw = {**data, "content": raw_content}
-    # Prefer provider-reported USD cost when the upstream
-    # gateway includes it (OpenRouter does, OpenAI direct does not).
-    # Treat negative or non-numeric values as absent.
+    # A gateway's `usage.cost` (OpenRouter) is authoritative; a bool would read as a phantom dollar.
     reported_cost = 0.0
     raw_cost = usage.get("cost")
-    # not-bool: bool subclasses int, and float(True) == 1.0 would record a
-    # phantom dollar per call that becomes the AUTHORITATIVE reported figure.
     if isinstance(raw_cost, int | float) and not isinstance(raw_cost, bool) and raw_cost > 0:
         reported_cost = float(raw_cost)
     return ProviderResponse(

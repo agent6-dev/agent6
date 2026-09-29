@@ -1,33 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `claude_code` provider: agent6's worker on the operator's Claude Code login.
+"""The `claude_code` provider: the worker on the operator's Claude Code login.
 
-One long-lived `claude -p` process per worker execution, driven over stream-json on
-its stdin and stdout. agent6 is the process's only tool source: it serves the
-sdk-type MCP server `agent6` on the same pipes, advertising the loop's tools
-and answering each `tools/call` with the result the loop dispatched. A round
-ends at `message_stop`; a tool round returns while the CLI is blocked on its
-first `tools/call`, and the next `call()` answers every pending request in
-order from the loop's tool_result blocks, with any later notice text riding
-as extra text items on the last answer. A call that passes no tools is one
-process per call.
+One long-lived `claude -p` process per worker execution, driven over stream-json.
+agent6 is its only tool source: it serves the sdk-type MCP server `agent6` on the
+same pipes and answers each `tools/call` with the result the loop dispatched. A
+tool round returns while the CLI is blocked on its first `tools/call`; the next
+call answers every pending request in order, with later notice text riding on the
+last answer. A call that passes no tools is one process per call.
 
 The process continues only when the new history extends what this session
-produced: the pending tool results, then text-only user turns. Anything else
-(resume, fork, a tier-2 restart, a retried or interrupted call, a tool-list or
-system change, a live context near the window) kills it and respawns with the
-history rendered as one user message (`render_history`).
+produced; anything else (resume, fork, a compaction restart, a retried or
+interrupted call, a tool-list or system change, a live context near the window)
+respawns it on the history rendered as one user message.
 
-Spend is plan-metered: every round records $0 with the plan windows from the
-CLI's `rate_limit_event`, and a round without a reading fails closed. The
-CLI's cumulative list-price estimate is never recorded.
-
-The child runs unjailed as the operator (its own login under `$HOME`, its own
-egress) with every Claude Code capability off: argv is operator config and
-literals, the system prompt travels in a 0600 file inside a private empty
-cwd, prompts and tool results travel on stdin, and the environment is curated
-(`child_env`). The initialize handshake carries the account block; only the
-email is kept, in memory, to scrub it from returned text (docs/security.md).
+Spend is plan-metered: every round records $0 with the plan windows from the CLI's
+`rate_limit_event`, and a round without a reading fails closed. The child runs
+unjailed as the operator with every Claude Code capability off: argv is operator
+config and literals, the system prompt travels in a 0600 file inside a private
+empty cwd, prompts and tool results travel on stdin, and the environment is
+curated. Of the handshake's account block only the email is kept, in memory, to
+scrub it from returned text (docs/security.md).
 """
 
 from __future__ import annotations
@@ -88,19 +81,17 @@ from agent6.sandbox.jail import die_with_parent, keep_out_of_the_sweep
 
 EMAIL_PLACEHOLDER = "<operator-email>"
 _MAX_LINE_BYTES = 8 * 1024 * 1024
-# The CLI emits a reading when a window's rounded percent or reset time
-# changes, within milliseconds of message_stop (4 ms measured on 2.1.251): one
-# tick covers it. A process's first round is always followed by one; none
-# inside the grace is not meterable.
+# A reading follows message_stop within milliseconds (4 ms measured on CLI 2.1.251), so one
+# tick covers it; a process's first round always gets one, inside the grace or not meterable.
 _PLAN_READING_DRAIN_S = STREAM_WATCHDOG_TICK_S
 _PLAN_READING_GRACE_S = 3.0
-# The reserve `models.registry.compaction_thresholds` keeps below the window;
-# a live context past it restarts the session on the compacted mirror.
+# The reserve the compaction thresholds keep below the window; past it the session restarts.
 _CONTEXT_RESERVE_TOKENS = 16_384
 _KILL_GRACE_S = 1.0
 
 
 def _missing_binary(binary: str) -> str:
+    """Return the remedy for a binary not on PATH."""
     return (
         f"Claude Code binary {binary!r} not found on PATH; install Claude Code and sign in"
         " (`claude auth login`), or set [providers.<name>].binary"
@@ -108,9 +99,17 @@ def _missing_binary(binary: str) -> str:
 
 
 def login_status(binary: str, *, timeout_s: float = 20.0) -> str | None:
-    """None when `<binary> auth status --json` reports a signed-in login, else
-    the remedy. Only `loggedIn` is read; the body (email, org) is never
-    returned, printed, or journaled."""
+    """Check the binary's login.
+
+    Only `loggedIn` is read; the body's email and org are never returned or logged.
+
+    Args:
+        binary: The Claude Code binary.
+        timeout_s: How long the status command may take.
+
+    Returns:
+        None when signed in, else the remedy.
+    """
     argv = [binary, "auth", "status", "--json"]
     try:
         proc = subprocess.run(  # noqa: PLW1510 - a signed-out login exits 1 with a JSON body
@@ -140,10 +139,12 @@ def login_status(binary: str, *, timeout_s: float = 20.0) -> str | None:
 
 
 def _reap(proc: subprocess.Popen[bytes], private_dir: Path) -> None:
-    """End the child: SIGTERM to its process group (the CLI exits at once and
-    removes its messaging socket; on stdin EOF it stays up while a tools/call
-    awaits its answer), SIGKILL after the grace, then the private directory.
-    The reader threads close stdout and stderr at their EOF."""
+    """End the child and remove its private directory.
+
+    SIGTERM to its process group (the CLI exits at once; on stdin EOF alone it
+    stays up while a tools/call awaits its answer), SIGKILL after the grace. The
+    reader threads close stdout and stderr at their EOF.
+    """
     with contextlib.suppress(OSError, ValueError):
         if proc.stdin is not None:
             proc.stdin.close()
@@ -169,31 +170,45 @@ class _ToolCall:
 
 @dataclass(slots=True, weakref_slot=True)
 class _Session:
-    """One spawned child and everything the continuation rule needs."""
+    """One spawned child and everything the continuation rule needs.
+
+    Attributes:
+        proc: The child.
+        private_dir: The child's cwd, holding the system prompt file.
+        system: The system prompt the child was spawned with.
+        tools: The tools the child was spawned with.
+        lines: The reader thread's queue; None marks stdout's EOF.
+        stderr_drain: Fills `stderr_tail`; joined before an exit is reported.
+        pushback: A line read past a round's end, returned by the next read.
+        reap: Ends the child once, on close or at interpreter exit.
+        stdin_lock: Serialises writes to the child.
+        stderr_tail: What the child wrote to stderr before dying.
+        stdin_log: The lines written since the last transcript record.
+        consumed: The caller's history as this session consumed it, one skeleton per message.
+        pending: The tool_use ids the last round produced, answered in order by the next call.
+        calls: The `tools/call` requests received, by tool_use id.
+        refused: The CLI's own error per tool_use id it refused to forward.
+        plan: The latest plan reading.
+        resolved_model: The model the CLI reported at init.
+        session_id: The CLI's session id.
+        account_email: The login's email, kept only to scrub it from returned text.
+        restart_next: The next call respawns rather than continues.
+    """
 
     proc: subprocess.Popen[bytes]
     private_dir: Path
     system: str
     tools: list[ToolDefinition]
     lines: queue.Queue[dict[str, Any] | None]
-    # Fills `stderr_tail`; joined before an exit is reported, so the tail holds
-    # what the child wrote before dying.
     stderr_drain: threading.Thread
-    # A line read past a round's end, returned by the next read.
     pushback: list[dict[str, Any] | None] = field(default_factory=list)
-    # Ends the child once: on close(), or at interpreter exit for a caller
-    # that never closes (a machine agent's worker).
     reap: weakref.finalize[[subprocess.Popen[bytes], Path], _Session] = field(init=False)
     stdin_lock: threading.Lock = field(default_factory=threading.Lock)
     stderr_tail: list[bytes] = field(default_factory=list)
     stdin_log: list[dict[str, Any]] = field(default_factory=list)
-    # The caller's history as this session consumed it (`message_skeleton`
-    # per message), and the tool_use ids the last round produced (answered in
-    # order by the next call).
     consumed: tuple[Skeleton, ...] = ()
     pending: tuple[str, ...] = ()
     calls: dict[str, _ToolCall] = field(default_factory=dict)
-    # The CLI's own error result per tool_use id it refused to forward.
     refused: dict[str, str] = field(default_factory=dict)
     plan: PlanUsage | None = None
     resolved_model: str = ""
@@ -202,25 +217,37 @@ class _Session:
     restart_next: bool = False
 
     def __post_init__(self) -> None:
+        """Arm the reaper."""
         self.reap = weakref.finalize(self, _reap, self.proc, self.private_dir)
 
 
 @dataclass(frozen=True, slots=True)
 class _Tail:
-    """What a continuing call sends: the pending results by id and the text
-    blocks that follow them (notices, nudges, steer text)."""
+    """What a continuing call sends.
+
+    Attributes:
+        results: The pending tool results by tool_use id.
+        texts: The text blocks that follow them (notices, nudges, steer text).
+    """
 
     results: dict[str, str]
     texts: tuple[str, ...]
 
 
 def _continuation(s: _Session, messages: Sequence[Mapping[str, Any]]) -> _Tail | None:
-    """The one rule for keeping the process: the new history must extend
-    what this session produced. The consumed prefix still has its skeleton
-    (a tier-2 restart replaces it; tier-1 rewrites keep it); after it comes
-    the assistant turn of the last round (or nothing, when the loop popped a
-    quiet one), then user turns only: the pending tool results first, text
-    blocks after. None means restart."""
+    """Apply the one rule for keeping the process: the history extends what it produced.
+
+    The consumed prefix keeps its skeleton; after it comes the last round's
+    assistant turn (or nothing, when the loop popped a quiet one), then user turns
+    only: the pending tool results first, text blocks after.
+
+    Args:
+        s: The session.
+        messages: The new history.
+
+    Returns:
+        What to send, or None to restart.
+    """
     n = len(s.consumed)
     if history_skeleton(messages[:n]) != s.consumed:
         return None
@@ -246,12 +273,19 @@ def _continuation(s: _Session, messages: Sequence[Mapping[str, Any]]) -> _Tail |
 
 
 def _serve_inline(s: _Session, msg: dict[str, Any]) -> bool:
-    """Answer, from the reader thread, what needs no loop state: the MCP
-    handshake (`initialize`, `notifications/initialized`, `tools/list`,
-    `ping`, an unknown method) and the CLI's own initialize response, whose
-    account block is dropped except the email kept in memory for the scrub.
-    True when consumed; a `tools/call` or any other line is queued for
-    `call()`."""
+    """Answer, from the reader thread, what needs no loop state.
+
+    The MCP handshake, `tools/list`, `ping`, an unknown method, and the CLI's own
+    initialize response, whose account block is dropped except the email kept for
+    the scrub.
+
+    Args:
+        s: The session.
+        msg: The line read.
+
+    Returns:
+        True when consumed; a `tools/call` or any other line is queued for the call.
+    """
     kind = msg.get("type")
     if kind == "control_response":
         response = msg.get("response") or {}
@@ -310,8 +344,11 @@ def _serve_inline(s: _Session, msg: dict[str, Any]) -> bool:
 
 
 def _read_stdout(s: _Session) -> None:
-    """The reader thread; it owns the pipe (a close from another thread while
-    a read is in flight lets that read land on the next child's descriptor)."""
+    """Run the reader thread, which owns the pipe.
+
+    A close from another thread while a read is in flight would let that read
+    land on the next child's descriptor.
+    """
     stream = s.proc.stdout
     assert stream is not None
     while True:
@@ -341,9 +378,7 @@ def _read_stdout(s: _Session) -> None:
             s.lines.put({"type": "_agent6_error", "text": str(exc)})
             break
         except Exception as exc:
-            # Deliberately broad: this is the reader thread's boundary, and a
-            # frame of any unexpected shape must reach the round as an error
-            # rather than end the thread with the round waiting on it.
+            # The thread's boundary: a frame of any shape reaches the round as an error.
             s.lines.put(
                 {
                     "type": "_agent6_error",
@@ -358,6 +393,16 @@ def _read_stdout(s: _Session) -> None:
 
 
 def _write(s: _Session, obj: dict[str, Any], *, log: bool = True) -> None:
+    """Write one stdin line.
+
+    Args:
+        s: The session.
+        obj: The line's object.
+        log: Whether the line joins the transcript's stdin log.
+
+    Raises:
+        ProviderError: The child stopped reading.
+    """
     data = json.dumps(obj, separators=(",", ":")).encode() + b"\n"
     with s.stdin_lock:
         stdin = s.proc.stdin
@@ -372,11 +417,12 @@ def _write(s: _Session, obj: dict[str, Any], *, log: bool = True) -> None:
 
 
 def _email_prefix_len(email: str, text: str) -> int:
-    """The longest proper prefix of *email* that ends *text*; 0 when none."""
+    """Return the length of the longest proper prefix of the email that ends the text."""
     return next((k for k in range(len(email) - 1, 0, -1) if text.endswith(email[:k])), 0)
 
 
 def _int(value: Any) -> int:
+    """Return a usage value as an int; 0 when absent or not one."""
     try:
         return int(value or 0)
     except (TypeError, ValueError):
@@ -385,37 +431,58 @@ def _int(value: Any) -> int:
 
 @dataclass(slots=True)
 class _Round:
-    """One API round as it streams in: the assistant blocks (Anthropic shape),
-    the message_delta usage and stop reason, and whether message_stop landed."""
+    """One API round as it streams in.
+
+    Attributes:
+        blocks: The assistant blocks, in Anthropic shape.
+        usage: The usage, from message_start and message_delta.
+        stop_reason: The stop reason from message_delta.
+        message_id: The message id from message_start.
+        ended: Whether message_stop landed.
+        cb: The open block's delta callback.
+        held: The streamed tail the email scrub holds back.
+    """
 
     blocks: list[dict[str, Any]] = field(default_factory=list)
     usage: dict[str, Any] = field(default_factory=dict)
     stop_reason: str = ""
     message_id: str = ""
     ended: bool = False
-    # The open block's delta callback and the streamed tail the scrub holds.
     cb: Callable[[str], None] | None = None
     held: str = ""
 
 
 class _Watch:
-    """The wait loop's per-tick checks: operator stop/steer and the idle clock,
-    with the phase-specific thresholds the SSE providers use."""
+    """The wait loop's per-tick checks: operator stop and steer, and the idle clock.
+
+    Attributes:
+        limit: The active idle budget, one of the SSE providers' phase thresholds.
+        last_at: The monotonic time of the last meaningful line.
+    """
 
     def __init__(
         self,
         should_abort: Callable[[], bool] | None,
         should_interrupt: Callable[[], bool] | None,
     ) -> None:
+        """Start the clock in the prefill phase."""
         self._abort = should_abort
         self._interrupt = should_interrupt
         self.limit = STREAM_FIRST_DATA_TIMEOUT_S
         self.last_at = time.monotonic()
 
     def mark(self) -> None:
+        """Mark a meaningful line."""
         self.last_at = time.monotonic()
 
     def tick(self) -> None:
+        """Run the per-tick checks.
+
+        Raises:
+            ProviderAborted: The operator stopped the run.
+            ProviderInterrupted: The operator asked to steer.
+            ProviderError: The idle budget ran out.
+        """
         if safe_poll(self._abort):
             raise ProviderAborted("run stopped by operator")
         if safe_poll(self._interrupt):
@@ -425,9 +492,11 @@ class _Watch:
 
 
 def _note_refusals(s: _Session, line: Mapping[str, Any]) -> None:
-    """A `user` echo carrying an `is_error` tool_result the CLI wrote itself:
-    it refused that call's input (unparsable or off-schema) and never sent the
-    `tools/call`; the model reads the CLI's error and the next round follows."""
+    """Note the tool calls the CLI refused itself.
+
+    A `user` echo carrying an `is_error` tool_result the CLI wrote means it refused
+    that call's input and never sent the `tools/call`; the next round follows.
+    """
     content = (line.get("message") or {}).get("content")
     if not isinstance(content, list):
         return
@@ -439,7 +508,7 @@ def _note_refusals(s: _Session, line: Mapping[str, Any]) -> None:
 
 
 def _echo_reason(content: object) -> str:
-    """The first line of an echoed tool_result, its `<tool_use_error>` tag off."""
+    """Return the first line of an echoed tool_result, its `<tool_use_error>` tag off."""
     if isinstance(content, list):
         text = "\n".join(str(b.get("text", "")) for b in content if isinstance(b, Mapping))
     else:
@@ -450,7 +519,16 @@ def _echo_reason(content: object) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ClaudeCodeProvider:
-    """The worker on the operator's Claude Code login (module docstring)."""
+    """The worker on the operator's Claude Code login.
+
+    Attributes:
+        model: The model id.
+        binary: The Claude Code binary.
+        effort: The reasoning effort passed on argv.
+        transcript_sink: Where each round is recorded.
+        budget: The run's tracker; None skips metering.
+        context_tokens: The model's window; a live context near it restarts the session.
+    """
 
     model: str
     binary: str = "claude"
@@ -458,7 +536,7 @@ class ClaudeCodeProvider:
     transcript_sink: TranscriptRecorder | None = None
     budget: BudgetTracker | None = None
     context_tokens: int | None = None
-    # The live session (a mutable cell on a frozen dataclass).
+    # The live session; a list, since the dataclass is frozen.
     _cell: list[_Session | None] = field(default_factory=lambda: [None])
 
     def call(
@@ -475,7 +553,28 @@ class ClaudeCodeProvider:
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
-        del max_tokens, temperature, reasoning_effort  # the binary owns sampling; effort is argv
+        """Run one round on the worker's process, or one process for a tool-less call.
+
+        Args:
+            system: The system prompt.
+            messages: The conversation in Anthropic shape.
+            tools: The tools the model may call; none means a one-process side call.
+            max_tokens: Ignored; the binary owns sampling.
+            temperature: Ignored; the binary owns sampling.
+            reasoning_effort: Ignored; effort is passed on argv at spawn.
+            text_delta_callback: Receives visible text as it streams.
+            thinking_delta_callback: Receives reasoning text as it streams.
+            should_abort: Polled each tick; True abandons the turn.
+            should_interrupt: Polled each tick; True ends the turn to steer.
+
+        Returns:
+            The round's response.
+
+        Raises:
+            ProviderError: The run is over budget, the child failed, or the round
+                could not be metered.
+        """
+        del max_tokens, temperature, reasoning_effort
         if self.budget is not None:
             self.budget.check()
         tool_list = list(tools or ())
@@ -485,15 +584,14 @@ class ClaudeCodeProvider:
             if tool_list:
                 s = self._worker_session(s, system, tool_list, messages, watch)
             else:
-                # A side call is one process per call; the worker's session,
-                # blocked on its tools/call, is untouched.
+                # The worker's session, blocked on its tools/call, is untouched.
                 s = self._spawn(system, [], messages, watch)
             s.consumed = history_skeleton(messages)
             resp = self._read_round(s, watch, text_delta_callback, thinking_delta_callback)
             self._record_transcript(s, system, messages, resp)
         except BaseException:
             if s is not None:
-                self._close(s)  # an exceptional exit leaves no half-consumed process behind
+                self._close(s)  # no half-consumed process survives an exceptional exit
             raise
         if not tool_list:
             s.reap()
@@ -505,6 +603,7 @@ class ClaudeCodeProvider:
             self._close(s)
 
     def _close(self, s: _Session) -> None:
+        """Reap a session and forget it when it is the live one."""
         s.reap()
         if self._cell[0] is s:
             self._cell[0] = None
@@ -519,8 +618,18 @@ class ClaudeCodeProvider:
         messages: Sequence[Mapping[str, Any]],
         watch: _Watch,
     ) -> _Session:
-        """The worker's process: continued when the history extends what it
-        produced, else respawned on the rendered history."""
+        """Continue the worker's process when the history extends what it produced, else respawn.
+
+        Args:
+            s: The live session, or None.
+            system: The system prompt.
+            tools: The tools offered.
+            messages: The new history.
+            watch: The wait loop's checks.
+
+        Returns:
+            The session to read the round from.
+        """
         if (
             s is not None
             and s.proc.poll() is None
@@ -543,8 +652,21 @@ class ClaudeCodeProvider:
         messages: Sequence[Mapping[str, Any]],
         watch: _Watch,
     ) -> _Session:
-        """One child through its handshake and the history's `system/init`;
-        a failure on the way reaps it."""
+        """Spawn one child through its handshake and the history's `system/init`.
+
+        Args:
+            system: The system prompt, written to a 0600 file in the private cwd.
+            tools: The tools offered.
+            messages: The history, rendered as one user message.
+            watch: The wait loop's checks.
+
+        Returns:
+            The session.
+
+        Raises:
+            ProviderError: The binary is missing or cannot start, or the child failed
+                on the way; a spawned child is reaped.
+        """
         private_dir = Path(tempfile.mkdtemp(prefix="agent6-claude-"))
         prompt_file = private_dir / "system_prompt.txt"
         atomic_write(prompt_file, system)  # a new file lands 0600
@@ -565,8 +687,7 @@ class ClaudeCodeProvider:
         except OSError as exc:
             shutil.rmtree(private_dir, ignore_errors=True)
             raise ProviderError(f"cannot start {self.binary!r}: {exc}") from exc
-        # In its own session and ours on purpose: unregistered, it is exactly
-        # what the escapee sweep kills at the next background stop.
+        # Unregistered, the child is exactly what the escapee sweep would kill.
         keep_out_of_the_sweep(proc.pid)
         assert proc.stderr is not None
         tail: list[bytes] = []
@@ -614,9 +735,12 @@ class ClaudeCodeProvider:
             raise
 
     def _audit_init(self, s: _Session, line: Mapping[str, Any]) -> None:
-        """The default-deny check on every `system/init`: the model's tool set
-        is exactly what agent6 offered, and the child authenticates with the
-        login, never a key."""
+        """Check every `system/init`: the tool set is exactly what agent6 offered.
+
+        Raises:
+            ProviderError: The child exposed another tool set, or resolved an API key
+                instead of the login (fatal).
+        """
         offered = {TOOL_PREFIX + td.name for td in s.tools}
         exposed = {str(t) for t in (line.get("tools") or ())}
         if exposed != offered:
@@ -639,12 +763,16 @@ class ClaudeCodeProvider:
         s.session_id = str(line.get("session_id") or "")
 
     def _continue(self, s: _Session, tail: _Tail, watch: _Watch) -> None:
+        """Send the continuing call: each pending result as its answer, the texts on the last.
+
+        Raises:
+            ProviderError: A result with its notices is over the CLI's persist threshold
+                (fatal), or the child moved on.
+        """
         if not tail.results:
             _write(s, user_line("\n\n".join(tail.texts)))
             return
-        # The turn's notices ride the last answered call. With every call
-        # refused the CLI's next round already runs, so they go in as the
-        # user line after it, the way a result-less turn's do.
+        # With every call refused the CLI's next round already runs; the texts go in as a user line.
         answered = [i for i in s.pending if i not in s.refused]
         if not answered:
             s.refused.clear()
@@ -654,8 +782,7 @@ class ClaudeCodeProvider:
             return
         for tool_use_id in s.pending:
             if tool_use_id in s.refused:
-                # The CLI answered this call with its own error, and the loop
-                # recorded the same error: nothing is owed here.
+                # The CLI answered it with its own error and the loop recorded the same.
                 del s.refused[tool_use_id]
                 continue
             call = self._await_call(s, tool_use_id, watch)
@@ -675,8 +802,11 @@ class ClaudeCodeProvider:
         s.pending = ()
 
     def _await_call(self, s: _Session, tool_use_id: str, watch: _Watch) -> _ToolCall:
-        """The `tools/call` for *tool_use_id*: stashed while the round was read,
-        or the next one the CLI sends (it serialises calls, one per answer)."""
+        """Return the `tools/call` for a tool_use id, stashed or the next one the CLI sends.
+
+        Raises:
+            ProviderError: The CLI refused the call itself or moved on without it.
+        """
         watch.limit = STREAM_FIRST_DATA_TIMEOUT_S
         while tool_use_id not in s.calls:
             if tool_use_id in s.refused:
@@ -694,10 +824,12 @@ class ClaudeCodeProvider:
         return s.calls.pop(tool_use_id)
 
     def _absorb(self, s: _Session, line: Mapping[str, Any]) -> None:
-        """A line outside a round's stream: stash a tools/call, allow a stray
-        can_use_tool, refuse any other control request, take a plan reading,
-        note a tool call the CLI refused, drop the CLI's other echoes and
-        progress lines."""
+        """Handle a line outside a round's stream.
+
+        A tools/call is stashed, a stray can_use_tool allowed, any other control
+        request refused, a plan reading taken, a refused call noted, and the CLI's
+        other echoes and progress lines dropped.
+        """
         kind = line.get("type")
         if kind == "control_request":
             self._control(s, line)
@@ -711,6 +843,11 @@ class ClaudeCodeProvider:
             self._check_result(s, line)
 
     def _control(self, s: _Session, line: Mapping[str, Any]) -> None:
+        """Handle a control request.
+
+        Raises:
+            ProviderError: An MCP request other than a tools/call.
+        """
         request = line.get("request") or {}
         rid = str(line.get("request_id", ""))
         subtype = request.get("subtype")
@@ -723,8 +860,7 @@ class ClaudeCodeProvider:
                 raise ProviderError(f"claude sent an unexpected MCP request: {rpc.get('method')!r}")
             s.calls[tool_use_id] = _ToolCall(rid, rpc.get("id"))
         elif subtype == "can_use_tool":
-            # Never sent under `--allowedTools mcp__agent6`; agent6's own
-            # approval gate already ran, so a deny here would only strand it.
+            # Never sent under the allowed-tools argv; agent6's approval gate already ran.
             _write(
                 s,
                 {
@@ -750,6 +886,12 @@ class ClaudeCodeProvider:
             )
 
     def _check_result(self, s: _Session, line: Mapping[str, Any]) -> None:
+        """Raise a `result` line's error, if it carries one.
+
+        Raises:
+            ProviderError: The turn failed; a signed-out login is fatal, and an API
+                status carried by the line keeps its retry class.
+        """
         subtype = str(line.get("subtype") or "")
         if not line.get("is_error") and not subtype.startswith("error"):
             return
@@ -758,14 +900,17 @@ class ClaudeCodeProvider:
             raise ProviderError(
                 "Claude Code is not signed in; run `claude auth login` as this user", fatal=True
             )
-        # `api_error_status` names the API status of a failed turn (404 for an
-        # unknown model); the loop's retry ladder skips the permanent ones.
         status = line.get("api_error_status")
         status = status if isinstance(status, int) else None
         where = f" (HTTP {status})" if status else ""
         raise ProviderError(f"claude result {subtype}{where}: {text[:500]}", status_code=status)
 
     def _next_line(self, s: _Session, watch: _Watch) -> dict[str, Any]:
+        """Return the next meaningful line, ticking the watch while waiting.
+
+        Raises:
+            ProviderError: The child exited or wrote an unreadable line.
+        """
         while True:
             if s.pushback:
                 line = s.pushback.pop()
@@ -781,8 +926,7 @@ class ClaudeCodeProvider:
                     rc: int | None = s.proc.wait(timeout=_KILL_GRACE_S)
                 except subprocess.TimeoutExpired:
                     rc = None
-                # The drain reaches EOF once the child is gone; a tail read
-                # before it gets there misses the child's last words.
+                # A tail read before the drain's EOF misses the child's last words.
                 s.stderr_drain.join(timeout=_KILL_GRACE_S)
                 tail = self._scrub(s, stderr_tail(s.stderr_tail)) or "no stderr"
                 raise ProviderError(f"claude exited {rc}: {tail}")
@@ -790,8 +934,7 @@ class ClaudeCodeProvider:
             if kind == "_agent6_error":
                 raise ProviderError(str(line.get("text")))
             if kind == "rate_limit_event":
-                # A plan reading is bookkeeping: the CLI repeats it while it
-                # waits out a window, and it says nothing about progress.
+                # The CLI repeats a reading while it waits out a window; it is not progress.
                 self._absorb(s, line)
                 watch.tick()
                 continue
@@ -815,6 +958,17 @@ class ClaudeCodeProvider:
         text_cb: Callable[[str], None] | None,
         thinking_cb: Callable[[str], None] | None,
     ) -> ProviderResponse:
+        """Read one round to its end and meter it.
+
+        Args:
+            s: The session.
+            watch: The wait loop's checks.
+            text_cb: Receives visible text as it streams.
+            thinking_cb: Receives reasoning text as it streams.
+
+        Returns:
+            The round's response.
+        """
         r = _Round()
         plan_before = s.plan
         watch.limit = STREAM_FIRST_DATA_TIMEOUT_S
@@ -828,7 +982,7 @@ class ClaudeCodeProvider:
                     self._block(s, b) for b in message_blocks(line.get("message") or {})
                 )
             elif kind == "result":
-                # A turn that ended without a stream (the signed-out synthetic reply).
+                # A turn that ended without a stream: the signed-out synthetic reply.
                 self._check_result(s, line)
                 r.stop_reason = r.stop_reason or str(line.get("stop_reason") or "end_turn")
                 r.ended = True
@@ -850,6 +1004,7 @@ class ClaudeCodeProvider:
         text_cb: Callable[[str], None] | None,
         thinking_cb: Callable[[str], None] | None,
     ) -> None:
+        """Fold one Messages stream event into the round."""
         kind = event.get("type")
         if kind == "message_start":
             message = event.get("message") or {}
@@ -883,9 +1038,18 @@ class ClaudeCodeProvider:
         *,
         final: bool = False,
     ) -> None:
-        """Stream a delta with the email scrubbed across delta boundaries: a
-        tail that could start an occurrence waits for the next delta, and
-        content_block_stop flushes it."""
+        """Stream a delta with the email scrubbed across delta boundaries.
+
+        A tail that could start an occurrence waits for the next delta; the block's
+        stop flushes it.
+
+        Args:
+            s: The session.
+            r: The round.
+            piece: The delta's text.
+            cb: The delta callback; None streams nothing.
+            final: Whether this flushes the held tail.
+        """
         if cb is None:
             return
         r.cb = cb
@@ -899,6 +1063,16 @@ class ClaudeCodeProvider:
                 cb(out)
 
     def _finish_round(self, s: _Session, r: _Round, ids: tuple[str, ...]) -> ProviderResponse:
+        """Meter the round and build its response.
+
+        Args:
+            s: The session.
+            r: The round as read.
+            ids: The round's tool_use ids.
+
+        Returns:
+            The response, with the CLI's own refusals under `refused`.
+        """
         input_tokens = _int(r.usage.get("input_tokens"))
         cache_read = _int(r.usage.get("cache_read_input_tokens"))
         cache_creation = _int(r.usage.get("cache_creation_input_tokens"))
@@ -930,8 +1104,11 @@ class ClaudeCodeProvider:
         )
 
     def _read_to_result(self, s: _Session, watch: _Watch) -> None:
-        """A prose round's `result` line belongs to that round: read it so a
-        turn error is raised where it happened."""
+        """Read a prose round's `result` line, so a turn error is raised where it happened.
+
+        Raises:
+            ProviderError: The turn failed, or another round started first.
+        """
         watch.limit = STREAM_IDLE_TIMEOUT_S
         while True:
             line = self._next_line(s, watch)
@@ -947,13 +1124,17 @@ class ClaudeCodeProvider:
     def _drain_after_round(
         self, s: _Session, ids: tuple[str, ...], plan_before: PlanUsage | None
     ) -> None:
-        """Wait one drain window (the first-reading grace while the process
-        has no reading yet) for the round's plan reading and for the CLI's
-        verdict on the round's tool calls: the `tools/call` of the first one
-        it accepts, or the refusal echoes of the ones its own input check
-        turned down. The calls behind an accepted one wait on its answer, so
-        the wait ends at the first `tools/call`. A line of the next round is
-        pushed back for the next read."""
+        """Wait one drain window for the round's plan reading and the CLI's verdict on its calls.
+
+        The verdict is the `tools/call` of the first accepted call (the rest wait on
+        its answer) or the refusal echoes of every call. A line of the next round is
+        pushed back for the next read.
+
+        Args:
+            s: The session.
+            ids: The round's tool_use ids.
+            plan_before: The plan reading before the round, to tell a new one.
+        """
         deadline = time.monotonic() + (
             _PLAN_READING_GRACE_S if s.plan is None else _PLAN_READING_DRAIN_S
         )
@@ -981,18 +1162,28 @@ class ClaudeCodeProvider:
     def _record(
         self, s: _Session, inp: int, out: int, cache_read: int, cache_creation: int
     ) -> None:
+        """Record the round's spend against the plan window.
+
+        Args:
+            s: The session.
+            inp: Input tokens.
+            out: Output tokens.
+            cache_read: Cache-read tokens.
+            cache_creation: Cache-write tokens.
+
+        Raises:
+            ProviderError: No plan reading (fatal: a retry would bill another round
+                into the same absence), or no input usage after the record.
+        """
         if self.budget is None:
             return
         if s.plan is None:
-            # Fatal: a retry replays the history into the same absence, one
-            # billed round per attempt.
             raise ProviderError(
                 "claude reported no plan window (rate_limit_event) for this round; agent6 meters"
                 " this provider by plan window only",
                 fatal=True,
             )
-        # On the ledger before any refusal: the round was generated and the
-        # plan window moved, whatever the input side reported.
+        # The round was generated and the plan window moved, whatever the input side reported.
         self.budget.record(
             model=s.resolved_model or self.model,
             input_tokens=inp,
@@ -1009,8 +1200,11 @@ class ClaudeCodeProvider:
             )
 
     def _block(self, s: _Session, block: Mapping[str, Any]) -> dict[str, Any]:
-        """One assistant block in Anthropic shape: bare tool names, the email
-        scrubbed from text and thinking, the CLI's `caller` dropped."""
+        """Return one assistant block in Anthropic shape.
+
+        Tool names are bare, the email is scrubbed from text and thinking, and the
+        CLI's `caller` is dropped.
+        """
         kind = block.get("type")
         if kind == "text":
             return {"type": "text", "text": self._scrub(s, str(block.get("text", "")))}
@@ -1033,11 +1227,13 @@ class ClaudeCodeProvider:
 
     @staticmethod
     def _scrub(s: _Session, text: str) -> str:
+        """Return the text with the login's email replaced by the placeholder."""
         return text.replace(s.account_email, EMAIL_PLACEHOLDER) if s.account_email else text
 
     def _record_transcript(
         self, s: _Session, system: str, messages: list[dict[str, Any]], resp: ProviderResponse
     ) -> None:
+        """Record the round as one transcript entry, then clear the stdin log."""
         if self.transcript_sink is None:
             s.stdin_log.clear()
             return

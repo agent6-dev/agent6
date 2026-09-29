@@ -1,20 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""OpenAI Chat Completions-compatible provider.
+"""The provider for any endpoint speaking the OpenAI Chat Completions API.
 
-Works against any endpoint speaking the OpenAI Chat Completions API: OpenAI,
-OpenRouter, Ollama (`/v1`), vLLM, LM Studio, llama.cpp's server, Moonshot,
-DeepSeek. HTTP transport and SSE lifecycle are shared with the Anthropic
-provider (`_transport.py`, `_stream.py`); both use httpx2 directly (no SDK)
-for a smaller audit surface.
-
-agent6's internal lingua franca is Anthropic content-blocks (text + tool_use +
-tool_result inline, the most expressive shape); translation both ways lives in
-`_openai_messages` / `_openai_parse`, so harness code sees one shape across
-providers. Deliberately NOT translated: `cache_control` markers are stripped
-(OpenAI caches server-side), and Anthropic's `extended_thinking` budget_tokens
-has no equivalent -- OpenAI reasoning is the `reasoning_effort` knob, wired
-from `[models.<role>].effort`.
+OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp's server, Moonshot and
+DeepSeek. The transport and the SSE lifecycle are shared with the Anthropic
+provider. Anthropic content blocks are agent6's internal shape; the translation
+both ways lives in `_openai_messages` and `_openai_parse`. `cache_control` markers
+are dropped (this wire caches server-side), and reasoning is the
+`reasoning_effort` knob from `[models.<role>].effort`.
 """
 
 from __future__ import annotations
@@ -46,12 +39,7 @@ from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_ur
 OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MAX_TOKENS = 8192
 
-# Reasoning models stream a separate `reasoning_content` whose tokens count
-# against `max_tokens` SERVER-SIDE, so at the ordinary per-call cap reasoning
-# consumes the budget and the assistant `content`/`tool_calls` truncate
-# mid-message: the loop sees stop_reason="length", empty text, no tool calls,
-# and stalls. A floor gives reasoning room; the budget tracker is unaffected
-# (it counts every emitted token via usage.completion_tokens).
+# Reasoning tokens count against `max_tokens`; below this floor they starve the answer.
 REASONING_MODEL_MIN_MAX_TOKENS = 32768
 _REASONING_MODEL_HINTS: tuple[str, ...] = (
     "thinking",
@@ -61,10 +49,7 @@ _REASONING_MODEL_HINTS: tuple[str, ...] = (
     "o1-",
     "o3-",
     "o4-",
-    # Reasoning-channel emitters whose model name does not advertise it: they
-    # return finish_reason="length" with empty content + empty tool_calls unless
-    # given output headroom. Match the FAMILY, not one generation; a false
-    # positive is harmless (the floor only raises a ceiling).
+    # Families that reason without saying so in the name.
     "kimi-k",
     "minimax-m2",
     "nemotron",
@@ -73,30 +58,28 @@ _REASONING_MODEL_HINTS: tuple[str, ...] = (
 
 
 def _require_metered_usage(usage: object, *, source: str) -> None:
-    """Fail closed when a budgeted OpenAI-compatible call cannot be metered.
+    """Refuse a budgeted call whose usage cannot be metered.
 
-    Presence alone is not enough: a gateway with usage tracking disabled returns
-    `prompt_tokens: 0` and every turn records zero, so the budget never trips.
-    `prompt_tokens` is total input (cached + fresh) and is never legitimately 0
-    for a real call, so require it strictly positive; a run must not proceed on a
-    call it cannot meter."""
+    A gateway with usage tracking off returns `prompt_tokens: 0`, so presence is
+    not enough; the total input is never 0 for a real call, so it must be positive.
+
+    Args:
+        usage: The response's `usage` value.
+        source: The name that leads the error.
+
+    Raises:
+        ProviderError: No positive input usage (retryable: a usage-less reply is a
+            gateway integrity failure, and a permanent class would let one mangled
+            stream end a budgeted run).
+    """
     if isinstance(usage, Mapping):
-        # Coerce numerically, as parse_response's usage_count does: a gateway
-        # serializing counts as JSON floats/strings (700.0, "700") is meterable.
-        # Absent/zero/non-numeric still fails closed below. completion_tokens
-        # presence is not required: the contract gates on the input side only.
+        # A count serialised as a float or a string is meterable, as `usage_count` reads it.
         try:
             prompt = int(usage.get("prompt_tokens") or 0)
         except (TypeError, ValueError):
             prompt = 0
         if prompt > 0:
             return
-    # No status code: a usage-less reply is a stream/gateway integrity failure
-    # (a degenerate stream the gateway cut, a proxy dropping the usage frame),
-    # so it rides the loop's bounded retry lane -- the failed attempt returns
-    # no response, so nothing unmetered enters the conversation, and repeated
-    # failure ends the run. A permanent classification here (a fake 422) would
-    # let ONE mangled stream kill a budgeted run with its budget unspent.
     raise ProviderError(
         f"{source} reported no usage input tokens (usage.prompt_tokens missing or 0); "
         "budgeted runs require provider usage accounting"
@@ -104,30 +87,21 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
 
 
 def _is_reasoning_model(model: str) -> bool:
-    """True if `model` looks like a reasoning model that emits
-    `reasoning_content` separately from `content`. Gates the effort DEFAULT
-    (reasoning_effort="low"), a measured behaviour change -- so it stays the
-    measured family set, NOT the broader floor set below."""
+    """Return whether the model reasons in a separate channel.
+
+    This set gates the effort default, a measured behaviour, so it stays the
+    measured families; the token floor matches more broadly.
+    """
     lowered = model.lower()
     return any(hint in lowered for hint in _REASONING_MODEL_HINTS)
 
 
-# The max_tokens FLOOR matches more broadly than the effort default: raising the
-# token ceiling only avoids a truncated reply, it never changes model behaviour,
-# so it is safe to catch aliases the measured effort set does not. `kimi-latest`
-# (Moonshot's rolling alias) emits reasoning_content and starves at the 16k
-# default, but the `kimi-k` family match misses it -- and adding it to
-# `_REASONING_MODEL_HINTS` would also pin it to the UNMEASURED effort="low"
-# default for whatever it currently resolves to. Floor only.
+# Aliases that get the token floor but not the effort default (the floor changes no behaviour).
 _REASONING_FLOOR_ONLY_HINTS: tuple[str, ...] = ("kimi-latest",)
 
 
 def _needs_reasoning_headroom(model: str) -> bool:
-    """True if `model` needs the max_tokens floor: any reasoning model, OpenAI's
-    own o-series / gpt-5 (which reason and starve just as hard, but are matched
-    narrowly only for the direct-host param rename), plus reasoning aliases
-    (kimi-latest) not in the effort set. Safe to match broadly -- the floor raises
-    a ceiling, it does not change behaviour, so a false positive costs nothing."""
+    """Return whether the model gets the `max_tokens` floor; a false positive costs nothing."""
     lowered = model.lower()
     return (
         _is_reasoning_model(model)
@@ -136,18 +110,12 @@ def _needs_reasoning_headroom(model: str) -> bool:
     )
 
 
-# OpenAI's OWN reasoning families (o-series + gpt-5). On the api.openai.com
-# direct host these reject the legacy `max_tokens` param (400, "Use
-# max_completion_tokens") and reject `temperature != 1`. Kept narrower than
-# `_is_reasoning_model` on purpose: third-party reasoning models (kimi,
-# deepseek, qwq) are never served by api.openai.com, so they must NOT trigger
-# the rename even if someone points them at the default base_url.
+# OpenAI's own reasoning families, which on api.openai.com reject `max_tokens` and a temperature.
 _OPENAI_DIRECT_REASONING_PREFIXES: tuple[str, ...] = ("o1", "o3", "o4", "gpt-5")
 
 
 def _is_openai_direct_reasoning_model(model: str) -> bool:
-    """True if `model` is one of OpenAI's own o-series/gpt-5 reasoning
-    models (only meaningful when the request targets api.openai.com)."""
+    """Return whether the model is one of OpenAI's own reasoning families."""
     lowered = model.lower()
     return any(
         lowered == p or lowered.startswith(p + "-") for p in _OPENAI_DIRECT_REASONING_PREFIXES
@@ -158,23 +126,25 @@ _EFFORT_LEVELS = ("off", "low", "medium", "high", "xhigh", "max")
 
 
 def is_openai_direct_host(base_url: str, deployment: str) -> bool:
-    """True when requests go to api.openai.com itself, whose o-series/gpt-5
-    models take parameters no other openai-compatible host does."""
+    """Return whether requests go to api.openai.com itself, whose parameters differ."""
     return deployment == "direct" and urlsplit(base_url).hostname == "api.openai.com"
 
 
 def sent_reasoning_effort(
     model: str, configured: str | None, *, direct_openai: bool = False
 ) -> str | None:
-    """The reasoning effort this role resolves to for *model*, or None when the
-    model takes no reasoning knob at all and the request carries none.
+    """Resolve the reasoning effort a call sends; the one owner of the rule `config show` prints.
 
-    One owner for the rule `config show` prints and `complete` sends.
-    Precedence: *configured* (the role's `effort`, or a per-call override) >
-    `AGENT6_REASONING_EFFORT` > `low`. `off` is a resolved level, not a wire
-    value: `complete` maps it per host, omitting the parameter on
-    api.openai.com (whose o-series always reasons) and sending
-    `{"enabled": false}` elsewhere.
+    Args:
+        model: The model id.
+        configured: The role's `effort` or a per-call override; None defers to the
+            `AGENT6_REASONING_EFFORT` variable, then `low`.
+        direct_openai: Whether the request targets api.openai.com.
+
+    Returns:
+        The level, or None when the model takes no reasoning knob. `off` is a
+        level, not a wire value: the call omits the parameter on api.openai.com
+        and sends `{"enabled": false}` elsewhere.
     """
     if not (
         _is_reasoning_model(model) or (direct_openai and _is_openai_direct_reasoning_model(model))
@@ -188,63 +158,60 @@ def sent_reasoning_effort(
 
 @dataclass(frozen=True, slots=True)
 class OpenAIProvider:
-    """Stateless OpenAI Chat Completions-compatible provider.
+    """The Chat Completions provider, constructed once per run.
 
-    `api_key` may be empty for unauthenticated local endpoints (Ollama,
-    llama.cpp's `server`); when empty, no `Authorization` header is sent.
+    Attributes:
+        api_key: The static credential; "" sends no auth header (a local endpoint).
+        model: The model id.
+        base_url: The endpoint's base URL.
+        deployment: The URL profile.
+        auth_style: The auth header style: `bearer`, `api_key_header` (Azure) or `none`.
+        extra_headers: Operator headers merged over the built ones.
+        extra_body: Operator body keys merged last; the structural keys are reserved.
+        extra_query: Operator query parameters (Azure's `api-version`).
+        timeout_s: The read budget in seconds.
+        transcript_sink: Where each round-trip is recorded.
+        budget: The run's tracker; None skips metering.
+        reasoning_effort: The role's effort; a per-call argument takes precedence.
+        credential: A short-lived bearer source; a 401 or 403 re-mints it once.
     """
 
     api_key: str
     model: str
     base_url: str = OPENAI_DEFAULT_BASE_URL
     deployment: Deployment = "direct"
-    # Auth header style (config AuthConfig.style): "bearer" (default),
-    # "api_key_header" (Azure's `api-key`), or "none" (local endpoints).
     auth_style: AuthStyle = "bearer"
     extra_headers: tuple[tuple[str, str], ...] = ()
-    # Provider-specific JSON merged into every request body (e.g. OpenRouter
-    # `provider` routing, see config OpenAIProviderEntry.extra_body). Keys here
-    # override computed tuning fields, EXCEPT the structural set filtered in
-    # `call` (messages/model/stream/stream_options/tools/tool_choice/
-    # response_format/n).
     extra_body: dict[str, Any] = field(default_factory=dict)
-    # Static URL query params merged onto every request (e.g. Azure's
-    # api-version). See config extra_query.
     extra_query: dict[str, str] = field(default_factory=dict)
     timeout_s: float = 120.0
     transcript_sink: TranscriptRecorder | None = None
     budget: BudgetTracker | None = None
-    # Default reasoning effort for this provider (config EffortLevel), wired
-    # from the role's `[models.<role>].effort`. A per-call `reasoning_effort`
-    # argument takes precedence; below this sits the AGENT6_REASONING_EFFORT
-    # env override. Only affects OpenAI-compatible reasoning models.
     reasoning_effort: str | None = None
-    # Short-lived bearer source (config `token_command`). When set, it mints
-    # the `Authorization` token per call instead of `api_key`, and a 401/403
-    # triggers one refresh + retry. The object is internally mutable (cache),
-    # which is why the otherwise-frozen provider holds only a reference to it.
     credential: CommandToken | None = None
-    # Some OpenAI-compatible backends agent6 cannot fingerprint up front (an Azure
-    # o-series/gpt-5 deployment has an arbitrary deployment name) reject the
-    # legacy `max_tokens` with a 400 saying to use `max_completion_tokens`,
-    # and/or reject any explicit `temperature`. On that 400 the call adapts
-    # the body and retries once, latching here so the rest of the run builds
-    # the right body first time. 1-element lists because the dataclass is
-    # frozen but the lists are mutable (same pattern as AnthropicProvider).
+    # Latched on a parameter-rejection 400 (an Azure reasoning deployment has an arbitrary name)
+    # so the rest of the run builds the right body first; lists, since the dataclass is frozen.
     _use_max_completion_tokens: list[bool] = field(default_factory=lambda: [False])
     _omit_temperature: list[bool] = field(default_factory=lambda: [False])
 
     @property
     def endpoint(self) -> str:
+        """The direct chat completions URL."""
         return self.base_url.rstrip("/") + "/chat/completions"
 
     def _adapt_body_for_400(self, status: int | None, text: str, body: dict[str, Any]) -> bool:
-        """Mutate `body` to satisfy a parameter-rejection 400 and latch the
-        provider so later calls build the right body first time. Covers the
-        two rejections a reasoning deployment we cannot fingerprint up front
-        (an Azure o-series/gpt-5 deployment has an arbitrary name) sends:
-        "use max_completion_tokens" and "temperature is not supported".
-        Returns True when an adaptation was made (caller retries once)."""
+        """Rewrite the body for a parameter-rejection 400 and latch the adaptation.
+
+        Covers "use max_completion_tokens" and "temperature is not supported".
+
+        Args:
+            status: The HTTP status.
+            text: The error text.
+            body: The request body, rewritten in place.
+
+        Returns:
+            Whether the body was adapted, so the transport retries once.
+        """
         if status != 400:
             return False
         if "max_tokens" in body and "max_completion_tokens" in (text or ""):
@@ -258,10 +225,7 @@ class OpenAIProvider:
         return False
 
     def _build_headers(self, token: str) -> dict[str, str]:
-        """Per-attempt request headers. Rebuilt each attempt because a
-        `token_command` credential mints a short-lived bearer that takes
-        precedence over the static api_key; on a 401/403 the transport
-        refreshes it once and retries, so an expired token self-heals."""
+        """Return one attempt's request headers, built from its token."""
         headers: dict[str, str] = {"content-type": "application/json"}
         authed = auth_header(self.auth_style, token)
         if authed is not None:
@@ -285,19 +249,33 @@ class OpenAIProvider:
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
-        # extended_thinking is Anthropic-shaped (`budget_tokens`).
-        # OpenAI reasoning models use `reasoning_effort` instead; no
-        # 1:1 mapping. Silently no-op so cross-provider harness code
-        # doesn't have to branch.
+        """Make one Chat Completions call, streaming when a delta callback is set.
+
+        Args:
+            system: The system prompt.
+            messages: The conversation in Anthropic shape.
+            tools: The tools the model may call.
+            max_tokens: The output cap; lifted to the reasoning floor for a reasoning model.
+            temperature: The sampling temperature; omitted where the host rejects one.
+            extended_thinking: Ignored; this wire has no equivalent of a thinking budget.
+            reasoning_effort: A per-call effort over the provider's own.
+            text_delta_callback: Receives visible text as it streams.
+            thinking_delta_callback: Receives reasoning text as it streams.
+            should_abort: Polled during a stream; True abandons the turn.
+            should_interrupt: Polled during a stream; True ends the turn to steer.
+
+        Returns:
+            The parsed response.
+
+        Raises:
+            ProviderError: The run is over budget, or the call failed.
+        """
         del extended_thinking
         if self.budget is not None:
             self.budget.check()
 
         oai_messages = anthropic_to_openai_messages(system, messages)
 
-        # Lift max_tokens for reasoning models so reasoning_content
-        # doesn't starve the actual assistant content + tool_calls. See
-        # REASONING_MODEL_MIN_MAX_TOKENS for the rationale.
         effective_max_tokens = max_tokens
         if (
             _needs_reasoning_headroom(self.model)
@@ -314,14 +292,7 @@ class OpenAIProvider:
             streaming=streaming,
             extra_query=self.extra_query,
         )
-        # OpenAI-direct o-series/reasoning models (o1/o3/o4/gpt-5-style)
-        # REJECT the legacy `max_tokens` parameter with a hard 400
-        # ("Use max_completion_tokens"), and reject `temperature != 1`.
-        # They are reached only on the OpenAI-direct host; other
-        # openai-compatible hosts (OpenRouter, Azure, vLLM, llama.cpp) still
-        # require `max_tokens` and accept arbitrary temperature, so gate the
-        # rename on host + model. OpenRouter normalises `max_tokens` ->
-        # `max_completion_tokens` itself.
+        # Only api.openai.com's own reasoning models reject `max_tokens` and a temperature.
         is_openai_direct = is_openai_direct_host(self.base_url, self.deployment)
         is_openai_direct_reasoning = is_openai_direct and _is_openai_direct_reasoning_model(
             self.model
@@ -331,21 +302,11 @@ class OpenAIProvider:
             body["max_completion_tokens"] = effective_max_tokens
         else:
             body["max_tokens"] = effective_max_tokens
-        # Direct/Vertex carry the model in the body; Azure carries the
-        # deployment name in the URL path, so omit it from the body there.
         if model_in_body:
             body["model"] = self.model
-        # The reasoning knob differs per host, and the wrong one is silently
-        # ignored rather than rejected:
-        #   OpenRouter-style: nested `reasoning.effort`; top-level
-        #     `reasoning_effort` and `reasoning.max_tokens` are no-ops, and
-        #     `off` must SEND `{"enabled": False}` (omitting leaves it on).
-        #   api.openai.com o-series/gpt-5: top-level `reasoning_effort`; the
-        #     nested object 400s as an unknown parameter.
-        # `is_openai_direct_reasoning` does not imply `_is_reasoning_model`,
-        # so gate on both, else the configured effort is dropped for exactly the
-        # models whose only control is the top-level one. Suppression is never
-        # automatic (measured: bench/perf/README.md).
+        # The reasoning knob differs per host and the wrong one is ignored, never rejected:
+        # OpenRouter takes a nested `reasoning.effort` and needs `{"enabled": false}` for off;
+        # api.openai.com takes a top-level `reasoning_effort` and cannot switch reasoning off.
         effort = sent_reasoning_effort(
             self.model,
             reasoning_effort if reasoning_effort is not None else self.reasoning_effort,
@@ -353,21 +314,12 @@ class OpenAIProvider:
         )
         if effort is not None:
             if is_openai_direct_reasoning:
-                # api.openai.com Chat Completions o-series/gpt-5 take a TOP-LEVEL
-                # `reasoning_effort` (low/medium/high), NOT the nested
-                # `reasoning` object OpenRouter invented -- sending the nested
-                # object there is an unknown parameter and 400s. Reasoning cannot
-                # be disabled on o-series, so "off" omits the param (server
-                # default) rather than sending {"enabled": False}.
                 if effort != "off":
                     body["reasoning_effort"] = effort
             elif effort == "off":
                 body["reasoning"] = {"enabled": False}
             else:
                 body["reasoning"] = {"effort": effort}
-        # OpenAI-direct o-series/reasoning models reject any explicit
-        # `temperature` (only the server default is accepted), so omit it
-        # there. Other hosts forward it as-is (until a 400 latches the omit).
         if (
             temperature is not None
             and not is_openai_direct_reasoning
@@ -376,16 +328,8 @@ class OpenAIProvider:
             body["temperature"] = temperature
         if tools:
             body["tools"] = tools_to_openai(tools)
-        # Operator-supplied body extras (e.g. OpenRouter `provider` routing to
-        # pin a caching/fast backend). Merged last so it can override computed
-        # tuning keys, never the structural keys: replacing
-        # `messages`/`model` would silently send a different request, and
-        # flipping `stream` would make the non-streaming path get an SSE body
-        # that `resp.json()` can't parse. Those are filtered out.
         if self.extra_body:
-            # Structural keys only: the conversation, the tool schema, tool
-            # choice, and the response shape the parser reads (`n` > 1 and a
-            # response_format change both break choices[0]-as-the-answer).
+            # The structural keys stay agent6's; tuning keys merge last and win.
             reserved = {
                 "messages",
                 "model",
@@ -397,25 +341,11 @@ class OpenAIProvider:
                 "n",
             }
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
-        # Names of the tools actually offered this turn. Used purely as
-        # a guard for the text-embedded-tool-call recovery in
-        # `parse_response`: we only ever coerce a text blob into a
-        # tool_use when its `name` matches a tool we really offered, so
-        # well-behaved models (native tool_calls) and models that happen
-        # to answer with JSON are never affected.
+        # The recovery of a call leaked into text is guarded by the tools offered this turn.
         tool_names = frozenset(t.name for t in tools) if tools else frozenset()
-        # Per-tool input JSON Schemas, keyed by name. Used by the
-        # text-embedded-tool-call recovery to coerce a `<parameter>` string
-        # value to its declared type (array/object/integer/...) so a leaked
-        # Qwen-style XML call rebuilds correctly. Empty when no tools.
         tool_schemas = {t.name: t.input_schema for t in tools} if tools else {}
 
-        # Streaming is chosen by the caller supplying a delta callback. It is
-        # also the only reliable path for OpenRouter-style gateways whose
-        # `: OPENROUTER PROCESSING` SSE comment heartbeats land in `resp.text`
-        # as garbage on the non-streaming path and break `resp.json()`; bench
-        # shell scripts force it via AGENT6_FORCE_STREAM=1 (the CLI translates
-        # that into a no-op callback).
+        # Streaming is the only reliable path through a gateway whose heartbeats corrupt a body.
         return ProviderCall(
             api_label="OpenAI",
             api_format="openai",
@@ -466,26 +396,31 @@ class OpenAIProvider:
         tool_names: frozenset[str] = frozenset(),
         tool_schemas: dict[str, dict[str, Any]] | None = None,
     ) -> ProviderResponse:
-        """SSE streaming variant of the OpenAI Chat Completions call.
+        """Make the call over SSE; this method owns the Chat Completions event shape.
 
-        The stream lifecycle (idle watchdog, operator stop/steer, teardown
-        classification) is `providers._stream.SseCall`; this method owns
-        the Chat Completions event shape:
+        Each frame is one `data:` JSON object whose `choices[0].delta` carries text,
+        reasoning (`reasoning_content` or `reasoning`) or indexed `tool_calls` whose
+        arguments arrive in pieces; usage lands in a trailing chunk with empty
+        `choices`, and `[DONE]` ends the stream.
 
-        * Single `data:` line per frame (no `event:` typing); frames
-          are JSON objects with a `choices` array carrying `delta`.
-        * Tool calls stream as `choices[0].delta.tool_calls[]` with an
-          `index` field; id + name arrive once, `function.arguments`
-          arrives across many chunks and must be concatenated per
-          index.
-        * Reasoning models surface a separate `delta.reasoning_content`
-          (Kimi, DeepSeek) or `delta.reasoning` (OpenRouter).
-        * Usage only arrives if `stream_options.include_usage` is set
-          and lands in a terminal chunk whose `choices` is `[]`.
-        * `data: [DONE]` marks end of stream.
-        * Gateways like OpenRouter emit SSE comment heartbeats
-          (`:OPENROUTER PROCESSING`) for long requests. `iter_lines`
-          surfaces them as lines starting with `:`; we skip those.
+        Args:
+            url: The URL dialled.
+            headers: The attempt's request headers.
+            body: The request body.
+            text_delta_callback: Receives visible text as it streams.
+            thinking_delta_callback: Receives reasoning text as it streams.
+            should_abort: Polled each watchdog tick; True abandons the turn.
+            should_interrupt: Polled each watchdog tick; True ends the turn to steer.
+            tool_names: The tools offered, guarding the recovery of a leaked call.
+            tool_schemas: The offered tools' input schemas.
+
+        Returns:
+            The parsed response.
+
+        Raises:
+            ProviderError: A stream error frame, a malformed delta, a stream cut
+                before its end, or missing usage on a budgeted run; what the cut
+                turn already cost is recorded first.
         """
         body = dict(body)
         body["stream"] = True
@@ -495,17 +430,12 @@ class OpenAIProvider:
 
         text_parts: list[str] = []
         reasoning_parts: list[str] = []
-        # tool_calls keyed by chunk-level `index` (not the call's
-        # external id, which sometimes arrives late).
+        # Keyed by the chunk's `index`; a call's id sometimes arrives late.
         tool_calls: dict[int, dict[str, Any]] = {}
         tool_arg_buf: dict[int, list[str]] = {}
         finish_reason = ""
         usage: dict[str, Any] = {}
-        # Stream-completion tracking: a legit stream ends with `[DONE]` and/or a
-        # non-empty `finish_reason`. A stream that ends with neither was cut off
-        # (gateway timed out the upstream and closed the body cleanly, the same
-        # failure family OpenRouter delivers as a mid-stream `error` frame); its
-        # half-assembled content must NOT be returned as a completed turn.
+        # A stream ending with neither `[DONE]` nor a finish_reason was cut, not completed.
         done_seen = False
 
         call = SseCall(
@@ -521,15 +451,13 @@ class OpenAIProvider:
         )
 
         def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: C901, PLR0912, PLR0915  # one streaming state machine; a split hides the event order
+            """Read the stream's events into the accumulators.
+
+            Raises:
+                ProviderError: A malformed delta or a stream error frame.
+            """
             nonlocal finish_reason, usage, done_seen
-            # An event resets the idle clock (comment heartbeats never do:
-            # they are exactly the bytes that mask an upstream hang); the
-            # watchdog is satisfied as long as events keep arriving, `[DONE]`
-            # included. mark_output (the switch to the short mid-stream idle
-            # timeout) happens later, only on the first real CONTENT token: an
-            # empty role/keepalive delta arrives immediately and must not end
-            # the generous prefill budget before the model has started
-            # producing output.
+            # An empty role delta arrives at once, so output is marked on the first content token.
             for _event, data in sse_events(resp):
                 clock.mark_data()
                 data_str = data.strip()
@@ -542,13 +470,7 @@ class OpenAIProvider:
                     evt: dict[str, Any] = json.loads(data_str)
                 except json.JSONDecodeError:
                     continue
-                # Mid-stream error frame (OpenRouter/OpenAI/LiteLLM deliver an
-                # upstream 5xx/429/4xx this way, then end the stream). Surface it
-                # instead of silently returning the partial turn, mirroring the
-                # Anthropic `error` event. Carry the upstream status like the
-                # non-streaming 2xx-envelope path -- streaming is the default, so
-                # a permanent code (402/insufficient_quota) delivered mid-stream
-                # would otherwise be retried every turn and lose its hint.
+                # A gateway delivers an upstream error as a frame; its status keeps the retry class.
                 err = evt.get("error")
                 if isinstance(err, dict):
                     call.record(status=0, response=data_str[:8192])
@@ -575,9 +497,7 @@ class OpenAIProvider:
                 if content is not None and not isinstance(content, str):
                     raise ProviderError("OpenAI response content delta was not a string")
                 if isinstance(content, str) and content:
-                    clock.mark_output()  # real output: the mid-stream idle budget applies
-                    # Accumulation is unconditional; the callback is optional
-                    # (streaming may be triggered by thinking_delta alone).
+                    clock.mark_output()
                     text_parts.append(content)
                     if text_delta_callback is not None:
                         with contextlib.suppress(Exception):
@@ -588,7 +508,7 @@ class OpenAIProvider:
                 if reasoning is not None and not isinstance(reasoning, str):
                     raise ProviderError("OpenAI response reasoning delta was not a string")
                 if isinstance(reasoning, str) and reasoning:
-                    clock.mark_output()  # streamed reasoning counts as output too
+                    clock.mark_output()
                     reasoning_parts.append(reasoning)
                     if thinking_delta_callback is not None:
                         with contextlib.suppress(Exception):
@@ -597,7 +517,7 @@ class OpenAIProvider:
                 if not isinstance(raw_tc, list):
                     continue
                 if raw_tc:
-                    clock.mark_output()  # tool-call tokens are real output
+                    clock.mark_output()
                 for tc in raw_tc:
                     if not isinstance(tc, dict):
                         continue
@@ -609,14 +529,9 @@ class OpenAIProvider:
                     if raw_idx is not None:
                         idx = int(raw_idx)
                     elif tc_id and any(s["id"] == tc_id for s in tool_calls.values()):
-                        # Indexless delta continuing a known call: route by id.
                         idx = next(i for i, s in tool_calls.items() if s["id"] == tc_id)
                     elif tc_id and tool_calls:
-                        # Indexless chunk carrying a NEW id (a gateway that
-                        # sends whole calls in one chunk without index
-                        # fields): open a fresh slot instead of collapsing
-                        # every call onto slot 0, which overwrites the first
-                        # call and concatenates both argument strings.
+                        # An indexless chunk with a new id opens its own slot rather than slot 0.
                         idx = max(tool_calls) + 1
                     else:
                         idx = max(tool_calls) if tool_calls else 0
@@ -653,9 +568,7 @@ class OpenAIProvider:
                         tool_arg_buf.setdefault(idx, []).append(args_piece)
 
         def _record_billed() -> None:
-            # Through parse_response so the usage mapping (cached vs fresh
-            # input, the reported cost) has ONE owner; the empty message is
-            # discarded, only its usage is kept.
+            """Record what the turn cost so far, through the one owner of the usage mapping."""
             if not usage:
                 return
             billed = parse_response(
@@ -676,19 +589,12 @@ class OpenAIProvider:
         try:
             call.run(consume)
         except BaseException:
-            # Billed already: a mid-stream error, the idle watchdog or an
-            # operator steer ends the turn after the provider has accepted the
-            # input, and the retry re-sends and is billed again. A usage shape
-            # the parser refuses must not replace the reason the stream ended.
+            # A usage shape the parser refuses must not replace the reason the stream ended.
             with contextlib.suppress(ProviderError):
                 _record_billed()
             raise
 
-        # A stream that ended without `[DONE]` and without any `finish_reason`
-        # was cut off mid-generation (a clean EOF is not a completion signal).
-        # Returning the accumulated partial text / half-built tool call as a
-        # finished turn feeds the loop a bogus silent_finish or a truncated
-        # tool_use; raise a retryable ProviderError so the call is re-issued.
+        # A truncated turn returned as finished would read as the model going quiet.
         if not done_seen and not finish_reason:
             _record_billed()
             call.record(
@@ -700,7 +606,6 @@ class OpenAIProvider:
                 "(no [DONE], no finish_reason); upstream appears cut off."
             )
 
-        # Finalise tool_call arguments.
         final_tool_calls: list[dict[str, Any]] = []
         for idx in sorted(tool_calls):
             slot = tool_calls[idx]
@@ -708,9 +613,7 @@ class OpenAIProvider:
             slot["function"]["arguments"] = args
             final_tool_calls.append(slot)
 
-        # role: a non-streamed response message always carries it, and the
-        # recorded body is read back as a transcript, so the synthesised one
-        # must too.
+        # The recorded body is read back as a transcript, so it carries the role.
         message: dict[str, Any] = {"role": "assistant", "content": "".join(text_parts)}
         if reasoning_parts:
             message["reasoning_content"] = "".join(reasoning_parts)
@@ -728,12 +631,7 @@ class OpenAIProvider:
             "usage": usage,
         }
         if self.budget is not None and not done_seen and not usage:
-            # include_usage is always set, so the usage chunk arrives AFTER
-            # finish_reason and before [DONE]: a stream that stopped in that
-            # window was cut, not unmetered. Raise the retryable truncation
-            # error rather than the permanent no-accounting 422 -- recorded as
-            # the cut it was, like the sibling truncation above, so a retried
-            # run's transcript does not show a clean 200 for it.
+            # The usage chunk follows finish_reason, so a stream stopped between them was cut.
             call.record(
                 status=0,
                 response="stream cut before its usage trailer (truncated)",
@@ -747,8 +645,6 @@ class OpenAIProvider:
             try:
                 _require_metered_usage(usage, source="OpenAI stream")
             except ProviderError:
-                # Billed for what it generated, like every cut stream above;
-                # a completion the guard accepts is metered by parse_response.
                 _record_billed()
                 raise
         parsed = parse_response(synthesised, tool_names=tool_names, tool_schemas=tool_schemas)

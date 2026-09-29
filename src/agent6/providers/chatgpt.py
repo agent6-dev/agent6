@@ -1,20 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""ChatGPT-subscription provider (the Codex Responses backend).
+"""The ChatGPT subscription provider, over the Codex Responses backend.
 
-Speaks the Responses API at `chatgpt.com/backend-api/codex/responses`,
-authorized by the OAuth credential from `agent6 connect <name>` plus the
-`chatgpt-account-id` header. The backend accepts streaming only, so every
-call runs over SSE; the delta callbacks stay optional. `instructions`
-carries agent6's own system prompt; with `store=false` the model's
-encrypted reasoning items replay verbatim, in wire order, so its chain of
-thought survives across tool calls.
-
-Usage draws on the ChatGPT plan's limits, not a metered key, so
-`ProviderResponse.cost_usd` stays 0; token counts are still metered for
-the budget's token caps. Feedback/rating endpoints are never called: a
-rating would opt those turns into provider-side training, so agent6 has no
-rating surface at all.
+Authorised by the OAuth credential from `agent6 connect` plus the account id
+header. The backend is stream-only, so every call runs over SSE. With
+`store=false` the model's encrypted reasoning items replay verbatim, so its chain
+of thought survives across tool calls. Usage draws on the plan's limits, so
+`cost_usd` stays 0 while token counts are metered. The rating endpoints are never
+called: a rating would opt the turn into provider-side training.
 """
 
 from __future__ import annotations
@@ -47,32 +40,29 @@ from agent6.providers.wire import request_url
 
 DEFAULT_MAX_TOKENS = 8192
 
-# Terminal stream events, by `type`: each carries the final response object
-# (usage, status, output). `response.failed` carries an error envelope instead,
-# and is handled separately.
+# Each carries the final response object; `response.failed` carries an envelope instead.
 _TERMINAL_EVENTS = frozenset({"response.completed", "response.done", "response.incomplete"})
 
-# Backend error codes that mean the plan's usage window is exhausted: carry
-# 429 so the loop treats them as retryable-with-backoff, not a provider bug.
+# The plan's window is exhausted; carried as a 429 so the loop backs off rather than failing.
 _USAGE_LIMIT_CODES = frozenset({"usage_limit_reached", "usage_not_included", "rate_limit_exceeded"})
 
 
 def responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """agent6's canonical Anthropic-shape messages -> Responses `input` items.
+    """Translate Anthropic-shaped messages into Responses `input` items.
 
-    Block order is the wire order: text runs flush as one message item;
-    `tool_use` becomes a `function_call` item (arguments as a JSON string,
-    keyed by `call_id`); `tool_result` becomes `function_call_output` with
-    the content flattened to a string. A `thinking` block carrying a
-    `chatgpt_reasoning` item replays that raw Responses item in place, only
-    WITH its following kept item (orphans violate the paired-item rules);
-    any other `thinking` block is display-only and dropped.
+    A text run is one message item, a `tool_use` a `function_call`, a `tool_result`
+    a `function_call_output` with its content as a string. A `thinking` block
+    carrying a `chatgpt_reasoning` item replays it in place, only with its
+    following kept item; any other `thinking` block is display-only and dropped.
+
+    Args:
+        messages: The conversation in Anthropic shape.
+
+    Returns:
+        The input items, in wire order.
     """
     items: list[dict[str, Any]] = []
-    # Ids of the blank-name or id-less tool_use blocks skipped below (a resumed history can
-    # carry one another provider emitted); their paired tool_result must be
-    # skipped too, or the request carries an output with no matching call and
-    # the backend rejects the whole conversation.
+    # A blank-name or id-less tool_use is dropped, and its paired tool_result with it.
     dropped_ids: set[str] = set()
     for msg in messages:
         role = str(msg.get("role", "user"))
@@ -87,18 +77,15 @@ def responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[dict[str, Any]]:
-    """One message's content blocks -> input items, text runs batched."""
+    """Return one message's content blocks as input items, text runs batched."""
     items: list[dict[str, Any]] = []
     text_run: list[str] = []
-    # A reasoning item is replayed only WITH its following kept item: an
-    # orphaned reasoning item (its paired call was dropped) violates the
-    # paired-item rules and would 400 the whole request.
+    # An orphaned reasoning item violates the wire's pairing rules and 400s the request.
     pending_reasoning: list[dict[str, Any]] = []
 
     def flush() -> None:
+        """Emit the pending text run as one message item."""
         if text_run:
-            # Each entry is its own text block (two harness notices can share
-            # a turn); a blank line keeps them apart.
             items.append(_message_item(role, "\n\n".join(text_run)))
             text_run.clear()
 
@@ -151,12 +138,13 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
 
 
 def _message_item(role: str, text: str) -> dict[str, Any]:
+    """Return one message item of the role's text kind."""
     kind = "output_text" if role == "assistant" else "input_text"
     return {"type": "message", "role": role, "content": [{"type": kind, "text": text}]}
 
 
 def tools_to_responses(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
-    """`ToolDefinition`s -> Responses function tools (flat, not nested)."""
+    """Return the tools as Responses function tools (flat, not nested)."""
     return [
         {
             "type": "function",
@@ -170,10 +158,17 @@ def tools_to_responses(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
 
 
 def _tool_use_of(item: dict[str, Any], *, n: int) -> dict[str, Any] | None:
-    """A `function_call` item -> an Anthropic-shape tool_use, or None for a
-    blank name (a malformed call must not enter history; see the OpenAI
-    parser's identical drop). Unparseable arguments keep the lenient-repair /
-    `_raw_arguments` fallback so dispatch can ask for a valid resend."""
+    """Translate a `function_call` item into a tool_use.
+
+    Args:
+        item: The output item.
+        n: The call's ordinal, for a synthesised id.
+
+    Returns:
+        The tool_use, or None for a blank name, which never enters history.
+        Unparseable arguments keep the lenient repair or the `_raw_arguments`
+        sentinel so dispatch can ask for a resend.
+    """
     name = str(item.get("name", "")).strip()
     if not name:
         return None
@@ -193,6 +188,11 @@ def _tool_use_of(item: dict[str, Any], *, n: int) -> dict[str, Any] | None:
 
 
 def _usage_count(value: Any, field_name: str) -> int:
+    """Return one usage count; 0 when absent.
+
+    Raises:
+        ProviderError: The value is not a non-negative integer.
+    """  # noqa: DOC501  # the TypeError is raised and caught in the same try
     if value is None:
         return 0
     try:
@@ -211,15 +211,20 @@ def _usage_count(value: Any, field_name: str) -> int:
 def parse_output_items(
     items: list[Any], *, usage: Mapping[str, Any], stop_reason: str
 ) -> ProviderResponse:
-    """Final Responses output items -> `ProviderResponse` (Anthropic shape).
+    """Parse the final output items into a response.
 
-    `raw["content"]` holds one block per output item in wire order: a
-    message's text, a reasoning item as a `thinking` block (its summary for
-    display, the raw item under `chatgpt_reasoning` for verbatim replay,
-    never decrypted), a function_call as `tool_use`. Usage normalisation
-    matches the OpenAI parser: the backend's `input_tokens` is the
-    cached+fresh total, so cached moves to `cache_read_tokens` and
-    `input_tokens` keeps fresh-only semantics.
+    `raw["content"]` holds one block per item in wire order: a message's text, a
+    reasoning item as a `thinking` block (its summary for display, the raw item
+    under `chatgpt_reasoning` for replay), a function_call as `tool_use`.
+
+    Args:
+        items: The output items.
+        usage: The terminal usage object; `input_tokens` is the cached plus fresh
+            total, normalised to fresh-only as the OpenAI parser does.
+        stop_reason: The stop reason read off the terminal event.
+
+    Returns:
+        The response in agent6's canonical shape.
     """
     text_parts: list[str] = []
     tool_uses: list[dict[str, Any]] = []
@@ -251,9 +256,7 @@ def parse_output_items(
                 blocks.append({"type": "tool_use", **tool_use})
     text = "\n\n".join(text_parts)
     if tool_uses and stop_reason == "end_turn":
-        # Anthropic-shape semantics: a turn that stopped to call tools says
-        # so. This also arms the loop's empty-tool-call detector for this
-        # wire (stop says tool_use + nothing came = a retryable contradiction).
+        # A turn that stopped to call tools says so, which arms the loop's empty-call detector.
         stop_reason = "tool_use"
     details = usage.get("input_tokens_details")
     cached = (
@@ -277,11 +280,17 @@ def parse_output_items(
 
 
 def _no_adapt(status: int | None, text: str, body: dict[str, Any]) -> bool:
+    """Return False: this wire adapts no body."""
     del status, text, body
     return False
 
 
 def _unreachable_hook(data: dict[str, Any]) -> Any:
+    """Refuse the non-streaming hooks; this wire is stream-only.
+
+    Raises:
+        ProviderError: Always.
+    """
     raise ProviderError("chatgpt provider is stream-only")  # pragma: no cover
 
 
@@ -289,6 +298,7 @@ _WINDOW_HEADER = re.compile(r"^x-codex-(?P<name>.+)-used-percent$")
 
 
 def _num(value: Any) -> float:
+    """Return a header or body value as a finite float; 0.0 when it is not one."""
     try:
         number = float(value or 0)
     except (TypeError, ValueError):
@@ -297,18 +307,22 @@ def _num(value: Any) -> float:
 
 
 def _window_order(name: str) -> tuple[int, str]:
-    """Primary first, secondary second, every other family by name."""
+    """Return a window's sort key: primary, secondary, then every other family by name."""
     return ({"primary": 0, "secondary": 1}.get(name, 2), name)
 
 
 def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
-    """The rate-limit windows off a response's `x-codex-*` headers.
+    """Read the plan windows off a response's `x-codex-*` headers.
 
-    Every `x-codex-<name>-used-percent` family is one window (`primary`,
-    `secondary`, and whatever per-model families the backend adds), with
-    its `-window-minutes` and `-reset-at` / `-reset-after-seconds` siblings.
-    The percent budget and every plan-usage surface read this one parse;
-    None when the backend sent no primary reading (absent or malformed)."""
+    Every `x-codex-<name>-used-percent` family is one window, with its window
+    minutes and reset siblings; every plan-usage surface reads this one parse.
+
+    Args:
+        headers: The response headers.
+
+    Returns:
+        The plan usage, or None when the primary reading is absent or malformed.
+    """
     lowered = {k.lower(): v for k, v in headers.items()}
     windows: list[PlanWindow] = []
     for key in sorted(lowered):
@@ -337,6 +351,7 @@ def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
         return None
 
     def _flag(name: str) -> bool:
+        """Return whether a header reads true."""
         return (lowered.get(name) or "").strip().lower() == "true"
 
     return PlanUsage(
@@ -348,10 +363,15 @@ def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
 
 
 def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
-    """The account's plan state off the backend's `/usage` body: every
-    `<name>_window` under `rate_limit` is one window, plus its own
-    limit-reached verdict and the purchased-credit family. None when the
-    body carries no primary window."""
+    """Read the account's plan state off the backend's `/usage` body.
+
+    Args:
+        body: The response body.
+
+    Returns:
+        Every `<name>_window` under `rate_limit` as a window, the backend's
+        limit-reached verdict and the credit family; None without a primary window.
+    """
     limits = body.get("rate_limit")
     if not isinstance(limits, Mapping):
         return None
@@ -391,7 +411,7 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
 
 
 def _stream_error(evt: dict[str, Any]) -> ProviderError:
-    """A `response.failed` / `error` frame -> a classified ProviderError."""
+    """Return the error a `response.failed` or `error` frame carries, classified."""
     response = evt.get("response")
     err = response.get("error") if isinstance(response, dict) else evt.get("error")
     if not isinstance(err, dict):
@@ -407,7 +427,24 @@ def _stream_error(evt: dict[str, Any]) -> ProviderError:
 
 @dataclass(frozen=True, slots=True)
 class ChatGPTProvider:
-    """Stateless provider for the ChatGPT-subscription Codex backend."""
+    """The ChatGPT provider, constructed once per run.
+
+    Attributes:
+        model: The model id.
+        credential: The OAuth credential; a 401 refreshes it once.
+        account_id: The `chatgpt-account-id` header.
+        base_url: The backend's base URL.
+        extra_headers: Operator headers merged over the built ones.
+        extra_body: Operator body keys merged last; the structural keys are reserved.
+        extra_query: Operator query parameters.
+        timeout_s: The read budget in seconds.
+        transcript_sink: Where each round-trip is recorded.
+        budget: The run's tracker; None skips metering and the preflight.
+        reasoning_effort: The role's effort; unset takes the model's default, and
+            "off" sends the wire's explicit "none".
+        session_id: The `prompt_cache_key` and `session-id` header, so caching
+            keys to this run's conversation.
+    """
 
     model: str
     credential: ChatGPTCredential
@@ -419,22 +456,20 @@ class ChatGPTProvider:
     timeout_s: float = 600.0
     transcript_sink: TranscriptRecorder | None = None
     budget: BudgetTracker | None = None
-    # Default reasoning effort, wired from `[models.<role>].effort`; the
-    # model's own default applies when unset, and "off" sends the wire's
-    # explicit "none".
     reasoning_effort: str | None = None
-    # Stable per-provider id: the backend's `prompt_cache_key` (<= 64 chars)
-    # and `session-id` header, so caching keys to this run's conversation.
     session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    # One usage preflight per provider (a mutable cell on a frozen dataclass).
+    # One usage preflight per provider; a list, since the dataclass is frozen.
     _preflighted: list[bool] = field(default_factory=lambda: [False])
 
     def preflight(self) -> PlanUsage | None:
-        """The account's plan state BEFORE any call, off the backend's
-        `/usage` (same host as `base_url`): both windows and the credit
-        family. Best effort: any failure reads as no reading, never as a
-        block. The body is parsed and dropped (it carries the account's
-        email), never recorded."""
+        """Read the account's plan state off the backend's `/usage` before any call.
+
+        Best effort: any failure reads as no reading, never as a block. The body
+        carries the account's email, so it is parsed and dropped, never recorded.
+
+        Returns:
+            The plan usage, or None when it could not be read.
+        """
         try:
             token = self.credential.token()
             resp = httpx2.get(
@@ -450,6 +485,7 @@ class ChatGPTProvider:
         return plan_usage_from_usage_body(body) if isinstance(body, dict) else None
 
     def _build_headers(self, token: str) -> dict[str, str]:
+        """Return one attempt's request headers, built from its token."""
         headers = {
             "content-type": "application/json",
             "authorization": f"Bearer {token}",
@@ -477,10 +513,27 @@ class ChatGPTProvider:
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
-        # The backend sizes output itself (`max_output_tokens` is not part of
-        # the Codex dialect), hard-rejects `temperature` (400 "Unsupported
-        # parameter"; effort is the only sampling knob), and the
-        # Anthropic-shaped `extended_thinking` has no mapping here either.
+        """Make one Responses call over SSE.
+
+        Args:
+            system: The system prompt, sent as `instructions`.
+            messages: The conversation in Anthropic shape.
+            tools: The tools the model may call.
+            max_tokens: Ignored; the backend sizes its output.
+            temperature: Ignored; the backend rejects one, and effort is the only knob.
+            extended_thinking: Ignored; this wire has no equivalent.
+            reasoning_effort: A per-call effort over the provider's own.
+            text_delta_callback: Receives visible text as it streams.
+            thinking_delta_callback: Receives reasoning summaries as they stream.
+            should_abort: Polled during the stream; True abandons the turn.
+            should_interrupt: Polled during the stream; True ends the turn to steer.
+
+        Returns:
+            The parsed response.
+
+        Raises:
+            ProviderError: The run is over budget, or the call failed.
+        """
         del max_tokens, temperature, extended_thinking
         if self.budget is not None:
             if not self._preflighted[0]:
@@ -505,8 +558,7 @@ class ChatGPTProvider:
             "parallel_tool_calls": True,
             "store": False,
             "stream": True,
-            # Explicit: the encrypted reasoning items we replay for stateless
-            # chain-of-thought continuity across tool calls.
+            # The encrypted reasoning items replayed for continuity across tool calls.
             "include": ["reasoning.encrypted_content"],
             "prompt_cache_key": self.session_id,
         }
@@ -514,9 +566,7 @@ class ChatGPTProvider:
             body["tools"] = tools_to_responses(tools)
         effort = reasoning_effort if reasoning_effort is not None else self.reasoning_effort
         if effort:
-            # The wire has an explicit "none" (verified live); merely omitting
-            # the field would leave the model's own default on, so "off" maps
-            # to it rather than silently meaning "default".
+            # Omitting the field leaves the model's default on; "off" needs the explicit "none".
             wire = "none" if effort == "off" else effort
             body["reasoning"] = {"effort": wire, "summary": "auto"}
         if self.extra_body:
@@ -547,8 +597,7 @@ class ChatGPTProvider:
             build_headers=self._build_headers,
             adapt_400=_no_adapt,
             adapt_attempts=0,
-            # Stream-only: ProviderCall never takes its non-streaming branch,
-            # so these two hooks are unreachable; metering happens in-stream.
+            # Stream-only, so the non-streaming hooks are unreachable; metering happens in-stream.
             require_metered=_unreachable_hook,
             parse=_unreachable_hook,
             stream=lambda attempt_headers: self._call_streaming(
@@ -573,15 +622,28 @@ class ChatGPTProvider:
         should_abort: Callable[[], bool] | None,
         should_interrupt: Callable[[], bool] | None,
     ) -> ProviderResponse:
-        """One SSE round-trip against the Responses backend.
+        """Make the call over SSE; this method owns the Responses event shape.
 
-        Event shape: each `data:` frame is a JSON object whose `type` names
-        the event. Deltas (`response.output_text.delta`,
-        `response.reasoning_*.delta`) feed the callbacks only; the final
-        content comes from `response.output_item.done` items, reconciled
-        against the terminal `response.completed` object (usage lives
-        there). A stream ending without a terminal event is a cut, never a
-        completed turn.
+        Each frame is a JSON object whose `type` names the event. Deltas feed the
+        callbacks only; the content comes from the `output_item.done` items,
+        reconciled against the terminal response object, where usage lives.
+
+        Args:
+            url: The URL dialled.
+            headers: The attempt's request headers.
+            body: The request body.
+            text_delta_callback: Receives visible text as it streams.
+            thinking_delta_callback: Receives reasoning summaries as they stream.
+            should_abort: Polled each watchdog tick; True abandons the turn.
+            should_interrupt: Polled each watchdog tick; True ends the turn to steer.
+
+        Returns:
+            The parsed response.
+
+        Raises:
+            ProviderError: A failed response, a stream cut before its terminal
+                event, or missing usage on a budgeted run; what the cut turn
+                already cost is recorded first.
         """
         stream_headers = dict(headers)
         stream_headers["accept"] = "text/event-stream"
@@ -594,6 +656,7 @@ class ChatGPTProvider:
         done = False
 
         def observe_headers(response_headers: Mapping[str, str]) -> None:
+            """Read the plan windows off the response headers."""
             nonlocal plan_usage
             plan_usage = _plan_usage_of(response_headers)
 
@@ -613,6 +676,11 @@ class ChatGPTProvider:
         def consume(  # noqa: PLR0912, PLR0915
             resp: httpx2.Response, clock: StreamClock
         ) -> None:
+            """Read the stream's events into the accumulators.
+
+            Raises:
+                ProviderError: A failed response or an unknown terminal status.
+            """  # noqa: DOC501  # `_stream_error` builds the ProviderError named above
             nonlocal usage, stop_reason, done
             for _event, data in sse_events(resp):
                 clock.mark_data()
@@ -666,8 +734,7 @@ class ChatGPTProvider:
                         raise ProviderError(f"ChatGPT response ended with status {status}")
                     final_items = response.get("output")
                     if isinstance(final_items, list) and final_items:
-                        # The terminal response is the complete, ordered output;
-                        # item.done events may be absent for only some items.
+                        # The terminal response is the whole output; item.done events may be absent.
                         items[:] = final_items
                     if status == "incomplete":
                         reason = str((response.get("incomplete_details") or {}).get("reason") or "")
@@ -682,6 +749,7 @@ class ChatGPTProvider:
                     return
 
         def _record_billed() -> None:
+            """Record what the turn cost so far, and the plan window it moved."""
             if not usage and plan_usage is None:
                 return
             billed = parse_output_items([], usage=usage, stop_reason="")
@@ -712,9 +780,7 @@ class ChatGPTProvider:
 
         parsed = parse_output_items(items, usage=usage, stop_reason=stop_reason)
         if not parsed.text and delta_text:
-            # A backend that streamed text deltas but no final message item:
-            # keep what the operator already watched arrive, ahead of the
-            # turn's other blocks.
+            # Text deltas without a final message item keep what the operator watched arrive.
             text = "".join(delta_text)
             parsed = replace(
                 parsed,
@@ -734,8 +800,6 @@ class ChatGPTProvider:
         )
         if self.budget is not None:
             if int(usage.get("input_tokens") or 0) <= 0:
-                # Billed for what it generated, and the plan window moved: on
-                # the ledger before the refusal.
                 _record_billed()
                 raise ProviderError(
                     "ChatGPT stream reported no usage input tokens;"

@@ -1,16 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Shared request transport for the provider call paths.
+"""The request transport the HTTP providers' call paths share.
 
-The HTTP providers execute one API call the same way: an attempt loop with
-per-attempt auth headers (a `token_command` credential mints a short-lived
-bearer, and a 401/403 refreshes it once and retries), one-shot 4xx body
-adaptation (each provider decides which parameter-rejection 400s it can fix
-by rewriting the body and latching), transcript recording, a retryable error
-for a 2xx with a non-JSON body, usage metering, and the budget charge.
-:class:`ProviderCall` owns that loop; request-body construction, header
-composition, 400 adaptation, metering rules, and response parsing stay
-per-provider via the hook fields.
+`ProviderCall` owns the attempt loop: per-attempt auth headers (a refreshable
+credential is re-minted once on a 401 or 403), one-shot 400 body adaptation,
+transcript recording, a retryable error for a malformed 2xx, usage metering and
+the budget charge. Body construction, headers, adaptation, metering rules and
+parsing stay per provider through its hook fields.
 """
 
 from __future__ import annotations
@@ -32,33 +28,36 @@ from agent6.providers.types import (
     scrub_secret_values,
 )
 
-# TCP+TLS handshake bound. A healthy endpoint connects in well under this;
-# only a blackhole (dropped SYN, dead proxy) takes longer, and *timeout*'s
-# 600s default would sit on it for ten minutes -- the stream watchdog cannot
-# help there, it has no response to close until the connect returns.
+# The handshake bound; only a blackholed connect takes longer, and the watchdog cannot cut one.
 CONNECT_TIMEOUT_S = 20.0
 
 
 def granular_timeout(timeout: float) -> httpx2.Timeout:
-    """*timeout* for read/write/pool, `CONNECT_TIMEOUT_S` for connect."""
+    """Return the timeout for read, write and pool, with the connect phase bounded on its own."""
     return httpx2.Timeout(timeout, connect=min(CONNECT_TIMEOUT_S, timeout))
 
 
-# A full-window reply serializes to a few MiB; 64 MiB never clips a real
-# response while stopping a pathological or hostile endpoint from being
-# buffered whole into this process (fetch and MCP bound their reads the same
-# way).
+# A full-window reply is a few MiB; the cap stops a hostile endpoint from being buffered whole.
 MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 
 
 def http_post(
     url: str, *, headers: dict[str, str], content: bytes, timeout: float
 ) -> httpx2.Response:
-    """POST seam: tests stub this name, never `httpx2` globally.
+    """Make one POST and read the body under the size cap; the seam tests stub.
 
-    The body is read incrementally under `MAX_RESPONSE_BYTES`; an endpoint
-    exceeding it raises a retryable `ProviderError` instead of an unbounded
-    buffer."""
+    Args:
+        url: The URL.
+        headers: The request headers.
+        content: The request body.
+        timeout: The read budget in seconds.
+
+    Returns:
+        The response with its body read.
+
+    Raises:
+        ProviderError: The body exceeded `MAX_RESPONSE_BYTES` (retryable).
+    """
     with httpx2.stream(
         "POST", url, headers=headers, content=content, timeout=granular_timeout(timeout)
     ) as resp:
@@ -69,10 +68,7 @@ def http_post(
                 raise ProviderError(
                     f"provider response exceeded {MAX_RESPONSE_BYTES} bytes; refusing to buffer it"
                 )
-        # iter_bytes() decoded the body: the wire's representation headers
-        # (content-encoding, content-length) no longer describe the content,
-        # and carrying them over makes httpx2 run the decoder again over
-        # plaintext.
+        # The body is decoded, so the wire's representation headers no longer describe it.
         response_headers = [
             (k, v)
             for k, v in httpx2.Headers(resp.headers).multi_items()
@@ -87,11 +83,11 @@ def http_post(
 
 
 def _has_assistant_output(data: dict[str, Any]) -> bool:
-    """Whether a 2xx body carries a REAL assistant response, so a top-level
-    `error` key beside it is incidental rather than an error envelope. Covers
-    both wire shapes: OpenAI `choices[].message` (content or tool_calls),
-    Anthropic top-level `content`. A placeholder choice with null content is
-    not output."""
+    """Return whether a 2xx body carries a real assistant response, in either wire shape.
+
+    A top-level `error` beside real output is incidental, not an envelope; a
+    placeholder choice with null content is not output.
+    """
     choices = data.get("choices")
     if isinstance(choices, list):
         for ch in choices:
@@ -101,10 +97,7 @@ def _has_assistant_output(data: dict[str, Any]) -> bool:
     return isinstance(data.get("content"), list) and bool(data.get("content"))
 
 
-# String error codes/types mapped to the HTTP statuses their provider
-# documents, so an error arriving in a 2xx body or a stream event keeps its
-# status; the retry decision is the status's (`NON_RETRYABLE_HTTP_STATUSES`):
-# 429, 500 and 529 retry, the rest are permanent.
+# The documented statuses behind string error codes, so an in-band error keeps its retry class.
 _ERROR_CODE_STATUS: dict[str, int] = {
     # OpenAI-family `code`
     "insufficient_quota": 402,
@@ -124,13 +117,18 @@ _ERROR_CODE_STATUS: dict[str, int] = {
 
 
 def envelope_status(err: object) -> int | None:
-    """The upstream HTTP status carried in an error envelope, if it is a real
-    4xx/5xx; else None (retryable). Threading it into `ProviderError.status_code`
-    lets `NON_RETRYABLE_HTTP_STATUSES` classify a 402 as permanent while a
-    429/5xx stays retryable.
+    """Read the HTTP status an error envelope carries.
 
-    Reads a numeric `code` (int or all-digit string) directly, and maps the
-    documented string `code`/`type` values to their statuses."""
+    A numeric `code` is read directly; a documented string `code` or `type` maps
+    to its status. Threaded into `ProviderError.status_code`, it lets the retry
+    wrapper treat a 402 as permanent and a 429 or 5xx as retryable.
+
+    Args:
+        err: The envelope's `error` value.
+
+    Returns:
+        The status when it is a real 4xx or 5xx, else None (retryable).
+    """
     if not isinstance(err, dict):
         return None
     code = err.get("code")
@@ -147,8 +145,7 @@ def envelope_status(err: object) -> int | None:
 
 
 def _envelope_detail(err: object) -> str:
-    """A readable `code: message` for an error envelope, tolerating a bare
-    string error and an empty object."""
+    """Return an error envelope as `code: message`, tolerating a bare string or an empty object."""
     if isinstance(err, dict):
         label = err.get("code") or err.get("type") or "error"
         return f"{label}: {err.get('message') or err}"
@@ -158,17 +155,22 @@ def _envelope_detail(err: object) -> str:
 def meter_completion(
     budget: BudgetTracker | None, model: str, parsed: ProviderResponse, api_label: str
 ) -> None:
-    """Book *parsed*'s usage, then refuse a completion the upstream failed.
+    """Book the response's usage, then refuse a completion the upstream failed.
 
-    The upstream's own failure signal, seen from OpenRouter as a 200 whose
-    choice carries `finish_reason: "error"`, a null content and nothing else.
-    Returned as a finished turn it spends a went-quiet nudge on an error and
-    abstains a review seat as if the model had answered; raised here it
-    retries, like a stream that ends without [DONE]. The record comes FIRST:
-    the provider billed those tokens either way, and every retry books its own.
+    OpenRouter reports an upstream failure as a 200 whose choice carries
+    `finish_reason: "error"` and no content; returned as a finished turn it would
+    read as the model going quiet, raised it retries. The usage is booked first:
+    the provider billed those tokens either way. Both the decoded and the streamed
+    response shape pass through here, so neither drifts from the other.
 
-    Both shapes a response arrives in -- decoded at once, or assembled from a
-    stream -- meter and check here, so neither can drift from the other.
+    Args:
+        budget: The run's tracker; None books nothing.
+        model: The model billed.
+        parsed: The parsed response.
+        api_label: The name that leads the error.
+
+    Raises:
+        ProviderError: The upstream failed the completion.
     """
     if budget is not None:
         budget.record(
@@ -194,16 +196,30 @@ def meter_completion(
 class ProviderCall:
     """One provider API call: the attempt loop around a built request body.
 
-    `adapt_400` receives `(status, error_text, body)` and returns True
-    after mutating `body` (and latching provider state) so the next attempt
-    sends the adapted request; `adapt_attempts` reserves one extra attempt
-    per adaptation the provider considers possible for this body. `stream`,
-    when set, replaces the non-streaming POST and receives the per-attempt
-    headers; errors it raises flow through the same adapt/refresh logic.
+    Attributes:
+        api_label: The name that leads API error messages ("OpenAI", "Anthropic").
+        api_format: The wire format ("openai", "anthropic", "chatgpt").
+        url: The URL dialled.
+        body: The request body; an adaptation mutates it in place.
+        timeout_s: The read budget in seconds.
+        api_key: The static credential, used when `credential` is None.
+        credential: A refreshable bearer; a 401 or 403 re-mints it once and retries.
+        transcript_sink: Where each round-trip is recorded; None records nothing.
+        budget: The run's tracker; None skips metering.
+        model: The model billed.
+        build_headers: Builds the attempt's headers from its token.
+        adapt_400: Receives `(status, error_text, body)` and returns True after
+            rewriting the body (and latching provider state) so the next attempt
+            sends the adapted request.
+        adapt_attempts: One extra attempt per adaptation possible for this body.
+        require_metered: Refuses a 2xx body that lacks usage when a budget is set.
+        parse: Parses a 2xx body.
+        stream: Replaces the non-streaming POST when set; receives the attempt's
+            headers, and its errors flow through the same adapt and refresh logic.
     """
 
-    api_label: str  # "OpenAI" / "Anthropic" / "ChatGPT"; leads API-error messages
-    api_format: str  # "openai" / "anthropic" / "chatgpt"; names the wire format
+    api_label: str
+    api_format: str
     url: str
     body: dict[str, Any]
     timeout_s: float
@@ -220,7 +236,7 @@ class ProviderCall:
     stream: Callable[[dict[str, str]], ProviderResponse] | None = None
 
     def record(self, headers: dict[str, str], status: int, response: dict[str, Any] | str) -> None:
-        """Write one transcript entry for this request (no-op without a sink)."""
+        """Write one transcript entry for this request; nothing without a sink."""
         if self.transcript_sink is not None:
             self.transcript_sink.record(
                 url=self.url,
@@ -231,9 +247,16 @@ class ProviderCall:
             )
 
     def run(self) -> ProviderResponse:
+        """Make the call, retrying once per credential refresh and per body adaptation.
+
+        Returns:
+            The parsed response.
+
+        Raises:
+            ProviderError: A transport error, an API error status, a malformed 2xx,
+                or a completion the upstream failed.
+        """
         cred = self.credential
-        # A credential reserves one refresh + retry for an expired bearer;
-        # each possible one-shot body adaptation reserves one more attempt.
         max_attempts = (2 if cred is not None else 1) + self.adapt_attempts
         for attempt in range(max_attempts):
             token = cred.token() if cred is not None else self.api_key
@@ -271,8 +294,7 @@ class ProviderCall:
                 ) from exc
             recorded = False
             if cred is not None and attempt + 1 < max_attempts and resp.status_code in (401, 403):
-                # Record BEFORE refreshing: this 401/403 hit the wire, and the
-                # transcript contract is one file per round-trip.
+                # The transcript contract is one file per round-trip, the refused one included.
                 self.record(headers, resp.status_code, resp.text[:8192])
                 recorded = True
                 if cred.invalidate(resp.status_code):
@@ -294,42 +316,37 @@ class ProviderCall:
         raise ProviderError(f"{self.api_label} auth retry exhausted")  # pragma: no cover
 
     def _decode_success(self, headers: dict[str, str], resp: httpx2.Response) -> ProviderResponse:
-        """A 2xx body -> ProviderResponse: decode, record, meter, budget."""
+        """Decode, record, check and meter a 2xx response.
+
+        Args:
+            headers: The attempt's request headers.
+            resp: The response.
+
+        Returns:
+            The parsed response.
+
+        Raises:
+            ProviderError: A non-JSON or non-object body, an error envelope, or a
+                body off the wire shape (each retryable unless the envelope's
+                status says otherwise).
+        """
         try:
-            # Annotated Any: json() returns whatever the body holds; the
-            # guard below proves the dict shape.
             data: Any = resp.json()
         except (json.JSONDecodeError, ValueError) as exc:
-            # A 2xx with a non-JSON body (transient proxy/gateway glitch)
-            # would otherwise raise a JSONDecodeError that the retry loop
-            # doesn't catch (it only handles ProviderError), aborting the
-            # run. Convert to a retryable ProviderError. Leaving
-            # status_code unset marks it retryable.
+            # A gateway glitch; without a status the error is retryable.
             self.record(headers, resp.status_code, resp.text[:8192])
             raise ProviderError(
                 f"non-JSON response from {self.api_label} "
                 f"(status {resp.status_code}): {scrub_secret_values(resp.text, headers)[:500]}"
             ) from exc
         if not isinstance(data, dict):
-            # A 2xx whose valid JSON is not an object (array/string from a
-            # glitching gateway): every consumer downstream assumes a dict,
-            # and the AttributeError it would raise bypasses the loop's
-            # ProviderError-only retry. Same retryable conversion as the
-            # non-JSON branch above.
             self.record(headers, resp.status_code, resp.text[:8192])
             raise ProviderError(
                 f"{self.api_label} returned a non-object JSON body "
                 f"(status {resp.status_code}): {scrub_secret_values(resp.text, headers)[:500]}"
             )
         self.record(headers, resp.status_code, data)
-        # An in-band error envelope on a 2xx (OpenRouter/LiteLLM deliver an
-        # upstream 5xx/429/4xx this way; Anthropic's error object has the same
-        # top-level key) is refused here, before require_metered blames the
-        # missing usage on agent6's accounting. Key on "no usable assistant
-        # output": a placeholder `choices` entry with null content is not
-        # output, a bare string `error` is still an envelope. The upstream code
-        # is the status, so NON_RETRYABLE_HTTP_STATUSES makes 4xx permanent and
-        # 429/5xx retryable.
+        # OpenRouter and LiteLLM deliver an upstream error in a 2xx body; refused before metering.
         err = data.get("error")
         if err and not _has_assistant_output(data):
             raise ProviderError(
@@ -343,9 +360,7 @@ class ProviderCall:
         try:
             parsed = self.parse(data)
         except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:
-            # A malformed 2xx body (a flaky gateway's null/renamed fields) is a
-            # retryable provider fault, never a raw traceback that bypasses
-            # the loop's retry wrapper. The one parse seam both providers use.
+            # The one parse seam: a malformed body never bypasses the retry wrapper as a traceback.
             raise ProviderError(
                 f"{self.api_label} 2xx body did not match the wire shape: {exc!r}"
             ) from exc

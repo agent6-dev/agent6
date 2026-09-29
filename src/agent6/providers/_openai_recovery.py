@@ -1,13 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Text-embedded tool-call recovery for the OpenAI-compatible provider.
+"""Recover tool calls a model wrote into its text, for the OpenAI provider.
 
-Fallback parsing for models whose server does not populate the native
-`tool_calls` array and instead leaks the call into the assistant
-`content` text (Qwen/Hermes tags, Qwen-Coder XML, Gemma `tool_code`
-fences, bare or fenced JSON). The rationale and the guards live on the
-comment block below; `providers/_openai_parse.py`'s `parse_response` is the
-only production caller.
+Some servers (Ollama and llama.cpp chat templates for Qwen, Hermes and other small
+models, some OpenRouter backends) leave `tool_calls` empty and leak the call into
+the assistant text as bare or fenced JSON, a `<tool_call>` tag, Qwen-Coder XML or
+a Gemma `tool_code` fence. Without recovery the loop sees text and no tool_use and
+stalls. Recovery runs only when no native call exists and a tool was offered; every
+form must name an offered tool except the `<tool_call>` tag, which keeps an unknown
+name for the dispatcher's error. The text is read once, left to right: a call
+quoted inside a closed fence stays text, and a call restated in a second form is
+that call.
 """
 
 from __future__ import annotations
@@ -17,38 +20,12 @@ import json
 import re
 from typing import Any
 
-# Some OpenAI-compatible servers (notably certain Ollama / llama.cpp
-# chat templates for Qwen, Hermes, and other small local models, and some
-# OpenRouter upstream backends) do NOT parse the model's tool call into the
-# native `tool_calls` array. Instead the call leaks into the assistant
-# `content` as plain text, in one of several shapes:
-#   - a bare JSON object `{"name": ..., "arguments": {...}}`,
-#   - the same wrapped in a ```json fence,
-#   - Hermes/Qwen `<tool_call>{json}</tool_call>` tags, or
-#   - the Qwen-Coder XML form ``<function=NAME><parameter=KEY>VALUE
-#     </parameter>...</function>`` (string-valued params, NOT JSON).
-# Without recovery the run loop sees text + no tool_use and stalls
-# ("went quiet" / "silent_finish"), which kills an entire family of
-# open-weight coding models (qwen3-coder, hermes, devstral, ...). We
-# recover these into real tool_uses only when no native call exists and at
-# least one tool was offered. Every form must name an offered tool except the
-# explicit `<tool_call>` tag, which keeps an unknown name so the dispatcher
-# returns that call's error. The text is read once, left to right: a call
-# quoted inside a closed Markdown fence stays text, and a call restated in a
-# second form is that call.
 _OPENER_RE = re.compile(r"(?m)^ {0,3}(?:`{3,}|~{3,})|<tool_call>|<function\s*=")
 _FENCE_OPEN_RE = re.compile(
     r"(?m)^ {0,3}(?P<marker>`{3,}|~{3,})[ \t]*(?P<lang>[^\s`~]*)[^\n]*(?:\n|$)"
 )
 _TOOL_CALL_CLOSE = "</tool_call>"
-# Qwen-Coder XML tool form. The closing `</function>` is sometimes
-# missing (truncation) or mis-spelled `</tool_call>`; capture the name
-# and a lenient body, then mine `<parameter=...>` pairs out of it.
-# The next-tag terminators are LOOKAHEADS (not consuming): when a closing tag
-# is missing, the body must end *before* the next block's opening tag without
-# swallowing it -- otherwise finditer consumes that opener and silently drops
-# the following function/parameter (corrupts e.g. apply_edit on open-weight
-# models that emit unclosed Qwen-XML tool calls).
+# Qwen-Coder XML; a closer may be missing or misspelled, so the next opener (lookahead) ends a body.
 _FUNCTION_CALL_RE = re.compile(
     r"<function\s*=\s*([^>\s]+?)\s*>(.*?)(?:</function>|</tool_call>|(?=<function\s*=)|\Z)",
     re.DOTALL,
@@ -58,27 +35,25 @@ _PARAMETER_RE = re.compile(
     re.DOTALL,
 )
 _PARAMETER_CLOSE = "</parameter>"
-# Leftover scaffolding to scrub from the visible text once calls are mined.
-# Orphan closers Qwen's template leaves right after a </function> block (a
-# stray </tool_call> most commonly); swallowed into the recovered call's span.
+# Orphan closers Qwen's template leaves after a block go with the recovered call's span.
 _TRAILING_SCAFFOLD_RE = re.compile(r"(?:\s*(?:</tool_call>|</function>|</parameter>))+")
 
 type _Call = dict[str, Any]
 
 
 def lenient_json_object(raw: object) -> dict[str, Any] | None:
-    """Recover a tool-call `arguments` string that strict `json.loads`
-    rejected, when the fix is safe and unambiguous. Returns the object, or None.
+    """Re-parse a tool-call `arguments` string that strict JSON rejected.
 
-    Two common weak/open-model malformations:
-    - a raw control char (an unescaped newline/tab) inside a string value, which
-      `strict=False` accepts;
-    - trailing junk after a valid object (a leaked `</invoke>` tag or prose),
-      which `raw_decode` ignores by parsing only the leading value.
+    Accepts a raw control character inside a string value and trailing junk after
+    a valid object (a leaked tag or prose), the two malformations weak models emit.
 
-    Only a dict result is returned; a scalar/array (or a still-invalid string,
-    e.g. a bad `\\d` regex escape) yields None so the caller keeps the
-    `_raw_arguments` sentinel rather than guessing."""
+    Args:
+        raw: The arguments string.
+
+    Returns:
+        The object; None for a scalar, an array or a still-invalid string, so the
+        caller keeps the `_raw_arguments` sentinel rather than guessing.
+    """
     if not isinstance(raw, str) or not raw.strip():
         return None
     try:
@@ -91,17 +66,24 @@ def lenient_json_object(raw: object) -> dict[str, Any] | None:
 def _tool_code_call_to_dict(
     node: ast.Call, source: str, tool_names: frozenset[str]
 ) -> dict[str, Any] | None:
-    """Turn one `ast.Call` into `{"name", "input"}` if it (or, unwrapping a
-    non-tool wrapper such as `print(tool(...))`, an inner call) targets an
-    offered tool. Keyword args are read with `ast.literal_eval` (already typed),
-    so no coercion; a non-literal, positional or splatted argument marks the
-    whole input malformed rather than silently dropping it. Returns None for a non-tool call;
-    we do NOT recurse into kwarg VALUES, so a tool nested as an
-    argument (`apply_edit(path=read_file(...))`) is not separately mined."""
+    """Turn one call node into a tool call when it targets an offered tool.
+
+    A non-tool wrapper such as `print(tool(...))` is unwrapped one level. Keyword
+    arguments are read as literals; a non-literal, positional or splatted argument
+    marks the whole input malformed rather than dropping it. A tool nested as an
+    argument value is not mined.
+
+    Args:
+        node: The call node.
+        source: The block's source, for the raw-arguments diagnostic.
+        tool_names: The tools offered.
+
+    Returns:
+        The `{"name", "input"}` call, or None for a non-tool call.
+    """
     if not isinstance(node.func, ast.Name):
         return None
     if node.func.id not in tool_names:
-        # One-level unwrap: a non-tool wrapper around a single tool call.
         for arg in node.args:
             if isinstance(arg, ast.Call):
                 inner = _tool_code_call_to_dict(arg, source, tool_names)
@@ -122,11 +104,11 @@ def _tool_code_call_to_dict(
 
 
 def _tool_code_calls(code: str, tool_names: frozenset[str]) -> list[_Call]:
-    """The offered-tool calls in one Gemini/Gemma ```tool_code block.
+    """Return the offered-tool calls in one Gemma `tool_code` block, in source order.
 
-    Parses the block with `ast` (never executes it). Top-level calls and
-    list/tuple elements keep source order; a `print(...)` wrapper around one
-    call is unwrapped."""
+    The block is parsed with `ast`, never executed; top-level calls and list or
+    tuple elements count, and a `print(...)` wrapper is unwrapped.
+    """
     code = code.strip()
     if not code:
         return []
@@ -151,16 +133,17 @@ def _tool_code_calls(code: str, tool_names: frozenset[str]) -> list[_Call]:
 def _coerce_param_value(value: str, declared_type: str | None) -> Any:  # noqa: PLR0911, PLR0912
     """Coerce a Qwen-XML `<parameter>` string to its schema-declared type.
 
-    The Qwen-Coder template emits each parameter value as raw text framed by
-    newlines, e.g. `<parameter=path>\\ninterp.py\\n</parameter>`. Strip the
-    framing newlines, then coerce by the tool's declared JSON-Schema type so
-    structured params (`array`/`object`) and scalars rebuild correctly
-    while string params (code in `new_string`/`old_string`) are left byte-
-    exact. Unknown type: parse only if it looks like JSON array/object, else
-    keep the string.
+    The template frames each value in newlines, which are stripped; a string
+    parameter is then kept byte-exact, a structured or scalar one is parsed, and
+    an undeclared one is parsed only when it looks like a JSON array or object.
+
+    Args:
+        value: The parameter text as matched.
+        declared_type: The JSON schema type of the parameter; None when unknown.
+
+    Returns:
+        The coerced value, or the string when the coercion fails.
     """
-    # Strip the single leading/trailing newline the template adds without
-    # touching interior or leading-space indentation that code params need.
     v = value
     if v.startswith("\n"):
         v = v[1:]
@@ -172,7 +155,7 @@ def _coerce_param_value(value: str, declared_type: str | None) -> Any:  # noqa: 
         try:
             return json.loads(v.strip())
         except (json.JSONDecodeError, TypeError):
-            return v  # let pydantic surface a clear validation error
+            return v  # pydantic surfaces the validation error
     if declared_type == "integer":
         try:
             return int(v.strip())
@@ -190,8 +173,6 @@ def _coerce_param_value(value: str, declared_type: str | None) -> Any:  # noqa: 
         if normalized in ("false", "0", "no"):
             return False
         return v
-    # Unknown / absent schema: only auto-parse clearly-structured JSON so a
-    # plain string value is never silently turned into a number or dict.
     stripped = v.strip()
     if stripped[:1] in ("[", "{"):
         try:
@@ -207,10 +188,20 @@ def _xml(
     tool_names: frozenset[str],
     tool_schemas: dict[str, dict[str, Any]] | None,
 ) -> tuple[int, list[_Call]] | None:
-    """The Qwen-Coder `<function=NAME><parameter=KEY>VALUE</parameter>` call
-    opening at *start*: its end and the call. None when NAME is not an offered
-    tool. A block missing its closer ends at its last closed parameter, or at
-    the end of the text while a parameter is still open (a truncated call)."""
+    """Parse the Qwen-Coder XML call opening at a position.
+
+    A block missing its closer ends at its last closed parameter, or at the end of
+    the text while a parameter is still open.
+
+    Args:
+        text: The whole text.
+        start: The opener's offset.
+        tool_names: The tools offered.
+        tool_schemas: The offered tools' input schemas, for coercing parameters.
+
+    Returns:
+        The block's end and the one call, or None when the name is not an offered tool.
+    """
     fmatch = _FUNCTION_CALL_RE.match(text, start)
     if fmatch is None:
         return None
@@ -242,7 +233,16 @@ def _xml(
 def _extract_tool_call_obj(
     candidate: str, tool_names: frozenset[str], *, allow_unknown: bool = False
 ) -> dict[str, Any] | None:
-    """Parse one JSON tool-call object, optionally accepting an unknown name."""
+    """Return the one JSON tool-call object in a text, or None.
+
+    Args:
+        candidate: The text.
+        tool_names: The tools offered.
+        allow_unknown: Whether a name outside the offered tools is kept.
+
+    Returns:
+        The `{"name", "input"}` call, or None when the text is not one call object.
+    """
     candidate = candidate.strip()
     if not candidate:
         return None
@@ -275,10 +275,20 @@ def _extract_tool_call_obj(
 
 
 def _fence(text: str, start: int, tool_names: frozenset[str]) -> tuple[int, list[_Call]] | None:
-    """The Markdown fence opening at *start*: its end and the calls it holds.
-    A ```tool_code block holds Python calls; a ```json or bare fence holding
-    one JSON call is that call; any other fence quotes its content. None for
-    an opener with no closer, which quotes nothing."""
+    """Parse the Markdown fence opening at a position.
+
+    A `tool_code` fence holds Python calls; a `json` or bare fence holding one JSON
+    call is that call; any other fence quotes its content.
+
+    Args:
+        text: The whole text.
+        start: The opener's offset.
+        tool_names: The tools offered.
+
+    Returns:
+        The fence's end and the calls it holds, or None for an opener with no
+        closer, which quotes nothing.
+    """
     opener = _FENCE_OPEN_RE.match(text, start)
     assert opener is not None
     marker = opener.group("marker")
@@ -303,9 +313,18 @@ def _tag(
     tool_names: frozenset[str],
     tool_schemas: dict[str, dict[str, Any]] | None,
 ) -> tuple[int, list[_Call]] | None:
-    """The `<tool_call>` tag opening at *start*: its end and the calls it
-    holds, one JSON call of any name or the forms nested in it. None for a
-    tag with no closer or no call, which stays text."""
+    """Parse the `<tool_call>` tag opening at a position.
+
+    Args:
+        text: The whole text.
+        start: The opener's offset.
+        tool_names: The tools offered.
+        tool_schemas: The offered tools' input schemas, for nested forms.
+
+    Returns:
+        The tag's end and its calls (one JSON call of any name, or the forms nested
+        in it), or None for a tag with no closer or no call, which stays text.
+    """
     content_start = start + len("<tool_call>")
     close = text.find(_TOOL_CALL_CLOSE, content_start)
     if close == -1:
@@ -323,9 +342,16 @@ def _scan(
     tool_names: frozenset[str],
     tool_schemas: dict[str, dict[str, Any]] | None,
 ) -> tuple[list[_Call], str]:
-    """Read *text* once, left to right: at each form opener the form is parsed
-    and its markup consumed; a call restated in a second form is that call.
-    Returns the calls in source order and the text they leave."""
+    """Read the text once, left to right, parsing each form at its opener.
+
+    Args:
+        text: The text to scan.
+        tool_names: The tools offered.
+        tool_schemas: The offered tools' input schemas.
+
+    Returns:
+        The calls in source order, each once, and the text they leave.
+    """
     calls: list[_Call] = []
     kept: list[str] = []
     pos = 0
@@ -359,12 +385,20 @@ def coerce_text_tool_calls(
     tool_names: frozenset[str],
     tool_schemas: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[_Call], str]:
-    """Recover the tool calls a model wrote into its text, in source order,
-    and return the unconsumed text."""
+    """Recover the tool calls a model wrote into its text.
+
+    Args:
+        text: The assistant text.
+        tool_names: The tools offered; empty recovers nothing.
+        tool_schemas: The offered tools' input schemas.
+
+    Returns:
+        The calls in source order and the unconsumed text; with no call, the text
+        as given.
+    """
     if not text or not tool_names:
         return [], text
-    # An exact bare JSON call is already self-delimiting. Parse it before
-    # looking for markup so call-shaped text inside a string argument stays data.
+    # A bare JSON call is parsed first so call-shaped text inside its string arguments stays data.
     bare = _extract_tool_call_obj(text, tool_names)
     if bare is not None:
         return [bare], ""

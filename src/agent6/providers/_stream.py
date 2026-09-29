@@ -1,41 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Shared SSE lifecycle for the provider streaming paths.
+"""The SSE lifecycle the HTTP providers' streaming paths share.
 
-The HTTP providers speak Server-Sent Events over a single POST and need the
-same machinery around their event loops: an idle watchdog that heartbeats cannot
-satisfy, operator stop/steer that ends an in-flight turn promptly, and
-classification of the teardown into `ProviderAborted` /
-`ProviderInterrupted` / a retryable `ProviderError`, and the SSE event
-framing (`sse_events`); what an event means stays per-provider.
+The event framing, an idle watchdog that heartbeats cannot satisfy, operator stop
+and steer ending an in-flight turn, and the teardown classified into
+`ProviderAborted`, `ProviderInterrupted` or a retryable `ProviderError`; what an
+event means stays per provider.
 
-Why a watchdog at all: httpx2's `timeout` (float or `httpx2.Timeout` with
-`read=`) resets on EVERY received byte, and gateways emit heartbeat bytes
-while a request is in flight (OpenRouter/Cloudflare send `:` SSE comment
-lines every ~15s; Anthropic sends `ping` events). If the upstream model
-truly hangs (observed: Kimi K2.6 sessions held in ESTABLISHED state with 0
-bytes of payload for 800+ seconds while heartbeats continued), the read
-timeout never fires and the orchestrator parks forever with no spend cap to
-save it. The fix: the per-provider consume loop marks each MEANINGFUL event
-on a :class:`StreamClock` (heartbeats deliberately do not count), and a
-watchdog thread closes the response once the gap exceeds the threshold. The
-blocking `iter_lines` then raises an `httpx2.HTTPError` that
-:meth:`SseCall.run` re-raises as a descriptive error so the loop can
-retry-or-quit at its own layer.
-
-Three idle phases, because "no data yet", "data stopped", and "thinking" mean
-different things:
-
-- Before the first real output token the gap is prefill / time-to-first-token,
-  which legitimately runs long on a big context or a slow model, so be patient
-  (`STREAM_FIRST_DATA_TIMEOUT_S`).
-- Once real output has started, models emit a data event every few seconds; a
-  45s gap then means the stream wedged (`STREAM_IDLE_TIMEOUT_S`).
-- Inside a display:omitted extended-thinking block (Anthropic adaptive thinking
-  on Sonnet 5 / Opus 4.7+ / Fable 5) the stream is ping-only by design while the
-  model reasons, so neither budget above applies; wait out a generous thinking
-  budget instead (`STREAM_THINKING_IDLE_TIMEOUT_S`). The consume loop brackets
-  the block with `enter_thinking()` / `exit_thinking()`.
+httpx2's read timeout resets on every byte, and gateways send heartbeat bytes
+(`:` comment lines every ~15s, Anthropic `ping` events) while an upstream model
+hangs, so a wedged stream never times out on its own. The consume loop marks each
+meaningful event on a `StreamClock` and a watchdog thread closes the response once
+the gap exceeds the phase's budget: patient before the first output token
+(prefill), tight once output flows, and patient again inside a display-omitted
+thinking block, which streams pings only by design.
 """
 
 from __future__ import annotations
@@ -63,15 +41,9 @@ from agent6.providers.types import (
 
 STREAM_FIRST_DATA_TIMEOUT_S = 120.0
 STREAM_IDLE_TIMEOUT_S = 45.0
-# A display:omitted extended-thinking block streams only `ping` heartbeats
-# while the model reasons (no content deltas), so the tight mid-stream budget
-# above would false-kill a long think. While inside a thinking block the
-# watchdog waits this much instead; a genuine wedge is still bounded, just less
-# tightly. Tunable if a max-effort model ever reasons past it in one block.
+# A thinking block streams pings only; the tight mid-stream budget would kill a long think.
 STREAM_THINKING_IDLE_TIMEOUT_S = 300.0
-# The watchdog also polls should_abort/should_interrupt each tick, so keep it
-# short: this bounds how long a Stop/steer/detach waits to end a long in-flight
-# turn. A quarter second reads as immediate without the impatient second Ctrl-C.
+# The tick also bounds how long a stop or steer waits; a quarter second reads as immediate.
 STREAM_WATCHDOG_TICK_S = 0.25
 _ERROR_BODY_PREFIX_BYTES = 8192
 
@@ -80,23 +52,45 @@ _ERROR_BODY_PREFIX_BYTES = 8192
 def http_stream(
     method: str, url: str, *, headers: dict[str, str], content: bytes, timeout: float
 ) -> Generator[httpx2.Response]:
-    """Streaming POST seam: tests stub this name, never `httpx2` globally.
+    """Open a streaming request; the seam tests stub in place of `httpx2`.
 
-    `granular_timeout` bounds the connect phase: the idle watchdog has no
-    response to close until the connect returns, so a blackholed connect is
-    httpx2's to cut, and it must not wait the full read budget to do it."""
+    The connect phase gets its own bound: the watchdog has no response to close
+    until the connect returns, so a blackholed connect is httpx2's to cut.
+
+    Args:
+        method: The HTTP method.
+        url: The URL.
+        headers: The request headers.
+        content: The request body.
+        timeout: The read budget in seconds.
+
+    Yields:
+        The open response.
+    """
     with httpx2.stream(
         method, url, headers=headers, content=content, timeout=granular_timeout(timeout)
     ) as resp:
         yield resp
 
 
-def bounded_lines(resp: httpx2.Response, *, max_line_bytes: int = 8 * 1024 * 1024):
-    """`resp.iter_lines()` with a per-line ceiling on what is handed
-    downstream: a line over it raises a retryable ProviderError instead of
-    being parsed (the non-streaming path caps its whole body). A line that
-    never ends is bounded by the watchdog, since iter_lines materializes it
-    first. Every consume loop reads through this."""
+def bounded_lines(
+    resp: httpx2.Response, *, max_line_bytes: int = 8 * 1024 * 1024
+) -> Generator[str]:
+    """Iterate the response's lines with a ceiling on each; every consume loop reads through it.
+
+    A line that never ends is bounded by the watchdog, since `iter_lines` reads it
+    whole first.
+
+    Args:
+        resp: The open response.
+        max_line_bytes: The ceiling.
+
+    Yields:
+        Each line.
+
+    Raises:
+        ProviderError: A line exceeded the ceiling (retryable).
+    """
     for line in resp.iter_lines():
         if len(line) * 4 > max_line_bytes and len(line.encode("utf-8")) > max_line_bytes:
             raise ProviderError(
@@ -108,14 +102,21 @@ def bounded_lines(resp: httpx2.Response, *, max_line_bytes: int = 8 * 1024 * 102
 def sse_events(
     resp: httpx2.Response, *, max_event_bytes: int = 8 * 1024 * 1024
 ) -> Generator[tuple[str, str]]:
-    """Yield one event name and its complete SSE data payload.
+    """Frame the response's SSE events.
 
-    SSE permits multiple `data:` fields in one event; their values are joined
-    with newlines and dispatched only at the blank-line boundary, so a stream
-    cut mid-event ends with no event (the consumer reads that as a cut, not
-    as a malformed event). An event over `max_event_bytes` raises the same
-    retryable ProviderError a line over the ceiling does. Comments and fields
-    this client does not use are ignored.
+    Several `data:` fields in one event join with newlines, and an event is
+    dispatched only at its blank-line boundary, so a stream cut mid-event ends
+    with no event. Comments and unused fields are ignored.
+
+    Args:
+        resp: The open response.
+        max_event_bytes: The ceiling on one event's data.
+
+    Yields:
+        Each event's name and its complete data payload.
+
+    Raises:
+        ProviderError: An event exceeded the ceiling (retryable).
     """
     event_type = ""
     data: list[str] = []
@@ -145,6 +146,7 @@ def sse_events(
 
 
 def _error_body_prefix(resp: httpx2.Response) -> str:
+    """Return the first 8 KiB of an error response's body as text."""
     body = bytearray()
     for chunk in resp.iter_bytes():
         remaining = _ERROR_BODY_PREFIX_BYTES - len(body)
@@ -155,15 +157,12 @@ def _error_body_prefix(resp: httpx2.Response) -> str:
 
 
 class StreamClock:
-    """Idle bookkeeping the per-provider consume loop feeds.
+    """The idle bookkeeping the consume loop feeds and the watchdog reads.
 
-    `mark_data()` on every meaningful wire event; heartbeats must not be
-    marked, they are exactly the bytes that mask a wedged upstream.
-    `mark_output()` when the model has produced real content (text /
-    reasoning / tool tokens), which ends the generous prefill budget and
-    starts the short mid-stream idle budget. `enter_thinking()` /
-    `exit_thinking()` bracket a display:omitted thinking block, whose
-    ping-only stream needs the patient thinking budget rather than either.
+    Heartbeats are never marked: they are the bytes that mask a wedged upstream.
+
+    Attributes:
+        last_data_at: The monotonic time of the last meaningful wire event.
     """
 
     __slots__ = ("_in_thinking", "_seen_output", "last_data_at")
@@ -174,21 +173,27 @@ class StreamClock:
         self._in_thinking = threading.Event()
 
     def mark_data(self) -> None:
+        """Mark a meaningful wire event."""
         self.last_data_at = time.monotonic()
 
     def mark_output(self) -> None:
+        """Mark the first real content (text, reasoning or tool tokens); prefill is over."""
         self._seen_output.set()
 
     def enter_thinking(self) -> None:
+        """Enter a display-omitted thinking block, which streams pings only."""
         self._in_thinking.set()
 
     def exit_thinking(self) -> None:
+        """Leave the thinking block."""
         self._in_thinking.clear()
 
     def idle_budget(self) -> tuple[float, str]:
-        """The active idle timeout and a label for it: a thinking block gets the
-        patient budget, before real output it is prefill, after it the tight
-        mid-stream budget."""
+        """Return the active idle timeout and its label.
+
+        A thinking block gets the patient budget, prefill the first-data budget,
+        and output the tight mid-stream budget.
+        """
         if self._in_thinking.is_set():
             return (STREAM_THINKING_IDLE_TIMEOUT_S, "mid-thinking")
         if self._seen_output.is_set():
@@ -197,8 +202,7 @@ class StreamClock:
 
 
 def safe_poll(fn: Callable[[], bool] | None) -> bool:
-    """An operator-state poll (should_abort, should_interrupt): absent or
-    raising, it reads False, so a poll never kills the watcher."""
+    """Return an operator-state callback's answer; absent or raising, it reads False."""
     if fn is None:
         return False
     try:
@@ -218,18 +222,22 @@ def record_billed_usage(
     cost_usd: float = 0.0,
     plan_usage: PlanUsage | None = None,
 ) -> None:
-    """Record what a call that did NOT complete already cost.
+    """Record what a call that did not complete already cost.
 
-    A stream that dies after the provider reported usage has been billed: the
-    input was accepted, and whatever was generated was produced. Counting only
-    completed calls would leave that spend invisible to `max_usd`, and every
-    retry re-sends the whole input and is billed again. The operator set a
-    number for the task; going past it without being told is the failure, and a
-    run can always be resumed.
+    A stream that dies after the provider reported usage has been billed, and every
+    retry is billed again; counting only completed calls would hide that spend from
+    `max_usd`. Nothing is recorded when the provider reported nothing; a reported
+    plan window counts as a report even without token counts.
 
-    Records nothing when the provider reported nothing: an unknown amount is
-    not a licence to invent one. A reported plan window is a report: the
-    window moved even when the body carried no token counts.
+    Args:
+        budget: The run's tracker; None records nothing.
+        model: The model billed.
+        input_tokens: Prompt tokens reported.
+        output_tokens: Completion tokens reported.
+        cache_read_tokens: Cache-read tokens reported.
+        cache_creation_tokens: Cache-write tokens reported.
+        cost_usd: The gateway-reported cost.
+        plan_usage: The plan window the response reported.
     """
     if budget is None:
         return
@@ -252,11 +260,23 @@ def record_billed_usage(
 
 @dataclass(frozen=True, slots=True)
 class SseCall:
-    """One provider SSE request: what the shared lifecycle needs around the
-    per-provider event loop."""
+    """One provider SSE request, as the shared lifecycle needs it.
 
-    api_label: str  # "OpenAI" / "Anthropic" / "ChatGPT"; leads API-error messages
-    api_format: str  # "openai" / "anthropic" / "chatgpt"; names the wire format
+    Attributes:
+        api_label: The name that leads API error messages ("OpenAI", "Anthropic").
+        api_format: The wire format ("openai", "anthropic", "chatgpt").
+        url: The URL dialled.
+        headers: The request headers.
+        body: The request body.
+        timeout_s: The read budget in seconds.
+        transcript_sink: Where the round-trip is recorded; None records nothing.
+        should_abort: Polled each watchdog tick; True ends the turn as aborted.
+        should_interrupt: Polled each watchdog tick; True ends the turn as interrupted.
+        response_headers: Receives the response headers once the stream opens.
+    """
+
+    api_label: str
+    api_format: str
     url: str
     headers: dict[str, str]
     body: dict[str, Any]
@@ -267,7 +287,7 @@ class SseCall:
     response_headers: Callable[[Mapping[str, str]], None] | None = None
 
     def record(self, *, status: int, response: dict[str, Any] | str) -> None:
-        """Write one transcript entry for this request (no-op without a sink)."""
+        """Write one transcript entry for this request; nothing without a sink."""
         if self.transcript_sink is not None:
             self.transcript_sink.record(
                 url=self.url,
@@ -280,24 +300,28 @@ class SseCall:
     def run(  # noqa: PLR0915
         self, consume: Callable[[httpx2.Response, StreamClock], None]
     ) -> None:
-        """Open the stream, run `consume` under the watchdog, classify teardown.
+        """Open the stream, run the consumer under the watchdog and classify the teardown.
 
-        `consume` iterates `resp.iter_lines()` and parses the provider's
-        events, marking the clock as it goes; accumulation happens in the
-        caller's closure. A `ProviderError` it raises (mid-stream error
-        frame) propagates unchanged; any other shape error a malformed 2xx
-        frame provokes is normalized to a retryable ProviderError here, the
-        one seam both providers stream through, so it can never bypass the
-        loop's retry wrapper as a raw traceback.
+        The consumer parses the provider's events and marks the clock; accumulation
+        happens in its closure.
+
+        Args:
+            consume: Reads the open response to its end.
+
+        Raises:
+            ProviderInterrupted: The operator asked to steer mid-stream.
+            ProviderAborted: The operator stopped the run mid-stream.
+            ProviderError: An API error status, the idle watchdog, a transport
+                error, or a malformed 2xx frame (a shape error from the consumer is
+                normalised here so it never bypasses the retry wrapper); one the
+                consumer raises itself propagates unchanged.
         """
         clock = StreamClock()
         aborted = threading.Event()
         interrupted = threading.Event()
         idle_killed = threading.Event()
         watchdog_stop = threading.Event()
-        # Mutable holder so the watchdog can reach the response without racing
-        # on assignment (the `with` body runs in a different frame from the
-        # watchdog closure).
+        # The watchdog closure reaches the response through the holder, never racing its assignment.
         resp_holder: dict[str, httpx2.Response] = {}
 
         def _watchdog() -> None:
@@ -305,15 +329,11 @@ class SseCall:
                 resp = resp_holder.get("resp")
                 if resp is None:
                     continue
-                # A poll that raised would end this thread and with it the
-                # idle-hang detection.
                 if safe_poll(self.should_abort):
                     aborted.set()
                     with contextlib.suppress(Exception):
                         resp.close()
                     return
-                # A steer request (Ctrl-C / TUI `s`) closes the stream so a long
-                # thinking turn reaches the loop's steer boundary at once.
                 if safe_poll(self.should_interrupt):
                     interrupted.set()
                     with contextlib.suppress(Exception):
@@ -378,9 +398,7 @@ class SseCall:
                         f"{self.api_label} stream frame did not match the wire shape:"
                         f" {exc!r} (malformed 2xx event; retryable)"
                     ) from exc
-                # A cross-thread close may end iteration as clean EOF rather
-                # than an HTTPError. The watchdog signal, not httpx's chosen
-                # teardown shape, determines what happened.
+                # A cross-thread close may end iteration as a clean EOF rather than an HTTPError.
                 _raise_watchdog()
         except httpx2.HTTPError as exc:
             _raise_watchdog(exc)

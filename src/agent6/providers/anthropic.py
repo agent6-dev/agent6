@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Anthropic provider.
+"""The Anthropic Messages provider.
 
-HTTP transport and SSE lifecycle are shared with the OpenAI provider
-(`providers/_transport.py`, `providers/_stream.py`); both use httpx2
-directly (no SDK) for a smaller audit surface and pinned URL. Supports
-prompt caching via the `cache_control` block field on system / tool
-entries.
+The transport and the SSE lifecycle are shared with the OpenAI provider; both use
+httpx2 directly, with no SDK, for a smaller audit surface and a pinned URL. Prompt
+caching rides the `cache_control` field on system and tool entries.
 """
 
 from __future__ import annotations
@@ -32,48 +30,38 @@ from agent6.providers.types import (
 from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_url
 
 if TYPE_CHECKING:
-    # Imported only for typing (used in a type hint); no runtime import needed.
     from agent6.providers.token_command import CommandToken
 
 ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
-# Vertex carries the protocol version in the request body (not a header) under
-# a Vertex-specific value; see _anthropic_version.
+# Vertex carries the protocol version in the body, under its own value.
 ANTHROPIC_VERTEX_VERSION = "vertex-2023-10-16"
 DEFAULT_MAX_TOKENS = 8192
 
 
 def _anthropic_version(deployment: str) -> tuple[str, str]:
-    """Return `(placement, value)` for the Anthropic protocol version.
+    """Return where the protocol version goes and its value.
 
-    Direct sends it as the `anthropic-version` HEADER; Vertex (and future
-    Bedrock) send it as an `anthropic_version` BODY field with a
-    deployment-specific value.
+    Direct sends the `anthropic-version` header; Vertex sends an `anthropic_version`
+    body field with its own value.
     """
     if deployment == "vertex":
         return ("body", ANTHROPIC_VERTEX_VERSION)
     return ("header", ANTHROPIC_VERSION)
 
 
-# Legacy extended-thinking `budget_tokens` per cross-provider `effort`
-# level. Anthropic REMOVED budget_tokens (a 400) on the
-# models in _ADAPTIVE_THINKING_MARKERS below in favour of adaptive thinking plus
-# output_config.effort, so this map is only for older models. Anthropic requires
-# `budget_tokens < max_tokens`; the call site lifts `max_tokens` so the
-# model keeps room to answer after thinking.
+# The `budget_tokens` per effort level for models without adaptive thinking; the wire requires
+# `budget_tokens < max_tokens`, so the call lifts `max_tokens` to leave room to answer.
 _THINKING_BUDGET_TOKENS: dict[str, int] = {
     "low": 4096,
     "medium": 8192,
     "high": 16384,
-    # The above-high tiers collapse to the top budget on this wire.
     "xhigh": 16384,
     "max": 16384,
 }
 
-# Models whose extended thinking must be adaptive: Anthropic removed
-# `budget_tokens` (a 400) on Opus 4.7+, Sonnet 5, and Fable 5, and deprecated
-# it on the 4.6 generation. All of these accept `thinking: {type: adaptive}`
-# and `output_config.effort`.
+# Models that reject `budget_tokens` (a 400) and take `thinking: {type: adaptive}` plus
+# `output_config.effort` instead.
 _ADAPTIVE_THINKING_MARKERS = (
     "fable-5",
     "mythos-5",
@@ -85,9 +73,7 @@ _ADAPTIVE_THINKING_MARKERS = (
     "sonnet-4-6",
     "sonnet-5",
 )
-# Of those, the models whose thinking display defaults to omitted: ask for a
-# summary so a long think streams progress (which also keeps the SSE idle
-# watchdog fed) and matches the documented default-override for these.
+# Of those, the models whose thinking display defaults to omitted; a summary streams progress.
 _SUMMARISE_DISPLAY_MARKERS = (
     "fable-5",
     "mythos-5",
@@ -100,14 +86,21 @@ _SUMMARISE_DISPLAY_MARKERS = (
 
 
 def _is_adaptive_thinking(model: str) -> bool:
+    """Return whether the model takes adaptive thinking rather than a token budget."""
     return any(m in model for m in _ADAPTIVE_THINKING_MARKERS)
 
 
 def _summarise_thinking_display(model: str) -> bool:
+    """Return whether the model's thinking display defaults to omitted."""
     return any(m in model for m in _SUMMARISE_DISPLAY_MARKERS)
 
 
 def _non_negative_integer(value: Any, field_name: str) -> int:
+    """Return a response value as a non-negative integer.
+
+    Raises:
+        ProviderError: The value is not one.
+    """  # noqa: DOC501  # the TypeError is raised and caught in the same try
     try:
         if isinstance(value, bool):
             raise TypeError
@@ -122,6 +115,7 @@ def _non_negative_integer(value: Any, field_name: str) -> int:
 
 
 def _usage_count(usage: Mapping[str, Any], key: str) -> int:
+    """Return one usage count; 0 when absent."""
     value = usage.get(key)
     if value is None:
         return 0
@@ -129,6 +123,11 @@ def _usage_count(usage: Mapping[str, Any], key: str) -> int:
 
 
 def _usage_mapping(value: Any) -> Mapping[str, Any]:
+    """Return a `usage` object, empty when absent.
+
+    Raises:
+        ProviderError: The value is present but not an object.
+    """
     if value is None:
         return {}
     if not isinstance(value, Mapping):
@@ -137,6 +136,16 @@ def _usage_mapping(value: Any) -> Mapping[str, Any]:
 
 
 def _response_string(value: Any, field_name: str, *, empty: bool = True) -> str:
+    """Return a response field as a string.
+
+    Args:
+        value: The field's value.
+        field_name: The field's name, for the error.
+        empty: Whether a blank string is accepted.
+
+    Raises:
+        ProviderError: The value is not a string, or is blank when one is required.
+    """
     if not isinstance(value, str) or (not empty and not value.strip()):
         qualifier = "a nonempty string" if not empty else "a string"
         raise ProviderError(f"Anthropic response {field_name} was not {qualifier}")
@@ -144,13 +153,20 @@ def _response_string(value: Any, field_name: str, *, empty: bool = True) -> str:
 
 
 def _require_metered_usage(usage: object, *, source: str) -> None:
-    """Fail closed when a budgeted Anthropic call cannot be metered.
+    """Refuse a budgeted call whose usage cannot be metered.
 
-    Presence alone is not enough: a gateway with usage tracking disabled returns
-    all-zero counts and every turn records zero, so the budget never trips.
-    Require a positive input side, but sum in the cache counters: a fully-cached
-    turn legitimately reports `input_tokens: 0` with `cache_read_input_tokens`
-    > 0, so a plain `input_tokens > 0` check would false-reject it."""
+    A gateway with usage tracking off returns all-zero counts, so presence is not
+    enough; the input side must be positive with the cache counters summed in,
+    since a fully cached turn reports `input_tokens: 0`.
+
+    Args:
+        usage: The response's `usage` value.
+        source: The name that leads the error.
+
+    Raises:
+        ProviderError: No positive input usage (retryable: a usage-less reply is a
+            gateway integrity failure, not a request defect).
+    """
     if isinstance(usage, Mapping):
         total_input = (
             _usage_count(usage, "input_tokens")
@@ -159,10 +175,6 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
         )
         if total_input > 0:
             return
-    # No status code: retryable, same reasoning as the OpenAI guard -- a
-    # usage-less reply is stream/gateway integrity failure, not a permanent
-    # request defect; the failed attempt returns no response so nothing
-    # unmetered enters the conversation.
     raise ProviderError(
         f"{source} reported no usage input tokens (usage.input_tokens missing or 0); "
         "budgeted runs require provider usage accounting"
@@ -170,14 +182,11 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
 
 
 def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return `messages` with every `cache_control` marker removed.
+    """Return the messages with every `cache_control` marker removed, copy-on-write.
 
-    The harness places rolling breakpoints in the message list (see
-    `agent6.harness._conversation`); when the operator sets
-    `prompt_caching = false` this strips them before the request is built.
-    Copy-on-write: unmarked messages pass through untouched, marked blocks are
-    shallow-copied so the caller's list (shared with resume snapshots) is
-    never mutated.
+    The harness places rolling breakpoints in the message list; with
+    `prompt_caching = false` they are stripped before the request is built. The
+    caller's list, shared with resume snapshots, is never mutated.
     """
     out: list[dict[str, Any]] = []
     changed = False
@@ -200,13 +209,17 @@ def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[st
 
 
 def shape_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return messages the Anthropic wire accepts, without mutating history.
+    """Return the messages the Anthropic wire accepts, without mutating history.
 
-    Opaque reasoning from another wire has no Anthropic signature and cannot
-    be replayed. Removing it can empty a message, which the API also rejects.
+    Reasoning from another wire has no Anthropic signature and cannot be replayed;
+    a message it empties is dropped, since the API rejects an empty one.
+
+    Raises:
+        ProviderError: No message is left (fatal).
     """
 
     def foreign(block: Any) -> bool:
+        """Return whether a block is reasoning this wire cannot replay."""
         if not isinstance(block, dict):
             return False
         if "chatgpt_reasoning" in block:
@@ -238,50 +251,61 @@ def shape_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
 
 
 def _is_temperature_400(status: int | None, text: str, body: dict[str, Any]) -> bool:
-    """True when a 400 says the model rejects `temperature` (e.g. claude-opus-4-8:
-    "temperature is deprecated for this model") AND temperature is still in the
-    request body -- the signal to drop it and retry once."""
+    """Return whether a 400 rejects a `temperature` the body still carries."""
     return status == 400 and "temperature" in body and "temperature" in (text or "").lower()
 
 
 @dataclass(frozen=True, slots=True)
 class AnthropicProvider:
-    """Stateless provider; constructed once per run."""
+    """The Anthropic provider, constructed once per run.
+
+    Attributes:
+        api_key: The static credential, used when `credential` is None.
+        model: The model id.
+        base_url: The endpoint's base URL.
+        deployment: The URL profile.
+        auth_style: The auth header style: `x_api_key` direct, `bearer` on Vertex.
+        prompt_caching: Whether the system block and the last tool are cache marked.
+        timeout_s: The read budget in seconds.
+        transcript_sink: Where each round-trip is recorded.
+        budget: The run's tracker; None skips metering.
+        effort: The reasoning level; anything but "off" enables extended thinking
+            and drops `temperature`, which the wire rejects while thinking.
+        extra_headers: Operator headers merged over the built ones.
+        extra_body: Operator body keys merged last; the structural keys are reserved.
+        extra_query: Operator query parameters.
+        credential: A short-lived bearer source; a 401 or 403 re-mints it once.
+    """
 
     api_key: str
     model: str
     base_url: str = ANTHROPIC_DEFAULT_BASE_URL
     deployment: Deployment = "direct"
-    # Auth header style (config AuthConfig.style). "x_api_key" for direct
-    # Anthropic, "bearer" for Vertex (Google OAuth via token_command).
     auth_style: AuthStyle = "x_api_key"
     prompt_caching: bool = True
     timeout_s: float = 120.0
     transcript_sink: TranscriptRecorder | None = None
     budget: BudgetTracker | None = None
-    # Reasoning-effort level (config `effort`). When not "off" the
-    # call enables Anthropic extended thinking with a budget drawn from
-    # `_THINKING_BUDGET_TOKENS` and drops `temperature` (Anthropic
-    # rejects temperature overrides while thinking is enabled).
     effort: str | None = None
     extra_headers: tuple[tuple[str, str], ...] = ()
     extra_body: dict[str, Any] = field(default_factory=dict)
     extra_query: dict[str, str] = field(default_factory=dict)
-    # Short-lived bearer source (config auth.token_command). When set it mints
-    # the auth token per call instead of api_key, and a 401/403 triggers one
-    # refresh + retry. Internally mutable (cache), hence held by reference.
     credential: CommandToken | None = None
-    # Some newer models (e.g. claude-opus-4-8) reject ANY `temperature` with a
-    # 400 "temperature is deprecated for this model". agent6 pins temperature for
-    # determinism, so on that 400 the call drops it and retries, latching this flag so the
-    # rest of the run omits it (avoids re-sending the full context every call).
-    # A 1-element list because the dataclass is frozen but the list is mutable.
+    # Latched on a "temperature is deprecated" 400 so the rest of the run omits it; a list, since
+    # the dataclass is frozen.
     _omit_temperature: list[bool] = field(default_factory=lambda: [False])
 
     def _adapt_body_for_400(self, status: int | None, text: str, body: dict[str, Any]) -> bool:
-        """Drop `temperature` and latch `_omit_temperature` on a
-        "temperature is deprecated" 400 (e.g. claude-opus-4-8); the transport
-        retries once with the adapted body."""
+        """Drop `temperature` on a 400 that rejects it and latch the omission.
+
+        Args:
+            status: The HTTP status.
+            text: The error text.
+            body: The request body, rewritten in place.
+
+        Returns:
+            Whether the body was adapted, so the transport retries once.
+        """
         if not _is_temperature_400(status, text, body):
             return False
         self._omit_temperature[0] = True
@@ -289,9 +313,14 @@ class AnthropicProvider:
         return True
 
     def _build_headers(self, token: str) -> dict[str, str]:
-        """Per-attempt request headers. Rebuilt each attempt because a
-        `token_command` credential mints a short-lived bearer (Vertex Google
-        OAuth); on a 401/403 the transport refreshes it once and retries."""
+        """Build one attempt's request headers from its token.
+
+        Args:
+            token: The attempt's credential.
+
+        Returns:
+            The headers, with an operator `anthropic-beta` merged into the built one.
+        """
         headers: dict[str, str] = {"content-type": "application/json"}
         authed = auth_header(self.auth_style, token)
         if authed is not None:
@@ -324,12 +353,28 @@ class AnthropicProvider:
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
-        # `reasoning_effort` is the OpenAI-reasoning-model knob; Anthropic
-        # extended thinking uses a different shape and is configured on the
-        # provider itself (`self.effort`), so the cross-provider call
-        # argument is ignored here.
+        """Make one Messages call, streaming when a delta callback is set.
+
+        Args:
+            system: The system prompt.
+            messages: The conversation in Anthropic shape.
+            tools: The tools the model may call.
+            max_tokens: The output cap; lifted to leave room to answer after thinking.
+            temperature: The sampling temperature; dropped while thinking.
+            reasoning_effort: Ignored; thinking is configured on the provider's `effort`.
+            text_delta_callback: Receives visible text as it streams.
+            thinking_delta_callback: Receives reasoning text as it streams.
+            should_abort: Polled during a stream; True abandons the turn.
+            should_interrupt: Polled during a stream; True ends the turn to steer.
+
+        Returns:
+            The parsed response.
+
+        Raises:
+            ProviderError: The run is over budget, `extra_body.max_tokens` sits under
+                the thinking budget, or the call failed.
+        """
         del reasoning_effort
-        # Hard-stop: refuse the call up front if the run is already over budget.
         if self.budget is not None:
             self.budget.check()
         streaming = text_delta_callback is not None or thinking_delta_callback is not None
@@ -343,9 +388,8 @@ class AnthropicProvider:
         )
         version_placement, version_value = _anthropic_version(self.deployment)
 
-        # Breakpoint budget (Anthropic max 4 per request): this provider marks
-        # the system block and the last tool (2); the harness's rolling pair
-        # in `messages` (agent6.harness._conversation) accounts for the other 2.
+        # Of the four cache breakpoints, this marks the system block and the last tool; the harness
+        # places the other two in `messages`.
         system_blocks: list[dict[str, Any]] = [{"type": "text", "text": system}]
         if self.prompt_caching:
             system_blocks[0]["cache_control"] = {"type": "ephemeral"}
@@ -360,20 +404,15 @@ class AnthropicProvider:
                     "description": t.description,
                     "input_schema": t.input_schema,
                 }
-                # Cache the last tool entry too, anthropic caches up to that block.
                 if self.prompt_caching and i == len(tools) - 1:
                     block["cache_control"] = {"type": "ephemeral"}
                 tool_payload.append(block)
 
-        # Extended thinking. Modern models (see _ADAPTIVE_THINKING_MARKERS) took
-        # adaptive thinking + output_config.effort and dropped budget_tokens;
-        # older models still use budget_tokens. "off" sends neither.
         level = self.effort or "off"
         adaptive_thinking = level != "off" and _is_adaptive_thinking(self.model)
         thinking_budget = None if adaptive_thinking else _THINKING_BUDGET_TOKENS.get(level)
         if adaptive_thinking or thinking_budget is not None:
-            # Room to answer after thinking. Adaptive carries no explicit budget,
-            # so reserve the same headroom as the deepest fixed budget.
+            # Adaptive carries no budget, so it reserves the deepest fixed one as headroom.
             reserve = thinking_budget or _THINKING_BUDGET_TOKENS["high"]
             max_tokens = max(max_tokens, reserve + DEFAULT_MAX_TOKENS)
 
@@ -382,36 +421,25 @@ class AnthropicProvider:
             "system": system_blocks,
             "messages": shape_anthropic_messages(messages),
         }
-        # Direct carries the model in the body; Vertex carries it in the URL
-        # path and moves the protocol version into the body.
         if model_in_body:
             body["model"] = self.model
         if version_placement == "body":
             body["anthropic_version"] = version_value
         if adaptive_thinking:
-            # Adaptive is the only on-mode on these models; where display
-            # defaults to omitted ask for a summary so a long think streams
-            # progress, and map the level onto effort. Temperature is dropped
-            # for thinking, same as the legacy branch (the transport also
-            # one-shot-adapts a temperature 400).
             thinking_cfg: dict[str, Any] = {"type": "adaptive"}
             if _summarise_thinking_display(self.model):
                 thinking_cfg["display"] = "summarized"
             body["thinking"] = thinking_cfg
-            # xhigh/max are OpenAI-tier spellings; Anthropic tops out at high.
+            # The wire's effort tops out at high.
             body["output_config"] = {"effort": "high" if level in ("xhigh", "max") else level}
         elif thinking_budget is not None:
-            # Legacy extended thinking; incompatible with temperature overrides.
             body["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
         elif temperature is not None and not self._omit_temperature[0]:
             body["temperature"] = temperature
         if tool_payload:
             body["tools"] = tool_payload
         if self.extra_body:
-            # The STRUCTURAL keys agent6 owns: replacing the conversation, the
-            # tool schema, or how a response arrives silently changes what the
-            # loop sent or breaks its parser. Tuning keys (max_tokens,
-            # temperature, thinking) merge last and win.
+            # The structural keys stay agent6's; tuning keys merge last and win.
             reserved = {
                 "system",
                 "messages",
@@ -423,8 +451,7 @@ class AnthropicProvider:
             }
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
         if thinking_budget is not None:
-            # The wire requires max_tokens above the budget; an extra_body
-            # max_tokens that contradicts the effort is the operator's to fix.
+            # An extra_body max_tokens under the budget is the operator's to fix.
             configured_max = body.get("max_tokens")
             if not isinstance(configured_max, int) or isinstance(configured_max, bool):
                 raise ProviderError("Anthropic request max_tokens was not an integer", fatal=True)
@@ -435,10 +462,6 @@ class AnthropicProvider:
                     fatal=True,
                 )
 
-        # The transport rebuilds headers per attempt (a token_command
-        # credential mints a short-lived Vertex bearer; a 401/403 refreshes it
-        # once and retries) and reserves one extra attempt for the one-shot
-        # "temperature is deprecated" 400 adaptation.
         return ProviderCall(
             api_label="Anthropic",
             api_format="anthropic",
@@ -483,45 +506,47 @@ class AnthropicProvider:
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
-        """SSE streaming variant.
+        """Make the call over SSE; this method owns the Messages event shape.
 
-        The stream lifecycle (idle watchdog, operator stop/steer, teardown
-        classification) is `providers._stream.SseCall`; this method owns the
-        Anthropic Messages event shape. It fans text_delta and thinking_delta
-        deltas to their callbacks as they arrive, and at message_stop returns
-        a ProviderResponse whose .raw is shaped identically to a non-streaming
-        response so callers (Harness, transcript replay) don't need a
-        streaming-aware code path.
+        Deltas fan to their callbacks as they arrive; at `message_stop` the response
+        is synthesised in the non-streaming shape, so no caller needs a streaming path.
+
+        Args:
+            url: The URL dialled.
+            headers: The attempt's request headers.
+            body: The request body.
+            text_delta_callback: Receives visible text as it streams.
+            thinking_delta_callback: Receives reasoning text as it streams.
+            should_abort: Polled each watchdog tick; True abandons the turn.
+            should_interrupt: Polled each watchdog tick; True ends the turn to steer.
+
+        Returns:
+            The parsed response.
+
+        Raises:
+            ProviderError: A stream error frame, a malformed event, a stream cut
+                before `message_stop`, or missing usage on a budgeted run; what the
+                cut turn already cost is recorded first.
         """
         body = dict(body)
-        # Direct enables streaming with a body flag; Vertex selects it via the
-        # `:streamRawPredict` URL suffix (already baked into `url`) and rejects
-        # a `stream` body field.
+        # Vertex selects streaming by the URL and rejects a `stream` body field.
         if self.deployment == "direct":
             body["stream"] = True
         stream_headers = dict(headers)
         stream_headers["accept"] = "text/event-stream"
 
-        # Accumulators for the synthesised non-streaming-shape response.
         content_blocks: list[dict[str, Any]] = []
-        # Per-index in-flight builders. Anthropic indexes content blocks
-        # 0..N within a single message; one block at a time is "open".
+        # Per-index builders; the wire indexes a message's blocks and opens one at a time.
         text_acc: dict[int, list[str]] = {}
         tool_acc: dict[int, dict[str, Any]] = {}
         json_partial: dict[int, list[str]] = {}
         unknown_acc: dict[int, dict[str, Any]] = {}
         open_blocks: set[int] = set()
-        # Extended-thinking builders. `thinking_acc` collects the visible
-        # reasoning text and `signature_acc` the cryptographic signature
-        # Anthropic requires to be echoed back on the next turn when a tool
-        # call follows a thinking block. Dropping either breaks multi-turn
-        # tool use under extended thinking, so both must round-trip.
+        # A thinking block's signature must round-trip, or a tool call after it breaks next turn.
         thinking_acc: dict[int, list[str]] = {}
         signature_acc: dict[int, list[str]] = {}
         stop_reason: str = ""
-        # The stream is complete only when a `message_stop` event arrives. A
-        # clean EOF before it means the connection was cut mid-message; the
-        # accumulated blocks are a truncated turn, not a finished one.
+        # A clean EOF before `message_stop` is a cut mid-message, not a completion.
         saw_message_stop = False
         usage_input = 0
         usage_output = 0
@@ -543,6 +568,11 @@ class AnthropicProvider:
         )
 
         def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: C901, PLR0912, PLR0915  # one streaming state machine; a split hides the event order
+            """Read the stream's events into the accumulators.
+
+            Raises:
+                ProviderError: A malformed event or a stream error frame.
+            """
             nonlocal stop_reason, saw_message_stop, usage_input, usage_output
             nonlocal usage_cache_read, usage_cache_creation, saw_input_usage, saw_output_usage
             for event_type, data_str in sse_events(resp):
@@ -553,14 +583,7 @@ class AnthropicProvider:
                 except json.JSONDecodeError as exc:
                     raise ProviderError("Anthropic stream event was not JSON") from exc
                 et = event_type or str(evt.get("type", ""))
-                # Reset the idle clock on every MEANINGFUL event. `ping`
-                # heartbeats are deliberately excluded: they are exactly the
-                # bytes that would otherwise mask a wedged upstream. mark_output
-                # (the switch to the short mid-stream idle timeout) fires only
-                # when actual content starts (content_block_* below), NOT on
-                # message_start -- that metadata arrives before the model has
-                # produced anything, and ending the generous prefill budget
-                # there would false-kill a long silent reason.
+                # `message_start` is metadata, so output is marked only once a content block starts.
                 if et != "ping":
                     clock.mark_data()
                 if et in ("content_block_start", "content_block_delta"):
@@ -590,11 +613,6 @@ class AnthropicProvider:
                     if btype == "text":
                         text_acc[idx] = [_response_string(cb.get("text", ""), "content text")]
                     elif btype == "thinking":
-                        # A thinking block streams only ping heartbeats under
-                        # display:omitted; tell the watchdog to wait out the
-                        # patient thinking budget until it closes, else the tight
-                        # mid-stream budget false-kills a long reason (see
-                        # providers/_stream.py idle phases).
                         clock.enter_thinking()
                         thinking_acc[idx] = [
                             _response_string(cb.get("thinking", ""), "content thinking")
@@ -603,7 +621,6 @@ class AnthropicProvider:
                             _response_string(cb.get("signature", ""), "content signature")
                         ]
                     elif btype == "redacted_thinking":
-                        # Opaque encrypted block, pass straight through.
                         content_blocks.append(
                             {
                                 "type": "redacted_thinking",
@@ -632,9 +649,7 @@ class AnthropicProvider:
                         }
                         json_partial[idx] = []
                     else:
-                        # The Messages API may add content block types. Keep an
-                        # opaque block exactly as it arrived so transcript
-                        # replay does not erase state from a newer wire.
+                        # A block type this client does not know is kept as it arrived.
                         unknown_acc[idx] = dict(cb)
                 elif et == "content_block_delta":
                     idx = _non_negative_integer(evt.get("index", 0), "content block index")
@@ -651,8 +666,7 @@ class AnthropicProvider:
                         piece = _response_string(d.get("text", ""), "content text delta")
                         text_acc.setdefault(idx, []).append(piece)
                         if piece and text_delta_callback is not None:
-                            # Callback failure must never break the
-                            # stream, cosmetic surface.
+                            # A callback is a cosmetic surface; its failure never breaks the stream.
                             with contextlib.suppress(Exception):
                                 text_delta_callback(piece)
                     elif dt == "thinking_delta":
@@ -684,8 +698,6 @@ class AnthropicProvider:
                             }
                         )
                     elif idx in thinking_acc:
-                        # Thinking done; real output (or the next block) resumes
-                        # normal idle budgeting.
                         clock.exit_thinking()
                         block_out: dict[str, Any] = {
                             "type": "thinking",
@@ -743,12 +755,7 @@ class AnthropicProvider:
                         label = "error"
                         detail = err or evt.get("message") or "unknown stream error"
                         status = None
-                    # Record the frame before raising so the upstream failure
-                    # is auditable in the transcript (parity with the OpenAI
-                    # provider's mid-stream error handling). Carry the upstream
-                    # status like the non-streaming 2xx-envelope path, so a
-                    # permanent error delivered mid-stream fails fast instead of
-                    # retrying every turn (streaming is the default path).
+                    # The frame is recorded first; the upstream status keeps a permanent error so.
                     call.record(status=0, response=data_str[:8192])
                     detail_text = scrub_secret_values(str(detail), headers)
                     raise ProviderError(
@@ -757,6 +764,7 @@ class AnthropicProvider:
                     )
 
         def _record_billed() -> None:
+            """Record what the turn cost so far."""
             record_billed_usage(
                 self.budget,
                 self.model,
@@ -769,19 +777,11 @@ class AnthropicProvider:
         try:
             call.run(consume)
         except BaseException:
-            # Billed already: input usage arrives in message_start, long before
-            # a mid-stream error, the idle watchdog, or an operator steer can
-            # end the turn. The retry re-sends the whole input and is billed
-            # again.
+            # Input usage arrives in `message_start`, so a turn ended early was billed.
             _record_billed()
             raise
 
-        # No `message_stop` means the stream was cut mid-message (a clean EOF is
-        # not a completion signal). The accumulated blocks are a truncated turn,
-        # possibly with text already fanned to the TUI; returning them as a
-        # finished response feeds the loop a bogus went_quiet/silent_finish.
-        # Raise a retryable ProviderError so the loop's ProviderCaller re-issues
-        # the request, recording what the cut turn already cost first.
+        # A truncated turn returned as finished would read as the model going quiet.
         if not saw_message_stop:
             _record_billed()
             call.record(status=0, response="stream ended without message_stop (truncated)")
@@ -790,10 +790,6 @@ class AnthropicProvider:
                 "(no message_stop); upstream appears cut off."
             )
 
-        # Synthesise the non-streaming-shaped response body so
-        # downstream consumers (transcript replay, assistant_blocks
-        # reconstruction in Harness) see the same shape they would
-        # see from a non-streaming call.
         synthesised: dict[str, Any] = {
             "type": "message",
             "role": "assistant",
@@ -816,8 +812,6 @@ class AnthropicProvider:
                     )
                 _require_metered_usage(synthesised.get("usage"), source="Anthropic stream")
             except ProviderError:
-                # Billed for what it generated, like every cut stream above;
-                # a completion the guards accept is metered by meter_completion.
                 _record_billed()
                 raise
         try:
@@ -830,12 +824,19 @@ class AnthropicProvider:
 
 
 def _parse_response(data: dict[str, Any]) -> ProviderResponse:
+    """Parse one Messages body.
+
+    Args:
+        data: The response body.
+
+    Returns:
+        The response in agent6's canonical shape.
+
+    Raises:
+        ProviderError: The body is malformed (retryable).
+    """
     content = data.get("content") or []
     if not isinstance(content, list):
-        # A misbehaving Anthropic-format proxy returning `content` as a bare
-        # string would iterate characters and AttributeError past the loop's
-        # ProviderError-only retry. Raise retryably (status_code unset), like
-        # the non-JSON and truncation guards.
         raise ProviderError(
             f"Anthropic response `content` was {type(content).__name__}, not a"
             " list (malformed 2xx from upstream gateway)"

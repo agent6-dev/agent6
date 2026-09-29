@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""OpenAI Chat Completions request-message translation.
+"""Translate Anthropic-shaped messages and tools into the Chat Completions request shape.
 
-Anthropic content-blocks (agent6's internal lingua franca) -> the OpenAI
-Chat Completions `messages` / `tools` wire shape. See
-`providers/openai.py`'s module docstring for the translation rationale
-(Shape B tool-use translation); this module is the request-building half.
+The request-building half of the OpenAI provider; `providers/openai.py` states
+the translation rationale.
 """
 
 from __future__ import annotations
@@ -17,8 +15,10 @@ from agent6.providers.types import ToolDefinition
 
 
 def tool_result_text(tr_content: Any) -> str:
-    """A tool_result's content as the one string the OpenAI-style wires carry:
-    the text blocks joined, else the content as JSON, else as text."""
+    """Return a tool_result's content as the one string the OpenAI wires carry.
+
+    The text blocks joined, else the content as JSON, else as text.
+    """
     if isinstance(tr_content, list):
         parts = [
             str(b.get("text", ""))
@@ -32,27 +32,21 @@ def tool_result_text(tr_content: Any) -> str:
 def anthropic_to_openai_messages(  # noqa: PLR0912
     system: str, anthropic_msgs: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Translate agent6's canonical Anthropic-shape messages into the
-    OpenAI Chat Completions `messages` array.
+    """Translate Anthropic-shaped messages into the Chat Completions `messages` array.
 
-    Three block types in Anthropic content are non-trivial:
+    Text blocks join into the message's string content; an assistant's `tool_use`
+    blocks move into `tool_calls`; each `tool_result` becomes its own `role="tool"`
+    message, since the wire puts tool replies in their own role.
 
-    - `text` -> string content on the message (concatenated for
-      multi-text-block messages).
-    - `tool_use` (assistant) -> moved into `message.tool_calls` as
-      OpenAI function-call objects; the assistant's text content
-      stays in `message.content`.
-    - `tool_result` (user) -> emitted as a SEPARATE message with
-      `role="tool"` and `tool_call_id` set; cannot stay in the
-      user-message position because OpenAI puts tool replies in their
-      own role.
+    Args:
+        system: The system prompt, the first message.
+        anthropic_msgs: The conversation in Anthropic content-block shape.
+
+    Returns:
+        The messages array, system first.
     """
     out: list[dict[str, Any]] = [{"role": "system", "content": system}]
-    # Ids of assistant tool_use blocks dropped for a blank name (see
-    # `parse_response`). Their paired tool_result must be dropped too, else
-    # the request carries a role=tool message with no matching tool_call and
-    # strict backends reject it. Defense-in-depth for a resumed run whose
-    # snapshot history already holds one.
+    # A blank-name tool_use is dropped, and its paired tool_result with it, or strict backends 400.
     dropped_tool_use_ids: set[str] = set()
     for msg in anthropic_msgs:
         role = str(msg.get("role", "user"))
@@ -74,8 +68,6 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
                 text_chunks.append(str(block.get("text", "")))
             elif btype == "tool_use" and role == "assistant":
                 if not str(block.get("name") or "").strip():
-                    # Blank-name tool_use: drop it and remember its id so its
-                    # paired tool_result is dropped below.
                     dropped_tool_use_ids.add(str(block.get("id", "")))
                     continue
                 tool_calls.append(
@@ -84,21 +76,15 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
                         "type": "function",
                         "function": {
                             "name": str(block.get("name", "")),
-                            # OpenAI requires arguments as a JSON string,
-                            # not an object.
+                            # The wire carries arguments as a JSON string, not an object.
                             "arguments": json.dumps(block.get("input") or {}),
                         },
                     }
                 )
             elif btype == "tool_result":
                 if str(block.get("tool_use_id", "")) in dropped_tool_use_ids:
-                    # Orphaned result for a dropped blank-name tool_use. Skip it
-                    # so the request stays well-formed.
                     continue
-                # The `content` field may be a string or a list of text
-                # blocks; OpenAI accepts either string or its own
-                # content-blocks shape. Flatten to string for the
-                # broadest compatibility (Ollama, Kimi, etc).
+                # A string result is what every backend accepts (Ollama, Kimi included).
                 tr_text = tool_result_text(block.get("content", ""))
                 tool_results.append(
                     {
@@ -114,36 +100,22 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
             elif tool_calls:
                 assistant_msg["content"] = None
             else:
-                # A thinking-only turn (reasoning starvation) yields neither
-                # text nor tool_calls. Chat Completions requires `content`
-                # unless `tool_calls` is present; `null` without tool_calls
-                # 400s on strict backends (non-retryable), so send "".
+                # A thinking-only turn has neither; null content without tool_calls 400s.
                 assistant_msg["content"] = ""
             if tool_calls:
                 assistant_msg["tool_calls"] = tool_calls
             out.append(assistant_msg)
         else:
-            # user (or other) message: tool_results MUST come first
-            # because OpenAI requires every `role=tool` message to
-            # immediately follow the assistant turn whose `tool_calls`
-            # it answers. Emitting text_chunks FIRST would (a) insert a
-            # user message between the assistant's tool_calls and the tool
-            # replies -- most OpenAI-compatible gateways tolerate that, but
-            # it is technically malformed -- and (b) make injected
-            # "[loop-guard]" / "[harness]" / "[review]" notices arrive
-            # before the tool result they comment on, so weak models lose
-            # the causal link.
+            # A role=tool message must directly follow the tool_calls it answers; text comes after.
             for tr in tool_results:
                 out.append(tr)
             if text_chunks:
-                # Each chunk is its own text block (two harness notices can
-                # share a turn); a blank line keeps them apart.
                 out.append({"role": role, "content": "\n\n".join(text_chunks)})
     return out
 
 
 def tools_to_openai(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
-    """Translate `ToolDefinition` tuples into OpenAI function-tool entries."""
+    """Return the tools as Chat Completions function-tool entries."""
     return [
         {
             "type": "function",

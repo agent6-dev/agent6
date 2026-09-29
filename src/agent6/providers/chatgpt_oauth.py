@@ -1,19 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""ChatGPT sign-in: PKCE authorization-code OAuth and a refreshing credential.
+"""The ChatGPT sign-in: PKCE authorization-code OAuth and a refreshing credential.
 
-`agent6 connect <name>` owns the interaction (browser, local callback,
-paste fallback); this module owns the protocol: the authorize URL, the code
-exchange, the refresh grant, and the :class:`ChatGPTCredential` the provider
-holds per call. The issuer, the client id, and the redirect
-(`localhost:1455`, pinned by the client registration) are constants, not
-knobs: the ChatGPT profile dials only OpenAI's hosts (tests inject a
-loopback issuer through the function parameters).
-
-Token requests go to `<issuer>/oauth/token` from agent6's own process;
-nothing a remote returns is executed. Tokens live in `secrets.toml` (0600)
-and never reach transcripts (the recorder redacts the Authorization header)
-or the jail.
+`agent6 connect` owns the interaction; this module owns the protocol: the
+authorize URL, the code exchange, the device flow, the refresh grant and the
+`ChatGPTCredential` the provider holds. The issuer, the client id and the
+redirect (pinned by the client registration) are constants, so the profile dials
+only OpenAI's hosts. Nothing a remote returns is executed. Tokens live in
+`secrets.toml` at 0600 and never reach a transcript or the jail.
 """
 
 from __future__ import annotations
@@ -38,13 +32,11 @@ from agent6.providers.types import ProviderError
 from agent6.secrets import OAuthTokens, load_oauth_tokens, save_oauth_tokens
 
 CHATGPT_ISSUER = "https://auth.openai.com"
-# The Codex CLI's public client registration, whose redirect is pinned to
-# localhost:1455 below.
+# The Codex CLI's public client registration; its redirect is pinned to localhost:1455.
 CHATGPT_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 REDIRECT_URI = "http://localhost:1455/auth/callback"
 CALLBACK_PORT = 1455
-# The device flow's fixed pieces: where the person enters the code, and the
-# redirect the issuer pairs with device-issued authorization codes.
+# The device flow's fixed paths: the code entry page and the redirect paired with its codes.
 DEVICE_VERIFY_PATH = "/codex/device"
 _DEVICE_USERCODE_PATH = "/api/accounts/deviceauth/usercode"
 _DEVICE_TOKEN_PATH = "/api/accounts/deviceauth/token"  # noqa: S105 - a URL path, not a secret
@@ -53,11 +45,10 @@ _DEVICE_TIMEOUT_S = 15 * 60.0
 OAUTH_SCOPE = "openid profile email offline_access"
 # The namespaced JWT claim OpenAI tokens carry the ChatGPT identity under.
 _CLAIMS_KEY = "https://api.openai.com/auth"
-# Refresh this long before nominal expiry so a token never dies mid-call.
+# A token is refreshed this long before its nominal expiry, so it never dies mid-call.
 _REFRESH_SKEW_S = 300.0
 _TOKEN_TIMEOUT_S = 30.0
-# Token-endpoint error codes that mean the refresh token itself is dead
-# (re-consent is the only repair); everything else is worth retrying.
+# The refresh token itself is dead; re-consent is the only repair.
 _PERMANENT_REFRESH_CODES = frozenset(
     {"refresh_token_expired", "refresh_token_reused", "refresh_token_invalidated", "invalid_grant"}
 )
@@ -65,7 +56,14 @@ _PERMANENT_REFRESH_CODES = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class TokenGrant:
-    """One `/oauth/token` response (exchange or refresh)."""
+    """One `/oauth/token` response, from an exchange or a refresh.
+
+    Attributes:
+        access_token: The bearer.
+        refresh_token: The rotating refresh token; "" when the response omitted it.
+        expires_in: The bearer's lifetime in seconds.
+        id_token: The identity JWT; "" when absent.
+    """
 
     access_token: str
     refresh_token: str
@@ -74,23 +72,32 @@ class TokenGrant:
 
 
 def pkce_challenge(verifier: str) -> str:
-    """The RFC 7636 S256 challenge for a verifier."""
+    """Return the RFC 7636 S256 challenge for a verifier."""
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
 def pkce_pair() -> tuple[str, str]:
-    """A fresh RFC 7636 `(code_verifier, S256 code_challenge)` pair."""
+    """Return a fresh RFC 7636 `(code_verifier, code_challenge)` pair."""
     verifier = pysecrets.token_urlsafe(64)
     return verifier, pkce_challenge(verifier)
 
 
 def authorize_url(issuer: str, client_id: str, *, challenge: str, state: str) -> str:
-    """The browser URL that starts the sign-in.
+    """Build the browser URL that starts the sign-in.
 
-    The extra `id_token_add_organizations` / `codex_cli_simplified_flow`
-    params are what the issuer expects from this client registration; without
-    them workspace accounts get an id_token with no account claim.
+    The `id_token_add_organizations` and `codex_cli_simplified_flow` parameters are
+    what the issuer expects from this client; without them a workspace account
+    gets an id_token with no account claim.
+
+    Args:
+        issuer: The OAuth issuer.
+        client_id: The client registration.
+        challenge: The PKCE challenge.
+        state: The state the callback must echo.
+
+    Returns:
+        The authorize URL.
     """
     query = urlencode(
         [
@@ -110,18 +117,23 @@ def authorize_url(issuer: str, client_id: str, *, challenge: str, state: str) ->
 
 
 def parse_callback(pasted: str, *, state: str) -> str:
-    """The authorization code carried by a callback URL (or bare query).
+    """Read the authorization code off the callback URL the browser landed on.
 
-    Accepts the full `http://localhost:1455/auth/callback?...` line the
-    browser lands on, or just its query string. Raises `ValueError` naming
-    the problem: an `error` param, a missing code, or a state mismatch (a
-    response agent6's own sign-in did not start).
+    Args:
+        pasted: The full callback URL, or just its query string.
+        state: The state the sign-in started with.
+
+    Returns:
+        The code.
+
+    Raises:
+        ValueError: A state mismatch, a refusal carried in the `error` parameter,
+            or no code; the message names which.
     """
     text = pasted.strip()
     query = urlsplit(text).query if "?" in text else text
     params = dict(parse_qsl(query, keep_blank_values=True))
-    # State first, for the error path too: a request agent6's own sign-in did
-    # not start gets nothing reflected or processed from its parameters.
+    # The state is checked first, so a callback this sign-in did not start gets nothing reflected.
     if params.get("state", "") != state:
         raise ValueError("state mismatch: this callback is not from the sign-in agent6 started")
     if params.get("error"):
@@ -134,7 +146,7 @@ def parse_callback(pasted: str, *, state: str) -> str:
 
 
 def _post_form(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Response:
-    """Token-endpoint POST seam: tests stub this name, never `httpx2` globally."""
+    """Return the token endpoint's response to a form POST; the seam tests stub."""
     return httpx2.post(
         url,
         headers={"content-type": "application/x-www-form-urlencoded"},
@@ -144,11 +156,23 @@ def _post_form(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Respo
 
 
 def _post_json(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Response:
-    """Device-endpoint POST seam: tests stub this name, never `httpx2` globally."""
+    """Return a device endpoint's response to a JSON POST; the seam tests stub."""
     return httpx2.post(url, json=data, timeout=timeout_s)
 
 
 def _grant_from_response(resp: httpx2.Response, *, operation: str) -> TokenGrant:
+    """Parse a 2xx token response.
+
+    Args:
+        resp: The response.
+        operation: "exchange" or "refresh", for the error.
+
+    Returns:
+        The grant.
+
+    Raises:
+        ProviderError: The body is not JSON or a field is unusable.
+    """  # noqa: DOC501  # the ValueError is raised and caught in the same try
     try:
         data: Any = resp.json()
     except ValueError as exc:
@@ -184,10 +208,10 @@ def _grant_from_response(resp: httpx2.Response, *, operation: str) -> TokenGrant
 
 
 def _scrub(text: str, secrets: tuple[str, ...]) -> str:
-    """Replace the in-flight credential values wherever the issuer's response
-    text echoes them (the same class `scrub_secret_values` covers on the model
-    wire; these endpoints have their own). Raw and JSON-escaped spellings;
-    values under 8 chars are ignored."""
+    """Return the text with every echoed credential value replaced.
+
+    Raw and JSON-escaped spellings are covered; values under 8 characters are skipped.
+    """
     for value in secrets:
         if len(value) < 8:
             continue
@@ -199,11 +223,18 @@ def _scrub(text: str, secrets: tuple[str, ...]) -> str:
 def _token_error(
     resp: httpx2.Response, *, operation: str, provider: str, secrets: tuple[str, ...] = ()
 ) -> ProviderError:
-    """A classified error for a non-2xx token response. The body's error code
-    decides permanence: a dead refresh token names the repair (`agent6
-    connect <provider>`); anything else keeps its status for the retry policy.
-    *secrets* are the request's credential values, scrubbed from any echoed
-    body text."""
+    """Classify a non-2xx token response.
+
+    Args:
+        resp: The response.
+        operation: "exchange" or "refresh", for the error.
+        provider: The provider name, for the reconnect hint.
+        secrets: The request's credential values, scrubbed from an echoed body.
+
+    Returns:
+        A 401 naming the reconnect for a dead refresh token; otherwise an error
+        carrying the response's status for the retry policy.
+    """
     body = _scrub(resp.text[:2000], secrets)
     code = ""
     try:
@@ -233,9 +264,24 @@ def exchange_code(
     redirect_uri: str = REDIRECT_URI,
     timeout_s: float = _TOKEN_TIMEOUT_S,
 ) -> TokenGrant:
-    """Exchange an authorization code for the token grant. *redirect_uri*
-    must match the flow that minted the code (the localhost callback, or the
-    issuer's device-flow callback)."""
+    """Exchange an authorization code for a token grant.
+
+    Args:
+        issuer: The OAuth issuer.
+        client_id: The client registration.
+        code: The authorization code.
+        verifier: The PKCE verifier the code was minted against.
+        provider: The provider name, for the reconnect hint.
+        redirect_uri: The redirect of the flow that minted the code.
+        timeout_s: The request timeout.
+
+    Returns:
+        The grant, always carrying a refresh token.
+
+    Raises:
+        ProviderError: The issuer was unreachable, refused the exchange, or answered
+            without a refresh token.
+    """  # noqa: DOC501  # `_token_error` builds the ProviderError named above
     url = f"{issuer.rstrip('/')}/oauth/token"
     try:
         resp = _post_form(
@@ -261,7 +307,13 @@ def exchange_code(
 
 @dataclass(frozen=True, slots=True)
 class DeviceAuth:
-    """A started device-code sign-in: what the person types, how we poll."""
+    """A started device-code sign-in.
+
+    Attributes:
+        device_auth_id: The issuer's id for the attempt.
+        user_code: The code the person types on the verify page.
+        interval_s: The polling interval the issuer asked for.
+    """
 
     device_auth_id: str
     user_code: str
@@ -269,8 +321,19 @@ class DeviceAuth:
 
 
 def start_device_auth(issuer: str, client_id: str) -> DeviceAuth | None:
-    """Begin the code-entry sign-in; None when the issuer has it disabled
-    (a 404 -- the caller falls back to pasting the callback URL)."""
+    """Begin the code-entry sign-in.
+
+    Args:
+        issuer: The OAuth issuer.
+        client_id: The client registration.
+
+    Returns:
+        The started attempt, or None when the issuer answers 404 (the caller falls
+        back to the pasted callback).
+
+    Raises:
+        ProviderError: The issuer was unreachable, refused, or answered malformed.
+    """
     url = f"{issuer.rstrip('/')}{_DEVICE_USERCODE_PATH}"
     try:
         resp = _post_json(url, {"client_id": client_id}, _TOKEN_TIMEOUT_S)
@@ -302,10 +365,23 @@ def poll_device_auth(
 ) -> TokenGrant:
     """Wait for the person to enter the code, then exchange the grant.
 
-    The issuer answers pending as 403/404 or `deviceauth_authorization_pending`
-    and hands back `{authorization_code, code_verifier}` once approved; the
-    exchange then runs with the issuer's own verifier and device redirect.
-    Raises ProviderError on refusal or when the code expires unentered.
+    The issuer answers pending as a 403, a 404 or `deviceauth_authorization_pending`
+    and hands back the code and its verifier once approved.
+
+    Args:
+        issuer: The OAuth issuer.
+        client_id: The client registration.
+        device: The started attempt.
+        provider: The provider name, for the reconnect hint.
+        timeout_s: How long the code stays valid.
+        sleep: The wait between polls.
+
+    Returns:
+        The grant.
+
+    Raises:
+        ProviderError: The issuer was unreachable or refused, the code expired
+            unentered, or the exchange failed.
     """
     url = f"{issuer.rstrip('/')}{_DEVICE_TOKEN_PATH}"
     deadline = time.monotonic() + timeout_s
@@ -350,6 +426,7 @@ def poll_device_auth(
 
 
 def _error_code_of(resp: httpx2.Response) -> str:
+    """Return the error code a response body carries; "" when it has none."""
     try:
         err = resp.json().get("error")
     except (ValueError, AttributeError):
@@ -365,7 +442,21 @@ def refresh_grant(
     provider: str,
     timeout_s: float = _TOKEN_TIMEOUT_S,
 ) -> TokenGrant:
-    """Trade a refresh token for a fresh grant (tokens rotate)."""
+    """Trade a refresh token for a fresh grant; tokens rotate.
+
+    Args:
+        issuer: The OAuth issuer.
+        client_id: The client registration.
+        refresh_token: The single-use refresh token.
+        provider: The provider name, for the reconnect hint.
+        timeout_s: The request timeout.
+
+    Returns:
+        The grant.
+
+    Raises:
+        ProviderError: The issuer was unreachable or refused.
+    """  # noqa: DOC501  # `_token_error` builds the ProviderError named above
     url = f"{issuer.rstrip('/')}/oauth/token"
     try:
         resp = _post_form(
@@ -385,12 +476,18 @@ def refresh_grant(
 
 
 def revoke_tokens(issuer: str, client_id: str, tokens: OAuthTokens) -> str | None:
-    """Best-effort revocation at `<issuer>/oauth/revoke` for a sign-out.
+    """Revoke the grant at sign-out, best effort.
 
-    Prefers the refresh token (killing the whole grant), falls back to the
-    access token. Returns an error description instead of raising: the caller
-    removes the local tokens either way, matching the endpoint's own
-    semantics (revoking an already-dead token is a success).
+    The refresh token kills the whole grant; the access token is the fallback.
+
+    Args:
+        issuer: The OAuth issuer.
+        client_id: The client registration.
+        tokens: The stored tokens.
+
+    Returns:
+        None on success, else the error's description; the caller removes the
+        local tokens either way.
     """
     token, hint = (
         (tokens.refresh_token, "refresh_token")
@@ -411,11 +508,10 @@ def revoke_tokens(issuer: str, client_id: str, tokens: OAuthTokens) -> str | Non
 
 
 def jwt_claims(token: str) -> dict[str, Any]:
-    """The payload claims of a JWT, `{}` on any malformation.
+    """Return a JWT's payload claims; `{}` on any malformation.
 
-    No signature check: agent6 is the OAuth client, not a verifier; the
-    tokens arrive over the issuer's own TLS channel and are only read back
-    for the account id.
+    No signature check: agent6 is the OAuth client, not a verifier, and the
+    claims are only read back for the account id.
     """
     parts = token.split(".")
     if len(parts) != 3:
@@ -431,17 +527,14 @@ def jwt_claims(token: str) -> dict[str, Any]:
 
 
 def account_id_of(grant: TokenGrant) -> str:
-    """The ChatGPT account id a grant is bound to, "" when absent.
+    """Return the account id a grant is bound to; "" when absent.
 
-    The claim rides in the access token and (for workspace accounts) the
-    id_token; the backend requires it back as the `chatgpt-account-id`
-    header.
+    The claim rides in the access token and, for a workspace account, the id_token.
     """
     for token in (grant.access_token, grant.id_token):
         auth = jwt_claims(token).get(_CLAIMS_KEY)
         if isinstance(auth, dict):
-            # Only the real account claim: `user_id` is the ChatGPT USER id,
-            # not an account id, and a guessed header is worse than none.
+            # `user_id` is a user id, not an account id; a guessed header is worse than none.
             account = auth.get("chatgpt_account_id")
             if isinstance(account, str) and account:
                 return account
@@ -449,7 +542,7 @@ def account_id_of(grant: TokenGrant) -> str:
 
 
 def plan_type_of(grant: TokenGrant) -> str:
-    """The ChatGPT plan the grant reports ("plus", "pro", ...), "" if absent."""
+    """Return the plan the grant reports ("plus", "pro"); "" when absent."""
     for token in (grant.id_token, grant.access_token):
         auth = jwt_claims(token).get(_CLAIMS_KEY)
         if isinstance(auth, dict):
@@ -460,9 +553,16 @@ def plan_type_of(grant: TokenGrant) -> str:
 
 
 def tokens_from_grant(grant: TokenGrant, *, previous: OAuthTokens | None = None) -> OAuthTokens:
-    """The storable tokens for a grant. A refresh response may omit the
-    rotated refresh token or the identity claim; both carry over from
-    *previous* rather than being erased."""
+    """Build the storable tokens for a grant.
+
+    Args:
+        grant: The grant.
+        previous: The stored tokens; a refresh may omit the rotated refresh token
+            or the identity claim, and both carry over rather than being erased.
+
+    Returns:
+        The tokens to store.
+    """
     account = account_id_of(grant) or (previous.account_id if previous else "")
     refresh = grant.refresh_token or (previous.refresh_token if previous else "")
     return OAuthTokens(
@@ -474,25 +574,17 @@ def tokens_from_grant(grant: TokenGrant, *, previous: OAuthTokens | None = None)
 
 
 class ChatGPTCredential:
-    """Cached, refreshing bearer over the stored ChatGPT OAuth tokens.
+    """A cached, refreshing bearer over the stored ChatGPT OAuth tokens.
 
-    The `token()` / `invalidate()` twin of :class:`CommandToken`, so the
-    shared transport refreshes it once after an auth failure. Thread-safe in
-    process; the reload-refresh-save transaction also holds an interprocess
-    flock beside `secrets.toml`, because the refresh token is SINGLE-USE and
-    rotates: two processes submitting the same one trips
-    `refresh_token_reused` and kills the sign-in for both.
-
-    The first account id read PINS the credential to that account: a stored
-    or refreshed grant bound to a different account refuses with the connect
-    hint (fail closed) rather than sending a bearer under a stale
-    `chatgpt-account-id` header.
-
-    After a 401 (`invalidate`), recovery adopts a NEWER stored grant first
-    and only refreshes when none exists; on `refresh_token_reused` it
-    re-reads once after a beat, in case a process on another host completed
-    the rotation. A 403 never refreshes: that is entitlement or policy, and
-    rotating a working token cannot fix it.
+    The `BearerCredential` twin of `CommandToken`. Thread-safe in process; the
+    reload-refresh-save transaction also holds an interprocess lock beside
+    `secrets.toml`, because the refresh token is single-use and two processes
+    submitting the same one kill the sign-in for both. The first account id read
+    pins the credential: a grant bound to another account refuses with the
+    reconnect hint rather than sending a bearer under a stale account header.
+    After a 401, recovery adopts a newer stored grant first and refreshes only
+    when none exists; a 403 never refreshes, since rotation cannot change what the
+    account is allowed to do.
     """
 
     __slots__ = (
@@ -513,6 +605,7 @@ class ChatGPTCredential:
         issuer: str = CHATGPT_ISSUER,
         client_id: str = CHATGPT_CLIENT_ID,
     ) -> None:
+        """Bind the credential to a provider's stored sign-in; nothing is read yet."""
         self._provider = provider_name
         self._issuer = issuer
         self._client_id = client_id
@@ -523,6 +616,15 @@ class ChatGPTCredential:
         self._last_returned = ""
 
     def _stored(self) -> OAuthTokens:
+        """Load the stored tokens and check them against the pinned account.
+
+        Returns:
+            The stored tokens.
+
+        Raises:
+            ProviderError: No sign-in is stored, the stored account id contradicts
+                the token's own claim, or the grant belongs to another account.
+        """
         tokens = load_oauth_tokens(self._provider)
         if tokens is None:
             raise ProviderError(
@@ -530,10 +632,7 @@ class ChatGPTCredential:
                 f" run `agent6 connect {self._provider}`.",
                 status_code=401,
             )
-        # The stored id must match the token's own claim: a stored entry can
-        # hold a USER id where the account id belongs, and trusting it would
-        # send a wrong chatgpt-account-id header. The repair is a reconnect,
-        # never a silent migration.
+        # A stored entry can hold a user id where the account id belongs; the repair is a reconnect.
         claimed = account_id_of(TokenGrant(tokens.access_token, "", 0.0, ""))
         if claimed and tokens.account_id and claimed != tokens.account_id:
             raise ProviderError(
@@ -545,7 +644,18 @@ class ChatGPTCredential:
         return self._same_account(tokens, claimed=claimed)
 
     def _same_account(self, tokens: OAuthTokens, *, claimed: str = "") -> OAuthTokens:
-        """Pin on the first account id seen; refuse a grant bound to another."""
+        """Pin on the first account id seen.
+
+        Args:
+            tokens: The grant's tokens.
+            claimed: The account id the token itself claims, when read.
+
+        Returns:
+            The tokens, unchanged.
+
+        Raises:
+            ProviderError: The grant belongs to another account.
+        """
         account = claimed or tokens.account_id
         if not self._account:
             self._account = account
@@ -559,22 +669,24 @@ class ChatGPTCredential:
         return tokens
 
     def _adopt(self, tokens: OAuthTokens) -> str:
+        """Return the tokens' bearer after taking them as current."""
         self._tokens = tokens
         self._force_refresh = False
         self._last_returned = tokens.access_token
         return tokens.access_token
 
     def token(self) -> str:
+        """Return a fresh-enough bearer, rotating the stored grant when needed.
+
+        Raises:
+            ProviderError: No usable sign-in is stored, the refresh lock could not
+                be taken, or the refresh failed.
+        """
         with self._lock:
             tokens = self._tokens or self._stored()
             if not self._force_refresh and time.time() < tokens.expires_at - _REFRESH_SKEW_S:
                 return self._adopt(tokens)
-            # Interprocess: the refresh token is SINGLE-USE, so the whole
-            # reload-refresh-save transaction serializes on the secrets lock
-            # (reentrant with save_oauth_tokens' own take). Unlike config
-            # writes (atomic either way), an unserialized rotation can kill
-            # the sign-in for every process, so an unheld lock REFUSES with a
-            # retryable error instead of proceeding on a fiction.
+            # An unserialised rotation kills every process's sign-in, so an unheld lock refuses.
             with locked_file(secrets_path()) as held:
                 if not held:
                     raise ProviderError(
@@ -583,9 +695,7 @@ class ChatGPTCredential:
                         " ChatGPT refresh token (remove a stale .lock sibling"
                         " if one is left over)"
                     )
-                # Re-read UNDER the lock: a sibling that finished first is
-                # adopted (after a 401 that means retry with its token, not
-                # burn another rotation on a grant that may already be fresh).
+                # A sibling that finished first is adopted rather than burning another rotation.
                 stored = self._stored()
                 fresh_enough = time.time() < stored.expires_at - _REFRESH_SKEW_S
                 if fresh_enough and stored.access_token != self._last_returned:
@@ -598,8 +708,7 @@ class ChatGPTCredential:
                 except ProviderError as exc:
                     if "refresh_token_reused" not in str(exc):
                         raise
-                    # Another HOST may have rotated (the flock covers only this
-                    # one), and a fresh sibling grant wins.
+                    # The lock covers one host; a rotation from another host wins after a beat.
                     time.sleep(1.0)
                     rescued = self._stored()
                     if (
@@ -613,11 +722,15 @@ class ChatGPTCredential:
                 return self._adopt(fresh)
 
     def invalidate(self, status: int = 401) -> bool:
-        """Arm recovery for the next `token()` after an auth failure. Only a
-        401 means the bearer itself is bad; a 403 is permission or
-        entitlement, and neither a newer sibling grant nor a rotation can
-        change what the account is allowed to do -- recovery changes
-        nothing, so the caller gets False and does not retry."""
+        """Arm recovery for the next `token()` after an auth failure.
+
+        Args:
+            status: The 401 or 403 the transport saw.
+
+        Returns:
+            True on a 401, the bearer itself being bad; False on a 403, which is
+            permission or entitlement and which no rotation can change.
+        """
         if status != 401:
             return False
         with self._lock:
@@ -625,7 +738,7 @@ class ChatGPTCredential:
         return True
 
     def account_id(self) -> str:
-        """The account id the backend requires as `chatgpt-account-id`."""
+        """Return the account id the backend requires as `chatgpt-account-id`."""
         with self._lock:
             tokens = self._tokens or self._stored()
             self._tokens = tokens

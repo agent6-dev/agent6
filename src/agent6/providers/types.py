@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Provider-neutral vocabulary shared by every provider implementation.
+"""Provider-neutral vocabulary shared by every provider.
 
-The errors, the response/tool shapes, the transcript sink, and the Retry-After
-parser live here rather than in one concrete provider so the others (and generic
-helpers like token_command) import DOWN to this leaf instead of sideways into
-`anthropic`, which would be an import cycle.
+The errors, the response and tool shapes, the transcript sink and the Retry-After
+parser live in this leaf so every provider imports down to it, never sideways.
 """
 
 from __future__ import annotations
@@ -27,26 +25,18 @@ from agent6.portable import atomic_write
 class ProviderError(Exception):
     """A provider call failed.
 
-    `status_code` is the upstream HTTP status when the failure originated
-    from an API error response (None for network/parse failures). The loop's
-    retry wrapper uses it to skip retrying permanent client errors such as
-    401/402/403 that will never succeed on a second attempt.
-
-    `retry_after_s` carries the upstream `Retry-After` hint (seconds) on a
-    rate-limit/unavailable response (429/503) when present, so the retry wrapper
-    waits at least as long as the server asked instead of its own shorter
-    backoff. None when absent.
-
-    `provider` is the configured provider name ("" until the instrumented
-    wrapper stamps it), so a credential hint can name the config key to fix.
-
-    `fatal` marks a permanent failure that carries no HTTP status (a missing
-    binary, a signed-out login): the retry wrapper re-raises it at once. The
-    run summary carries the text of a fatal error and of a statusless one;
-    an HTTP response's body stays in the log.
-
-    `attempts` is how many calls the retry wrapper spent before re-raising
-    (1 for an error it never retried).
+    Attributes:
+        status_code: The upstream HTTP status of an API error response; None for a
+            network or parse failure. The retry wrapper skips permanent client
+            errors (401, 402, 403) by it.
+        retry_after_s: The upstream `Retry-After` hint in seconds on a 429 or 503,
+            the floor of the retry wrapper's wait; None when absent.
+        provider: The configured provider name, "" until the instrumented wrapper
+            stamps it, so a credential hint can name the config key.
+        fatal: A permanent failure with no HTTP status (a missing binary, a
+            signed-out login); the retry wrapper re-raises it at once.
+        attempts: The calls the retry wrapper spent before re-raising; 1 when it
+            never retried.
     """
 
     def __init__(
@@ -66,25 +56,27 @@ class ProviderError(Exception):
         self.attempts = attempts
 
 
-class ProviderAborted(ProviderError):  # noqa: N818  # a signal, not an error  # a signal, not an error
-    """The operator stopped the run mid-call (a streaming turn was interrupted).
-    A distinct type so the loop ends the run instead of retrying like a fault."""
+class ProviderAborted(ProviderError):  # noqa: N818  # a signal, not an error
+    """The operator stopped the run mid-call; the loop ends the run instead of retrying."""
 
 
-class ProviderInterrupted(ProviderError):  # noqa: N818  # a signal, not an error  # a signal, not an error
-    """The operator asked to steer mid-call, so the watchdog closed the (possibly
-    long, thinking) stream to bring the loop to its steer boundary promptly. Unlike
-    ProviderAborted this does not end the run: the loop shows the steer menu and
-    then re-does the turn (or stops/detaches per the operator's choice)."""
+class ProviderInterrupted(ProviderError):  # noqa: N818  # a signal, not an error
+    """The operator asked to steer mid-call, so the watchdog closed the stream.
+
+    Unlike `ProviderAborted` this does not end the run: the loop shows the steer
+    menu and then redoes the turn, or stops or detaches as the operator chooses.
+    """
 
 
 def parse_retry_after(headers: Mapping[str, str]) -> float | None:
-    """Parse an HTTP `Retry-After` header to a non-negative seconds value.
+    """Parse an HTTP `Retry-After` header in either RFC 7231 form.
 
-    Accepts the two RFC 7231 forms: a delta in seconds (`"120"`) or an
-    HTTP-date (`"Wed, 21 Oct 2026 07:28:00 GMT"`, converted to a delay from
-    now). Returns None when the header is absent or unparseable. Case-insensitive
-    lookup works with httpx2's header mapping.
+    Args:
+        headers: The response headers; both spellings of the name are tried.
+
+    Returns:
+        The delay in seconds, never negative; None when the header is absent or
+        unparseable.
     """
     raw = headers.get("retry-after") or headers.get("Retry-After")
     if not raw:
@@ -92,7 +84,7 @@ def parse_retry_after(headers: Mapping[str, str]) -> float | None:
     raw = raw.strip()
     try:
         secs = float(raw)
-        # Reject inf/nan (a malformed header); a real delta is finite seconds.
+        # inf and nan parse as floats but are malformed headers.
         return max(0.0, secs) if math.isfinite(secs) else None
     except ValueError:
         pass
@@ -113,20 +105,25 @@ _REDACTED = "<REDACTED>"
 
 
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
-    """Redact secret-bearing request headers before they are written to disk."""
+    """Return the request headers with each secret-bearing value replaced by the marker."""
     return {k: (_REDACTED if k.lower() in _REDACT_HEADER_NAMES else v) for k, v in headers.items()}
 
 
 def scrub_secret_values(text: str, headers: dict[str, str]) -> str:
-    """Replace the exact credential values riding in *headers* with the
-    redaction marker wherever they appear in *text*.
+    """Replace the credential values the headers carry wherever they appear in text.
 
-    Complements `_redact_headers`, which redacts the header FIELDS: a server
-    that echoes the received credential puts the value in a BODY or an error
-    excerpt. Scrubbed spellings: the raw value, the bare token behind a scheme
-    prefix (`Bearer <token>`), and each one's JSON-escaped form. Values under
-    8 chars are ignored (no real key is that short; replacing them would shred
-    the text)."""
+    Covers a server that echoes the credential in a body or an error excerpt. The
+    raw value, the bare token behind a scheme prefix and each one's JSON-escaped
+    form are scrubbed; values under 8 characters are skipped, since replacing them
+    would shred the text.
+
+    Args:
+        text: The text about to be written.
+        headers: The request headers, the source of the values.
+
+    Returns:
+        The text with every spelling of each credential replaced by the marker.
+    """
     for name, value in headers.items():
         if name.lower() not in _REDACT_HEADER_NAMES or not value:
             continue
@@ -139,11 +136,11 @@ def scrub_secret_values(text: str, headers: dict[str, str]) -> str:
 
 
 def _max_seq_in_dir(transcripts_dir: Path) -> int:
-    """The highest seq already recorded in *transcripts_dir*, or 0 if empty.
+    """Return the highest seq recorded in the directory, or 0 when it holds none.
 
-    The seq is the 6-digit suffix of each committed `<ts>-<seq>.json` file
-    (atomic_write's in-flight temp is a `.tmp` dotfile, so the glob never sees
-    it). A non-conforming stray `.json` is skipped, not fatal."""
+    The seq is the suffix of each `<ts>-<seq>.json` file; an in-flight temp file
+    and a stray `.json` without the suffix are skipped.
+    """
     seqs = [
         int(tail)
         for p in transcripts_dir.glob("*.json")
@@ -153,11 +150,7 @@ def _max_seq_in_dir(transcripts_dir: Path) -> int:
 
 
 class TranscriptRecorder(Protocol):
-    """What a provider needs of a transcript sink: record one round-trip.
-
-    Lets a provider hold either the run's shared :class:`TranscriptSink` or a
-    :class:`RoleTranscriptSink` view bound to its seat.
-    """
+    """What a provider needs of a transcript sink: the shared sink or a seat's view."""
 
     def record(
         self,
@@ -167,16 +160,32 @@ class TranscriptRecorder(Protocol):
         request_body: dict[str, Any],
         response_status: int,
         response_body: dict[str, Any] | str,
-    ) -> Path: ...
+    ) -> Path:
+        """Record one round-trip.
+
+        Args:
+            url: The URL dialled.
+            request_headers: The request headers; secrets are redacted on write.
+            request_body: The request body.
+            response_status: The HTTP status.
+            response_body: The response body, parsed or raw.
+
+        Returns:
+            The transcript file written.
+        """
+        ...
 
 
 @dataclass(frozen=True, slots=True)
 class RoleTranscriptSink:
-    """A :class:`TranscriptSink` view bound to one seat.
+    """A `TranscriptSink` view that stamps one seat on every record.
 
-    Delegates every write to the shared sink (so seq stays run-global) with the
-    seat stamped, which is what lets a transcript consumer tell the worker's
-    conversation from a compaction side-call's scratch round-trip.
+    The seq counter stays run-global; the seat lets a transcript consumer tell the
+    worker's conversation from a compaction side-call's round-trip.
+
+    Attributes:
+        inner: The shared sink.
+        seat: The seat stamped on each record.
     """
 
     inner: TranscriptSink
@@ -191,6 +200,18 @@ class RoleTranscriptSink:
         response_status: int,
         response_body: dict[str, Any] | str,
     ) -> Path:
+        """Record one round-trip through the shared sink with the seat stamped.
+
+        Args:
+            url: The URL dialled.
+            request_headers: The request headers.
+            request_body: The request body.
+            response_status: The HTTP status.
+            response_body: The response body, parsed or raw.
+
+        Returns:
+            The transcript file written.
+        """
         return self.inner.record(
             url=url,
             request_headers=request_headers,
@@ -202,32 +223,25 @@ class RoleTranscriptSink:
 
 
 class TranscriptSink:
-    """Append-only writer of one JSON file per LLM round-trip.
+    """Write one JSON file per model round-trip; append-only and thread-safe.
 
-    Files live under `transcripts_dir/<utc-iso>-<seq>.json`. The seq counter is
-    per-RUN (not per-sink): a sink opened over a dir that already holds a prior
-    execution's transcripts continues the counter from the highest present, so seq
-    stays globally unique and monotonic across resume executions -- every consumer
-    (the load_transcripts sort, the `(seq N)` label, the `--seq` window) treats
-    it as a run-global key. Monotonically increasing and thread-safe. Secrets in
-    request headers are redacted, and a credential value a body echoes is
-    scrubbed, before any bytes hit disk.
+    Files are `<utc-iso>-<seq>.json`. The seq is run-global: a sink over a directory
+    that already holds transcripts continues from the highest present, so every
+    consumer can treat it as a unique, monotonic key across resumes. Secret headers
+    are redacted and an echoed credential scrubbed before any bytes hit disk.
     """
 
     __slots__ = ("_dir", "_lock", "_seq")
 
     def __init__(self, transcripts_dir: Path) -> None:
+        """Open the sink over a directory, creating it and continuing its seq."""
         mkdir_for_real_user(transcripts_dir)
         self._dir = transcripts_dir
         self._lock = threading.Lock()
         self._seq = _max_seq_in_dir(transcripts_dir)
 
     def for_seat(self, seat: str) -> RoleTranscriptSink:
-        """A view of this sink that stamps *seat* on everything it records.
-
-        The seq counter, lock, and directory stay shared: seq is a run-global
-        key every consumer sorts by.
-        """
+        """Return a view of this sink that stamps the seat on everything it records."""
         return RoleTranscriptSink(self, seat)
 
     def record(
@@ -240,6 +254,19 @@ class TranscriptSink:
         response_body: dict[str, Any] | str,
         seat: str = "",
     ) -> Path:
+        """Write one round-trip as the next transcript file.
+
+        Args:
+            url: The URL dialled.
+            request_headers: The request headers; secrets are redacted on write.
+            request_body: The request body.
+            response_status: The HTTP status.
+            response_body: The response body, parsed or raw.
+            seat: The seat that made the call; "" for the worker.
+
+        Returns:
+            The transcript file written.
+        """
         with self._lock:
             self._seq += 1
             seq = self._seq
@@ -248,10 +275,7 @@ class TranscriptSink:
         payload = {
             "ts": ts,
             "seq": seq,
-            # Which seat made this call. Compaction's side-calls (the gist
-            # distiller, the tier-2 summariser) share the run's sink, and a
-            # side-call's one-message request reads as a compaction restart to
-            # the conversation fold; the seat lets it skip them.
+            # Without it a compaction side-call's one-message request reads as a restart.
             "seat": seat,
             "request": {
                 "url": url,
@@ -263,30 +287,40 @@ class TranscriptSink:
                 "body": response_body,
             },
         }
-        # atomic_write (mkstemp, unpredictable name, O_EXCL): a predictable
-        # `<name>.json.tmp` is symlink-followable, and the rename makes the
-        # record durable.
+        # atomic_write's unpredictable O_EXCL temp name is not symlink-followable.
         text = scrub_secret_values(json.dumps(payload, indent=2, sort_keys=True), request_headers)
         atomic_write(path, text)
         return path
 
 
 class BearerCredential(Protocol):
-    """A refreshable bearer source (`CommandToken`, `ChatGPTCredential`).
+    """A refreshable bearer source (`CommandToken`, `ChatGPTCredential`)."""
 
-    `token()` returns a fresh-enough bearer; `invalidate(status)` reacts to
-    one auth failure (the transport passes the 401/403 it saw) and returns
-    whether a retry is worthwhile -- False when recovery changed nothing,
-    so the transport does not repeat the identical request."""
+    def token(self) -> str:
+        """Return a fresh-enough bearer."""
+        ...
 
-    def token(self) -> str: ...
+    def invalidate(self, status: int = 401) -> bool:
+        """React to one auth failure.
 
-    def invalidate(self, status: int = 401) -> bool: ...
+        Args:
+            status: The 401 or 403 the transport saw.
+
+        Returns:
+            Whether a retry is worthwhile; False when recovery changed nothing.
+        """
+        ...
 
 
 @dataclass(frozen=True, slots=True)
 class ToolDefinition:
-    """One tool exposed to the model. `input_schema` is generated from a pydantic model."""
+    """One tool exposed to the model.
+
+    Attributes:
+        name: The tool's name.
+        description: The model-facing description.
+        input_schema: The JSON schema of the arguments, generated from a pydantic model.
+    """
 
     name: str
     description: str
@@ -295,7 +329,23 @@ class ToolDefinition:
 
 @dataclass(frozen=True, slots=True)
 class ProviderResponse:
-    """Response from a single provider call."""
+    """The response to one provider call.
+
+    Attributes:
+        text: The visible text.
+        tool_uses: The tool calls the model made.
+        stop_reason: The provider's stop reason, as spelled on the wire.
+        input_tokens: Prompt tokens billed.
+        output_tokens: Completion tokens billed.
+        cache_read_tokens: Prompt tokens served from the cache.
+        cache_creation_tokens: Prompt tokens written to the cache.
+        cost_usd: The gateway-reported cost of this call (OpenRouter's `usage.cost`);
+            0 means no authoritative figure, and the price table estimates instead.
+        raw: The response body as received.
+        refused: Tool-use ids the provider's own front-end answered with an error
+            before agent6 could run them, with its text; the loop records the error
+            as the result and runs nothing.
+    """
 
     text: str
     tool_uses: tuple[dict[str, Any], ...]
@@ -304,30 +354,19 @@ class ProviderResponse:
     output_tokens: int
     cache_read_tokens: int
     cache_creation_tokens: int
-    # provider-reported USD cost for this single call. Populated only by
-    # the OpenAI-compatible provider when the upstream
-    # gateway returns `usage.cost` (OpenRouter does; OpenAI direct does
-    # not; Anthropic does not). Zero means "no authoritative figure was
-    # supplied", callers fall back to the price-table estimate in
-    # `BudgetTracker.estimate_usd`.
     cost_usd: float = 0.0
     raw: dict[str, Any] = field(default_factory=dict)
-    # tool_use ids the provider's own front-end answered with an error before
-    # agent6 could run them (the claude_code CLI's input check), with its
-    # text: the loop records the error as the call's result and runs nothing.
     refused: dict[str, str] = field(default_factory=dict)
 
 
-# The stop-reason spellings a provider uses when the OUTPUT CAP truncated a turn
-# (OpenAI "length", Anthropic "max_tokens"), case-folded for gateways that
-# upper-case them. A reasoning model can spend its whole cap before emitting any
-# content, so a truncated call is a FAILED call (retry / raise the cap), never a
-# "verdict of empty" or NEEDS_WORK.
+# The output-cap stop reasons (OpenAI "length", Anthropic "max_tokens"), case-folded.
 _OUTPUT_CAP_STOP_REASONS = frozenset({"length", "max_tokens"})
 
 
 def output_cap_truncated(resp: ProviderResponse) -> bool:
-    """Whether *resp* was cut off by the output token cap. The single owner of
-    the check: the review seats and the loop's starvation trip-wire both ask
-    it."""
+    """Return whether the output cap cut the response off.
+
+    A reasoning model can spend its whole cap before emitting content, so a
+    truncated call is a failed call, never an empty verdict.
+    """
     return resp.stop_reason.strip().lower() in _OUTPUT_CAP_STOP_REASONS

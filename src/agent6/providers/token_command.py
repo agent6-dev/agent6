@@ -2,17 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """Mint a short-lived bearer token by running an operator-configured command.
 
-Some OpenAI-compatible endpoints don't take a static API key; they want a
-short-lived bearer that has to be refreshed (cloud OAuth access tokens,
-internal OIDC/STS gateways, ...). `[providers.<name>].token_command` names a
-command that prints such a token to stdout; :class:`CommandToken` runs it,
-caches the result for `token_command_ttl_s` seconds, and re-runs it on demand
-so the provider stays authenticated without a human re-pasting a key.
-
-The command runs in agent6's own process, outside any run sandbox, with the
-operator's environment, the same trust level as an `[mcp.servers.<name>]` command.
-It is therefore an operator-controlled config knob, never something a run can
-set, and the token it prints is sent as `Authorization: Bearer <token>`.
+`[providers.<name>].token_command` names a command that prints a bearer to stdout
+(a cloud OAuth access token, an OIDC or STS gateway); `CommandToken` caches it for
+`token_command_ttl_s` seconds and re-runs on demand. The command runs outside any
+sandbox with the operator's environment, the trust level of an MCP server command,
+so only config sets it, never a run.
 """
 
 from __future__ import annotations
@@ -28,13 +22,7 @@ _DEFAULT_RUN_TIMEOUT_S = 30.0
 
 
 class CommandToken:
-    """Cached, refreshable bearer minted by running an external command.
-
-    Thread-safe. `token()` returns the cached value while it is younger than
-    `ttl_s` and otherwise re-runs the command; `invalidate()` forces the
-    next `token()` to re-run (the provider calls it after a 401/403 so an
-    expired token self-heals regardless of `ttl_s`).
-    """
+    """A cached, refreshable bearer minted by an external command; thread-safe."""
 
     __slots__ = ("_argv", "_fetched_at", "_lock", "_run_timeout_s", "_token", "_ttl_s")
 
@@ -50,13 +38,14 @@ class CommandToken:
         self._run_timeout_s = run_timeout_s
         self._lock = threading.Lock()
         self._token = ""
-        self._fetched_at = 0.0  # time.monotonic() of the last successful run
+        self._fetched_at = 0.0  # monotonic time of the last successful run
 
     def token(self) -> str:
-        """Return a fresh-enough bearer, running the command if needed.
+        """Return the cached bearer while younger than the TTL, else re-run the command.
 
-        Raises :class:`ProviderError` if the command is missing, times out,
-        exits non-zero, or prints nothing.
+        Raises:
+            ProviderError: The command is missing, times out, exits non-zero or
+                prints nothing.
         """
         with self._lock:
             now = time.monotonic()
@@ -70,9 +59,15 @@ class CommandToken:
     def invalidate(self, status: int = 401) -> bool:
         """Drop the cached token so the next `token()` re-runs the command.
 
-        Both 401 and 403 re-mint here: a command-minted bearer is typically
-        short-lived and scoped, so either can mean it aged out. (The OAuth
-        credential differs: only a 401 refreshes there.)"""
+        Both 401 and 403 re-mint: a command-minted bearer is short-lived and scoped,
+        so either can mean it aged out (the OAuth credential refreshes on 401 only).
+
+        Args:
+            status: The HTTP status that prompted the drop; unused.
+
+        Returns:
+            True, the provider's signal to retry the request.
+        """
         del status
         with self._lock:
             self._token = ""
@@ -80,6 +75,14 @@ class CommandToken:
         return True
 
     def _run(self) -> str:
+        """Run the command once.
+
+        Returns:
+            The token the command printed, stripped.
+
+        Raises:
+            ProviderError: The command could not start, timed out, failed or was silent.
+        """
         try:
             proc = subprocess.run(
                 self._argv,
