@@ -13,13 +13,13 @@ the stdlib and `agent6.paths`, so `agent6.budget` can use it; reads never touch 
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import functools
 import json
+import pathlib
 import re
-from dataclasses import dataclass
-from functools import lru_cache
-from pathlib import Path
 
-from agent6.paths import cache_dir
+from agent6 import paths
 
 __all__ = ["lookup_price"]
 
@@ -46,10 +46,10 @@ def _openrouter_alias(model: str) -> str | None:
     return f"anthropic/{base}"
 
 
-def _models_cache_dir() -> Path | None:
+def _models_cache_dir() -> pathlib.Path | None:
     """Return the models cache directory, or None when no cache dir resolves."""
     with contextlib.suppress(OSError, RuntimeError):
-        return cache_dir() / "models"
+        return paths.cache_dir() / "models"
     return None
 
 
@@ -70,7 +70,7 @@ def _cache_state() -> tuple[tuple[str, float], ...]:
     return tuple(out)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Price:
     """A model's listed rates in USD per 1M tokens.
 
@@ -94,7 +94,7 @@ class Price:
         return [self.input, self.output, self.cache_read, self.cache_write]
 
 
-@lru_cache(maxsize=4)
+@functools.lru_cache(maxsize=4)
 def _load_pricing(
     state: tuple[tuple[str, float], ...],
 ) -> dict[str, dict[str, Price]]:

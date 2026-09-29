@@ -11,15 +11,16 @@ network failure it falls back to the stale cache, then to an empty list.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
+import pathlib
 import time
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urlsplit
+from urllib import parse
 
 import httpx2
 
+from agent6 import paths, secrets
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -27,11 +28,8 @@ from agent6.config import (
     OpenAIProviderEntry,
     ProviderEntry,
 )
-from agent6.models.pricing import Price
-from agent6.paths import cache_dir
-from agent6.providers.types import ProviderError
-from agent6.providers.wire import auth_header
-from agent6.secrets import load_oauth_tokens
+from agent6.models import pricing as models_pricing
+from agent6.providers import types, wire
 
 __all__ = ["cached_context_window", "list_models"]
 
@@ -40,17 +38,17 @@ _CACHE_TTL_S = 600
 _FETCH_TIMEOUT_S = 1.5  # tab completion waits on this
 
 
-def _cache_path(provider_name: str) -> Path | None:
+def _cache_path(provider_name: str) -> pathlib.Path | None:
     """Return the provider's cache file, or None when the name is not one path component.
 
     Provider names are config table keys; a `/` or `..` would write outside the cache dir.
     """
-    if provider_name in ("", ".", "..") or provider_name != Path(provider_name).name:
+    if provider_name in ("", ".", "..") or provider_name != pathlib.Path(provider_name).name:
         return None
-    return cache_dir() / "models" / f"{provider_name}.json"
+    return paths.cache_dir() / "models" / f"{provider_name}.json"
 
 
-def _read_cache(path: Path | None) -> list[str] | None:
+def _read_cache(path: pathlib.Path | None) -> list[str] | None:
     """Return the cached model ids, or None when the file is missing or malformed."""
     if path is None:
         return None
@@ -65,9 +63,9 @@ def _read_cache(path: Path | None) -> list[str] | None:
 
 
 def _write_cache(
-    path: Path | None,
+    path: pathlib.Path | None,
     models: list[str],
-    pricing: dict[str, Price],
+    pricing: dict[str, models_pricing.Price],
     context: dict[str, int],
 ) -> None:
     """Write the listing, plus the pricing and context keys where the provider publishes them."""
@@ -118,14 +116,14 @@ def _per_mtok(pricing: dict[str, Any], key: str) -> float | None:
     return value if value >= 0 else None
 
 
-def _parse_pricing(payload: object) -> dict[str, Price]:
+def _parse_pricing(payload: object) -> dict[str, models_pricing.Price]:
     """Return per-model prices from an OpenRouter-style `{"data": [...]}` body.
 
     A model without a usable prompt and completion pair is absent (unknown beats wrong); the
     cache rates ride along only when both parse.
     """
     data = payload.get("data") if isinstance(payload, dict) else None
-    out: dict[str, Price] = {}
+    out: dict[str, models_pricing.Price] = {}
     if not isinstance(data, list):
         return out
     for item in data:
@@ -143,9 +141,9 @@ def _parse_pricing(payload: object) -> dict[str, Price]:
             _per_mtok(pricing, "input_cache_write"),
         )
         if read is None or write is None:
-            out[mid] = Price(in_mtok, out_mtok)
+            out[mid] = models_pricing.Price(in_mtok, out_mtok)
         else:
-            out[mid] = Price(in_mtok, out_mtok, read, write)
+            out[mid] = models_pricing.Price(in_mtok, out_mtok, read, write)
     return out
 
 
@@ -188,7 +186,7 @@ def _models_endpoint(
     # Vertex and Azure have no uniform /models endpoint; the caller swallows that failure.
     if isinstance(entry, AnthropicProviderEntry) and entry.deployment == "direct":
         headers["anthropic-version"] = _ANTHROPIC_VERSION
-    authed = auth_header(entry.auth_style, api_key or "")
+    authed = wire.auth_header(entry.auth_style, api_key or "")
     if authed is not None:
         headers[authed[0]] = authed[1]
     return url, headers
@@ -210,9 +208,9 @@ def _chatgpt_models_endpoint(
     Raises:
         ProviderError: No sign-in is stored for the provider.
     """
-    tokens = load_oauth_tokens(provider_name)
+    tokens = secrets.load_oauth_tokens(provider_name)
     if tokens is None:
-        raise ProviderError(
+        raise types.ProviderError(
             f"no ChatGPT sign-in stored for {provider_name!r}; run `agent6 connect {provider_name}`"
         )
     url = f"{entry.base_url.rstrip('/')}/models?client_version={_CHATGPT_CLIENT_VERSION}"
@@ -249,7 +247,7 @@ def _chatgpt_listing(payload: object) -> tuple[list[str], dict[str, int]]:
 
 def _fetch(
     provider_name: str, entry: ProviderEntry, api_key: str | None, timeout_s: float
-) -> tuple[list[str], dict[str, Price], dict[str, int]]:
+) -> tuple[list[str], dict[str, models_pricing.Price], dict[str, int]]:
     """Fetch the entry's listing; raises on any failure.
 
     Returns:
@@ -270,7 +268,7 @@ def _fetch(
     return _parse_models(payload), _parse_pricing(payload), _parse_context(payload)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class KeyProbeResult:
     """The outcome of a `connect` key probe.
 
@@ -315,11 +313,11 @@ def probe_provider_key(
         return KeyProbeResult(ok=True, status="unsupported", detail=detail)
     try:
         url, headers = _models_endpoint(entry, api_key)
-    except ProviderError as exc:
+    except types.ProviderError as exc:
         # A credential auth_header refuses (a control char, non-ASCII) is an unusable key.
         return KeyProbeResult(ok=False, status="auth_failed", detail=str(exc)[:200])
     # OpenRouter's /models is public; probe its auth-gated /key, matched on the parsed host.
-    host = (urlsplit(entry.base_url).hostname or "").lower()
+    host = (parse.urlsplit(entry.base_url).hostname or "").lower()
     if host == "openrouter.ai" or host.endswith(".openrouter.ai"):
         url = entry.base_url.rstrip("/") + "/key"
     try:
@@ -391,7 +389,7 @@ def fetch_models_live(
     """
     try:
         models, pricing, context = _fetch(provider_name, entry, api_key, timeout_s)
-    except (httpx2.HTTPError, ValueError, OSError, ProviderError):
+    except (httpx2.HTTPError, ValueError, OSError, types.ProviderError):
         return None  # ProviderError: a malformed credential, or no ChatGPT sign-in
     if not models:
         return None

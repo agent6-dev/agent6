@@ -12,18 +12,17 @@ nothing is fetched and nothing blocks. Nothing here raises.
 
 from __future__ import annotations
 
+import dataclasses
 import difflib
+import pathlib
 from collections.abc import Sequence
-from dataclasses import dataclass
-from pathlib import Path
 
-from agent6.config import ClaudeCodeProviderEntry, Config, ConfigError, RoleName
-from agent6.config.layer import load_effective
-from agent6.directive import DirectiveError, Segment, parse_spec
-from agent6.kinds import ModelRoute
-from agent6.models.cache import cached_models, fetch_models_live
-from agent6.models.registry import normalize_model_id
-from agent6.secrets import SecretsError, load_secrets, resolve_api_key
+from agent6 import directive as agent6_directive
+from agent6 import kinds
+from agent6 import secrets as agent6_secrets
+from agent6.config import ClaudeCodeProviderEntry, Config, ConfigError, RoleName, layer
+from agent6.models import cache as models_cache
+from agent6.models import registry
 
 ROLES: tuple[RoleName, ...] = ("worker", "reviewer", "planner")
 
@@ -47,10 +46,10 @@ def _known_models(cfg: Config, provider: str) -> set[str]:
         for role in ROLES
         if (rm := cfg.models.resolve(role)) is not None and rm.provider == provider
     }
-    return named | set(cached_models(provider))
+    return named | set(models_cache.cached_models(provider))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ModelValidation:
     """The outcome of a model check.
 
@@ -87,16 +86,16 @@ def _fresh_listing(cfg: Config, provider_name: str) -> list[str] | None:
     if entry is None or isinstance(entry, ClaudeCodeProviderEntry):
         return None  # no listing: the binary resolves model names itself
     try:
-        secrets = load_secrets()
-    except SecretsError:
+        secrets = agent6_secrets.load_secrets()
+    except agent6_secrets.SecretsError:
         secrets = {}
-    key = resolve_api_key(provider_name, entry.api_key_env, secrets=secrets)
-    return fetch_models_live(provider_name, entry, key)
+    key = agent6_secrets.resolve_api_key(provider_name, entry.api_key_env, secrets=secrets)
+    return models_cache.fetch_models_live(provider_name, entry, key)
 
 
 def _matches(model: str, pool: set[str], norm_pool: set[str]) -> bool:
     """Return whether the model is listed, by exact id or normalized form."""
-    return model in pool or normalize_model_id(model) in norm_pool
+    return model in pool or registry.normalize_model_id(model) in norm_pool
 
 
 def _close_ids(typo: str, pool: list[str], bare_to_full: dict[str, list[str]]) -> tuple[str, ...]:
@@ -129,7 +128,7 @@ def _suggest(unknown: list[str], pool: list[str]) -> dict[str, tuple[str, ...]]:
     return {model: _close_ids(model, pool, bare_to_full) for model in unknown}
 
 
-def validate_spec_models(routes: Sequence[ModelRoute | None], cfg: Config) -> ModelValidation:
+def validate_spec_models(routes: Sequence[kinds.ModelRoute | None], cfg: Config) -> ModelValidation:
     """Check a `/parallel` spec's lane routes, each against its own provider.
 
     A miss against an existing cache re-checks the live listing once; a miss on a provider
@@ -143,19 +142,19 @@ def validate_spec_models(routes: Sequence[ModelRoute | None], cfg: Config) -> Mo
     Returns:
         The outcome, with each unknown route named as provider/model.
     """
-    misses: list[ModelRoute] = []
+    misses: list[kinds.ModelRoute] = []
     for route in routes:
         if route is None or route in misses:
             continue
         known = _known_models(cfg, route.provider)
-        if not _matches(route.model, known, {normalize_model_id(m) for m in known}):
+        if not _matches(route.model, known, {registry.normalize_model_id(m) for m in known}):
             misses.append(route)
     unknown: list[str] = []
     unvalidated: list[str] = []
     suggestions: dict[str, tuple[str, ...]] = {}
     fresh_by_provider: dict[str, list[str] | None] = {}
     for route in misses:
-        if not cached_models(route.provider):
+        if not models_cache.cached_models(route.provider):
             # No snapshot to judge against: a fetchable listing would be cached by preflight.
             unvalidated.append(route.spec)
             continue
@@ -166,7 +165,7 @@ def validate_spec_models(routes: Sequence[ModelRoute | None], cfg: Config) -> Mo
             unvalidated.append(route.spec)
             continue
         pool = _known_models(cfg, route.provider) | set(fresh)
-        if _matches(route.model, pool, {normalize_model_id(m) for m in pool}):
+        if _matches(route.model, pool, {registry.normalize_model_id(m) for m in pool}):
             continue
         unknown.append(route.spec)
         specs = sorted(f"{route.provider}/{m}" for m in pool)
@@ -194,16 +193,16 @@ def validate_configured_model(cfg: Config, role: RoleName) -> ModelValidation:
     rm = cfg.models.resolve(role)
     if rm is None:
         return ModelValidation(unknown=(), suggestions={}, can_validate=False)
-    cache = set(cached_models(rm.provider))
+    cache = set(models_cache.cached_models(rm.provider))
     if not cache:
         return ModelValidation(unknown=(), suggestions={}, can_validate=False)
-    if _matches(rm.model, cache, {normalize_model_id(c) for c in cache}):
+    if _matches(rm.model, cache, {registry.normalize_model_id(c) for c in cache}):
         return ModelValidation(unknown=(), suggestions={}, can_validate=True)
     fresh = _fresh_listing(cfg, rm.provider)
     if fresh is None:
         return ModelValidation(unknown=(rm.model,), suggestions={}, can_validate=False)
     fresh_set = set(fresh)
-    if _matches(rm.model, fresh_set, {normalize_model_id(c) for c in fresh_set}):
+    if _matches(rm.model, fresh_set, {registry.normalize_model_id(c) for c in fresh_set}):
         return ModelValidation(unknown=(), suggestions={}, can_validate=True)
     return ModelValidation(
         unknown=(rm.model,),
@@ -285,9 +284,9 @@ def refusal_message(v: ModelValidation, *, directive: bool) -> str:
 
 
 def directive_model_refusal(
-    cwd: Path,
-    segments: Sequence[Segment],
-    config_path: Path | None = None,
+    cwd: pathlib.Path,
+    segments: Sequence[agent6_directive.Segment],
+    config_path: pathlib.Path | None = None,
     *,
     preset: str = "",
     model: str = "",
@@ -306,7 +305,7 @@ def directive_model_refusal(
         or there is no cache to check against (the lane's own preflight warns).
     """
     try:
-        cfg = load_effective(cwd, config_path, preset=preset).config
+        cfg = layer.load_effective(cwd, config_path, preset=preset).config
         if model:
             cfg = cfg.with_model_route("worker", cfg.model_route("worker", model))
     except ConfigError:
@@ -316,9 +315,9 @@ def directive_model_refusal(
         routes = [
             cfg.model_route("worker", m) if m else None
             for seg in segments
-            for m in parse_spec(seg.spec, limit=cap)
+            for m in agent6_directive.parse_spec(seg.spec, limit=cap)
         ]
-    except (ConfigError, DirectiveError) as exc:
+    except (ConfigError, agent6_directive.DirectiveError) as exc:
         return str(exc)
     verdict = validate_spec_models(routes, cfg)
     return refusal_message(verdict, directive=True) if verdict.refused else None

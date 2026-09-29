@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import re
 
+from agent6 import kinds
 from agent6.config import Config
-from agent6.kinds import RoleName
-from agent6.models.cache import cached_context_window
-from agent6.providers.openai import is_openai_direct_host, sent_reasoning_effort
+from agent6.models import cache
+from agent6.providers import openai
 
 __all__ = [
     "BUNDLED_CONTEXT_WINDOWS",
@@ -85,7 +85,7 @@ def context_window(provider_name: str, model_id: str) -> int | None:
     Returns:
         The window, or None when neither source knows it.
     """
-    return _bundled_context_window(model_id) or cached_context_window(
+    return _bundled_context_window(model_id) or cache.cached_context_window(
         provider_name, (model_id, normalize_model_id(model_id))
     )
 
@@ -141,7 +141,7 @@ def decompose_default(model_id: str) -> bool:
     return family.startswith(DECOMPOSE_WIN_MODEL_FAMILIES)
 
 
-def role_effort(cfg: Config, role: RoleName) -> str | None:
+def role_effort(cfg: Config, role: kinds.RoleName) -> str | None:
     """Return the reasoning effort a role's calls carry.
 
     The configured `[models.<role>].effort` when set, else each wire's default: `low` for an
@@ -166,10 +166,10 @@ def role_effort(cfg: Config, role: RoleName) -> str | None:
         case "chatgpt" | "claude_code":
             return rm.effort
         case _:
-            return sent_reasoning_effort(
+            return openai.sent_reasoning_effort(
                 rm.model,
                 rm.effort,
-                direct_openai=is_openai_direct_host(entry.base_url, entry.deployment),
+                direct_openai=openai.is_openai_direct_host(entry.base_url, entry.deployment),
             )
 
 

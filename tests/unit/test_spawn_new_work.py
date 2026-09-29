@@ -12,6 +12,7 @@ import subprocess
 
 import pytest
 
+from agent6.config import layer
 from agent6.ui import spawn
 
 
@@ -166,7 +167,7 @@ def test_parallel_refuses_unknown_model_before_spawn(
         del preset
         return _Eff(_provider_cfg())
 
-    monkeypatch.setattr(models_validate, "load_effective", _eff)
+    monkeypatch.setattr(layer, "load_effective", _eff)
     captured = _capture_locate(monkeypatch)
     session_dir, err = spawn.spawn_new_work(
         tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it"
@@ -206,7 +207,7 @@ def test_parallel_validation_uses_the_picked_model_provider(
     def _listing(*_a: object) -> list[str]:
         return ["o-model"]
 
-    monkeypatch.setattr(models_validate, "load_effective", _eff)
+    monkeypatch.setattr(layer, "load_effective", _eff)
     monkeypatch.setattr(models_validate, "_fresh_listing", _listing)
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "run", "/parallel q-lane,q-lane fix it", model="q/q-default")
@@ -228,13 +229,11 @@ def test_parallel_unknown_model_no_cache_proceeds(
     # preflight warns. The spawn happens.
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "empty-cache"))
 
-    from agent6.models import validate as models_validate
-
     def _eff(_cwd: object, _cp: object = None, *, preset: str = "") -> _Eff:
         del preset
         return _Eff(_provider_cfg())
 
-    monkeypatch.setattr(models_validate, "load_effective", _eff)
+    monkeypatch.setattr(layer, "load_effective", _eff)
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "run", "/parallel made-up/model fix it")
     assert captured[-1][1:] == ["run", "--parallel", "made-up/model", "--", "fix it"]

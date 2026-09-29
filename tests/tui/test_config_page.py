@@ -544,8 +544,6 @@ def test_editing_a_model_survives_a_broken_secrets_file(
     The thread worker's SecretsError hit textual's default exit_on_error; the fetch degrades to
     a keyless attempt instead, as models/validate.py does.
     """
-    from agent6.models import choices
-
     gdir = paths.global_config_dir()
     secrets = gdir / "secrets.toml"
     secrets.write_text('[anthropic]\napi_key = "sk-x"\n', encoding="utf-8")
@@ -557,7 +555,7 @@ def test_editing_a_model_survives_a_broken_secrets_file(
         return models
 
     monkeypatch.setattr(cache, "cached_models", _models)
-    monkeypatch.setattr(choices, "list_models", _models)  # the live fetch, keyless here
+    monkeypatch.setattr(cache, "list_models", _models)  # the live fetch, keyless here
 
     async def scenario() -> None:
         app = _Host(repo)

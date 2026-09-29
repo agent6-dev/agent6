@@ -9,15 +9,13 @@ same lists.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
-from agent6.config import Config, ConfigError
-from agent6.config.layer import EffectiveConfig, load_effective, preset_catalog
-from agent6.kinds import session_kind
-from agent6.models.cache import cached_models, list_models
-from agent6.models.validate import ROLES
-from agent6.secrets import SecretsError, load_secrets, resolve_api_key
-from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6 import kinds
+from agent6 import secrets as agent6_secrets
+from agent6.config import Config, ConfigError, layer
+from agent6.models import cache, validate
+from agent6.sessions import manifest as sessions_manifest
 
 
 def provider_model_choices(cfg: Config, provider: str) -> list[str]:
@@ -35,20 +33,22 @@ def provider_model_choices(cfg: Config, provider: str) -> list[str]:
         The ids, sorted.
     """
     out: set[str] = set()
-    for role in ROLES:
+    for role in validate.ROLES:
         rm = cfg.models.resolve(role)
         if rm is not None and rm.provider == provider:
             out.add(rm.model)
     entry = cfg.providers.get(provider)
     if entry is None:
-        out.update(cached_models(provider))
+        out.update(cache.cached_models(provider))
     else:
         try:
-            secrets = load_secrets()
-        except SecretsError:
+            secrets = agent6_secrets.load_secrets()
+        except agent6_secrets.SecretsError:
             secrets = {}
-        api_key = resolve_api_key(provider, getattr(entry, "api_key_env", None), secrets=secrets)
-        out.update(list_models(provider, entry, api_key))
+        api_key = agent6_secrets.resolve_api_key(
+            provider, getattr(entry, "api_key_env", None), secrets=secrets
+        )
+        out.update(cache.list_models(provider, entry, api_key))
     return sorted(out)
 
 
@@ -66,8 +66,8 @@ def route_choices(cfg: Config) -> list[str]:
     """
     out: set[str] = set()
     for name in cfg.providers:
-        out.update(f"{name}/{m}" for m in cached_models(name))
-    for role in ROLES:
+        out.update(f"{name}/{m}" for m in cache.cached_models(name))
+    for role in validate.ROLES:
         rm = cfg.models.resolve(role)
         if rm is not None and rm.provider in cfg.providers:
             out.add(f"{rm.provider}/{rm.model}")
@@ -84,11 +84,11 @@ def route_for(cfg: Config, mode: str) -> str:
     Returns:
         The route, or "".
     """
-    rm = cfg.models.resolve(session_kind(mode).role)
+    rm = cfg.models.resolve(kinds.session_kind(mode).role)
     return f"{rm.provider}/{rm.model}" if rm is not None else ""
 
 
-def available_routes(cwd: Path, config_path: Path | None) -> list[str]:
+def available_routes(cwd: pathlib.Path, config_path: pathlib.Path | None) -> list[str]:
     """Return `route_choices` for the config a hub at a directory runs under.
 
     Args:
@@ -99,13 +99,13 @@ def available_routes(cwd: Path, config_path: Path | None) -> list[str]:
         The routes, or [] on any config error.
     """
     try:
-        cfg = load_effective(cwd, config_path).config
+        cfg = layer.load_effective(cwd, config_path).config
     except ConfigError:
         return []
     return route_choices(cfg)
 
 
-def default_preset(cwd: Path, config_path: Path | None) -> str:
+def default_preset(cwd: pathlib.Path, config_path: pathlib.Path | None) -> str:
     """Return the preset the config at a directory selects.
 
     Args:
@@ -116,12 +116,14 @@ def default_preset(cwd: Path, config_path: Path | None) -> str:
         The selected preset, or "" when none is selected or on any config error.
     """
     try:
-        return preset_catalog(cwd, config_path).selected
+        return layer.preset_catalog(cwd, config_path).selected
     except ConfigError:
         return ""
 
 
-def default_route(cwd: Path, config_path: Path | None, mode: str, preset: str) -> str:
+def default_route(
+    cwd: pathlib.Path, config_path: pathlib.Path | None, mode: str, preset: str
+) -> str:
     """Return the route a session of a mode runs under a preset from the config alone.
 
     Args:
@@ -134,7 +136,7 @@ def default_route(cwd: Path, config_path: Path | None, mode: str, preset: str) -
         The route, or "" on any config error or an unset role.
     """
     try:
-        cfg = load_effective(cwd, config_path, preset=preset).config
+        cfg = layer.load_effective(cwd, config_path, preset=preset).config
     except ConfigError:
         return ""
     return route_for(cfg, mode)
@@ -154,7 +156,11 @@ def default_label(name: str, *, recorded: bool = False) -> str:
 
 
 def resume_defaults(
-    cwd: Path, config_path: Path | None, session_dir: Path, *, preset: str = ""
+    cwd: pathlib.Path,
+    config_path: pathlib.Path | None,
+    session_dir: pathlib.Path,
+    *,
+    preset: str = "",
 ) -> tuple[str, str]:
     """Return the (preset, model) labels of a resume row's no-flag entries.
 
@@ -171,9 +177,9 @@ def resume_defaults(
         The preset label and the model label.
     """
     try:
-        manifest = read_manifest(session_dir)
+        manifest = sessions_manifest.read_manifest(session_dir)
         mode: str = manifest.session_mode()
-    except ManifestError:
+    except sessions_manifest.ManifestError:
         replayed, driver, mode = "", None, "run"
     else:
         replayed, driver = manifest.harness.replay_preset, manifest.models.replay_driver
@@ -188,7 +194,7 @@ def resume_defaults(
     )
 
 
-def model_role_provider(eff: EffectiveConfig, key: str) -> str | None:
+def model_role_provider(eff: layer.EffectiveConfig, key: str) -> str | None:
     """Return the provider whose model ids a `models.<role>.model` leaf takes.
 
     Args:
@@ -205,7 +211,7 @@ def model_role_provider(eff: EffectiveConfig, key: str) -> str | None:
     return getattr(role, "provider", None) or None
 
 
-def config_value_choices(eff: EffectiveConfig, key: str) -> list[str]:
+def config_value_choices(eff: layer.EffectiveConfig, key: str) -> list[str]:
     """Return what a chooser offers for an open-text config leaf.
 
     Enum leaves carry their choices in the config view.

@@ -12,6 +12,7 @@ import pytest
 
 from agent6 import paths
 from agent6.config import layer
+from agent6.models import cache as models_cache
 from agent6.models import registry
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.web import model
@@ -430,7 +431,6 @@ def test_config_suggestions_providers_and_models(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `provider` offers the configured names as choices; `model` suggests the provider's cached ids.
-    from agent6.models import choices
 
     cfg_home = paths.global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
@@ -446,7 +446,7 @@ def test_config_suggestions_providers_and_models(
         seen["provider"] = provider
         return ["kimi", "qwen3"]
 
-    monkeypatch.setattr(choices, "list_models", _fake_list)
+    monkeypatch.setattr(models_cache, "list_models", _fake_list)
     payload = model.config_payload(tmp_path)
     assert payload["models.worker.provider"]["choices"] == ["openrouter"]
     assert payload["preset"]["choices"] == ["paranoid", "quick", "standard", "ultra"]
