@@ -25,6 +25,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, RichLog, Static, TextArea, Tree
 
 from agent6.sessions.ipc import clear_answer
+from agent6.ui.tui._dashboard_header import RunHeader
 from agent6.ui.tui.app import Agent6TUI, TuiExit
 from agent6.ui.tui.composer import ApprovalRow
 from agent6.ui.tui.modals import (
@@ -1800,7 +1801,7 @@ def test_dashboard_does_not_call_a_dead_driverless_run_idle(
     """A missing driver supplies no role fact, not an idle state. A worker that
     died launching reads stale, while the unknown role is a dash cached from
     the manifest rather than a manifest read on every heartbeat."""
-    from agent6.ui.tui import dashboard as dash_mod
+    from agent6.ui.tui import _dashboard_header as header_mod
 
     (tmp_path / "manifest.json").write_text(
         json.dumps({"mode": "run", "session_id": tmp_path.name, "user_task": "t"}),
@@ -1808,21 +1809,22 @@ def test_dashboard_does_not_call_a_dead_driverless_run_idle(
     )
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
     (tmp_path / "worker.pid").write_text("999999999", encoding="utf-8")
-    real = dash_mod.read_manifest
+    real = header_mod.read_manifest
     reads: list[int] = []
 
     def _counted(session_dir: Path) -> object:
         reads.append(1)
         return real(session_dir)
 
-    monkeypatch.setattr(dash_mod, "read_manifest", _counted)
+    monkeypatch.setattr(header_mod, "read_manifest", _counted)
 
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
             before = len(reads)
-            lines = {app._dash._start_role() for _ in range(4)}  # pyright: ignore[reportPrivateUsage]
+            header = app._dash.query_one(RunHeader)  # pyright: ignore[reportPrivateUsage]
+            lines = {header._start_role() for _ in range(4)}  # pyright: ignore[reportPrivateUsage]
             assert lines == {"(unknown)"}
             assert len(reads) - before <= 1
             top = str(app._dash.query_one("#top", Static).render())

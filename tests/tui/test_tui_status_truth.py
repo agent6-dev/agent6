@@ -27,6 +27,7 @@ from textual.app import ScreenStackError
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
+from agent6.ui.tui._dashboard_header import RunHeader
 from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.composer import ApprovalRow, SteerInput
 from agent6.viewmodel.state import status_facts
@@ -1178,7 +1179,7 @@ def test_dashboard_header_says_where_the_changes_are(
             before = str(app._dash.query_one("#top", Static).render())
             manifest["merged"] = {"into": "main", "sha": tip, "tip": tip}
             (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-            app._dash._branch_recheck_at = 0.0  # pyright: ignore[reportPrivateUsage]
+            app._dash.query_one(RunHeader)._branch_recheck_at = 0.0  # pyright: ignore[reportPrivateUsage]
             app._dash.render_heartbeat()
             await pilot.pause()
             after = str(app._dash.query_one("#top", Static).render())

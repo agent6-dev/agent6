@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import contextlib
 import subprocess
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
 
@@ -36,13 +35,8 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6.graph.order import DONE_STATUSES
-from agent6.sessions.ipc import (
-    listening_ports,
-)
-from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.types import SESSION_KINDS
 from agent6.ui.tui import clipboard
+from agent6.ui.tui._dashboard_header import RunHeader
 from agent6.ui.tui._diff_pane import DiffPane
 from agent6.ui.tui.composer import (
     APPROVAL_KEY_BINDINGS,
@@ -66,17 +60,11 @@ from agent6.ui.tui.theme import (
     status_style,
 )
 from agent6.ui.tui.widgets import ScrollPane
-from agent6.viewmodel import manifest_branches, manifest_header, session_compare
 from agent6.viewmodel.format import (
     clip_cell,
     dead_run_note,
-    format_compare,
-    format_usd,
     spinner_frame,
     status_label,
-)
-from agent6.viewmodel.listing import (
-    task_snippet,
 )
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
@@ -255,91 +243,6 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         self._rendered_tree: tuple[object, ...] | None = None
         self._rendered_tools: tuple[object, object] | None = None
         self._step_state: tuple[str, SessionState] | None = None  # the fold as of the step
-        self._compare_line: str | None = None  # cached fan-out compare header (terminal state)
-        self._branch_line: str | None = None  # cached branch header
-        self._branch_finished = False  # the run state the cached line was read under
-        self._branch_recheck_at = 0.0  # a finished run re-reads every few seconds
-        self._lineage_line: str | None = None  # cached fork lineage (never changes)
-        self._start_role_line: str | None = None  # the manifest's driver, before any call
-
-    def _compare_top(self) -> str:
-        """The fan-out compare outcome for the header's task line (empty for a
-        non-lane run). Read from the manifest once it appears (a lane is stamped
-        post-import, by which point it is finished) and cached: it never changes."""
-        if self._compare_line is not None:
-            return self._compare_line
-        formatted = format_compare(session_compare(self._tui.session_dir))
-        if formatted is None:
-            return ""  # not stamped (yet); don't cache: a live lane may get stamped later
-        headline, rationale = formatted
-        rat = f" — {rationale[:100]}" if rationale else ""
-        self._compare_line = f"\ncompare: {headline}{rat}"
-        return self._compare_line
-
-    def _start_role(self) -> str:
-        """The role line before the first model call: the role and model the
-        manifest says drives the run, read once the manifest exists (a
-        launching run has none for a moment). A manifest naming no driver
-        reads "(unknown)", once."""
-        if self._start_role_line is None:
-            try:
-                m = read_manifest(self._tui.session_dir)
-            except ManifestError:
-                return "(unknown)"
-            driver = m.models.driver
-            if driver is None or m.mode not in SESSION_KINDS:
-                self._start_role_line = "(unknown)"
-            else:
-                self._start_role_line = f"{SESSION_KINDS[m.mode].role} / {driver.model}"
-        return self._start_role_line
-
-    def _lineage_top(self) -> str:
-        """Where a forked run came from, for the header (the web header's and
-        `sessions show`'s line); read once, it never changes."""
-        if self._lineage_line is None:
-            lineage = manifest_header(self._tui.session_dir).get("forked_from", "")
-            self._lineage_line = f"\nforked from: {lineage}" if lineage else ""
-        return self._lineage_line
-
-    def _branch_top(self) -> str:
-        """Where the run's work lives, for the header: the run branch and the
-        base a merge lands on, or the branch merged (the web header's line and
-        `sessions show`'s `changes:`). Read from the manifest once it names a
-        branch and cached while the run lives; a finished run re-reads it every
-        few seconds, since the auto-merge lands after session.end while a held
-        screen keeps repainting, and a resume in place (finished again False)
-        drops the cache, since a leg committing past the stamp unmakes the
-        merge."""
-        finished = self._tui.state.finished
-        if finished != self._branch_finished:
-            self._branch_finished = finished
-            self._branch_line = None
-        now = time.monotonic()
-        if self._branch_line is not None and (not finished or now < self._branch_recheck_at):
-            return self._branch_line
-        line = manifest_branches(self._tui.session_dir, repo=Path.cwd()).get("branch_line", "")
-        if not line:
-            return ""  # no manifest yet (a launching run); don't cache
-        self._branch_line = f"\nbranch: {line}"
-        self._branch_recheck_at = now + 5.0
-        return self._branch_line
-
-    @staticmethod
-    def _pins_top(s: SessionState) -> str:
-        """The operator's pinned instructions in force, for the header (the web
-        header's and `sessions show`'s line)."""
-        return f"\npins: {' | '.join(s.pins)}" if s.pins else ""
-
-    def _serving_top(self) -> str:
-        """What the run is serving, for the header: the ports its network
-        listens on and the `agent6 forward` line that reaches one (the web
-        header's and `sessions show`'s line). A live probe: "" once the
-        network is gone."""
-        ports = listening_ports(self._tui.session_dir)
-        if not ports:
-            return ""
-        listed = ", ".join(str(p) for p in ports)
-        return f"\nserving: {listed} · agent6 forward {self._tui.session_dir.name} {ports[0]}"
 
     @property
     def _tui(self) -> Agent6TUI:
@@ -350,7 +253,7 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield MenuBar(self.MENUS)  # the top row: menus + "agent6 — <run>"
-        yield Static("", id="top")
+        yield RunHeader()
         yield Static("", id="summary")  # compact only: the folded rows in one line
         with Horizontal(id="head"):
             yield Tree("tasks", id="plan")
@@ -555,15 +458,6 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
 
     # --- rendering ---------------------------------------------------
 
-    def _end_label(self) -> str:
-        """The top-line status label, from the dir decision (status_for_session_dir,
-        the same word the hub row shows), in the word's shared colour; empty
-        while running (the heartbeat line carries live activity)."""
-        word, reason = self._tui.dir_status
-        if word == "running":
-            return ""
-        return f"[b {status_style(word)}]{escape(status_label(word, reason))}[/]"
-
     def render_heartbeat(self) -> None:
         """The cheap once-a-second repaint: the top status line, the composer
         bar's labels, and the live stream pane. The full pane rebuild
@@ -582,56 +476,9 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         )
         self.query_one("#dash-resume", ResumeOptions).show(mode == "resume")
         self._render_approval()
-        role = s.last_role
-        # A spinner + seconds since the last event belongs only to a model call
-        # awaiting its result. A live worker before or between calls is not
-        # evidence that a model is working.
         active = tui.model_call_in_flight()
-        beat = ""
-        if active and role is not None:
-            spinner = spinner_frame(tui.spin)
-            beat = f" {spinner} {tui.seconds_since_event()}s"
-        role_line = f"{role.role} / {role.model}{beat}" if role else self._start_role()
-        finished = self._end_label()
         ds, as_of = self._details_state(s)
-        # tasks and cost are both as-of the selected step; ctx is live.
-        done_n = sum(1 for t in ds.tasks if t.status in DONE_STATUSES)
-        step = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
-        cost = f"[b]{format_usd(ds.budget.usd_total, partial=ds.budget.usd_partial)}[/]"
-        # Consumption of the binding ledger: this leg's metered spend vs its
-        # usd_cap (resume re-arms the cap while usd_total stays cumulative),
-        # plus the unmetered-token fraction when that ledger has traffic.
-        budget = ""
-        if ds.budget.usd_cap > 0:
-            leg_usd = ds.budget.usd_total - ds.budget.usd_prior_legs
-            budget = f"   budget: {min(leg_usd / ds.budget.usd_cap, 1.0):.0%}"
-        if ds.budget.tokens_unmetered and ds.budget.tokens_fallback_cap > 0:
-            unmet = min(ds.budget.tokens_unmetered / ds.budget.tokens_fallback_cap, 1.0)
-            budget += f"   unmetered: {unmet:.0%}"
-        if ds.budget.plan_used_percent > 0:
-            budget += f"   plan: {ds.budget.plan_used_percent:g}%"
-            if ds.budget.plan_cap > 0:
-                budget += f" (run {ds.budget.plan_consumed:g}/{ds.budget.plan_cap:g}pt)"
-        pct = tui.context_pct()
-        ctx = f"   ctx: {pct}%" if pct is not None else ""
-        # The status leads line 1, where the eye lands; the role, model and task
-        # share line 2. Every line ends in an ellipsis rather than wrap, so a long
-        # model id never pushes the status onto a line of its own.
-        status = f"{finished}   " if finished else ""
-        task = escape(task_snippet(s.user_task or tui.fallback_task, max_chars=120))
-        top = self.query_one("#top", Static)
-        header = Text.from_markup(
-            f"[b]agent6[/]  {status}{step}   cost: {cost}{budget}{as_of}{ctx}\n"
-            f"role: {escape(role_line)} · task: {task}"
-            f"{escape(self._lineage_top())}{escape(self._branch_top())}"
-            f"{escape(self._pins_top(s))}{escape(self._serving_top())}"
-            f"{escape(self._compare_top())}"
-        )
-        lines = header.split("\n")
-        if width := top.content_size.width:
-            for line in lines:
-                line.truncate(width, overflow="ellipsis")
-        top.update(Text("\n").join(lines))
+        self.query_one("#top", RunHeader).refresh_lines(s, ds, as_of, active=active)
         if self.has_class("-compact"):
             calls = f"{len(s.tool_calls)} tool call{'' if len(s.tool_calls) == 1 else 's'}"
             if s.tool_calls:
@@ -639,7 +486,8 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 ok = "…" if last.ok is None else ("✓" if last.ok else "✗")
                 calls += f" · last {last.name} {ok}"
             folded = Text(f"{calls} · Tab unfolds a pane")
-            folded.truncate(top.content_size.width or 200, overflow="ellipsis")
+            width = self.query_one("#top", RunHeader).content_size.width
+            folded.truncate(width or 200, overflow="ellipsis")
             self.query_one("#summary", Static).update(folded)
 
         # Live reasoning / response pane. Built as rich Text so model output is
