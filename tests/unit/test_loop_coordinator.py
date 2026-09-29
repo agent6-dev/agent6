@@ -321,10 +321,10 @@ def test_the_root_task_is_titled_by_the_headline_every_listing_shows(tmp_path: P
     graph = _FakeGraph()
     wf = _build_wf(repo, MagicMock(), steer_text="", graph=graph)
     seeded = '<prior-run id="agile-echo-H2EWX5">\ndigest\n</prior-run>\n\n# Fix the parser\n\nbody'
-    root_id = wf._seed_root_task(seeded)  # pyright: ignore[reportPrivateUsage]
+    root_id = wf.operator_tasks.seed_root(seeded)
     assert root_id is not None
     assert graph.nodes()[root_id].title == "Fix the parser"
-    assert wf._seed_root_task("   ") is not None  # pyright: ignore[reportPrivateUsage]
+    assert wf.operator_tasks.seed_root("   ") is not None
     assert [n.title for n in graph.nodes().values()] == ["Fix the parser", "(run)"]
 
 

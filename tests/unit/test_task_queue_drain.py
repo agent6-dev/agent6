@@ -71,7 +71,7 @@ def test_a_queued_task_lands_under_the_root_whole(tmp_path: Path) -> None:
     queue_request(sink.path.parent, "task", "second thing")
     wf = _workflow(curator, sink)
 
-    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf.operator_tasks.take(root)
 
     children = [curator.nodes()[cid] for cid in curator.get(root).children]
     assert [c.title for c in children] == ["Add a --json flag", "second thing"]
@@ -87,8 +87,8 @@ def test_the_drain_takes_each_task_once(tmp_path: Path) -> None:
     wf = _workflow(curator, sink)
     state = _state(root)
 
-    wf._take_operator_requests(state)  # pyright: ignore[reportPrivateUsage]
-    wf._take_operator_requests(state)  # pyright: ignore[reportPrivateUsage]
+    wf.operator_tasks.take(state.root_task_id)
+    wf.operator_tasks.take(state.root_task_id)
 
     assert len(curator.get(root).children) == 1
 
@@ -100,7 +100,7 @@ def test_a_queued_task_is_journalled_for_the_surfaces(tmp_path: Path) -> None:
     queue_request(sink.path.parent, "task", "note it")
     wf = _workflow(curator, sink)
 
-    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf.operator_tasks.take(root)
 
     kinds = [e["type"] for e in _events(sink)]
     assert "loop.task.queued" in kinds
@@ -113,7 +113,7 @@ def test_an_empty_queue_journals_nothing(tmp_path: Path) -> None:
     curator, sink, root = _run_dir(tmp_path)
     wf = _workflow(curator, sink)
 
-    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf.operator_tasks.take(root)
 
     assert _events(sink) == []
 
@@ -160,7 +160,7 @@ def test_a_queued_task_inherits_prompt_revision(tmp_path: Path) -> None:
     wf = _workflow(curator, sink)
     wf.revision = RevisionSettings(reviser=reviser, mode="interactive")
 
-    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf.operator_tasks.take(root)
 
     node = curator.nodes()[curator.get(root).children[0]]
     assert node.title == "Add a --json flag"  # the tree keeps the operator's words
@@ -178,7 +178,7 @@ def test_a_failed_revision_keeps_the_task_as_written(tmp_path: Path) -> None:
     wf = _workflow(curator, sink)
     wf.revision = RevisionSettings(reviser=reviser, mode="auto")
 
-    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf.operator_tasks.take(root)
 
     node = curator.nodes()[curator.get(root).children[0]]
     assert node.rationale == SPEC

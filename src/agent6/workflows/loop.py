@@ -15,7 +15,7 @@ import itertools
 import json
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -32,9 +32,7 @@ from agent6.git_ops import (
 from agent6.git_ops import status as git_status
 from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import (
-    AddSubtaskIntent,
     SetCursorIntent,
-    TaskNodeDraft,
     UpdateStatusIntent,
 )
 from agent6.graph.order import OPEN_STATUSES
@@ -64,7 +62,7 @@ from agent6.sessions.ipc import (
     emit_session_start,
 )
 from agent6.skills import ResolvedSkills
-from agent6.task_text import operator_task_text, task_headline
+from agent6.task_text import operator_task_text
 from agent6.tools.dispatch import (
     OperatorCommandUnexecutable,
     ToolDenied,
@@ -149,6 +147,7 @@ from agent6.workflows._nudges import (
     PLAN_ON_DISK_HEADER,
     tool_error_signature,
 )
+from agent6.workflows._operator_tasks import OperatorTasks
 from agent6.workflows._panel import (
     review_notice,
 )
@@ -394,11 +393,11 @@ class Workflow:
         # dispatcher so add_task with parent_id=None has a parent. Skipped
         # gracefully if no curator is configured (DAG tools then
         # raise ToolError if called).
-        root_id = self._seed_root_task(effective_task)
+        root_id = self.operator_tasks.seed_root(effective_task)
         if root_id is not None:
             self.dispatcher.set_run_root_node_id(root_id)
             self._log(f"LOOP: DAG root task seeded: {root_id}")
-            self._seed_standing_goal(root_id)
+            self.operator_tasks.seed_standing(root_id, self.standing_goal)
             self._emit_graph_snapshot()  # show the root in the live task view
 
         self._log(
@@ -1566,7 +1565,7 @@ class Workflow:
         graph, then the focus banner, then the before-call advisors, so a
         finish directive a low budget draws is the most recent message, not the
         banner."""
-        self._take_operator_requests(state)
+        self.operator_tasks.take(state.root_task_id)
         self._maybe_surface_current_task(conversation, state)
         for advisor in BEFORE_CALL:
             self._tell(conversation, advisor(state, ctx))
@@ -1586,121 +1585,6 @@ class Workflow:
             self._emit(answer.event, **answer.fields)
         if answer.log:
             self._log(answer.log)
-
-    def _take_operator_requests(self, state: LoopState) -> bool:
-        """Apply what the operator asked of the run since its last turn
-        boundary (`/task`, `/standing`, `/retire`, or `agent6 steer` with the
-        same words), in the order asked; True when anything landed. Nothing
-        enters the conversation: the point of queueing rather than steering
-        is that the turn in flight never sees it, and the next turn's focus
-        banner names the work. A refused request is logged and emitted."""
-        if self.curator is None or state.root_task_id is None:
-            return False
-        landed = False
-        for request in self.bridge.take_requests():
-            try:
-                if request.kind == "task":
-                    self._queue_task(state.root_task_id, request.text)
-                elif request.kind == "standing":
-                    self._set_standing_goal(state.root_task_id, request.text)
-                else:
-                    self._retire_task(request.text)
-            except (CuratorError, OSError, ValidationError) as exc:
-                self._log(f"LOOP: {request.kind} request refused: {exc}")
-                self._emit(
-                    "loop.request.refused",
-                    kind=request.kind,
-                    text=request.text[:200],
-                    error=str(exc),
-                )
-                continue
-            landed = True
-        if landed:
-            self._emit_graph_snapshot()
-        return landed
-
-    def _queue_task(self, root_id: str, text: str) -> None:
-        """A queued task lands as the root's last ordinary child, so the run
-        reaches it once the open work drains. The title stays the operator's
-        own first line even when the revision rewrites the body, so the task
-        tree reads in their words; the whole text is the rationale, so a long
-        spec survives whole."""
-        title = task_headline(text)[:200] or text.strip()[:200]
-        spec = self._revised_queued_task(text)
-        node = self.curator_or_raise.add_subtask(
-            AddSubtaskIntent(
-                parent_id=root_id,
-                draft=TaskNodeDraft(
-                    title=title,
-                    rationale=spec if spec.strip() != title else "",
-                    created_by="user",
-                ),
-            )
-        )
-        self._log(f"LOOP: operator queued task {node.id}: {title}")
-        self._emit("loop.task.queued", id=node.id, title=title)
-
-    def _retire_task(self, task_id: str) -> None:
-        """Obsolete rather than skipped: the operator decided the work no
-        longer applies. Their route is the curator itself, so a task they
-        queued is retirable here even though `update_task` refuses it to the
-        model."""
-        node = self.curator_or_raise.update_status(
-            UpdateStatusIntent(id=task_id, new_status="obsolete", note="retired by the operator")
-        )
-        self._log(f"LOOP: operator retired task {node.id}")
-        self._emit("loop.task.retired", id=node.id, title=node.title)
-
-    def _set_standing_goal(self, root_id: str, goal: str) -> None:
-        """Typing a goal means "this is the goal now", so the one it replaces
-        is retired rather than kept beside it. Retired, not made ordinary: a
-        goal reads as an activity ("keep hunting for defects"), and an ordinary
-        task of that shape is worked once and marked passed."""
-        curator = self.curator_or_raise
-        for node in curator.nodes().values():
-            if node.standing and node.status in OPEN_STATUSES:
-                curator.update_status(
-                    UpdateStatusIntent(
-                        id=node.id, new_status="obsolete", note="replaced by the operator"
-                    )
-                )
-                self._log(f"LOOP: standing goal {node.id} retired for a new one")
-        node = curator.add_subtask(
-            AddSubtaskIntent(
-                parent_id=root_id,
-                draft=TaskNodeDraft(title=goal, standing=True, created_by="steering"),
-            )
-        )
-        self._log(f"LOOP: standing goal set: {node.id}")
-        self._emit("loop.standing.set", id=node.id, title=goal)
-
-    @property
-    def curator_or_raise(self) -> GraphCurator:
-        if self.curator is None:
-            raise CuratorError("this run has no task graph")
-        return self.curator
-
-    def _revised_queued_task(self, text: str) -> str:
-        """A queued task through `[prompt].revise_prompt`, when the operator
-        turned it on: the same one-shot pass the initial task gets, which folds
-        the revision with the original and marks the original authoritative.
-
-        Nobody is at a terminal at a turn boundary, so `interactive` revises the
-        way `auto` does, and a failed pass keeps the text as written: a queued
-        task is never lost to a reviser that could not answer."""
-        if self.revision.mode == "off":
-            return text
-        try:
-            return revise_prompt(
-                replace(self.revision, mode="auto"),
-                text,
-                load_repo_summary(self.chain.root),
-                log=self._log,
-                emit=self._emit,
-            )
-        except PromptRevisionError as exc:
-            self._log(f"LOOP: queued task kept as written: {exc}")
-            return text
 
     def _maybe_surface_current_task(self, conversation: Conversation, state: LoopState) -> None:
         """Surface-current-task: keep the worker on ONE task at a time.
@@ -1925,45 +1809,6 @@ class Workflow:
         )
 
     # ---- snapshots and carryover -----------------------------------------------
-
-    def _seed_root_task(self, user_task: str) -> str | None:
-        """Create the run's root task in the DAG when the curator
-        is wired. Returns the new node id, or None if no curator.
-
-        The root is the user's task itself. Subsequent agent `add_task`
-        calls with `parent_id=None` attach under this root."""
-        if self.curator is None:
-            return None
-        # TaskNodeDraft.title has min_length=1: "(run)" when the task is blank.
-        title = task_headline(user_task)[:200] or "(run)"
-        try:
-            draft = TaskNodeDraft(
-                title=title,
-                rationale="single-loop run; root task seeded by Workflow",
-                acceptance="",
-                relevant_paths=(),
-                created_by="user",
-            )
-            node = self.curator.add_subtask(AddSubtaskIntent(parent_id=None, draft=draft))
-            return node.id
-        except (CuratorError, OSError, ValidationError) as exc:
-            self._log(f"LOOP: failed to seed root task: {exc}")
-            return None
-
-    def _seed_standing_goal(self, root_id: str) -> None:
-        """The operator's `run --standing` goal, set as `/standing` sets one.
-        Only a fresh run seeds one, so there is never a second to weigh
-        against it; `/standing` is what changes the goal of a run already
-        going."""
-        goal = self.standing_goal.strip()
-        if not goal or self.curator is None:
-            return
-        try:
-            self._set_standing_goal(root_id, goal)
-        except (CuratorError, OSError, ValidationError) as exc:
-            self._log(f"LOOP: standing goal not seeded: {exc}")
-            return
-        self._emit_graph_snapshot()
 
     def _dirty_tree_note(self) -> str:
         """Summary suffix naming an uncommitted worktree (`RunChain.dirty_note`),
@@ -2458,6 +2303,18 @@ class Workflow:
         )
 
     @cached_property
+    def operator_tasks(self) -> OperatorTasks:
+        return OperatorTasks(
+            curator=self.curator,
+            take_requests=self.bridge.take_requests,
+            revision=self.revision,
+            root=self.chain.root,
+            log=self._log,
+            emit=self._emit,
+            emit_graph_snapshot=self._emit_graph_snapshot,
+        )
+
+    @cached_property
     def parallel(self) -> ParallelDispatcher:
         """The run's `/parallel` lane dispatch."""
         return ParallelDispatcher(
@@ -2598,7 +2455,7 @@ class Workflow:
                 # Injected (or a bare poke): the run continues where it parked.
                 self._emit("loop.parked.resumed", iteration=iteration)
                 return None
-            if self._take_operator_requests(state):
+            if self.operator_tasks.take(state.root_task_id):
                 # A queued task, goal or retirement is work: the run continues
                 # and the next turn's focus banner names it.
                 self._emit("loop.parked.resumed", iteration=iteration)

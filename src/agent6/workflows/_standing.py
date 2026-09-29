@@ -5,7 +5,7 @@ its ordinary work runs out. `Standing` answers whether a soft end (a
 finish_session, the settled family, a quiet turn) converts into re-entry,
 with the nudge that re-enters, and applies that conversion to a turn's
 stops. The goal itself is set by `run --standing` or `/standing`
-(`Workflow._set_standing_goal`)."""
+(`OperatorTasks.set_standing`)."""
 
 from __future__ import annotations
 

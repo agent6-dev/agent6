@@ -25,7 +25,6 @@ from agent6.ui.cli import main
 from agent6.ui.directives import act_on_directive
 from agent6.workflows.loop import Workflow
 from tests.unit.test_task_queue_drain import (
-    _state,  # pyright: ignore[reportPrivateUsage]
     _workflow,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -88,7 +87,7 @@ def test_the_loop_adopts_the_goal(tmp_path: Path) -> None:
     curator, root, wf = _run(tmp_path)
     queue_request(curator.layout.session_dir, "standing", "keep the suite green")
 
-    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf.operator_tasks.take(root)
 
     standing = [n for n in curator.nodes().values() if n.standing]
     assert [(n.title, n.created_by) for n in standing] == [("keep the suite green", "steering")]
@@ -101,7 +100,7 @@ def test_a_new_goal_retires_the_old_one(tmp_path: Path) -> None:
     curator, root, wf = _run(tmp_path)
     for goal in ("first goal", "second goal"):
         queue_request(curator.layout.session_dir, "standing", goal)
-        wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
+        wf.operator_tasks.take(root)
 
     by_title = {n.title: n for n in curator.nodes().values()}
     assert by_title["first goal"].status == "obsolete"
@@ -115,6 +114,6 @@ def test_a_new_goal_retires_the_old_one(tmp_path: Path) -> None:
 def test_no_goal_waiting_changes_nothing(tmp_path: Path) -> None:
     curator, root, wf = _run(tmp_path)
 
-    wf._take_operator_requests(_state(root))  # pyright: ignore[reportPrivateUsage]
+    wf.operator_tasks.take(root)
 
     assert not [n for n in curator.nodes().values() if n.standing]

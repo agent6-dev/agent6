@@ -46,9 +46,7 @@ def test_only_a_fresh_run_takes_the_flag() -> None:
 
 def test_a_fresh_run_seeds_the_goal(tmp_path: Path) -> None:
     curator, root, wf = _seeded(tmp_path)
-    wf.standing_goal = "keep the suite green"
-
-    wf._seed_standing_goal(root)  # pyright: ignore[reportPrivateUsage]
+    wf.operator_tasks.seed_standing(root, "keep the suite green")
 
     standing = [n for n in curator.nodes().values() if n.standing]
     assert [(n.title, n.created_by) for n in standing] == [("keep the suite green", "steering")]
@@ -57,6 +55,6 @@ def test_a_fresh_run_seeds_the_goal(tmp_path: Path) -> None:
 def test_no_flag_seeds_nothing(tmp_path: Path) -> None:
     curator, root, wf = _seeded(tmp_path)
 
-    wf._seed_standing_goal(root)  # pyright: ignore[reportPrivateUsage]
+    wf.operator_tasks.seed_standing(root, "")
 
     assert not [n for n in curator.nodes().values() if n.standing]
