@@ -453,7 +453,7 @@ class OpenAIProvider:
             else None,
         ).run()
 
-    def _call_streaming(  # noqa: PLR0915
+    def _call_streaming(  # noqa: C901, PLR0915  # one streaming state machine; a split hides the event order
         self,
         *,
         url: str,
@@ -520,7 +520,7 @@ class OpenAIProvider:
             should_interrupt=should_interrupt,
         )
 
-        def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: PLR0912, PLR0915
+        def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: C901, PLR0912, PLR0915  # one streaming state machine; a split hides the event order
             nonlocal finish_reason, usage, done_seen
             # An event resets the idle clock (comment heartbeats never do:
             # they are exactly the bytes that mask an upstream hang); the

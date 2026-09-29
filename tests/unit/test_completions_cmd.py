@@ -139,7 +139,7 @@ def test_detects_shell_from_process_tree(home: Path, monkeypatch: pytest.MonkeyP
     bash keeps $SHELL=bash). The walk returns the nearest shell ancestor,
     skipping non-shell wrappers like uv."""
     proc = home / "proc"
-    # agent6 <- uv(50) <- fish(40) <- bash(30) <- init
+    # the parent chain: agent6 under uv (50), under fish (40), under bash (30), under init
     for pid, comm, ppid in ((50, "uv", 40), (40, "fish", 30), (30, "bash", 1)):
         d = proc / str(pid)
         d.mkdir(parents=True)

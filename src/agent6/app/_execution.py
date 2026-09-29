@@ -178,7 +178,7 @@ def _journal_escape(events: EventSink, exc: BaseException, *, iterations: int) -
     return reason
 
 
-def run_execution(  # noqa: PLR0911, PLR0912, PLR0915 - one execution body, one return per ending
+def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915 - one execution body, one return per ending  # an execution's setup, run and teardown in reading order
     cfg: Config,
     layout: SessionLayout,
     inputs: ExecutionInputs,

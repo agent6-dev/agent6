@@ -476,8 +476,8 @@ class MenuBar(Horizontal):
         # The widget that had focus before the menu was opened, so closing the
         # dropdown returns focus there. Without this, removing the focused
         # dropdown lets textual's _reset_focus fall to the last focusable widget
-        # in the chain, which then auto-scrolls a scroll container (e.g. the
-        # config #settings) to the bottom to reveal it.
+        # in the chain, which then auto-scrolls a scroll container, such as the
+        # config settings pane, to the bottom to reveal it.
         self._restore_focus: Widget | None = None
 
     def compose(self) -> ComposeResult:

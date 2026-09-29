@@ -53,8 +53,8 @@ Span = tuple[str, StyleName]
 Line = list[Span]
 
 # One detail level, cycled by a single shortcut in the TUI:
-#   hidden    -- thinking and tool items omitted entirely: just the dialogue
-#                (prose, operator, commits, verdict)
+#   hidden    -- thinking and tool items omitted entirely: just the dialogue,
+#                prose, operator, commits and verdict
 #   collapsed -- thinking as a one-line marker, tool detail clipped (the default)
 #   expanded  -- thinking and tool detail both in full
 DetailLevel = Literal["hidden", "collapsed", "expanded"]

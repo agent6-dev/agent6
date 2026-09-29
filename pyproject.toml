@@ -103,21 +103,36 @@ extend-exclude = ["bench/coreagent/tasks/*/repo", "docs/screenshots/seed"]
 
 [tool.ruff.lint]
 select = [
-    "B",    # bugbear
-    "E",    # pycodestyle
-    "F",    # pyflakes
-    "I",    # isort
-    "N",    # pep8-naming
-    "PL",   # pylint subset
-    "PTH",  # use pathlib
-    "RUF",  # ruff-specific
-    "S",    # bandit
-    "SIM",  # simplify
-    "TID",  # tidy imports
-    "UP",   # pyupgrade
-    "W",    # pycodestyle
+    "ANN",    # everything typed
+    "B",      # bugbear
+    "C90",    # complexity: the hard bound
+    "D",      # docstrings in the Google shape
+    "DOC201", # a Returns section where a value is returned
+    "DOC402", # a Yields section where a value is yielded
+    "DOC501", # a Raises section for what is raised
+    "DOC502", # no Raises entry for what is not raised
+    "E",      # pycodestyle
+    "ERA",    # no commented-out code
+    "F",      # pyflakes
+    "I",      # isort
+    "ICN",    # import conventions: module-style imports
+    "N",      # pep8-naming
+    "PL",     # pylint subset
+    "PTH",    # use pathlib
+    "RUF",    # ruff-specific
+    "S",      # bandit
+    "SIM",    # simplify
+    "TID",    # tidy imports
+    "UP",     # pyupgrade
+    "W",      # pycodestyle
 ]
+# The DOC rules are preview rules, selected by their exact codes.
+preview = true
+explicit-preview-rules = true
 ignore = [
+    "ANN401",   # Any stays allowed at the boundaries that need it
+    "D105",     # a magic method's docstring says nothing its name does not
+    "D107",     # the class docstring carries the attributes; __init__ repeats it
     "PLR0913",  # too many args; fine in our typed APIs
     "PLR0917",  # same call, counted positionally
     "PLR2004",  # magic-value comparisons; noisy in tests
@@ -126,16 +141,379 @@ ignore = [
     "S607",     # subprocess partial path: we use absolute paths
 ]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 20
+
+[tool.ruff.lint.flake8-import-conventions]
+# Members are never imported from these: `from agent6.pkg import module` and
+# `module.name` at the call site (typing and collections.abc excepted). The
+# agent6 entries are every leaf module of the tree, pinned by
+# tests/unit/test_import_style.py.
+banned-from = [
+    "agent6._data.words",
+    "agent6.app._execution",
+    "agent6.app._lane_watch",
+    "agent6.app._session",
+    "agent6.app._setup",
+    "agent6.app.btw",
+    "agent6.app.compare",
+    "agent6.app.confine",
+    "agent6.app.finalize",
+    "agent6.app.fork",
+    "agent6.app.fork_worktrees",
+    "agent6.app.frontend",
+    "agent6.app.machine._bundle",
+    "agent6.app.machine._frontend",
+    "agent6.app.machine._preflight",
+    "agent6.app.machine._scriptcheck",
+    "agent6.app.machine._spend",
+    "agent6.app.machine.create",
+    "agent6.app.machine.listing",
+    "agent6.app.machine.run",
+    "agent6.app.machine_agent",
+    "agent6.app.manifest",
+    "agent6.app.merge",
+    "agent6.app.parallel",
+    "agent6.app.preflight",
+    "agent6.app.providers",
+    "agent6.app.reporter",
+    "agent6.app.resume",
+    "agent6.app.run",
+    "agent6.app.stop",
+    "agent6.app.undo",
+    "agent6.budget",
+    "agent6.child_env",
+    "agent6.commit_message",
+    "agent6.config._base",
+    "agent6.config._git",
+    "agent6.config._harness",
+    "agent6.config._providers",
+    "agent6.config._sandbox",
+    "agent6.config._surfaces",
+    "agent6.config.io",
+    "agent6.config.layer",
+    "agent6.config.model",
+    "agent6.config.write",
+    "agent6.directive",
+    "agent6.errors",
+    "agent6.events",
+    "agent6.git_ops",
+    "agent6.graph.curator",
+    "agent6.graph.models",
+    "agent6.graph.order",
+    "agent6.graph.replay",
+    "agent6.graph.storage",
+    "agent6.graph.ulid",
+    "agent6.harness._advice",
+    "agent6.harness._chain",
+    "agent6.harness._checkpoint",
+    "agent6.harness._compaction",
+    "agent6.harness._compactor",
+    "agent6.harness._context",
+    "agent6.harness._conversation",
+    "agent6.harness._dag_focus",
+    "agent6.harness._finish_gates",
+    "agent6.harness._guards",
+    "agent6.harness._llm_json",
+    "agent6.harness._loop_state",
+    "agent6.harness._memory_touch",
+    "agent6.harness._metric",
+    "agent6.harness._metric_sampler",
+    "agent6.harness._nearest_tests",
+    "agent6.harness._nudges",
+    "agent6.harness._operator",
+    "agent6.harness._operator_tasks",
+    "agent6.harness._panel",
+    "agent6.harness._parallel_dispatch",
+    "agent6.harness._prompt_blocks",
+    "agent6.harness._prompt_revision",
+    "agent6.harness._provider_call",
+    "agent6.harness._quiet_turns",
+    "agent6.harness._reviewer",
+    "agent6.harness._snapshot",
+    "agent6.harness._spiral",
+    "agent6.harness._standing",
+    "agent6.harness._toolset",
+    "agent6.harness._verify_gate",
+    "agent6.harness._verify_verdict",
+    "agent6.harness.code_review",
+    "agent6.harness.judge",
+    "agent6.harness.loop",
+    "agent6.harness.run_review",
+    "agent6.harness.subrun",
+    "agent6.init",
+    "agent6.kinds",
+    "agent6.machine._semantics",
+    "agent6.machine.authoring",
+    "agent6.machine.dryrun",
+    "agent6.machine.engine",
+    "agent6.machine.graph",
+    "agent6.machine.journal",
+    "agent6.machine.predicate",
+    "agent6.machine.spec",
+    "agent6.machine.template",
+    "agent6.memory",
+    "agent6.models.cache",
+    "agent6.models.choices",
+    "agent6.models.pricing",
+    "agent6.models.registry",
+    "agent6.models.validate",
+    "agent6.paths",
+    "agent6.portable",
+    "agent6.prompts.judge",
+    "agent6.prompts.loop",
+    "agent6.prompts.machine",
+    "agent6.prompts.review",
+    "agent6.prompts.revision",
+    "agent6.providers._claude_code_wire",
+    "agent6.providers._openai_messages",
+    "agent6.providers._openai_parse",
+    "agent6.providers._openai_recovery",
+    "agent6.providers._stream",
+    "agent6.providers._transport",
+    "agent6.providers.anthropic",
+    "agent6.providers.chatgpt",
+    "agent6.providers.chatgpt_oauth",
+    "agent6.providers.claude_code",
+    "agent6.providers.openai",
+    "agent6.providers.token_command",
+    "agent6.providers.types",
+    "agent6.providers.wire",
+    "agent6.sandbox.detect",
+    "agent6.sandbox.jail",
+    "agent6.sandbox.landlock",
+    "agent6.sandbox.tool_paths",
+    "agent6.secrets",
+    "agent6.sessions.id",
+    "agent6.sessions.ipc",
+    "agent6.sessions.layout",
+    "agent6.sessions.lock",
+    "agent6.sessions.manifest",
+    "agent6.skills",
+    "agent6.task_text",
+    "agent6.tools._agent6_docs",
+    "agent6.tools._control_tools",
+    "agent6.tools._dag_tools",
+    "agent6.tools._edit_diag",
+    "agent6.tools._fs_tools",
+    "agent6.tools._nav_tools",
+    "agent6.tools._path_safety",
+    "agent6.tools._result_format",
+    "agent6.tools._skill_tools",
+    "agent6.tools.background",
+    "agent6.tools.dispatch",
+    "agent6.tools.errors",
+    "agent6.tools.fetch",
+    "agent6.tools.http_body",
+    "agent6.tools.index",
+    "agent6.tools.mcp_client",
+    "agent6.tools.mcp_http",
+    "agent6.tools.operator_prompts",
+    "agent6.tools.patch_apply",
+    "agent6.tools.policy",
+    "agent6.tools.results",
+    "agent6.tools.schema",
+    "agent6.tools.sessions",
+    "agent6.ui.acp.frontend",
+    "agent6.ui.acp.rpc",
+    "agent6.ui.acp.runner",
+    "agent6.ui.acp.server",
+    "agent6.ui.acp.session",
+    "agent6.ui.acp.updates",
+    "agent6.ui.btw",
+    "agent6.ui.cli._ask",
+    "agent6.ui.cli._common",
+    "agent6.ui.cli._compare",
+    "agent6.ui.cli._config_args",
+    "agent6.ui.cli._console_view",
+    "agent6.ui.cli._interact",
+    "agent6.ui.cli._live",
+    "agent6.ui.cli._machine_args",
+    "agent6.ui.cli._mcp_args",
+    "agent6.ui.cli._menu_input",
+    "agent6.ui.cli._plan_args",
+    "agent6.ui.cli._preflight",
+    "agent6.ui.cli._repl",
+    "agent6.ui.cli._review_args",
+    "agent6.ui.cli._run_args",
+    "agent6.ui.cli._session_prompt",
+    "agent6.ui.cli._sessions_args",
+    "agent6.ui.cli._skills_args",
+    "agent6.ui.cli._steer",
+    "agent6.ui.cli._steer_menu",
+    "agent6.ui.cli._task_refs",
+    "agent6.ui.cli._task_tree",
+    "agent6.ui.cli._terminal_guard",
+    "agent6.ui.cli._watch_args",
+    "agent6.ui.cli.answer_cmd",
+    "agent6.ui.cli.check_cmds",
+    "agent6.ui.cli.completers",
+    "agent6.ui.cli.completions_cmd",
+    "agent6.ui.cli.config_cmds",
+    "agent6.ui.cli.connect",
+    "agent6.ui.cli.fork",
+    "agent6.ui.cli.history_cmds",
+    "agent6.ui.cli.init_cmds",
+    "agent6.ui.cli.machine_agent",
+    "agent6.ui.cli.machine_check",
+    "agent6.ui.cli.machine_cmds",
+    "agent6.ui.cli.mcp_connect",
+    "agent6.ui.cli.memory_cmds",
+    "agent6.ui.cli.model",
+    "agent6.ui.cli.net_cmds",
+    "agent6.ui.cli.parallel",
+    "agent6.ui.cli.parser",
+    "agent6.ui.cli.plan_watch",
+    "agent6.ui.cli.prompt_cmds",
+    "agent6.ui.cli.ps_cmd",
+    "agent6.ui.cli.resume",
+    "agent6.ui.cli.review_cmds",
+    "agent6.ui.cli.run",
+    "agent6.ui.cli.sessions_cmds",
+    "agent6.ui.cli.sessions_compare",
+    "agent6.ui.cli.sessions_merge",
+    "agent6.ui.cli.sessions_review",
+    "agent6.ui.cli.sessions_show",
+    "agent6.ui.cli.skills_cmds",
+    "agent6.ui.cli.steer_cmd",
+    "agent6.ui.cli.stop_cmd",
+    "agent6.ui.cli.system_cmds",
+    "agent6.ui.cli.watch",
+    "agent6.ui.cli.web_cmds",
+    "agent6.ui.directives",
+    "agent6.ui.keymap",
+    "agent6.ui.mcp_server",
+    "agent6.ui.notify",
+    "agent6.ui.spawn",
+    "agent6.ui.steer",
+    "agent6.ui.tui.__main__",
+    "agent6.ui.tui._dashboard_header",
+    "agent6.ui.tui._diff_pane",
+    "agent6.ui.tui.app",
+    "agent6.ui.tui.clipboard",
+    "agent6.ui.tui.composer",
+    "agent6.ui.tui.config_page",
+    "agent6.ui.tui.conversation",
+    "agent6.ui.tui.copy_method",
+    "agent6.ui.tui.dashboard",
+    "agent6.ui.tui.home",
+    "agent6.ui.tui.logview",
+    "agent6.ui.tui.machines",
+    "agent6.ui.tui.menubar",
+    "agent6.ui.tui.modals",
+    "agent6.ui.tui.new_work",
+    "agent6.ui.tui.prompts",
+    "agent6.ui.tui.screen_chrome",
+    "agent6.ui.tui.settings",
+    "agent6.ui.tui.theme",
+    "agent6.ui.tui.widgets",
+    "agent6.ui.web._sse",
+    "agent6.ui.web.actions",
+    "agent6.ui.web.model",
+    "agent6.ui.web.page",
+    "agent6.ui.web.server",
+    "agent6.verify_infer",
+    "agent6.viewmodel.config_view",
+    "agent6.viewmodel.events",
+    "agent6.viewmodel.format",
+    "agent6.viewmodel.listing",
+    "agent6.viewmodel.log_line",
+    "agent6.viewmodel.machine_state",
+    "agent6.viewmodel.policy",
+    "agent6.viewmodel.state",
+    "agent6.viewmodel.tail",
+    "agent6.viewmodel.transcript",
+    "agent6.viewmodel.transcript_render",
+    "agent6.viewmodel.transcript_style",
+    "agent6.viewmodel.wire",
+    "argcomplete.shell_integration",
+    "argparse",
+    "collections",
+    "concurrent.futures",
+    "contextlib",
+    "dataclasses",
+    "datetime",
+    "email.utils",
+    "functools",
+    "http.client",
+    "http.server",
+    "importlib",
+    "io",
+    "ipaddress",
+    "itertools",
+    "jsonschema",
+    "math",
+    "multiprocessing.synchronize",
+    "pathlib",
+    "pydantic",
+    "pydantic_core",
+    "rich.markup",
+    "rich.text",
+    "textual",
+    "textual.app",
+    "textual.binding",
+    "textual.command",
+    "textual.containers",
+    "textual.css.query",
+    "textual.geometry",
+    "textual.message",
+    "textual.screen",
+    "textual.timer",
+    "textual.widgets",
+    "textual.widgets._select",
+    "threading",
+    "tree_sitter",
+    "tree_sitter_language_pack",
+    "types",
+    "unittest",
+    "unittest.mock",
+    "urllib.error",
+    "urllib.parse",
+    "urllib.request",
+    "xonsh.built_ins",
+    "xonsh.completers",
+    "xonsh.completers.tools",
+]
+
 [tool.ruff.lint.per-file-ignores]
-"bench/**" = ["E501", "N", "PLC0415", "PLR0912", "PLR0915", "PLW2901", "PTH", "S", "SIM105", "SIM114", "SIM115"]
+"bench/**" = ["ANN", "C90", "D", "DOC", "E501", "ERA", "ICN", "N", "PLC0415", "PLR0912", "PLR0915", "PLW2901", "PTH", "S", "SIM105", "SIM114", "SIM115"]
+# Until a package's docstring and import passes land, its docstring, annotation and
+# import-style rules stay off; each pass removes its own line.
+# `*` crosses `/` here, so a package's own modules are listed by name.
+"src/agent6/{__init__,budget,child_env,commit_message,directive,errors,events,git_ops,init,kinds,memory,paths,portable,secrets,skills,task_text,verify_infer}.py" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/_data/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/app/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/config/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/graph/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/harness/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/machine/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/models/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/prompts/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/providers/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/sandbox/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/sessions/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/tools/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/ui/{__init__,btw,directives,keymap,mcp_server,notify,spawn,steer}.py" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/ui/acp/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/ui/cli/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/ui/tui/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/ui/web/**" = ["ANN", "D", "DOC", "ICN003"]
+"src/agent6/viewmodel/**" = ["ANN", "D", "DOC", "ICN003"]
+"docs/{gen_config,gen_contracts,gen_diagrams}.py" = ["ANN", "D", "DOC", "ICN003"]
+"docs/screenshots/{build_fixtures,keystroke_overlay,llm_proxy,make_cover,seed,tui_snapshot,web_demo}.py" = ["ANN", "D", "DOC", "ICN003"]
 # gen_contracts.py embeds the artifact's CSS/SVG/HTML as strings; line length is moot there.
 "docs/gen_contracts.py" = ["E501"]
 "docs/screenshots/keystroke_overlay.py" = ["PLR0912", "PLR1730"]
 # web_demo.py embeds a block of cursor/animation JS as a string; line length is moot there.
 "docs/screenshots/web_demo.py" = ["E501"]
+"hatch_build.py" = ["ANN", "D", "DOC", "ICN003"]
 # page.py composes embedded HTML asset strings; line length is meaningless there.
 "src/agent6/ui/web/page.py" = ["E501"]
-"tests/**" = ["B017", "PLC0415", "PLR0915", "PLR2004", "S"]
+# A test module, class or function needs no docstring; one that has one names the regression.
+"tests/**" = ["ANN", "B017", "D1", "D", "DOC", "ICN003", "PLC0415", "PLR0915", "PLR2004", "S"]
 
 [tool.pyright]
 include = ["docs/gen_contracts.py", "src", "tests"]

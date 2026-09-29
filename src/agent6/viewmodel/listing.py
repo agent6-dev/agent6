@@ -650,7 +650,7 @@ def needs_new_work_refusal(session_id: str) -> str:
     )
 
 
-def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold, like build_parser)
+def scan_session_log(logs: Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915 (linear fold, like build_parser)  # one branch per event type
     """Fold `logs.jsonl` into a :class:`LogScan`: session.start (mode/task), the
     last session.end (un-finished again by a later resume), the running per-execution
     budget banked across resumes into a cumulative total, and the liveness

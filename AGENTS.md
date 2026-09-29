@@ -112,6 +112,9 @@
   Strict pyright.
 - **Layout**: src layout under `src/agent6/`; tests under `tests/`; Rust sandbox launcher under `src/agent6/jail/`.
 - **Style**: ruff is the only formatter and linter, line length 100; run `uv run ruff check` and `uv run ruff format` before committing.
+  The select list in `pyproject.toml` is the rule set: docstrings in the Google shape (a one-line imperative summary, a blank line, short lines; Args, Returns, Yields, Raises with names only, the types in the annotations), everything typed, module-style imports (`from agent6.pkg import module`, `module.name` at the call site), pep8 names.
+  `C901` at 20 is the hard bound on a function; the target is smaller: a function reads in one screen, a module in one sitting.
+  A comment is one line; a docstring's rationale is one line the reader could not reconstruct.
 - **Typing**: pydantic v2 at trust boundaries (config, LLM I/O, tool schemas, IPC); everywhere else, `@dataclass(frozen=True, slots=True)`.
 - **Imports**: absolute only (`from agent6.x import y`).
 - **Errors**: fail loudly, through a custom exception class per subsystem; every `except` names what it catches and re-raises what it cannot handle.

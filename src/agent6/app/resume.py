@@ -254,7 +254,7 @@ def execution_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> s
     return pinned or "inferred"
 
 
-def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
+def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume is refused, in preflight order
     config_path: Path | None,
     session_id: str,
     *,

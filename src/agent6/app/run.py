@@ -113,7 +113,7 @@ def discard_husk_dir(session_dir: Path) -> None:
         shutil.rmtree(session_dir)
 
 
-def run_task(  # noqa: PLR0911, PLR0912, PLR0915
+def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is refused, in preflight order
     cfg: Config,
     task: str,
     *,

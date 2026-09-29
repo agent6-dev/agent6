@@ -173,7 +173,7 @@ def new_draft_dir(state: Path) -> Path:
     return bucket_dir(state, bucket) / unused_session_id(state, bucket)
 
 
-def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
+def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop's attempts and refusals, in order
     task: str,
     frontend: MachineFrontend,
     *,

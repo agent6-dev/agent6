@@ -283,7 +283,7 @@ def _install_status_signal(
     return signal.signal(signal.SIGTSTP, _handler)
 
 
-def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared stage dict
+def install_steer_sigint(  # noqa: C901, PLR0915 - a closure factory over one shared stage dict  # the SIGINT ladder's stages, in order
     events: EventSink,
     session_dir: Path,
     console_view: ConsoleView | None = None,

@@ -368,7 +368,7 @@ def parse_event(raw: dict[str, Any]) -> Event:
         return RawEvent(type=str(raw.get("type", "")), raw=raw)
 
 
-def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
+def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912  # one branch per event type
     """The per-family arms, one coercion per family, so every event on disk
     folds to the same output field for field."""
     match raw.get("type", ""):

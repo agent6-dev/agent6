@@ -472,7 +472,7 @@ class AnthropicProvider:
             else None,
         ).run()
 
-    def _call_streaming(  # noqa: PLR0915
+    def _call_streaming(  # noqa: C901, PLR0915  # one streaming state machine; a split hides the event order
         self,
         *,
         url: str,
@@ -542,7 +542,7 @@ class AnthropicProvider:
             should_interrupt=should_interrupt,
         )
 
-        def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: PLR0912, PLR0915
+        def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: C901, PLR0912, PLR0915  # one streaming state machine; a split hides the event order
             nonlocal stop_reason, saw_message_stop, usage_input, usage_output
             nonlocal usage_cache_read, usage_cache_creation, saw_input_usage, saw_output_usage
             for event_type, data_str in sse_events(resp):

@@ -225,7 +225,7 @@ def machine_tool_policy_factory(
     return build
 
 
-def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
+def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the machine lifecycle's refusals, one per surface, in order
     path: Path,
     frontend: MachineFrontend,
     *,

@@ -562,7 +562,7 @@ class ChatGPTProvider:
             ),
         ).run()
 
-    def _call_streaming(  # noqa: PLR0915
+    def _call_streaming(  # noqa: C901, PLR0915  # one streaming state machine; a split hides the event order
         self,
         *,
         url: str,

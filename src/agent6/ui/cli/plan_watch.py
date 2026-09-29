@@ -500,7 +500,7 @@ def _line_is_session_end(raw: bytes | str) -> bool:
     return isinstance(obj, dict) and obj.get("type") == "session.end"
 
 
-def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0912, PLR0915
+def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per event kind the watch prints
     """Tail `logs.jsonl` line-by-line with no extra deps.
 
     Polls the file with 0.25s sleeps; rotates when the inode changes.

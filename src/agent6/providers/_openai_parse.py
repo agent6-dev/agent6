@@ -57,7 +57,7 @@ def usage_count(usage: Mapping[str, Any], field: str, *, path: str = "") -> int:
     return count
 
 
-def parse_response(  # noqa: PLR0912, PLR0915
+def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider dialect
     data: dict[str, Any],
     *,
     tool_names: frozenset[str] = frozenset(),

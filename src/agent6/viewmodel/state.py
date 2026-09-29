@@ -311,7 +311,7 @@ def _answered_only[PromptT: (ApprovalPrompt, QuestionPrompt)](
     return tuple(p for p in prompts if p.answered)
 
 
-def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # noqa: PLR0911, PLR0912, PLR0915
+def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per event type
     """Fold one event into the session state. Pure function.
 
     The event is parsed once (`events.parse_event`) into a typed family; each arm

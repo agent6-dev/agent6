@@ -1013,7 +1013,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
     eng.spent_usd = spent_usd
 
 
-def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR0912, PLR0915
+def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per state kind
     """Continue live from where the journal ends: execute one state per
     iteration, journal its fact, and advance, until a terminal state (or a
     budget cap, a runtime state error, or an `--exit-on-wait` park) ends it."""

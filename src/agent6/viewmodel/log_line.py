@@ -70,7 +70,7 @@ def _cut(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "\u2026"
 
 
-def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
+def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR0915  # one branch per event type
     ts = str(event.get("ts", ""))
     etype = str(event.get("type", "?"))
     # Compact one-line representation: timestamp, type, salient field.

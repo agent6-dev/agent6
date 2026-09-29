@@ -107,7 +107,7 @@ def _strip_ab_prefix(header_path: str) -> str:
     return header_path
 
 
-def parse_patch(text: str) -> ParsedPatch:  # noqa: PLR0912, PLR0915
+def parse_patch(text: str) -> ParsedPatch:  # noqa: C901, PLR0912, PLR0915  # the patch grammar, one branch per line kind
     """Parse a single-file unified diff. Raises PatchError on malformed input."""
     if not text.strip():
         raise PatchError("Empty patch")

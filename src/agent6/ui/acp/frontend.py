@@ -75,7 +75,7 @@ class Asker(Protocol):
     ) -> str | None: ...
 
 
-def acp_frontend(
+def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one place
     *,
     ask: Asker,
     capabilities: FrontendCapabilities,
