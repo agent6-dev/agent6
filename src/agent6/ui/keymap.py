@@ -3,9 +3,9 @@
 """The keys agent6 answers to, in one table.
 
 A shortcut belongs to a surface, but the same key often means the same thing on
-several: the approval letters are the CLI prompt's, the TUI row's and the TUI
-modal's. Spelling them once keeps them from drifting apart, and makes a
-collision visible by reading one file instead of thirty.
+several: the approval letters are the CLI prompt's and the TUI row's.
+Spelling them once keeps them from drifting apart, and makes a collision
+visible by reading one file instead of thirty.
 
 A leaf: no agent6 imports, no textual, so every front-end can read it. Textual
 bindings are built from these tuples where they are used.
@@ -144,5 +144,14 @@ SCREEN_LETTERS: dict[str, dict[str, str]] = {
         "q": "close",
     },
     "machine": {"q": "close"},
-    "machine watch": {"s": "steer", "m": "poke", "x": "stop", "q": "close"},
+    "machine watch": {
+        "s": "steer",
+        "m": "poke",
+        "x": "stop",
+        "q": "close",
+        "y": "answer('yes')",
+        "a": "answer('session')",
+        "n": "answer('no')",
+        "d": "answer('session-deny')",
+    },
 }

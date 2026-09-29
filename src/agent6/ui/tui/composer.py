@@ -274,8 +274,8 @@ class ApprovalKeys:
     APPROVAL_KEY_BINDINGS in its BINDINGS. The open approval docks as an
     ApprovalRow before the widget `APPROVAL_DOCK_BEFORE` names, its letters
     answer from anywhere on the screen except a text field, and the answer is
-    written through `deliver_answer`. The host supplies `approval_session`
-    and may extend `approval_answered`.
+    written through `deliver_answer`. The host supplies `approval_dir` and
+    `approval_live`, and may extend `approval_answered`.
 
     Tab out of the composer and the keys work wherever the focus lands (the
     transcript, a pane); keep tabbing and each answer is a tab stop of its own,
@@ -287,15 +287,22 @@ class ApprovalKeys:
     APPROVAL_FOCUS_AFTER: ClassVar[str] = ""
     # The row carries the command when the screen shows it nowhere else.
     APPROVAL_ROW_SHOWS_PROMPT: ClassVar[bool] = True
+    # What an answer to a run that no longer takes one says.
+    APPROVAL_LOST: ClassVar[str] = "the run is gone: the answer reached nothing"
+    # The row's hint on reaching the keys: a screen with a composer names it.
+    APPROVAL_ROW_HINT: ClassVar[str] = "(Tab out of the bar for the keys; or click)"
 
     _prompts: PromptDispatcher | None = None
     _row: ApprovalRow | None = None
     _row_id: str = ""
     _answered_from_row: bool = False  # the focus stayed on the approval
 
-    def approval_session(self) -> tuple[Path, bool]:
-        """The session dir an answer is written to, and whether the run still
-        takes one."""
+    def approval_dir(self) -> Path:
+        """The session dir an answer is written to."""
+        raise NotImplementedError
+
+    def approval_live(self) -> bool:
+        """Whether the run still takes an answer, read at the answer."""
         raise NotImplementedError
 
     def approval_answered(self, verdict: str) -> None:
@@ -308,7 +315,7 @@ class ApprovalKeys:
         prompts = self._prompts
         if prompts is None:
             return open_approval_of(state)
-        session_dir, _live = self.approval_session()
+        session_dir = self.approval_dir()
         return open_approval_of(state, taken=lambda aid: prompts.seen(session_dir, aid))
 
     def sync_approval(self, current: ApprovalPrompt | None) -> None:
@@ -328,7 +335,9 @@ class ApprovalKeys:
         if self._row is not None:
             self._row.remove()
         prompt = current.prompt if self.APPROVAL_ROW_SHOWS_PROMPT else ""
-        self._row = ApprovalRow(standing=current.standing, prompt=prompt)
+        self._row = ApprovalRow(
+            standing=current.standing, prompt=prompt, hint=self.APPROVAL_ROW_HINT
+        )
         self._row_id = current.id
         screen.mount(self._row, before=screen.query_one(self.APPROVAL_DOCK_BEFORE))
         if self._answered_from_row:
@@ -342,14 +351,14 @@ class ApprovalKeys:
         # next approval answers too.
         self._answered_from_row = self._row.holds_focus()
         screen = cast(Screen[Any], self)
-        session_dir, live = self.approval_session()
         verdict = deliver_answer(
             screen,
-            session_dir=session_dir,
+            session_dir=self.approval_dir(),
             prompt_id=self._row_id,
             answer=message.answer,
             prompts=self._prompts,
-            live=live,
+            live=self.approval_live(),
+            lost=self.APPROVAL_LOST,
         )
         if not verdict:
             return
@@ -547,10 +556,17 @@ class ApprovalRow(Vertical):
             super().__init__()
             self.answer = answer
 
-    def __init__(self, *, standing: bool, prompt: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        standing: bool,
+        prompt: str = "",
+        hint: str = ApprovalKeys.APPROVAL_ROW_HINT,
+    ) -> None:
         super().__init__()  # no fixed id: a superseded row may still be unmounting
         self._standing = standing
         self._prompt = prompt
+        self._hint = hint
 
     def compose(self) -> ComposeResult:
         if self._prompt:
@@ -561,7 +577,7 @@ class ApprovalRow(Vertical):
                     yield _AnswerLabel(
                         entry.key, entry.answer, entry.label, _ANSWER_STYLES[entry.answer]
                     )
-            yield Static(Text("(Tab out of the bar for the keys; or click)", style="dim"))
+            yield Static(Text(self._hint, style="dim"))
 
     def offers(self, answer: str) -> bool:
         """Whether this prompt offers *answer*: a prompt with no scope offers
@@ -589,12 +605,14 @@ def deliver_answer(
     answer: str,
     prompts: Any = None,
     live: bool = True,
+    lost: str = ApprovalKeys.APPROVAL_LOST,
 ) -> str:
     """Write an approval answer a row collected, notify the screen, and say what
     happened: "allowed", "denied", "answered elsewhere", or "" for a run that
-    can no longer take it. One owner, so both run views answer alike."""
+    can no longer take it (*lost* is the notice). One owner, so every view
+    answers alike."""
     if not live:
-        screen.notify("the run is gone: the answer reached nothing", severity="warning")
+        screen.notify(lost, severity="warning")
         return ""
     if prompts is not None:
         prompts.claim(session_dir, prompt_id)

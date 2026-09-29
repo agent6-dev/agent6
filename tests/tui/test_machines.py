@@ -14,7 +14,7 @@ from textual.widgets import DataTable, Input
 from agent6.machine import MachineSpec
 from agent6.paths import state_dir
 from agent6.ui.tui import machines as machmod
-from agent6.ui.tui.composer import SteerInput
+from agent6.ui.tui.composer import ApprovalRow, SteerInput
 from agent6.ui.tui.machines import (
     CreateMachineModal,
     MachineDetailScreen,
@@ -25,6 +25,7 @@ from agent6.ui.tui.machines import (
 from agent6.ui.tui.modals import ConfirmModal
 from agent6.viewmodel import machine_files
 from agent6.viewmodel.machine_state import machine_verb_refusal
+from tests.tui._waits import answerable, focus_answers, wait_for
 
 # A no-I/O machine that reaches a terminal immediately (branch -> terminal), so a
 # `machine run` produces a finished instance with no model/jail needed.
@@ -862,15 +863,13 @@ def _blocked_machine(tmp_path: Path, *, alive: bool) -> tuple[Path, MachineSpec]
     return instance, spec
 
 
-def test_watch_screen_does_not_pop_prompts_on_a_dead_machine(tmp_path: Path) -> None:
+def test_watch_screen_offers_no_approval_on_a_dead_machine(tmp_path: Path) -> None:
     """The fold keeps an unanswered prompt in the newest agent state past a
-    worker death, so the watch screen popped live-looking Allow/Deny (a
+    worker death, so the watch screen offered live-looking Allow/Deny (a
     destructive-command approval among them) over a machine nobody can answer
     and wrote the answer into a per-state dir whose loop has exited. The
-    machine twin of the run-modal gate."""
+    machine twin of the run views' liveness gate."""
     from textual.widgets import Static
-
-    from agent6.ui.tui.modals import ApprovalModal
 
     instance, spec = _blocked_machine(tmp_path, alive=False)
 
@@ -884,18 +883,16 @@ def test_watch_screen_does_not_pop_prompts_on_a_dead_machine(tmp_path: Path) -> 
             await pilot.pause()
             for _ in range(4):  # let several polls run
                 await pilot.pause()
-            assert not isinstance(app.screen, ApprovalModal), "popped a modal on a dead machine"
             screen = app.screen
             assert isinstance(screen, MachineWatchScreen)
+            assert not screen.query(ApprovalRow), "docked a row on a dead machine"
             assert "stopped" in str(screen.query_one("#mw-head", Static).render())
 
     asyncio.run(scenario())
 
 
-def test_watch_screen_pops_prompts_on_a_live_machine(tmp_path: Path) -> None:
-    # The converse: gating on liveness must not cost a RUNNING machine its modal.
-    from agent6.ui.tui.modals import ApprovalModal
-
+def test_watch_screen_docks_the_approval_on_a_live_machine(tmp_path: Path) -> None:
+    # The converse: gating on liveness must not cost a RUNNING machine its row.
     instance, spec = _blocked_machine(tmp_path, alive=True)
 
     class _Host(App[None]):
@@ -905,11 +902,10 @@ def test_watch_screen_pops_prompts_on_a_live_machine(tmp_path: Path) -> None:
     async def scenario() -> None:
         app = _Host()
         async with app.run_test(size=(120, 40)) as pilot:
-            deadline = 0
-            while not isinstance(app.screen, ApprovalModal) and deadline < 80:
-                await pilot.pause(0.05)
-                deadline += 1
-            assert isinstance(app.screen, ApprovalModal), "a live machine must still pop the modal"
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            await wait_for(pilot, lambda: answerable(screen), "the approval row")
 
     asyncio.run(scenario())
 
@@ -1354,7 +1350,6 @@ def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: Path
     in the tick after the worker died landed in a dead state dir with no word;
     the gate is re-read at submit, as a steer's and a poke's are."""
     from agent6.ui.tui.machines import _ANSWER_LOST  # pyright: ignore[reportPrivateUsage]
-    from agent6.ui.tui.modals import ApprovalModal
 
     instance, spec = _blocked_machine(tmp_path, alive=True)
     state = instance / "states" / "0000-route"
@@ -1366,11 +1361,14 @@ def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: Path
     async def scenario() -> None:
         app = _Host()
         async with app.run_test(size=(120, 40)) as pilot:
-            deadline = 0
-            while not isinstance(app.screen, ApprovalModal) and deadline < 80:
-                await pilot.pause(0.05)
-                deadline += 1
-            assert isinstance(app.screen, ApprovalModal)
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            await wait_for(pilot, lambda: answerable(screen), "the approval row")
+            await focus_answers(screen, pilot)
+            # The next poll would withdraw the row of a dead machine; the
+            # answer under test lands before it.
+            screen._poll_timer.pause()  # pyright: ignore[reportPrivateUsage]
             (instance / "worker.pid").write_text("999999999", encoding="utf-8")  # dies
             await pilot.press("y")
             await pilot.pause()

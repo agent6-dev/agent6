@@ -26,7 +26,6 @@ from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static, TextArea
 
-from agent6.ui.keymap import APPROVAL_ANSWERS
 from agent6.ui.tui.widgets import TypeaheadField
 from agent6.viewmodel.state import Question
 
@@ -49,81 +48,6 @@ _ARROW_NAV = (
 # Modal frames pin a static round $accent (focused) border: a modal always owns
 # focus, so it always shows the focused accent; the $primary<->$accent
 # resting/focus toggle is only for non-modal cards where focus actually moves.
-class ApprovalModal(ModalScreen[str]):
-    """Dismisses "yes", "no", or "session" (allow this prompt's whole scope for
-    the run). `standing=False` is a prompt with no scope to grant, so it offers
-    no session button: one that answered only the call it was clicked on would
-    lie about itself."""
-
-    DEFAULT_CSS = """
-    ApprovalModal { align: center middle; }
-    #approval-box {
-        width: 80%; max-width: 100; height: auto;
-        border: round $accent; padding: 1 2; background: $surface;
-    }
-    #approval-buttons { height: auto; align: center middle; margin-top: 1; }
-    #approval-buttons Button {
-        margin: 0 1; min-width: 18; height: 1; border: none;
-        background: transparent; color: $accent;
-    }
-    #approval-buttons Button:focus { background: $primary; color: $text; text-style: bold; }
-    """
-
-    # Keys handled on the modal (not the app) so they reach the focused button.
-    # The letters and words are `ui.keymap`'s, shared with the CLI prompt and
-    # the inline row; a scoped answer's binding is hidden when the prompt has
-    # no scope (`check_action`). The upper-case twins forgive a stuck shift.
-    BINDINGS: ClassVar = [
-        *_ARROW_NAV,
-        *(
-            Binding(key, f"answer('{entry.answer}')", entry.label.title(), show=show)
-            for entry in APPROVAL_ANSWERS
-            for key, show in ((entry.key, True), (entry.key.upper(), False))
-        ),
-        Binding("escape", "answer('no')", "Deny", show=False),
-    ]
-
-    def __init__(self, prompt_id: str, prompt: str, *, standing: bool = True) -> None:
-        super().__init__()
-        self.prompt_id = prompt_id
-        self.prompt_text = prompt
-        self.standing = standing
-
-    def compose(self) -> ComposeResult:
-        with Container(id="approval-box"):
-            body = Text()
-            body.append("Approval requested\n\n", style="bold")
-            body.append(self.prompt_text)  # plain append: never parsed as markup
-            yield Static(body)
-            with Horizontal(id="approval-buttons"):
-                for entry in APPROVAL_ANSWERS:
-                    if entry.standing and not self.standing:
-                        continue
-                    yield Button(
-                        f"{entry.label.capitalize()} ({entry.key})",
-                        id=entry.answer,
-                        variant="success" if entry.grants else "error",
-                    )
-
-    def on_mount(self) -> None:
-        # The safe choice takes the focus, as ConfirmModal's does: an accidental
-        # Enter must not grant a command the model wrote.
-        self.query_one("#no", Button).focus()
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id or "no")  # button ids are the answer values
-
-    def action_answer(self, answer: str) -> None:
-        self.dismiss(answer)
-
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Hides the scope answers (footer included) on a prompt with none."""
-        if action != "answer":
-            return True
-        scoped = {e.answer for e in APPROVAL_ANSWERS if e.standing}
-        return self.standing or str(parameters[0]) not in scoped
-
-
 class ConfirmModal(ModalScreen[bool]):
     """A generic yes/no confirmation (title + body). y confirms; n / Esc / q cancel.
     No backdrop-click dismissal, matching the other consequential modals. Defaults

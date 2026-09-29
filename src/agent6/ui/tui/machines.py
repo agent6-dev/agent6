@@ -57,7 +57,7 @@ from agent6.sessions.ipc import (
 from agent6.sessions.layout import bucket_dir, machines_root
 from agent6.ui.notify import desktop_notify
 from agent6.ui.spawn import agent6_argv, spawn_and_confirm, spawn_and_locate
-from agent6.ui.tui.composer import SteerInput
+from agent6.ui.tui.composer import APPROVAL_KEY_BINDINGS, ApprovalKeys, SteerInput
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
     ConfirmModal,
@@ -138,17 +138,18 @@ _ANSWER_LOST = (
 )
 
 
-class MachineWatchScreen(ScreenChrome, Screen[None]):
+class MachineWatchScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     """Live view of a running (or finished) machine: the state overview with the
     current state marked, each transition as it lands, and the active agent
     state's reasoning streamed from its per-state logs.jsonl, the in-TUI
     equivalent of `agent6 attach`. Polls every 0.5s.
 
     Interactive: while open it registers as an answer front-end (a frontends/ claim on
-    the instance dir), so the current agent state's `run_command` approvals and
-    `ask_user` questions pop as modals here; `s` steers that state, `m` sends a
-    message (a poke payload) to a waiting machine, and a `machine.notify` (or the
-    machine's completion) fires a desktop + in-app notification."""
+    the instance dir), so the current agent state's `run_command` approvals dock
+    as the run views' answer row (above the footer) and its `ask_user` questions
+    pop as modals; `s` steers that state, `m` sends a message (a poke payload)
+    to a waiting machine, and a `machine.notify` (or the machine's completion)
+    fires a desktop + in-app notification."""
 
     HELP_TITLE: ClassVar = "agent6 machine — keys & actions"
     MENUS: ClassVar = (
@@ -177,8 +178,12 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         Binding("question_mark", "help", "Help"),
         Binding("escape", "close", "Back", key_display="Esc/q"),
         Binding("q", "close", "Back", show=False),
+        *APPROVAL_KEY_BINDINGS,  # an open approval answers from any non-text focus
         *menu_bindings(MENUS),
     ]
+    APPROVAL_DOCK_BEFORE: ClassVar = "Footer"
+    APPROVAL_LOST: ClassVar = _ANSWER_LOST
+    APPROVAL_ROW_HINT: ClassVar = "(or click)"  # no composer here: the keys always answer
     CSS = (
         PALETTE_CSS
         + """
@@ -240,7 +245,7 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         # endedNotified seed); a machine ending while watched still announces.
         self._end_notified = seeded.ended is not None
         self._poll()
-        self.set_interval(0.5, self._poll)
+        self._poll_timer = self.set_interval(0.5, self._poll)
 
     def on_unmount(self) -> None:
         # Drop only our own front-end claim; concurrent watchers keep theirs.
@@ -316,7 +321,7 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
 
     def _answerable(self) -> bool:
         """Read fresh at submit, as a steer's and a poke's gates are: the worker
-        can die while a prompt's modal is open."""
+        can die while a prompt is up."""
         return not machine_verb_refusal(self._root, self._root.name, "answer")
 
     def action_steer(self) -> None:
@@ -484,18 +489,32 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
             desktop_notify(f"agent6: {ms.machine} {ended.status}", ended.reason)
 
     def _dispatch_prompts(self, *, live: bool) -> None:
-        """Pop approval/question modals for the current agent state's pending
-        prompts, writing answers back to that state's per-state dir.
+        """Dock the current agent state's open approval and pop a modal per
+        pending question, the answers written back to that state's dir.
 
         Only while the machine is running: a parked/stopped/ended instance's
         newest agent state is finished, so the fold still carries an unanswered
-        prompt but nothing would poll the answer. Popping live-looking
+        prompt but nothing would poll the answer. Offering a live-looking
         Allow/Deny (a destructive-command approval among them) over a dead
-        machine is the machine twin of the run-modal gate."""
+        machine is the machine twin of the run views' liveness gate."""
         state_log = self._leg_fold.log
         if not live or state_log is None:
+            self.sync_approval(None)
             return
-        self._prompts.dispatch(state_log.parent, self._leg_fold.state)
+        self.sync_approval(self.open_approval(self._leg_fold.state))
+        prompts = self._prompts
+        if prompts is not None:
+            prompts.dispatch(state_log.parent, self._leg_fold.state)
+
+    def approval_dir(self) -> Path:
+        """The newest agent state's dir."""
+        state_log = self._leg_fold.log
+        return state_log.parent if state_log is not None else self._root
+
+    def approval_live(self) -> bool:
+        """Read fresh at the answer, as a steer's and a poke's gates are: the
+        worker can die while the row is up."""
+        return self._answerable()
 
     def _render_log_lines(self, log: RichLog, *, live: bool) -> None:
         """Render new complete lines of the current state log: accumulate

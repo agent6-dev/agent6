@@ -444,8 +444,11 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
                 self._note_answered("allowed" if answered.approved else "denied")
         return self.open_approval(state)
 
-    def approval_session(self) -> tuple[Path, bool]:
-        return self._logs_path.parent, self._host_live()
+    def approval_dir(self) -> Path:
+        return self._logs_path.parent
+
+    def approval_live(self) -> bool:
+        return self._host_live()
 
     def approval_answered(self, verdict: str) -> None:
         self._note_answered(verdict)

@@ -28,7 +28,6 @@ from agent6.sessions.ipc import clear_answer
 from agent6.ui.tui.app import Agent6TUI, TuiExit
 from agent6.ui.tui.composer import ApprovalRow
 from agent6.ui.tui.modals import (
-    ApprovalModal,
     ConfirmModal,
     QuestionModal,
     SteerModal,
@@ -144,18 +143,18 @@ def test_diff_colors_content_with_header_like_prefixes(tmp_path: Path) -> None:
 
 def test_modal_arrow_keys_move_focus() -> None:
     """Arrow keys move focus in a modal like Tab (the app.focus_next fix). Tested
-    on the button-only approval dialog, where no text field consumes the arrows."""
+    on the button-only confirm dialog, where no text field consumes the arrows."""
 
     class _Host(App[None]):
         def on_mount(self) -> None:
-            self.push_screen(ApprovalModal("a", "allow?"), lambda _v: None)
+            self.push_screen(ConfirmModal("Confirm", "Proceed?"), lambda _v: None)
 
     async def scenario() -> None:
         app = _Host()
         async with app.run_test() as pilot:
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, ApprovalModal)
+            assert isinstance(modal, ConfirmModal)
             first = modal.focused
             assert isinstance(first, Button)
             await pilot.press("right")  # arrow moves focus to the other button
@@ -176,12 +175,6 @@ def test_consequential_modal_buttons_name_their_answers() -> None:
             return [str(button.label) for button in modal.query(Button)]
 
     async def scenario() -> None:
-        assert await labels(ApprovalModal("a", "allow?")) == [
-            "Allow (y)",
-            "Allow all (a)",
-            "Deny (n)",
-            "Deny all (d)",
-        ]
         assert await labels(ConfirmModal("Confirm", "Proceed?", confirm_label="Delete")) == [
             "Delete (y)",
             "Cancel (n)",
@@ -199,12 +192,6 @@ def test_consequential_modal_buttons_name_their_answers() -> None:
 
 def test_each_consequential_modal_delivers_one_result() -> None:
     async def scenario() -> None:
-        approval = _ModalHost(ApprovalModal("a", "allow?"))
-        async with approval.run_test() as pilot:
-            await pilot.press("a")
-            await pilot.pause()
-            assert approval.results == ["session"]
-
         confirmation = _ModalHost(ConfirmModal("Confirm", "Proceed?"))
         async with confirmation.run_test() as pilot:
             await pilot.pause()
@@ -386,7 +373,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
             app._handle_event(_ev(type="approval.prompt", id="ap1", prompt="run_command(['ls'])"))
             app._tick()
             await pilot.pause()
-            assert not isinstance(app.screen, ApprovalModal)
+            assert not isinstance(app.screen, ModalScreen)
             await focus_answers(app._dash, pilot)
             await pilot.press("y")
             assert await answer_written(tmp_path, pilot) == "yes"
@@ -1669,32 +1656,6 @@ def test_composer_compact_directive_routes_to_compact_request(tmp_path: Path) ->
     asyncio.run(scenario())
 
 
-def test_a_prompt_with_no_scope_shows_no_allow_session_button() -> None:
-    """The button would grant nothing beyond the call it was clicked on (the
-    fetch gate opts out of standing answers), so it is not there -- and neither
-    is its "a" key, footer entry included."""
-
-    class _Host(App[None]):
-        def on_mount(self) -> None:
-            self.push_screen(ApprovalModal("a", "allow fetch?", standing=False), lambda _v: None)
-
-    async def scenario() -> None:
-        app = _Host()
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            modal = app.screen
-            assert isinstance(modal, ApprovalModal)
-            labels = [str(b.label) for b in modal.query(Button)]
-            assert labels == ["Allow (y)", "Deny (n)"]
-            assert modal.check_action("answer", ("session",)) is False
-            assert modal.check_action("answer", ("yes",)) is True
-            await pilot.press("a")  # the removed binding must not answer
-            await pilot.pause()
-            assert app.screen is modal, "'a' dismissed a modal that offers no session answer"
-
-    asyncio.run(scenario())
-
-
 def test_the_composer_title_shows_its_brackets(tmp_path: Path) -> None:
     """A border title is markup: the live composer's `/compact [focus]` hint
     lost its `[focus]` (rendered as "/compact )") the way `[git]` vanished from
@@ -1741,32 +1702,6 @@ def test_the_menu_bar_title_keeps_the_tasks_brackets(tmp_path: Path) -> None:
             shown = app.screen.query_one(".app-title", Static).render()
             text = shown.plain if isinstance(shown, Text) else str(shown)
             assert "[wip]" in text, text
-
-    asyncio.run(scenario())
-
-
-def test_the_approval_modal_offers_every_answer_and_focuses_the_safe_one() -> None:
-    """`session-deny` is a first-class answer the CLI and the composer's inline
-    row both offer; the modal did not. Enter also fell on Allow, where the
-    modal's sibling deliberately focuses the safe choice."""
-
-    class _Host(App[None]):
-        def on_mount(self) -> None:
-            self.push_screen(ApprovalModal("a", "rm -rf build/"), lambda _v: None)
-
-    async def scenario() -> None:
-        app = _Host()
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            modal = app.screen
-            assert isinstance(modal, ApprovalModal)
-            labels = [str(b.label) for b in modal.query(Button)]
-            assert labels == ["Allow (y)", "Allow all (a)", "Deny (n)", "Deny all (d)"]
-            focused = modal.focused
-            assert isinstance(focused, Button) and focused.id == "no"
-            await pilot.press("d")
-            await pilot.pause()
-            assert app.screen is not modal, "'d' answered nothing"
 
     asyncio.run(scenario())
 

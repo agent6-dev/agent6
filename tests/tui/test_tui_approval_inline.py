@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.composer import ApprovalRow, SteerInput
-from agent6.ui.tui.modals import ApprovalModal
 from tests.tui._waits import (
     TIMEOUT_S,
     answer_written,
@@ -67,7 +67,7 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: Path) -> None:
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             await pilot.pause()
-            assert not isinstance(app.screen, ApprovalModal)
+            assert not isinstance(app.screen, ModalScreen)
             assert await _row_shown(app, pilot)
             item = app._conv.query_one("#conv-approval", Static)  # pyright: ignore[reportPrivateUsage]
             assert item.display
@@ -393,7 +393,7 @@ def test_the_dashboard_answers_inline_and_keeps_the_focus_on_the_answers(tmp_pat
                 pump=app._tick,  # pyright: ignore[reportPrivateUsage]
             )
             row = app._dash.query(ApprovalRow).first()  # pyright: ignore[reportPrivateUsage]
-            assert not isinstance(app.screen, ApprovalModal)
+            assert not isinstance(app.screen, ModalScreen)
             assert app.focused is bar  # the row took nothing
             shown = str(row.query_one(Static).render())
             assert "Allow run_command" in shown and "ls" in shown

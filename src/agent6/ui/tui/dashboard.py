@@ -462,8 +462,11 @@ class DashboardScreen(ApprovalKeys, ScreenChrome, Screen[None]):
     def on_descendant_focus(self, _event: events.DescendantFocus) -> None:
         self._show_pane_row()
 
-    def approval_session(self) -> tuple[Path, bool]:
-        return self._tui.session_dir, self._tui.session_controllable()
+    def approval_dir(self) -> Path:
+        return self._tui.session_dir
+
+    def approval_live(self) -> bool:
+        return self._tui.session_controllable()
 
     def approval_answered(self, verdict: str) -> None:
         self._render_approval()

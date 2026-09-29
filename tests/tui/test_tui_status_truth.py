@@ -24,11 +24,11 @@ from typing import Any
 
 import pytest
 from textual.app import ScreenStackError
+from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.composer import ApprovalRow, SteerInput
-from agent6.ui.tui.modals import ApprovalModal
 from agent6.viewmodel.state import status_facts
 from tests.tui._waits import answerable, focus_answers, wait_for
 
@@ -678,7 +678,7 @@ def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
             app._heartbeat_at = 0.0
             app._tick()
             await pilot.pause()
-            assert not isinstance(app.screen, ApprovalModal)
+            assert not isinstance(app.screen, ModalScreen)
             assert not (d / "approvals" / "ap1.answer").exists()
 
     asyncio.run(scenario())

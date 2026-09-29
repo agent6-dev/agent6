@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Prompt dispatch for a TUI view over a session's fold: one modal per
-unanswered question (the run views dock their approvals as a row), its
-answer written to that session's file bridge. Shared by the run views and
-the machine watch view."""
+unanswered question (every view docks its approvals as a row), its answer
+written to that session's file bridge, and the claim every surface takes a
+prompt through. Shared by the run views and the machine watch view."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from typing import Any
 
 from textual.app import App
 
-from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_answer, write_question_answers
-from agent6.ui.tui.modals import ApprovalModal, QuestionModal
+from agent6.sessions.ipc import ANSWERED_ELSEWHERE, write_question_answers
+from agent6.ui.tui.modals import QuestionModal
 from agent6.viewmodel.state import SessionState
 
 
@@ -25,34 +25,16 @@ class PromptDispatcher:
     false (the worker died mid-modal) is dropped with the *lost* warning
     instead of written to a file nobody polls."""
 
-    def __init__(
-        self,
-        app: App[Any],
-        *,
-        answerable: Callable[[], bool],
-        lost: str,
-        inline_approvals: Callable[[], bool] = lambda: False,
-    ) -> None:
+    def __init__(self, app: App[Any], *, answerable: Callable[[], bool], lost: str) -> None:
         self._app = app
         self._answerable = answerable
         self._lost = lost
-        # True while the active screen renders approvals itself (the
-        # conversation's inline item + key row), so no modal is pushed.
-        self._inline_approvals = inline_approvals
         self._seen: set[str] = set()
 
     def reset(self) -> None:
         self._seen.clear()
 
     def dispatch(self, session_dir: Path, state: SessionState) -> None:
-        for ap in state.pending_approvals:
-            if ap.answered or self._inline_approvals():
-                continue
-            if self.claim(session_dir, ap.id):
-                self._app.push_screen(
-                    ApprovalModal(ap.id, ap.prompt, standing=ap.standing),
-                    self._on_approval(session_dir, ap.id),
-                )
         for qp in state.pending_questions:
             if not qp.answered and self.claim(session_dir, qp.id):
                 self._app.push_screen(
@@ -72,16 +54,6 @@ class PromptDispatcher:
 
     def seen(self, session_dir: Path, prompt_id: str) -> bool:
         return f"{session_dir}|{prompt_id}" in self._seen
-
-    def _on_approval(self, session_dir: Path, prompt_id: str) -> Callable[[str | None], None]:
-        def cb(answer: str | None) -> None:
-            if not self._answerable():
-                self._app.notify(self._lost, severity="warning", timeout=6.0)
-                return
-            if not write_answer(session_dir, prompt_id, answer or "no"):
-                self._app.notify(ANSWERED_ELSEWHERE, severity="warning", timeout=6.0)
-
-        return cb
 
     def _on_question(
         self, session_dir: Path, prompt_id: str

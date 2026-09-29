@@ -180,12 +180,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[TuiExit]):
         self.logs_path = session_dir / LOGS_NAME
         self.state: SessionState = initial_state()
         self._prompts = PromptDispatcher(
-            self,
-            answerable=self.session_controllable,
-            lost=_ANSWER_LOST,
-            inline_approvals=lambda: isinstance(
-                self._screen_or_none(), (ConversationScreen, DashboardScreen)
-            ),
+            self, answerable=self.session_controllable, lost=_ANSWER_LOST
         )
         self._seen_steer = 0
         self._dirty = False  # a structural event arrived; _tick coalesces the repaint
