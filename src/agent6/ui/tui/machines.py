@@ -605,10 +605,7 @@ class CreateMachineModal(ModalScreen[str]):
     }
     /* The new-task composer, so a machine is described in the same box a run
        is: multi-line, Enter drafts, Ctrl-J adds a line. */
-    #create-input {
-        height: auto; max-height: 8; margin-top: 1; border: round $primary; background: $surface;
-    }
-    #create-input:focus { border: round $accent; }
+    #create-input { margin-top: 1; }
     #create-hint { color: $text-muted; padding-top: 1; }
     """
     )

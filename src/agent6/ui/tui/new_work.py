@@ -75,8 +75,6 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
     #draft-options { height: 1; padding: 0 1; }
     .draft-label { width: auto; padding: 0 1 0 0; color: $text-muted; }
     #draft-options Picker { margin-right: 2; }
-    #draft-input { height: auto; max-height: 8; border: round $primary; background: $surface; }
-    #draft-input:focus { border: round $accent; }
     """
 
     MENUS: ClassVar = (

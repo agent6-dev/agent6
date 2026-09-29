@@ -295,6 +295,15 @@ class SteerInput(TextArea):
 
     ALLOW_MAXIMIZE = False  # a full-screen composer is never what Maximize means
 
+    # One style for every screen's composer; a screen adds only its placement.
+    DEFAULT_CSS = f"""
+    SteerInput {{
+        height: auto; max-height: {_INPUT_MAX_ROWS + 2};
+        border: round $primary; background: $surface;
+    }}
+    SteerInput:focus {{ border: round $accent; }}
+    """
+
     BINDINGS: ClassVar = [
         # TextArea's own undo stack; ctrl+z is the app's Detach (see Agent6TUI).
         Binding("ctrl+underscore", "undo", "Undo", show=False),

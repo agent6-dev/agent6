@@ -204,11 +204,7 @@ class ConversationScreen(ApprovalKeys, ScreenChrome, Screen[None]):
         border-top: solid $border; background: $surface;
     }
     /* The composer: steer a live run, resume a finished one (see _sync_input). */
-    #conv-input {
-        display: none; height: auto; max-height: 8;
-        border: round $primary; background: $surface;
-    }
-    #conv-input:focus { border: round $accent; }
+    #conv-input { display: none; }
     """
 
     _VIEW_ITEMS: ClassVar = (
