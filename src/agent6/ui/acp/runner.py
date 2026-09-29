@@ -1,21 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One ACP prompt becomes one agent6 run.
+"""Run one agent6 run per ACP prompt.
 
-The protocol owns stdout, so the run's reporter writes to stderr. One status
-line on stdout desynchronises the stream irrecoverably, and no editor recovers
-from it.
-
-The run id is minted here, before the run starts, so `session/cancel` has
-something to address: a lifecycle minting its own would leave the session with
-no handle, and a cancel would report success while the run ran on, spending
-budget and making commits. It is minted once per ACP session: later prompts
-resume that same run with the new text seeded as its first steering
-instruction, so the session stays one conversation.
-
-`run_task` reads the process cwd, so a run in a session's directory has to
-chdir there, which is process-global. Runs are therefore serialised on the
-connection: a second prompt waits rather than running in the wrong repository.
+The protocol owns stdout, so the reporter writes to stderr. The run id is minted
+before the run starts, so `session/cancel` has something to address, and once per
+ACP session: later prompts resume the same run with their text as its first
+steering instruction. `run_task` reads the process cwd, so runs are serialised on
+the connection and a second prompt waits.
 """
 
 from __future__ import annotations
@@ -57,28 +48,29 @@ from agent6.viewmodel.listing import scan_session_log
 from agent6.viewmodel.tail import journal_size, tail_events
 from agent6.viewmodel.transcript import TranscriptFold, TranscriptItem
 
-# A safety net on joining the streaming tail, not the normal path: `_stop`
-# ends it one read pass after the run returns. This bounds a tail wedged on a
-# filesystem that is not answering.
+# Bounds the join on a tail wedged on a filesystem; `_stop` ends it one read pass after the run.
 DRAIN_S = 5.0
-# How often a queued turn checks for its own cancel while another session's
-# turn holds the run lock.
+# How often a queued turn checks for its own cancel while another turn holds the run lock.
 QUEUE_POLL_S = 0.1
 
 
 def _stderr(message: str) -> None:
+    """Print to stderr, the editor's agent log."""
     print(message, file=sys.stderr)
 
 
 @dataclass
 class ProseOrder:
-    """The lifecycle's lines, queued for the journal tail to emit in order.
+    """Queue the lifecycle's lines for the journal tail to emit in order.
 
-    The lifecycle speaks from the run thread while the tail projects the
-    journal from its own, a poll behind; sent as they are said, an ending
-    line would land before the turn's last tool calls. Each line is stamped with
-    the journal's size when said, and the tail emits it once it has read
-    past that point (everything, once the tail is done).
+    The tail projects the journal a poll behind the run thread, so a line sent as
+    said would land before the turn's last tool calls. Each line is stamped with
+    the journal's size when said, and emitted once the tail has read past it.
+
+    Attributes:
+        server: The connection.
+        acp_session_id: The conversation the lines address.
+        logs_path: The journal.
     """
 
     server: ACPServer
@@ -88,19 +80,19 @@ class ProseOrder:
     _pending: list[tuple[int, str]] = field(default_factory=list)
 
     def say(self, text: str) -> None:
+        """Queue a line, stamped with the journal's size now."""
         with self._lock:
             self._pending.append((journal_size(self.logs_path), text))
 
     def flush(self, consumed: int | None) -> None:
-        """Emit every line stamped at or before *consumed* bytes of journal; all of
-        them for None."""
+        """Emit every line stamped at or before the consumed journal size; all for None."""
         with self._lock:
             due = [t for stamp, t in self._pending if consumed is None or stamp <= consumed]
             self._pending = [
                 (s, t) for s, t in self._pending if consumed is not None and s > consumed
             ]
         for text in due:
-            # `note`/`warn` already carry the marker `message_update` adds.
+            # A note or warning already carries the marker `message_update` adds.
             self.server.notify_raw(
                 message_update(self.acp_session_id, text.removeprefix("[agent6] "))
             )
@@ -109,16 +101,20 @@ class ProseOrder:
 def forwarding_reporter(
     server: ACPServer, acp_session_id: str, said: list[str], *, order: ProseOrder | None = None
 ) -> Reporter:
-    """The lifecycle's reporter: stderr (the editor's agent log), and the same
-    line to the editor as agent6's own prose, in journal order through *order*
-    when a tail is projecting the journal (else as it is said).
+    """Build the lifecycle's reporter: stderr, and the same line to the editor as agent6's prose.
 
-    What the lifecycle says is stated nowhere else: no journal event carries a
-    refusal's reason (a missing git identity, another writer holding the
-    repo, a dirty worktree), the auto-stash notice, or the where-are-my-changes
-    footer. The cost receipt goes to stderr only: the fold's done item already
-    carries the cost. *said* collects the forwarded lines, so a turn that
-    ended with nothing said can be told apart from one that explained itself.
+    No journal event carries a refusal's reason, so the reporter is the one route
+    for it; the cost receipt goes to stderr only, since the fold's done item
+    carries the cost.
+
+    Args:
+        server: The connection.
+        acp_session_id: The conversation the lines address.
+        said: Collects the forwarded lines, so a silent end is told from an explained one.
+        order: Emits the lines in journal order while a tail projects the journal.
+
+    Returns:
+        The reporter.
     """
 
     def _say(message: str) -> None:
@@ -136,14 +132,14 @@ def forwarding_reporter(
 
 
 def option_kind(text: str, standing: bool | None) -> str:
-    """ACP's button kinds, from who asked, never from the option text.
+    """Return ACP's button kind from who asked, never from the option text.
 
-    `standing=True` is an approval an editor may remember. `False` is the
-    fetch tool's off-list host, where remembering would silently cover a
-    different host. `None` is a `UserQuestion`, whose options the model wrote:
-    keying on the text would let a model emit an option literally named
-    "allow" and have it advertised as `allow_always`, so an editor keying its
-    memory on the title would auto-approve later real permission requests.
+    A model-written option named "allow" must not be advertised as `allow_always`.
+
+    Args:
+        text: The option.
+        standing: True for an approval the editor may remember, False for one it
+            must not, None for a question the model wrote.
     """
     if standing is None:
         return "allow_once"
@@ -153,13 +149,15 @@ def option_kind(text: str, standing: bool | None) -> str:
 
 
 def stop_reason(code: int, *, end_reason: str = "") -> StopReason:
-    """ACP's vocabulary, from the lifecycle's exit code.
+    """Return ACP's stop reason for the lifecycle's exit code.
 
-    A deliberate finish is `end_turn` even when the verify gate stayed red
-    (exit 4) or the edits stranded uncommitted (exit 5): the agent answered,
-    and that state is already on the wire as messages. `refusal` is for a run
-    that could not complete (it broke, was refused, or hit its budget); ACP has
-    no finer failure word, and the detail again arrives as messages.
+    A deliberate finish is `end_turn` even over a red gate or stranded edits, which
+    are already on the wire; `refusal` is ACP's one word for a run that could not
+    complete.
+
+    Args:
+        code: The exit code.
+        end_reason: The journal's end reason for this turn, or "".
     """
     if code == 130:
         return "cancelled"
@@ -169,10 +167,9 @@ def stop_reason(code: int, *, end_reason: str = "") -> StopReason:
 
 
 def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
-    """The option the editor chose, or None for no usable answer.
+    """Return the option the editor chose, or None for no usable answer.
 
-    A cancel, a timeout and an id we did not issue are all "no answer", and
-    the answer has to be one we offered, or an unknown string could become an
+    The answer must be an offered index, or an unknown string could become an
     "allow" by prefix.
     """
     outcome = answer.get("outcome")
@@ -186,14 +183,14 @@ def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
 
 
 class Announced:
-    """One turn's register: its number, and the tool calls the editor has
-    been told about.
+    """Register one turn's number and the tool calls the editor has been told about.
 
-    Written by the tail as it announces; a permission request for a call
-    waits here until the call it names has been announced, so the editor
-    never hears of a call first through its approval. The wait is bounded by
-    liveness, never a clock: the tail closes the register when it stops
-    reading, and a cancelled turn abandons the wait.
+    A permission request waits here until the call it names is announced, so the
+    editor never hears of a call first through its approval. The wait ends on
+    liveness, never a clock: the tail closes the register when it stops reading.
+
+    Attributes:
+        turn: The turn's number.
     """
 
     def __init__(self, turn: int) -> None:
@@ -207,23 +204,26 @@ class Announced:
             return tool_call_id in self._ids
 
     def add(self, tool_call_id: str) -> None:
+        """Record a call as announced and wake every waiter."""
         with self._changed:
             self._ids.add(tool_call_id)
             self._changed.notify_all()
 
     def close(self) -> None:
+        """Close the register once the tail stops reading, ending every wait."""
         with self._changed:
             self._closed = True
             self._changed.notify_all()
 
     def wait_for(self, tool_call_id: str, *, abandoned: Callable[[], bool]) -> None:
+        """Wait until the call is announced, the register closes or the turn is abandoned."""
         with self._changed:
             while tool_call_id not in self._ids and not self._closed and not abandoned():
-                self._changed.wait(0.5)  # *abandoned* is polled; add/close wake at once
+                self._changed.wait(0.5)  # abandonment is polled; add and close wake at once
 
 
 def _result_paths(event: dict[str, Any]) -> tuple[str, ...]:
-    """The paths a tool.result journaled, for the editor's follow-along."""
+    """Return the paths a tool.result journaled, for the editor's follow-along."""
     raw = event.get("paths")
     if not isinstance(raw, list):
         return ()
@@ -232,16 +232,18 @@ def _result_paths(event: dict[str, Any]) -> tuple[str, ...]:
 
 @dataclass
 class RunBridge:
-    """Runs prompts for one ACP connection."""
+    """Run prompts for one ACP connection.
+
+    Attributes:
+        server: The connection.
+        config_path: The `--config FILE` overlay every session load threads.
+    """
 
     server: ACPServer
-    # The top-level `--config FILE` overlay; every session load threads it.
     config_path: Path | None = None
-    # One at a time: the chdir in `_run` is process-global, and a run in the
-    # wrong directory commits to the wrong repository.
+    # One run at a time: the chdir in `_run` is process-global.
     _runs: threading.Lock = field(default_factory=threading.Lock)
-    # The session whose turn holds `_runs`, named to a turn queued behind it.
-    _running: Session | None = None
+    _running: Session | None = None  # the turn holding `_runs`, named to a queued one
     _asks: threading.Lock = field(default_factory=threading.Lock)
     _asked: int = 0
 
@@ -250,6 +252,7 @@ class RunBridge:
             self.config_path = self.config_path.resolve()
 
     def sessions(self) -> Sessions:
+        """Return the session table wired to this bridge."""
         return Sessions(run=self.run, state_dir_for=state_dir)
 
     def ask(
@@ -262,28 +265,25 @@ class RunBridge:
         call_id: int | None,
         until: Callable[[], bool] | None = None,
     ) -> str | None:
-        """Put one approval or question to the editor.
+        """Put one approval or question to the editor as a permission request.
 
-        ACP v1 has no method for a free-form question, so a `UserQuestion` goes
-        out as a permission request too: its options are the answers. The
-        editor renders buttons either way, which is what the seam needs.
+        ACP v1 has no free-form question, so a question's options are its buttons,
+        and one with no options is answered "said nothing" at once. The request's
+        `toolCall` carries the whole prompt as the title; a prompt gating a call
+        names that call once announced, and one gating none announces and closes
+        an entity of its own.
 
-        A question with no options has no buttons, so there is nothing for the
-        operator to press: asking would stall the whole permission timeout and
-        then answer "said nothing" regardless. Not asking is the same answer
-        immediately, without holding the run for five minutes.
+        Args:
+            session: The session.
+            announced: The turn's register of announced calls.
+            prompt: The text.
+            options: The choices, in order.
+            standing: Whether "always" may be offered; None for a question.
+            call_id: The dispatcher's stamp on the gated call, or None.
+            until: Polled while the answer is pending; True ends the wait.
 
-        `toolCall` is required on a permission request, and is the only text
-        the editor has to render: it carries the prompt as the call's title,
-        which a ToolCallUpdate exists to update. The announced title is
-        `salient_arg` clipped to 60 chars, which would show the operator an
-        argv whose first line looks benign and whose rest they never see. A
-        prompt gating a tool call (*call_id*, the dispatcher's
-        stamp) names that call, once the tail has announced it; its lifecycle
-        carries on from there (pending, then its outcome). A prompt gating no
-        call announces an entity of its own, and closes it: an entity ACP
-        models as having a lifecycle needs its end, or an editor keeps one
-        pending tool call per approval for the life of the session.
+        Returns:
+            The chosen option, or None for no answer.
         """
         if not options:
             return None
@@ -318,11 +318,7 @@ class RunBridge:
                 "toolCall": tool_call,
                 "options": [
                     {
-                        # An index, not the option text: the text can be
-                        # model-written (a UserQuestion's options are), and an
-                        # identifier is not a place for model input. It also
-                        # makes "only an option we offered" structural rather
-                        # than a string comparison.
+                        # An index, not the text: the text can be model-written.
                         "optionId": str(index),
                         "name": printable(text),
                         "kind": option_kind(text, standing),
@@ -352,13 +348,12 @@ class RunBridge:
         return chosen
 
     def _frontend(self, session: Session, announced: Announced) -> SessionFrontend:
+        """Return the front-end for one turn."""
         return acp_frontend(
             ask=lambda prompt, options, standing, call_id, until=None: self.ask(
                 session, announced, prompt, options, standing, call_id, until
             ),
-            # `initialize` has not landed if this is None, and nothing is
-            # known about the client; the cautious answer is that it can do
-            # nothing.
+            # Before `initialize` lands nothing is known about the client, so it can do nothing.
             capabilities=self.server.client_capabilities or FrontendCapabilities(),
             agent6_exe=agent6_exe,
             spawn_detached_resume=lambda cwd, sid, flags: spawn_detached_resume(
@@ -367,54 +362,45 @@ class RunBridge:
         )
 
     def _resumable(self, session: Session) -> bool:
-        """A later prompt continues the session's run: the prior turn left a
-        resume snapshot."""
+        """Return whether the prior turn left a resume snapshot for this prompt to continue."""
         if not session.session_id:
             return False
         layout = session.layout(state_dir(session.cwd))
         return (layout.session_dir / "loop_state.json").is_file()
 
     def _recorded(self, session: Session) -> bool:
-        """Whether the session's run id names a run the lifecycle recorded
-        (its manifest exists): such an id starts nothing again, a never
-        recorded one starts as new."""
+        """Return whether the session's run id names a recorded run, which starts nothing again."""
         if not session.session_id:
             return False
         return session.layout(state_dir(session.cwd)).manifest_path.exists()
 
     def _cancelled_unstarted(self, session: Session) -> StopReason:
-        """A turn cancelled before it started is stopped by not starting it;
-        the marker the cancel wrote would otherwise stop the session's next
-        turn at its first step."""
+        """Clear the cancel's marker, which would otherwise stop the next turn at its first step.
+
+        Returns:
+            The stop reason "cancelled".
+        """
         clear_stop_request(session.layout(state_dir(session.cwd)).session_dir)
         return "cancelled"
 
     def had_journal(self, session: Session) -> bool:
-        """Whether this turn got far enough to write a journal of its own."""
+        """Return whether the turn got far enough to write a journal."""
         if not session.session_id:
             return False
         return session.layout(state_dir(session.cwd)).logs_path.exists()
 
     def run(self, session: Session, text: str) -> StopReason:
-        # The turn's start: a cancel written from here on (during the queue
-        # wait, or the lifecycle's own startup) is this turn's to honor.
-        started_at = time.time()
-        # Before the queue, not after. `_runs` is held for a whole run, so a
-        # second session's turn can wait here for many minutes, and deciding
-        # the id inside would leave that whole window with no run to address:
-        # a cancel writes no marker, the turn runs to completion spending
-        # budget and making commits, and the editor is told "cancelled".
-        # Through the owner: a fresh id reaches run_task as an explicit one,
-        # which skips the lifecycle's own minting; a collision would refuse
-        # the turn with "use agent6 resume <id>" over an id the editor never
-        # chose.
+        """Run one prompt as a turn, queued behind another session's turn.
+
+        Returns:
+            ACP's stop reason.
+        """
+        started_at = time.time()  # a cancel written from here on is this turn's to honor
+        # The id is minted before the queue, so a cancel during the wait has a run to address.
         try:
             resuming = self._resumable(session)
             if not resuming and self._recorded(session):
-                # The prior turn recorded a run and left no resume point (it
-                # died before its first checkpoint): the lifecycle refuses
-                # that id as existing and would refuse a resume too, so the
-                # session goes on under a new run, and says so.
+                # A recorded run with no resume point is refused both ways; a new run says so.
                 self.server.notify_raw(
                     message_update(
                         session.acp_id,
@@ -427,14 +413,10 @@ class RunBridge:
                 session.session_id = unused_session_id(
                     state_dir(session.cwd), session_bucket(ACP_MODE)
                 )
-        except Exception as exc:
-            # A config that cannot be read raises here, before any journal.
+        except Exception as exc:  # an unreadable config raises here, before any journal
             self._could_not_finish(session, exc)
             return "refusal"
         if not self._runs.acquire(blocking=False):
-            # Queued behind another session's turn: say so, and keep listening
-            # for a cancel while waiting (a turn that has not started is
-            # stopped by not starting it).
             holder = self._running
             who = f"session {holder.acp_id}" if holder is not None else "another session"
             self.server.notify_raw(
@@ -460,17 +442,21 @@ class RunBridge:
             self._runs.release()
 
     def _could_not_finish(self, session: Session, exc: Exception) -> None:
-        """A run that dies says why before the turn returns its stop reason.
-        A broken config is the ordinary case (the CLI prints it; here the
-        editor would otherwise see a turn end with no words). This also follows
-        a journal ending when later finalization fails: that failure is part of
-        the run too. A non-operator fault's traceback goes to stderr."""
+        """Tell the editor why a run died before the turn returns its stop reason.
+
+        A non-operator fault's traceback goes to stderr.
+        """
         what = "could not start" if not self.had_journal(session) else "failed"
         self.server.notify_raw(message_update(session.acp_id, f"the run {what}: {exc}"))
         if not isinstance(exc, OperatorError):
             _stderr(f"[agent6] run {session.session_id}: {traceback.format_exc()}")
 
     def _run(self, session: Session, text: str, *, resuming: bool, started_at: float) -> StopReason:
+        """Run the turn under the run lock, with a tail projecting its journal.
+
+        Returns:
+            ACP's stop reason.
+        """
         layout = session.layout(state_dir(session.cwd))
         os.chdir(session.cwd)
         session.turn += 1
@@ -481,14 +467,7 @@ class RunBridge:
         ended, drained = threading.Event(), threading.Event()
 
         def _stop() -> bool:
-            """Stop the tail one read pass after the run returns.
-
-            `tail_events` checks this at the top of each poll, so answering
-            False once lets the journal's last lines still reach the editor.
-            Stopping immediately would drop them; waiting for the run's own
-            `session.end` would tax every turn that ends without one (a config
-            error, an early refusal) with the full drain timeout.
-            """
+            """Return whether the tail stops: one pass after the run, so its last lines land."""
             if not ended.is_set():
                 return False
             if drained.is_set():
@@ -508,10 +487,7 @@ class RunBridge:
         reporter = forwarding_reporter(self.server, session.acp_id, said, order=order)
         try:
             if resuming:
-                # The prompt rides in as the resumed run's first steering
-                # instruction; resume accepts a finished run exactly when it
-                # carries one. resume_task loads config itself, from the same
-                # explicit path.
+                # The prompt is the resumed run's first steering instruction.
                 code = resume_task(
                     self.config_path,
                     session.session_id,
@@ -537,12 +513,8 @@ class RunBridge:
             tail.join(timeout=DRAIN_S)
             order.flush(None)  # a tail that outlived the drain still owes these
         if code != 0 and not said and not self.had_journal(session):
-            # A stop before the run had anything to say for itself.
             self.server.notify_raw(message_update(session.acp_id, f"the run stopped (exit {code})"))
-        # A refusal that returns before journaling its own session.end leaves
-        # the previous turn's reason in the journal, and a resume start clears
-        # the fold's `finished` but not its `end_reason`: only a journal that
-        # grew and ended this execution carries a reason of this turn.
+        # Only a journal that grew and ended this execution carries a reason of this turn.
         grown = journal_size(layout.logs_path) > journal_before
         scan = scan_session_log(layout.logs_path)
         end_reason = scan.end_reason if grown and scan.finished else ""
@@ -557,15 +529,20 @@ class RunBridge:
         announced: Announced,
         order: ProseOrder | None = None,
     ) -> None:
-        """Project the run's journal into `session/update` as it is written,
-        the lifecycle's own lines taking their place between events.
+        """Project the run's journal into `session/update` as it is written.
 
-        A resumed run appends to the journal its prior executions already fill, and
-        the editor rendered those turns as they happened: start where the
-        journal ended before this execution (*journal_before*), or the whole
-        conversation replays as if new. The ending also goes to
-        stderr, the editor's agent log: the editor is the live view, so the
-        lifecycle prints no ending of its own."""
+        The lifecycle's own lines take their place between events; the ending also
+        goes to stderr, since the lifecycle prints none of its own.
+
+        Args:
+            session: The session.
+            logs_path: The journal.
+            stop: Polled by the tail; True ends it.
+            journal_before: Where to start on a resumed run, whose earlier turns the
+                editor already rendered; None replays the whole journal.
+            announced: The turn's register of announced calls.
+            order: The lifecycle's queued lines.
+        """
         fold = TranscriptFold()
         streamed: set[str] = set()
         consumed = [0]
@@ -644,7 +621,16 @@ def serve_acp(
     *,
     config_path: Path | None = None,
 ) -> int:
-    """Speak ACP on this process's stdio until the editor closes it."""
+    """Speak ACP on the process's stdio until the editor closes it.
+
+    Args:
+        stdin: The client's requests; None is the process's stdin.
+        stdout: The replies; None is the process's stdout.
+        config_path: The `--config FILE` overlay, or None.
+
+    Returns:
+        The exit code, 0.
+    """
     server = ACPServer(
         stdin=stdin if stdin is not None else sys.stdin.buffer,
         stdout=stdout if stdout is not None else sys.stdout.buffer,

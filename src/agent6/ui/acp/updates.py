@@ -2,13 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Project the shared transcript fold into ACP `session/update` notifications.
 
-The fold (`viewmodel.transcript`) is what the CLI, the TUI and the web already
-render. Projecting it, rather than reading the journal again with ACP's own
-rules, keeps a fourth surface from disagreeing with the other three about what
-happened in a run.
-
-Pure: events in, notification bodies out. Nothing here touches the wire, so a
-test can assert the exact JSON an editor would receive.
+Projecting the fold every other surface renders keeps a fourth surface from
+disagreeing about what happened. Nothing here touches the wire.
 """
 
 from __future__ import annotations
@@ -18,18 +13,12 @@ from typing import Any
 
 from agent6.viewmodel.transcript import TranscriptItem
 
-# Which ACP update a fold item becomes. `thinking` is the model's reasoning and
-# ACP has a distinct channel for it; an editor renders it collapsed rather than
-# as the answer. `operator` is the human's own words (a steer, or the follow-up
-# a resume began with), so it echoes back as a user message, not as something
-# the agent said.
+# The update a fold item becomes; the operator's own words echo back as a user message.
 _CHUNK_KIND = {
     "thinking": "agent_thought_chunk",
     "text": "agent_message_chunk",
     "operator": "user_message_chunk",
-    # Harness prose: a compaction, a btw answer, an operator notice. Not the
-    # model speaking, but what the run said.
-    "marker": "agent_message_chunk",
+    "marker": "agent_message_chunk",  # harness prose: a compaction, a btw answer, a notice
 }
 
 # ACP's kind per built-in tool, the editor's icon; an MCP tool reads `other`.
@@ -54,9 +43,7 @@ _TOOL_KINDS = {
     "ask_user": "other",
     "add_task": "think",
     "update_task": "think",
-    # The finish tools never fold to a call (the transcript drops them);
-    # listed so the map covers the whole surface.
-    "finish_session": "other",
+    "finish_session": "other",  # the finish tools never fold to a call; listed for coverage
     "finish_planning": "other",
 }
 
@@ -71,17 +58,19 @@ def updates_for(
     paths: tuple[str, ...] = (),
     streamed: bool = False,
 ) -> list[dict[str, Any]]:
-    """The `session/update` notifications one fold item becomes.
+    """Return the `session/update` notifications one fold item becomes.
 
-    A tool call is announced once (`tool_call`, from its first in-flight item)
-    and updated after that (`tool_call_update`: awaiting approval, running
-    again, settled), paired by *wire_id* (`tool_call_id`; the execution's own stamp
-    when none is given); *announced* says the editor already has the call.
-    ACP models a tool call as a thing with a lifecycle, and an editor that
-    only sees the finished one cannot show work in progress, which for a
-    long verify is the whole point.
+    A tool call is announced once and updated after that, so an editor shows work
+    in progress.
 
-    `streamed`: *item* is one delta of a message in flight, sent whole.
+    Args:
+        item: The fold item.
+        acp_session_id: The conversation the notifications address.
+        wire_id: The call's `toolCallId`; "" takes the execution's own stamp.
+        announced: The editor already has the call.
+        cwd: The working directory the locations resolve against.
+        paths: The paths the tool result named.
+        streamed: The item is one delta of a message in flight, sent whole.
     """
     if item.kind == "done":
         return [
@@ -91,8 +80,6 @@ def updates_for(
             )
         ]
     if item.kind == "commit":
-        # `body` is empty on a commit; the sha and the line count live in
-        # `detail`.
         text = " ".join(part for part in ("committed", item.arg, item.detail) if part)
         return [
             _update(
@@ -118,8 +105,7 @@ def updates_for(
             )
         ]
     chunk = _CHUNK_KIND.get(item.kind)
-    # A streamed delta keeps every byte (a paragraph break arrives as its own
-    # delta); a whole message is stripped, and a blank one is no message.
+    # A streamed delta keeps every byte; a whole message is stripped, and a blank one is none.
     body = item.body if streamed else item.body.strip()
     if chunk is None or not body:
         return []
@@ -127,17 +113,10 @@ def updates_for(
 
 
 def ending(item: TranscriptItem) -> str:
-    """How a run ended, in words.
+    """Return how a run ended, in the status words every surface uses.
 
-    The fold sets `body` only for a clean `finish_session`, carrying everything
-    else in `ok`/`name`/`detail`. Reading `body` alone would render a provider
-    error, a budget stop and an iteration cap as silence, and make a finish
-    over a red gate look identical to a green one.
-
-    The words are the status vocabulary every other surface uses: "passed" only
-    for all-gates-green, otherwise the end reason's own label. "finished" is a
-    deliberate finish that verified nothing (a gateless run), not a failure
-    verdict.
+    The fold sets `body` only for a clean `finish_session`; the end reason rides in
+    `name` and `detail`, so a provider error or a red gate is never silence.
     """
     parts = [f"Session {item.name or 'ended'}"]
     if item.detail:
@@ -147,13 +126,7 @@ def ending(item: TranscriptItem) -> str:
 
 
 def message_update(acp_session_id: str, text: str) -> dict[str, Any]:
-    """One line of agent6's own prose, as a `session/update`.
-
-    What the harness says when there is no run to say it: a cancel for a
-    session that does not exist, a run that died before it had a journal. Both
-    would otherwise put nothing on the wire, and an editor cannot render
-    silence. Marked as agent6's own, because the model did not say it.
-    """
+    """Return one line of agent6's own prose as a `session/update`, marked as its own."""
     return _update(
         acp_session_id,
         {"sessionUpdate": "agent_message_chunk", "content": _text(f"[agent6] {text}")},
@@ -161,6 +134,7 @@ def message_update(acp_session_id: str, text: str) -> dict[str, Any]:
 
 
 def _update(acp_session_id: str, update: dict[str, Any]) -> dict[str, Any]:
+    """Return one `session/update` notification."""
     return {
         "jsonrpc": "2.0",
         "method": "session/update",
@@ -169,85 +143,66 @@ def _update(acp_session_id: str, update: dict[str, Any]) -> dict[str, Any]:
 
 
 def printable(text: str) -> str:
-    """Model-authored text, with control characters dropped.
+    """Return the text with control characters dropped.
 
-    Every string this front-end puts on the wire that the model had a hand in
-    goes through here: a ContentBlock, a tool call's `title` (the model's own
-    argv, via `salient_arg`), and a permission request's title and option
-    names, the one surface an operator must read before granting a command.
+    Every model-authored string on the wire goes through here: content blocks,
+    tool titles, and the permission request an operator reads before granting.
     """
     return "".join(c for c in text if c.isprintable() or c in "\n\t")
 
 
 def _text(text: str) -> dict[str, Any]:
-    """A ContentBlock, with control characters dropped.
-
-    Every string this module puts on the wire goes through here, and most of
-    them are model-authored. The fold scrubs its own previews and deltas
-    (viewmodel.transcript.scrub_terminal_controls), but the renderer here is a
-    third party: agent6 does not get to assume it treats an escape as inert,
-    so this layer scrubs everything it emits regardless. `isprintable` is
-    false for every C0/C1 control, so a sequence loses its ESC and becomes
-    the literal text it was pretending not to be.
-    """
+    """Return a text content block, scrubbed; the editor is a third-party renderer."""
     return {"type": "text", "text": printable(text)}
 
 
 def _tool_status(item: TranscriptItem) -> str:
-    """ACP's status for the fold's item: a call in flight is `in_progress`,
-    or `pending` while it waits on an approval or an ask_user answer (the
-    fold's mark in `detail`); a settled one carries its verdict."""
+    """Return ACP's status for the item; a call waiting on an answer is `pending`."""
     if item.ok is None:
         return "pending" if item.detail else "in_progress"
     return "completed" if item.ok else "failed"
 
 
 def _tool_content(item: TranscriptItem) -> list[dict[str, Any]]:
-    """What the tool produced, in ACP's tagged shape.
+    """Return what the tool produced, in ACP's tagged shape.
 
-    `ToolCallContent` is a discriminated union (`content` | `diff` |
-    `terminal`), not a bare ContentBlock array. A bare array makes a strict
-    client reject the whole notification, so its `completed`/`failed` never
-    arrives and the call stays `pending` for the rest of the session.
-
-    `tail` is the failure's actual output (a red gate's test log, a command's
-    stderr). The fold fills it for exactly this; dropping it leaves an editor
-    showing "failed" with no reason.
+    A bare content-block array makes a strict client reject the notification, and
+    the call then stays pending; `tail` is the failure's output, the reason an
+    editor shows beside "failed".
     """
     body = "\n".join(part for part in (item.detail, item.tail) if part)
     return [{"type": "content", "content": _text(body)}] if body else []
 
 
 def _tool_locations(paths: tuple[str, ...], cwd: Path) -> list[dict[str, str]]:
-    """ACP's absolute follow-along locations from a tool.result's paths, each
-    once."""
+    """Return ACP's absolute follow-along locations, each path once."""
     resolved = ((cwd / path).resolve() for path in paths)
     return [{"path": str(path)} for path in dict.fromkeys(resolved)]
 
 
 def wire_call_id(session_id: str, turn: int, within_execution: str) -> str:
-    """One tool call's id on the wire, `<run>:<turn>:<call>`: unique for the
-    life of the ACP session, which is what an editor keys a call's lifecycle
-    on. *within_execution* is the dispatcher's stamp, a per-execution counter that starts
-    at 1 in every turn, so the run id and the turn join it."""
+    """Return a tool call's wire id, `<run>:<turn>:<call>`, unique for the ACP session.
+
+    Args:
+        session_id: The run id; "" leaves the stamp bare.
+        turn: The turn.
+        within_execution: The dispatcher's stamp, a counter that restarts every turn.
+    """
     return f"{session_id}:{turn}:{within_execution}" if session_id else within_execution
 
 
 def _execution_call_id(item: TranscriptItem) -> str:
-    """A fold item's stamped call id, which makes every call its own entity
-    (two identical calls share a name+arg key); the name+arg fall-back is for
-    historical events with no stamp."""
+    """Return the item's stamped call id, or its name and arg for an event with no stamp."""
     return item.call_id or (f"{item.name}:{item.arg}" if item.arg else item.name)
 
 
 def tool_call_id(item: TranscriptItem, session_id: str, turn: int) -> str:
-    """`wire_call_id` for a fold item."""
+    """Return the wire id for a fold item."""
     return wire_call_id(session_id, turn, _execution_call_id(item))
 
 
 def _tool_call(item: TranscriptItem, wire_id: str) -> dict[str, Any]:
-    # The model wrote `arg` (its own argv / path / pattern), so it is scrubbed
-    # like any other model text; `content` next door already was.
+    """Return the `tool_call` announcement's fields; the model wrote the arg, so it is scrubbed."""
     title = printable(f"{item.name} {item.arg}".strip())
     return {
         "toolCallId": wire_id,

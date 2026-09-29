@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""JSON-RPC 2.0 over stdio, and the `initialize` handshake.
+"""Speak JSON-RPC 2.0 over stdio, with the `initialize` handshake.
 
-Framing is line-delimited JSON with a bounded read, the same shape
-`ui/mcp_server.py` uses and for the same reason: an unbounded `readline`
-buffers a whole line before any size check, so a runaway client could exhaust
-memory before the cap could refuse it. The dispatch is not shared: different
-protocol, different methods.
+Framing is line-delimited JSON with a bounded read, as `ui/mcp_server.py` frames:
+an unbounded `readline` buffers a whole line before any size check.
 """
 
 from __future__ import annotations
@@ -33,62 +30,60 @@ from agent6.ui.acp.rpc import (
 from agent6.ui.acp.session import Sessions, prompt_text
 from agent6.ui.acp.updates import message_update
 
-# The ACP version this front-end speaks. Negotiation is bilateral: the client
-# sends the newest it supports, we answer with this, and the client disconnects
-# if it cannot live with the answer.
+# The client sends the newest version it supports and disconnects if this one will not do.
 PROTOCOL_VERSION = 1
-# 4 MiB, mirroring the MCP server's cap. A prompt with a large pasted context
-# is the legitimate big case; past this the payload is dropped, not buffered.
+# 4 MiB, the MCP server's cap; past it the payload is dropped, not buffered.
 MAX_LINE_BYTES = 1 << 22
-# How long EOF waits for a turn to reach its next boundary. Long enough for a
-# verify to finish, short enough that a wedged run does not hold the editor's
-# exit forever.
+# How long EOF waits for a turn to reach its next boundary: a verify's length, not a wedged run's.
 EOF_GRACE_S = 30.0
 
-
-# A handler returns this instead of a result when the reply comes later, from
-# a worker thread. `session/prompt` is the case: answering it inline would
-# block the read loop for the whole run, and a blocked loop cannot receive the
-# `session/cancel` that ACP requires to work during one.
+# A handler's result when a worker thread replies later, so the read loop stays free for a cancel.
 DEFERRED = object()
 
 
 @dataclass
 class _Pending:
-    """One outstanding request to the client."""
+    """One outstanding request to the client.
+
+    Attributes:
+        arrived: Set once the answer landed or the wait was abandoned.
+        answer: The client's response frame.
+    """
 
     arrived: threading.Event = field(default_factory=threading.Event)
     answer: dict[str, Any] | None = None
 
 
 def capabilities_from(_client: dict[str, Any]) -> FrontendCapabilities:
-    """What the client said it can do, as the seam every front-end declares.
+    """Return the client's capabilities in the seam every front-end declares.
 
-    `session/request_permission` is required of every ACP client, so a
-    connected one can always be asked."""
+    Every ACP client must serve `session/request_permission`, so it can be asked.
+    """
     return FrontendCapabilities(can_ask=True)
 
 
 @dataclass
 class ACPServer:
-    """One ACP connection. Owns the framing; the methods live beside it."""
+    """One ACP connection, owning the framing.
+
+    Attributes:
+        stdin: The client's requests.
+        stdout: The replies and notifications.
+        client_capabilities: What the client declared at `initialize`.
+        sessions: How a prompt becomes a run; None in a transport-only test.
+    """
 
     stdin: BinaryIO
     stdout: BinaryIO
     client_capabilities: FrontendCapabilities | None = None
-    # How a prompt becomes a run. None in a transport-only test.
     sessions: Sessions | None = None
     _handlers: dict[str, Any] = field(default_factory=dict)
-    # One writer at a time: the read loop answers requests while worker threads
-    # stream session/update, and two interleaved writes are a line no editor
-    # can parse.
+    # One writer at a time: a reply and a worker's update interleaved is a line no editor parses.
     _write_lock: threading.Lock = field(default_factory=threading.Lock)
-    # Requests we sent the client, awaiting its answer.
     _pending: dict[object, _Pending] = field(default_factory=dict)
     _pending_lock: threading.Lock = field(default_factory=threading.Lock)
     _next_id: int = 0
-    # The client's end of the pipe is closed; further writes have no reader.
-    _gone: bool = False
+    _gone: bool = False  # the client's end of the pipe is closed
 
     def __post_init__(self) -> None:
         self._handlers = {
@@ -99,21 +94,17 @@ class ACPServer:
         }
 
     def serve(self) -> None:
-        """Read messages until EOF. Requests are answered; notifications are
-        acted on and not answered, per JSON-RPC."""
+        """Read messages until EOF; requests are answered, notifications acted on."""
         while True:
             line = self.stdin.readline(MAX_LINE_BYTES + 1)
             if not line:
-                # EOF: the editor closed. Let a live turn stop at a boundary
-                # rather than being torn down mid-git holding the locks.
+                # EOF: a live turn stops at a boundary rather than mid-git holding the locks.
                 self.abandon_pending()
                 if self.sessions is not None:
                     self.sessions.wait_for_turns(timeout_s=EOF_GRACE_S)
                 return
             if len(line) > MAX_LINE_BYTES:
-                # Drain the rest of the oversized line in bounded chunks and
-                # drop the payload: refusing beats buffering it. Its id is
-                # inside the dropped bytes, so the refusal carries none.
+                # The payload is drained in bounded chunks and dropped; its id went with it.
                 while line and not line.endswith(b"\n"):
                     line = self.stdin.readline(MAX_LINE_BYTES + 1)
                 self.reply(
@@ -129,13 +120,14 @@ class ACPServer:
             self._handle(line)
 
     def _handle(self, line: bytes) -> None:
+        """Dispatch one message to its handler and send the reply it owes."""
         parsed = self._envelope(line)
         if parsed is None:
             return
         req_id, method, params = parsed
         handler = self._handlers.get(method)
         if handler is None:
-            if req_id is not None:  # a notification we do not know is ignorable
+            if req_id is not None:  # an unknown notification is ignorable
                 self.reply(req_id, error=(METHOD_NOT_FOUND, f"unknown method: {method!r}"))
             return
         try:
@@ -144,23 +136,26 @@ class ACPServer:
             if req_id is not None:
                 self.reply(req_id, error=(exc.code, exc.message))
             return
-        except Exception as exc:  # a handler bug must not kill the connection
+        except Exception as exc:  # a handler bug never kills the connection
             print(f"[agent6] {method}: {traceback.format_exc()}", file=sys.stderr)
             if req_id is not None:
                 self.reply(req_id, error=(INTERNAL_ERROR, f"{type(exc).__name__}: {exc}"))
             return
         if result is DEFERRED:
-            return  # a worker owns this reply now
+            return
         if req_id is not None:
             self.reply(req_id, result=result)
 
     def _envelope(  # noqa: PLR0911
         self, line: bytes
     ) -> tuple[object, str, dict[str, Any]] | None:
-        """`(id, method, params)`, or None when there is nothing to act on.
+        """Parse one line into its id, method and params.
 
-        Invalid JSON has no request id to echo, so its parse-error response
-        carries a null id. The connection stays open for the next request.
+        Invalid JSON has no id to echo, so its parse error carries a null id; the
+        connection stays open.
+
+        Returns:
+            The id, method and params, or None when there is nothing to act on.
         """
         try:
             message = json.loads(line)
@@ -178,10 +173,7 @@ class ACPServer:
             return None
         req_id = message.get("id")
         if "method" not in message and self._ours(req_id) and self._deliver(req_id, message):
-            # The client answering something we asked (the reply path for
-            # session/request_permission): the slot waiting on it vouches for
-            # the frame, so an envelope fault does not cost the worker the
-            # permission timeout.
+            # The client's answer to a request of ours; the waiting slot vouches for the frame.
             return None
         if message.get("jsonrpc") != "2.0":
             self.reply(
@@ -203,8 +195,7 @@ class ACPServer:
         raw = message.get("params")
         if not isinstance(method, str):
             if req_id is not None:
-                # An error frame naming an id we minted would answer our own
-                # request: a malformed answer to one is refused under null.
+                # An error frame naming an id this server minted would answer its own request.
                 self.reply(
                     None if self._ours(req_id) else req_id,
                     error=(INVALID_REQUEST, "no method"),
@@ -222,12 +213,8 @@ class ACPServer:
     def abandon_pending(self) -> None:
         """Answer every outstanding request with nothing, because nobody will.
 
-        The read loop is the only thing that delivers a client's answer, so
-        once it is gone a worker waiting on an approval waits the full
-        permission timeout, far longer than the EOF grace: the process would
-        exit and kill the run it was trying to let finish. The seam already
-        reads an empty answer as the cautious deny, so the run reaches its next
-        boundary and the stop marker takes effect.
+        Only the read loop delivers a client's answer; without this a worker would
+        wait the full permission timeout, past the EOF grace, and be killed mid-run.
         """
         with self._pending_lock:
             waiting = list(self._pending.values())
@@ -237,16 +224,17 @@ class ACPServer:
 
     @staticmethod
     def _ours(req_id: object) -> bool:
-        """Whether *req_id* is one `request` minted."""
+        """Return whether the id is one `request` minted."""
         return isinstance(req_id, str) and req_id.startswith("agent6-")
 
     def _deliver(self, req_id: object, message: dict[str, Any]) -> bool:
-        """Hand a client response to whoever is waiting for it. True if it was
-        ours."""
+        """Hand a client response to the slot waiting for it.
+
+        Returns:
+            Whether a slot was waiting; a frame with neither result nor error is not
+            a response, and would otherwise deny the approval it named.
+        """
         if "result" not in message and "error" not in message:
-            # A JSON-RPC response carries one or the other. Without this, any
-            # malformed frame carrying an outstanding id would become that
-            # approval's answer, and an unreadable answer denies.
             return False
         with self._pending_lock:
             slot = self._pending.pop(req_id, None)
@@ -266,12 +254,17 @@ class ACPServer:
     ) -> dict[str, Any]:
         """Ask the client something and wait for its answer.
 
-        Called from a worker thread, never from the read loop: the loop
-        delivers the answer, so waiting on it there would deadlock. A
-        timeout answers with nothing rather than wedging the turn: an editor
-        that never replies must not cost the session. So does *until*
-        holding (polled every 0.2 s): the question was answered by another
-        route, and the editor's reply, if one comes, answers nothing.
+        Called from a worker thread, never the read loop, which delivers the answer.
+
+        Args:
+            method: The request's method.
+            params: Its params.
+            timeout_s: How long to wait before answering with nothing.
+            until: Polled every 0.2 s; True ends the wait with nothing, the prompt
+                having been answered by another route.
+
+        Returns:
+            The client's result object, or empty.
         """
         if until is not None and until():
             return {}
@@ -292,13 +285,19 @@ class ACPServer:
         return result if isinstance(result, dict) else {}
 
     def _session_new(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
+        """Return the reply to `session/new`: the new session's id."""
         return self._sessions().new(params)
 
     def _session_prompt(self, params: dict[str, Any], req_id: object) -> object:
+        """Serve `session/prompt`; the worker replies with the stop reason.
+
+        Returns:
+            `DEFERRED`.
+
+        Raises:
+            RpcError: The prompt came as a notification, which nothing could answer.
+        """
         if req_id is None:
-            # A turn's whole point is the stopReason it answers with. Sent as a
-            # notification there is nobody to answer, and replying with a null
-            # id is not valid JSON-RPC.
             raise RpcError(INVALID_REQUEST, "session/prompt is a request, not a notification")
         sessions = self._sessions()
         session = sessions.get(params)
@@ -311,11 +310,11 @@ class ACPServer:
         return DEFERRED
 
     def _session_cancel(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
-        # A notification in ACP: no reply, and it must land while the turn it
-        # cancels is still running, which is why the turn is not on this
-        # thread. A cancel for a session this server does not have would
-        # otherwise vanish with zero bytes written, so the stop button does
-        # nothing and says nothing; tell the editor instead.
+        """Serve `session/cancel`, a notification.
+
+        Returns:
+            An empty result, never sent; an unknown session is told to the editor.
+        """
         sessions = self._sessions()
         try:
             sessions.cancel(sessions.get(params))
@@ -324,11 +323,24 @@ class ACPServer:
         return {}
 
     def _sessions(self) -> Sessions:
+        """Return the session runner.
+
+        Raises:
+            RpcError: None is wired.
+        """
         if self.sessions is None:
             raise RpcError(INTERNAL_ERROR, "this connection has no session runner wired")
         return self.sessions
 
     def _initialize(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
+        """Serve `initialize`: the capability exchange.
+
+        Returns:
+            The protocol version and the agent's capabilities.
+
+        Raises:
+            RpcError: The protocol version is not an integer from 0 to 65535.
+        """
         protocol_version = params.get("protocolVersion")
         if (
             not isinstance(protocol_version, int)
@@ -341,13 +353,8 @@ class ACPServer:
         return {
             "protocolVersion": PROTOCOL_VERSION,
             "agentCapabilities": {
-                # `session/load` is what v2 reorganises, and resume is where
-                # agent6 has the most of its own semantics.
                 "loadSession": False,
-                # Not advertised: `prompt_text` keeps only text blocks, and a
-                # resource block's uri is client-controlled, so passing one
-                # through would be path injection. Claiming support and then
-                # dropping the attachment silently is worse than saying no.
+                # A resource block's uri is client-controlled; passing it through is path injection.
                 "promptCapabilities": {"embeddedContext": False},
             },
             "agentInfo": {"name": "agent6", "version": __version__},
@@ -361,6 +368,7 @@ class ACPServer:
         result: dict[str, Any] | None = None,
         error: tuple[int, str] | None = None,
     ) -> None:
+        """Send a reply carrying the result, or the error as code and message."""
         body: dict[str, Any] = {"jsonrpc": "2.0", "id": req_id}
         if error is not None:
             body["error"] = {"code": error[0], "message": error[1]}
@@ -369,9 +377,7 @@ class ACPServer:
         self.notify_raw(body)
 
     def notify_raw(self, body: dict[str, Any]) -> None:
-        """Write one message. Encoded lossily on purpose: a lone surrogate in
-        model-emitted text would otherwise raise mid-write and desynchronise
-        the stream, which is worse than a replacement character."""
+        """Write one message, encoded lossily: a lone surrogate must not desync the stream."""
         line = json.dumps(body, ensure_ascii=False, default=str) + "\n"
         gone = False
         with self._write_lock:
@@ -382,11 +388,8 @@ class ACPServer:
                     self.stdout.write(line.encode("utf-8", "replace"))
                     self.stdout.flush()
                 except BrokenPipeError:
-                    # The editor closed the connection. There is nobody left to
-                    # tell, and a live run's tail would otherwise raise once per
-                    # event; the run itself keeps going to its next boundary.
+                    # The editor closed; the run keeps going to its next boundary.
                     self._gone = True
                     gone = True
         if gone:
-            # Nothing this server asked can be answered now either.
             self.abandon_pending()

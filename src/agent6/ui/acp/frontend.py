@@ -1,15 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `SessionFrontend` an ACP client provides.
+"""Build the `SessionFrontend` an ACP client provides.
 
-Every prompt the lifecycle raises becomes a `session/request_permission` to
-the editor; everything a terminal front-end would draw becomes nothing, because
-an ACP client renders from `session/update` instead.
-
-A client that declared it cannot be asked is never asked: the answer comes from
-the cautious default rather than a hang or an invented yes. That is what
-`FrontendCapabilities` is for, so an editor with no way to show a prompt still
-gets a working session, one where the model has fewer powers.
+Every prompt the lifecycle raises becomes a `session/request_permission`; what a
+terminal would draw becomes nothing, since the editor renders `session/update`.
+A client that declared it cannot be asked gets the cautious default instead.
 """
 
 from __future__ import annotations
@@ -44,27 +39,28 @@ from agent6.tools.operator_prompts import (
 )
 from agent6.ui.steer import file_bridge_steer
 
-# How long a permission request waits for the editor. An operator who has
-# walked away must not hold a run forever, and the seam already reads silence
-# as the cautious answer: an approval becomes a denial, a question becomes no
-# answer at all.
+# Silence past the wait is the cautious answer: an approval denies, a question has none.
 PERMISSION_TIMEOUT_S = 300.0
 
 
-# What the client is asked, and what an unaskable client is assumed to have
-# said. Every one of these is the cautious answer: a session that cannot ask
-# does less, never something unwatched.
-# (prompt, options, standing, call_id) -> the chosen option, or None for no
-# answer. `standing` is None for a question, whose options the model wrote: an
-# answer among several is not a permission, and must never be offered as one
-# the editor may remember. `call_id` is the dispatcher's stamp on the tool
-# call the prompt gates (the `call_id` its journaled prompt carries), or None
-# for a prompt that gates no call (a pre-run question, a verify the harness
-# runs itself). The keyword `until`, polled while the editor's answer is
-# pending, ends the wait with None: the question was answered by another
-# route (the session's answer file, which every other seat writes).
 class Asker(Protocol):
-    def __call__(
+    """Ask the editor one prompt.
+
+    Args:
+        prompt: The text.
+        options: The choices, in order.
+        standing: Whether "always" may be offered; None for a question, whose
+            options the model wrote and which is never a permission.
+        call_id: The dispatcher's stamp on the gated tool call, or None for a
+            prompt that gates no call.
+        until: Polled while the answer is pending; True ends the wait with None,
+            the prompt having been answered by another route.
+
+    Returns:
+        The chosen option, or None for no answer.
+    """
+
+    def __call__(  # noqa: D102  # the protocol's docstring documents the call
         self,
         prompt: str,
         options: tuple[str, ...],
@@ -82,7 +78,17 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
     agent6_exe: Callable[[], str],
     spawn_detached_resume: Callable[[Path, str, Sequence[str]], str],
 ) -> SessionFrontend:
-    """Wire the lifecycle to one ACP client."""
+    """Wire the lifecycle to one ACP client.
+
+    Args:
+        ask: Asks the editor one prompt.
+        capabilities: What the client said it can do.
+        agent6_exe: The agent6 executable a spawn uses.
+        spawn_detached_resume: Spawns a detached resume.
+
+    Returns:
+        The front-end the lifecycle drives.
+    """
 
     def _approve(
         prompt: str,
@@ -92,14 +98,10 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         call_id: int | None = None,
         until: Callable[[], bool] | None = None,
     ) -> bool | None:
-        """The editor's verdict; None when it gave none (a timeout, or *until*
-        held first)."""
+        """Return the editor's verdict, or None when it gave none in time."""
         if not capabilities.can_ask:
-            return False  # nobody to ask, so the answer is no
-        # No scope means an "always allow" the editor remembers must not cover
-        # this one: the fetch tool's off-list host, where a GET can carry data
-        # out in its path. The option names carry it, because an editor that
-        # offers "always" needs something to key that decision on.
+            return False
+        # No scope means an "always allow" must not cover this one; the option names carry it.
         standing = scope is not None
         options = ("allow", "deny") if standing else ("allow once", "deny")
         answer = ask(prompt, options, standing, call_id, until)
@@ -107,8 +109,6 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
 
     def _build_approver(session_dir: Path) -> Approver:
         def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
-            # A client that cannot be asked denies as a headless run does, and
-            # the journal names that: nobody answered.
             if not capabilities.can_ask:
                 return ApprovalAnswer(False, "headless")
             approved = _approve(
@@ -118,7 +118,6 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
                 until=lambda: answer_written(session_dir, request.id),
             )
             if approved is None:
-                # The answer file: `agent6 answer`, the web, an attached TUI.
                 filed = read_answer(session_dir, request.id, timeout_s=0.0)
                 if filed is not None:
                     return ApprovalAnswer(
@@ -137,14 +136,9 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
                 filed = read_question_answers(session_dir, request.id, timeout_s=0.0)
                 if filed is not None:
                     return QuestionAnswer(filed, "frontend")
-                # ACP v1's permission request can only render option buttons.
-                # A free-form question, alone or in a batch, therefore reached
-                # nobody, rather than an operator who submitted a blank answer.
+                # ACP v1 renders option buttons only, so a free-form question reached nobody.
                 return QuestionAnswer(tuple("" for _ in request.questions), "headless", unseen=True)
-            # An unanswered question becomes an empty string, which the loop
-            # already treats as "the operator said nothing", not as a value.
-            # One deadline for the request: a timeout per question would make
-            # an N-question ask wait N times the documented bound.
+            # One deadline for the request, or N questions wait N times the bound.
             deadline = time.monotonic() + PERMISSION_TIMEOUT_S
             answers: list[str] = []
             for question in request.questions:
@@ -168,36 +162,26 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         return ask_questions
 
     def _confirm_unconfined(isolation: IsolationLevel, cfg: Config) -> bool:
-        """Only ask when it is actually true.
+        """Ask only when the run is unconfined, so the approval never becomes reflexive.
 
-        The lifecycle calls this on every run; the "is this dangerous" test
-        lives in the answer, not the call. Asking regardless would tell the
-        editor a confined run is unsandboxed, on the one approval that must
-        never become reflexive.
+        Returns:
+            Whether the run may go ahead.
         """
         if isolation != "none" or cfg.sandbox.run_commands != "yes":
             return True
-        # No scope: docs/security.md documents this as a one-time gate, and
-        # ACP's `allow_always` is exactly the button that would let one click
-        # silence it for every later session.
+        # No scope: docs/security.md makes this a one-time gate, never an "always".
         return bool(_approve("Run commands UNSANDBOXED on this host, with no per-command prompt?"))
 
     def _steer(
         _events: EventSink, session_dir: Path, _facts: Callable[[], SessionFacts]
     ) -> SteerHooks:
-        # The file bridge: a later prompt on this session resumes the run with
-        # its text seeded through the steer files (resume --steer), and the
-        # loop's pre-call drain reads these hooks, so the seeded instruction
-        # reaches the resumed model. Mid-run nothing here writes steer files,
-        # so no new affordance is offered.
+        # A later prompt resumes the run with its text seeded through the steer files.
         return file_bridge_steer(session_dir)
 
     def _no_repl(
         _session_dir: Path, _budget: BudgetTracker, _task: str, _mcp: object
     ) -> Callable[[int, str], AutoCommitDirective]:
-        # ACP has its own turn loop; an interactive REPL inside it would be a
-        # second one, with two things reading the same stdin. The hook exists
-        # and always continues.
+        # ACP has its own turn loop; a REPL inside it would be a second reader of stdin.
         return lambda _iteration, _summary: "continue"
 
     def _no_ask_repl(
@@ -208,10 +192,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
     return SessionFrontend(
         capabilities=capabilities,
         should_spawn_tui=lambda _tui, _interactive, _mode: False,
-        # Stream the deltas as events (session/update reads them); the editor
-        # is the live view, so the ending's headline and summary are the
-        # fold's done item, and the console view a terminal would attach is
-        # nothing here.
+        # The deltas stream as events; the editor is the live view.
         stream_modes=lambda _tui_enabled: (True, True),
         attach_console_view=lambda _events: None,
         close_console_view=lambda: None,
@@ -251,6 +232,5 @@ def _no_coordinator(
     _max_usd: float | None,
     _auto_approve: bool,
 ) -> None:
-    """`/parallel` fans out sibling runs, which need somewhere to be watched.
-    An ACP client renders one session; lanes would run invisibly."""
+    """Refuse `/parallel`: an ACP client renders one session, so lanes would run unseen."""
     return None
