@@ -15,7 +15,7 @@ doing the model's filesystem work. `session/load` is not implemented, and
 
 from __future__ import annotations
 
-from agent6.ui.acp.runner import serve_acp
-from agent6.ui.acp.server import ACPServer
+from agent6.ui.acp.runner import serve_acp  # noqa: ICN003  # re-export
+from agent6.ui.acp.server import ACPServer  # noqa: ICN003  # re-export
 
 __all__ = ["ACPServer", "serve_acp"]

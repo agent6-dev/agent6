@@ -41,7 +41,7 @@ Hold a session's end and the snapshot a resume re-enters.
 **SessionSnapshot** &mdash; Hold the persisted state of an in-flight session, what a resume re-enters and a fork clones.
 
 - **Written by:** harness/loop
-- **Read by:** app/{_execution, finalize, fork, frontend, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_state, _metric, _verify_gate}, ui/cli/_ask
+- **Read by:** app/{_execution, finalize, fork, frontend, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_state, _metric, _verify_gate}, ui/acp/frontend, ui/cli/_ask
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (23 test files exercise it)
 
 ## ToolResult family

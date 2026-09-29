@@ -252,7 +252,7 @@ def test_a_cancel_while_idle_does_not_poison_the_next_turn(
         stopped.append(path)
         return stop.StopOutcome(path.name, True, "after_step", "")
 
-    monkeypatch.setattr("agent6.ui.acp.session.stop_session", _stop)
+    monkeypatch.setattr("agent6.app.stop.stop_session", _stop)
     sessions = _sessions(_ends)
     session = acp_session.Session(acp_id="s1", cwd=tmp_path, session_id="run-1")
 

@@ -9,35 +9,19 @@ A client that declared it cannot be asked gets the cautious default instead.
 
 from __future__ import annotations
 
+import contextlib
+import pathlib
 import time
 from collections.abc import Callable, Sequence
-from contextlib import nullcontext
-from pathlib import Path
 from typing import Protocol
 
-from agent6.app.frontend import FrontendCapabilities, SessionFacts, SessionFrontend, SteerHooks
-from agent6.budget import BudgetTracker
+from agent6 import budget, events, kinds
+from agent6.app import frontend
 from agent6.config import Config
-from agent6.events import EventSink
-from agent6.harness.loop import Harness, SessionResult
-from agent6.kinds import AutoCommitDirective, IsolationLevel
-from agent6.sessions.ipc import (
-    answer_written,
-    question_answers_written,
-    read_answer,
-    read_question_answers,
-    record_answer,
-)
-from agent6.sessions.layout import SessionLayout
-from agent6.tools.operator_prompts import (
-    ApprovalAnswer,
-    ApprovalRequest,
-    Approver,
-    QuestionAnswer,
-    Questioner,
-    QuestionRequest,
-)
-from agent6.ui.steer import file_bridge_steer
+from agent6.harness import _snapshot, loop
+from agent6.sessions import ipc, layout
+from agent6.tools import operator_prompts
+from agent6.ui import steer
 
 # Silence past the wait is the cautious answer: an approval denies, a question has none.
 PERMISSION_TIMEOUT_S = 300.0
@@ -74,10 +58,10 @@ class Asker(Protocol):
 def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one place
     *,
     ask: Asker,
-    capabilities: FrontendCapabilities,
+    capabilities: frontend.FrontendCapabilities,
     agent6_exe: Callable[[], str],
-    spawn_detached_resume: Callable[[Path, str, Sequence[str]], str],
-) -> SessionFrontend:
+    spawn_detached_resume: Callable[[pathlib.Path, str, Sequence[str]], str],
+) -> frontend.SessionFrontend:
     """Wire the lifecycle to one ACP client.
 
     Args:
@@ -107,37 +91,45 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         answer = ask(prompt, options, standing, call_id, until)
         return None if answer is None else answer.startswith("allow")
 
-    def _build_approver(session_dir: Path) -> Approver:
-        def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
+    def _build_approver(session_dir: pathlib.Path) -> operator_prompts.Approver:
+        def approve(
+            request: operator_prompts.ApprovalRequest, /
+        ) -> operator_prompts.ApprovalAnswer:
             if not capabilities.can_ask:
-                return ApprovalAnswer(False, "headless")
+                return operator_prompts.ApprovalAnswer(False, "headless")
             approved = _approve(
                 request.prompt,
                 scope=request.scope,
                 call_id=request.call_id,
-                until=lambda: answer_written(session_dir, request.id),
+                until=lambda: ipc.answer_written(session_dir, request.id),
             )
             if approved is None:
-                filed = read_answer(session_dir, request.id, timeout_s=0.0)
+                filed = ipc.read_answer(session_dir, request.id, timeout_s=0.0)
                 if filed is not None:
-                    return ApprovalAnswer(
-                        record_answer(session_dir, filed, request.scope), "frontend"
+                    return operator_prompts.ApprovalAnswer(
+                        ipc.record_answer(session_dir, filed, request.scope), "frontend"
                     )
-                return ApprovalAnswer(False, "acp")
-            return ApprovalAnswer(approved, "acp")
+                return operator_prompts.ApprovalAnswer(False, "acp")
+            return operator_prompts.ApprovalAnswer(approved, "acp")
 
         return approve
 
-    def _build_questioner(session_dir: Path) -> Questioner:
-        def ask_questions(request: QuestionRequest, /) -> QuestionAnswer:
+    def _build_questioner(session_dir: pathlib.Path) -> operator_prompts.Questioner:
+        def ask_questions(
+            request: operator_prompts.QuestionRequest, /
+        ) -> operator_prompts.QuestionAnswer:
             if not capabilities.can_ask:
-                return QuestionAnswer(tuple("" for _ in request.questions), "headless", unseen=True)
+                return operator_prompts.QuestionAnswer(
+                    tuple("" for _ in request.questions), "headless", unseen=True
+                )
             if not all(question.options for question in request.questions):
-                filed = read_question_answers(session_dir, request.id, timeout_s=0.0)
+                filed = ipc.read_question_answers(session_dir, request.id, timeout_s=0.0)
                 if filed is not None:
-                    return QuestionAnswer(filed, "frontend")
+                    return operator_prompts.QuestionAnswer(filed, "frontend")
                 # ACP v1 renders option buttons only, so a free-form question reached nobody.
-                return QuestionAnswer(tuple("" for _ in request.questions), "headless", unseen=True)
+                return operator_prompts.QuestionAnswer(
+                    tuple("" for _ in request.questions), "headless", unseen=True
+                )
             # One deadline for the request, or N questions wait N times the bound.
             deadline = time.monotonic() + PERMISSION_TIMEOUT_S
             answers: list[str] = []
@@ -148,20 +140,20 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
                     None,
                     request.call_id,
                     lambda: (
-                        question_answers_written(session_dir, request.id)
+                        ipc.question_answers_written(session_dir, request.id)
                         or time.monotonic() >= deadline
                     ),
                 )
                 if answer is None:
-                    filed = read_question_answers(session_dir, request.id, timeout_s=0.0)
+                    filed = ipc.read_question_answers(session_dir, request.id, timeout_s=0.0)
                     if filed is not None:
-                        return QuestionAnswer(filed, "frontend")
+                        return operator_prompts.QuestionAnswer(filed, "frontend")
                 answers.append(answer or "")
-            return QuestionAnswer(tuple(answers), "acp")
+            return operator_prompts.QuestionAnswer(tuple(answers), "acp")
 
         return ask_questions
 
-    def _confirm_unconfined(isolation: IsolationLevel, cfg: Config) -> bool:
+    def _confirm_unconfined(isolation: kinds.IsolationLevel, cfg: Config) -> bool:
         """Ask only when the run is unconfined, so the approval never becomes reflexive.
 
         Returns:
@@ -173,23 +165,25 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         return bool(_approve("Run commands UNSANDBOXED on this host, with no per-command prompt?"))
 
     def _steer(
-        _events: EventSink, session_dir: Path, _facts: Callable[[], SessionFacts]
-    ) -> SteerHooks:
+        _events: events.EventSink,
+        session_dir: pathlib.Path,
+        _facts: Callable[[], frontend.SessionFacts],
+    ) -> frontend.SteerHooks:
         # A later prompt resumes the run with its text seeded through the steer files.
-        return file_bridge_steer(session_dir)
+        return steer.file_bridge_steer(session_dir)
 
     def _no_repl(
-        _session_dir: Path, _budget: BudgetTracker, _task: str, _mcp: object
-    ) -> Callable[[int, str], AutoCommitDirective]:
+        _session_dir: pathlib.Path, _budget: budget.BudgetTracker, _task: str, _mcp: object
+    ) -> Callable[[int, str], kinds.AutoCommitDirective]:
         # ACP has its own turn loop; a REPL inside it would be a second reader of stdin.
         return lambda _iteration, _summary: "continue"
 
     def _no_ask_repl(
-        _wf: Harness, _budget: BudgetTracker, _layout: SessionLayout, _task: str
-    ) -> SessionResult:
+        _wf: loop.Harness, _budget: budget.BudgetTracker, _layout: layout.SessionLayout, _task: str
+    ) -> _snapshot.SessionResult:
         raise RuntimeError("an ACP session drives its own turns; the ask REPL is not used")
 
-    return SessionFrontend(
+    return frontend.SessionFrontend(
         capabilities=capabilities,
         should_spawn_tui=lambda _tui, _interactive, _mode: False,
         # The deltas stream as events; the editor is the live view.
@@ -197,7 +191,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         attach_console_view=lambda _events: None,
         close_console_view=lambda: None,
         loop_logger=lambda _mode: lambda _line: None,
-        tui_session=lambda _session_dir, _enabled: nullcontext(),
+        tui_session=lambda _session_dir, _enabled: contextlib.nullcontext(),
         build_approver=_build_approver,
         build_questioner=_build_questioner,
         make_steer_state=_steer,
@@ -225,8 +219,8 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
 
 def _no_coordinator(
     _cfg: Config,
-    _cwd: Path,
-    _state_dir: Path,
+    _cwd: pathlib.Path,
+    _state_dir: pathlib.Path,
     _mode: str,
     _session_id: str,
     _max_usd: float | None,

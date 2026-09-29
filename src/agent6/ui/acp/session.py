@@ -8,21 +8,19 @@ A prompt runs on a worker thread: a blocked read loop could not receive the
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 import sys
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
-from agent6.app.preflight import git_repo_refusal
-from agent6.app.stop import stop_session
-from agent6.kinds import session_bucket
-from agent6.sessions.id import friendly_token
-from agent6.sessions.ipc import request_stop
-from agent6.sessions.layout import SessionLayout
-from agent6.ui.acp.rpc import INVALID_PARAMS, RpcError
+from agent6 import kinds
+from agent6.app import preflight, stop
+from agent6.sessions import id, ipc
+from agent6.sessions import layout as sessions_layout
+from agent6.ui.acp import rpc
 
 # What ACP is told a turn ended as; `cancelled` is the operator's act, not a failure.
 StopReason = str
@@ -30,7 +28,7 @@ StopReason = str
 ACP_MODE = "run"
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class Session:
     """One ACP session: a working directory, and at most one live turn.
 
@@ -48,7 +46,7 @@ class Session:
     """
 
     acp_id: str
-    cwd: Path
+    cwd: pathlib.Path
     session_id: str = ""
     turn: int = 0
     thread: threading.Thread | None = None
@@ -59,14 +57,14 @@ class Session:
         """Return whether a turn is in flight."""
         return self.turn_live
 
-    def layout(self, state_dir: Path) -> SessionLayout:
+    def layout(self, state_dir: pathlib.Path) -> sessions_layout.SessionLayout:
         """Return the turn's agent6 session dir, under ACP's own bucket."""
-        return SessionLayout(
-            state_dir=state_dir, session_id=self.session_id, subdir=session_bucket(ACP_MODE)
+        return sessions_layout.SessionLayout(
+            state_dir=state_dir, session_id=self.session_id, subdir=kinds.session_bucket(ACP_MODE)
         )
 
 
-@dataclass
+@dataclasses.dataclass
 class Sessions:
     """The connection's sessions, and how a prompt becomes a run.
 
@@ -77,8 +75,8 @@ class Sessions:
     """
 
     run: Callable[[Session, str], StopReason]
-    state_dir_for: Callable[[Path], Path]
-    _by_id: dict[str, Session] = field(default_factory=dict)
+    state_dir_for: Callable[[pathlib.Path], pathlib.Path]
+    _by_id: dict[str, Session] = dataclasses.field(default_factory=dict)
 
     def new(self, params: dict[str, Any]) -> dict[str, Any]:
         """Serve `session/new`.
@@ -92,33 +90,33 @@ class Sessions:
                 operator's config only.
         """
         raw_cwd = params.get("cwd")
-        if not isinstance(raw_cwd, str) or not Path(raw_cwd).is_absolute():
-            raise RpcError(INVALID_PARAMS, "cwd must be an absolute path")
-        cwd = Path(raw_cwd)
+        if not isinstance(raw_cwd, str) or not pathlib.Path(raw_cwd).is_absolute():
+            raise rpc.RpcError(rpc.INVALID_PARAMS, "cwd must be an absolute path")
+        cwd = pathlib.Path(raw_cwd)
         # The wall `agent6 run` puts in front of a workspace: this directory becomes the jail's.
-        refusal = git_repo_refusal(cwd)
+        refusal = preflight.git_repo_refusal(cwd)
         if refusal is not None:
-            raise RpcError(INVALID_PARAMS, refusal)
+            raise rpc.RpcError(rpc.INVALID_PARAMS, refusal)
         servers = params.get("mcpServers")
         if servers is not None and not isinstance(servers, list):
-            raise RpcError(INVALID_PARAMS, "mcpServers must be a list")
+            raise rpc.RpcError(rpc.INVALID_PARAMS, "mcpServers must be a list")
         if isinstance(servers, list) and servers:
             # Accepting the session and not starting them would read as connected.
-            raise RpcError(
-                INVALID_PARAMS,
+            raise rpc.RpcError(
+                rpc.INVALID_PARAMS,
                 "agent6 does not take MCP servers from the editor: configure them in "
                 "agent6's own config ([mcp.servers], `agent6 mcp connect`) and remove "
                 "them from this agent's entry.",
             )
         additional = params.get("additionalDirectories")
         if additional is not None and not isinstance(additional, list):
-            raise RpcError(INVALID_PARAMS, "additionalDirectories must be a list")
+            raise rpc.RpcError(rpc.INVALID_PARAMS, "additionalDirectories must be a list")
         if isinstance(additional, list) and additional:
-            raise RpcError(
-                INVALID_PARAMS,
+            raise rpc.RpcError(
+                rpc.INVALID_PARAMS,
                 "agent6 does not support additionalDirectories; remove them from this session",
             )
-        session = Session(acp_id=friendly_token(), cwd=cwd)
+        session = Session(acp_id=id.friendly_token(), cwd=cwd)
         self._by_id[session.acp_id] = session
         return {"sessionId": session.acp_id}
 
@@ -131,7 +129,7 @@ class Sessions:
         acp_session_id = params.get("sessionId")
         session = self._by_id.get(acp_session_id) if isinstance(acp_session_id, str) else None
         if session is None:
-            raise RpcError(INVALID_PARAMS, f"no session {acp_session_id!r}")
+            raise rpc.RpcError(rpc.INVALID_PARAMS, f"no session {acp_session_id!r}")
         return session
 
     def start_turn(
@@ -144,7 +142,7 @@ class Sessions:
             RuntimeError: The worker thread could not start.
         """
         if session.is_running():
-            raise RpcError(INVALID_PARAMS, "that session already has a turn in flight")
+            raise rpc.RpcError(rpc.INVALID_PARAMS, "that session already has a turn in flight")
         session.cancelled = False
 
         def _work() -> None:
@@ -193,10 +191,10 @@ class Sessions:
         if not session.session_id:
             return
         session_dir = session.layout(self.state_dir_for(session.cwd)).session_dir
-        out = stop_session(session_dir, after_step=True)
+        out = stop.stop_session(session_dir, after_step=True)
         if not out.ok:
             # The turn is live before the lifecycle records its worker; the marker survives startup.
-            if out.how == "not_live" and session.is_running() and request_stop(session_dir):
+            if out.how == "not_live" and session.is_running() and ipc.request_stop(session_dir):
                 return
             # A notification has no reply: stderr is the one channel left.
             print(f"[agent6] {out.message}", file=sys.stderr)
@@ -216,26 +214,30 @@ def prompt_text(params: dict[str, Any]) -> str:
     """
     blocks = params.get("prompt")
     if not isinstance(blocks, list):
-        raise RpcError(INVALID_PARAMS, "prompt must be a list of content blocks")
+        raise rpc.RpcError(rpc.INVALID_PARAMS, "prompt must be a list of content blocks")
     parts: list[str] = []
     for index, b in enumerate(blocks, start=1):
         if not isinstance(b, dict):
-            raise RpcError(INVALID_PARAMS, f"prompt content block {index} must be an object")
+            raise rpc.RpcError(
+                rpc.INVALID_PARAMS, f"prompt content block {index} must be an object"
+            )
         if b.get("type") == "text":
             text = b.get("text")
             if not isinstance(text, str):
-                raise RpcError(
-                    INVALID_PARAMS, f"prompt content block {index} text must be a string"
+                raise rpc.RpcError(
+                    rpc.INVALID_PARAMS, f"prompt content block {index} text must be a string"
                 )
             if text:
                 parts.append(text)
         elif b.get("type") == "resource_link":
             uri = b.get("uri")
             if not isinstance(uri, str):
-                raise RpcError(INVALID_PARAMS, f"prompt content block {index} uri must be a string")
+                raise rpc.RpcError(
+                    rpc.INVALID_PARAMS, f"prompt content block {index} uri must be a string"
+                )
             if uri:
                 parts.append(f"Attached: {uri}")
     text = "\n\n".join(parts).strip()
     if not text:
-        raise RpcError(INVALID_PARAMS, "the prompt carried no text")
+        raise rpc.RpcError(rpc.INVALID_PARAMS, "the prompt carried no text")
     return text

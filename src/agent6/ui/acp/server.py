@@ -8,27 +8,19 @@ an unbounded `readline` buffers a whole line before any size check.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 import threading
 import time
 import traceback
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import Any, BinaryIO
 
 from agent6 import __version__
-from agent6.app.frontend import FrontendCapabilities
-from agent6.ui.acp.rpc import (
-    INTERNAL_ERROR,
-    INVALID_PARAMS,
-    INVALID_REQUEST,
-    METHOD_NOT_FOUND,
-    PARSE_ERROR,
-    RpcError,
-)
-from agent6.ui.acp.session import Sessions, prompt_text
-from agent6.ui.acp.updates import message_update
+from agent6.app import frontend
+from agent6.ui.acp import rpc, updates
+from agent6.ui.acp import session as acp_session
 
 # The client sends the newest version it supports and disconnects if this one will not do.
 PROTOCOL_VERSION = 1
@@ -41,7 +33,7 @@ EOF_GRACE_S = 30.0
 DEFERRED = object()
 
 
-@dataclass
+@dataclasses.dataclass
 class _Pending:
     """One outstanding request to the client.
 
@@ -50,19 +42,19 @@ class _Pending:
         answer: The client's response frame.
     """
 
-    arrived: threading.Event = field(default_factory=threading.Event)
+    arrived: threading.Event = dataclasses.field(default_factory=threading.Event)
     answer: dict[str, Any] | None = None
 
 
-def capabilities_from(_client: dict[str, Any]) -> FrontendCapabilities:
+def capabilities_from(_client: dict[str, Any]) -> frontend.FrontendCapabilities:
     """Return the client's capabilities in the seam every front-end declares.
 
     Every ACP client must serve `session/request_permission`, so it can be asked.
     """
-    return FrontendCapabilities(can_ask=True)
+    return frontend.FrontendCapabilities(can_ask=True)
 
 
-@dataclass
+@dataclasses.dataclass
 class ACPServer:
     """One ACP connection, owning the framing.
 
@@ -75,13 +67,13 @@ class ACPServer:
 
     stdin: BinaryIO
     stdout: BinaryIO
-    client_capabilities: FrontendCapabilities | None = None
-    sessions: Sessions | None = None
-    _handlers: dict[str, Any] = field(default_factory=dict)
+    client_capabilities: frontend.FrontendCapabilities | None = None
+    sessions: acp_session.Sessions | None = None
+    _handlers: dict[str, Any] = dataclasses.field(default_factory=dict)
     # One writer at a time: a reply and a worker's update interleaved is a line no editor parses.
-    _write_lock: threading.Lock = field(default_factory=threading.Lock)
-    _pending: dict[object, _Pending] = field(default_factory=dict)
-    _pending_lock: threading.Lock = field(default_factory=threading.Lock)
+    _write_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
+    _pending: dict[object, _Pending] = dataclasses.field(default_factory=dict)
+    _pending_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _next_id: int = 0
     _gone: bool = False  # the client's end of the pipe is closed
 
@@ -110,7 +102,7 @@ class ACPServer:
                 self.reply(
                     None,
                     error=(
-                        INVALID_REQUEST,
+                        rpc.INVALID_REQUEST,
                         f"a request line over {MAX_LINE_BYTES} bytes was dropped",
                     ),
                 )
@@ -128,18 +120,18 @@ class ACPServer:
         handler = self._handlers.get(method)
         if handler is None:
             if req_id is not None:  # an unknown notification is ignorable
-                self.reply(req_id, error=(METHOD_NOT_FOUND, f"unknown method: {method!r}"))
+                self.reply(req_id, error=(rpc.METHOD_NOT_FOUND, f"unknown method: {method!r}"))
             return
         try:
             result = handler(params, req_id)
-        except RpcError as exc:
+        except rpc.RpcError as exc:
             if req_id is not None:
                 self.reply(req_id, error=(exc.code, exc.message))
             return
         except Exception as exc:  # a handler bug never kills the connection
             print(f"[agent6] {method}: {traceback.format_exc()}", file=sys.stderr)
             if req_id is not None:
-                self.reply(req_id, error=(INTERNAL_ERROR, f"{type(exc).__name__}: {exc}"))
+                self.reply(req_id, error=(rpc.INTERNAL_ERROR, f"{type(exc).__name__}: {exc}"))
             return
         if result is DEFERRED:
             return
@@ -163,13 +155,13 @@ class ACPServer:
             self.reply(
                 None,
                 error=(
-                    PARSE_ERROR,
+                    rpc.PARSE_ERROR,
                     f"invalid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}",
                 ),
             )
             return None
         if not isinstance(message, dict):
-            self.reply(None, error=(INVALID_REQUEST, "the JSON-RPC message must be an object"))
+            self.reply(None, error=(rpc.INVALID_REQUEST, "the JSON-RPC message must be an object"))
             return None
         req_id = message.get("id")
         if "method" not in message and self._ours(req_id) and self._deliver(req_id, message):
@@ -182,13 +174,13 @@ class ACPServer:
                 and not isinstance(req_id, bool)
                 and not self._ours(req_id)
                 else None,
-                error=(INVALID_REQUEST, "jsonrpc must be '2.0'"),
+                error=(rpc.INVALID_REQUEST, "jsonrpc must be '2.0'"),
             )
             return None
         if req_id is not None and (isinstance(req_id, bool) or not isinstance(req_id, str | int)):
             self.reply(
                 None,
-                error=(INVALID_REQUEST, "id must be a string, number, or null"),
+                error=(rpc.INVALID_REQUEST, "id must be a string, number, or null"),
             )
             return None
         method = message.get("method")
@@ -198,14 +190,14 @@ class ACPServer:
                 # An error frame naming an id this server minted would answer its own request.
                 self.reply(
                     None if self._ours(req_id) else req_id,
-                    error=(INVALID_REQUEST, "no method"),
+                    error=(rpc.INVALID_REQUEST, "no method"),
                 )
             return None
         if raw is not None and not isinstance(raw, dict):
             if req_id is not None:
                 self.reply(
                     req_id,
-                    error=(INVALID_PARAMS, f"params for {method!r} must be an object"),
+                    error=(rpc.INVALID_PARAMS, f"params for {method!r} must be an object"),
                 )
             return None
         return req_id, method, raw or {}
@@ -298,10 +290,12 @@ class ACPServer:
             RpcError: The prompt came as a notification, which nothing could answer.
         """
         if req_id is None:
-            raise RpcError(INVALID_REQUEST, "session/prompt is a request, not a notification")
+            raise rpc.RpcError(
+                rpc.INVALID_REQUEST, "session/prompt is a request, not a notification"
+            )
         sessions = self._sessions()
         session = sessions.get(params)
-        text = prompt_text(params)
+        text = acp_session.prompt_text(params)
         sessions.start_turn(
             session,
             text,
@@ -318,18 +312,20 @@ class ACPServer:
         sessions = self._sessions()
         try:
             sessions.cancel(sessions.get(params))
-        except RpcError as exc:
-            self.notify_raw(message_update(str(params.get("sessionId")), f"cancel: {exc.message}"))
+        except rpc.RpcError as exc:
+            self.notify_raw(
+                updates.message_update(str(params.get("sessionId")), f"cancel: {exc.message}")
+            )
         return {}
 
-    def _sessions(self) -> Sessions:
+    def _sessions(self) -> acp_session.Sessions:
         """Return the session runner.
 
         Raises:
             RpcError: None is wired.
         """
         if self.sessions is None:
-            raise RpcError(INTERNAL_ERROR, "this connection has no session runner wired")
+            raise rpc.RpcError(rpc.INTERNAL_ERROR, "this connection has no session runner wired")
         return self.sessions
 
     def _initialize(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
@@ -347,7 +343,9 @@ class ACPServer:
             or isinstance(protocol_version, bool)
             or not 0 <= protocol_version <= 65_535
         ):
-            raise RpcError(INVALID_PARAMS, "protocolVersion must be an integer from 0 to 65535")
+            raise rpc.RpcError(
+                rpc.INVALID_PARAMS, "protocolVersion must be an integer from 0 to 65535"
+            )
         raw = params.get("clientCapabilities")
         self.client_capabilities = capabilities_from(raw if isinstance(raw, dict) else {})
         return {

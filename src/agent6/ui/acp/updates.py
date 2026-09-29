@@ -8,10 +8,10 @@ disagreeing about what happened. Nothing here touches the wire.
 
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 from typing import Any
 
-from agent6.viewmodel.transcript import TranscriptItem
+from agent6.viewmodel import transcript
 
 # The update a fold item becomes; the operator's own words echo back as a user message.
 _CHUNK_KIND = {
@@ -49,12 +49,12 @@ _TOOL_KINDS = {
 
 
 def updates_for(
-    item: TranscriptItem,
+    item: transcript.TranscriptItem,
     *,
     acp_session_id: str,
     wire_id: str = "",
     announced: bool = False,
-    cwd: Path | None = None,
+    cwd: pathlib.Path | None = None,
     paths: tuple[str, ...] = (),
     streamed: bool = False,
 ) -> list[dict[str, Any]]:
@@ -112,7 +112,7 @@ def updates_for(
     return [_update(acp_session_id, {"sessionUpdate": chunk, "content": _text(body)})]
 
 
-def ending(item: TranscriptItem) -> str:
+def ending(item: transcript.TranscriptItem) -> str:
     """Return how a run ended, in the status words every surface uses.
 
     The fold sets `body` only for a clean `finish_session`; the end reason rides in
@@ -156,14 +156,14 @@ def _text(text: str) -> dict[str, Any]:
     return {"type": "text", "text": printable(text)}
 
 
-def _tool_status(item: TranscriptItem) -> str:
+def _tool_status(item: transcript.TranscriptItem) -> str:
     """Return ACP's status for the item; a call waiting on an answer is `pending`."""
     if item.ok is None:
         return "pending" if item.detail else "in_progress"
     return "completed" if item.ok else "failed"
 
 
-def _tool_content(item: TranscriptItem) -> list[dict[str, Any]]:
+def _tool_content(item: transcript.TranscriptItem) -> list[dict[str, Any]]:
     """Return what the tool produced, in ACP's tagged shape.
 
     A bare content-block array makes a strict client reject the notification, and
@@ -174,7 +174,7 @@ def _tool_content(item: TranscriptItem) -> list[dict[str, Any]]:
     return [{"type": "content", "content": _text(body)}] if body else []
 
 
-def _tool_locations(paths: tuple[str, ...], cwd: Path) -> list[dict[str, str]]:
+def _tool_locations(paths: tuple[str, ...], cwd: pathlib.Path) -> list[dict[str, str]]:
     """Return ACP's absolute follow-along locations, each path once."""
     resolved = ((cwd / path).resolve() for path in paths)
     return [{"path": str(path)} for path in dict.fromkeys(resolved)]
@@ -191,17 +191,17 @@ def wire_call_id(session_id: str, turn: int, within_execution: str) -> str:
     return f"{session_id}:{turn}:{within_execution}" if session_id else within_execution
 
 
-def _execution_call_id(item: TranscriptItem) -> str:
+def _execution_call_id(item: transcript.TranscriptItem) -> str:
     """Return the item's stamped call id, or its name and arg for an event with no stamp."""
     return item.call_id or (f"{item.name}:{item.arg}" if item.arg else item.name)
 
 
-def tool_call_id(item: TranscriptItem, session_id: str, turn: int) -> str:
+def tool_call_id(item: transcript.TranscriptItem, session_id: str, turn: int) -> str:
     """Return the wire id for a fold item."""
     return wire_call_id(session_id, turn, _execution_call_id(item))
 
 
-def _tool_call(item: TranscriptItem, wire_id: str) -> dict[str, Any]:
+def _tool_call(item: transcript.TranscriptItem, wire_id: str) -> dict[str, Any]:
     """Return the `tool_call` announcement's fields; the model wrote the arg, so it is scrubbed."""
     title = printable(f"{item.name} {item.arg}".strip())
     return {

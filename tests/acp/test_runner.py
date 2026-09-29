@@ -17,14 +17,19 @@ from typing import Any
 
 import pytest
 
+from agent6 import kinds as agent6_kinds
+from agent6 import paths
+from agent6.app import _execution as app__execution
+from agent6.app import _setup, resume, run, stop
 from agent6.app import reporter as app_reporter
-from agent6.app import stop
 from agent6.config import Config, layer, model
+from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
 from agent6.ui.acp import runner
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as session_mod
+from agent6.viewmodel import tail as viewmodel_tail
 
 
 class _Wire:
@@ -137,7 +142,7 @@ def test_a_cancel_reaches_the_run_it_names(
         assert after_step  # a cancel lets the step in flight finish and commit
         return _ignore(path)
 
-    monkeypatch.setattr(session_mod, "stop_session", _record)
+    monkeypatch.setattr(stop, "stop_session", _record)
     monkeypatch.chdir(tmp_path)
 
     started, release = threading.Event(), threading.Event()
@@ -147,8 +152,8 @@ def test_a_cancel_reaches_the_run_it_names(
         release.wait(timeout=5.0)
         return 0
 
-    monkeypatch.setattr(runner, "run_task", _blocking_run)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _blocking_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
 
     wire = _Wire()
     try:
@@ -169,7 +174,7 @@ def test_a_cancel_reaches_the_run_it_names(
 
 
 def test_a_cancelled_turn_says_so(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(session_mod, "stop_session", _ignore)
+    monkeypatch.setattr(stop, "stop_session", _ignore)
     monkeypatch.chdir(tmp_path)
     started, release = threading.Event(), threading.Event()
 
@@ -178,8 +183,8 @@ def test_a_cancelled_turn_says_so(tmp_path: pathlib.Path, monkeypatch: pytest.Mo
         release.wait(timeout=5.0)
         return 0
 
-    monkeypatch.setattr(runner, "run_task", _blocking_run)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _blocking_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -205,14 +210,14 @@ def test_the_runs_journal_streams_out_as_session_update(
         session_id = kw["session_id"]
         assert isinstance(session_id, str)
         layout = sessions_layout.SessionLayout(
-            state_dir=runner.state_dir(tmp_path), session_id=session_id
+            state_dir=paths.state_dir(tmp_path), session_id=session_id
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         layout.logs_path.write_bytes(recorded.read_bytes())
         return 0
 
-    monkeypatch.setattr(runner, "run_task", _writing_run)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _writing_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -250,8 +255,8 @@ def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
         )
         raise RuntimeError("the provider client exploded")
 
-    monkeypatch.setattr(runner, "run_task", _dies_mid_run)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _dies_mid_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -279,7 +284,7 @@ def test_a_resumed_turns_own_failure_does_not_borrow_a_stale_end_reason(
     monkeypatch.chdir(tmp_path)
     session_id = "brave-oak-AAAAAA"
     layout = sessions_layout.SessionLayout(
-        paths.state_dir(tmp_path), session_id, subdir=session_mod.session_bucket("run")
+        paths.state_dir(tmp_path), session_id, subdir=agent6_kinds.session_bucket("run")
     )
     layout.ensure()
     layout.logs_path.write_text(
@@ -300,7 +305,7 @@ def test_a_resumed_turns_own_failure_does_not_borrow_a_stale_end_reason(
             fh.write(json.dumps({"type": "loop.resume.start"}) + "\n")
         return 1  # a provider crash this turn, unrelated to any iteration cap
 
-    monkeypatch.setattr(runner, "resume_task", _crashes_after_resuming)
+    monkeypatch.setattr(resume, "resume_task", _crashes_after_resuming)
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id=session_id)
 
@@ -320,15 +325,15 @@ def test_a_fault_after_session_end_still_keeps_its_reason(
     monkeypatch.chdir(tmp_path)
 
     def _dies_after_end(*_a: object, **kw: Any) -> int:
-        layout = sessions_layout.SessionLayout(runner.state_dir(tmp_path), str(kw["session_id"]))
+        layout = sessions_layout.SessionLayout(paths.state_dir(tmp_path), str(kw["session_id"]))
         layout.ensure()
         events = agent6_events.EventSink(layout.logs_path)
         events.emit("session.start", mode="run", user_task="t")
         events.emit("session.end", reason="finish_session", all_passed=True)
         raise RuntimeError("the finalizer exploded")
 
-    monkeypatch.setattr(runner, "run_task", _dies_after_end)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _dies_after_end)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     out = io.BytesIO()
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=out))
     session = session_mod.Session(acp_id="s", cwd=tmp_path)
@@ -350,7 +355,7 @@ def test_a_run_that_cannot_start_says_why(
     def _broken(*_a: object, **_kw: object) -> object:
         raise model.ConfigError("Config file is not valid TOML (agent6.toml)")
 
-    monkeypatch.setattr(runner, "load_session_config", _broken)
+    monkeypatch.setattr(_setup, "load_session_config", _broken)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -520,7 +525,7 @@ def test_a_turn_cancelled_while_queued_never_starts(
     completion spending budget and making commits, and the editor was told
     "cancelled" the entire time.
     """
-    monkeypatch.setattr(session_mod, "stop_session", _ignore)
+    monkeypatch.setattr(stop, "stop_session", _ignore)
     monkeypatch.chdir(tmp_path)
     ran: list[str] = []
     first_started, release = threading.Event(), threading.Event()
@@ -531,8 +536,8 @@ def test_a_turn_cancelled_while_queued_never_starts(
         release.wait(timeout=5.0)
         return 0
 
-    monkeypatch.setattr(runner, "run_task", _blocking_run)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _blocking_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         first = wire.new_session(_repo(tmp_path))
@@ -603,8 +608,8 @@ def test_a_refusal_that_never_reached_a_journal_still_says_why(
         reporter.err("REFUSING: another writer holds this repository")
         return 2
 
-    monkeypatch.setattr(runner, "run_task", _refusing_run)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _refusing_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -832,9 +837,9 @@ def test_a_second_prompt_resumes_the_same_run(
     def _minted(*_a: object, **_k: object) -> str:
         return "run-AAAA11"
 
-    monkeypatch.setattr(runner, "state_dir", _state_dir)
-    monkeypatch.setattr(runner, "unused_session_id", _minted)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(paths, "state_dir", _state_dir)
+    monkeypatch.setattr(id, "unused_session_id", _minted)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
 
     def _run_task(_config: object, text: str, **kw: Any) -> int:
         calls.append(("run", str(kw["session_id"]), text))
@@ -844,8 +849,8 @@ def test_a_second_prompt_resumes_the_same_run(
         calls.append(("resume", session_id, str(kw["steer"])))
         return 0
 
-    monkeypatch.setattr(runner, "run_task", _run_task)
-    monkeypatch.setattr(runner, "resume_task", _resume_task)
+    monkeypatch.setattr(run, "run_task", _run_task)
+    monkeypatch.setattr(resume, "resume_task", _resume_task)
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
     session = session_mod.Session(acp_id="s", cwd=tmp_path)
 
@@ -877,12 +882,12 @@ def test_a_refused_second_turn_does_not_inherit_the_first_turns_reason(
     def _minted(*_a: object, **_k: object) -> str:
         return "run-AAAA11"
 
-    monkeypatch.setattr(runner, "state_dir", _state_dir)
-    monkeypatch.setattr(runner, "unused_session_id", _minted)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(paths, "state_dir", _state_dir)
+    monkeypatch.setattr(id, "unused_session_id", _minted)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
 
     def _capped_run(*_a: object, **kw: Any) -> int:
-        layout = sessions_layout.SessionLayout(runner.state_dir(tmp_path), str(kw["session_id"]))
+        layout = sessions_layout.SessionLayout(paths.state_dir(tmp_path), str(kw["session_id"]))
         layout.ensure()
         events = agent6_events.EventSink(layout.logs_path)
         events.emit("session.start", mode="run", user_task="t")
@@ -893,8 +898,8 @@ def test_a_refused_second_turn_does_not_inherit_the_first_turns_reason(
     def _refused_resume(*_a: object, **_k: object) -> int:
         return 2
 
-    monkeypatch.setattr(runner, "run_task", _capped_run)
-    monkeypatch.setattr(runner, "resume_task", _refused_resume)
+    monkeypatch.setattr(run, "run_task", _capped_run)
+    monkeypatch.setattr(resume, "resume_task", _refused_resume)
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
     session = session_mod.Session(acp_id="s", cwd=tmp_path)
 
@@ -930,11 +935,11 @@ def test_a_fault_on_a_resumed_turn_still_reaches_the_editor(
     def _dies_in_preflight(_config_path: object, session_id: str, **kw: Any) -> int:
         raise RuntimeError("the resume preflight exploded")
 
-    monkeypatch.setattr(runner, "state_dir", _state_dir)
-    monkeypatch.setattr(runner, "unused_session_id", _minted)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
-    monkeypatch.setattr(runner, "run_task", _ended_run)
-    monkeypatch.setattr(runner, "resume_task", _dies_in_preflight)
+    monkeypatch.setattr(paths, "state_dir", _state_dir)
+    monkeypatch.setattr(id, "unused_session_id", _minted)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _ended_run)
+    monkeypatch.setattr(resume, "resume_task", _dies_in_preflight)
     out = io.BytesIO()
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=out))
     session = session_mod.Session(acp_id="s", cwd=tmp_path)
@@ -965,7 +970,7 @@ def test_a_gated_call_reads_pending_on_the_wire(
 
     def _gated_run(*_a: object, **kw: Any) -> int:
         layout = sessions_layout.SessionLayout(
-            state_dir=runner.state_dir(tmp_path), session_id=str(kw["session_id"])
+            state_dir=paths.state_dir(tmp_path), session_id=str(kw["session_id"])
         )
         layouts.append(layout)
         layout.session_dir.mkdir(parents=True, exist_ok=True)
@@ -982,8 +987,8 @@ def test_a_gated_call_reads_pending_on_the_wire(
         events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
         return 0
 
-    monkeypatch.setattr(runner, "run_task", _gated_run)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _gated_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -1073,7 +1078,7 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns(
 
     def _layout(session_id: str) -> sessions_layout.SessionLayout:
         return sessions_layout.SessionLayout(
-            state_dir=runner.state_dir(tmp_path), session_id=session_id
+            state_dir=paths.state_dir(tmp_path), session_id=session_id
         )
 
     def _run_task(*_a: object, **kw: Any) -> int:
@@ -1095,9 +1100,9 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns(
         events.emit("session.end", reason="finish_session", iterations=2, all_passed=True)
         return 0
 
-    monkeypatch.setattr(runner, "run_task", _run_task)
-    monkeypatch.setattr(runner, "resume_task", _resume_task)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _run_task)
+    monkeypatch.setattr(resume, "resume_task", _resume_task)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -1178,7 +1183,7 @@ def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
     server.notify_raw = lambda body: sent.append(  # pyright: ignore[reportAttributeAccessIssue]
         (at[0], body)
     )
-    monkeypatch.setattr(runner, "tail_events", _events)
+    monkeypatch.setattr(viewmodel_tail, "tail_events", _events)
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
 
@@ -1262,7 +1267,7 @@ def test_the_runs_notices_reach_the_editor(
 
     def _noticing_run(*_a: object, **kw: Any) -> int:
         layout = sessions_layout.SessionLayout(
-            state_dir=runner.state_dir(tmp_path), session_id=str(kw["session_id"])
+            state_dir=paths.state_dir(tmp_path), session_id=str(kw["session_id"])
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = agent6_events.EventSink(layout.logs_path)
@@ -1275,8 +1280,8 @@ def test_the_runs_notices_reach_the_editor(
         reporter.note("pre-run changes left stashed; restore with: git stash apply abc123")
         return 0
 
-    monkeypatch.setattr(runner, "run_task", _noticing_run)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _noticing_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -1312,7 +1317,7 @@ def test_the_editor_gets_each_ending_fact_once(
 
     def _ending_run(*_a: object, **kw: Any) -> int:
         layout = sessions_layout.SessionLayout(
-            state_dir=runner.state_dir(tmp_path), session_id=str(kw["session_id"])
+            state_dir=paths.state_dir(tmp_path), session_id=str(kw["session_id"])
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = agent6_events.EventSink(layout.logs_path)
@@ -1325,8 +1330,8 @@ def test_the_editor_gets_each_ending_fact_once(
         reporter.out("\nchanges are on agent6/run-x")
         return 0
 
-    monkeypatch.setattr(runner, "run_task", _ending_run)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _ending_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -1353,7 +1358,7 @@ def _two_sessions_one_blocked(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[_Wire, str, str, threading.Event]:
     """Two sessions on one connection, the first's turn holding the run lock."""
-    monkeypatch.setattr(session_mod, "stop_session", _ignore)
+    monkeypatch.setattr(stop, "stop_session", _ignore)
     monkeypatch.chdir(tmp_path)
     first_started, release = threading.Event(), threading.Event()
 
@@ -1362,8 +1367,8 @@ def _two_sessions_one_blocked(
         release.wait(timeout=10.0)
         return 0
 
-    monkeypatch.setattr(runner, "run_task", _blocking_run)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _blocking_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     wire = _Wire()
     first = wire.new_session(_repo(tmp_path))
     wire.send(id=9, method="session/new", params={"cwd": str(tmp_path)})
@@ -1418,7 +1423,7 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
 
     def _gated_run(*_a: object, **kw: Any) -> int:
         layout = sessions_layout.SessionLayout(
-            state_dir=runner.state_dir(tmp_path), session_id=str(kw["session_id"])
+            state_dir=paths.state_dir(tmp_path), session_id=str(kw["session_id"])
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = agent6_events.EventSink(layout.logs_path)
@@ -1436,8 +1441,8 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
         events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
         return 0
 
-    monkeypatch.setattr(runner, "run_task", _gated_run)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _gated_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -1572,7 +1577,7 @@ def test_a_turn_that_cannot_choose_its_run_says_why(
     def _broken(*_a: object, **_kw: object) -> object:
         raise model.ConfigError("Config file cannot be read (config.toml)")
 
-    monkeypatch.setattr(runner, "state_dir", _broken)
+    monkeypatch.setattr(paths, "state_dir", _broken)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -1618,8 +1623,8 @@ def test_a_cancel_before_the_turn_starts_leaves_no_marker_for_the_next(
     def _state_dir(_cwd: pathlib.Path) -> pathlib.Path:
         return tmp_path / "state"
 
-    monkeypatch.setattr(runner, "state_dir", _state_dir)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(paths, "state_dir", _state_dir)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-AAAA11")
     session_dir = sessions_layout.SessionLayout(tmp_path / "state", "run-AAAA11").session_dir
@@ -1652,10 +1657,10 @@ def test_a_second_prompt_after_a_recorded_turn_with_no_snapshot_starts_a_new_run
         calls.append(str(kw["session_id"]))
         return 1
 
-    monkeypatch.setattr(runner, "state_dir", _state_dir)
-    monkeypatch.setattr(runner, "unused_session_id", _minted)
-    monkeypatch.setattr(runner, "load_session_config", _loaded)
-    monkeypatch.setattr(runner, "run_task", _run_task)
+    monkeypatch.setattr(paths, "state_dir", _state_dir)
+    monkeypatch.setattr(id, "unused_session_id", _minted)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(run, "run_task", _run_task)
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
@@ -1715,14 +1720,12 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
     """
     from agent6 import paths
     from agent6.app import _execution as app__execution
-    from agent6.app import preflight as preflight_mod
-    from agent6.app import run as run_mod
     from agent6.sessions import ipc
 
     def _no_keys(_cfg: Config) -> None:
         return None
 
-    monkeypatch.setattr(preflight_mod, "check_provider_keys", _no_keys)  # no key here
+    monkeypatch.setattr(_setup, "check_provider_keys", _no_keys)  # no key here
     repo = _repo(tmp_path / "repo")
     subprocess.run(
         ["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "seed"], check=True
@@ -1737,7 +1740,7 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
     monkeypatch.chdir(repo)
     session = session_mod.Session(acp_id="s", cwd=repo)
     seen: list[bool] = []
-    real_run_task = runner.run_task
+    real_run_task = run.run_task
 
     def _cancelled_while_starting(cfg: Config, text: str, **kw: Any) -> int:
         session_dir = session.layout(paths.state_dir(repo)).session_dir
@@ -1749,8 +1752,8 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
         seen.append(ipc.stop_request_pending(session.layout(paths.state_dir(repo)).session_dir))
         return app__execution.ExecutionEnd(rc=0)
 
-    monkeypatch.setattr(run_mod, "run_execution", _execution)
-    monkeypatch.setattr(runner, "run_task", _cancelled_while_starting)
+    monkeypatch.setattr(app__execution, "run_execution", _execution)
+    monkeypatch.setattr(run, "run_task", _cancelled_while_starting)
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
 
     assert bridge.run(session, "do the thing") == "end_turn"
