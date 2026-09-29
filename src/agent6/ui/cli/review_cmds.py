@@ -444,7 +444,7 @@ def _cmd_review(  # noqa: PLR0911
 
     print(f"[agent6] reviewing: {label}", file=sys.stderr)
     try:
-        text = code_review.code_review(
+        text = code_review.review_diff(
             reviewer,
             diff=diff,
             agents_md=agents_md,

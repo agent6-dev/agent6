@@ -98,7 +98,7 @@ def test_a_name_resolving_off_the_public_internet_is_refused(
 
     monkeypatch.setattr(socket, "getaddrinfo", _local)
     with pytest.raises(fetch.FetchRefusedError, match="not a public address"):
-        fetch.fetch(fetch.check_url("https://localhost/x"))
+        fetch.fetch_url(fetch.check_url("https://localhost/x"))
 
 
 @pytest.mark.parametrize(
@@ -151,7 +151,7 @@ def test_an_allowed_host_is_never_prompted_for(
     def _fetched(checked: fetch.Checked) -> fetch.Fetched:
         return fetch.Fetched(url=checked.url, status=200, content_type="text/plain", body="hello")
 
-    monkeypatch.setattr(fetch, "fetch", _fetched)
+    monkeypatch.setattr(fetch, "fetch_url", _fetched)
     cfg = Config.model_validate({"sandbox": {"fetch_hosts": ["example.com"]}})
     d = dispatch.ToolDispatcher(
         root=tmp_path, config=cfg, prompts=operator_prompts.OperatorPrompts(approver=_loud)
@@ -265,7 +265,7 @@ def test_fetch_is_hidden_wherever_a_command_reaches_the_network(
 
 def test_a_plain_text_response_streams_back(monkeypatch: pytest.MonkeyPatch) -> None:
     _fetch_serving(monkeypatch, headers={"content-type": "text/plain"}, content=b"hello")
-    got = fetch.fetch(fetch.check_url("https://example.com/x"))
+    got = fetch.fetch_url(fetch.check_url("https://example.com/x"))
     assert (got.status, got.body) == (200, "hello")
 
 
@@ -281,7 +281,7 @@ def test_a_compressed_response_is_refused_not_decoded(monkeypatch: pytest.Monkey
         content=gzip.compress(b"a" * 4096),
     )
     with pytest.raises(fetch.FetchRefusedError, match="content-encoding"):
-        fetch.fetch(fetch.check_url("https://example.com/x"))
+        fetch.fetch_url(fetch.check_url("https://example.com/x"))
 
 
 def test_an_oversized_body_is_refused_while_it_arrives(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -289,7 +289,7 @@ def test_an_oversized_body_is_refused_while_it_arrives(monkeypatch: pytest.Monke
         monkeypatch, headers={"content-type": "text/plain"}, content=b"x" * (fetch.MAX_BYTES + 1)
     )
     with pytest.raises(fetch.FetchRefusedError, match="larger than"):
-        fetch.fetch(fetch.check_url("https://example.com/x"))
+        fetch.fetch_url(fetch.check_url("https://example.com/x"))
 
 
 def test_a_denied_fetch_never_touches_the_resolver(

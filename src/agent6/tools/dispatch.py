@@ -859,7 +859,7 @@ class ToolDispatcher:
                 f"fetch not approved for {checked.host} (add it to sandbox.fetch_hosts to allow it)"
             )
         try:
-            got = fetch.fetch(checked)
+            got = fetch.fetch_url(checked)
         except fetch.FetchRefusedError as exc:
             raise tools_errors.ToolError(str(exc)) from exc
         return results.FetchResult(

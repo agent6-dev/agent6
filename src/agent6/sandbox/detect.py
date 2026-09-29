@@ -239,7 +239,7 @@ def degrade_reason(env: Environment) -> str | None:
     return cause
 
 
-def detect() -> Environment:
+def environment() -> Environment:
     """Return the host's kernel, container indicators and confinement capabilities."""
     signals = detect_container_signals()
     return Environment(

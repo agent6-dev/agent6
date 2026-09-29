@@ -439,7 +439,7 @@ class _Reader:
                 self.edit(key)
 
 
-def menu_input(
+def read_line(
     prompt: str,
     commands: dict[str, str],
     history: list[str],

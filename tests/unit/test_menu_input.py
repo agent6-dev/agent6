@@ -26,7 +26,7 @@ def _run(keys: list[str], history: list[str] | None = None) -> tuple[str, str]:
     """Drive menu_input with scripted keys; returns (line, everything written)."""
     out: list[str] = []
     it = iter(keys)
-    line = _menu_input.menu_input(
+    line = _menu_input.read_line(
         "P> ",
         _steer_menu.MENU_COMMANDS,
         history if history is not None else [],
@@ -171,7 +171,7 @@ def test_byte_decoded_ctrl_c_cleans_the_terminal_once() -> None:
     out: list[str] = []
     keys = iter([*_chars("half typed"), "interrupt"])
     with pytest.raises(KeyboardInterrupt):
-        _menu_input.menu_input(
+        _menu_input.read_line(
             "P> ", _steer_menu.MENU_COMMANDS, [], read_key=lambda: next(keys), write=out.append
         )
     assert "".join(out).count("\r\n\x1b[J") == 1
@@ -343,7 +343,7 @@ def test_the_default_writer_reaches_the_terminal_under_the_guard(
     raw = io.StringIO()
     monkeypatch.setattr(sys, "stdout", _terminal_guard.ScrubbedStream(raw))
     it = iter(["tab", "enter"])
-    _menu_input.menu_input(
+    _menu_input.read_line(
         "P> ", {"/a": "x\x1b]52;c;aGVsbG8=\x07y", "/b": "z"}, [], read_key=lambda: next(it)
     )
     out = raw.getvalue()

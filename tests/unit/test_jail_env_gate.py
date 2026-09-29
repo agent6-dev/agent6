@@ -29,7 +29,7 @@ def _env(
 
 
 def test_healthy_env_passes(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(detect, "detect", _env)
+    monkeypatch.setattr(detect, "environment", _env)
     try:
         jail_env.require_userns_jail()
     except (pytest.skip.Exception, pytest.fail.Exception) as exc:  # pragma: no cover
@@ -37,7 +37,7 @@ def test_healthy_env_passes(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_no_kernel_sandbox_skips(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(detect, "detect", lambda: _env(sandbox=False, userns=False))
+    monkeypatch.setattr(detect, "environment", lambda: _env(sandbox=False, userns=False))
     with pytest.raises(pytest.skip.Exception):
         jail_env.require_userns_jail()
 
@@ -46,7 +46,7 @@ def test_container_skips(monkeypatch: pytest.MonkeyPatch) -> None:
     def _reason(_env: object) -> str | None:
         return "container blocks userns"
 
-    monkeypatch.setattr(detect, "detect", lambda: _env(userns=False, container=True))
+    monkeypatch.setattr(detect, "environment", lambda: _env(userns=False, container=True))
     monkeypatch.setattr(detect, "degrade_reason", _reason)
     with pytest.raises(pytest.skip.Exception):
         jail_env.require_userns_jail()
@@ -56,7 +56,7 @@ def test_host_policy_block_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     def _reason(_env: object) -> str | None:
         return "user.max_user_namespaces = 0"
 
-    monkeypatch.setattr(detect, "detect", lambda: _env(userns=False))
+    monkeypatch.setattr(detect, "environment", lambda: _env(userns=False))
     monkeypatch.setattr(detect, "degrade_reason", _reason)
     monkeypatch.delenv("AGENT6_TEST_SKIP_JAIL", raising=False)
     with pytest.raises(pytest.fail.Exception) as exc:
@@ -71,7 +71,7 @@ def test_explicit_env_turns_the_failure_into_a_skip(
     def _reason(_env: object) -> str | None:
         return "blocked"
 
-    monkeypatch.setattr(detect, "detect", lambda: _env(userns=False))
+    monkeypatch.setattr(detect, "environment", lambda: _env(userns=False))
     monkeypatch.setattr(detect, "degrade_reason", _reason)
     monkeypatch.setenv("AGENT6_TEST_SKIP_JAIL", "1")
     with pytest.raises(pytest.skip.Exception):

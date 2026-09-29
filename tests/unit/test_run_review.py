@@ -306,7 +306,7 @@ class _FakeProvider:
 
 def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
     provider = _FakeProvider()
-    out = run_review.run_review(provider, digest="session x: task", agents_md="# rules")  # type: ignore[arg-type]
+    out = run_review.review_digest(provider, digest="session x: task", agents_md="# rules")  # type: ignore[arg-type]
     assert out.startswith("## Outcome")
     assert provider.last_user == "AGENTS.md:\n# rules\n\nRUN RECORD:\nsession x: task"
     assert "Candidate memory facts" in provider.last_system
@@ -322,9 +322,9 @@ def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
     ):
         assert line in provider.last_system
     with pytest.raises(run_review.RunReviewError, match="provider call failed"):
-        run_review.run_review(_FakeProvider(raise_error=True), digest="x")  # type: ignore[arg-type]
+        run_review.review_digest(_FakeProvider(raise_error=True), digest="x")  # type: ignore[arg-type]
     with pytest.raises(run_review.RunReviewError, match="empty"):
-        run_review.run_review(_FakeProvider(response_text="  "), digest="x")  # type: ignore[arg-type]
+        run_review.review_digest(_FakeProvider(response_text="  "), digest="x")  # type: ignore[arg-type]
 
 
 def _reviewer_config() -> Config:

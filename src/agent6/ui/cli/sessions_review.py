@@ -78,7 +78,7 @@ def _cmd_sessions_review(  # noqa: PLR0911
     digest = run_review.run_digest(layout)
     print(f"[agent6] reviewing run: {layout.session_id}", file=sys.stderr)
     try:
-        text = run_review.run_review(
+        text = run_review.review_digest(
             reviewer, digest=digest.render(), agents_md=_context.agents_md_text(cwd)
         )
     except run_review.RunReviewError as exc:

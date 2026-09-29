@@ -41,7 +41,7 @@ Format:
 """
 
 
-def code_review(
+def review_diff(
     provider: Provider,
     *,
     diff: str,

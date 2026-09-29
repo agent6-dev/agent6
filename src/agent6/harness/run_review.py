@@ -275,7 +275,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     )
 
 
-def run_review(
+def review_digest(
     provider: Provider, *, digest: str, agents_md: str = "", max_tokens: int = 4096
 ) -> str:
     """Ask the reviewer model to review a run from its digest.

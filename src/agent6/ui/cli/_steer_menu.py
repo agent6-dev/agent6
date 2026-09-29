@@ -268,7 +268,7 @@ def _line_reader(
     arrived = functools.partial(ipc.steer_answer_written, session_dir)
     _RECALL.seed(session_dir)
     display = {**offered, **{c: d[:70] for c, (d, _t) in skills.items()}}
-    return lambda p: _menu_input.menu_input(p, display, _RECALL.lines, until=arrived)
+    return lambda p: _menu_input.read_line(p, display, _RECALL.lines, until=arrived)
 
 
 def pause_menu(

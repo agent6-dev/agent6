@@ -152,7 +152,7 @@ def check_url(url: str) -> Checked:
     return Checked(url=url, host=host)
 
 
-def fetch(checked: Checked) -> Fetched:
+def fetch_url(checked: Checked) -> Fetched:
     """GET a vetted URL, refusing anything that is not a bounded text response.
 
     The host resolves here, behind every gate, to public addresses only, which keeps a fetch

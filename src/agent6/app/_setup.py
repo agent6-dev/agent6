@@ -50,7 +50,7 @@ def detect_env() -> detect.Environment:
     Raises:
         JailBinaryError: The jail binary cannot be executed on this host.
     """
-    env = detect.detect()
+    env = detect.environment()
     if not env.sandbox_available:
         return env
     works = strict_namespaces_work()

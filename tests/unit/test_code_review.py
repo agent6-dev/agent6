@@ -49,7 +49,7 @@ class _FakeProvider:
 
 def test_code_review_passes_diff_and_context() -> None:
     provider = _FakeProvider(response_text="LGTM with nits\n- [nit] foo")
-    out = code_review.code_review(
+    out = code_review.review_diff(
         provider,  # type: ignore[arg-type]
         diff="diff --git a/x b/x\n+pass\n",
         agents_md="# project rules",
@@ -67,17 +67,17 @@ def test_code_review_passes_diff_and_context() -> None:
 def test_code_review_sends_the_whole_large_diff() -> None:
     provider = _FakeProvider()
     huge = "start\n" + "x" * 200_000 + "\nend"
-    code_review.code_review(provider, diff=huge)  # type: ignore[arg-type]
+    code_review.review_diff(provider, diff=huge)  # type: ignore[arg-type]
     assert provider.last_user == f"DIFF:\n{huge}"
 
 
 def test_code_review_rejects_empty_response() -> None:
     provider = _FakeProvider(response_text="   ")
     with pytest.raises(code_review.CodeReviewError, match="empty"):
-        code_review.code_review(provider, diff="diff")  # type: ignore[arg-type]
+        code_review.review_diff(provider, diff="diff")  # type: ignore[arg-type]
 
 
 def test_code_review_wraps_provider_error() -> None:
     provider = _FakeProvider(raise_error=True)
     with pytest.raises(code_review.CodeReviewError, match="provider call failed"):
-        code_review.code_review(provider, diff="diff")  # type: ignore[arg-type]
+        code_review.review_diff(provider, diff="diff")  # type: ignore[arg-type]

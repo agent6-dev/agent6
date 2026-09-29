@@ -21,7 +21,7 @@ from agent6.sandbox import detect
 
 
 def require_userns_jail() -> None:
-    env = detect.detect()
+    env = detect.environment()
     if not env.sandbox_available:
         pytest.skip(f"no kernel sandbox on {sys.platform!r}")
     if env.userns_supported:

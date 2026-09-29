@@ -510,7 +510,7 @@ def test_pause_menu_seeds_recall_from_the_journal(
         history.append("/status")  # what accepting a line does
         return "go"
 
-    monkeypatch.setattr(_menu_input, "menu_input", fake_menu_input)
+    monkeypatch.setattr(_menu_input, "read_line", fake_menu_input)
     assert cli__steer_menu.pause_menu(tmp_path) == "go"
     assert seen[0] == ["polish the TUI", "focus on tests"]
     # A later pause of the same session must not reseed away in-process lines.

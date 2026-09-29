@@ -68,7 +68,7 @@ def test_the_freeform_review_is_saved_and_its_path_named(
 ) -> None:
     monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock())
     monkeypatch.setattr(
-        code_review, "code_review", mock.MagicMock(return_value="LGTM with nits\n- [nit] x")
+        code_review, "review_diff", mock.MagicMock(return_value="LGTM with nits\n- [nit] x")
     )
 
     rc = review_cmds._cmd_review(None, base="", head="HEAD", paths=())  # pyright: ignore[reportPrivateUsage]

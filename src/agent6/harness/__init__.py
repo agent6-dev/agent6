@@ -129,7 +129,7 @@ def model_exchange_for(
 def _shown_isolation(config: Config) -> kinds.IsolationLevel:
     """Return the isolation level a run here would resolve, "none" when the host cannot honor it."""
     try:
-        return detect.resolve_isolation(config.sandbox.isolation, detect.detect())
+        return detect.resolve_isolation(config.sandbox.isolation, detect.environment())
     except detect.IsolationUnavailableError:
         return "none"
 
