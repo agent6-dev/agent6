@@ -170,7 +170,7 @@ def _patch_jail(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
         seen.append(policy)
         return _FakeJailResult()
 
-    monkeypatch.setattr("agent6.machine.engine.run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     return seen
 
 

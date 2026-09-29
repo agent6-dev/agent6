@@ -9,7 +9,7 @@ harness, which keeps the tach graph acyclic.
 
 from __future__ import annotations
 
-from agent6.prompts.machine import MACHINE_AUTHOR_GUIDE
+from agent6.prompts.machine import MACHINE_AUTHOR_GUIDE  # noqa: ICN003  # re-export
 
 __all__ = ["MACHINE_AUTHOR_GUIDE", "build_authoring_prompt"]
 

@@ -19,21 +19,20 @@ Layout under the per-repo state dir, `machines/<id>/`::
 
 from __future__ import annotations
 
+import contextlib
+import datetime
 import json
 import os
+import pathlib
 import shutil
 from collections.abc import Generator
-from contextlib import contextmanager, suppress
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
-from pydantic_core import PydanticSerializationError
+import pydantic
+import pydantic_core
 
-from agent6.machine.spec import MachineError
-from agent6.paths import mkdir_for_real_user
-from agent6.portable import atomic_write, lock_exclusive, unlock
+from agent6 import paths, portable
+from agent6.machine import spec
 
 __all__ = [
     "AgentFact",
@@ -55,10 +54,10 @@ __all__ = [
     "write_source",
 ]
 
-_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
+_MODEL_CONFIG = pydantic.ConfigDict(extra="forbid", frozen=True)
 
 
-class JournalError(MachineError):
+class JournalError(spec.MachineError):
     """On-disk journal state (the journal, a pending wait, the source, the lock) is unusable.
 
     A `MachineError`, so every surface degrades on a broken journal as on a broken machine
@@ -71,10 +70,10 @@ class JournalError(MachineError):
 
 def _now_iso() -> str:
     """Return the current UTC instant as an ISO-8601 timestamp."""
-    return datetime.now(UTC).isoformat(timespec="microseconds")
+    return datetime.datetime.now(datetime.UTC).isoformat(timespec="microseconds")
 
 
-class ToolFact(BaseModel):
+class ToolFact(pydantic.BaseModel):
     """The observation one tool state produced.
 
     Attributes:
@@ -95,7 +94,7 @@ class ToolFact(BaseModel):
     stderr: str = ""
 
 
-class WaitFact(BaseModel):
+class WaitFact(pydantic.BaseModel):
     """The observation one wait state produced.
 
     Attributes:
@@ -114,16 +113,16 @@ class WaitFact(BaseModel):
     payload: Any = None
 
 
-class BranchFact(BaseModel):
+class BranchFact(pydantic.BaseModel):
     """The observation one branch state produced: the index of the clause that fired."""
 
     model_config = _MODEL_CONFIG
 
     kind: Literal["branch"] = "branch"
-    clause_index: int = Field(ge=0)
+    clause_index: int = pydantic.Field(ge=0)
 
 
-class AgentFact(BaseModel):
+class AgentFact(pydantic.BaseModel):
     """The observation one agent state produced.
 
     Attributes:
@@ -146,14 +145,14 @@ class AgentFact(BaseModel):
     payload: dict[str, Any] | None = None
     usd: float = 0.0
     usd_partial: bool = False
-    input_tokens: int = Field(default=0, ge=0)
-    output_tokens: int = Field(default=0, ge=0)
+    input_tokens: int = pydantic.Field(default=0, ge=0)
+    output_tokens: int = pydantic.Field(default=0, ge=0)
 
 
-Fact = Annotated[ToolFact | WaitFact | BranchFact | AgentFact, Field(discriminator="kind")]
+Fact = Annotated[ToolFact | WaitFact | BranchFact | AgentFact, pydantic.Field(discriminator="kind")]
 
 
-class MachineBegin(BaseModel):
+class MachineBegin(pydantic.BaseModel):
     """The journal's first event: which machine, at which version, started the instance."""
 
     model_config = _MODEL_CONFIG
@@ -164,7 +163,7 @@ class MachineBegin(BaseModel):
     version: int
 
 
-class StepEvent(BaseModel):
+class StepEvent(pydantic.BaseModel):
     """One transition: the state, the fact it produced, the label and the destination.
 
     Attributes:
@@ -181,14 +180,14 @@ class StepEvent(BaseModel):
 
     type: Literal["step"] = "step"
     ts: str
-    seq: int = Field(ge=0)
+    seq: int = pydantic.Field(ge=0)
     state: str
     label: str
     goto: str
     fact: Fact
 
 
-class MachineNotify(BaseModel):
+class MachineNotify(pydantic.BaseModel):
     """A state's `notify` message, journaled on entry.
 
     Presentation only: it adds no edge and never moves the reducer.
@@ -203,7 +202,7 @@ class MachineNotify(BaseModel):
     level: Literal["info", "warn", "error"] = "info"
 
 
-class MachineEnd(BaseModel):
+class MachineEnd(pydantic.BaseModel):
     """The journal's terminal event.
 
     Attributes:
@@ -227,14 +226,14 @@ class MachineEnd(BaseModel):
     status: Literal["ok", "failed"]
     reason: str
     state: str
-    transitions: int = Field(ge=0)
+    transitions: int = pydantic.Field(ge=0)
     usd: float = 0.0
     usd_partial: bool = False
     input_tokens: int = 0
     output_tokens: int = 0
 
 
-class AttemptSpend(BaseModel):
+class AttemptSpend(pydantic.BaseModel):
     """The metered spend of a state attempt a supervisor death orphaned.
 
     The resuming supervisor journals it from the per-state log before re-running the state,
@@ -245,7 +244,7 @@ class AttemptSpend(BaseModel):
 
     type: Literal["attempt.spend"] = "attempt.spend"
     ts: str
-    seq: int = Field(ge=0)
+    seq: int = pydantic.Field(ge=0)
     state: str
     usd: float = 0.0
     usd_partial: bool = False
@@ -255,23 +254,23 @@ class AttemptSpend(BaseModel):
 
 JournalEvent = Annotated[
     MachineBegin | StepEvent | MachineNotify | MachineEnd | AttemptSpend,
-    Field(discriminator="type"),
+    pydantic.Field(discriminator="type"),
 ]
 
-_EVENT_ADAPTER: TypeAdapter[Any] = TypeAdapter(JournalEvent)
+_EVENT_ADAPTER: pydantic.TypeAdapter[Any] = pydantic.TypeAdapter(JournalEvent)
 
 
-class Snapshot(BaseModel):
+class Snapshot(pydantic.BaseModel):
     """The blackboard and position after a transition, for inspection and status."""
 
     model_config = _MODEL_CONFIG
 
-    seq: int = Field(ge=0)
+    seq: int = pydantic.Field(ge=0)
     state: str
     blackboard: dict[str, Any]
 
 
-class PendingWait(BaseModel):
+class PendingWait(pydantic.BaseModel):
     """A wait that is armed but has not fired.
 
     The instant is computed once and persisted, so a resume or a scheduler tick compares
@@ -288,14 +287,14 @@ class PendingWait(BaseModel):
 
     state: str
     wake_epoch: float | None = None
-    seq: int = Field(default=0, ge=0)
+    seq: int = pydantic.Field(default=0, ge=0)
 
     @property
     def wake_at(self) -> str:
         """The wake instant as an ISO-8601 UTC timestamp, or "" for a timerless wait."""
         if self.wake_epoch is None:
             return ""
-        return datetime.fromtimestamp(self.wake_epoch, tz=UTC).isoformat()
+        return datetime.datetime.fromtimestamp(self.wake_epoch, tz=datetime.UTC).isoformat()
 
 
 def scrub_lone_surrogates(value: Any) -> Any:
@@ -318,7 +317,7 @@ def scrub_lone_surrogates(value: Any) -> Any:
     return value
 
 
-def dump_json(model: BaseModel, *, indent: int | None = None) -> str:
+def dump_json(model: pydantic.BaseModel, *, indent: int | None = None) -> str:
     """Serialize one journal or snapshot record, replacing lone surrogates.
 
     `model_dump_json` raises on a lone surrogate; the fallback writes valid UTF-8 so the
@@ -333,7 +332,7 @@ def dump_json(model: BaseModel, *, indent: int | None = None) -> str:
     """
     try:
         return model.model_dump_json(indent=indent)
-    except PydanticSerializationError:
+    except pydantic_core.PydanticSerializationError:
         raw = json.dumps(
             model.model_dump(mode="json"),
             ensure_ascii=False,
@@ -362,7 +361,7 @@ class MachineJournal:
         wait_path: The pending wait record.
     """
 
-    def __init__(self, root: Path, *, snapshot_keep: int = 5) -> None:
+    def __init__(self, root: pathlib.Path, *, snapshot_keep: int = 5) -> None:
         self.snapshot_keep = snapshot_keep
         self.root = root
         self.journal_path = root / "journal.jsonl"
@@ -373,7 +372,7 @@ class MachineJournal:
 
     def ensure_dirs(self) -> None:
         """Create the instance directories."""
-        mkdir_for_real_user(self.snapshots_dir)
+        paths.mkdir_for_real_user(self.snapshots_dir)
 
     def exists(self) -> bool:
         """Return whether the instance has a journal."""
@@ -383,7 +382,7 @@ class MachineJournal:
         """Append the `machine.begin` event."""
         self.append(MachineBegin(ts=_now_iso(), machine=machine, version=version))
 
-    def append(self, event: BaseModel) -> None:
+    def append(self, event: pydantic.BaseModel) -> None:
         """Append one event as a JSON line, fsync'd.
 
         A torn previous append (a file not ending in a newline) is truncated off first, so
@@ -445,7 +444,7 @@ class MachineJournal:
                 continue
             try:
                 events.append(_EVENT_ADAPTER.validate_json(raw))
-            except ValidationError as exc:
+            except pydantic.ValidationError as exc:
                 raise JournalError(
                     f"corrupt journal line {lineno} in {self.journal_path}: {exc}"
                 ) from exc
@@ -478,7 +477,7 @@ class MachineJournal:
             return end if isinstance(end, MachineEnd) else None
         try:
             event = _EVENT_ADAPTER.validate_json(whole[-1])
-        except ValidationError as exc:
+        except pydantic.ValidationError as exc:
             raise JournalError(f"corrupt journal tail in {self.journal_path}: {exc}") from exc
         return event if isinstance(event, MachineEnd) else None
 
@@ -488,19 +487,19 @@ class MachineJournal:
         Recovery and replay fold the journal; the retained tail is a fallback for a corrupt
         latest.
         """
-        mkdir_for_real_user(self.snapshots_dir)
+        paths.mkdir_for_real_user(self.snapshots_dir)
         dest = self.snapshots_dir / f"{snapshot.seq}.json"
-        atomic_write(dest, dump_json(snapshot, indent=2) + "\n")
+        portable.atomic_write(dest, dump_json(snapshot, indent=2) + "\n")
         if self.snapshot_keep <= 0:
             return
-        with suppress(OSError):
+        with contextlib.suppress(OSError):
             for entry in self.snapshots_dir.iterdir():
                 if (
                     entry.suffix == ".json"
                     and entry.stem.isdigit()
                     and int(entry.stem) <= snapshot.seq - self.snapshot_keep
                 ):
-                    with suppress(OSError):
+                    with contextlib.suppress(OSError):
                         entry.unlink()
 
     def latest_snapshot(self) -> Snapshot | None:
@@ -523,7 +522,7 @@ class MachineJournal:
             path = self.snapshots_dir / f"{seq}.json"
             try:
                 return Snapshot.model_validate_json(path.read_bytes())
-            except (ValidationError, OSError):
+            except (pydantic.ValidationError, OSError):
                 continue
         return None
 
@@ -587,8 +586,8 @@ class MachineJournal:
         Args:
             payload: Travels to the waking wait as its `signal` payload, journaled.
         """
-        mkdir_for_real_user(self.root)
-        atomic_write(self.signal_path, json.dumps(payload))
+        paths.mkdir_for_real_user(self.root)
+        portable.atomic_write(self.signal_path, json.dumps(payload))
 
     def read_pending_wait(self) -> PendingWait | None:
         """Read the armed wait, if any.
@@ -604,7 +603,7 @@ class MachineJournal:
             return None
         try:
             return PendingWait.model_validate_json(self.wait_path.read_bytes())
-        except (ValidationError, OSError) as exc:
+        except (pydantic.ValidationError, OSError) as exc:
             raise JournalError(
                 f"corrupt pending wait {self.wait_path}: {exc}\n"
                 f"  delete it to re-arm the wait from the machine's own state:"
@@ -613,16 +612,16 @@ class MachineJournal:
 
     def write_pending_wait(self, pending: PendingWait) -> None:
         """Persist the armed wait atomically."""
-        mkdir_for_real_user(self.root)
-        atomic_write(self.wait_path, dump_json(pending, indent=2) + "\n")
+        paths.mkdir_for_real_user(self.root)
+        portable.atomic_write(self.wait_path, dump_json(pending, indent=2) + "\n")
 
     def clear_pending_wait(self) -> None:
         """Drop the armed wait's record."""
         self.wait_path.unlink(missing_ok=True)
 
 
-@contextmanager
-def machine_lock(root: Path) -> Generator[None]:
+@contextlib.contextmanager
+def machine_lock(root: pathlib.Path) -> Generator[None]:
     """Hold the single-writer lock of one machine instance.
 
     Args:
@@ -634,29 +633,29 @@ def machine_lock(root: Path) -> Generator[None]:
     Raises:
         JournalError: Another runner holds the lock.
     """
-    mkdir_for_real_user(root)
+    paths.mkdir_for_real_user(root)
     lock_path = root / "machine.lock"
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
         try:
-            lock_exclusive(fd, blocking=False)
+            portable.lock_exclusive(fd, blocking=False)
         except OSError as exc:
             raise JournalError(f"machine is already running (lock held): {lock_path}") from exc
         try:
             yield
         finally:
-            unlock(fd)
+            portable.unlock(fd)
     finally:
         os.close(fd)
 
 
-def write_source(root: Path, text: str) -> None:
+def write_source(root: pathlib.Path, text: str) -> None:
     """Persist the machine source the run started from, for replay."""
-    mkdir_for_real_user(root)
-    atomic_write(root / "machine.asm.toml", text)
+    paths.mkdir_for_real_user(root)
+    portable.atomic_write(root / "machine.asm.toml", text)
 
 
-def read_source(root: Path) -> str:
+def read_source(root: pathlib.Path) -> str:
     """Read the persisted machine source.
 
     Args:
@@ -677,28 +676,28 @@ def read_source(root: Path) -> str:
         raise JournalError(f"cannot read persisted machine source at {path}: {exc}") from exc
 
 
-def write_stop_request(root: Path) -> None:
+def write_stop_request(root: pathlib.Path) -> None:
     """Ask the live machine to park at its next transition boundary.
 
     A marker, not a kill: the state in flight finishes and journals its fact, then the
     engine returns `stopped` with no end, so the instance stays resumable.
     """
-    mkdir_for_real_user(root)
+    paths.mkdir_for_real_user(root)
     (root / "stop").touch()
 
 
-def stop_requested(root: Path) -> bool:
+def stop_requested(root: pathlib.Path) -> bool:
     """Return whether a stop marker is present."""
     return (root / "stop").is_file()
 
 
-def clear_stop_request(root: Path) -> None:
+def clear_stop_request(root: pathlib.Path) -> None:
     """Remove the stop marker."""
-    with suppress(FileNotFoundError):
+    with contextlib.suppress(FileNotFoundError):
         (root / "stop").unlink()
 
 
-def write_bundle(root: Path, machine_path: Path) -> None:
+def write_bundle(root: pathlib.Path, machine_path: pathlib.Path) -> None:
     """Persist the bundle the instance starts from: the source plus its `scripts/` tree.
 
     Replay evidence, and the baseline `bundle_drift` holds every continuation to.
@@ -711,7 +710,7 @@ def write_bundle(root: Path, machine_path: Path) -> None:
         shutil.copytree(scripts, dst)
 
 
-def bundle_drift(root: Path, machine_path: Path) -> str | None:
+def bundle_drift(root: pathlib.Path, machine_path: pathlib.Path) -> str | None:
     """Return the first difference between the working bundle and the recorded one.
 
     A live instance runs the logic it recorded; an edit takes effect on a new instance.
@@ -740,7 +739,7 @@ def bundle_drift(root: Path, machine_path: Path) -> str | None:
     return None
 
 
-def _tree_files(base: Path) -> dict[str, bytes]:
+def _tree_files(base: pathlib.Path) -> dict[str, bytes]:
     """Return every file under the directory by relative path, or {} when it is not one."""
     if not base.is_dir():
         return {}

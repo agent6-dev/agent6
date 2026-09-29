@@ -9,12 +9,12 @@ attribute access, as the predicate evaluator does.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
 
-from agent6.machine.predicate import Reference
+from agent6.machine import predicate
 
 __all__ = [
     "FILTERS",
@@ -39,15 +39,15 @@ class TemplateError(Exception):
     """Raised when a template string is malformed (a load-time error)."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Interp:
     """One interpolation: a reference and its filter, if any."""
 
-    ref: Reference
+    ref: predicate.Reference
     filt: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Template:
     """A parsed template: literal text and interpolations in order."""
 
@@ -123,14 +123,14 @@ def _parse_interp(body: str, whole: str) -> Interp:
             " captured value instead)"
         )
     segments = ref_text.split(".")
-    return Interp(ref=Reference(root=segments[0], path=tuple(segments[1:])), filt=filt)
+    return Interp(ref=predicate.Reference(root=segments[0], path=tuple(segments[1:])), filt=filt)
 
 
 class TemplateRuntimeError(TemplateError):
     """A validated template cannot be rendered against the blackboard's actual data."""
 
 
-def resolve_reference(ref: Reference, scope: Mapping[str, object]) -> object:
+def resolve_reference(ref: predicate.Reference, scope: Mapping[str, object]) -> object:
     """Resolve a reference against a scope by dict navigation, never `getattr`.
 
     Args:

@@ -13,8 +13,8 @@ the stdlib alone, so the allow-list audits in isolation.
 from __future__ import annotations
 
 import ast
+import dataclasses
 from collections.abc import Mapping
-from dataclasses import dataclass
 
 __all__ = [
     "ALLOWED_FUNCTIONS",
@@ -45,7 +45,7 @@ class PredicateError(Exception):
     """Raised when a predicate is not a valid, allow-listed expression."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Reference:
     """A blackboard reference: a root variable plus record field navigations.
 
@@ -61,7 +61,7 @@ class Reference:
         return ".".join((self.root, *self.path))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Predicate:
     """A parsed, allow-list-validated predicate.
 

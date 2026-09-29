@@ -11,24 +11,14 @@ schemas, captures and routing are sound.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
-from dataclasses import dataclass
 from typing import Any
 
-from agent6.machine._semantics import validate_record_payload
-from agent6.machine.engine import EngineError, initial_blackboard, reduce
-from agent6.machine.journal import AgentFact, ToolFact
-from agent6.machine.predicate import PredicateError, evaluate, parse_predicate
-from agent6.machine.spec import (
-    AgentState,
-    BranchState,
-    MachineSpec,
-    TerminalState,
-    ToolState,
-    WaitState,
-)
-from agent6.machine.template import TemplateError
+from agent6.machine import _semantics, engine, journal, template
+from agent6.machine import predicate as machine_predicate
+from agent6.machine import spec as machine_spec
 
 __all__ = [
     "BranchCheck",
@@ -42,7 +32,7 @@ _LIST_RE = re.compile(r"^list\[([a-z0-9_]+)\]$")
 _SCALAR_EXAMPLES: dict[str, Any] = {"str": "", "int": 0, "float": 0.0, "bool": False}
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class StateCheck:
     """One non-branch state's dry-run result.
 
@@ -63,7 +53,7 @@ class StateCheck:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class BranchCheck:
     """One branch state's dry-run result.
 
@@ -84,7 +74,7 @@ class BranchCheck:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class DryRunReport:
     """The per-state and per-branch checks of one dry run."""
 
@@ -97,7 +87,9 @@ class DryRunReport:
         return all(s.ok for s in self.states) and all(b.ok for b in self.branches)
 
 
-def synthesize_record(spec: MachineSpec, schema_name: str, _seen: tuple[str, ...] = ()) -> Any:
+def synthesize_record(
+    spec: machine_spec.MachineSpec, schema_name: str, _seen: tuple[str, ...] = ()
+) -> Any:
     """Return a minimal schema-valid example object for a schema.
 
     Exactly the required fields: scalars zero, lists empty, enums their first member, nested
@@ -123,7 +115,7 @@ def synthesize_record(spec: MachineSpec, schema_name: str, _seen: tuple[str, ...
     return out
 
 
-def _synthesize_field(spec: MachineSpec, field: Any, seen: tuple[str, ...]) -> Any:
+def _synthesize_field(spec: machine_spec.MachineSpec, field: Any, seen: tuple[str, ...]) -> Any:
     """Return the example value for one field."""
     if field.enum:
         return field.enum[0]
@@ -155,7 +147,10 @@ def _capture_summary(capture: Any) -> str:
 
 
 def _check_tool(
-    spec: MachineSpec, name: str, state: ToolState, blackboard: dict[str, Any]
+    spec: machine_spec.MachineSpec,
+    name: str,
+    state: machine_spec.ToolState,
+    blackboard: dict[str, Any],
 ) -> StateCheck:
     """Return the check of a tool state's success path."""
     if state.output_schema is not None:
@@ -163,8 +158,10 @@ def _check_tool(
     else:
         # A schema-less capture still requires one JSON value; null is the weakest valid one.
         stdout = "null" if state.capture is not None else ""
-    fact = ToolFact(exit_code=0, stdout=stdout, timed_out=False)
-    reduce(spec, state, fact, blackboard)  # exercises capture rendering; raises on a bad template
+    fact = journal.ToolFact(exit_code=0, stdout=stdout, timed_out=False)
+    engine.reduce(
+        spec, state, fact, blackboard
+    )  # exercises capture rendering; raises on a bad template
     goto = state.on["ok"]
     if goto not in spec.states:
         return StateCheck(name, "tool", False, "ok", goto, f"on.ok -> {goto!r} is not a state")
@@ -172,17 +169,22 @@ def _check_tool(
 
 
 def _check_agent(
-    spec: MachineSpec, name: str, state: AgentState, blackboard: dict[str, Any]
+    spec: machine_spec.MachineSpec,
+    name: str,
+    state: machine_spec.AgentState,
+    blackboard: dict[str, Any],
 ) -> StateCheck:
     """Return the check of an agent state's success path."""
     payload = synthesize_record(spec, state.output_schema)
-    problems = validate_record_payload(
+    problems = _semantics.validate_record_payload(
         spec.schemas, state.output_schema, payload, where="finish_session payload"
     )
     if problems:  # pragma: no cover - synthesis is schema-valid by construction
         return StateCheck(name, "agent", False, "ok", None, "; ".join(problems))
-    fact = AgentFact(outcome="ok", reason="finish_session", payload=payload)
-    reduce(spec, state, fact, blackboard)  # exercises capture rendering; raises on a bad template
+    fact = journal.AgentFact(outcome="ok", reason="finish_session", payload=payload)
+    engine.reduce(
+        spec, state, fact, blackboard
+    )  # exercises capture rendering; raises on a bad template
     goto = state.on["ok"]
     if goto not in spec.states:
         return StateCheck(name, "agent", False, "ok", goto, f"on.ok -> {goto!r} is not a state")
@@ -190,15 +192,15 @@ def _check_agent(
 
 
 def _check_state(
-    spec: MachineSpec, name: str, state: Any, blackboard: dict[str, Any]
+    spec: machine_spec.MachineSpec, name: str, state: Any, blackboard: dict[str, Any]
 ) -> StateCheck:
     """Return the check of one non-branch state; a runtime error is the detail."""
     try:
-        if isinstance(state, ToolState):
+        if isinstance(state, machine_spec.ToolState):
             return _check_tool(spec, name, state, blackboard)
-        if isinstance(state, AgentState):
+        if isinstance(state, machine_spec.AgentState):
             return _check_agent(spec, name, state, blackboard)
-        if isinstance(state, WaitState):
+        if isinstance(state, machine_spec.WaitState):
             # A wait with no timer parks until a poke (no `tick` edge).
             forever = state.every_secs is None and state.until is None
             label = "signal" if forever else "tick"
@@ -206,15 +208,18 @@ def _check_state(
             ok = goto in spec.states
             detail = f"{label} path" if ok else f"on.{label} -> {goto!r} is not a state"
             return StateCheck(name, "wait", ok, label, goto, detail)
-        if isinstance(state, TerminalState):
+        if isinstance(state, machine_spec.TerminalState):
             return StateCheck(name, "terminal", True, None, None, f"{state.status}: {state.reason}")
-    except (EngineError, TemplateError, PredicateError) as exc:
+    except (engine.EngineError, template.TemplateError, machine_predicate.PredicateError) as exc:
         return StateCheck(name, getattr(state, "kind", "?"), False, None, None, str(exc))
     return StateCheck(name, getattr(state, "kind", "?"), True, None, None, "")  # pragma: no cover
 
 
 def _check_branch(
-    spec: MachineSpec, name: str, state: BranchState, blackboard: dict[str, Any]
+    spec: machine_spec.MachineSpec,
+    name: str,
+    state: machine_spec.BranchState,
+    blackboard: dict[str, Any],
 ) -> BranchCheck:
     """Return the check of a branch: the first clause that fires."""
     try:
@@ -224,7 +229,9 @@ def _check_branch(
             else:
                 assert clause.if_ is not None
                 fired, label, goto = (
-                    evaluate(parse_predicate(clause.if_), blackboard),
+                    machine_predicate.evaluate(
+                        machine_predicate.parse_predicate(clause.if_), blackboard
+                    ),
                     clause.if_,
                     clause.goto,
                 )
@@ -232,13 +239,15 @@ def _check_branch(
                 ok = goto in spec.states
                 detail = "" if ok else f"goto {goto!r} is not a state"
                 return BranchCheck(name, index, label, goto, ok, detail)
-    except (PredicateError, TemplateError) as exc:
+    except (machine_predicate.PredicateError, template.TemplateError) as exc:
         return BranchCheck(name, None, None, None, False, f"predicate error: {exc}")
     # validate_semantics guarantees a final else, so this is unreachable.
     return BranchCheck(name, None, None, None, False, "no clause matched")  # pragma: no cover
 
 
-def dry_run(spec: MachineSpec, blackboard_fixture: dict[str, Any] | None = None) -> DryRunReport:
+def dry_run(
+    spec: machine_spec.MachineSpec, blackboard_fixture: dict[str, Any] | None = None
+) -> DryRunReport:
     """Run the per-state and per-branch passes over a machine.
 
     Args:
@@ -248,7 +257,7 @@ def dry_run(spec: MachineSpec, blackboard_fixture: dict[str, Any] | None = None)
     Returns:
         The report.
     """
-    base = initial_blackboard(spec)
+    base = engine.initial_blackboard(spec)
     # A record var defaults to {}, which a branch reading `verdict.field` cannot evaluate against,
     # so it takes the schema's zero record (optional fields absent; `has()` is their guard).
     for name, var in (*spec.vars.code.items(), *spec.vars.agent.items()):
@@ -259,7 +268,7 @@ def dry_run(spec: MachineSpec, blackboard_fixture: dict[str, Any] | None = None)
     states: list[StateCheck] = []
     branches: list[BranchCheck] = []
     for name, state in spec.states.items():
-        if isinstance(state, BranchState):
+        if isinstance(state, machine_spec.BranchState):
             branches.append(_check_branch(spec, name, state, dict(base)))
         else:
             states.append(_check_state(spec, name, state, dict(base)))

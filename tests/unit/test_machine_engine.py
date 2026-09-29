@@ -17,6 +17,7 @@ from agent6.config import Config
 from agent6.machine import _semantics
 from agent6.machine import engine as machine_engine
 from agent6.machine import journal as machine_journal
+from agent6.sandbox import jail
 
 # A minimal tool/branch/terminal machine: scan -> (branch on items) -> record -> stop.
 COUNTER = """
@@ -977,7 +978,6 @@ def test_data_dir_env_matches_jail_mount(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The data dir lives outside cwd; the jail mounts it at its real path in every isolation.
-    from agent6.machine import engine
 
     data_dir = tmp_path / "state" / "machines" / "m" / "data"
     captured: dict[str, kinds.JailPolicy] = {}
@@ -988,7 +988,7 @@ def test_data_dir_env_matches_jail_mount(
             argv=policy.argv, returncode=0, stdout="{}", stderr="", duration_s=0.0
         )
 
-    monkeypatch.setattr(engine, "run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
 
     levels: tuple[kinds.IsolationLevel, ...] = ("strict", "hardened")
     for isolation in levels:
@@ -1010,8 +1010,6 @@ def test_tool_jails_carry_the_operator_hide_paths(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A machine's tool jails are jailed commands like any other; hide_paths reaches them."""
-    from agent6.machine import engine
-
     captured: dict[str, kinds.JailPolicy] = {}
 
     def fake_run_in_jail(policy: kinds.JailPolicy) -> kinds.CommandResult:
@@ -1020,7 +1018,7 @@ def test_tool_jails_carry_the_operator_hide_paths(
             argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0
         )
 
-    monkeypatch.setattr(engine, "run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
     hidden = tmp_path / "cred.txt"
     cfg = Config.model_validate({"sandbox": {"hide_paths": [str(hidden)]}})
     world = machine_engine.LiveWorld(
@@ -1038,7 +1036,6 @@ def test_live_world_run_tool_maps_rc124_to_timed_out(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """LiveWorld.run_tool derives timed_out from rc 124, so on.timeout is reachable."""
-    from agent6.machine import engine
 
     def fake_run_in_jail(policy: kinds.JailPolicy) -> kinds.CommandResult:
         # The launcher SIGKILLed the child at the deadline and reported rc=124.
@@ -1046,7 +1043,7 @@ def test_live_world_run_tool_maps_rc124_to_timed_out(
             argv=policy.argv, returncode=124, stdout="", stderr="", duration_s=0.0
         )
 
-    monkeypatch.setattr(engine, "run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
     world = machine_engine.LiveWorld(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
@@ -1064,7 +1061,7 @@ def test_live_world_run_tool_maps_rc124_to_timed_out(
             argv=policy.argv, returncode=2, stdout="", stderr="", duration_s=0.0
         )
 
-    monkeypatch.setattr(engine, "run_in_jail", plain_nonzero)
+    monkeypatch.setattr(jail, "run_in_jail", plain_nonzero)
     res2 = world.run_tool(("false",), 1.0)
     assert res2.timed_out is False
     assert res2.exit_code == 2
@@ -1675,7 +1672,6 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A tool-state jail resolves operator tools exactly as run_command's jail does.
-    from agent6.machine import engine as engine_mod
 
     captured: dict[str, kinds.JailPolicy] = {}
 
@@ -1688,8 +1684,8 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
     def fake_tool_paths() -> tuple[str, tuple[pathlib.Path, ...]]:
         return "/usr/bin:/bin:/fake/bin", (pathlib.Path("/fake/real-tools"),)
 
-    monkeypatch.setattr(engine_mod, "run_in_jail", fake_run_in_jail)
-    monkeypatch.setattr("agent6.tools.policy.operator_tool_paths", fake_tool_paths)
+    monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.operator_tool_paths", fake_tool_paths)
     monkeypatch.setenv("PATH", "/host/only/path")  # must NOT leak into the jail
     world = machine_engine.LiveWorld(
         cwd=tmp_path,

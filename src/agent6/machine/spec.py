@@ -9,20 +9,12 @@ so `agent6 machine check` prints them all at once.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import re
-from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
-from pydantic import (
-    AfterValidator,
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
-    Field,
-    field_validator,
-    model_validator,
-)
+import pydantic
 
 __all__ = [
     "AgentState",
@@ -43,9 +35,9 @@ __all__ = [
 ]
 
 # Strict: TOML supplies native scalars, so a quoted number is refused; tuple fields opt out.
-_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
-_StrTuple = Annotated[tuple[str, ...], Field(strict=False)]
-_NonEmptyStrTuple = Annotated[tuple[str, ...], Field(strict=False, min_length=1)]
+_MODEL_CONFIG = pydantic.ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
+_StrTuple = Annotated[tuple[str, ...], pydantic.Field(strict=False)]
+_NonEmptyStrTuple = Annotated[tuple[str, ...], pydantic.Field(strict=False, min_length=1)]
 
 IDENT_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _LIST_RE = re.compile(r"^list\[([a-z0-9_]+)\]$")
@@ -72,26 +64,26 @@ class MachineError(Exception):
         super().__init__("\n".join(problems))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ScalarT:
     """A scalar type: one of `str`, `int`, `float`, `bool`."""
 
     name: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class ListT:
     """A list of one scalar type."""
 
     elem: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class JsonT:
     """Any JSON value."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class RecordT:
     """A record of a declared schema."""
 
@@ -158,17 +150,17 @@ def _normalize_field(value: Any) -> Any:
     return value
 
 
-class FieldSpec(BaseModel):
+class FieldSpec(pydantic.BaseModel):
     """One schema field: its type, whether it is optional, and an enum for a `str`."""
 
     model_config = _MODEL_CONFIG
 
-    type: str = Field(min_length=1)
+    type: str = pydantic.Field(min_length=1)
     optional: bool = False
     enum: _StrTuple | None = None
 
 
-_FieldSpecT = Annotated[FieldSpec, BeforeValidator(_normalize_field)]
+_FieldSpecT = Annotated[FieldSpec, pydantic.BeforeValidator(_normalize_field)]
 
 
 def _normalize_notify(value: Any) -> Any:
@@ -178,7 +170,7 @@ def _normalize_notify(value: Any) -> Any:
     return value
 
 
-class NotifySpec(BaseModel):
+class NotifySpec(pydantic.BaseModel):
     """A state's `notify`: a templated message journaled on entry and sent to the hook.
 
     Presentation only; it adds no edge. Authors write `notify = "msg"` or
@@ -187,39 +179,39 @@ class NotifySpec(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    message: str = Field(min_length=1)
+    message: str = pydantic.Field(min_length=1)
     level: Literal["info", "warn", "error"] = "info"
 
 
-_NotifySpecT = Annotated[NotifySpec, BeforeValidator(_normalize_notify)]
+_NotifySpecT = Annotated[NotifySpec, pydantic.BeforeValidator(_normalize_notify)]
 
 
-class OperatorVar(BaseModel):
+class OperatorVar(pydantic.BaseModel):
     """A `[vars.operator]` variable: a typed constant."""
 
     model_config = _MODEL_CONFIG
 
-    type: str = Field(min_length=1)
+    type: str = pydantic.Field(min_length=1)
     value: Any
 
 
-class MutableVar(BaseModel):
+class MutableVar(pydantic.BaseModel):
     """A `[vars.code]` or `[vars.agent]` variable: a typed default its owner's states write."""
 
     model_config = _MODEL_CONFIG
 
-    type: str = Field(min_length=1)
+    type: str = pydantic.Field(min_length=1)
     default: Any
 
 
-class VarsSection(BaseModel):
+class VarsSection(pydantic.BaseModel):
     """The three owner tables of the blackboard, one read namespace."""
 
     model_config = _MODEL_CONFIG
 
-    operator: dict[str, OperatorVar] = Field(default_factory=dict)
-    code: dict[str, MutableVar] = Field(default_factory=dict)
-    agent: dict[str, MutableVar] = Field(default_factory=dict)
+    operator: dict[str, OperatorVar] = pydantic.Field(default_factory=dict)
+    code: dict[str, MutableVar] = pydantic.Field(default_factory=dict)
+    agent: dict[str, MutableVar] = pydantic.Field(default_factory=dict)
 
 
 def _finite_usd(v: float) -> float:
@@ -233,10 +225,10 @@ def _finite_usd(v: float) -> float:
     return v
 
 
-_FiniteUsd = Annotated[float, AfterValidator(_finite_usd)]
+_FiniteUsd = Annotated[float, pydantic.AfterValidator(_finite_usd)]
 
 
-class BudgetSpec(BaseModel):
+class BudgetSpec(pydantic.BaseModel):
     """The machine's spend bounds.
 
     Attributes:
@@ -247,11 +239,11 @@ class BudgetSpec(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    max_usd: _FiniteUsd | None = Field(default=None, gt=0.0)
-    max_transitions: int = Field(gt=0)
+    max_usd: _FiniteUsd | None = pydantic.Field(default=None, gt=0.0)
+    max_transitions: int = pydantic.Field(gt=0)
 
 
-class Capture(BaseModel):
+class Capture(pydantic.BaseModel):
     """How a state writes its result: one whole-value target, or `set` templates per target."""
 
     model_config = _MODEL_CONFIG
@@ -260,7 +252,7 @@ class Capture(BaseModel):
     finish_json: str | None = None
     set: dict[str, str] | None = None
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _exactly_one(self) -> Capture:
         """Return the capture, requiring exactly one of its three modes.
 
@@ -284,16 +276,16 @@ class Capture(BaseModel):
         return self
 
 
-class WhenClause(BaseModel):
+class WhenClause(pydantic.BaseModel):
     """One branch clause: an `if` predicate or the final `else`, and its `goto`."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
-    if_: str | None = Field(default=None, alias="if")
-    else_: bool | None = Field(default=None, alias="else")
-    goto: str = Field(min_length=1)
+    if_: str | None = pydantic.Field(default=None, alias="if")
+    else_: bool | None = pydantic.Field(default=None, alias="else")
+    goto: str = pydantic.Field(min_length=1)
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _exactly_one(self) -> WhenClause:
         """Return the clause, requiring exactly one of `if` and `else`, and `else = true`.
 
@@ -307,7 +299,7 @@ class WhenClause(BaseModel):
         return self
 
 
-class AgentState(BaseModel):
+class AgentState(pydantic.BaseModel):
     """An `agent` state: one agent6 loop whose `finish_session` payload is captured.
 
     Attributes:
@@ -333,21 +325,21 @@ class AgentState(BaseModel):
 
     kind: Literal["agent"]
     notify: _NotifySpecT | None = None
-    model: str = Field(default="inherit", min_length=1)
+    model: str = pydantic.Field(default="inherit", min_length=1)
     mode: Literal["agent", "run"] = "agent"
-    prompt: str = Field(min_length=1)
-    output_schema: str = Field(min_length=1)
+    prompt: str = pydantic.Field(min_length=1)
+    output_schema: str = pydantic.Field(min_length=1)
     capture: Capture
-    timeout_secs: int = Field(gt=0)
+    timeout_secs: int = pydantic.Field(gt=0)
     on: dict[str, str]
     provider: str | None = None
     effort: Literal["off", "low", "medium", "high", "xhigh", "max"] | None = None
     temperature: float | None = None
-    max_usd: _FiniteUsd | None = Field(default=None, gt=0.0)
-    max_tokens_fallback: int | None = Field(default=None, ge=-1)
+    max_usd: _FiniteUsd | None = pydantic.Field(default=None, gt=0.0)
+    max_tokens_fallback: int | None = pydantic.Field(default=None, ge=-1)
 
 
-class ToolState(BaseModel):
+class ToolState(pydantic.BaseModel):
     """A `tool` state: one jailed command whose JSON stdout may be captured.
 
     Attributes:
@@ -374,12 +366,12 @@ class ToolState(BaseModel):
     command: _NonEmptyStrTuple
     output_schema: str | None = None
     capture: Capture | None = None
-    timeout_secs: int = Field(gt=0)
+    timeout_secs: int = pydantic.Field(gt=0)
     on: dict[str, str]
     network: Literal["auto", "host", "none"] = "auto"
     pass_env: _StrTuple = ()
 
-    @field_validator("pass_env")
+    @pydantic.field_validator("pass_env")
     @classmethod
     def _env_names(cls, names: tuple[str, ...]) -> tuple[str, ...]:
         """Return the names, each a valid environment variable name.
@@ -403,29 +395,29 @@ def _seconds_as_str(value: object) -> object:
     return value
 
 
-class WaitState(BaseModel):
+class WaitState(pydantic.BaseModel):
     """A `wait` state: parks until an interval, an instant, or a poke."""
 
     model_config = _MODEL_CONFIG
 
     kind: Literal["wait"]
     notify: _NotifySpecT | None = None
-    every_secs: Annotated[str, BeforeValidator(_seconds_as_str)] | None = None
+    every_secs: Annotated[str, pydantic.BeforeValidator(_seconds_as_str)] | None = None
     until: str | None = None
     on: dict[str, str]
 
 
-class BranchState(BaseModel):
+class BranchState(pydantic.BaseModel):
     """A `branch` state: routes on the first `when` clause that fires; the last is `else`."""
 
     model_config = _MODEL_CONFIG
 
     kind: Literal["branch"]
     notify: _NotifySpecT | None = None
-    when: Annotated[tuple[WhenClause, ...], Field(strict=False, min_length=1)]
+    when: Annotated[tuple[WhenClause, ...], pydantic.Field(strict=False, min_length=1)]
 
 
-class TerminalState(BaseModel):
+class TerminalState(pydantic.BaseModel):
     """A `terminal` state: ends the machine with a status and a reason."""
 
     model_config = _MODEL_CONFIG
@@ -433,12 +425,12 @@ class TerminalState(BaseModel):
     kind: Literal["terminal"]
     notify: _NotifySpecT | None = None
     status: Literal["ok", "failed"]
-    reason: str = Field(min_length=1)
+    reason: str = pydantic.Field(min_length=1)
 
 
 StateSpec = Annotated[
     AgentState | ToolState | WaitState | BranchState | TerminalState,
-    Field(discriminator="kind"),
+    pydantic.Field(discriminator="kind"),
 ]
 
 
@@ -490,7 +482,7 @@ def protected_overlay_error(config: dict[str, Any]) -> str | None:
     return None
 
 
-class MachineSpec(BaseModel):
+class MachineSpec(pydantic.BaseModel):
     """A parsed `.asm.toml` machine.
 
     Attributes:
@@ -507,16 +499,16 @@ class MachineSpec(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    machine: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    machine: str = pydantic.Field(pattern=r"^[a-z][a-z0-9_-]*$")
     version: Literal[1]
-    initial: str = Field(min_length=1)
+    initial: str = pydantic.Field(min_length=1)
     budget: BudgetSpec
-    vars: VarsSection = Field(default_factory=VarsSection)
-    schemas: dict[str, dict[str, _FieldSpecT]] = Field(default_factory=dict)
+    vars: VarsSection = pydantic.Field(default_factory=VarsSection)
+    schemas: dict[str, dict[str, _FieldSpecT]] = pydantic.Field(default_factory=dict)
     states: dict[str, StateSpec]
-    config: dict[str, Any] = Field(default_factory=dict)
+    config: dict[str, Any] = pydantic.Field(default_factory=dict)
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def _forbid_protected_overlay_tables(self) -> MachineSpec:
         """Return the machine, refusing an overlay that carries operator-only policy.
 
@@ -528,7 +520,7 @@ class MachineSpec(BaseModel):
         return self
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class Edge:
     """One labelled transition of the machine graph."""
 

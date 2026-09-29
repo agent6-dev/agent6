@@ -9,18 +9,15 @@ and offline replay. An `agent` state runs an agent6 loop through an injected run
 
 from __future__ import annotations
 
-from agent6.machine._semantics import (
+from agent6.machine._semantics import (  # noqa: ICN003  # re-export
     fixture_problems,
     load_machine,
     validate_record_payload,
     validate_semantics,
 )
-from agent6.machine.authoring import (
-    MACHINE_AUTHOR_GUIDE,
-    build_authoring_prompt,
-)
-from agent6.machine.dryrun import BranchCheck, DryRunReport, StateCheck, dry_run
-from agent6.machine.engine import (
+from agent6.machine.authoring import build_authoring_prompt  # noqa: ICN003  # re-export
+from agent6.machine.dryrun import BranchCheck, DryRunReport, StateCheck, dry_run  # noqa: ICN003  # re-export
+from agent6.machine.engine import (  # noqa: ICN003  # re-export
     AgentExecResult,
     AgentRequest,
     EngineError,
@@ -32,8 +29,8 @@ from agent6.machine.engine import (
     World,
     drive,
 )
-from agent6.machine.graph import render_dot, render_mermaid
-from agent6.machine.journal import (
+from agent6.machine.graph import render_dot, render_mermaid  # noqa: ICN003  # re-export
+from agent6.machine.journal import (  # noqa: ICN003  # re-export
     AgentFact,
     AttemptSpend,
     JournalError,
@@ -54,7 +51,7 @@ from agent6.machine.journal import (
     write_source,
     write_stop_request,
 )
-from agent6.machine.spec import (
+from agent6.machine.spec import (  # noqa: ICN003  # re-export
     PROTECTED_OVERLAY_LEAVES,
     PROTECTED_OVERLAY_TABLES,
     AgentState,
@@ -66,6 +63,7 @@ from agent6.machine.spec import (
     protected_overlay_error,
     protected_overlay_key_error,
 )
+from agent6.prompts.machine import MACHINE_AUTHOR_GUIDE  # noqa: ICN003  # re-export
 
 __all__ = [
     "MACHINE_AUTHOR_GUIDE",

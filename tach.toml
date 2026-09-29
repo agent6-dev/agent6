@@ -635,7 +635,7 @@ depends_on = ["agent6.graph.models", "agent6.graph.order", "agent6.graph.storage
 
 [[modules]]
 path = "agent6.machine"
-depends_on = ["agent6.machine._semantics", "agent6.machine.authoring", "agent6.machine.dryrun", "agent6.machine.engine", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.spec"]
+depends_on = ["agent6.machine._semantics", "agent6.machine.authoring", "agent6.machine.dryrun", "agent6.machine.engine", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.spec", "agent6.prompts"]
 
 [[modules]]
 path = "agent6.machine.authoring"
