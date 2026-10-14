@@ -222,14 +222,14 @@ class JailPolicy:
         env: The child's environment.
         network: The network the child joins: the machine's, the run's own shared
             with its siblings, or an empty one of its own.
-        extra_ro_paths: Trees bound read-only under `/ro`.
-        extra_rw_paths: Trees bound read-write.
+        extra_ro_paths: Trees bound read-only at their real paths.
+        extra_rw_paths: Trees bound read-write at their real paths.
         extra_device_paths: Device nodes bound into the jail's `/dev`; each must be a
             char or block device on the host or the launcher refuses.
         extra_protect_paths: Paths inside the workspace made read-only from the child's
             view, so a model-driven command cannot rewrite `.git`.
         tool_paths: Operator tools outside the system dirs, bound read-only and
-            executable at their real paths, since `/ro` remapping breaks symlinks.
+            executable at their real paths.
         hide_paths: The operator's additions to the hidden set, masked last, after
             every bind; agent6's own private dirs are unioned in at serialization.
         timeout_s: The command's deadline.
