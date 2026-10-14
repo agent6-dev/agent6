@@ -464,3 +464,11 @@ def test_a_shell_line_is_judged_by_its_first_program(
     for md in ("Verify: nosuchtool check && nosuchtool test", "Verify: FOO=1 nosuchtool test"):
         got = verify_infer.infer_verify_command(tmp_path, md)
         assert got.argv == () and "no `nosuchtool`" in got.passed_over[0][1], md
+
+
+def test_an_inline_verify_line_drops_its_comment_before_the_unquote() -> None:
+    """A comment after the backticks kept them, and sh ran the command's output as a command."""
+    assert verify_infer.verify_from_agents_md("Verify: `make test` # the gate") == (
+        "make",
+        "test",
+    )

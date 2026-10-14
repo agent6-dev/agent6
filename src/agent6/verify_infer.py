@@ -196,7 +196,8 @@ def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
         return argv
     for line in agents_md.splitlines():
         m = _INLINE_VERIFY.match(line)
-        if m and (argv := line_to_argv(_unquote_code(m.group(1)))) is not None:
+        # The comment goes first: backticks closed after it would survive the unquote.
+        if m and (argv := line_to_argv(_unquote_code(_strip_comment(m.group(1))))) is not None:
             return argv
     return None
 
