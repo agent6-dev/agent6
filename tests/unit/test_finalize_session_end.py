@@ -524,6 +524,64 @@ def test_provider_error_is_headlined_failed(tmp_path: pathlib.Path, capsys: obje
     assert "failed" in out and "provider error" in out
 
 
+def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A provider error before any commit ends on the plain resume line.
+
+    The run left no tree of its own, so "resume and run the gate" names nothing to verify. The same
+    stop over committed work keeps the errand.
+    """
+    import subprocess as sp
+
+    repo = _seeded_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    result = _snapshot.SessionResult(
+        completed=False,
+        reason="provider_error",
+        summary="provider error at iter 1 (HTTP 401) Authentication failed",
+        iterations=1,
+        tool_calls=0,
+        verified="unverified",
+    )
+    outs: dict[str, str] = {}
+    for session_id in ("r-401", "r-401-committed"):
+        layout = _layout(
+            tmp_path,
+            session_id,
+            [
+                {"type": "session.start", "session_id": session_id, "user_task": "t"},
+                {"type": "session.end", "reason": "provider_error", "all_passed": False},
+            ],
+        )
+        layout.manifest_path.write_text(
+            json.dumps({"mode": "run", "session_id": session_id, "base_branch": "main"}),
+            encoding="utf-8",
+        )
+        if session_id == "r-401-committed":
+            sp.run(
+                ["git", "update-ref", git_ops.chain_ref_for(session_id), "HEAD"],
+                cwd=repo,
+                check=True,
+            )
+        _finalize.print_session_end(
+            result,
+            layout=layout,
+            cwd=repo,
+            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+            console_stream=False,
+            reporter=reporter.STDIO_REPORTER,
+        )
+        outs[session_id] = capsys.readouterr().out
+
+    out = outs["r-401"]
+    assert "nothing verified the final tree" not in out
+    assert "resume and run the gate" not in out
+    assert "failed · provider error\n  provider error at iter 1 (HTTP 401)" in out
+    assert "resume with:  agent6 resume r-401" in out
+    assert "resume and run the gate:  agent6 resume r-401-committed" in outs["r-401-committed"]
+
+
 def test_end_banner_adds_the_run_total_across_resume_executions(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

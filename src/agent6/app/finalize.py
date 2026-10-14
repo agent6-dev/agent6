@@ -204,16 +204,23 @@ def _print_unverified(
     result: _snapshot.SessionResult,
     *,
     layout: sessions_layout.SessionLayout,
+    cwd: pathlib.Path,
     reporter: app_reporter.Reporter,
 ) -> None:
     """Say what is missing after a gated end nothing observed.
 
+    A run that stopped with nothing committed left no tree of its own to verify.
+
     Args:
         result: The session's result.
         layout: The session's layout.
+        cwd: The checkout.
         reporter: Receives the lines.
     """
     if result.verified != "unverified":
+        return
+    chain = git_ops.chain_ref_for(layout.session_id)
+    if not result.completed and git_ops.chain_tip(cwd, chain) is None:
         return
     reporter.out(
         "\nnothing verified the final tree: no verify ran this execution, or edits landed"
@@ -293,7 +300,7 @@ def print_session_end(
         reporter.out("    - run with --dangerously-disable-sandbox")
     _print_next_session(layout, completed=result.completed, reporter=reporter)
     _print_unknown_baseline(result, layout=layout, reporter=reporter)
-    _print_unverified(result, layout=layout, reporter=reporter)
+    _print_unverified(result, layout=layout, cwd=cwd, reporter=reporter)
     _print_stale_gate(result, reporter=reporter)
     reporter.out("")
     reporter.cost(budget.format_summary())
