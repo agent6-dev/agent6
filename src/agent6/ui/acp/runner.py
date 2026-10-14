@@ -27,7 +27,7 @@ from agent6.app import _setup, finalize, frontend, resume
 from agent6.app import reporter as app_reporter
 from agent6.app import run as app_run
 from agent6.sessions import id, ipc
-from agent6.ui import spawn
+from agent6.ui import keymap, spawn
 from agent6.ui.acp import frontend as acp_frontend
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
@@ -124,21 +124,31 @@ def forwarding_reporter(
     return app_reporter.Reporter(out=_say, err=_say, receipt=_stderr)
 
 
-def option_kind(text: str, standing: bool | None) -> str:
-    """Return ACP's button kind from who asked, never from the option text.
+# What each answer of a scoped approval grants, as ACP's option kinds name it.
+_STANDING_KINDS = {
+    entry.label: ("allow" if entry.grants else "reject")
+    + ("_always" if entry.standing else "_once")
+    for entry in keymap.APPROVAL_ANSWERS
+}
 
-    A model-written option named "allow" must not be advertised as `allow_always`.
+
+def option_kind(text: str, standing: bool | None) -> str:
+    """Return ACP's button kind from who asked and what the answer grants.
+
+    A model-written option named "allow" must not be advertised as `allow_always`, and an
+    `_always` kind names only an answer that writes a session grant or deny.
 
     Args:
         text: The option.
-        standing: True for an approval the editor may remember, False for one it
-            must not, None for a question the model wrote.
+        standing: True for a scoped approval, whose "allow all" and "deny all" the session
+            remembers; False for one nothing may remember; None for a question the model
+            wrote.
     """
     if standing is None:
         return "allow_once"
-    if text == "deny":
-        return "reject_once"
-    return "allow_always" if standing else "allow_once"
+    if not standing:
+        return "reject_once" if text == "deny" else "allow_once"
+    return _STANDING_KINDS.get(text, "allow_once")
 
 
 def stop_reason(code: int, *, end_reason: str = "") -> acp_session.StopReason:

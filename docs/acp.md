@@ -48,8 +48,9 @@ A prompt that gates no call (a pre-run question) announces a tool call of its ow
 The prompt and its answer go through the same gate every front-end answers through, so `agent6 attach` and the web show the run as waiting; the answer journals `source: "acp"`, or `"headless"` when the client declared it cannot be asked.
 
 - an unanswered request denies after five minutes, and the run continues without it
+- a command or an MCP tool call offers the four answers every front-end shares: "allow" (`allow_once`) and "deny" (`reject_once`) answer the one call, "allow all" (`allow_always`) grants that scope's later calls for the session, "deny all" (`reject_always`) withdraws the scope's tools for the session
 - an off-list `fetch` host is offered as `allow_once` only, so an editor's "always allow" cannot cover a different host later
-- a standing "allow all" an earlier front-end recorded on the run answers that scope's later prompts without asking the editor (`source: "session"`)
+- a standing "allow all", from the editor or an earlier front-end, answers that scope's later prompts without asking the editor (`source: "session"`)
 
 ## Sessions
 

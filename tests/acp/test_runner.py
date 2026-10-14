@@ -479,12 +479,29 @@ def test_the_option_kinds_carry_what_the_editor_may_remember() -> None:
 
     A remembered answer would silently cover a different host.
     """
-    assert runner.option_kind("allow", True) == "allow_always"
     assert runner.option_kind("allow once", False) == "allow_once"
-    assert runner.option_kind("deny", True) == "reject_once"
+    assert runner.option_kind("deny", False) == "reject_once"
     assert runner.option_kind("dark", None) == "allow_once"
     # The model writes the options; keyed on text, one named "allow" read as a remembered grant.
     assert runner.option_kind("allow", None) == "allow_once"
+    assert runner.option_kind("allow all", None) == "allow_once"
+
+
+def test_only_the_standing_answers_are_advertised_as_always() -> None:
+    """Each of a scoped approval's four answers carries the kind of what it grants.
+
+    "allow" was advertised as `allow_always` while it granted one call.
+    """
+    four = ("allow", "allow all", "deny", "deny all")
+    kinds = {text: runner.option_kind(text, True) for text in four}
+    assert kinds == {
+        "allow": "allow_once",
+        "allow all": "allow_always",
+        "deny": "reject_once",
+        "deny all": "reject_always",
+    }
+    # A prompt with no scope has no standing answer to advertise.
+    assert runner.option_kind("allow all", False) == "allow_once"
 
 
 def test_the_stop_reason_is_one_acp_defines() -> None:

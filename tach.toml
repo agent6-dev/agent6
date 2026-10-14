@@ -256,6 +256,8 @@ depends_on = [
   # `tools.operator_prompts` protocols; building them names their values.
   "agent6.tools",
   "agent6.kinds",
+  # A scoped approval offers the four answers every front-end shares.
+  "agent6.ui.keymap",
   # The same detached-resume spawner ui.cli uses: `--detach` is a lifecycle
   # affordance, not a CLI one.
   "agent6.ui.spawn",

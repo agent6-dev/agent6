@@ -21,7 +21,7 @@ from agent6.config import Config
 from agent6.harness import _snapshot, loop
 from agent6.sessions import ipc, layout
 from agent6.tools import operator_prompts
-from agent6.ui import steer
+from agent6.ui import keymap, steer
 
 # Silence past the wait is the cautious answer: an approval denies, a question has none.
 PERMISSION_TIMEOUT_S = 300.0
@@ -74,22 +74,30 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         The front-end the lifecycle drives.
     """
 
-    def _approve(
+    def _answer(
         prompt: str,
         /,
         *,
         scope: str | None = None,
         call_id: int | None = None,
         until: Callable[[], bool] | None = None,
-    ) -> bool | None:
-        """Return the editor's verdict, or None when it gave none in time."""
+    ) -> str | None:
+        """Return the editor's answer as the bridge spells it, or None when it gave none in time.
+
+        A scoped prompt offers the four answers every front-end shares (`yes`, `session`,
+        `no`, `session-deny`). One with no scope offers one call or a deny, so an "always
+        allow" cannot cover it.
+        """
         if not capabilities.can_ask:
-            return False
-        # No scope means an "always allow" must not cover this one; the option names carry it.
+            return "no"
         standing = scope is not None
-        options = ("allow", "deny") if standing else ("allow once", "deny")
-        answer = ask(prompt, options, standing, call_id, until)
-        return None if answer is None else answer.startswith("allow")
+        offered = (
+            {entry.label: entry.answer for entry in keymap.APPROVAL_ANSWERS}
+            if standing
+            else {"allow once": "yes", "deny": "no"}
+        )
+        chosen = ask(prompt, tuple(offered), standing, call_id, until)
+        return None if chosen is None else offered.get(chosen, "no")
 
     def _build_approver(session_dir: pathlib.Path) -> operator_prompts.Approver:
         def approve(
@@ -97,20 +105,23 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         ) -> operator_prompts.ApprovalAnswer:
             if not capabilities.can_ask:
                 return operator_prompts.ApprovalAnswer(False, "headless")
-            approved = _approve(
+            answer = _answer(
                 request.prompt,
                 scope=request.scope,
                 call_id=request.call_id,
                 until=lambda: ipc.answer_written(session_dir, request.id),
             )
-            if approved is None:
+            if answer is None:
                 filed = ipc.read_answer(session_dir, request.id, timeout_s=0.0)
                 if filed is not None:
                     return operator_prompts.ApprovalAnswer(
                         ipc.record_answer(session_dir, filed, request.scope), "frontend"
                     )
                 return operator_prompts.ApprovalAnswer(False, "acp")
-            return operator_prompts.ApprovalAnswer(approved, "acp")
+            # A session answer persists for the scope, as it does from every front-end.
+            return operator_prompts.ApprovalAnswer(
+                ipc.record_answer(session_dir, answer, request.scope), "acp"
+            )
 
         return approve
 
@@ -162,7 +173,8 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         if isolation != "none" or cfg.sandbox.run_commands != "yes":
             return True
         # No scope: docs/security.md makes this a one-time gate, never an "always".
-        return bool(_approve("Run commands UNSANDBOXED on this host, with no per-command prompt?"))
+        asked = "Run commands UNSANDBOXED on this host, with no per-command prompt?"
+        return _answer(asked) == "yes"
 
     def _steer(
         _events: event_log.EventSink,
@@ -196,8 +208,8 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         build_questioner=_build_questioner,
         make_steer_state=_steer,
         confirm_unconfined_autorun=_confirm_unconfined,
-        confirm_run_on_run_branch=lambda branch: bool(
-            _approve(f"Continue this run on {branch!r}, which is already a run branch?")
+        confirm_run_on_run_branch=lambda branch: (
+            _answer(f"Continue this run on {branch!r}, which is already a run branch?") == "yes"
         ),
         prompt_detach_away_mode=lambda _session_dir, _scopes: None,
         select_revised_prompt=None,

@@ -16,8 +16,12 @@ import pytest
 
 from agent6 import event_log
 from agent6.app import frontend
+from agent6.sessions import ipc
 from agent6.tools import operator_prompts, schema
 from agent6.ui.acp import frontend as acp_frontend
+
+# The answers a scoped approval offers, the ones every front-end shares.
+_FOUR = ("allow", "allow all", "deny", "deny all")
 
 
 def _frontend(*, can_ask: bool = True, reply: str | None = "allow"):
@@ -58,8 +62,46 @@ def test_an_approval_becomes_a_request_to_the_editor(tmp_path: pathlib.Path) -> 
     front, asked = _frontend()
     approve = _prompts(front, tmp_path).approve
     assert approve("Allow run_command: ls", scope="command") is True
-    assert asked == [("Allow run_command: ls", ("allow", "deny"), True)]
+    assert asked == [("Allow run_command: ls", _FOUR, True)]
     assert _journal(tmp_path / "logs.jsonl")[-1]["source"] == "acp"
+
+
+def test_allow_from_the_editor_grants_one_call(tmp_path: pathlib.Path) -> None:
+    """The editor's "allow" covers the call it gates, and the next call asks again."""
+    front, asked = _frontend(reply="allow")
+    approve = _prompts(front, tmp_path).approve
+    assert approve("Allow run_command: ls", scope="command") is True
+    assert not ipc.session_allow_set(tmp_path, "command")
+    assert approve("Allow run_command: ls", scope="command") is True
+    assert len(asked) == 2
+
+
+def test_allow_all_from_the_editor_grants_the_scope_for_the_session(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The editor's "allow all" grants the scope, so its later prompts are not asked.
+
+    The one allow button was advertised as `allow_always` and granted one call, so an editor
+    that remembered the choice and the run that asked again disagreed.
+    """
+    front, asked = _frontend(reply="allow all")
+    approve = _prompts(front, tmp_path).approve
+    assert approve("Allow run_command: ls", scope="command") is True
+    assert ipc.session_allow_set(tmp_path, "command")
+    assert approve("Allow run_command: make", scope="command") is True
+    assert len(asked) == 1
+    assert _journal(tmp_path / "logs.jsonl")[-1]["source"] == "session"
+    # One scope's grant is never consent for another.
+    assert not ipc.session_allow_set(tmp_path, "mcp.files")
+
+
+def test_deny_all_from_the_editor_withdraws_the_scope(tmp_path: pathlib.Path) -> None:
+    """The editor's "deny all" denies the call and records the session deny for its scope."""
+    front, _asked = _frontend(reply="deny all")
+    approve = _prompts(front, tmp_path).approve
+    assert approve("Allow run_command: ls", scope="command") is False
+    assert ipc.session_deny_set(tmp_path, "command")
+    assert not ipc.session_allow_set(tmp_path, "command")
 
 
 def test_a_client_that_cannot_be_asked_gets_a_no(tmp_path: pathlib.Path) -> None:
@@ -125,7 +167,7 @@ def test_the_unsandboxed_prompt_fires_only_when_it_is_true() -> None:
     """
     from agent6.config import Config
 
-    front, asked = _frontend(reply="allow")
+    front, asked = _frontend(reply="allow once")  # the option this gate offers
     assert front.confirm_unconfined_autorun("strict", Config()) is True
     assert asked == [], "a confined run is not dangerous and must not prompt"
 
@@ -155,7 +197,7 @@ def test_an_approval_that_must_not_be_remembered_says_so(tmp_path: pathlib.Path)
     assert asked[-1][1:] == (("allow once", "deny"), False)
 
     approve("Allow run_command: ls", scope="command")
-    assert asked[-1][1:] == (("allow", "deny"), True)
+    assert asked[-1][1:] == (_FOUR, True)
 
 
 def test_the_editor_is_the_live_view_and_nothing_is_drawn() -> None:

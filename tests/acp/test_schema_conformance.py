@@ -154,9 +154,16 @@ def test_a_permission_request_is_one_a_client_can_answer() -> None:
     session = acp_session.Session(acp_id="s", cwd=pathlib.Path("/x"), session_id="run-x", turn=1)
     announced = runner.Announced(turn=1)
     announced.add("run-x:1:7")
-    bridge.ask(session, announced, "Allow run_command: ls", ("allow", "deny"), True, 7)
+    four = ("allow", "allow all", "deny", "deny all")  # a scoped approval's answers
+    bridge.ask(session, announced, "Allow run_command: ls", four, True, 7)
     bridge.ask(session, announced, "Theme?", ("dark", "light"), None, None)
     assert len(sent) == 2
+    assert [o["kind"] for o in sent[0]["options"]] == [
+        "allow_once",
+        "allow_always",
+        "reject_once",
+        "reject_always",
+    ]
     assert sent[0]["toolCall"]["toolCallId"] == "run-x:1:7"
     # The title is what the operator approves; carried by id alone, a long argv was approved unseen.
     assert set(sent[0]["toolCall"]) == {"toolCallId", "title", "status"}, sent[0]["toolCall"]
