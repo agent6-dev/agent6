@@ -53,6 +53,11 @@ A capable model loses no score to the 16k regime on these tasks; it pays in re-r
   With no nudge: 7.05 ± 1.28 turns and 51.3k tokens in.
   Every arm passed 20 of 20.
   The flip advisory fired in 20 of 20 runs and the deferred finish in 11; the extra turns sit after the first green verify (2.65 ± 0.67 against 1.00).
+- The advisory carries the cost and the writes; the deferred finish carries neither (same tasks, a fourth arm with the advisory alone, n=20 runs).
+  Advisory alone: 8.70 ± 1.69 turns and 70.1k tokens in, no measured difference from both nudges (9.25, and 8.90 in a same-day control of n=10).
+  Against no nudge it is higher by 1.65 turns (twice the standard error is 0.95).
+  Runs with a memory write: 11 of 20 with both nudges, 11 of 20 with the advisory alone.
+  On orchard the advisory alone added 0.58 memory files per session against 0.67 in the same-day control (n=12 sessions each, no measured difference); the deferral fired in 0 of 24 control sessions.
 - On three tasks green at the base (n=12 runs per arm), 8 runs per arm caused a red of their own.
   The base-red rule kept the writes (1.42 with both nudges, 1.33 under the rule, no measured difference); no nudge dropped them to 0.
 - On orchard the base-red rule ends the writes (gpt-6-astra, n=4 sequences per arm, 12 sessions).
