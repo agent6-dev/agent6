@@ -209,6 +209,19 @@ def test_new_refuses_what_a_run_refuses(
     assert "policy" not in host
 
 
+def test_new_refuses_a_workspace_under_a_hidden_path(
+    tmp_path: pathlib.Path, host: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`exec --new` built a jail for a workspace under a `sandbox.hide_paths` entry."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    cfg = Config.model_validate({"sandbox": {"isolation": "strict", "hide_paths": [str(tmp_path)]}})
+    assert exec_cmds.exec_new(cfg, frozenset(), workspace, ("true",)) == 2
+    err = capsys.readouterr().err
+    assert f"REFUSING: the workspace {str(workspace)!r} is under {str(tmp_path)!r}" in err
+    assert "policy" not in host
+
+
 def test_new_refuses_a_level_the_host_lacks(
     tmp_path: pathlib.Path,
     host: dict[str, Any],

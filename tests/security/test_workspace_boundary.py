@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from agent6 import kinds
 from agent6.config import Config
 from agent6.tools import dispatch, errors
 
@@ -207,6 +208,32 @@ def test_a_state_dir_inside_the_workspace_refuses_at_preflight(
 
     refusal = confine.check_workspace_outside_private_dirs(workspace)
     assert refusal is not None and "inside the workspace" in refusal
+
+
+@pytest.mark.parametrize("isolation", ["strict", "hardened", "none"])
+def test_a_workspace_under_a_hidden_path_refuses_at_preflight(
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
+) -> None:
+    """A workspace under a `sandbox.hide_paths` entry refuses before anything runs.
+
+    Launched, the rootfs setup fails under the mask; with a write grant on the workspace the
+    jailed command could write `.git/config` through it, and the in-process tools refuse
+    every path there.
+    """
+    from agent6.app import confine
+
+    hidden = tmp_path / "vault"
+    workspace = hidden / "repo"
+    workspace.mkdir(parents=True)
+    for entry in (hidden, workspace):
+        cfg = Config.model_validate({"sandbox": {"hide_paths": [str(entry)]}})
+        refusal = confine.config_refusal(cfg, isolation, workspace)
+        assert refusal is not None
+        assert f"the workspace {str(workspace)!r} is under {str(entry)!r}" in refusal
+        assert "Drop the entry from sandbox.hide_paths, or work in a directory outside" in refusal
+    # An entry inside the workspace is what the key is for.
+    inside = Config.model_validate({"sandbox": {"hide_paths": [str(workspace / ".env")]}})
+    assert confine.check_workspace_outside_hidden_paths(inside, workspace) is None
 
 
 # --- operator grants ---------------------------------------------------------

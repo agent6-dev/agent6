@@ -131,9 +131,13 @@ def exec_policy(
         The policy.
 
     Raises:
-        JailUnavailableError: The jail's HOME is refused or cannot be created, or the
-            worktree's `.git` pointer no longer names the recorded git dir.
+        JailUnavailableError: The workspace is under a hidden path, the jail's HOME is refused
+            or cannot be created, or the worktree's `.git` pointer no longer names the recorded
+            git dir.
     """
+    # A run refuses this at its start; the config read for a live run can have the entry since.
+    if (hidden := confine.check_workspace_outside_hidden_paths(cfg, cwd)) is not None:
+        raise jail.JailUnavailableError(hidden)
     env_base = child_env.without_provider_keys(dict(os.environ)) if isolation == "none" else None
     return tools_policy.jail_policy(
         cwd,

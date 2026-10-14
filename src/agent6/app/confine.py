@@ -189,6 +189,25 @@ def check_workspace_outside_private_dirs(root: pathlib.Path) -> str | None:
     return None
 
 
+def check_workspace_outside_hidden_paths(cfg: Config, root: pathlib.Path) -> str | None:
+    """Return the refusal when the workspace is a `[sandbox].hide_paths` entry or under one.
+
+    Such a workspace hides the run's files from its own tools; the launcher's rootfs setup
+    fails under the mask, and a write grant on the workspace would bind it back through the
+    mask, `.git` included. An entry inside the workspace is fine.
+    """
+    resolved = root.resolve()
+    for entry in cfg.sandbox.hide_paths:
+        if resolved.is_relative_to(pathlib.Path(entry).resolve()):
+            return (
+                f"the workspace {str(resolved)!r} is under {entry!r}, which"
+                " sandbox.hide_paths hides from the run's tools and commands, so the run"
+                " could not work on its own files. Drop the entry from sandbox.hide_paths,"
+                " or work in a directory outside it."
+            )
+    return None
+
+
 def check_protect_git_support(
     cfg: Config, isolation: kinds.IsolationLevel, *, explicitly_set: bool
 ) -> str | None:
@@ -399,6 +418,8 @@ def config_refusal(
             explicitly_set="sandbox.home" in explicit_leaves,
         ),
         lambda: check_mcp_network_support(cfg, isolation),
+        # Before the hardened check, which reads the same overlap as an entry inside a grant.
+        lambda: check_workspace_outside_hidden_paths(cfg, workspace),
         lambda: check_hide_paths_support(cfg, isolation, workspace, worktree_git_dir),
         lambda: check_workspace_outside_private_dirs(workspace),
         lambda: check_protect_git_support(

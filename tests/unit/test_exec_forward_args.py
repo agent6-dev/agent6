@@ -98,6 +98,31 @@ def test_forward_without_a_listener_is_a_refusal(
     assert seen == {}
 
 
+def test_exec_refuses_a_workspace_under_a_hidden_path(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`exec` into a live run built a jail for a workspace a `sandbox.hide_paths` entry covers."""
+    from agent6.config import Config
+    from agent6.ui.cli import exec_cmds, net_cmds
+
+    def _strict(req: str, env: Any) -> str:
+        return "strict"
+
+    def _ran(policy: Any, session_net: Any = None) -> int:
+        return 0
+
+    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(exec_cmds, "run_attached", _ran)
+    (tmp_path / "run").mkdir()
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
+    ipc.write_worker_pid(layout.session_dir, os.getpid())
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    cfg = Config.model_validate({"sandbox": {"network": "host", "hide_paths": [str(tmp_path)]}})
+    assert net_cmds.exec_in_session(layout, cfg, workspace, ("true",)) == 2
+    assert f"the workspace {str(workspace)!r} is under {str(tmp_path)!r}" in capsys.readouterr().err
+
+
 def test_exec_refuses_a_session_network_nobody_holds(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
