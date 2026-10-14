@@ -127,8 +127,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     if worktree and cfg.git.control == "model":
         reporter.refuse(
             "--worktree runs in a linked worktree whose .git is read-only in the jail; under"
-            ' [git].control = "model" the model could not commit there. Set control ='
-            ' "agent6" for this run, or run without --worktree.'
+            ' [git].control = "model" the model could not commit there. Set [git].control ='
+            ' "agent6" (`agent6 config set --repo git.control agent6`), or run without'
+            " --worktree."
         )
         return 2
     if worktree and (top := paths.checkout_root(repo)) != repo.resolve():

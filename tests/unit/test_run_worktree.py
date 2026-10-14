@@ -366,7 +366,7 @@ def test_parallel_and_worktree_together_refuse(
     repo = _repo(tmp_path, monkeypatch)
 
     assert cli_main(["run", "--worktree", "--parallel", "2", "task"]) == 2
-    assert "--parallel cannot combine with --worktree" in capsys.readouterr().err
+    assert "REFUSING: --parallel cannot combine with --worktree" in capsys.readouterr().err
     assert _worktrees(repo) == [str(repo)]
 
 
@@ -379,7 +379,9 @@ def test_model_controlled_git_refuses(
 
     assert cli_main(["run", "--worktree", "--session-id", "wt-MODL01", "task"]) == 2
     err = capsys.readouterr().err
+    assert "REFUSING: --worktree runs in a linked worktree" in err
     assert '[git].control = "model"' in err and "without --worktree" in err
+    assert "agent6 config set --repo git.control agent6" in err and "for this run" not in err
     assert _nothing_was_created(repo, "wt-MODL01")
 
 

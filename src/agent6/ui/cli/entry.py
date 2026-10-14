@@ -138,7 +138,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         )
         return 2
     if parallel and getattr(args, "worktree", False):
-        _common.error(
+        _common.refuse(
             "--parallel cannot combine with --worktree (each lane already works in its own"
             " clone); drop one of the two."
         )
