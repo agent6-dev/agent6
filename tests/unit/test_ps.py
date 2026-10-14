@@ -243,6 +243,9 @@ def test_ps_names_the_worktree_a_run_works_in(
     base = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv(
+        "HOME", str(tmp_path)
+    )  # the table contracts a path under HOME; JSON does not
     runs = base / "agent6" / "some-repo-000000" / "sessions" / "runs"
     worktree = tmp_path / "cache" / "apart"
     _live(runs / "apart", {"mode": "run", "worktree": str(worktree)})
@@ -251,7 +254,7 @@ def test_ps_names_the_worktree_a_run_works_in(
     assert ps_cmd.cmd_ps() == 0
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].split() == ["directory", "id", "mode", "status", "pid", "front-end", "worktree"]
-    assert next(line for line in lines if " apart " in line).endswith(f"  {worktree}")
+    assert next(line for line in lines if " apart " in line).endswith("  ~/cache/apart")
     assert str(worktree) not in next(line for line in lines if " inplace " in line)
 
     assert ps_cmd.cmd_ps(as_json=True) == 0

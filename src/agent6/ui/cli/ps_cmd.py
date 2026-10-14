@@ -56,7 +56,7 @@ class _Row:
             self.status,
             str(self.pid) if self.pid is not None else "?",
             "attached" if self.attached else "",
-            self.worktree or "",
+            _common.home_contracted(self.worktree) if self.worktree else "",
         )
 
 
@@ -133,7 +133,7 @@ def _live_rows() -> _Live:
                         ipc.read_worker_pid(sdir),
                         ipc.frontend_is_live(sdir),
                         coordinator=summary.coordinator,
-                        worktree=_common.home_contracted(summary.worktree) or None,
+                        worktree=summary.worktree or None,
                     )
             # A machine instance is a live session too: its worker.pid sits at the instance root.
             machines = repo_dir / "machines"

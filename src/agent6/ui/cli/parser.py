@@ -260,7 +260,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--json",
         action="store_true",
         help="Emit the rows as a JSON array (directory, repo_id, id, mode, status, pid, attached,"
-        " coordinator, lanes).",
+        " coordinator, worktree, lanes).",
     )
     ps_p.add_argument(
         "--lanes",
