@@ -168,3 +168,30 @@ def test_a_closed_stdout_ends_quietly(tmp_path: pathlib.Path) -> None:
         os.close(write_end)
     assert (proc.returncode, proc.stderr) == (141, "")
     assert not list(tmp_path.glob("agent6-crash-*"))
+
+
+def test_a_closed_stderr_ends_at_141_too(tmp_path: pathlib.Path) -> None:
+    """With `2>&1 | head` the exit flush of stderr failed after the handler: exit 120."""
+    read_end, write_end = os.pipe()
+    os.close(read_end)
+    env = os.environ | {
+        "XDG_CONFIG_HOME": str(tmp_path / "g"),
+        "XDG_STATE_HOME": str(tmp_path / "s"),
+        "TMPDIR": str(tmp_path),
+    }
+    env.pop("AGENT6_DEBUG", None)
+    script = "import sys; from agent6.ui.cli import cli_main; sys.exit(cli_main())"
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", script, "sessions", "show", "no-such-run"],
+            cwd=tmp_path,
+            env=env,
+            stdout=write_end,
+            stderr=write_end,
+            timeout=60,
+            check=False,
+        )
+    finally:
+        os.close(write_end)
+    assert proc.returncode == 141
+    assert not list(tmp_path.glob("agent6-crash-*"))

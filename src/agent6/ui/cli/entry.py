@@ -85,8 +85,11 @@ def cli_main(argv: list[str] | None = None) -> int:
             _common.error(f"{exc}")
             return 2
         except BrokenPipeError:
-            # The interpreter flushes stdout at exit: /dev/null takes what the closed pipe cannot.
-            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+            # The interpreter flushes both streams at exit, and a failed flush turns the exit
+            # into 120: /dev/null takes what the closed pipe cannot.
+            sink = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(sink, sys.stdout.fileno())
+            os.dup2(sink, sys.stderr.fileno())
             return 141
         except Exception as exc:  # the last resort; re-raised under AGENT6_DEBUG
             if os.environ.get("AGENT6_DEBUG") == "1":
