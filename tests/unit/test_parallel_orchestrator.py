@@ -2656,3 +2656,13 @@ def test_a_fan_out_leaves_no_stop_marker_behind(
     # A stop that lands mid-spawn leaves the unstarted lanes out of every
     # table; the report names them.
     assert [line for line in said if "stopped before lanes 1-2 started" in line]
+
+
+def test_a_relative_workdir_resolves_to_an_absolute_path(
+    origin: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A relative `[parallel].workdir` reached a fork's manifest as a relative worktree path."""
+    monkeypatch.chdir(tmp_path)
+    cfg = Config.model_validate({"parallel": {"workdir": "wt"}})
+
+    assert parallel.workdir_base(cfg, origin) == tmp_path.resolve() / "wt" / paths.repo_id(origin)

@@ -115,10 +115,11 @@ def workdir_base(cfg: Config, origin: pathlib.Path) -> pathlib.Path:
         origin: The repository.
 
     Returns:
-        `[parallel].workdir`, or the cache's `parallel` dir, plus the repo id.
+        `[parallel].workdir` as an absolute path, or the cache's `parallel` dir, plus the
+        repo id.
     """
     base = (
-        pathlib.Path(cfg.parallel.workdir)
+        pathlib.Path(cfg.parallel.workdir).resolve()
         if cfg.parallel.workdir
         else paths.cache_dir() / "parallel"
     )
