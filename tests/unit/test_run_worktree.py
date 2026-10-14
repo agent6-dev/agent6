@@ -814,3 +814,108 @@ def test_a_configured_setup_command_outranks_the_agents_md_block(
     assert worktree is not None
     assert (worktree / ".setup-ran").read_text(encoding="utf-8") == "configured\n"
     assert "inferred from AGENTS.md" not in err
+
+
+_FAKE_PYTHON = "#!/bin/sh\nexit 0\n"
+_BUILD_VENV = (
+    '["sh", "-c", "mkdir -p .venv/bin && printf \'#!/bin/sh\\\\nexit 0\\\\n\' > .venv/bin/python'
+    ' && chmod +x .venv/bin/python"]'
+)
+
+
+def _untracked_venv(repo: pathlib.Path) -> None:
+    """Give the checkout an environment git does not track, as a real `.venv` is."""
+    (repo / ".git" / "info" / "exclude").write_text(".venv/\n", encoding="utf-8")
+    (repo / ".venv" / "bin").mkdir(parents=True)
+    python = repo / ".venv" / "bin" / "python"
+    python.write_text(_FAKE_PYTHON, encoding="utf-8")
+    python.chmod(0o755)
+
+
+def _pin_gate(repo: pathlib.Path, extra: str = "") -> None:
+    path = paths.state_dir(repo) / "config.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f'[harness]\nverify_command = [".venv/bin/python", "-m", "pytest", "-q"]\n{extra}',
+        encoding="utf-8",
+    )
+
+
+def test_a_gate_on_an_untracked_path_with_no_setup_command_refuses_before_anything_is_created(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The run started, spent its turns, and ended `verify command unexecutable`."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _untracked_venv(repo)
+    _pin_gate(repo)
+    prov = _script(monkeypatch)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-GATE01", "task"]) == 2
+    err = capsys.readouterr().err
+
+    assert prov.calls == 0
+    assert _nothing_was_created(repo, "wt-GATE01")
+    assert "REFUSING: the verify gate runs `.venv/bin/python`" in err
+    assert "git does not track" in err
+    assert """agent6 config set --repo parallel.setup_command '["uv", "sync"]'""" in err
+    assert "`## Setup command`" in err and "AGENTS.md" in err
+
+
+def test_the_gate_is_inferred_in_the_checkout_and_carried_into_the_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Inferred in the worktree, where `.venv` is absent, the gate became `python3 -m pytest`."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    (repo / "pyproject.toml").write_text('[project]\nname = "p"\nversion = "0"\n', encoding="utf-8")
+    _git(repo, "add", "pyproject.toml")
+    _git(repo, "commit", "-q", "-m", "manifest")
+    _untracked_venv(repo)
+    _with_setup(repo, _BUILD_VENV)
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-GATE02", "add new.txt"]) == 0
+    err = capsys.readouterr().err
+
+    manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-GATE02"))
+    assert manifest.harness.verify_command == (".venv/bin/python", "-m", "pytest", "-q")
+    assert manifest.harness.verify_origin == "inferred"
+    assert "inferred from pyproject: .venv/bin/python -m pytest -q" in err
+    assert manifest.worktree is not None and (manifest.worktree / ".venv/bin/python").exists()
+
+
+def test_a_setup_command_that_leaves_the_gate_path_missing_ends_the_session_saying_so(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The setup command exited 0, and the run then ended `verify command unexecutable`."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _untracked_venv(repo)
+    _pin_gate(repo, '\n[parallel]\nsetup_command = ["true"]\n')
+    prov = _script(monkeypatch)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-GATE03", "task"]) == 1
+    out = capsys.readouterr().out
+
+    assert prov.calls == 0
+    assert "failed · setup command failed" in out
+    assert "the setup command ran (true), and the verify gate's `.venv/bin/python` is still" in out
+    assert not sessions_manifest.read_manifest(_run_dir(repo, "wt-GATE03")).workspace_set_up
+
+
+def test_a_fork_whose_gate_is_on_an_untracked_path_refuses_before_its_worktree_exists(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The fork was created, and its first execution ended `verify command unexecutable`."""
+    in_checkout = _COMMANDS.replace("[sandbox]", '[git]\ndirty_tree = "include"\n\n[sandbox]')
+    repo = _repo(tmp_path, monkeypatch, config=in_checkout)
+    _untracked_venv(repo)
+    _pin_gate(repo)
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+    assert cli_main(["run", "--session-id", "wt-GATE04", "add new.txt"]) == 0
+    capsys.readouterr()
+
+    assert cli_main(["fork", "wt-GATE04", "--session-id", "wt-FORK04", "--no-run"]) == 2
+    err = capsys.readouterr().err
+
+    assert _nothing_was_created(repo, "wt-FORK04")
+    assert "the verify gate runs `.venv/bin/python`" in err
+    assert "a fork's new worktree" in err

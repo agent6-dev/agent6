@@ -238,6 +238,13 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     if worktree or stamps.parallel_lineage() is not None:
         # The run's own worktree, or a lane's clone: read in this checkout, carried in the config.
         cfg = workspace_setup.infer_if_unset(cfg, repo, reporter=reporter)
+    if worktree and (
+        gate_refusal := workspace_setup.gate_refusal(
+            cfg, repo, workspace_setup.origin_gate(cfg, repo), workspace="a new worktree"
+        )
+    ):
+        reporter.refuse(gate_refusal)
+        return 2
 
     checkout: fork_worktrees.Checkout | None = None
 
@@ -450,9 +457,11 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         def _gate(cfg: Config, budget: agent6_budget.BudgetTracker) -> Config:
             # Infer an unset gate, then drop it last when commands are withheld.
             configured_gate = bool(cfg.harness.verify_command)
+            # In the repository, never the run's worktree: a signal such as `.venv` is absent
+            # there until the setup command builds it, and the gate is carried.
             cfg = preflight.infer_verify_if_unset(
                 cfg,
-                cwd,
+                repo,
                 mode=mode,
                 events=events,
                 transcript_sink=transcript_sink,

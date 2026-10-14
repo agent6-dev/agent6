@@ -26,12 +26,13 @@ from concurrent import futures as concurrent_futures
 from typing import Protocol
 
 from agent6 import directive, event_log, git_ops, kinds, memory, paths
-from agent6.app import _lane_watch, finalize, stamps
+from agent6.app import _lane_watch, _setup, finalize, preflight, stamps, workspace_setup
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import judge, subrun
 from agent6.models import validate
+from agent6.providers import TranscriptSink
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -1108,19 +1109,13 @@ def run_parallel(
         return 2
     if fanout_id is None:
         fanout_id = lanes[0].session_id.rsplit("-l", 1)[0]
-    if spawner is None:
-        spawner = functools.partial(
-            bridge_spawner,
-            pins=pins,
-            cfg=cfg,
-            origin=origin,
-            max_usd=max_usd,
-            auto_approve=auto_approve,
-            lane_away=lane_away,
-            fanout_id=fanout_id,
-            coordinator=fanout_id,
-            runtime=runtime,
-        )
+    # Before any clone: a lane's clone holds tracked files only.
+    refusal = workspace_setup.gate_refusal(
+        cfg, origin, workspace_setup.origin_gate(cfg, origin), workspace="a lane's clone"
+    )
+    if refusal is not None:
+        reporter.refuse(refusal)
+        return 2
     try:
         origin_status = git_ops.status(origin)
     except git_ops.GitError as exc:
@@ -1152,6 +1147,31 @@ def run_parallel(
         mode="run",
     )
     events.emit("loop.parallel.dispatched", group=fanout_id, lanes=len(lanes), tasks=[task[:200]])
+    if spawner is None:
+        # The setup command and the gate are settled once, here in the origin, and ride in
+        # every lane's config: a clone lacks the untracked signals inference reads.
+        cfg = workspace_setup.infer_if_unset(cfg, origin, reporter=reporter)
+        cfg = preflight.infer_verify_if_unset(
+            cfg,
+            origin,
+            mode="run",
+            events=events,
+            transcript_sink=TranscriptSink(layout.transcripts_dir),
+            budget=_setup.budget_tracker(cfg),
+            reporter=reporter,
+        )
+        spawner = functools.partial(
+            bridge_spawner,
+            pins=pins,
+            cfg=cfg,
+            origin=origin,
+            max_usd=max_usd,
+            auto_approve=auto_approve,
+            lane_away=lane_away,
+            fanout_id=fanout_id,
+            coordinator=fanout_id,
+            runtime=runtime,
+        )
     try:
         return _drive_fanout(
             task,

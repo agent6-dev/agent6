@@ -420,21 +420,14 @@ def run_one(
         state_dir=paths.state_dir(req.cwd),
     )
     setup_left: frozenset[str] = frozenset()
-    if (
-        cfg.parallel.setup_command
-        and in_clone
-        and not workspace_setup.withheld(
-            cfg.parallel.setup_command, dispatcher=dispatcher, reporter=reporter
-        )
-    ):
-        unready = workspace_setup.run(
-            cfg.parallel.setup_command, dispatcher=dispatcher, reporter=reporter
-        )
-        if unready is not None:
-            reporter.error(unready)
+    if in_clone:
+        prepared = workspace_setup.prepare(cfg, req.root, dispatcher=dispatcher, reporter=reporter)
+        if prepared.problem is not None:
+            reporter.error(prepared.problem)
             return _result("setup_command_failed", None, budget)
-        # What the command left untracked is the environment, never the state's work.
-        setup_left = git_ops.untracked_paths(req.root)
+        if prepared.ran:
+            # What the command left untracked is the environment, never the state's work.
+            setup_left = git_ops.untracked_paths(req.root)
     rm = cfg.models.resolve("worker")
     compact_drop, compact_summarise, keep_recent = providers.resolve_compaction_thresholds(
         cfg, rm, log=reporter.err

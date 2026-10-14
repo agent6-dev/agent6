@@ -24,7 +24,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from agent6 import git_ops, kinds, paths, portable
-from agent6.app import _setup, fork_worktrees, parallel, resume, stamps
+from agent6.app import _setup, fork_worktrees, parallel, resume, stamps, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
 from agent6.graph import replay, storage
@@ -405,6 +405,17 @@ def create_fork(
             ' [git].control = "model" the model could not commit there. Set control ='
             ' "agent6" for the fork, or take the run back with /undo in its checkout.'
         )
+        return "", 2
+    if added and (
+        gate_refusal := workspace_setup.gate_refusal(
+            plan.cfg,
+            cwd,
+            # Config outranks the source's pin on the fork's first execution.
+            plan.cfg.harness.verify_command or tuple(plan.gate[0]),
+            workspace="a fork's new worktree",
+        )
+    ):
+        reporter.refuse(gate_refusal)
         return "", 2
     if added:
         path = parallel.subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)

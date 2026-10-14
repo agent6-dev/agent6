@@ -305,17 +305,10 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         # environment, so every commit leaves it out as it does the operator's files.
         unready: str | None = None
         untracked_at_start = inputs.untracked_at_start
-        if (
-            cfg.parallel.setup_command
-            and workspace_setup.session_needs_setup(layout.session_dir)
-            and not workspace_setup.withheld(
-                cfg.parallel.setup_command, dispatcher=dispatcher, reporter=reporter
-            )
-        ):
-            unready = workspace_setup.run(
-                cfg.parallel.setup_command, dispatcher=dispatcher, reporter=reporter
-            )
-            if unready is None:
+        if workspace_setup.session_needs_setup(layout.session_dir):
+            prepared = workspace_setup.prepare(cfg, cwd, dispatcher=dispatcher, reporter=reporter)
+            unready = prepared.problem
+            if prepared.ran:
                 try:
                     stamps.stamp_workspace_set_up(layout.session_dir)
                 except (sessions_manifest.ManifestError, OSError) as exc:

@@ -18,6 +18,7 @@ import pathlib
 import threading
 import types
 from collections.abc import Generator, Mapping
+from typing import Any
 
 import pytest
 
@@ -801,6 +802,84 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
+
+
+def test_run_parallel_refuses_a_gate_on_an_untracked_path_before_any_clone(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: parallel.LaneRuntime,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Every lane cloned, ran, and ended red: its clone had no `.venv` for the gate."""
+    origin_state = paths.state_dir(origin)
+    (origin / ".venv" / "bin").mkdir(parents=True)
+    (origin / ".venv" / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
+    cfg = Config.model_validate(
+        {"harness": {"verify_command": [".venv/bin/python", "-m", "pytest", "-q"]}}
+    )
+    lanes = _specs(tmp_path, cfg, "fan", "2")
+    spawned: list[str] = []
+
+    def spawner(spec: subrun.LaneSpec, task: str) -> subrun.LaneResult:
+        spawned.append(f"{spec.session_id}: {task}")
+        raise AssertionError("no lane may be cloned")
+
+    rc = parallel.run_parallel(
+        "do the task",
+        lanes,
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="fan",
+    )
+
+    assert rc == 2 and not spawned
+    assert not (origin_state / "sessions" / "runs" / "fan").exists()
+    err = capsys.readouterr().err
+    assert "the verify gate runs `.venv/bin/python`" in err and "a lane's clone" in err
+
+
+def test_run_parallel_settles_the_gate_and_the_setup_command_in_the_origin(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: parallel.LaneRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each lane inferred its own gate in a clone with no `.venv`, and got `python3 -m pytest`."""
+    origin_state = paths.state_dir(origin)
+    (origin / "pyproject.toml").write_text("[project]\nname = 'p'\n", encoding="utf-8")
+    (origin / "AGENTS.md").write_text(
+        "## Setup command\n```\nuv sync --offline\n```\n", encoding="utf-8"
+    )
+    (origin / ".venv" / "bin").mkdir(parents=True)
+    (origin / ".venv" / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "fan", "1")
+    carried: list[Config] = []
+
+    def _spawn(spec: subrun.LaneSpec, task: str, **kw: Any) -> subrun.LaneResult:
+        carried.append(kw["cfg"])
+        return subrun.LaneResult(
+            spec=spec, session_dir=spec.workdir, branch="b", ok=False, error=task
+        )
+
+    monkeypatch.setattr(parallel, "bridge_spawner", _spawn)
+
+    parallel.run_parallel(
+        "do the task",
+        lanes,
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        fanout_id="fan",
+    )
+
+    (lane_cfg,) = carried
+    assert lane_cfg.harness.verify_command == (".venv/bin/python", "-m", "pytest", "-q")
+    assert lane_cfg.parallel.setup_command == ("uv", "sync", "--offline")
 
 
 def test_run_parallel_imports_branches_and_stamps_lineage(

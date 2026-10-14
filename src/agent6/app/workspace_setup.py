@@ -6,15 +6,20 @@ A `run --worktree` worktree, a fork's worktree, a lane's clone and a machine sta
 hold tracked files only. `[parallel].setup_command` runs once in each, through the session's
 own dispatcher, so it gets the jail every command of that run gets. A session's manifest
 records that its workspace is set up. With no command configured, the `## Setup command`
-block of the origin's AGENTS.md supplies it.
+block of the origin's AGENTS.md supplies it. A gate whose first word is a path git does not
+track cannot run in such a workspace until a setup command builds it: with none, the start
+refuses before anything is created.
 """
 
 from __future__ import annotations
 
+import dataclasses
+import os
 import pathlib
 import shlex
+from collections.abc import Sequence
 
-from agent6 import verify_infer
+from agent6 import git_ops, verify_infer
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.sessions import manifest as sessions_manifest
@@ -58,6 +63,62 @@ def infer_if_unset(cfg: Config, origin: pathlib.Path, *, reporter: app_reporter.
     return cfg.with_setup_command(argv)
 
 
+def _gate_path(gate: Sequence[str]) -> str:
+    """Return the gate's first word as a path into the workspace; "" for a name or a way out."""
+    first = gate[0] if gate else ""
+    if "/" not in first or pathlib.Path(first).is_absolute():
+        return ""
+    path = os.path.normpath(first)
+    return "" if path.startswith("..") else path
+
+
+def _no_setup_text(path: str, workspace: str) -> str:
+    """Return the refusal naming the gate's path and the two ways to state a setup command."""
+    return (
+        f"the verify gate runs `{path}`, a path git does not track, so it is absent in"
+        f" {workspace}, which holds tracked files only, and no setup command builds it there.\n"
+        "  - set one for this repository:  agent6 config set --repo parallel.setup_command"
+        """ '["uv", "sync"]'\n"""
+        "  - or state it in AGENTS.md: a `## Setup command` heading over a fenced block"
+    )
+
+
+def origin_gate(cfg: Config, origin: pathlib.Path) -> tuple[str, ...]:
+    """Return the gate the config pins or the origin's own files give, with no model call."""
+    if cfg.harness.verify_command or not cfg.harness.verify_infer:
+        return cfg.harness.verify_command
+    hide = cfg.sandbox.hide_paths
+    agents_md = verify_infer.read_agents_md(origin, hide)
+    return verify_infer.infer_verify_command(origin, agents_md, hide=hide).argv
+
+
+def gate_refusal(
+    cfg: Config, origin: pathlib.Path, gate: Sequence[str], *, workspace: str
+) -> str | None:
+    """Return why a session could never run its gate in a new workspace, or None.
+
+    Args:
+        cfg: The session's config.
+        origin: The checkout the workspace is cut from.
+        gate: The gate the session will be judged by.
+        workspace: The workspace, for the message ("a new worktree").
+
+    Returns:
+        The refusal when the gate's first word is a path in the checkout that git does not
+        track and no setup command is configured or stated in AGENTS.md; None otherwise,
+        and when commands are withheld, which leaves the run gateless.
+    """
+    path = _gate_path(gate)
+    if not path or cfg.sandbox.run_commands == "no" or cfg.parallel.setup_command:
+        return None
+    agents_md = verify_infer.read_agents_md(origin, cfg.sandbox.hide_paths)
+    if verify_infer.setup_from_agents_md(agents_md) is not None:
+        return None
+    if path in git_ops.tracked_files(origin):
+        return None
+    return _no_setup_text(gate[0], workspace)
+
+
 def session_needs_setup(session_dir: pathlib.Path) -> bool:
     """Return whether the session's own worktree or clone has not run its setup command.
 
@@ -72,16 +133,57 @@ def session_needs_setup(session_dir: pathlib.Path) -> bool:
     return isolated and not manifest.workspace_set_up
 
 
-def withheld(
-    argv: tuple[str, ...], *, dispatcher: dispatch.ToolDispatcher, reporter: app_reporter.Reporter
-) -> bool:
-    """Return whether commands are withheld, noting that the setup command does not run."""
-    if dispatcher.command_policy() != "no":
-        return False
-    reporter.note(
-        f"commands are withheld, and the setup command is one ({shlex.join(argv)}): not run"
-    )
-    return True
+@dataclasses.dataclass(frozen=True, slots=True)
+class Prepared:
+    """What preparing a workspace found.
+
+    Attributes:
+        problem: What is not ready, the output tail under it; None when the workspace is.
+        ran: Whether the setup command ran and left the workspace ready.
+    """
+
+    problem: str | None
+    ran: bool
+
+
+def prepare(
+    cfg: Config,
+    root: pathlib.Path,
+    *,
+    dispatcher: dispatch.ToolDispatcher,
+    reporter: app_reporter.Reporter,
+) -> Prepared:
+    """Run the workspace's setup command, then check that the gate's path exists there.
+
+    Args:
+        cfg: The session's config, its gate resolved.
+        root: The workspace.
+        dispatcher: The session's dispatcher, whose jail the command runs in.
+        reporter: Receives the command line and its output.
+
+    Returns:
+        What is not ready, and whether the command ran; withheld commands run nothing and
+        leave no gate to check.
+    """
+    argv = cfg.parallel.setup_command
+    if dispatcher.command_policy() == "no":
+        if argv:
+            line = shlex.join(argv)
+            reporter.note(f"commands are withheld, and the setup command is one ({line}): not run")
+        return Prepared(None, ran=False)
+    if argv and (problem := run(argv, dispatcher=dispatcher, reporter=reporter)) is not None:
+        return Prepared(problem, ran=False)
+    gate = cfg.harness.verify_command
+    path = _gate_path(gate)
+    if not path or (root / path).exists():
+        return Prepared(None, ran=bool(argv))
+    if argv:
+        return Prepared(
+            f"the setup command ran ({shlex.join(argv)}), and the verify gate's `{gate[0]}` is"
+            f" still missing in {root}",
+            ran=False,
+        )
+    return Prepared(_no_setup_text(gate[0], f"this workspace ({root})"), ran=False)
 
 
 def run(
