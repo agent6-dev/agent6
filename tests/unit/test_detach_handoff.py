@@ -262,6 +262,7 @@ def test_a_loop_crash_prints_the_end_that_it_journals(
             Config(),
             layout,
             _execution.ExecutionInputs(
+                explicit_leaves=frozenset(),
                 session_id=layout.session_id,
                 mode="run",
                 role="worker",
@@ -332,6 +333,7 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
         Config(),
         layout,
         _execution.ExecutionInputs(
+            explicit_leaves=frozenset(),
             session_id=layout.session_id,
             mode="ask",
             role="worker",
@@ -402,6 +404,7 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
         Config(),
         layout,
         _execution.ExecutionInputs(
+            explicit_leaves=frozenset(),
             session_id=layout.session_id,
             mode="ask",
             role="worker",
@@ -463,6 +466,7 @@ def test_a_surface_without_the_revise_choice_skips_revision(
         Config.model_validate({"prompt": {"revise_prompt": "interactive"}}),
         layout,
         _execution.ExecutionInputs(
+            explicit_leaves=frozenset(),
             session_id=layout.session_id,
             mode="run",
             role="worker",

@@ -305,7 +305,11 @@ def test_dispatch_parallel_refuses_unknown_model_before_any_clone(
 
     monkeypatch.setattr(parallel, "run_parallel", _boom)
     rc = parallel_cmd.dispatch_parallel(
-        _provider_cfg(), "fix the bug", "moonshotai/kimi-k2.7", cwd=origin
+        _provider_cfg(),
+        "fix the bug",
+        "moonshotai/kimi-k2.7",
+        explicit_leaves=frozenset(),
+        cwd=origin,
     )
     assert rc == 2
     err = capsys.readouterr().err
@@ -329,7 +333,9 @@ def test_dispatch_parallel_unknown_model_no_cache_warns_and_proceeds(
         return 0
 
     monkeypatch.setattr(parallel, "run_parallel", _fake_run)
-    rc = parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
+    rc = parallel_cmd.dispatch_parallel(
+        _provider_cfg(), "fix the bug", "made-up/model", explicit_leaves=frozenset(), cwd=origin
+    )
     assert rc == 0
     assert reached == ["fix the bug"]  # not blocked offline
     assert "WARNING: unvalidated model" in capsys.readouterr().err
@@ -348,9 +354,16 @@ def test_dispatch_parallel_forwards_auto_approve_to_run_parallel(
 
     monkeypatch.setattr(parallel, "run_parallel", _fake_run)
     parallel_cmd.dispatch_parallel(
-        _provider_cfg(), "fix the bug", "made-up/model", cwd=origin, auto_approve=True
+        _provider_cfg(),
+        "fix the bug",
+        "made-up/model",
+        explicit_leaves=frozenset(),
+        cwd=origin,
+        auto_approve=True,
     )
-    parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
+    parallel_cmd.dispatch_parallel(
+        _provider_cfg(), "fix the bug", "made-up/model", explicit_leaves=frozenset(), cwd=origin
+    )
 
     assert captured == [True, False]
 
@@ -377,11 +390,17 @@ def test_dispatch_parallel_gives_the_lanes_the_coordinators_away_mode(
     monkeypatch.setattr(parallel, "run_parallel", _fake_run)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
-    parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
+    parallel_cmd.dispatch_parallel(
+        _provider_cfg(), "fix the bug", "made-up/model", explicit_leaves=frozenset(), cwd=origin
+    )
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
-    parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
+    parallel_cmd.dispatch_parallel(
+        _provider_cfg(), "fix the bug", "made-up/model", explicit_leaves=frozenset(), cwd=origin
+    )
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
-    parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
+    parallel_cmd.dispatch_parallel(
+        _provider_cfg(), "fix the bug", "made-up/model", explicit_leaves=frozenset(), cwd=origin
+    )
     assert captured == ["wait", "deny", "wait"]
     err = capsys.readouterr().err
     assert err.count("fetch and MCP approvals are denied") == 1
@@ -404,7 +423,12 @@ def test_dispatch_parallel_forwards_pins_to_run_parallel(
 
     monkeypatch.setattr(parallel, "run_parallel", _fake_run)
     parallel_cmd.dispatch_parallel(
-        _provider_cfg(), "fix", "made-up/model", cwd=origin, pins=("never touch schema",)
+        _provider_cfg(),
+        "fix",
+        "made-up/model",
+        explicit_leaves=frozenset(),
+        cwd=origin,
+        pins=("never touch schema",),
     )
     assert captured == [("never touch schema",)]
 
@@ -439,7 +463,12 @@ def test_coordinator_dispatch_refuses_unknown_model(
 
     monkeypatch.setattr(subrun, "clone_workspace", _boom)
     dispatch = parallel.build_lane_spawner(
-        _provider_cfg(), origin, origin_state, coordinator_session_id="coord", runtime=runtime
+        _provider_cfg(),
+        origin,
+        origin_state,
+        explicit_leaves=frozenset(),
+        coordinator_session_id="coord",
+        runtime=runtime,
     )
     with pytest.raises(parallel.ParallelError, match=r"unknown model 'o/moonshotai/kimi-k2\.7'"):
         dispatch([subrun.LaneTask(task="do it", model="moonshotai/kimi-k2.7")], "p1")
@@ -475,7 +504,12 @@ def test_coordinator_dispatch_wait_honors_a_stop_request(
 
     monkeypatch.setattr(parallel, "run_lane_to_completion", fake_lane)
     dispatch = parallel.build_lane_spawner(
-        _provider_cfg(), origin, origin_state, coordinator_session_id="coord", runtime=runtime
+        _provider_cfg(),
+        origin,
+        origin_state,
+        explicit_leaves=frozenset(),
+        coordinator_session_id="coord",
+        runtime=runtime,
     )
     dispatch([subrun.LaneTask(task="a", model=None)], "p1")
 
@@ -516,7 +550,12 @@ def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
 
     monkeypatch.setattr(parallel, "run_lane_to_completion", fake_lane)
     dispatch = parallel.build_lane_spawner(
-        _provider_cfg(), origin, origin_state, coordinator_session_id="coord", runtime=runtime
+        _provider_cfg(),
+        origin,
+        origin_state,
+        explicit_leaves=frozenset(),
+        coordinator_session_id="coord",
+        runtime=runtime,
     )
     start = time.monotonic()
     with pytest.raises(RuntimeError, match="lane thread blew up"):
@@ -555,7 +594,7 @@ def test_bridge_spawner_argv_ends_options_before_task(
         lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
     )
     parallel.bridge_spawner(
-        spec, "--allow-root pwn", cfg=cfg, origin=origin, max_usd=2.0,
+        spec, "--allow-root pwn", explicit_leaves=frozenset(), cfg=cfg, origin=origin, max_usd=2.0,
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         coordinator="co",
     )  # fmt: skip
@@ -590,7 +629,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
         lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
     )
     parallel.bridge_spawner(
-        spec, "task", cfg=cfg, origin=origin, max_usd=None,
+        spec, "task", explicit_leaves=frozenset(), cfg=cfg, origin=origin, max_usd=None,
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         coordinator="co",
     )  # fmt: skip
@@ -622,6 +661,7 @@ def test_bridge_spawner_argv_includes_auto_approve_when_set(
     )
     parallel.bridge_spawner(
         spec, "do it", cfg=cfg, origin=origin, max_usd=None, auto_approve=True,
+        explicit_leaves=frozenset(),
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         coordinator="co",
     )  # fmt: skip
@@ -647,7 +687,7 @@ def test_bridge_spawner_argv_omits_auto_approve_by_default(
         lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
     )
     parallel.bridge_spawner(
-        spec, "do it", cfg=cfg, origin=origin, max_usd=None,
+        spec, "do it", explicit_leaves=frozenset(), cfg=cfg, origin=origin, max_usd=None,
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         coordinator="co",
     )  # fmt: skip
@@ -683,6 +723,7 @@ def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
     parallel.run_lane_to_completion(
         spec,
         "do it",
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=tmp_path / "ostate",
@@ -718,7 +759,7 @@ def test_run_parallel_forwards_pins_to_the_default_spawner(
 
     monkeypatch.setattr(parallel, "bridge_spawner", fake_bridge)
     parallel.run_parallel(
-        "t", lanes, cfg=cfg, origin=origin, origin_state=origin_state,
+        "t", lanes, explicit_leaves=frozenset(), cfg=cfg, origin=origin, origin_state=origin_state,
         runtime=runtime, fanout_id="fan", pins=("keep it",),
     )  # fmt: skip
     assert captured[-1]["pins"] == ("keep it",)
@@ -834,6 +875,7 @@ def test_run_parallel_refuses_a_gate_on_an_untracked_path_before_any_clone(
     rc = parallel.run_parallel(
         "do the task",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -877,6 +919,7 @@ def test_run_parallel_settles_the_gate_and_the_setup_command_in_the_origin(
     parallel.run_parallel(
         "do the task",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -900,6 +943,7 @@ def test_run_parallel_imports_branches_and_stamps_lineage(
     rc = parallel.run_parallel(
         "do the task",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -954,6 +998,7 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
         parallel.run_parallel(
             "do the task",
             lanes,
+            explicit_leaves=frozenset(),
             cfg=cfg,
             origin=origin,
             origin_state=origin_state,
@@ -1002,7 +1047,7 @@ def test_run_parallel_forwards_auto_approve_to_the_default_spawner(
     monkeypatch.setattr(parallel, "bridge_spawner", fake_bridge)
 
     parallel.run_parallel(
-        "t", lanes, cfg=cfg, origin=origin, origin_state=origin_state,
+        "t", lanes, explicit_leaves=frozenset(), cfg=cfg, origin=origin, origin_state=origin_state,
         runtime=runtime, fanout_id="fan", auto_approve=True,
     )  # fmt: skip
 
@@ -1028,7 +1073,7 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
     )
 
     parallel.run_parallel(
-        "t", lanes, cfg=cfg, origin=origin, origin_state=origin_state,
+        "t", lanes, explicit_leaves=frozenset(), cfg=cfg, origin=origin, origin_state=origin_state,
         runtime=runtime, spawner=spawner, fanout_id="fan",
     )  # fmt: skip
 
@@ -1076,7 +1121,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
     monkeypatch.setattr(compare, "rank", fake_rank)
 
     parallel.run_parallel(
-        "t", lanes, cfg=cfg, origin=origin, origin_state=origin_state,
+        "t", lanes, explicit_leaves=frozenset(), cfg=cfg, origin=origin, origin_state=origin_state,
         runtime=runtime, spawner=spawner, fanout_id="fan",
     )  # fmt: skip
 
@@ -1112,6 +1157,7 @@ def test_run_parallel_removes_its_emptied_workdir_levels(
     rc = parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1137,6 +1183,7 @@ def test_run_parallel_symlink_appears_before_import(
     parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1164,6 +1211,7 @@ def test_failed_lane_does_not_stop_others(
     rc = parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1213,6 +1261,7 @@ def test_report_ranks_passing_lane_first(
     parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1253,6 +1302,7 @@ def test_the_report_spells_a_lanes_cost_and_outcome_as_the_listing_does(
     parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1279,6 +1329,7 @@ def test_run_parallel_all_failed_returns_1(
     rc = parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1318,6 +1369,7 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
     rc = parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1361,6 +1413,7 @@ def test_ctrl_c_during_spawn_loop_stops_imports_and_reports(
     rc = parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1422,6 +1475,7 @@ def test_await_waits_for_worker_pid_to_clear(
     rc = parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1464,6 +1518,7 @@ def test_cleanup_preserves_unimported_lane(
     rc = parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1514,6 +1569,7 @@ def test_await_uses_real_run_dir_not_symlink(
     rc = parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1570,6 +1626,7 @@ def test_run_lane_to_completion_imports_and_stamps(
     res = parallel.run_lane_to_completion(
         spec,
         "do it",
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1607,6 +1664,7 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
     res = parallel.run_lane_to_completion(
         spec,
         "do it",
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1641,6 +1699,7 @@ def test_a_failed_lane_never_joins_the_coordinator(
     res = parallel.run_lane_to_completion(
         spec,
         "do it",
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1677,6 +1736,7 @@ def test_a_crashed_lane_never_joins_the_coordinator(
     res = parallel.run_lane_to_completion(
         spec,
         "do it",
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1709,7 +1769,12 @@ def test_build_lane_spawner_over_cap_refused(
 
     monkeypatch.setattr(parallel, "run_lane_to_completion", fake_rltc)
     dispatch = parallel.build_lane_spawner(
-        cfg, origin, paths.state_dir(origin), coordinator_session_id="co", runtime=runtime
+        cfg,
+        origin,
+        paths.state_dir(origin),
+        explicit_leaves=frozenset(),
+        coordinator_session_id="co",
+        runtime=runtime,
     )
     with pytest.raises(parallel.ParallelError, match="max_lanes"):
         dispatch([subrun.LaneTask(task="t", model=None)] * 3, "p1")
@@ -1748,6 +1813,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
     res = parallel.run_lane_to_completion(
         spec,
         "do it",
+        explicit_leaves=frozenset(),
         cfg=Config(),
         origin=origin,
         origin_state=origin_state,
@@ -1782,6 +1848,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     res = parallel.run_lane_to_completion(
         spec,
         "do it",
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1808,6 +1875,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     res2 = parallel.run_lane_to_completion(
         spec2,
         "do it",
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -1848,7 +1916,12 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
 
     monkeypatch.setattr(parallel, "run_lane_to_completion", fake_rltc)
     dispatch = parallel.build_lane_spawner(
-        cfg, origin, origin_state, coordinator_session_id="co", runtime=runtime
+        cfg,
+        origin,
+        origin_state,
+        explicit_leaves=frozenset(),
+        coordinator_session_id="co",
+        runtime=runtime,
     )
     lanes = [
         subrun.LaneTask(task="task a", model="kimi"),
@@ -1888,7 +1961,13 @@ def test_build_lane_spawner_forwards_auto_approve(
 
     monkeypatch.setattr(parallel, "run_lane_to_completion", fake_rltc)
     dispatch = parallel.build_lane_spawner(
-        cfg, origin, origin_state, coordinator_session_id="co", runtime=runtime, auto_approve=True
+        cfg,
+        origin,
+        origin_state,
+        explicit_leaves=frozenset(),
+        coordinator_session_id="co",
+        runtime=runtime,
+        auto_approve=True,
     )
     dispatch([subrun.LaneTask(task="task a", model=None)], "p3")
 
@@ -1918,10 +1997,23 @@ def test_build_coordinator_spawner_forwards_auto_approve(
     monkeypatch.setattr(parallel, "build_lane_spawner", fake_build_lane_spawner)
 
     parallel.build_coordinator_spawner(
-        cfg, origin, origin_state, mode="run", session_id="co", runtime=runtime, auto_approve=True
+        cfg,
+        origin,
+        origin_state,
+        explicit_leaves=frozenset(),
+        mode="run",
+        session_id="co",
+        runtime=runtime,
+        auto_approve=True,
     )
     parallel.build_coordinator_spawner(
-        cfg, origin, origin_state, mode="run", session_id="co", runtime=runtime
+        cfg,
+        origin,
+        origin_state,
+        explicit_leaves=frozenset(),
+        mode="run",
+        session_id="co",
+        runtime=runtime,
     )
 
     assert captured == [True, False]
@@ -1990,6 +2082,7 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
     res = parallel.run_lane_to_completion(
         spec,
         "do it",
+        explicit_leaves=frozenset(),
         cfg=Config(),
         origin=origin,
         origin_state=tmp_path / "ostate",
@@ -2034,6 +2127,7 @@ def test_crashed_lane_is_not_a_rankable_candidate(
     rc = parallel.run_parallel(
         "do the task",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -2084,7 +2178,7 @@ def test_lane_config_forces_a_run_branch(tmp_path: pathlib.Path) -> None:
     base = Config()
     cfg = base.model_copy(update={"git": base.git.model_copy(update={"branch_per_run": False})})
     spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "clone", route=None)
-    path = _workdirs.write_lane_config(cfg, spec)
+    path = _workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset({"git.branch_per_run"}))
     written = tomllib.loads(path.read_text(encoding="utf-8"))
     assert written["git"]["branch_per_run"] is True
 
@@ -2108,7 +2202,11 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
         workdir=tmp_path / "clone",
         route=kinds.ModelRoute("p", "other"),
     )
-    written = tomllib.loads(_workdirs.write_lane_config(cfg, spec).read_text(encoding="utf-8"))
+    written = tomllib.loads(
+        _workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset()).read_text(
+            encoding="utf-8"
+        )
+    )
     assert (written["models"]["worker"]["provider"], written["models"]["worker"]["model"]) == (
         "p",
         "other",
@@ -2144,6 +2242,7 @@ def test_a_fanout_where_every_lane_failed_crowns_nobody(
     rc = parallel.run_parallel(
         "do the task",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -2203,6 +2302,7 @@ def test_a_compare_where_every_candidate_failed_its_own_gate_crowns_nobody(
     rc = parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -2251,6 +2351,7 @@ def test_a_judge_that_misranks_a_failed_gate_lane_first_crowns_nobody(
     parallel.run_parallel(
         "t",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -2366,6 +2467,7 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
         )
         result = parallel.bridge_spawner(
             spec, "do it", cfg=Config(), origin=origin, max_usd=None, lane_away=away,
+            explicit_leaves=frozenset(),
             fanout_id="fan", coordinator="co",
             runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         )  # fmt: skip
@@ -2402,7 +2504,7 @@ def test_lane_is_self_describing_from_birth(
         lane=2, session_id="fan-l2", workdir=tmp_path / "work" / "lane-2", route=None
     )
     parallel.bridge_spawner(
-        spec, "do it", cfg=Config(), origin=origin, max_usd=None,
+        spec, "do it", explicit_leaves=frozenset(), cfg=Config(), origin=origin, max_usd=None,
         fanout_id="fan", coordinator="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
     )  # fmt: skip
     assert captured[-1]["AGENT6_PARALLEL_LINEAGE"] == "co:fan:2"
@@ -2618,6 +2720,7 @@ def test_run_parallel_is_a_session_of_its_own(
     rc = parallel.run_parallel(
         "do the task",
         lanes,
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -2695,6 +2798,7 @@ def test_a_stop_during_spawn_prevents_more_lanes(
     rc = parallel.run_parallel(
         "t",
         _specs(tmp_path, cfg, "fan", "3"),
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,
@@ -2729,6 +2833,7 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
         parallel.run_parallel(
             "t",
             _specs(tmp_path, cfg, "crash", "1"),
+            explicit_leaves=frozenset(),
             cfg=cfg,
             origin=origin,
             origin_state=origin_state,
@@ -2751,6 +2856,7 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
         parallel.run_parallel(
             "t",
             _specs(tmp_path, cfg, "kbi", "1"),
+            explicit_leaves=frozenset(),
             cfg=cfg,
             origin=origin,
             origin_state=origin_state,
@@ -2783,6 +2889,7 @@ def test_a_fan_out_leaves_no_stop_marker_behind(
     parallel.run_parallel(
         "t",
         _specs(tmp_path, cfg, "fan", "2"),
+        explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
         origin_state=origin_state,

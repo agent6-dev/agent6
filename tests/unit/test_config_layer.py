@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import pathlib
+import tomllib
 
 import pytest
 
@@ -12,6 +13,7 @@ from agent6 import errors
 from agent6 import paths as paths_mod
 from agent6.config import (
     AnthropicProviderEntry,
+    Config,
     ConfigError,
     OpenAIProviderEntry,
     io,
@@ -553,6 +555,54 @@ def test_materialize_roundtrips(repo: pathlib.Path, tmp_path: pathlib.Path) -> N
     assert reloaded.harness.verify_command == ("pytest", "-q")
     assert reloaded.sandbox.run_commands == "yes"
     assert reloaded.providers["anthropic"].api_format == "anthropic"
+
+
+@pytest.mark.parametrize(
+    ("explicit_leaves", "writes_protect_git", "writes_home"),
+    [
+        (None, True, True),
+        (frozenset(), False, False),
+        (frozenset({"sandbox.protect_git"}), True, False),
+    ],
+)
+def test_materialize_distinguishes_explicit_defaults_from_unset_leaves(
+    explicit_leaves: frozenset[str] | None, writes_protect_git: bool, writes_home: bool
+) -> None:
+    """Selective materialization keeps explicit defaults and post-load non-default values."""
+    cfg = Config().with_budget_overrides(max_usd=3.5)
+
+    written = tomllib.loads(layer.materialize(cfg, explicit_leaves=explicit_leaves))
+
+    assert ("protect_git" in written.get("sandbox", {})) is writes_protect_git
+    assert ("home" in written.get("sandbox", {})) is writes_home
+    assert written["budget"]["max_usd"] == 3.5
+    if writes_protect_git:
+        assert written["sandbox"]["protect_git"] is True
+
+
+def test_materialize_selective_keeps_named_models_and_dict_values() -> None:
+    """Selective materialization preserves dotted provider names and whole extra_body leaves."""
+    cfg = Config.model_validate(
+        {
+            "providers": {
+                "team.provider": {
+                    "api_format": "openai",
+                    "base_url": "https://p.example/v1",
+                    "extra_body": {"nested": {"enabled": True}, "steps": [{"count": 2}]},
+                }
+            },
+            "models": {"worker": {"provider": "team.provider", "model": "lane-model"}},
+        }
+    )
+
+    written = tomllib.loads(layer.materialize(cfg, explicit_leaves=frozenset()))
+    reloaded = Config.model_validate(written)
+
+    assert reloaded.models.worker is not None
+    assert reloaded.models.worker.provider == "team.provider"
+    provider = reloaded.providers["team.provider"]
+    assert isinstance(provider, OpenAIProviderEntry)
+    assert provider.extra_body == {"nested": {"enabled": True}, "steps": [{"count": 2}]}
 
 
 def test_materialize_roundtrips_nested_objects_in_arrays(

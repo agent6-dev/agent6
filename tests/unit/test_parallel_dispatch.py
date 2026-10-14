@@ -174,11 +174,17 @@ def test_a_dirty_origin_fans_out_under_stash_and_include(
 
     monkeypatch.setattr(parallel, "run_parallel", _fake_run_parallel)
     ask = Config.model_validate({"git": {"dirty_tree": "ask"}})
-    assert cli_parallel.dispatch_parallel(ask, "t", "2", cwd=tmp_path) == 2
+    assert (
+        cli_parallel.dispatch_parallel(ask, "t", "2", explicit_leaves=frozenset(), cwd=tmp_path)
+        == 2
+    )
     assert "dirty_tree" in capsys.readouterr().err and fanned == []
     for choice in ("stash", "include"):
         cfg = Config.model_validate({"git": {"dirty_tree": choice}})
-        assert cli_parallel.dispatch_parallel(cfg, "t", "2", cwd=tmp_path) == 0, choice
+        assert (
+            cli_parallel.dispatch_parallel(cfg, "t", "2", explicit_leaves=frozenset(), cwd=tmp_path)
+            == 0
+        ), choice
     assert fanned == ["t", "t"]
 
 

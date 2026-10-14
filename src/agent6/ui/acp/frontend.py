@@ -224,6 +224,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
 
 def _no_coordinator(
     _cfg: Config,
+    _explicit_leaves: frozenset[str],
     _cwd: pathlib.Path,
     _state_dir: pathlib.Path,
     _mode: str,

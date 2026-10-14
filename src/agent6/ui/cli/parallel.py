@@ -78,6 +78,7 @@ def dispatch_parallel(
     task: str,
     spec: str,
     *,
+    explicit_leaves: frozenset[str],
     cwd: pathlib.Path,
     max_usd: float | None = None,
     auto_approve: bool = False,
@@ -92,6 +93,7 @@ def dispatch_parallel(
         cfg: The effective config.
         task: The task text.
         spec: The `--parallel` lane spec.
+        explicit_leaves: The dotted leaves the origin's config layers set.
         cwd: The origin repo.
         max_usd: The spend ceiling forwarded to every lane.
         auto_approve: `--auto-approve`, forwarded to every lane.
@@ -147,6 +149,7 @@ def dispatch_parallel(
         task,
         lanes,
         cfg=cfg,
+        explicit_leaves=explicit_leaves,
         origin=origin,
         origin_state=origin_state,
         runtime=lane_runtime(),

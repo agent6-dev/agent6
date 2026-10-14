@@ -172,7 +172,7 @@ class SessionFrontend:
     ]
     save_ask_transcript: Callable[[layout.SessionLayout, str, str], None]
     build_coordinator_spawner: Callable[
-        [Config, pathlib.Path, pathlib.Path, str, str, float | None, bool],
+        [Config, frozenset[str], pathlib.Path, pathlib.Path, str, str, float | None, bool],
         subrun.GroupLaneSpawner | None,
     ]
     agent6_exe: Callable[[], str]

@@ -1108,13 +1108,16 @@ def _is_table_array(value: Any) -> bool:
 def materialize(
     config: config_model.Config,
     *,
+    explicit_leaves: frozenset[str] | None = None,
     keep_presets_from: pathlib.Path | None = None,
     keep_preset_selector: bool = False,
 ) -> str:
-    """Render the resolved config as a complete TOML document, every value explicit.
+    """Render the resolved config as TOML, optionally omitting unset defaults.
 
     Args:
         config: The validated config.
+        explicit_leaves: Write these dotted leaves and values differing from `Config()`.
+            None writes every value, as `config fill` does.
         keep_presets_from: A file whose own `[presets.*]` tables the document carries; no
             `Config` holds them, and a fill rewriting the operator's file would otherwise
             delete definitions it cannot see.
@@ -1126,9 +1129,30 @@ def materialize(
         The TOML text.
     """
     data = config.model_dump(mode="python")
+    if explicit_leaves is not None:
+        defaults = config_leaves(config_model.Config())
+        selected = {
+            leaf
+            for leaf, value in config_leaves(config).items()
+            if leaf in explicit_leaves or leaf not in defaults or value != defaults[leaf]
+        }
+
+        def select_leaves(table: dict[str, Any], prefix: str = "") -> dict[str, Any]:
+            out: dict[str, Any] = {}
+            for key, value in table.items():
+                path = f"{prefix}{key}"
+                if path in selected:
+                    out[key] = value
+                elif isinstance(value, dict) and (sub := select_leaves(value, f"{path}.")):
+                    out[key] = sub
+            return out
+
+        data = select_leaves(data)
     data = data if keep_preset_selector else {k: v for k, v in data.items() if k != "preset"}
     lines: list[str] = [
-        "# agent6 effective config, materialized by `agent6 config fill`.",
+        "# agent6 effective config."
+        if explicit_leaves is not None
+        else "# agent6 effective config, materialized by `agent6 config fill`.",
         "# Every value below is explicit; edit freely.",
         "",
     ]

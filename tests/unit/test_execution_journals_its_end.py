@@ -76,6 +76,7 @@ def test_provider_setup_failure_journals_session_end(
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
     inputs = _execution.ExecutionInputs(
+        explicit_leaves=frozenset(),
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -141,6 +142,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
     inputs = _execution.ExecutionInputs(
+        explicit_leaves=frozenset(),
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -214,6 +216,7 @@ def test_mcp_setup_failure_journals_session_end(
     frontend.stream_modes.return_value = (False, False)
     frontend.make_steer_state.side_effect = _steer_state
     inputs = _execution.ExecutionInputs(
+        explicit_leaves=frozenset(),
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -335,6 +338,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         make_steer_state=_steer_state,
     )
     inputs = _execution.ExecutionInputs(
+        explicit_leaves=frozenset(),
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -447,6 +451,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
     monkeypatch.setattr(paths, "chown_to_real_user", _returning(None))
 
     inputs = _execution.ExecutionInputs(
+        explicit_leaves=frozenset(),
         session_id=layout.session_id,
         mode="run",
         role="worker",
@@ -583,6 +588,7 @@ def test_the_chown_runs_after_the_auto_merge_writes(
         cfg,
         layout,
         _execution.ExecutionInputs(
+            explicit_leaves=frozenset(),
             session_id=layout.session_id,
             mode="run",
             role="worker",
@@ -704,6 +710,7 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
         cfg,
         layout,
         _execution.ExecutionInputs(
+            explicit_leaves=frozenset(),
             session_id=layout.session_id,
             mode="run",
             role="worker",
@@ -801,6 +808,7 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
             Config(),
             layout,
             _execution.ExecutionInputs(
+                explicit_leaves=frozenset(),
                 session_id=layout.session_id,
                 mode="run",
                 role="worker",
@@ -881,6 +889,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
         Config(),
         layout,
         _execution.ExecutionInputs(
+            explicit_leaves=frozenset(),
             session_id=layout.session_id,
             mode="run",
             role="worker",

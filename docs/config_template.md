@@ -301,6 +301,7 @@ Every browser [signs in](web.md#sign-in) with the server's secret.
 
 Fan-out defaults for `run --parallel N|[provider/]model,...`.
 Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
+A lane runs under the settings you set, at their effective values; a setting left at its default is a default in the lane too, so a sandbox default this host cannot honour degrades with a warning there as it does in a single run, and one you set refuses.
 `--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
 A live run dispatches lanes the same way via the `/parallel` steer directive (depth 1: a lane never fans out; headless surfaces without a dispatcher answer "not available").
 

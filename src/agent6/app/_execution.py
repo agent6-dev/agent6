@@ -48,6 +48,7 @@ class ExecutionInputs:
         session_id: The session's id.
         mode: The session mode.
         role: The role driving it.
+        explicit_leaves: The dotted leaves the run's config layers set, inherited by lanes.
         isolation: The resolved isolation level.
         tui_enabled: Whether the TUI owns the terminal.
         interactive: Whether an operator is at the terminal.
@@ -75,6 +76,7 @@ class ExecutionInputs:
     session_id: str
     mode: kinds.ResumableMode
     role: RoleName
+    explicit_leaves: frozenset[str]
     isolation: kinds.IsolationLevel
     tui_enabled: bool
     interactive: bool
@@ -378,6 +380,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 # None in plan and ask, and inside a lane.
                 lane_spawner=frontend.build_coordinator_spawner(
                     cfg,
+                    inputs.explicit_leaves,
                     cwd,
                     state_dir,
                     mode,

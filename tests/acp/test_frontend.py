@@ -233,7 +233,7 @@ def test_parallel_lanes_are_not_spawned_into_a_single_pane() -> None:
 
     front, _asked = _frontend()
     spawner = front.build_coordinator_spawner(
-        Config(), pathlib.Path("/x"), pathlib.Path("/y"), "run", "r", None, False
+        Config(), frozenset(), pathlib.Path("/x"), pathlib.Path("/y"), "run", "r", None, False
     )
     assert spawner is None
 

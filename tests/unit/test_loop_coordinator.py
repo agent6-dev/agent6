@@ -745,7 +745,13 @@ def test_coordinator_spawner_gate_under_subrun(
     # A write run outside a lane gets a real dispatcher.
     assert callable(
         parallel.build_coordinator_spawner(
-            cfg, tmp_path, tmp_path, mode="run", session_id="r", runtime=cli_parallel.lane_runtime()
+            cfg,
+            tmp_path,
+            tmp_path,
+            explicit_leaves=frozenset(),
+            mode="run",
+            session_id="r",
+            runtime=cli_parallel.lane_runtime(),
         )
     )
     # plan/ask make no commits to clone -> no dispatcher.
@@ -754,6 +760,7 @@ def test_coordinator_spawner_gate_under_subrun(
             cfg,
             tmp_path,
             tmp_path,
+            explicit_leaves=frozenset(),
             mode="plan",
             session_id="r",
             runtime=cli_parallel.lane_runtime(),
@@ -764,7 +771,13 @@ def test_coordinator_spawner_gate_under_subrun(
     monkeypatch.setenv("AGENT6_SUBRUN", "1")
     assert (
         parallel.build_coordinator_spawner(
-            cfg, tmp_path, tmp_path, mode="run", session_id="r", runtime=cli_parallel.lane_runtime()
+            cfg,
+            tmp_path,
+            tmp_path,
+            explicit_leaves=frozenset(),
+            mode="run",
+            session_id="r",
+            runtime=cli_parallel.lane_runtime(),
         )
         is None
     )

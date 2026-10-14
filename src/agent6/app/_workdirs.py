@@ -193,27 +193,31 @@ def sweep_fanout_clones(origin: pathlib.Path, cfg: Config) -> tuple[int, int]:
     return swept, kept
 
 
-def write_lane_config(cfg: Config, spec: subrun.LaneSpec) -> pathlib.Path:
-    """Write the lane's config file: the origin's effective config, the worker re-routed.
+def write_lane_config(
+    cfg: Config, spec: subrun.LaneSpec, *, explicit_leaves: frozenset[str]
+) -> pathlib.Path:
+    """Write the origin's explicit settings and non-default lane values to `--config`.
 
-    The clone's own per-repo config is empty, so the origin's settings ride in the
-    file the lane loads with `--config`.
+    The clone's per-repo config is empty; unset defaults stay defaults in the lane.
 
     Args:
         cfg: The origin's effective config.
         spec: The lane.
+        explicit_leaves: The dotted leaves the origin's config layers set.
 
     Returns:
         The config file's path.
     """
     lane_cfg = cfg.with_model_route("worker", spec.route) if spec.route else cfg
-    # The import fetches the lane's branch, so branch_per_run stays on whatever the origin says.
+    # The import fetches the lane's branch, so branch_per_run stays on.
     lane_cfg = lane_cfg.model_copy(
         update={"git": lane_cfg.git.model_copy(update={"branch_per_run": True})}
     )
     config_path = spec.workdir.parent / f"lane-{spec.lane}-config.toml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(layer.materialize(lane_cfg), encoding="utf-8")
+    config_path.write_text(
+        layer.materialize(lane_cfg, explicit_leaves=explicit_leaves), encoding="utf-8"
+    )
     return config_path
 
 

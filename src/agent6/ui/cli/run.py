@@ -170,11 +170,12 @@ def session_frontend(config_path: pathlib.Path | None = None) -> frontend.Sessio
             layout, question=question, answer=answer
         ),
         build_coordinator_spawner=(
-            lambda cfg, cwd, state_dir, mode, session_id, max_usd, auto_approve: (
+            lambda cfg, explicit_leaves, cwd, state_dir, mode, session_id, max_usd, auto_approve: (
                 parallel.build_coordinator_spawner(
                     cfg,
                     cwd,
                     state_dir,
+                    explicit_leaves=explicit_leaves,
                     mode=mode,
                     session_id=session_id,
                     runtime=cli_parallel.lane_runtime(),
@@ -332,6 +333,7 @@ def _cmd_run(
             cfg,
             task,
             parallel_spec,
+            explicit_leaves=explicit_leaves,
             cwd=pathlib.Path.cwd(),
             max_usd=budget_overrides.max_usd if budget_overrides is not None else None,
             auto_approve=sandbox_overrides.auto_approve if sandbox_overrides is not None else False,

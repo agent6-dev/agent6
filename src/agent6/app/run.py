@@ -505,6 +505,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 session_id=effective_session_id,
                 mode=mode,
                 role=role,
+                explicit_leaves=explicit_leaves,
                 isolation=isolation,
                 tui_enabled=tui_enabled,
                 interactive=interactive,

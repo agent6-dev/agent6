@@ -153,6 +153,7 @@ def bridge_spawner(
     *,
     pins: Sequence[str] = (),
     cfg: Config,
+    explicit_leaves: frozenset[str],
     origin: pathlib.Path,
     max_usd: float | None,
     auto_approve: bool = False,
@@ -169,6 +170,7 @@ def bridge_spawner(
         task: The lane's task.
         pins: The coordinator's pins, passed out of band of the task.
         cfg: The origin's effective config.
+        explicit_leaves: The dotted leaves the origin's config layers set.
         origin: The repository.
         max_usd: The lane's spend cap, forwarded to its argv.
         auto_approve: The fan-out's own `--auto-approve`, forwarded to its argv.
@@ -193,7 +195,7 @@ def bridge_spawner(
         return subrun.LaneResult(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
-    config_path = _workdirs.write_lane_config(cfg, spec)
+    config_path = _workdirs.write_lane_config(cfg, spec, explicit_leaves=explicit_leaves)
     lane_state = paths.state_dir(spec.workdir)
     # The clone's state dir is empty; the origin's memory and rulings are seeded into it.
     memory.seed_store(paths.state_dir(origin), lane_state)
@@ -249,6 +251,7 @@ def run_lane_to_completion(
     *,
     pins: Sequence[str] = (),
     cfg: Config,
+    explicit_leaves: frozenset[str],
     origin: pathlib.Path,
     origin_state: pathlib.Path,
     group: str,
@@ -277,6 +280,7 @@ def run_lane_to_completion(
         task: The lane's task.
         pins: The coordinator's pins.
         cfg: The origin's effective config.
+        explicit_leaves: The dotted leaves the origin's config layers set.
         origin: The repository.
         origin_state: The origin's state dir.
         group: The group the lane belongs to.
@@ -308,6 +312,7 @@ def run_lane_to_completion(
             auto_approve=auto_approve,
             lane_away=lane_away,
             at=at,
+            explicit_leaves=explicit_leaves,
             fanout_id=group,
             coordinator=coordinator,
             runtime=runtime,
@@ -369,6 +374,7 @@ def build_lane_spawner(
     origin: pathlib.Path,
     origin_state: pathlib.Path,
     *,
+    explicit_leaves: frozenset[str],
     coordinator_session_id: str,
     runtime: LaneRuntime,
     max_usd: float | None = None,
@@ -386,6 +392,7 @@ def build_lane_spawner(
         cfg: The coordinator's config.
         origin: The repository.
         origin_state: The origin's state dir.
+        explicit_leaves: The dotted leaves the coordinator's config layers set.
         coordinator_session_id: The coordinator's session id.
         runtime: The front-end's primitives.
         max_usd: Each lane's spend cap.
@@ -450,6 +457,7 @@ def build_lane_spawner(
                 pins=lane.pins,
                 at=at,
                 cfg=cfg,
+                explicit_leaves=explicit_leaves,
                 origin=origin,
                 origin_state=origin_state,
                 group=group_id,
@@ -496,6 +504,7 @@ def build_coordinator_spawner(
     origin: pathlib.Path,
     origin_state: pathlib.Path,
     *,
+    explicit_leaves: frozenset[str],
     mode: str,
     session_id: str,
     runtime: LaneRuntime,
@@ -512,6 +521,7 @@ def build_coordinator_spawner(
         cfg: The run's config.
         origin: The repository.
         origin_state: The origin's state dir.
+        explicit_leaves: The dotted leaves the run's config layers set.
         mode: The session mode.
         session_id: The run's session id.
         runtime: The front-end's primitives.
@@ -529,6 +539,7 @@ def build_coordinator_spawner(
         cfg,
         origin,
         origin_state,
+        explicit_leaves=explicit_leaves,
         coordinator_session_id=session_id,
         runtime=runtime,
         max_usd=max_usd,
@@ -842,6 +853,7 @@ def run_parallel(
     lanes: list[subrun.LaneSpec],
     *,
     cfg: Config,
+    explicit_leaves: frozenset[str],
     origin: pathlib.Path,
     origin_state: pathlib.Path,
     runtime: LaneRuntime,
@@ -864,6 +876,7 @@ def run_parallel(
         task: The task every lane runs.
         lanes: The planned lanes.
         cfg: The origin's effective config.
+        explicit_leaves: The dotted leaves the origin's config layers set.
         origin: The repository.
         origin_state: The origin's state dir.
         runtime: The front-end's primitives.
@@ -950,6 +963,7 @@ def run_parallel(
             lane_away=lane_away,
             fanout_id=fanout_id,
             coordinator=fanout_id,
+            explicit_leaves=explicit_leaves,
             runtime=runtime,
         )
     try:
