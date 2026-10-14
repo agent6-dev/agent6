@@ -452,6 +452,18 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             reporter.error(str(exc))
             return 2
         cfg, explicit_leaves = effective.config, effective.explicit_leaves
+        # A lane's record is imported into the origin's state with its branch; its tree is no
+        # checkout's. Only its own clone, under the parallel workdir, may continue it.
+        lane = manifest.parallel
+        workdir = agent6_paths.parallel_base(cfg.parallel.workdir).resolve()
+        if lane is not None and not cwd.resolve().is_relative_to(workdir):
+            reporter.refuse(
+                f"{session_id} is a lane of the fan-out {lane.coordinator}: its work is on its"
+                " own branch, and this checkout holds another tree, so it cannot continue here."
+                " Continue it in a worktree of its own:\n"
+                f'    agent6 fork {session_id} --steer "..."'
+            )
+            return 2
         if workspace_setup.session_needs_setup(layout.session_dir):
             cfg = workspace_setup.infer_if_unset(cfg, repo, reporter=reporter)
 

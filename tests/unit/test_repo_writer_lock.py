@@ -891,6 +891,78 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
     assert "as yours" not in err
 
 
+def test_resume_of_a_fan_out_lane_from_the_origin_checkout_refuses(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A lane resumed from the origin ran on the checkout's tree, not the lane's.
+
+    Its record is imported into the origin's state and its work is on its branch. The resume
+    ran in the checkout: the gate certified the wrong tree, the next commit started a chain
+    off the base branch, and a merge landed that commit alone while the lane read merged.
+    `agent6 fork` continues a lane in a worktree at its tip, and the refusal names it.
+    """
+    from agent6 import secret_store
+    from agent6.app import _execution as app__execution
+    from agent6.app import _execution as execution_mod
+    from agent6.app import resume as resume_mod
+    from agent6.harness import _snapshot
+
+    secret_store.save_secret("anthropic", "x")
+    state = paths.state_dir(repo)
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="fan-AAAA11-l1")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "session_id": "fan-AAAA11-l1",
+                "mode": "run",
+                "base_sha": "",
+                "base_branch": "main",
+                "run_branch": "agent6/fan-AAAA11-l1",
+                "user_task": "t",
+                "parallel": {"group": "fan-AAAA11", "lane": 1, "coordinator": "fan-AAAA11"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    layout.logs_path.write_text(
+        '{"type": "session.start", "mode": "run", "user_task": "t"}\n'
+        '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
+        encoding="utf-8",
+    )
+    snapshot = _snapshot.SessionSnapshot(
+        system="s",
+        messages=[],
+        tool_calls=0,
+        next_iteration=1,
+        root_task_id=None,
+        original_task="t",
+        verify_command=(),
+    )
+    (layout.session_dir / "loop_state.json").write_text(
+        snapshot.model_dump_json(), encoding="utf-8"
+    )
+    ran: list[object] = []
+
+    def _execution(*_a: object, **_k: object) -> app__execution.ExecutionEnd:
+        ran.append(1)
+        return app__execution.ExecutionEnd(rc=0)
+
+    monkeypatch.setattr(app__execution, "run_execution", _execution)
+    monkeypatch.setattr(execution_mod, "run_execution", _execution)
+
+    rc = resume_mod.resume_task(
+        None, "fan-AAAA11-l1", started_at=time.time(), frontend=mock.MagicMock(), force=False
+    )
+
+    assert rc == 2 and ran == []
+    err = capsys.readouterr().err
+    assert "fan-AAAA11-l1 is a lane of the fan-out fan-AAAA11" in err
+    assert "agent6 fork fan-AAAA11-l1" in err
+
+
 def test_a_run_started_in_a_subdirectory_shares_the_checkouts_lock(tmp_path: pathlib.Path) -> None:
     """The lock is one per CHECKOUT, wherever the operator stood when they started the run.
 
