@@ -960,6 +960,38 @@ def test_terminal_notify_render_failure_keeps_status_but_is_never_silent(
     assert events_ok[-1].status == "ok"
 
 
+def test_a_terminal_reason_is_rendered_against_the_blackboard(tmp_path: pathlib.Path) -> None:
+    """`{{ ... }}` in a terminal `reason` renders as `notify` does: the end, the hook, a replay."""
+    journal, f = _load(
+        tmp_path, NOTIFIER.replace('reason = "finished"', 'reason = "finished for {{ who }}"')
+    )
+    spec = _semantics.load_machine(f)
+    world = FakeWorld({"noop": _ok()})
+    result = machine_engine.drive(spec, journal, world, live=True)
+    assert (result.status, result.reason) == ("ok", "finished for ops")
+    end = journal.read()[-1]
+    assert isinstance(end, machine_journal.MachineEnd) and end.reason == "finished for ops"
+    assert ("end", "done", "finished for ops", "ok") in world.notifications
+    replayed = machine_engine.drive(spec, journal, FakeWorld({}), live=False)
+    assert replayed.reason == "finished for ops"
+
+
+def test_a_terminal_reason_that_cannot_render_keeps_its_status_and_says_so(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A `reason` whose reference is absent at the end never flips the status or goes silent."""
+    body = NOTIFY_FAIL.replace('notify = "bye {{ out.note }}"\n', "").replace(
+        'reason = "finished"', 'reason = "finished: {{ out.note }}"'
+    )
+    journal, f = _load(tmp_path, body)
+    spec = _semantics.load_machine(f)
+    result = machine_engine.drive(spec, journal, FakeWorld({}), live=True)
+    assert result.status == "ok"
+    assert result.reason.startswith("finished: {{ out.note }} (reason not rendered: ")
+    end = journal.read()[-1]
+    assert isinstance(end, machine_journal.MachineEnd) and end.reason == result.reason
+
+
 def test_live_world_materializes_poke_atomically(tmp_path: pathlib.Path) -> None:
     data_dir = tmp_path / "data"
     world = live_world.LiveWorld(

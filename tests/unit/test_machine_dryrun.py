@@ -119,6 +119,18 @@ def test_dry_run_states_route_and_capture(tmp_path: pathlib.Path) -> None:
     assert report.ok
 
 
+def test_dry_run_renders_a_terminal_reason(tmp_path: pathlib.Path) -> None:
+    """`machine test` prints a terminal's `reason` as the run would, rendered on the blackboard."""
+    f = tmp_path / "m.asm.toml"
+    f.write_text(
+        DEMO.replace('reason = "done"', 'reason = "done, approved={{ approved }}"'),
+        encoding="utf-8",
+    )
+    by_name = {s.name: s for s in dry_run(load_machine(f)).states}
+    assert by_name["stop_ok"].ok
+    assert by_name["stop_ok"].detail == "ok: done, approved=false"
+
+
 # --- per-branch routing -----------------------------------------------------
 
 

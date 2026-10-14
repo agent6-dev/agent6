@@ -369,6 +369,8 @@ reason = "machine budget exhausted"
 
 - absorbing: emits `machine.end` and returns control to the CLI
 - a machine may have many terminal states (success and failure variants)
+- `reason` is a blackboard template, as `notify` is: `reason = "stopped after {{ count }} items"` is rendered when the machine ends, and `machine check` validates its references
+    - a reference that cannot render at the end (an absent optional field) leaves the template in the reason with the error beside it; the status stands
 
 #### `notify` (any state)
 
@@ -403,6 +405,7 @@ Two channels render it; agent6 owns no push infrastructure:
 ### 4.4 Templating and list-splicing
 
 Strings may contain `{{ ... }}` interpolations.
+The templated fields are an agent's `prompt`, each element of a tool's `command`, a `capture.set` value, a wait's `every_secs` and `until`, any state's `notify` message, and a terminal's `reason`; every other string is literal.
 
 - an interpolation is one reference plus at most one filter, nothing more
 - no arbitrary expressions, no chained filters, no method calls; anything richer belongs in a `branch` predicate (itself restricted)

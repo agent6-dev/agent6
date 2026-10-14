@@ -208,7 +208,10 @@ def _check_state(
             detail = f"{label} path" if ok else f"on.{label} -> {goto!r} is not a state"
             return StateCheck(name, "wait", ok, label, goto, detail)
         if isinstance(state, schema.TerminalState):
-            return StateCheck(name, "terminal", True, None, None, f"{state.status}: {state.reason}")
+            reason = template.render_string(
+                template.parse_template(state.reason), blackboard, where="reason"
+            )
+            return StateCheck(name, "terminal", True, None, None, f"{state.status}: {reason}")
     except (engine.EngineError, template.TemplateError, machine_predicate.PredicateError) as exc:
         return StateCheck(name, getattr(state, "kind", "?"), False, None, None, str(exc))
     return StateCheck(name, getattr(state, "kind", "?"), True, None, None, "")  # pragma: no cover

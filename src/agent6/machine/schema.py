@@ -419,7 +419,14 @@ class BranchState(pydantic.BaseModel):
 
 
 class TerminalState(pydantic.BaseModel):
-    """A `terminal` state: ends the machine with a status and a reason."""
+    """A `terminal` state: ends the machine with a status and a reason.
+
+    Attributes:
+        kind: The discriminator.
+        notify: The message journaled on entry, or None.
+        status: `ok` or `failed`.
+        reason: Why the machine ended, a template rendered against the blackboard at the end.
+    """
 
     model_config = _MODEL_CONFIG
 

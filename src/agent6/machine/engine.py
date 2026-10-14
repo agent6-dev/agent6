@@ -608,6 +608,20 @@ def _emit_notify(
     world.notify("notify", state_name, message, state.notify.level)
 
 
+def _terminal_reason(state: schema.TerminalState, blackboard: Mapping[str, object]) -> str:
+    """Return a terminal's `reason`, rendered against the blackboard as `notify` is.
+
+    Presentation only: a reference that cannot render keeps the template in the text, with
+    the error beside it, and never changes the status.
+    """
+    try:
+        return machine_template.render_string(
+            machine_template.parse_template(state.reason), blackboard, where="reason"
+        )
+    except _STATE_RUNTIME_ERRORS as exc:
+        return f"{state.reason} (reason not rendered: {exc})"
+
+
 def _emit_end(
     journal: machine_journal.MachineJournal,
     world: World,
@@ -890,7 +904,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
                 journal,
                 world,
                 status=current.status,
-                reason=current.reason,
+                reason=_terminal_reason(current, blackboard),
                 state=state,
                 transitions=transitions,
             )
@@ -1069,7 +1083,12 @@ def drive(
     if not live:
         current = spec.states.get(eng.state)
         if isinstance(current, schema.TerminalState):
-            return MachineResult(current.status, current.reason, eng.state, eng.transitions)
+            return MachineResult(
+                current.status,
+                _terminal_reason(current, eng.blackboard),
+                eng.state,
+                eng.transitions,
+            )
         return MachineResult(
             "incomplete", "journal ends before a terminal state", eng.state, eng.transitions
         )

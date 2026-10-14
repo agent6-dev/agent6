@@ -551,7 +551,7 @@ def _validate_template(
 
 
 def _validate_state(name: str, state: schema.StateSpec, env: _Env) -> list[str]:
-    """Return one state's problems; every kind's `notify` template is checked first."""
+    """Return one state's problems; `notify` and a terminal's `reason` are checked as templates."""
     problems: list[str] = []
     if state.notify is not None:
         problems.extend(
@@ -571,7 +571,17 @@ def _validate_state(name: str, state: schema.StateSpec, env: _Env) -> list[str]:
         problems.extend(_validate_wait(name, state, env))
     elif isinstance(state, schema.BranchState):
         problems.extend(_validate_branch(name, state, env))
-    return problems  # a terminal's shape is fully checked by pydantic
+    else:
+        problems.extend(
+            _validate_template(
+                state.reason,
+                env,
+                result_type=None,
+                allow_splice=False,
+                where=f"state {name!r} reason",
+            )
+        )
+    return problems
 
 
 def _validate_on(name: str, on: dict[str, str], expected: frozenset[str]) -> list[str]:
