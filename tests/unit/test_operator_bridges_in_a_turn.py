@@ -94,6 +94,7 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
+                verify_settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
                 verify_command=(),
                 verify_when="never",

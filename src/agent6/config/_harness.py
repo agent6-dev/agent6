@@ -167,6 +167,17 @@ class HarnessConfig(pydantic.BaseModel):
             "the notice alone."
         ),
     )
+    # Measured: six idle turns cut steered runs mid-work, twelve none (bench/coreagent/FINDINGS.md).
+    verify_settled_stop_after: int = pydantic.Field(
+        default=12,
+        ge=0,
+        description=(
+            "Consecutive turns with no edit, no commit, no memory write and an unchanged tree "
+            "before a plain run ends after a green verify or a gateless editing step. A verify "
+            "run is neutral; progress or an operator steer restarts the streak. `0` disables the "
+            "stop, not the nudge at three idle turns."
+        ),
+    )
     stagnation_notice_after_s: float = pydantic.Field(
         default=300.0,
         ge=0.0,

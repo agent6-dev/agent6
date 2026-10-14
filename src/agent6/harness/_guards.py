@@ -141,7 +141,7 @@ class SettledGuard:
 
     Once the run reached a good state (a green verify, or an editing step on a
     gateless run), idle turns count: one nudge at `VERIFY_SETTLED_NUDGE_AFTER`,
-    the stop at `VERIFY_SETTLED_STOP_AFTER`.
+    the stop at `harness.verify_settled_stop_after` unless disabled.
 
     Attributes:
         tree: The last tree sha seen; execution-local, so a resumed execution
@@ -175,14 +175,6 @@ class SettledGuard:
         """Start a fresh idle streak; the nudge may go out again."""
         self.idle = 0
         self.nudged = False
-
-    def stop_due(self) -> bool:
-        """Return whether the idle streak reached the stop.
-
-        Returns:
-            True at `VERIFY_SETTLED_STOP_AFTER` idle turns.
-        """
-        return self.idle >= _nudges.VERIFY_SETTLED_STOP_AFTER
 
     def nudge_due(self) -> bool:
         """Return whether the one settled nudge goes out now, and count it as sent.
@@ -279,7 +271,8 @@ def verify_settled(
     )
     if turn.finish is not None:
         return None
-    if guard.stop_due():
+    stop_after = ctx.verify_settled_stop_after
+    if stop_after > 0 and guard.idle >= stop_after:
         return _advice.Stop(
             lambda: settled_end(state, ctx),
             soft="verify_settled",
@@ -288,7 +281,7 @@ def verify_settled(
         )
     if guard.nudge_due():
         return _advice.Nudge(
-            _nudges.VERIFY_SETTLED_NUDGE,
+            _nudges.verify_settled_nudge(stop_after),
             event="loop.verify_settled.nudge",
             fields={"iteration": turn.iteration, "idle": guard.idle},
         )

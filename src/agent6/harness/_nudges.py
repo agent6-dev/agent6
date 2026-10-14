@@ -202,17 +202,27 @@ PLAN_NUDGE_AFTER_ITERS = 12
 # Only subtasks gate; the always-pending root would deadlock.
 TASK_FINISH_PATIENCE = 3
 
-# Verify-settled completion (run mode): after a green verify, turns with no commit and no edit.
-# Nudge at the first threshold, stop at the second; a green verify alone never stops a run.
-# Generous on purpose: a tight window would cut off a worker reading toward its next edit.
+# Settled completion (run mode): idle turns after a green verify or a gateless editing step.
 VERIFY_SETTLED_NUDGE_AFTER = 3
-VERIFY_SETTLED_STOP_AFTER = 12
 
-VERIFY_SETTLED_NUDGE = (
-    "[harness settled] Changes are committed and the last three turns changed"
-    " nothing; finish_session ends the run, and at twelve unchanged turns the"
-    " run ends on its own."
-)
+
+def verify_settled_nudge(stop_after: int) -> str:
+    """Return the settled notice, announcing the stop only when enabled.
+
+    Args:
+        stop_after: The configured idle-turn threshold; 0 disables the stop.
+
+    Returns:
+        The nudge with the configured threshold, or no stop sentence.
+    """
+    text = (
+        "[harness settled] Changes are committed and the last three turns changed"
+        " nothing; finish_session ends the run"
+    )
+    if stop_after > 0:
+        return f"{text}, and at {stop_after} unchanged turns the run ends on its own."
+    return f"{text}."
+
 
 # Injected once when a run has spent `stagnation_notice_after_s` with no edit and no verify.
 STAGNATION_NUDGE = (

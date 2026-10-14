@@ -79,9 +79,10 @@ class TurnContext:
     iteration: int
     # The execution's first iteration: a turn allowance counts from it.
     execution_start: int
-    # `[harness]`'s guard knobs: the empty-turn nudge cap, the kill threshold, the notice delay.
+    # `[harness]`'s guard knobs.
     went_quiet_max_nudges: int
     loop_guard_kill_threshold: int
+    verify_settled_stop_after: int
     stagnation_notice_after_s: float
     # `[harness].verify_when` and `verify_retries`, read by the red-gate return rule.
     verify_when: Literal["finish", "step", "never"]

@@ -183,6 +183,7 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: pathlib.P
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_command=("pytest", "-q"),
             verify_when="finish",

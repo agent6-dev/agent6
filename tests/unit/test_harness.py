@@ -137,6 +137,7 @@ def _wf(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
+                verify_settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
                 verify_command=(),
                 verify_when="never",
@@ -240,6 +241,7 @@ def _cfg_with_verify() -> Any:
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_command=("true",),
             verify_when="never",
@@ -840,6 +842,7 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -928,6 +931,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1008,6 +1012,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: pathlib.Path) -> None:
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1125,6 +1130,7 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: pathlib.Pa
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1181,6 +1187,7 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: pathlib.Path)
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1360,6 +1367,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1417,6 +1425,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> 
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1493,6 +1502,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: pathlib
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1556,6 +1566,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1652,6 +1663,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1703,6 +1715,7 @@ def test_worker_max_tokens_starvation_backoff() -> None:
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1737,6 +1750,7 @@ def test_worker_max_tokens_starvation_backoff() -> None:
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
+                verify_settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
                 verify_when="never",
                 verify_retries=2,
@@ -1804,6 +1818,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: pathlib.Path)
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1883,6 +1898,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: pathlib.Path) -> None:
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -1974,6 +1990,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -2067,6 +2084,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -2250,7 +2268,6 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
 
 def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> None:
     """A worker spinning after a green verify is nudged once, then stopped as verify_settled."""
-    from agent6.harness import _nudges
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2259,7 +2276,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _nudges.VERIFY_SETTLED_NUDGE[:24] in str(kwargs["messages"][-1]):
+            if "[harness settled]" in str(kwargs["messages"][-1]):
                 self.saw_nudge = True
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id="v1")  # -> verify passes
@@ -2281,6 +2298,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -2349,6 +2367,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -2433,7 +2452,6 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
     tmp_path: pathlib.Path,
 ) -> None:
     """The settled detector stays dormant until verify has passed once."""
-    from agent6.harness import _nudges
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -2442,7 +2460,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _nudges.VERIFY_SETTLED_NUDGE[:24] in str(kwargs["messages"][-1]):
+            if "[harness settled]" in str(kwargs["messages"][-1]):
                 self.saw_nudge = True
             if self.calls >= 6:
                 return _tool_resp("finish_session", {"summary": "done"}, tool_id="fin")
@@ -2465,6 +2483,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -2517,6 +2536,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -2588,6 +2608,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -2677,6 +2698,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -2753,6 +2775,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -2819,6 +2842,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -2897,6 +2921,7 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -3015,6 +3040,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -3133,6 +3159,7 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -3161,6 +3188,7 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -3189,6 +3217,7 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -3549,7 +3578,7 @@ def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> N
     wf = _wf(curator=_FakeGraph(nodes))
     state = _state(
         verify=_verify_verdict.VerifyVerdict(ever_passed=True, last_ok=True),
-        settled=_guards.SettledGuard(tree="tree", idle=_nudges.VERIFY_SETTLED_STOP_AFTER - 1),
+        settled=_guards.SettledGuard(tree="tree", idle=11),
         gates=_finish_gates.FinishGates(task_nudges_used=_nudges.TASK_FINISH_PATIENCE),
     )
     turn = _turn()
@@ -3565,13 +3594,11 @@ def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> N
 
 def test_a_settled_end_from_the_scoped_gate_reads_scoped() -> None:
     """A verify_settled end carries `scoped` like the grounded ends do."""
-    from agent6.harness import _nudges
-
     ev = _EventCapture()
     wf = _wf(events=ev)
     state = _state(
         verify=_verify_verdict.VerifyVerdict(ever_passed=True, last_ok=True, scoped=True),
-        settled=_guards.SettledGuard(tree="tree", idle=_nudges.VERIFY_SETTLED_STOP_AFTER - 1),
+        settled=_guards.SettledGuard(tree="tree", idle=11),
     )
     turn = _turn()
     with mock.patch.object(_chain.RunChain, "tree_sha", return_value="tree"):
@@ -3596,8 +3623,6 @@ def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
 
 def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
     """The automatic settled ending passes the same task gate as finish_session."""
-    from agent6.harness import _nudges
-
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "review repo"},
         "sub1": {"parent_id": "root", "status": "pending", "title": "audit providers"},
@@ -3605,7 +3630,7 @@ def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
     wf = _wf(curator=_FakeGraph(nodes))
     state = _state(
         verify=_verify_verdict.VerifyVerdict(ever_passed=True, last_ok=True),
-        settled=_guards.SettledGuard(tree="tree", idle=_nudges.VERIFY_SETTLED_STOP_AFTER - 1),
+        settled=_guards.SettledGuard(tree="tree", idle=11),
     )
     turn = _turn()
     with mock.patch.object(_chain.RunChain, "tree_sha", return_value="tree"):
@@ -4156,6 +4181,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -4256,6 +4282,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -4929,6 +4956,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5047,6 +5075,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> Non
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5094,6 +5123,7 @@ def test_resume_snapshot_carries_verify_command(tmp_path: pathlib.Path) -> None:
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5146,6 +5176,7 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: pathlib
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5239,6 +5270,7 @@ def test_question_nudge_then_accept(tmp_path: pathlib.Path) -> None:
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5342,6 +5374,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5416,6 +5449,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5499,6 +5533,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: pat
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5558,6 +5593,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5624,6 +5660,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5702,6 +5739,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5766,6 +5804,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: pathli
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5844,6 +5883,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -5934,6 +5974,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -6004,6 +6045,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -6186,6 +6228,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -6250,6 +6293,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -6317,6 +6361,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -6387,6 +6432,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -6457,6 +6503,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -6703,6 +6750,7 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -6764,6 +6812,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -6893,6 +6942,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -7008,6 +7058,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
+                verify_settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
                 verify_command=("false",),
                 verify_when="never",
@@ -7494,6 +7545,7 @@ def _loop_config() -> Any:
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -8124,8 +8176,6 @@ def _settles_at(
     wf: loop.Harness, repo: pathlib.Path, state: _loop_state.LoopState, *, gated: bool
 ) -> int | None:
     """The iteration the verify-settled stop fires at, or None within a generous window."""
-    from agent6.harness import _nudges
-
     (repo / "x.txt").write_text("the worker's finished work\n", encoding="utf-8")
     first = _edited_turn(1)
     if gated:
@@ -8133,7 +8183,7 @@ def _settles_at(
         first.verify_just_passed = True
     wf._turn_auto_commit_and_metric(state, first)  # pyright: ignore[reportPrivateUsage]
     _settle(wf, state, first)
-    for i in range(2, _nudges.VERIFY_SETTLED_STOP_AFTER * 3):
+    for i in range(2, 36):
         turn = _loop_state.TurnState(
             iteration=i,
             resp=_resp(""),
@@ -8494,6 +8544,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="never",
             verify_retries=2,
@@ -8578,6 +8629,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify_when="step",
             verify_retries=2,

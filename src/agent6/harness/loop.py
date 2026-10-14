@@ -1509,6 +1509,7 @@ class Harness:
             execution_start=execution_start,
             went_quiet_max_nudges=self.config.harness.went_quiet_max_nudges,
             loop_guard_kill_threshold=self.config.harness.loop_guard_kill_threshold,
+            verify_settled_stop_after=self.config.harness.verify_settled_stop_after,
             stagnation_notice_after_s=self.config.harness.stagnation_notice_after_s,
             verify_when=self.gate.when,
             verify_retries=self.gate.retries,

@@ -20,7 +20,7 @@ from agent6 import child_env, commit_message, event_log, git_ops, verify_infer
 from agent6.app import merge
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, NotifyConfig
-from agent6.harness import _advice, _nudges, _snapshot
+from agent6.harness import _advice, _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import (
@@ -284,8 +284,8 @@ def _print_settled(
     if result.reason != "verify_settled":
         return
     reporter.out(
-        "\nthe worker never called finish_session: the run ended after"
-        f" {_nudges.VERIFY_SETTLED_STOP_AFTER} turns that changed nothing."
+        "\nthe worker never called finish_session: the harness ended the run"
+        " when the tree stopped changing."
     )
     reporter.out(f"  if the task is unfinished:  agent6 resume {layout.session_id}")
 

@@ -60,6 +60,7 @@ def _wf(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
+                verify_settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
                 verify_command=(),
                 verify_when="never",
@@ -474,11 +475,11 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
 
 
 def _settled_state() -> Any:
-    from agent6.harness import _loop_state, _nudges
+    from agent6.harness import _loop_state
 
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.settled.gateless_ever_edited = True
-    state.settled.idle = _nudges.VERIFY_SETTLED_STOP_AFTER
+    state.settled.idle = 12
     return state
 
 

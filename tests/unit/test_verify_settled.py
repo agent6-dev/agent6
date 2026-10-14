@@ -8,10 +8,13 @@ A plain run that reached a good state and made no progress; the stop's end is
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 from unittest import mock
 
-from agent6.config import Config
+import pytest
+
+from agent6 import config
 from agent6.harness import (
     _advice,
     _chain,
@@ -47,31 +50,99 @@ def test_idle_turns_draw_one_nudge_then_a_soft_declared_stop() -> None:
     state = _green_state()
     ctx = turn_context(tree_sha=lambda: "tree")
     # The first turn measures the tree (progress); the idle streak starts after it.
-    turns = range(1, _nudges.VERIFY_SETTLED_STOP_AFTER + 2)
+    turns = range(1, 14)
     answers = [_guards.verify_settled(_turn(i), state, ctx) for i in turns]
     nudges = [a for a in answers if isinstance(a, _advice.Nudge)]
     stops = [a for a in answers if isinstance(a, _advice.Stop)]
-    assert [a.text for a in nudges] == [_nudges.VERIFY_SETTLED_NUDGE]
+    assert [a.text for a in nudges] == [
+        "[harness settled] Changes are committed and the last three turns changed"
+        " nothing; finish_session ends the run, and at 12 unchanged turns the run ends on its"
+        " own."
+    ]
     assert nudges[0].fields == {"iteration": _nudges.VERIFY_SETTLED_NUDGE_AFTER + 1, "idle": 3}
     assert len(stops) == 1 and answers[-1] is stops[0]
     stop = stops[0]
     assert stop.soft == "verify_settled" and stop.declared == "settled"
-    assert (
-        stop.log
-        == f"LOOP: verify_settled at iter {_nudges.VERIFY_SETTLED_STOP_AFTER + 1} (idle 12)"
-    )
+    assert stop.log == "LOOP: verify_settled at iter 13 (idle 12)"
     end = stop.end()
     assert end.reason == "verify_settled" and end.completed and end.verdict == "passed"
 
 
 def test_the_stop_waits_twelve_idle_turns_and_the_nudge_says_so() -> None:
+    """The default stops at 12 idle turns and the nudge states that number."""
     state = _green_state()
     ctx = turn_context(tree_sha=lambda: "tree")
     answers = [_guards.verify_settled(_turn(i), state, ctx) for i in range(1, 14)]
     kinds = [type(a) for a in answers]
     # Turn 1 measures the tree; the nudge lands at idle 3 (turn 4), the stop at idle 12 (turn 13).
     assert kinds == [type(None)] * 3 + [_advice.Nudge] + [type(None)] * 8 + [_advice.Stop]
-    assert "twelve unchanged turns" in _nudges.VERIFY_SETTLED_NUDGE
+    nudge = answers[3]
+    assert isinstance(nudge, _advice.Nudge)
+    assert "at 12 unchanged turns" in nudge.text
+
+
+def _configured_context(
+    tmp_path: pathlib.Path, state: _loop_state.LoopState, stop_after: int
+) -> _advice.TurnContext:
+    """Build the advisor's context through the harness with a configured stop."""
+    wf = loop.Harness(
+        chain=_chain.RunChain(tmp_path),
+        config=config.Config.model_validate({"harness": {"verify_settled_stop_after": stop_after}}),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
+        logger=lambda _line: None,
+        mode="run",
+    )
+    ctx = wf._turn_context(state, iteration=1, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    return dataclasses.replace(ctx, tree_sha=lambda: "tree")
+
+
+@pytest.mark.parametrize("stop_after", [1, 3, 6, 18])
+@pytest.mark.parametrize("gated", [False, True])
+def test_the_configured_threshold_moves_the_settled_stop(
+    tmp_path: pathlib.Path, stop_after: int, gated: bool
+) -> None:
+    """The settled guard uses the configured threshold, not a fixed 12 turns."""
+    state = _green_state() if gated else _loop_state.LoopState(original_task="t", tool_calls=0)
+    state.settled.gateless_ever_edited = not gated
+    ctx = _configured_context(tmp_path, state, stop_after)
+    answers = [_guards.verify_settled(_turn(i), state, ctx) for i in range(1, stop_after + 2)]
+    assert not any(isinstance(a, _advice.Stop) for a in answers[:-1])
+    assert isinstance(answers[-1], _advice.Stop)
+    assert state.settled.idle == stop_after
+
+
+@pytest.mark.parametrize("gated", [False, True])
+def test_zero_disables_the_settled_stop_but_keeps_the_nudge(
+    tmp_path: pathlib.Path, gated: bool
+) -> None:
+    """A disabled settled stop still nudges at idle 3 without announcing an end."""
+    state = _green_state() if gated else _loop_state.LoopState(original_task="t", tool_calls=0)
+    state.settled.gateless_ever_edited = not gated
+    ctx = _configured_context(tmp_path, state, 0)
+    answers = [_guards.verify_settled(_turn(i), state, ctx) for i in range(1, 102)]
+    nudges = [a for a in answers if isinstance(a, _advice.Nudge)]
+    assert not any(isinstance(a, _advice.Stop) for a in answers)
+    assert len(nudges) == 1 and answers[3] is nudges[0]
+    assert nudges[0].fields == {"iteration": 4, "idle": 3}
+    assert nudges[0].text == (
+        "[harness settled] Changes are committed and the last three turns changed"
+        " nothing; finish_session ends the run."
+    )
+
+
+@pytest.mark.parametrize("stop_after", [6, 18])
+def test_the_settled_nudge_names_the_configured_threshold(
+    tmp_path: pathlib.Path, stop_after: int
+) -> None:
+    """The model's settled nudge states the configured stop instead of twelve."""
+    state = _green_state()
+    ctx = _configured_context(tmp_path, state, stop_after)
+    answers = [_guards.verify_settled(_turn(i), state, ctx) for i in range(1, 5)]
+    nudge = answers[-1]
+    assert isinstance(nudge, _advice.Nudge)
+    assert f"at {stop_after} unchanged turns" in nudge.text
+    assert "twelve" not in nudge.text
 
 
 def test_progress_restarts_the_streak_and_a_verify_run_is_neutral() -> None:
@@ -93,7 +164,7 @@ def test_a_memory_store_write_restarts_the_idle_streak() -> None:
     """The settled nudge followed the memory advisory: the writes it asked for counted as idle."""
     wf = loop.Harness(
         chain=_chain.RunChain(pathlib.Path("/tmp")),
-        config=Config(),
+        config=config.Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(),
         logger=lambda _line: None,
@@ -115,7 +186,7 @@ def test_a_memory_store_write_restarts_the_idle_streak() -> None:
 
 
 def test_a_finish_call_a_metric_run_or_an_unseeded_run_disarms_it() -> None:
-    ready = _guards.SettledGuard(tree="tree", idle=_nudges.VERIFY_SETTLED_STOP_AFTER)
+    ready = _guards.SettledGuard(tree="tree", idle=12)
     state = _green_state()
     state.settled = ready
     ctx = turn_context(tree_sha=lambda: "tree")
@@ -127,9 +198,7 @@ def test_a_finish_call_a_metric_run_or_an_unseeded_run_disarms_it() -> None:
     unseeded = _loop_state.LoopState(original_task="t", tool_calls=0)
     assert _guards.verify_settled(_turn(9), unseeded, ctx) is None
     gateless = _loop_state.LoopState(original_task="t", tool_calls=0)
-    gateless.settled = _guards.SettledGuard(
-        tree="tree", idle=_nudges.VERIFY_SETTLED_STOP_AFTER, gateless_ever_edited=True
-    )
+    gateless.settled = _guards.SettledGuard(tree="tree", idle=12, gateless_ever_edited=True)
     assert isinstance(_guards.verify_settled(_turn(9), gateless, ctx), _advice.Stop)
 
 
@@ -161,7 +230,7 @@ def _steered(tmp_path: pathlib.Path, text: str | None) -> _loop_state.LoopState:
     """Return a state one turn short of the settled stop, after the operator's steer landed."""
     wf = loop.Harness(
         chain=_chain.RunChain(tmp_path),
-        config=Config(),
+        config=config.Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(),
         logger=lambda _line: None,
@@ -171,9 +240,7 @@ def _steered(tmp_path: pathlib.Path, text: str | None) -> _loop_state.LoopState:
         ),
     )
     state = _green_state()
-    state.settled = _guards.SettledGuard(
-        tree="tree", idle=_nudges.VERIFY_SETTLED_STOP_AFTER - 1, nudged=True
-    )
+    state.settled = _guards.SettledGuard(tree="tree", idle=11, nudged=True)
     wf.steering.handle(_conversation.Conversation(), 4, state)
     return state
 
@@ -187,7 +254,7 @@ def test_an_operator_steer_restarts_the_idle_streak_and_its_nudge(tmp_path: path
     # No steer, or an empty one, leaves the streak as it was.
     for text in (None, "  "):
         untouched = _steered(tmp_path, text)
-        assert untouched.settled.idle == _nudges.VERIFY_SETTLED_STOP_AFTER - 1
+        assert untouched.settled.idle == 11
         assert untouched.settled.nudged is True
 
 

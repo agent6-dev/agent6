@@ -86,10 +86,7 @@ def test_all_green_finish_is_headlined_passed(tmp_path: pathlib.Path, capsys: ob
 def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The harness's own stop over a green gate was headlined "passed" with no way on.
-
-    The worker had called no finish_session and the task could be unbuilt.
-    """
+    """A settled end names no fixed threshold and offers a resume, never a passed headline."""
     layout = _layout(
         tmp_path,
         "r-settled",
@@ -116,7 +113,10 @@ def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
     )
     out = capsys.readouterr().out
     assert out.split("\n")[1] == "finished · settled"
-    assert "the worker never called finish_session: the run ended after 12 turns" in out
+    assert (
+        "the worker never called finish_session: the harness ended the run"
+        " when the tree stopped changing."
+    ) in out
     assert "  if the task is unfinished:  agent6 resume r-settled" in out
     assert _finalize.session_exit_code(result) == 0
 
