@@ -329,6 +329,23 @@ def _prompt_for_the_next_input(  # noqa: PLR0911
     )
 
 
+def _names_an_existing_plan(cwd: pathlib.Path, task: str) -> bool:
+    """Return whether the task is exactly the id of a plan in this repository.
+
+    A task that cannot be a directory name is none: a separator, or a name past the
+    filesystem's limit, which the lookup reports as an OSError.
+    """
+    from agent6.sessions import id
+    from agent6.sessions import layout as sessions_layout
+
+    if not sessions_layout.is_safe_session_id(task):
+        return False
+    try:
+        return id.session_id_bucket(paths.state_dir(cwd), task) == "plans"
+    except OSError:
+        return False
+
+
 def _dispatch_plan(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 plan` or its show and edit verbs."""
     from agent6.app import _setup
@@ -343,6 +360,13 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
         return plan_watch._cmd_plan_edit(args.session_id)
     if not args.task:
         _common.error("'plan' needs a task argument (or `plan show/edit <id>`).")
+        return 2
+    if _names_an_existing_plan(pathlib.Path.cwd(), args.task.strip()):
+        # `plan run <id>` reads as "run this plan"; the verb for that is `run --from`.
+        _common.error(
+            f"{args.task.strip()!r} names an existing plan. Execute it with:\n"
+            f"    agent6 run --from {args.task.strip()}"
+        )
         return 2
     session_id = _minted_session_id(args.session_id, "plan")
     rc = run._cmd_run(

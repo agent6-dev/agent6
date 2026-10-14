@@ -195,3 +195,47 @@ def test_a_closed_stderr_ends_at_141_too(tmp_path: pathlib.Path) -> None:
         os.close(write_end)
     assert proc.returncode == 141
     assert not list(tmp_path.glob("agent6-crash-*"))
+
+
+def test_a_plan_task_that_names_an_existing_plan_points_at_run_from(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 plan run <plan-id>` started a planning session whose task was the id."""
+    from agent6 import paths
+    from agent6.sessions import layout as sessions_layout
+
+    monkeypatch.chdir(tmp_path)
+    plan = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="quiet-lake-AAAA11", subdir="plans"
+    )
+    plan.ensure()
+    plan.manifest_path.write_text('{"version": 3, "mode": "plan", "session_id": "x"}')
+
+    rc = cli_main(["plan", "run", "quiet-lake-AAAA11"])
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "names an existing plan" in err and "agent6 run --from quiet-lake-AAAA11" in err
+
+
+def test_a_long_plan_task_reaches_the_preflight(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The existing-plan check stats the task as a session dir name.
+
+    Once a plan exists, a task past 255 bytes with no slash would raise `File name too long` there.
+    """
+    for argv in (["init", "-q", "-b", "main"], ["commit", "-q", "--allow-empty", "-m", "c1"]):
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *argv], cwd=tmp_path, check=True
+        )
+    monkeypatch.chdir(tmp_path)
+    from agent6 import paths
+    from agent6.sessions import layout as sessions_layout
+
+    # A repository that already holds a plan: the stat reaches the long name.
+    sessions_layout.bucket_dir(paths.state_dir(tmp_path), "plans").mkdir(parents=True)
+    rc = cli_main(["plan", "word " * 60 + "x" * 300])
+    err = capsys.readouterr().err
+    assert rc == 2, err
+    assert "No providers configured" in err
