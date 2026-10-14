@@ -86,6 +86,7 @@ The tokens and the points against `max_percent` on `sessions show` are the lates
 - Ctrl-Z stops a job of the shell you opened; a command you run directly keeps running, since no shell could resume it
 - inside strict there is no `/dev/pts` or `/dev/tty`: `tty` prints "not a tty", and a program that opens `/dev/tty` fails
 - a command a signal ended reports 128 plus the signal, on every level
+- `agent6 exec ID` works in the run's workspace: a file your command writes there is in the run's tree, and the run's next commit holds it
 
 The steer directives work from every composer, the pause menu, and `agent6 steer ID "/task ..."` from a script.
 

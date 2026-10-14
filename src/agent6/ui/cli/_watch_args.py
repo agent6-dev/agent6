@@ -231,6 +231,8 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " isolation and network (mounts derive from your current config), so"
             " you see what the agent sees. The command is yours, not"
             " the model's, so it is never approved or recorded as a tool call."
+            " What it writes in the workspace is in the run's tree: the run's next commit"
+            " holds it."
             " With stdin and stdout on a terminal it gets a terminal of its own, with"
             " job control; otherwise stdin,"
             " stdout and stderr pass through, so pipes and redirects work (reach a server"

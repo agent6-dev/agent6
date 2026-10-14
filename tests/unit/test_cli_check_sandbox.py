@@ -94,6 +94,37 @@ def test_check_sandbox_reports_a_landlock_probe_error(
     assert "[FAIL] landlock_abi: landlock_create_ruleset" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    ("network", "told"),
+    [
+        ("host", "this config gives the run's commands the host's network (sandbox.network)"),
+        ("auto", "this config gives the run's commands their own network, with no route off"),
+    ],
+)
+def test_check_sandbox_names_the_network_its_probe_ran_on(
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
+    network: str,
+    told: str,
+) -> None:
+    """The probe read `blocked` under `network = "host"`, where a command reaches the internet.
+
+    The probe's jail has no network whatever the config says, so the line says that and what
+    the config gives the run's commands.
+    """
+    _force_profile(monkeypatch, "strict")
+    cfg = Config.model_validate({"sandbox": {"network": network}})
+    rc = check_cmds._cmd_check_sandbox(cfg)  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert (
+        "jail_blocks_network: a DNS lookup failed (exit 2) in a probe jail with no network" in out
+    )
+    assert told in out
+    assert stub_jail
+
+
 def test_check_sandbox_hardened_passes_and_skips_network(
     monkeypatch: pytest.MonkeyPatch,
     stub_jail: list[kinds.JailPolicy],

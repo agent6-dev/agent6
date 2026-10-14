@@ -137,6 +137,24 @@ def test_boundaries_report_is_level_aware(
     assert "network  host" in out
 
 
+def test_boundaries_report_says_what_hardened_leaves_writable(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Under hardened the report left out the host's /tmp and said nothing about `.git`.
+
+    A jailed command writes both there: Landlock grants the host's /tmp, and no mount
+    namespace exists to re-bind `.git` read-only. It reads the host's /dev/shm under the /dev
+    grant, which the report names.
+    """
+    _force(monkeypatch, "hardened")
+    check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert "(the workspace; .git writable: hardened has no mount to re-bind it)" in out
+    assert "rw  /tmp  (the host's /tmp, shared with every process of yours)" in out
+    assert "--  /proc  (not granted under hardened" in out
+    assert "ro  /dev/shm  (the host's, under the /dev grant" in out
+
+
 def test_boundaries_report_lists_what_the_host_network_reads(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

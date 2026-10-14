@@ -158,14 +158,24 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:  # noqa: PLR0915  # on
         try:
             res = _jail("/usr/bin/getent", "hosts", "example.com")
             ok = res.returncode != 0
+            # The probe's jail has no network whatever the config says.
+            net = tools_policy.resolve_network(cfg if cfg is not None else Config(), isolation)
+            gives = (
+                "the host's network (sandbox.network)"
+                if net == "host"
+                else "their own network, with no route off this machine"
+            )
             reports.append(
                 kinds.SandboxReport(
                     name="jail_blocks_network",
                     ok=ok,
                     detail=(
-                        f"a DNS lookup failed (exit {res.returncode}): blocked"
+                        f"a DNS lookup failed (exit {res.returncode}) in a probe jail with no"
+                        " network: the jail can block it; this config gives the run's commands"
+                        f" {gives}"
                         if ok
-                        else "a DNS lookup succeeded: the network is reachable"
+                        else "a DNS lookup succeeded in a probe jail with no network: the"
+                        " network is reachable"
                     ),
                 )
             )
@@ -457,9 +467,10 @@ def _boundaries_commands(
         print("    UNCONFINED: no jail on this host; commands run as you.")
         print(_home_line(cfg, selected, ws.root, git_grant))
         return
-    git_note = (
-        "; .git re-bound read-only" if selected == "strict" and cfg.sandbox.protect_git else ""
-    )
+    if selected != "strict":
+        git_note = f"; .git writable: {selected} has no mount to re-bind it"
+    else:
+        git_note = "; .git re-bound read-only" if cfg.sandbox.protect_git else ""
     print(f"    rw  {ws.root}  (the workspace{git_note})")
     if git_grant is not None:
         print(
@@ -471,7 +482,13 @@ def _boundaries_commands(
         rest = "" if net == "host" else " (the rest of /etc is empty)"
         print(f"    ro  system: {' '.join(_STRICT_SYSTEM_BINDS)}{rest}")
     else:
+        print("    rw  /tmp  (the host's /tmp, shared with every process of yours)")
         print(f"    ro  system (Landlock): {' '.join(_HARDENED_SYSTEM_RO)}")
+        print(f"    --  /proc  (not granted under {selected}: `ps` fails there)")
+        print(
+            "    ro  /dev/shm  (the host's, under the /dev grant: Python multiprocessing"
+            " cannot write there)"
+        )
     print(_home_line(cfg, selected, ws.root, git_grant))
     notes = tool_paths.tool_mount_notes()
     if notes.exposes_home_dir:

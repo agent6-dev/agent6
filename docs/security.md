@@ -23,6 +23,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 - No reads outside the workspace and a read-only system set for installed toolchains
     - `strict`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, whose `/etc` holds nothing else off the host network, plus a curated `/dev`
     - `hardened`: Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc`, `/dev`
+        - `/proc` is not granted, and the host's `/dev/shm` is readable under the `/dev` grant but not writable: `ps` and Python `multiprocessing` fail there, and work under `strict`
     - `sandbox.extra_read_paths` adds more; `agent6 check boundaries` prints the resolved set
     - a child on the host network (`network = "host"`, or any level but `strict`) also reads what name resolution and TLS verification need, where the host has them: `/etc/resolv.conf` and the file it points to, `/etc/hosts`, `/etc/nsswitch.conf`, and the CA store (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`).
       File permissions still apply: the root-only private keys beside the certificates stay unreadable to a run that is not root
