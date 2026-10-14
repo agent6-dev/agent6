@@ -314,7 +314,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
 
 
 def test_the_stale_gate_proposal_survives_an_unverified_verdict(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], jail_bin: pathlib.Path
 ) -> None:
     """A gate declared stale with no verify observation still prints the proposal."""
     result = _snapshot.SessionResult(
@@ -331,7 +331,7 @@ def test_the_stale_gate_proposal_survives_an_unverified_verdict(
 
 
 def test_the_stale_gate_remedy_is_a_command_that_installs_that_gate(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], jail_bin: pathlib.Path
 ) -> None:
     """`harness.verify_command` is argv and takes no shell; a proposed pipeline wraps as `sh -c`."""
     result = _snapshot.SessionResult(

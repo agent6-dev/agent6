@@ -9,8 +9,10 @@ and the operator notify hook.
 from __future__ import annotations
 
 import contextlib
+import itertools
 import json
 import pathlib
+import re
 import shlex
 import subprocess
 from collections.abc import Callable, Collection, Sequence
@@ -21,6 +23,7 @@ from agent6.app import merge
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, NotifyConfig
 from agent6.harness import _advice, _snapshot
+from agent6.sandbox import tool_paths
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import (
@@ -263,11 +266,42 @@ def _print_stale_gate(result: _snapshot.SessionResult, *, reporter: app_reporter
     if not result.stale_gate or result.verified not in ("failed", "unverified"):
         return
     reporter.out("\nthe worker says this run's verify gate no longer matches the task:")
-    reporter.out(f"  it proposes: {result.stale_gate}")
-    reporter.out("  nothing changed. To adopt it:")
+    proposal = result.stale_gate.strip()
     # `config set` takes argv as a JSON array; the inference's tokeniser wraps a pipeline.
-    argv = json.dumps(list(verify_infer.line_to_argv(result.stale_gate) or ()))
-    reporter.out(f"    agent6 config set --repo harness.verify_command {shlex.quote(argv)}")
+    argv = verify_infer.line_to_argv(proposal) if "\n" not in proposal else None
+    if not argv or len(proposal) > STALE_GATE_COMMAND_MAX_CHARS or not _starts_a_runner(argv):
+        # Prose, not a command: an argv built from it would be wrong by construction.
+        prose = " ".join(proposal.split())
+        clipped = "..." if len(prose) > STALE_GATE_COMMAND_MAX_CHARS else ""
+        reporter.out(f"  it says: {prose[:STALE_GATE_COMMAND_MAX_CHARS]}{clipped}")
+        reporter.out("  nothing changed; set harness.verify_command yourself if it is right.")
+        return
+    reporter.out(f"  it proposes: {proposal}")
+    reporter.out("  nothing changed. To adopt it:")
+    adopt = json.dumps(list(argv))
+    reporter.out(f"    agent6 config set --repo harness.verify_command {shlex.quote(adopt)}")
+
+
+# A gate command fits one line and starts with a runner the sandbox has; anything else is the
+# worker's prose about the gate.
+STALE_GATE_COMMAND_MAX_CHARS = 200
+_ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
+
+
+def _starts_a_runner(argv: tuple[str, ...]) -> bool:
+    """Return whether the argv, or the `sh -c` line it wraps, starts with a runner the sandbox has.
+
+    A builtin with no executable on the sandbox's PATH, such as `set`, is no runner: `set the gate
+    to ...` would install a gate that always passes.
+    """
+    words = argv
+    if argv[:2] == ("sh", "-c"):
+        try:
+            words = tuple(shlex.split(argv[2])) if len(argv) > 2 else ()
+        except ValueError:
+            return False
+        words = tuple(itertools.dropwhile(_ASSIGNMENT.match, words))
+    return bool(words) and tool_paths.jail_resolves(words[0])
 
 
 def _print_settled(
