@@ -1132,6 +1132,7 @@ class Harness:
             return  # a dry run writes nothing: no memory write, no tree edit
         if self._note_memory_touch(state, name, result, tool_input):
             # A memory write is not workspace work: the tree bookkeeping below does not apply.
+            turn.wrote_memory = True
             return
         if name in ("apply_edit", "apply_patch"):
             turn.edited = True

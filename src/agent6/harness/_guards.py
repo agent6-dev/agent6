@@ -146,7 +146,8 @@ class SettledGuard:
     Attributes:
         tree: The last tree sha seen; execution-local, so a resumed execution
             re-measures on its first turn.
-        idle: Consecutive turns with no edit, no commit and an unchanged tree.
+        idle: Consecutive turns with no edit, no commit, no memory write and an
+            unchanged tree.
         nudged: The one settled nudge went out.
         gateless_ever_edited: A gateless run took an editing step. Persisted.
     """
@@ -161,7 +162,7 @@ class SettledGuard:
 
         Args:
             tree: The tree sha after the turn.
-            progress: An edit, a commit or a tree change happened.
+            progress: An edit, a commit, a memory write or a tree change happened.
             verify_ran: A verify ran this turn.
         """
         self.tree = tree
@@ -273,7 +274,7 @@ def verify_settled(
     tree = ctx.tree_sha()
     guard.note_turn(
         tree,
-        progress=turn.committed or turn.edited or tree != guard.tree,
+        progress=turn.committed or turn.edited or turn.wrote_memory or tree != guard.tree,
         verify_ran=turn.verify_just_passed or turn.verify_just_failed,
     )
     if turn.finish is not None:

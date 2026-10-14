@@ -169,6 +169,7 @@ class TurnState:
             changed the tree that verify validated; only the auto-commit gate
             reads it.
         edited: An edit landed this turn.
+        wrote_memory: A write to the memory store landed this turn.
         committed: A checkpoint committed this turn.
         dag_mutated: A DAG tool ran this turn.
         metric_sampled: The worker ran the metric itself this turn.
@@ -196,6 +197,7 @@ class TurnState:
     verify_flipped_green: bool = False
     edit_since_verify_pass: bool = False
     edited: bool = False
+    wrote_memory: bool = False
     committed: bool = False
     dag_mutated: bool = False
     metric_sampled: bool = False

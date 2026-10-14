@@ -23,6 +23,7 @@ from agent6.harness import (
     _operator,
     loop,
 )
+from agent6.tools import results
 from agent6.viewmodel import listing
 from tests.unit.turn_context import turn_context
 
@@ -86,6 +87,31 @@ def test_progress_restarts_the_streak_and_a_verify_run_is_neutral() -> None:
     moved = turn_context(tree_sha=lambda: "another tree")
     state.settled.idle = 2
     assert _guards.verify_settled(_turn(5), state, moved) is None and state.settled.idle == 0
+
+
+def test_a_memory_store_write_restarts_the_idle_streak() -> None:
+    """The settled nudge followed the memory advisory: the writes it asked for counted as idle."""
+    wf = loop.Harness(
+        chain=_chain.RunChain(pathlib.Path("/tmp")),
+        config=Config(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
+        logger=lambda _line: None,
+        state_dir=pathlib.Path("/tmp/state"),
+    )
+    state = _green_state()
+    state.settled = _guards.SettledGuard(tree="tree", idle=_nudges.VERIFY_SETTLED_NUDGE_AFTER - 1)
+    turn = _turn(5)
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state,
+        turn,
+        "apply_edit",
+        results.EditResult(applied=("create",), path="fact.md"),
+        {"path": "/tmp/state/memory/fact.md", "edits": []},
+    )
+    assert turn.edited is False
+    assert _guards.verify_settled(turn, state, turn_context(tree_sha=lambda: "tree")) is None
+    assert state.settled.idle == 0
 
 
 def test_a_finish_call_a_metric_run_or_an_unseeded_run_disarms_it() -> None:
