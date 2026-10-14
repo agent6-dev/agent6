@@ -135,15 +135,16 @@ def cache_dir(user: RealUser | None = None) -> pathlib.Path:
     return _user_dir(user, "XDG_CACHE_HOME", ".cache")
 
 
-def jail_cache_home(user: RealUser | None = None) -> pathlib.Path:
-    """Return the persistent HOME a jailed command gets, `<cache>/home`.
+def jail_cache_home(repo_root: pathlib.Path, user: RealUser | None = None) -> pathlib.Path:
+    """Return the persistent HOME one repository's jailed commands get, `<cache>/homes/<repo-id>`.
 
     Used under `hardened` and `none`, which have no private /tmp, and under `strict`
-    with `[sandbox].home = "cache"`. Model-writable across runs, 0700, never the
-    operator's own home; `app.confine.check_jail_home` creates it and refuses a
-    symlink or another user's directory there.
+    with `[sandbox].home = "cache"`. Model-writable across that repository's runs, 0700,
+    never the operator's own home and never another repository's;
+    `app.confine.check_jail_home` creates it and refuses a symlink or another user's
+    directory there.
     """
-    return cache_dir(user) / "home"
+    return cache_dir(user) / "homes" / repo_id(repo_root)
 
 
 def data_dir(user: RealUser | None = None) -> pathlib.Path:

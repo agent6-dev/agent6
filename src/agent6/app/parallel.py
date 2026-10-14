@@ -263,6 +263,8 @@ def sweep_fanout_clones(origin: pathlib.Path, cfg: Config) -> tuple[int, int]:
                 safe = False
                 break
         if safe:
+            for clone in clones:
+                shutil.rmtree(paths.jail_cache_home(clone), ignore_errors=True)
             shutil.rmtree(fanout, ignore_errors=True)
             swept += 1
         else:
@@ -981,7 +983,7 @@ def _import_lanes(
 def _cleanup(
     imported: list[subrun.LaneSpec], *, workdir_root: pathlib.Path, base: pathlib.Path, cfg: Config
 ) -> None:
-    """Tear down the clone, state dir and config of each imported lane, best-effort.
+    """Tear down the clone, state dir, jail home and config of each imported lane, best-effort.
 
     Every level from the group dir up to the per-repo base is removed once empty,
     never the dir above it.
@@ -994,6 +996,7 @@ def _cleanup(
     """
     for spec in imported:
         shutil.rmtree(paths.state_dir(spec.workdir), ignore_errors=True)
+        shutil.rmtree(paths.jail_cache_home(spec.workdir), ignore_errors=True)
         shutil.rmtree(spec.workdir, ignore_errors=True)
         (spec.workdir.parent / f"lane-{spec.lane}-config.toml").unlink(missing_ok=True)
     level = workdir_root

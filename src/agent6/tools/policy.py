@@ -21,16 +21,35 @@ from agent6.tools import _path_safety, _result_format
 JAIL_TMP_HOME = pathlib.Path("/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
 
 
-def persistent_jail_home(config: Config, isolation: kinds.IsolationLevel) -> pathlib.Path | None:
+def persistent_jail_home(
+    config: Config,
+    isolation: kinds.IsolationLevel,
+    root: pathlib.Path,
+    worktree_git_dir: pathlib.Path | None = None,
+) -> pathlib.Path | None:
     """Return the persistent HOME a jailed command gets, or None where `JAIL_TMP_HOME` applies.
 
-    Only `strict` has a private /tmp for a throwaway HOME; every other level gets
-    `agent6.paths.jail_cache_home`, and strict opts into it with `[sandbox].home = "cache"`.
-    `jail_policy` creates it and grants it read-write at its real path.
+    Only `strict` has a private /tmp for a throwaway HOME; every other level gets the
+    repository's `agent6.paths.jail_cache_home`, and strict opts into it with
+    `[sandbox].home = "cache"`. `jail_policy` creates it and grants it read-write at its real
+    path.
+
+    Args:
+        config: The run's config.
+        isolation: The resolved isolation level.
+        root: The workspace.
+        worktree_git_dir: The recorded repository git dir of a session in a linked worktree.
+            It names the repository; the worktree's own `.git` pointer never does, since a
+            jailed command can rewrite it under hardened and aim HOME at another repository's.
+
+    Returns:
+        The repository's persistent HOME, or None.
     """
     if isolation == "strict" and config.sandbox.home == "tmp":
         return None
-    return paths.jail_cache_home()
+    if worktree_git_dir is not None and worktree_git_dir.name == ".git":
+        return paths.jail_cache_home(worktree_git_dir.parent)
+    return paths.jail_cache_home(paths.checkout_root(root))
 
 
 def jail_home_refusal(home: pathlib.Path) -> str | None:
@@ -240,7 +259,7 @@ def jail_policy(
     env = _result_format.passthrough_env() if env_base is None else dict(env_base)
     # HOME is forced like PATH: the operator's HOME is not in the jail, and toolchains need a
     # writable cache root under it (go-build, CARGO_HOME, uv).
-    persistent = persistent_jail_home(config, isolation)
+    persistent = persistent_jail_home(config, isolation, root, worktree_git_dir)
     if persistent is not None:
         # Created here so every policy builder gets a HOME that exists: the launcher skips a
         # missing rw path silently. Inspected before creation and again after it.

@@ -87,18 +87,19 @@ class SandboxConfig(pydantic.BaseModel):
             "regardless."
         ),
     )
-    # The cache dir is paths.jail_cache_home.
+    # The cache dir is paths.jail_cache_home, keyed on the repository.
     home: Literal["tmp", "cache"] = pydantic.Field(
         default="tmp",
         description=(
             "The HOME jailed commands get under `strict`: `tmp` is `/tmp/agent6-home` inside the "
             "run's private tmpfs, gone with the run; `cache` is the persistent "
-            "`$XDG_CACHE_HOME/agent6/home` (created `0700`, refused once loosened), bind-mounted "
-            "read-write at its real "
-            "path. `hardened` and `none` have no private tmpfs and always use the cache dir; an "
-            "explicit `tmp` refuses to start there. Persistence is a cross-run channel inside the "
-            "jail's world: a poisoned cache or a `~/.gitconfig` alias written by one run reaches "
-            "the next jailed run, never your own tools."
+            "`$XDG_CACHE_HOME/agent6/homes/<repo-id>`, one directory per repository (created "
+            "`0700`, refused once loosened), bind-mounted read-write at its real path. `hardened` "
+            "and `none` have no private tmpfs and always use that directory; an explicit `tmp` "
+            "refuses to start there. Persistence is a cross-run channel inside the jail's world: "
+            "a poisoned cache or a `~/.gitconfig` alias written by one run reaches the next "
+            "jailed run in the same repository, never another repository's runs and never your "
+            "own tools."
         ),
     )
     # RLIMIT_DATA rather than RLIMIT_AS so V8, the JVM and ASAN, which reserve address space

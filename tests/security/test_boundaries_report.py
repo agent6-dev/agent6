@@ -116,7 +116,7 @@ def test_boundaries_report_is_level_aware(
     assert checks == [], "the section reports facts; the summary owns verdicts"
     assert "not strict: userns blocked (test)" in out
     assert "ro  system (Landlock): /usr /bin /sbin /lib /lib64 /etc /dev" in out
-    assert f"rw  {paths.jail_cache_home()}  (HOME" in out and "persists" in out
+    assert f"rw  {paths.jail_cache_home(pathlib.Path.cwd())}  (HOME" in out and "persists" in out
     assert "denied by Landlock" in out
     assert "re-bound" not in out
     assert "private to the command" not in out
@@ -135,7 +135,10 @@ def test_boundaries_report_names_the_opted_in_persistent_home(
         Config(sandbox=SandboxConfig(home="cache"))
     )
     out = capsys.readouterr().out
-    assert f"rw  {paths.jail_cache_home()}  (HOME" in out and "sandbox.home = cache" in out
+    assert (
+        f"rw  {paths.jail_cache_home(pathlib.Path.cwd())}  (HOME" in out
+        and "sandbox.home = cache" in out
+    )
     assert "/tmp/agent6-home" not in out
 
 
@@ -150,10 +153,8 @@ def test_boundaries_report_names_the_home_under_none(
     check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert "UNCONFINED" in out
-    assert (
-        f"rw  {paths.jail_cache_home()}  (HOME, persists across runs: none has no private /tmp)"
-        in out
-    )
+    home = paths.jail_cache_home(pathlib.Path.cwd())
+    assert f"rw  {home}  (HOME, persists across runs: none has no private /tmp)" in out
 
 
 def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(

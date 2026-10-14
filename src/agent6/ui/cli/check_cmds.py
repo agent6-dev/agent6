@@ -399,9 +399,14 @@ def _device_lines(cfg: Config) -> list[str]:
     return [f"    dev {p}  (sandbox.extra_device_paths)" for p in cfg.sandbox.extra_device_paths]
 
 
-def _home_line(cfg: Config, selected: kinds.IsolationLevel) -> str:
-    """Return the jail's HOME line: strict's tmpfs, or the persistent cache dir and why."""
-    persistent = tools_policy.persistent_jail_home(cfg, selected)
+def _home_line(
+    cfg: Config,
+    selected: kinds.IsolationLevel,
+    root: pathlib.Path,
+    git_grant: pathlib.Path | None,
+) -> str:
+    """Return the jail's HOME line: strict's tmpfs, or the repository's cache dir and why."""
+    persistent = tools_policy.persistent_jail_home(cfg, selected, root, git_grant)
     if persistent is None:
         return f"    rw  {tools_policy.JAIL_TMP_HOME}  (HOME, inside the private /tmp)"
     why = "sandbox.home = cache" if selected == "strict" else f"{selected} has no private /tmp"
@@ -450,7 +455,7 @@ def _boundaries_commands(
     )
     if selected == "none":
         print("    UNCONFINED: no jail on this host; commands run as you.")
-        print(_home_line(cfg, selected))
+        print(_home_line(cfg, selected, ws.root, git_grant))
         return
     git_note = (
         "; .git re-bound read-only" if selected == "strict" and cfg.sandbox.protect_git else ""
@@ -465,7 +470,7 @@ def _boundaries_commands(
         print(f"    ro  system: {' '.join(_STRICT_SYSTEM_BINDS)} (the rest of /etc is empty)")
     else:
         print(f"    ro  system (Landlock): {' '.join(_HARDENED_SYSTEM_RO)}")
-    print(_home_line(cfg, selected))
+    print(_home_line(cfg, selected, ws.root, git_grant))
     notes = tool_paths.tool_mount_notes()
     if notes.exposes_home_dir:
         print(

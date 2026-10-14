@@ -91,7 +91,7 @@ def warn_sandbox_gaps(
             "reason /tmp is the host's shared /tmp. Use 'strict' for a private /tmp "
             "and a protected .git."
         )
-    persistent = tools_policy.persistent_jail_home(cfg, isolation)
+    persistent = tools_policy.persistent_jail_home(cfg, isolation, root, worktree_git_dir)
     if persistent is not None and isolation != "none":
         cause, fix = (
             (
@@ -210,23 +210,30 @@ def check_protect_git_support(
 
 
 def check_jail_home(
-    cfg: Config, isolation: kinds.IsolationLevel, *, explicitly_set: bool
+    cfg: Config,
+    isolation: kinds.IsolationLevel,
+    workspace: pathlib.Path,
+    worktree_git_dir: pathlib.Path | None = None,
+    *,
+    explicitly_set: bool,
 ) -> str | None:
     """Return the refusal when the jail's HOME cannot be what the config says, else None.
 
-    `home = "tmp"` is a private tmpfs, which only strict has: the default degrades to the cache
-    dir with a warning, an explicit one refuses. A persistent dir the policy builder could not
-    make agent6's own refuses too, without creating anything.
+    `home = "tmp"` is a private tmpfs, which only strict has: the default degrades to the
+    repository's cache dir with a warning, an explicit one refuses. A persistent dir the policy
+    builder could not make agent6's own refuses too, without creating anything.
     """
+    persistent = tools_policy.persistent_jail_home(cfg, isolation, workspace, worktree_git_dir)
+    if persistent is None:
+        return None
     if isolation != "strict" and explicitly_set and cfg.sandbox.home == "tmp":
         return (
             "sandbox.home = 'tmp' requires the strict isolation (a private /tmp tmpfs),"
             f" but this run resolved to {isolation!r}, where HOME is the persistent"
-            f" cache dir {str(paths.jail_cache_home())!r}. Set sandbox.home = 'cache' to"
+            f" cache dir {str(persistent)!r}. Set sandbox.home = 'cache' to"
             " run here, or use strict."
         )
-    persistent = tools_policy.persistent_jail_home(cfg, isolation)
-    return None if persistent is None else tools_policy.jail_home_refusal(persistent)
+    return tools_policy.jail_home_refusal(persistent)
 
 
 def _hardened_grant_regions(
@@ -253,7 +260,7 @@ def _hardened_grant_regions(
             )
         else:
             regions.append((pathlib.Path(p), "sandbox.extra_read_paths"))
-    home = tools_policy.persistent_jail_home(cfg, "hardened")
+    home = tools_policy.persistent_jail_home(cfg, "hardened", root, worktree_git_dir)
     regions += [
         (pathlib.Path(p), "the jail's HOME" if p == home else "sandbox.extra_write_paths")
         for p in policy.extra_rw_paths
@@ -381,7 +388,13 @@ def config_refusal(
     """
     checks: tuple[Callable[[], str | None], ...] = (
         # The HOME check first: `check_hide_paths_support` builds the policy, which creates HOME.
-        lambda: check_jail_home(cfg, isolation, explicitly_set="sandbox.home" in explicit_leaves),
+        lambda: check_jail_home(
+            cfg,
+            isolation,
+            workspace,
+            worktree_git_dir,
+            explicitly_set="sandbox.home" in explicit_leaves,
+        ),
         lambda: check_mcp_network_support(cfg, isolation),
         lambda: check_hide_paths_support(cfg, isolation, workspace, worktree_git_dir),
         lambda: check_workspace_outside_private_dirs(workspace),

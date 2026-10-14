@@ -174,7 +174,7 @@ def test_hardened_warning_names_shared_tmp_and_persistent_home(
     for cfg in (_cfg(), Config(sandbox=SandboxConfig(protect_git=False))):
         confine.warn_sandbox_gaps("hardened", _env(4), cfg, root=tmp_path)
         err = capsys.readouterr().err
-        assert str(paths.jail_cache_home()) in err
+        assert str(paths.jail_cache_home(tmp_path)) in err
         assert "/tmp/agent6-home" not in err
         assert "persists across runs" in err and "executable" in err
         assert ("cannot protect .git" in err) == cfg.sandbox.protect_git
@@ -192,10 +192,10 @@ def test_strict_cache_home_warns_naming_the_cost(
         "strict", _env(4), Config(sandbox=SandboxConfig(home="cache")), root=tmp_path
     )
     err = capsys.readouterr().err
-    assert "sandbox.home = 'cache'" in err and str(paths.jail_cache_home()) in err
+    assert "sandbox.home = 'cache'" in err and str(paths.jail_cache_home(tmp_path)) in err
     assert "persists across runs" in err and "executable" in err
     confine.warn_sandbox_gaps("strict", _env(4), _cfg(), root=tmp_path)
-    assert str(paths.jail_cache_home()) not in capsys.readouterr().err
+    assert str(paths.jail_cache_home(tmp_path)) not in capsys.readouterr().err
 
 
 def test_a_cleartext_credential_endpoint_warns_at_run_entry(
@@ -354,7 +354,7 @@ def test_a_plain_hardened_run_neither_warns_nor_refuses(
     err = capsys.readouterr().err
     # hardened's persistent HOME is the one notice every such run carries;
     # nothing here is an exposure.
-    assert err.count("WARNING") == 1 and str(paths.jail_cache_home()) in err, err
+    assert err.count("WARNING") == 1 and str(paths.jail_cache_home(tmp_path)) in err, err
     assert "can read" not in err
     assert confine.check_hide_paths_support(cfg, "hardened", tmp_path) is None
 

@@ -681,7 +681,7 @@ def _land_machine_clone(
     """
     advanced = git_ops.chain_tip(clone, chain_ref)
     if advanced is None or advanced == git_ops.chain_tip(origin, chain_ref):
-        shutil.rmtree(clone, ignore_errors=True)
+        _drop_clone(clone)
         return result
     try:
         git_ops.fetch_branch(origin, clone, f"{chain_ref}:{chain_ref}")
@@ -690,5 +690,11 @@ def _land_machine_clone(
         return result.model_copy(
             update={"reason": f"import of machine work failed: {exc}", "payload": None}
         )
-    shutil.rmtree(clone, ignore_errors=True)
+    _drop_clone(clone)
     return result
+
+
+def _drop_clone(clone: pathlib.Path) -> None:
+    """Remove a state's clone and the persistent jail home keyed on it."""
+    shutil.rmtree(clone, ignore_errors=True)
+    shutil.rmtree(paths.jail_cache_home(clone), ignore_errors=True)

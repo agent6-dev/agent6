@@ -39,7 +39,7 @@ def cache_home(monkeypatch: pytest.MonkeyPatch) -> Iterator[pathlib.Path]:
     scratch = pathlib.Path(tempfile.mkdtemp(prefix="agent6-jail-home-", dir=base))
     monkeypatch.setenv("XDG_CACHE_HOME", str(scratch / "cache"))
     try:
-        yield scratch / "cache" / "agent6" / "home"
+        yield scratch / "cache" / "agent6" / "homes"
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -74,19 +74,20 @@ def test_the_persistent_home_is_writable_and_the_operators_home_is_not(
     """
     ws = tmp_path / "ws"
     ws.mkdir()
-    assert paths.jail_cache_home() == cache_home
+    home = paths.jail_cache_home(ws)
+    assert home.parent == cache_home
     assert not cache_home.exists()
     script = (
-        f'test "$HOME" = {shlex.quote(str(cache_home))} || exit 3; '
+        f'test "$HOME" = {shlex.quote(str(home))} || exit 3; '
         "cd ~ && touch probe || exit 4; "
         f"{_operator_home_probe()} >/dev/null 2>&1 && exit 5; "
         "echo ok"
     )
     policy = tools_policy.jail_policy(ws, cfg, isolation, ("/bin/sh", "-c", script), network="none")  # pyright: ignore[reportArgumentType]
-    assert stat.S_IMODE(cache_home.lstat().st_mode) == 0o700
+    assert stat.S_IMODE(home.lstat().st_mode) == 0o700
     res = jail.run_in_jail(policy)
     assert res.returncode == 0 and "ok" in res.stdout, (res.returncode, res.stdout, res.stderr)
-    assert (cache_home / "probe").is_file()
+    assert (home / "probe").is_file()
 
 
 def test_the_tmpfs_home_goes_with_the_run(tmp_path: pathlib.Path, cache_home: pathlib.Path) -> None:

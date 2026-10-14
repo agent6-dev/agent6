@@ -276,7 +276,7 @@ def test_liveworld_no_data_dir_grants_only_the_home(
     world = _world(tmp_path, "hardened")
     world.run_tool(("true",), 5.0)
     # hardened's persistent HOME is the only extra grant: no data dir, no data grant.
-    assert seen[-1].extra_rw_paths == (paths.jail_cache_home(),)
+    assert seen[-1].extra_rw_paths == (paths.jail_cache_home(tmp_path),)
     assert all(k != "AGENT6_MACHINE_DATA_DIR" for k, _ in seen[-1].env)
 
 

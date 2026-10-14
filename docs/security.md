@@ -29,14 +29,16 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - `hardened`: the host's `/tmp`
 - `HOME` is a directory of agent6's own, never the operator's
     - `strict`: `/tmp/agent6-home`, created inside the private tmpfs and gone with the run; `[sandbox].home = "cache"` swaps in the persistent dir below, bind-mounted read-write at its real path
-    - `hardened` and `none`: `$XDG_CACHE_HOME/agent6/home` (default `~/.cache/agent6/home`), created `0700` by agent6 and, under `hardened`, Landlock-granted read-write like the workspace; the rest of the operator's home stays ungranted
+    - `hardened` and `none`: `$XDG_CACHE_HOME/agent6/homes/<repo-id>` (default `~/.cache/agent6/homes/<repo-id>`), one directory per repository, created `0700` by agent6 and, under `hardened`, Landlock-granted read-write like the workspace; the rest of the operator's home and every other repository's directory stay ungranted
+    - a linked worktree (`run --worktree`, a fork) gets its repository's directory, named by the git dir the session recorded and never by the worktree's own `.git` pointer; a lane's clone and a machine state's clone get a directory of their own, removed with the clone
     - a symlink, another user's directory, a mode open to group or others, or a path inside agent6's private dirs at that location refuses the run.
       The mode is checked on every run (a jailed command can `chmod` its own HOME), and the refusal names `chmod 700`; nothing restores it silently
-    - persistence is a cross-run channel inside the jail's world: a poisoned cache or a `~/.gitconfig` alias reaches the next jailed run, never the operator's own tools
+    - persistence is a cross-run channel inside the jail's world: a poisoned cache or a `~/.gitconfig` alias reaches the next jailed run in the same repository, never another repository's runs and never the operator's own tools
+    - a `$XDG_CACHE_HOME/agent6/home` directory is the shared `HOME` of an earlier version: nothing reads or grants it, and it can be deleted
 - agent6's own git never pushes, force-pushes, rewrites history, or `reset --hard` ([Git](#7-git))
     - a `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `strict`, and push needs egress
 - No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary (one create path stays open, below)
-    - the exception is the jail's persistent `HOME` (`hardened`, `none`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run, and under `hardened` it is executable.
+    - the exception is the jail's persistent `HOME` (`hardened`, `none`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run in that repository, and under `hardened` it is executable.
       The operator's own shell, tools, and dotfiles never read it
     - chmod-family syscalls (`fchmodat2` included) deny modes carrying `S_ISUID` / `S_ISGID`; ordinary chmod passes
     - so do the create paths that take a mode: `creat`, `mknod`/`mknodat`, and `open`/`openat` with `O_CREAT` or `O_TMPFILE`.

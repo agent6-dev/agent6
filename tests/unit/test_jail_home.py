@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 import stat
+import subprocess
 
 import pytest
 
@@ -42,8 +43,8 @@ def _warned(isolation: str, cfg: Config, root: pathlib.Path) -> list[str]:
 def test_strict_defaults_to_the_private_tmpfs_home(tmp_path: pathlib.Path) -> None:
     policy = policy_module.jail_policy(tmp_path, Config(), "strict", ("true",))
     assert dict(policy.env)["HOME"] == str(policy_module.JAIL_TMP_HOME) == "/tmp/agent6-home"
-    assert paths.jail_cache_home() not in policy.extra_rw_paths
-    assert not paths.jail_cache_home().exists()
+    assert paths.jail_cache_home(tmp_path) not in policy.extra_rw_paths
+    assert not paths.jail_cache_home(tmp_path).exists()
 
 
 @pytest.mark.parametrize(
@@ -62,7 +63,7 @@ def test_the_builder_creates_and_grants_the_persistent_home(
     The launcher skips a missing rw path silently, so `agent6 exec` and an MCP probe need it to
     exist.
     """
-    home = paths.jail_cache_home()
+    home = paths.jail_cache_home(tmp_path)
     assert not home.exists()
     policy = policy_module.jail_policy(tmp_path, cfg, isolation, ("true",))  # pyright: ignore[reportArgumentType]
     assert dict(policy.env)["HOME"] == str(home)
@@ -73,9 +74,9 @@ def test_the_builder_creates_and_grants_the_persistent_home(
 
 def test_the_preflight_check_inspects_without_creating(tmp_path: pathlib.Path) -> None:
     """The refusal check itself writes nothing; creation is the builder's."""
-    assert confine.check_jail_home(Config(), "hardened", explicitly_set=False) is None
+    assert confine.check_jail_home(Config(), "hardened", tmp_path, explicitly_set=False) is None
     assert confine.config_refusal(Config(), "strict", tmp_path) is None
-    assert not paths.jail_cache_home().exists()
+    assert not paths.jail_cache_home(tmp_path).exists()
 
 
 def test_a_symlink_at_the_cache_home_refuses(tmp_path: pathlib.Path) -> None:
@@ -83,7 +84,7 @@ def test_a_symlink_at_the_cache_home_refuses(tmp_path: pathlib.Path) -> None:
 
     The preflight refuses it as a message; `agent6 exec` gets the same words from the builder.
     """
-    home = paths.jail_cache_home()
+    home = paths.jail_cache_home(tmp_path)
     home.parent.mkdir(parents=True, exist_ok=True)
     home.symlink_to(tmp_path)
     msg = confine.config_refusal(Config(), "hardened", tmp_path)
@@ -100,7 +101,7 @@ def test_a_dir_owned_by_someone_else_refuses(
 
     The other user is faked by shifting `effective_user`; the ownership comparison is the real one.
     """
-    home = paths.jail_cache_home()
+    home = paths.jail_cache_home(tmp_path)
     home.mkdir(parents=True)
     me = paths.effective_user()
     monkeypatch.setattr(paths, "effective_user", lambda: dataclasses.replace(me, uid=me.uid + 1))
@@ -116,7 +117,7 @@ def test_a_cache_home_open_to_others_refuses(tmp_path: pathlib.Path) -> None:
 
     A jailed command owns HOME and may chmod it; another local user could plant a `~/.gitconfig`.
     """
-    home = paths.jail_cache_home()
+    home = paths.jail_cache_home(tmp_path)
     home.mkdir(parents=True, mode=0o700)
     home.chmod(0o777)
     msg = confine.config_refusal(Config(), "hardened", tmp_path)
@@ -128,7 +129,7 @@ def test_a_cache_home_open_to_others_refuses(tmp_path: pathlib.Path) -> None:
     home.chmod(0o700)
     assert confine.config_refusal(Config(), "hardened", tmp_path) is None
     assert (
-        paths.jail_cache_home()
+        paths.jail_cache_home(tmp_path)
         in policy_module.jail_policy(tmp_path, Config(), "hardened", ("true",)).extra_rw_paths
     )
 
@@ -170,8 +171,9 @@ def test_a_symlinked_ancestor_into_a_private_dir_refuses(
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "elsewhere" / "cache"))
     assert confine.config_refusal(Config(), "hardened", tmp_path / "ws") is None
     policy = policy_module.jail_policy(tmp_path / "ws", Config(), "hardened", ("true",))
-    assert tmp_path / "elsewhere" / "cache" / "agent6" / "home" in policy.extra_rw_paths
-    assert (real / "cache" / "agent6" / "home").is_dir()
+    homes = tmp_path / "elsewhere" / "cache" / "agent6" / "homes"
+    assert homes / paths.repo_id(tmp_path / "ws") in policy.extra_rw_paths
+    assert (real / "cache" / "agent6" / "homes" / paths.repo_id(tmp_path / "ws")).is_dir()
 
 
 @pytest.mark.parametrize("isolation", ["hardened", "none"])
@@ -179,7 +181,7 @@ def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
     tmp_path: pathlib.Path, isolation: str
 ) -> None:
     """`home = "tmp"` needs strict's private tmpfs: written down it refuses, as default degrades."""
-    msg = confine.check_jail_home(Config(), isolation, explicitly_set=True)  # pyright: ignore[reportArgumentType]
+    msg = confine.check_jail_home(Config(), isolation, tmp_path, explicitly_set=True)  # pyright: ignore[reportArgumentType]
     assert msg is not None
     assert "requires the strict isolation" in msg
     assert f"resolved to '{isolation}'" in msg
@@ -192,9 +194,9 @@ def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
 
 def test_the_default_degrades_with_a_warning_naming_the_home(tmp_path: pathlib.Path) -> None:
     """Hardened's start-of-run warning names the persistent HOME whatever `protect_git` says."""
-    assert confine.check_jail_home(Config(), "hardened", explicitly_set=False) is None
+    assert confine.check_jail_home(Config(), "hardened", tmp_path, explicitly_set=False) is None
     for cfg in (Config(), Config(sandbox=SandboxConfig(protect_git=False))):
-        home = str(paths.jail_cache_home())
+        home = str(paths.jail_cache_home(tmp_path))
         lines = [line for line in _warned("hardened", cfg, tmp_path) if home in line]
         assert len(lines) == 1, lines
         assert "persists across runs" in lines[0] and "executable" in lines[0]
@@ -204,10 +206,54 @@ def test_strict_cache_is_an_explicit_widening_that_warns(tmp_path: pathlib.Path)
     lines = _warned("strict", Config(sandbox=SandboxConfig(home="cache")), tmp_path)
     assert any(
         "sandbox.home = 'cache'" in line
-        and str(paths.jail_cache_home()) in line
+        and str(paths.jail_cache_home(tmp_path)) in line
         and "persists" in line
         for line in lines
     ), lines
     assert not any(
-        str(paths.jail_cache_home()) in line for line in _warned("strict", Config(), tmp_path)
+        str(paths.jail_cache_home(tmp_path)) in line
+        for line in _warned("strict", Config(), tmp_path)
     )
+
+
+def _persistent_home(
+    root: pathlib.Path, worktree_git_dir: pathlib.Path | None = None
+) -> pathlib.Path:
+    cfg = Config(sandbox=SandboxConfig(home="cache"))
+    policy = policy_module.jail_policy(
+        root, cfg, "strict", ("true",), worktree_git_dir=worktree_git_dir
+    )
+    return pathlib.Path(dict(policy.env)["HOME"])
+
+
+def test_each_repository_gets_its_own_persistent_home(tmp_path: pathlib.Path) -> None:
+    """One shared home let a file one repository's run wrote reach every other repository's."""
+    one, other = tmp_path / "one", tmp_path / "other"
+    one.mkdir()
+    other.mkdir()
+
+    home, other_home = _persistent_home(one), _persistent_home(other)
+
+    assert home != other_home
+    assert home == paths.jail_cache_home(one) == paths.cache_dir() / "homes" / paths.repo_id(one)
+    assert stat.S_IMODE(home.parent.lstat().st_mode) == 0o700
+    assert not (paths.cache_dir() / "home").exists()
+
+
+def test_a_worktree_gets_its_repositorys_home_from_the_recorded_git_dir(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Keyed on the worktree's `.git` pointer, a jailed rewrite would aim HOME at another repo."""
+    repo, worktree = tmp_path / "repo", tmp_path / "wt"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", str(worktree)], check=True)
+    git_dir = (repo / ".git").resolve()
+
+    assert _persistent_home(worktree, worktree_git_dir=git_dir) == paths.jail_cache_home(repo)
+    assert _persistent_home(repo) == paths.jail_cache_home(repo)

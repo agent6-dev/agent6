@@ -1409,6 +1409,10 @@ def test_cleanup_preserves_unimported_lane(
     git_ops.create_branch(origin, "agent6/fan-l1")
     _git(origin, "checkout", "main")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+    # Each clone's persistent jail home, as a hardened lane's first command leaves it.
+    homes = [paths.jail_cache_home(lane.workdir) for lane in lanes]
+    for home in homes:
+        home.mkdir(parents=True)
 
     rc = parallel.run_parallel(
         "t",
@@ -1431,6 +1435,8 @@ def test_cleanup_preserves_unimported_lane(
     assert (origin_state / "sessions" / "runs" / "fan-l2").is_dir()
     assert not (origin_state / "sessions" / "runs" / "fan-l2").is_symlink()
     assert not lanes[1].workdir.exists()
+    # A clone's jail home goes with the clone and stays with a kept one.
+    assert homes[0].is_dir() and not homes[1].exists()
     # The report names the kept clone so the operator can act on it.
     out = capsys.readouterr().out
     assert str(lanes[0].workdir) in out
@@ -2417,10 +2423,16 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     subrun.clone_workspace(origin, foreign)
     git_ops.create_branch(foreign, "agent6/fan-c-l1")
 
+    for clone in (unmerged, merged):
+        paths.jail_cache_home(clone).mkdir(parents=True)
+
     swept, kept = parallel.sweep_fanout_clones(origin, cfg)
     assert (swept, kept) == (1, 1)  # the foreign repo's dir is not counted
     assert (scoped / "fan-a").is_dir()  # unique commits: kept whole
     assert not (scoped / "fan-b").exists()
+    # A swept clone's persistent jail home goes with it; a kept clone's stays.
+    assert paths.jail_cache_home(unmerged).is_dir()
+    assert not paths.jail_cache_home(merged).exists()
     assert (foreign / ".git").exists()  # out of scope: untouched
 
 
