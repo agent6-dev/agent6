@@ -140,7 +140,6 @@ def session_frontend(config_path: pathlib.Path | None = None) -> frontend.Sessio
         ),
         confirm_unconfined_autorun=_preflight.confirm_unconfined_autorun,
         confirm_run_on_run_branch=_preflight.confirm_run_on_run_branch,
-        confirm_replay_after_crash=_preflight.confirm_replay_after_crash,
         prompt_detach_away_mode=_interact.prompt_detach_away_mode,
         # The choice reads stdin: with it redirected nobody can answer.
         select_revised_prompt=(

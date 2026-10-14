@@ -17,7 +17,7 @@ The loop-owned conversation: typed turns over the provider wire.
 **Conversation** &mdash; The history as frozen turns plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
-- **Read by:** harness/{_compaction, _compactor, _loop_state, _operator, _parallel_dispatch, _standing, _verify_gate}
+- **Read by:** harness/{_compaction, _compactor, _loop_state, _operator, _parallel_dispatch, _snapshot, _standing, _verify_gate}
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (24 test files exercise it)
 
 ## SessionManifest
@@ -34,7 +34,7 @@ The manifest.json shape and its one reader; `app.manifest` is the writer.
 
 ## SessionSnapshot
 
-[`agent6.harness._snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/_snapshot.py) &middot; pydantic model
+[`agent6.harness._snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/_snapshot.py) &middot; pydantic model + 1 nested models
 
 Hold a session's end and the snapshot a resume re-enters.
 

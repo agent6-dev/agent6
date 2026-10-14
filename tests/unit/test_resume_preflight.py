@@ -434,16 +434,14 @@ def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
     assert manifest.models.driver_from_flag is False
 
 
-def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+def test_a_resume_after_a_death_mid_turn_asks_nothing_and_keeps_the_record_for_the_loop(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Approving a replay spends the marker only when the provider replay begins.
+    """A resume over an in-flight turn record asks no question and leaves the record to the loop.
 
-    Clearing it before run_execution setup meant a provider-construction or MCP startup failure made
-    the next attempt replay the crashed turn's tools without warning.
+    The resume asked whether to replay the turn. The loop hands the model the turn with its
+    cut-off calls unrun, so a startup failure before the loop must leave the record in place.
     """
-    from unittest import mock
-
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
@@ -457,7 +455,12 @@ def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
         / "plan-CRASHMARK"
         / _snapshot.TURN_IN_FLIGHT_NAME
     )
-    _snapshot.write_turn_marker(marker, 1, ("run_command",))
+    flight = _snapshot.TurnInFlight(
+        iteration=1,
+        assistant=({"type": "tool_use", "id": "c1", "name": "run_command", "input": {}},),
+    )
+    _snapshot.write_turn_marker(marker, flight)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)
     monkeypatch.setattr(git_ops, "verify_git_identity", _nothing)
@@ -466,15 +469,12 @@ def test_a_resume_startup_failure_keeps_the_crash_replay_marker(
         raise _Stop()
 
     monkeypatch.setattr(app__execution, "run_execution", _fail_startup)
-    frontend = mock.MagicMock()
-    frontend.confirm_replay_after_crash.return_value = True
 
     with pytest.raises(_Stop):
-        resume_mod.resume_task(
-            None, "plan-CRASHMARK", started_at=time.time(), frontend=frontend, force=False
-        )
+        cli_resume._cmd_resume(None, "plan-CRASHMARK", force=False)
 
-    assert _snapshot.read_turn_marker(marker) == (1, ("run_command",))
+    assert "mid-turn" not in capsys.readouterr().err
+    assert _snapshot.read_turn_marker(marker) == flight
 
 
 def _unconfined(*_a: object, **_k: object) -> str:

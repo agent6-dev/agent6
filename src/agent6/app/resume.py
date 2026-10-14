@@ -12,7 +12,6 @@ import contextlib
 import json
 import os
 import pathlib
-from collections.abc import Callable
 
 from agent6 import budget, directive, event_log, git_ops, kinds
 from agent6 import paths as agent6_paths
@@ -119,37 +118,6 @@ def commits_note(repo: pathlib.Path, manifest: sessions_manifest.SessionManifest
     if git_ops.chain_tip(repo, chain) is not None:
         return f"its commits are on {chain}"
     return "it recorded no commits"
-
-
-def turn_replay_allowed(
-    session_dir: pathlib.Path,
-    next_iteration: int,
-    confirm: Callable[[int, tuple[str, ...]], bool],
-) -> bool:
-    """Decide whether resume may proceed given the mid-turn-crash marker.
-
-    A stale marker (its turn completed) is cleared silently. A marker for the turn
-    about to re-run is a real mid-turn crash whose tools may have partially
-    applied, so the front-end decides; approval leaves the marker for the replayed
-    turn to supersede.
-
-    Args:
-        session_dir: The session's directory.
-        next_iteration: The turn the snapshot resumes at.
-        confirm: Asked, with the crashed turn and its tools, whether to replay.
-
-    Returns:
-        Whether to proceed.
-    """
-    marker_path = session_dir / _snapshot.TURN_IN_FLIGHT_NAME
-    marker = _snapshot.read_turn_marker(marker_path)
-    if marker is None:
-        return True
-    iteration, tools = marker
-    if iteration < next_iteration:
-        _snapshot.clear_turn_marker(marker_path)  # stale: the turn completed, never ask
-        return True
-    return confirm(iteration, tools)
 
 
 def snapshot_head_mismatch(
@@ -400,14 +368,6 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         except (ValueError, OSError) as exc:
             reporter.error(str(exc))
             return 1
-        if not turn_replay_allowed(
-            layout.session_dir, snapshot.next_iteration, frontend.confirm_replay_after_crash
-        ):
-            reporter.err(
-                "Not resuming: inspect the working tree and the run log first"
-                " (the marker stays; resume again and answer yes to replay)."
-            )
-            return 2
         manifest_preset = manifest.harness.replay_preset
         resume_base_sha = manifest.base_sha
         run_branch = manifest.run_branch or ""

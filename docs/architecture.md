@@ -156,6 +156,8 @@ flowchart TD
 **Snapshot before every call.** `loop_state.json` is rewritten in the session directory before each provider request, with a per-turn copy under `checkpoints/<NNNN>.json`.
 `agent6 resume` rehydrates from `loop_state.json` and `agent6 fork --at-turn N` from the matching checkpoint.
 With the per-call transcripts, an interrupted run replays deterministically up to the next model call.
+A turn's tool calls and each result that returned are recorded in `turn_in_flight.json` while they dispatch.
+A resume after a death there runs none of the turn's calls again: the model gets the results that returned, and one line for each other call saying it was interrupted and not re-run.
 
 **The harness runs the gate** (`[harness].verify_when`, default `finish`).
 When `finish_session` arrives over a tree no verify verdict covers (green or red, nothing edited since), the loop runs `verify_command` itself, through the same dispatcher path as the model's `run_verify_command`, approvals included.
@@ -363,6 +365,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `logs.jsonl` | the structured event stream |
 | `loop_state.json` | the latest resume snapshot, written before each LLM call and at iteration end |
 | `checkpoints/<NNNN>.json` | per-turn snapshots at the pre-call boundary, carrying the run's chain tip (`head_sha`) and the curator `graph_version` |
+| `turn_in_flight.json` | the turn whose tool calls are dispatching, with each result that returned; gone once the snapshot holds the turn or the execution ends itself |
 | `plan.md` | the plan itself, in plan sessions |
 | `transcripts/` | full provider request and response pairs for replay |
 | `worker.pid` | the live worker's pid and start time; every surface reads liveness here |
@@ -438,6 +441,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | --- | --- |
 | `session.start` | `user_task` |
 | `loop.resume.start` | the execution a `resume` opens: `session_id`, `mode`, `iteration`, `messages` |
+| `loop.resume.interrupted` | the resumed execution found a turn its predecessor died in: `iteration`, and `tools`, the calls that never returned and are not re-run |
 | `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail` |
 | `verify.start` / `.end` | `cmd`, `exit_code`, `duration_s`, `*_tail` |
 | `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `memory/DECISIONS.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |

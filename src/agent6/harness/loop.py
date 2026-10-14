@@ -271,6 +271,7 @@ class Harness:
             raise _snapshot.ResumeError("resume() called but resume_state_path is None")
         try:
             snapshot = _snapshot.load_session_snapshot(self.resume_state_path)
+            snapshot, interrupted = self._fold_interrupted_turn(snapshot)
             conversation = _conversation.Conversation.from_wire(snapshot.messages)
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise _snapshot.ResumeError(
@@ -290,6 +291,16 @@ class Harness:
             f"(iter={snapshot.next_iteration}, messages={len(snapshot.messages)}, "
             f"tool_calls={snapshot.tool_calls})"
         )
+        if interrupted:
+            self._log(
+                f"LOOP: the last execution died in turn {snapshot.next_iteration - 1};"
+                f" not re-run: {', '.join(interrupted)}"
+            )
+            self._emit(
+                "loop.resume.interrupted",
+                iteration=snapshot.next_iteration - 1,
+                tools=list(interrupted),
+            )
 
         if snapshot.root_task_id is not None:
             self.dispatcher.set_run_root_node_id(snapshot.root_task_id)
@@ -320,6 +331,39 @@ class Harness:
             original_task=snapshot.original_task,
             resume_from=snapshot,
         )
+
+    def _fold_interrupted_turn(
+        self, snapshot: _snapshot.SessionSnapshot
+    ) -> tuple[_snapshot.SessionSnapshot, tuple[str, ...]]:
+        """Advance the snapshot past a turn the last execution died in, and drop the marker.
+
+        The advanced snapshot is on disk before the marker goes, so no later death re-runs
+        the turn's calls.
+
+        Args:
+            snapshot: The snapshot the execution resumes from.
+
+        Returns:
+            The snapshot to resume from, and the names of the calls that never returned.
+
+        Raises:
+            OSError: The advanced snapshot could not be written.
+        """
+        assert self.resume_state_path is not None
+        marker = self.resume_state_path.parent / _snapshot.TURN_IN_FLIGHT_NAME
+        flight = _snapshot.read_turn_marker(marker)
+        interrupted: tuple[str, ...] = ()
+        if flight is not None and flight.iteration == snapshot.next_iteration:
+            try:
+                snapshot, interrupted = _snapshot.fold_interrupted_turn(snapshot, flight)
+            except ValueError as exc:
+                self._log(
+                    f"LOOP: dropped an in-flight turn record the snapshot does not lead to: {exc}"
+                )
+            else:
+                portable.atomic_write(self.resume_state_path, snapshot.model_dump_json())
+        _snapshot.clear_turn_marker(marker)
+        return snapshot, interrupted
 
     # ---- snapshots and carryover ---------------------------------------------
 
@@ -570,13 +614,8 @@ class Harness:
                     return outcome
                 continue
             turn = _loop_state.TurnState(iteration=iteration, resp=got, assistant=assistant)
-            # The marker outlives a crash mid-dispatch, so resume asks before replaying a tool.
-            if self.resume_state_path is not None:
-                _snapshot.write_turn_marker(
-                    self.resume_state_path.parent / _snapshot.TURN_IN_FLIGHT_NAME,
-                    iteration,
-                    tuple(tu.name for tu in assistant.tool_uses),
-                )
+            # The marker outlives a death mid-dispatch, so a resume never runs these calls again.
+            self._mark_turn(turn)
             result = self._turn_dispatch_tools(state, turn, ctx)
             if result is not None:
                 return result
@@ -915,6 +954,7 @@ class Harness:
                         for_call=tu,
                     )
                 )
+                self._mark_turn(turn)
                 continue
             state.tool_calls += 1
             # The call's signature for the spiral guard; stable JSON so key order cannot differ.
@@ -974,12 +1014,34 @@ class Harness:
                     for_call=tu,
                 )
             )
+            self._mark_turn(turn)
         # The gate run the harness adds to the turn, after the model's calls.
         try:
             self.gate.harness_verify(state, turn)
         except errors.OperatorCommandUnexecutableError as exc:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         return None
+
+    def _mark_turn(self, turn: _loop_state.TurnState) -> None:
+        """Write the in-flight marker: the turn's calls and the results that returned so far.
+
+        Args:
+            turn: This turn's state.
+        """
+        if self.resume_state_path is None:
+            return
+        _snapshot.write_turn_marker(
+            self.resume_state_path.parent / _snapshot.TURN_IN_FLIGHT_NAME,
+            _snapshot.TurnInFlight(
+                iteration=turn.iteration,
+                assistant=turn.assistant.raw_content,
+                results=tuple(
+                    item.content
+                    for item in turn.tool_results
+                    if isinstance(item, _conversation.ToolResultItem)
+                ),
+            ),
+        )
 
     def _tree_before_command(self, name: str) -> str:
         """Return the tree's content sha before a child-process tool's call.
@@ -1748,6 +1810,11 @@ class Harness:
         """
         if end.checkpoint:
             self.checkpoints.final(iteration=iteration)
+        # An end the loop declares is no death: the next resume re-enters at the snapshot.
+        if self.resume_state_path is not None:
+            _snapshot.clear_turn_marker(
+                self.resume_state_path.parent / _snapshot.TURN_IN_FLIGHT_NAME
+            )
         roots = end.roots if end.roots is not None else end.verdict != "failed"
         if roots:
             self._pass_pending_root_tasks()

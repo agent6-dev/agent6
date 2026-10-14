@@ -17,6 +17,9 @@ from typing import Any, Literal
 
 import pydantic
 
+from agent6 import portable
+from agent6.harness import _conversation
+
 # Every way a session can end; `SessionResult` says what each means.
 SessionEndReason = Literal[
     "finish_session",
@@ -287,46 +290,110 @@ def load_session_snapshot(path: pathlib.Path) -> SessionSnapshot:
         raise ValueError(f"malformed run-state snapshot at {path}: {exc}") from exc
 
 
-# Written before a turn's tools dispatch and deleted after the snapshot advances past them.
+# Written before a turn's tools dispatch, rewritten as each call returns, and deleted once the
+# snapshot advances past the turn or the execution ends itself.
 TURN_IN_FLIGHT_NAME = "turn_in_flight.json"
 
 
-def write_turn_marker(path: pathlib.Path, iteration: int, tools: tuple[str, ...]) -> None:
+class TurnInFlight(pydantic.BaseModel):
+    """Hold the turn whose tools are dispatching, for a resume after the execution dies in it.
+
+    Attributes:
+        iteration: The turn.
+        assistant: The assistant message's content blocks, verbatim.
+        results: The result content of each call that returned, in call order.
+    """
+
+    model_config = pydantic.ConfigDict(frozen=True, extra="forbid")
+
+    iteration: int
+    assistant: tuple[Any, ...]
+    results: tuple[str, ...] = ()
+
+
+def write_turn_marker(path: pathlib.Path, flight: TurnInFlight) -> None:
     """Write the marker; a failed write never fails the turn.
 
     Args:
         path: The marker file.
-        iteration: The turn whose tools are about to run.
-        tools: The tool names of the turn.
+        flight: The turn and the results that returned so far.
     """
     with contextlib.suppress(OSError):
-        path.write_text(
-            json.dumps({"iteration": iteration, "tools": list(tools)}), encoding="utf-8"
-        )
+        portable.atomic_write(path, flight.model_dump_json())
 
 
-def read_turn_marker(path: pathlib.Path) -> tuple[int, tuple[str, ...]] | None:
-    """Return the marker's (iteration, tool names), or None when it is absent or unreadable.
+def read_turn_marker(path: pathlib.Path) -> TurnInFlight | None:
+    """Return the marker, or None when it is absent or unreadable.
 
     Args:
         path: The marker file.
 
     Returns:
-        The turn whose tools may have run and their names, or None.
+        The turn whose tools may have run, or None.
     """
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        return TurnInFlight.model_validate_json(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    iteration = raw.get("iteration") if isinstance(raw, dict) else None
-    if not isinstance(iteration, int):
-        return None
-    tools = raw.get("tools")
-    names = tuple(t for t in tools if isinstance(t, str)) if isinstance(tools, list) else ()
-    return iteration, names
 
 
 def clear_turn_marker(path: pathlib.Path) -> None:
     """Delete the marker when present."""
     with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)
+
+
+def interrupted_result(name: str) -> str:
+    """Return the result of a call that did not return before its execution died.
+
+    Args:
+        name: The tool's name.
+
+    Returns:
+        The result content the model reads.
+    """
+    return json.dumps({"error": f"{name} was interrupted before it returned and was not re-run"})
+
+
+def fold_interrupted_turn(
+    snapshot: SessionSnapshot, flight: TurnInFlight
+) -> tuple[SessionSnapshot, tuple[str, ...]]:
+    """Return the snapshot advanced past the turn its execution died in.
+
+    No call of the turn runs again: one that returned keeps its result, every other gets
+    `interrupted_result`.
+
+    Args:
+        snapshot: The snapshot written before the turn's model call.
+        flight: The turn's marker.
+
+    Returns:
+        The snapshot whose next model call follows the turn, and the names of the calls that
+        never returned.
+
+    Raises:
+        ValueError: The marker's blocks do not continue the snapshot's conversation.
+    """
+    conversation = _conversation.Conversation.from_wire(snapshot.messages)
+    calls = conversation.assistant(flight.assistant).tool_uses
+    if not calls:
+        raise ValueError("the in-flight turn holds no tool call")
+    returned = len(flight.results)
+    conversation.results(
+        [
+            _conversation.ToolResultItem(
+                tool_use_id=call.id,
+                content=flight.results[i] if i < returned else interrupted_result(call.name),
+                for_call=call,
+            )
+            for i, call in enumerate(calls)
+        ]
+    )
+    folded = snapshot.model_copy(
+        update={
+            "messages": conversation.to_wire(),
+            "next_iteration": flight.iteration + 1,
+            "tool_calls": snapshot.tool_calls + returned,
+        }
+    )
+    return folded, tuple(call.name for call in calls[returned:])

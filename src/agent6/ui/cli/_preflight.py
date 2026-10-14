@@ -39,33 +39,6 @@ def confirm_run_on_run_branch(base_branch: str) -> bool:
     return ans.strip().lower() in {"y", "yes"}
 
 
-def confirm_replay_after_crash(iteration: int, tools: tuple[str, ...]) -> bool:
-    """Confirm replaying a turn whose tools may have partially applied before a crash.
-
-    Args:
-        iteration: The turn about to re-run.
-        tools: The tools the crashed turn had dispatched.
-
-    Returns:
-        Whether to proceed; interactive defaults to no, headless warns and proceeds.
-    """
-    named = ", ".join(tools) if tools else "unknown tools"
-    warning = (
-        f"[agent6] The previous run died mid-turn (iteration {iteration}; {named}).\n"
-        "  Its tools may have PARTIALLY APPLIED; replaying the turn can repeat a\n"
-        "  non-idempotent effect (an appending command, a migration, an MCP call)."
-    )
-    if not sys.stdin.isatty():
-        print(warning + " Proceeding (non-interactive).", file=sys.stderr)
-        return True
-    print(warning, file=sys.stderr)
-    try:
-        ans = input("  Re-run the turn anyway? [y/N]: ")
-    except (EOFError, KeyboardInterrupt):
-        return False
-    return ans.strip().lower() in {"y", "yes"}
-
-
 def confirm_unconfined_autorun(isolation: kinds.IsolationLevel, cfg: Config) -> bool:
     """Confirm once, at startup, a run with the sandbox off and run_command auto-approved.
 

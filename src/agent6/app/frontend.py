@@ -135,8 +135,6 @@ class SessionFrontend:
         make_steer_state: Builds the steer state over the sink, the run dir and the facts.
         confirm_unconfined_autorun: Confirms running commands unconfined.
         confirm_run_on_run_branch: Confirms starting on a run branch.
-        confirm_replay_after_crash: (iteration, tool names) -> replay a turn whose tools may
-            have partially applied; interactive fronts prompt, headless warns and proceeds.
         prompt_detach_away_mode: Asks the away mode when the run detaches.
         select_revised_prompt: Runs the revise choice; None when the surface cannot, and the
             execution then skips revision instead of reading a selector's None as a quit.
@@ -163,7 +161,6 @@ class SessionFrontend:
     ]
     confirm_unconfined_autorun: Callable[[kinds.IsolationLevel, Config], bool]
     confirm_run_on_run_branch: Callable[[str], bool]
-    confirm_replay_after_crash: Callable[[int, tuple[str, ...]], bool]
     prompt_detach_away_mode: Callable[[pathlib.Path, tuple[str, ...]], None]
     select_revised_prompt: Callable[[str, str, tuple[str, ...]], str | None] | None
     build_repl_hook: Callable[

@@ -7484,10 +7484,52 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: pathlib.Path) -> 
     assert evt["commit_subject"] == "agent6 iter 2: fix"
 
 
+def _loop_config() -> Any:
+    """The `[harness]` surface a driven loop reads, with no gate run by the harness."""
+    return types_.SimpleNamespace(
+        sandbox=types_.SimpleNamespace(hide_paths=()),
+        git=_GIT_STUB,
+        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types_.SimpleNamespace(
+            standing_patience=-1,
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            stagnation_notice_after_s=300.0,
+            verify_when="never",
+            verify_retries=2,
+            verify_command=("true",),
+            metric=None,
+            verify_timeout_s=60.0,
+            verify_infer=True,
+        ),
+    )
+
+
+_TASK_WIRE = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
+
+
+def _two_call_resp() -> ProviderResponse:
+    """One assistant turn holding two tool calls, `call-a` then `call-b`."""
+    blocks = [
+        {"type": "tool_use", "id": "call-a", "name": "read_file", "input": {"path": "a"}},
+        {"type": "tool_use", "id": "call-b", "name": "run_command", "input": {"argv": ["x"]}},
+    ]
+    return ProviderResponse(
+        text="",
+        tool_uses=tuple({"id": b["id"], "name": b["name"], "input": b["input"]} for b in blocks),
+        stop_reason="tool_use",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        raw={"content": blocks},
+    )
+
+
 def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: pathlib.Path) -> None:
-    """The mid-turn-crash marker is on disk while tools dispatch and gone after the snapshot."""
+    """The in-flight record is on disk while tools dispatch and gone after the snapshot."""
     marker = tmp_path / _snapshot.TURN_IN_FLIGHT_NAME
-    seen: list[tuple[int, tuple[str, ...]] | None] = []
+    seen: list[_snapshot.TurnInFlight | None] = []
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -7510,111 +7552,221 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: pat
                 {"acknowledged": True, "summary": raw_input.get("summary", "")}
             )
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
-        git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
-            standing_patience=-1,
-            went_quiet_max_nudges=4,
-            loop_guard_kill_threshold=10,
-            stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_retries=2,
-            verify_command=("true",),
-            metric=None,
-            verify_timeout_s=60.0,
-            verify_infer=True,
-        ),
-    )
     wf = _wf(
         root=tmp_path,
-        config=config,
+        config=_loop_config(),
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
         max_iterations=3,
         resume_state_path=tmp_path / "loop_state.json",
     )
-    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            conversation=_conversation.Conversation.from_wire(messages),
+            conversation=_conversation.Conversation.from_wire(_TASK_WIRE),
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
             original_task="t",
         )
     assert result.completed is True
-    assert seen[0] == (1, ("run_verify_command",))  # live during dispatch
-    assert seen[-1] is not None and seen[-1][0] == 2  # second turn's own marker
+    first, last = seen[0], seen[-1]
+    assert first is not None and (first.iteration, first.results) == (1, ())  # live during dispatch
+    assert [b["name"] for b in first.assistant] == ["run_verify_command"]
+    assert last is not None and last.iteration == 2  # the second turn's own record
     assert not marker.exists()  # a clean end leaves nothing
 
 
-def test_the_old_crash_marker_survives_the_replayed_provider_call(tmp_path: pathlib.Path) -> None:
-    """The replayed turn's own marker write or snapshot supersedes the old marker, nothing else."""
+def test_an_end_declared_mid_turn_clears_the_turn_marker(tmp_path: pathlib.Path) -> None:
+    """An execution that ends itself while a turn's tools dispatch leaves no in-flight record.
 
-    class ReplayStarted(Exception):  # noqa: N818  # a signal, not an error  # a signal, not an error
-        pass
+    A run that stopped at "verify command unexecutable" kept the record, so its resume treated a
+    clean end as a death mid-turn.
+    """
+    from agent6.tools import errors
 
     marker = tmp_path / _snapshot.TURN_IN_FLIGHT_NAME
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            return _tool_resp("run_verify_command")
+
+    class DispatcherStub(_StubDispatcher):
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+            assert marker.exists()
+            raise errors.OperatorCommandUnexecutableError("verify command 'npm' not in jail")
+
+    wf = _wf(
+        root=tmp_path,
+        config=_loop_config(),
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=3,
+        resume_state_path=tmp_path / "loop_state.json",
+    )
+    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="system",
+        conversation=_conversation.Conversation.from_wire(_TASK_WIRE),
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
+    )
+    assert result.reason == "verify_command_unexecutable"
+    assert not marker.exists()
+
+
+class _Died(BaseException):
+    """Stands in for the process dying: no handler in the loop catches it."""
+
+
+def _die_in_the_second_call(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Drive one turn of two calls whose second never returns; return the snapshot path."""
+    snapshot_path = tmp_path / "loop_state.json"
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            return _two_call_resp()
+
+    class DispatcherStub(_StubDispatcher):
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+            if name == "run_command":
+                raise _Died
+            return tools_results.RawResult({"content": "the file"})
+
+    wf = _wf(
+        root=tmp_path,
+        config=_loop_config(),
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=3,
+        resume_state_path=snapshot_path,
+    )
+    with pytest.raises(_Died):
+        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="system",
+            conversation=_conversation.Conversation.from_wire(_TASK_WIRE),
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    return snapshot_path
+
+
+def test_a_resume_after_a_death_mid_turn_does_not_run_the_cut_off_call_again(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A resume after a death mid-turn hands the model the turn, its cut-off call unrun.
+
+    The resume re-entered at the model call before the turn, so the model issued the same calls
+    and a command that had half run ran again.
+    """
+    import json
+
+    snapshot_path = _die_in_the_second_call(tmp_path)
+    marker = tmp_path / _snapshot.TURN_IN_FLIGHT_NAME
+    assert marker.exists()
+    sent: list[list[dict[str, Any]]] = []
+    dispatched: list[str] = []
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            sent.append(kwargs["messages"])
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="tool-9")
+
+    class DispatcherStub(_StubDispatcher):
+        def set_run_root_node_id(self, _node_id: str) -> None:
+            return None
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+            dispatched.append(name)
+            return tools_results.RawResult({"acknowledged": True, "summary": "done"})
+
+    wf = _wf(
+        root=tmp_path,
+        config=_loop_config(),
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=3,
+        resume_state_path=snapshot_path,
+    )
+    with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
+        result = wf.resume()
+
+    assert result.completed is True
+    assert dispatched == ["finish_session"]  # neither call of the dead turn ran again
+    assistant, answers = sent[0][-2], sent[0][-1]
+    assert [b["id"] for b in assistant["content"]] == ["call-a", "call-b"]
+    returned, cut_off = answers["content"][0], answers["content"][1]
+    assert (returned["tool_use_id"], cut_off["tool_use_id"]) == ("call-a", "call-b")
+    assert "the file" in returned["content"]  # the call that returned keeps its result
+    assert cut_off["content"] == json.dumps(
+        {"error": "run_command was interrupted before it returned and was not re-run"}
+    )
+    assert result.iterations == 2  # the dead turn is turn 1; the resume opens turn 2
+    assert not marker.exists()
+
+
+def test_a_death_before_the_resumed_call_keeps_the_interrupted_turn(tmp_path: pathlib.Path) -> None:
+    """The interrupted turn is in the snapshot before the resumed execution does anything else.
+
+    A resume that died or ended before its first model call would otherwise leave a snapshot from
+    before the turn and no record of it, and the next resume would run the turn's calls again.
+    """
+    snapshot_path = _die_in_the_second_call(tmp_path)
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            raise _Died
+
+    wf = _wf(
+        root=tmp_path,
+        config=_loop_config(),
+        provider=ProviderStub(),
+        dispatcher=_StubDispatcher(),
+        max_iterations=3,
+        resume_state_path=snapshot_path,
+    )
+    with pytest.raises(_Died):
+        wf.resume()
+    snap = _snapshot.load_session_snapshot(snapshot_path)
+    assert snap.next_iteration == 2
+    assert [b["tool_use_id"] for b in snap.messages[-1]["content"]] == ["call-a", "call-b"]
+
+
+def test_a_resume_clears_a_marker_whose_turn_completed(tmp_path: pathlib.Path) -> None:
+    """A record of a turn the snapshot already holds is dropped, the conversation untouched."""
     snapshot_path = tmp_path / "loop_state.json"
     snapshot_path.write_text(
         _snapshot.SessionSnapshot(
             system="system",
-            messages=[],
+            messages=_TASK_WIRE,
             tool_calls=0,
-            next_iteration=1,
+            next_iteration=5,
             root_task_id=None,
             original_task="t",
             verify_command=(),
         ).model_dump_json(),
         encoding="utf-8",
     )
-    _snapshot.write_turn_marker(marker, 1, ("run_command",))
-    seen: list[tuple[int, tuple[str, ...]] | None] = []
+    marker = tmp_path / _snapshot.TURN_IN_FLIGHT_NAME
+    _snapshot.write_turn_marker(
+        marker,
+        _snapshot.TurnInFlight(iteration=3, assistant=tuple(_two_call_resp().raw["content"])),
+    )
+    sent: list[list[dict[str, Any]]] = []
 
     class ProviderStub:
-        def call(self, **_kwargs: Any) -> ProviderResponse:
-            seen.append(_snapshot.read_turn_marker(marker))
-            raise ReplayStarted
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            sent.append(kwargs["messages"])
+            return _resp("done")
 
     wf = _wf(root=tmp_path, provider=ProviderStub(), resume_state_path=snapshot_path)
-    with pytest.raises(ReplayStarted):
-        wf.resume()
-    assert seen == [(1, ("run_command",))]
-
-
-def test_turn_replay_allowed_marker_semantics(tmp_path: pathlib.Path) -> None:
-    """No marker proceeds; a stale one clears silently; a matching one asks and stays put.
-
-    Cleared on approval, a later preflight refusal replayed the turn on the next attempt and its
-    tools' side effects happened twice.
-    """
-    from agent6.app import resume
-
-    marker = tmp_path / _snapshot.TURN_IN_FLIGHT_NAME
-    asked: list[tuple[int, tuple[str, ...]]] = []
-
-    def _no(iteration: int, tools: tuple[str, ...]) -> bool:
-        asked.append((iteration, tools))
-        return False
-
-    def _yes(iteration: int, tools: tuple[str, ...]) -> bool:
-        asked.append((iteration, tools))
-        return True
-
-    assert resume.turn_replay_allowed(tmp_path, 5, _no) is True  # no marker, never asks
-    _snapshot.write_turn_marker(marker, 3, ("apply_patch",))
-    assert resume.turn_replay_allowed(tmp_path, 5, _no) is True  # stale: cleared, no ask
+    result = wf.resume()
+    assert result.iterations == 5
+    assert len(sent[0]) == 1  # the task alone: nothing folded in
     assert not marker.exists()
-    assert asked == []
-    _snapshot.write_turn_marker(marker, 5, ("run_command",))
-    assert resume.turn_replay_allowed(tmp_path, 5, _no) is False  # matching + decline
-    assert marker.exists()  # stays for the next resume to ask again
-    assert resume.turn_replay_allowed(tmp_path, 5, _yes) is True  # matching + accept
-    assert marker.exists(), "the answer is spent by the execution, not by the question"
-    assert asked == [(5, ("run_command",)), (5, ("run_command",))]
 
 
 def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
