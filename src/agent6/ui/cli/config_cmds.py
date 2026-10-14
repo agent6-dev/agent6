@@ -437,7 +437,7 @@ def _cmd_config_set(
         return 2
     if machine is None:
         _warn_if_still_broken()
-    print(f"Set {key} = {config_view.format_value(parsed)} in {target}")
+    print(f"Set {key} = {io.format_toml_value(parsed)} in {target}")
     if machine is None and (note := _flag_shadow_note(key, config_path)):
         print(note)
     return 0
@@ -565,7 +565,7 @@ def _config_list_edit(
         parsed = io.parse_cli_value(value)
         items = list(current)
         if (parsed in items) == add:
-            print(f"{config_view.format_value(parsed)} {'already' if add else 'not'} in {key}.")
+            print(f"{io.format_toml_value(parsed)} {'already' if add else 'not'} in {key}.")
             return 0
         items = [*items, parsed] if add else [x for x in items if x != parsed]
         prior = errors.read_operator_file(target) if target.is_file() else None
@@ -588,7 +588,7 @@ def _config_list_edit(
     if machine is None:
         _warn_if_still_broken()
     verb, prep = ("Added", "to") if add else ("Removed", "from")
-    print(f"{verb} {config_view.format_value(parsed)} {prep} {key} in {target}")
+    print(f"{verb} {io.format_toml_value(parsed)} {prep} {key} in {target}")
     return 0
 
 

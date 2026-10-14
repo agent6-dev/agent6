@@ -42,6 +42,65 @@ def _global_toml(tmp_path: pathlib.Path) -> dict[str, object]:
 # --- set / get / unset (scalars) -------------------------------------------
 
 
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("parallel.setup_command", '["sh", "-c", "echo hi"]'),
+        ("git.commit.name", r'"A \"quoted\" name"'),
+        ("context", "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"),
+    ],
+)
+def test_config_set_echo_keeps_the_written_toml(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str, value: str
+) -> None:
+    """The set echo must preserve TOML quotes, escapes and inline-table syntax."""
+    assert _run(["config", "set", "--repo", key, value]) == 0
+    target = paths.repo_config_path(iso)
+    assert capsys.readouterr().out == f"Set {key} = {value} in {target}\n"
+    written = io.read_toml_leaf(io.read_toml_file(target), key)
+    assert written == tomllib.loads(f"value = {value}")["value"]
+
+
+@pytest.mark.parametrize(
+    ("verb", "initial", "message", "changed"),
+    [
+        ("add", "[]", 'Added "echo hi" to parallel.setup_command in {target}\n', True),
+        (
+            "remove",
+            '["echo hi"]',
+            'Removed "echo hi" from parallel.setup_command in {target}\n',
+            True,
+        ),
+        ("add", '["echo hi"]', '"echo hi" already in parallel.setup_command.\n', False),
+        ("remove", "[]", '"echo hi" not in parallel.setup_command.\n', False),
+    ],
+)
+def test_config_list_edit_echo_keeps_toml_quotes(
+    iso: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    verb: str,
+    initial: str,
+    message: str,
+    changed: bool,
+) -> None:
+    """Add and remove must quote string entries in success and no-op messages."""
+    key = "parallel.setup_command"
+    assert _run(["config", "set", "--repo", key, initial]) == 0
+    target = paths.repo_config_path(iso)
+    before = target.read_text(encoding="utf-8")
+    capsys.readouterr()
+
+    assert _run(["config", verb, "--repo", key, "echo hi"]) == 0
+
+    assert capsys.readouterr().out == message.format(target=target)
+    after = target.read_text(encoding="utf-8")
+    if changed:
+        expected = '["echo hi"]' if verb == "add" else "[]"
+        assert f"setup_command = {expected}\n" in after
+    else:
+        assert after == before
+
+
 def test_set_bool_is_typed_not_string(iso: pathlib.Path) -> None:
     assert _run(["config", "set", "sandbox.protect_git", "false"]) == 0
     sandbox = _global_toml(iso)["sandbox"]
