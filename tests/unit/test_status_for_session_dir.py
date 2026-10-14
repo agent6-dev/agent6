@@ -19,7 +19,7 @@ import pathlib
 
 import pytest
 
-from agent6.viewmodel import listing
+from agent6.viewmodel import format, listing, transcript
 from agent6.viewmodel import state as viewmodel_state
 
 LIVE = os.getpid()
@@ -190,6 +190,54 @@ def test_both_fact_producers_and_the_listing_agree(
     assert listing.status_for_session_dir(d, viewmodel_state.status_facts(fold)) == (word, reason)
     summary = listing.summarize_session_dir(d)
     assert (summary.status, summary.reason) == (word, reason)
+
+
+@pytest.mark.parametrize(
+    ("reason", "detail"),
+    [("silent_finish", "no finish call"), ("metric_plateau", "metric plateau")],
+)
+@pytest.mark.parametrize(
+    ("all_passed", "verify_exit", "gate_detail"),
+    [
+        (True, 0, ""),
+        (None, None, ""),
+        (False, 1, "gate red"),
+        (False, 124, "gate timed out"),
+        (False, 0, "unverified"),
+    ],
+    ids=["green", "no-gate", "red", "timed-out", "stale-green"],
+)
+@pytest.mark.parametrize("scoped", [False, True])
+def test_harness_end_labels_agree_across_the_scan_and_both_folds(
+    tmp_path: pathlib.Path,
+    reason: str,
+    detail: str,
+    all_passed: bool | None,
+    verify_exit: int | None,
+    gate_detail: str,
+    scoped: bool,
+) -> None:
+    """A silent or plateau end must not become passed in any fold or hide a not-green gate."""
+    events: list[dict[str, object]] = [_START]
+    if verify_exit is not None:
+        events.append(
+            {"type": "verify.end", "cmd": ["pytest"], "exit_code": verify_exit, "timeout_s": 300.0}
+        )
+    events.append(
+        {"type": "session.end", "reason": reason, "all_passed": all_passed, "scoped": scoped}
+    )
+    d = _mk(tmp_path, reason, events)
+    scan = listing.scan_session_log(d / "logs.jsonl")
+    fold = viewmodel_state.fold_session(events)
+    expected = ("finished", gate_detail or detail)
+    assert listing.status_for_session_dir(d, scan.status_facts()) == expected
+    assert listing.status_for_session_dir(d, viewmodel_state.status_facts(fold)) == expected
+    summary = listing.summarize_session_dir(d)
+    assert (summary.status, summary.reason) == expected
+    label = f"finished · {gate_detail or detail}"
+    assert format.listing_status_label(summary.mode, summary.status, summary.reason) == label
+    done = next(it for it in transcript.fold_transcript(events) if it.kind == "done")
+    assert done.name == label
 
 
 def test_resume_clears_orphaned_pending_prompts() -> None:

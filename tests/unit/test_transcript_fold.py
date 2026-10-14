@@ -567,11 +567,11 @@ _DONE_LABELS = {
     "finish_session": "finished · unverified",
     "finish_planning": "planned",
     "answered": "answered",
-    "silent_finish": "finished · unverified",
+    "silent_finish": "finished · no finish call",
     "went_quiet": "failed · went quiet",
     "budget_exhausted": "failed · budget exhausted",
     "provider_error": "failed · provider error",
-    "metric_plateau": "finished · unverified",
+    "metric_plateau": "finished · metric plateau",
     "verify_settled": "finished · settled",
     "settled": "finished · unverified",
     "no_progress": "failed · no progress",
@@ -600,7 +600,7 @@ _DONE_LABELS = {
 def test_every_end_reason_has_a_done_line_label() -> None:
     """The done marker's label for every end reason, with a new reason extending the table.
 
-    An operator stop reads stopped, a clean end finished, the rest failed with the reason.
+    Green harness ends keep their own label without a finish_session call.
     """
     from typing import get_args
 
@@ -608,10 +608,11 @@ def test_every_end_reason_has_a_done_line_label() -> None:
 
     assert set(_DONE_LABELS) == set(get_args(_snapshot.SessionEndReason))
     for reason, label in _DONE_LABELS.items():
+        all_passed = reason in ("silent_finish", "metric_plateau", "verify_settled")
         done = next(
             it
             for it in fold_transcript(
-                [{"type": "session.end", "reason": reason, "all_passed": False}]
+                [{"type": "session.end", "reason": reason, "all_passed": all_passed}]
             )
             if it.kind == "done"
         )

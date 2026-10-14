@@ -121,6 +121,44 @@ def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
     assert _finalize.session_exit_code(result) == 0
 
 
+@pytest.mark.parametrize(
+    ("reason", "headline"),
+    [
+        ("silent_finish", "finished · no finish call"),
+        ("metric_plateau", "finished · metric plateau"),
+    ],
+)
+@pytest.mark.parametrize("all_passed", [True, None])
+def test_silent_and_plateau_ends_are_not_headlined_passed(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    reason: _snapshot.SessionEndReason,
+    headline: str,
+    all_passed: bool | None,
+) -> None:
+    """A silent or plateau end names its cause over a green or absent gate, never passed."""
+    layout = _layout(
+        tmp_path,
+        "r-harness",
+        [
+            {"type": "session.start", "session_id": "r-harness", "user_task": "t"},
+            {"type": "session.end", "reason": reason, "all_passed": all_passed},
+        ],
+    )
+    result = _snapshot.SessionResult(
+        completed=True, reason=reason, summary="done", iterations=2, tool_calls=3
+    )
+    _finalize.print_session_end(
+        result,
+        layout=layout,
+        cwd=tmp_path,
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=False,
+        reporter=reporter.STDIO_REPORTER,
+    )
+    assert capsys.readouterr().out.split("\n")[1] == headline
+
+
 def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

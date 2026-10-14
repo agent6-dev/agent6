@@ -49,6 +49,34 @@ def test_run_summary_captures_cost_and_status(tmp_path: pathlib.Path) -> None:
     assert s["label"] == "passed"  # the one shared human label, rendered verbatim
 
 
+@pytest.mark.parametrize(
+    ("reason", "label"),
+    [
+        ("silent_finish", "finished · no finish call"),
+        ("metric_plateau", "finished · metric plateau"),
+    ],
+)
+@pytest.mark.parametrize("all_passed", [True, None])
+def test_harness_ends_keep_their_labels_in_the_hub_and_run_view(
+    tmp_path: pathlib.Path, reason: str, label: str, all_passed: bool | None
+) -> None:
+    """The hub and run page must not flatten a harness-declared end to passed or finished."""
+    d = _run(
+        tmp_path,
+        reason,
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "reason": reason, "all_passed": all_passed},
+        ],
+    )
+    (row,) = model.hub_payload(tmp_path)["sessions"]
+    assert (row["status"], row["label"]) == ("finished", label)
+    snapshot = session_snapshot(d)
+    assert (snapshot["status"], snapshot["status_label"]) == ("finished", label)
+    done = next(item for item in model.conversation_payload(d)["items"] if item["kind"] == "done")
+    assert label in "".join(text for line in done["lines"] for text, _style in line)
+
+
 def test_run_summary_uses_plan_points_for_a_plan_metered_run(tmp_path: pathlib.Path) -> None:
     _run(
         tmp_path,

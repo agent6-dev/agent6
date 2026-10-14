@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 
+import pytest
 from textual import containers, widgets
 
 from agent6.ui.tui import app as tui_app
@@ -109,6 +110,39 @@ def test_an_unrendered_finish_call_with_bad_args_does_not_crash_the_screen(
             await pilot.pause()
             assert isinstance(app.screen, conversation.ConversationScreen)
             assert "● passed" in _body_text(app)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("reason", "label"),
+    [
+        ("silent_finish", "finished · no finish call"),
+        ("metric_plateau", "finished · metric plateau"),
+    ],
+)
+def test_harness_end_labels_reach_the_conversation_and_dashboard(
+    tmp_path: pathlib.Path, reason: str, label: str
+) -> None:
+    """A harness-declared end must not read passed in the done line, title or dashboard."""
+    events: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": reason, "all_passed": True},
+    ]
+
+    async def scenario() -> None:
+        run = tmp_path / "run"
+        run.mkdir()
+        _write(run / "logs.jsonl", events)
+        app = tui_app.Agent6TUI(run, exit_on_end=True)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await wait_for(pilot, lambda: label in _body_text(app), "the harness end's done line")
+            await wait_for(pilot, lambda: label in app.run_title(), "the end-hold title")
+            assert label in app.run_title()
+            await pilot.press("ctrl+d")
+            await pilot.pause()
+            assert label in str(app.screen.query_one("#stream-body", widgets.Static).render())
+            assert label in str(app.screen.query_one("#top", widgets.Static).render())
 
     asyncio.run(scenario())
 

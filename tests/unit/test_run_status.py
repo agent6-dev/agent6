@@ -305,6 +305,37 @@ def test_status_of_a_scoped_green_names_the_scoped_gate(
     assert "state:      passed · scoped gate (finish_session)\n" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    ("reason", "label"),
+    [
+        ("silent_finish", "finished · no finish call"),
+        ("metric_plateau", "finished · metric plateau"),
+    ],
+)
+def test_sessions_and_show_name_a_harness_end_over_a_green_gate(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    reason: str,
+    label: str,
+) -> None:
+    """The sessions listing and show must not present a harness end as a finish call's pass."""
+    from agent6.ui.cli import sessions_cmds
+
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "session.start", "mode": "run"},
+            {"ts": _ts(1), "type": "session.end", "reason": reason, "all_passed": True},
+        ],
+    )
+    assert sessions_cmds._cmd_list(as_json=False) == 0
+    assert label in capsys.readouterr().out
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert f"state:      {label} ({reason})\n" in capsys.readouterr().out
+
+
 def test_status_finish_without_all_passed_reads_finished(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -542,9 +542,22 @@ def test_home_open_run_returns_its_dir(tmp_path: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(
+    ("reason", "all_passed", "label"),
+    [
+        ("provider_error", False, "failed · provider error"),
+        ("silent_finish", True, "finished · no finish call"),
+        ("metric_plateau", True, "finished · metric plateau"),
+    ],
+)
 def test_hub_status_label_matches_the_cli_and_web_for_the_same_dir(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str,
+    all_passed: bool,
+    label: str,
 ) -> None:
+    """The TUI hub must keep a harness end's label, matching the CLI and web hubs."""
     import asyncio
 
     from textual import widgets
@@ -560,10 +573,10 @@ def test_hub_status_label_matches_the_cli_and_web_for_the_same_dir(
     rd = _write_run(
         a6,
         "runs",
-        "failed",
+        reason,
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "all_passed": False, "reason": "provider_error"},
+            {"type": "session.end", "all_passed": all_passed, "reason": reason},
         ],
     )
     cli_row = listing.summary_row(listing.summarize_session_dir(rd))
@@ -579,7 +592,7 @@ def test_hub_status_label_matches_the_cli_and_web_for_the_same_dir(
                 cli_row["status"],
                 cli_row["label"],
             )
-            assert tui_label == cli_row["label"] == "failed · provider error"
+            assert tui_label == cli_row["label"] == label
 
     asyncio.run(scenario())
 

@@ -118,7 +118,7 @@ A denied approval withholds the gate for the rest of the run, and the run ends u
 `step` also runs it after every editing turn; `never` leaves every run to the model.
 A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run, or the model's own unless `verify_when = "never"`) re-runs scoped to the tests nearest the run's diff.
 It stays scoped until a full run of the gate passes.
-The notice lists the selected files, `session.end` carries `scoped`, and a scoped green reads `passed · scoped gate` on every surface.
+The notice lists the selected files, `session.end` carries `scoped`, and a `finish_session` over a scoped green reads `passed · scoped gate` on every surface.
 A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
 The settled stop ends a plain run after `harness.verify_settled_stop_after` consecutive idle turns (default 12) following a green verify or a gateless editing step.
 A verify run is neutral; an edit, a commit, a memory write, a tree change or an operator steer restarts the streak.

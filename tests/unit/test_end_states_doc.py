@@ -113,14 +113,14 @@ def test_the_end_state_table_matches_the_code() -> None:
     )
 
 
-def test_passed_is_the_headline_of_three_ends_over_a_green_gate() -> None:
-    """`passed` names a green gate under these three ends; the settled stop never reads it."""
+def test_only_a_finish_call_over_a_green_gate_is_headlined_passed() -> None:
+    """A harness-declared end over a green gate must not read passed."""
     passed = [
         reason
         for reason in get_args(_snapshot.SessionEndReason)
         if "`passed`" in _row(reason).split("|")[2]
     ]
-    assert passed == ["finish_session", "silent_finish", "metric_plateau"]
+    assert passed == ["finish_session"]
 
 
 if __name__ == "__main__":

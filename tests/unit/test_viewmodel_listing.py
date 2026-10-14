@@ -1247,7 +1247,7 @@ def test_a_crashed_run_reads_dead_at_once(tmp_path: pathlib.Path) -> None:
 def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
     tmp_path: pathlib.Path,
 ) -> None:
-    """session.end's all_passed is a tri-state: an explicit null is "finished", an absent key False.
+    """A gateless silent end names the missing finish call; an absent all_passed stays False.
 
     A gateless silent finish listed as "passed" for a tree nothing verified.
     """
@@ -1262,7 +1262,7 @@ def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
     )
     assert (summarize_session_dir(ungated).status, summarize_session_dir(ungated).reason) == (
         "finished",
-        "",
+        "no finish call",
     )
     legacy = _write_run(
         tmp_path,

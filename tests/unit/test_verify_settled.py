@@ -258,9 +258,17 @@ def test_an_operator_steer_restarts_the_idle_streak_and_its_nudge(tmp_path: path
         assert untouched.settled.nudged is True
 
 
-def test_a_green_settled_end_reads_finished_settled_never_passed() -> None:
-    """The harness's own stop over a green gate read "passed", with no finish_session call."""
+@pytest.mark.parametrize(
+    ("reason", "detail"),
+    [
+        ("verify_settled", "settled"),
+        ("silent_finish", "no finish call"),
+        ("metric_plateau", "metric plateau"),
+    ],
+)
+def test_a_green_harness_end_reads_finished_never_passed(reason: str, detail: str) -> None:
+    """A harness-declared end over a green gate must not read passed, even when scoped."""
     for scoped in (False, True):
         assert listing.status_word(
-            finished=True, all_passed=True, end_reason="verify_settled", scoped=scoped
-        ) == ("finished", "settled")
+            finished=True, all_passed=True, end_reason=reason, scoped=scoped
+        ) == ("finished", detail)

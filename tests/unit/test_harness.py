@@ -290,7 +290,7 @@ def test_run_silent_finish_over_green_verify_stays_passed() -> None:
 
 
 def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
-    """A gateless run's silent finish ends with all_passed=None, which words as "finished"."""
+    """A gateless run's silent finish ends with all_passed=None and reads "finished"."""
     from agent6.viewmodel import listing
 
     ev = _EventCapture()
@@ -307,7 +307,7 @@ def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
     assert ends and ends[-1]["all_passed"] is None
     assert listing.status_word(finished=True, all_passed=None, end_reason="silent_finish") == (
         "finished",
-        "",
+        "no finish call",
     )
 
 

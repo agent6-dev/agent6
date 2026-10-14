@@ -379,15 +379,15 @@ def status_word(
 
     The one place that decides how a run's outcome reads; headers and listings share
     it. "stopped" and "undone" are the operator's own acts, "planned" and "answered"
-    the clean exits that verified nothing, "passed" every gate green, "finished" a
-    deliberate finish without all-passed or an end the harness declared over a green
-    gate, and anything else "failed" with the reason.
+    the clean exits that verified nothing, "passed" a finish_session over a green gate,
+    "finished" a deliberate finish without all-passed or an end the harness declared,
+    and anything else "failed" with the reason.
 
     Args:
         finished: A session.end was seen.
         all_passed: The verify tri-state: True when the final tree was observed
             verify-green, False when not (red, stale or an error end), None when no
-            verify command gated it; None reads "finished" whatever the reason.
+            verify command gated it.
         end_reason: The session.end reason word.
         scoped: The certifying gate ran scoped to the tests nearest the run's diff,
             so a pass reads "passed · scoped gate".
@@ -408,6 +408,8 @@ def status_word(
         "finish_planning": ("planned", ""),
         "answered": ("answered", ""),
         "undone": ("undone", ""),
+        "silent_finish": ("finished", "no finish call" if all_passed is not False else not_green),
+        "metric_plateau": ("finished", "metric plateau" if all_passed is not False else not_green),
         # The harness ended the run over a green gate; the worker called no finish_session.
         "verify_settled": ("finished", "settled"),
         "settled": ("finished", not_green),
@@ -420,7 +422,7 @@ def status_word(
         return "passed", "scoped gate" if scoped else ""
     # Only an observed not-green words "failed"; a deliberate finish over one is "finished".
     if all_passed is False and end_reason:
-        clean_end = end_reason in ("finish_session", "silent_finish", "metric_plateau")
+        clean_end = end_reason == "finish_session"
         # A stale-gate claim is its own detail, as the raw reason so a surface names it once.
         word = "finished" if clean_end or end_reason == "gate_stale" else "failed"
         return word, not_green if clean_end else end_reason

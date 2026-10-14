@@ -108,6 +108,21 @@ def test_exit_code_verified_finish_is_zero() -> None:
     )
 
 
+@pytest.mark.parametrize("reason", ["verify_settled", "silent_finish", "metric_plateau"])
+@pytest.mark.parametrize(
+    ("verified", "code"),
+    [("passed", 0), ("not_applicable", 0), ("failed", 4), ("unverified", 4)],
+)
+def test_harness_end_labels_do_not_change_exit_codes(
+    reason: _snapshot.SessionEndReason, verified: _snapshot.Verification, code: int
+) -> None:
+    """A harness end keeps exit 0 for green or absent gates and 4 for not-green gates."""
+    assert (
+        finalize.session_exit_code(_result(completed=True, reason=reason, verified=verified))
+        == code
+    )
+
+
 def test_exit_code_unverified_finish_is_four() -> None:
     """A gated finish nothing observed exits 4, like a red one.
 
