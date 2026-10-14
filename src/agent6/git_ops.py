@@ -1009,12 +1009,13 @@ def worktree_tree(path: pathlib.Path, seed: str | None, exclude: Collection[str]
     try:
         if seed is not None:
             _run(path, "read-tree", seed, env_extra=env)
+        # git refuses a pathspec naming an ignored path, exclude or not, and `add -A` never
+        # takes one: an excluded path the ignore rules cover by now needs no exclude.
+        exclude = unignored(path, tuple(sorted(exclude)))
         if exclude:
             spec = tmp / "pathspec"
             spec.write_bytes(
-                b"\0".join(
-                    [b":/", *(f":(top,exclude,literal){rel}".encode() for rel in sorted(exclude))]
-                )
+                b"\0".join([b":/", *(f":(top,exclude,literal){rel}".encode() for rel in exclude)])
             )
             _run(
                 path,

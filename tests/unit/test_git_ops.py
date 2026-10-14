@@ -1838,3 +1838,29 @@ def test_worktree_matches_reads_repo_relative_paths_from_a_subdirectory(
 
     assert not git_ops.worktree_matches(tmp_path, "HEAD", ["README.md"])
     assert not git_ops.worktree_matches(tmp_path / "sub", "HEAD", ["README.md"])
+
+
+def test_an_excluded_path_that_git_now_ignores_does_not_fail_the_tree(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A run's own `.gitignore` edit made every later commit of the run fail.
+
+    The operator's untracked files are kept out of the run's tree by exclude pathspecs, and
+    git refuses a pathspec that names an ignored path. Once the run ignored `node_modules`
+    (or the operator's `notes.txt`), `git add -A` failed, the work stayed uncommitted, and the
+    run still ended passed. An ignored path needs no exclude: `add -A` never takes it.
+    """
+    _init_repo(tmp_path)
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "left.js").write_text("x\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("the operator's\n", encoding="utf-8")
+    (tmp_path / "kept.txt").write_text("the operator's too\n", encoding="utf-8")
+    exclude = git_ops.untracked_paths(tmp_path)
+    assert exclude  # the three untracked entries, as a run records them at its start
+    (tmp_path / ".gitignore").write_text("node_modules/\nnotes.txt\n", encoding="utf-8")
+    (tmp_path / "calc.py").write_text("def multiply(a, b):\n    return a * b\n", encoding="utf-8")
+
+    tree = git_ops.worktree_tree(tmp_path, "HEAD", exclude)
+
+    held = set(git_ops.tree_paths(tmp_path, tree))
+    assert held == {"README.md", ".gitignore", "calc.py"}
