@@ -401,6 +401,10 @@ def run_one(
         agent_state = req.events_log.parent
         instance_dir = req.transcript_dir.parent
         bridges = _build_machine_bridges(instance_dir, agent_state, events_sink)
+    # A state's clone is fresh; a state in the checkout has the operator's environment.
+    in_clone = not read_only and req.root != req.cwd
+    if in_clone:
+        cfg = workspace_setup.infer_if_unset(cfg, req.cwd, reporter=reporter)
     dispatcher = dispatch.ToolDispatcher(
         root=req.root,
         config=cfg,
@@ -415,12 +419,10 @@ def run_one(
         # The repo's state dir, keyed on the checkout: a clone has no memory of its own.
         state_dir=paths.state_dir(req.cwd),
     )
-    # A state's clone is fresh; a state in the checkout has the operator's environment.
     setup_left: frozenset[str] = frozenset()
     if (
         cfg.parallel.setup_command
-        and not read_only
-        and req.root != req.cwd
+        and in_clone
         and not workspace_setup.withheld(
             cfg.parallel.setup_command, dispatcher=dispatcher, reporter=reporter
         )

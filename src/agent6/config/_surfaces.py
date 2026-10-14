@@ -259,6 +259,8 @@ class ParallelConfig(pydantic.BaseModel):
             "only, so an untracked environment (`.venv`, `node_modules`) is absent there. The "
             "command runs once in each, before the first turn, in the run's own sandbox: the "
             "isolation, network and grants every command of that run gets. A nonzero exit, or "
-            "600 seconds without one, ends the session before any turn. Empty: nothing runs."
+            "600 seconds without one, ends the session before any turn. Unset: an AGENTS.md "
+            "`## Setup command` fenced block supplies it, read as the `## Verify command` "
+            "block is, and the run prints it; with neither, nothing runs."
         ),
     )

@@ -26,6 +26,7 @@ from agent6.app import (
     parallel,
     preflight,
     stamps,
+    workspace_setup,
 )
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
@@ -233,6 +234,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             )
             reporter.error(f"run {session_id!r} already exists.{next_step}")
             return 2
+
+    if worktree or stamps.parallel_lineage() is not None:
+        # The run's own worktree, or a lane's clone: read in this checkout, carried in the config.
+        cfg = workspace_setup.infer_if_unset(cfg, repo, reporter=reporter)
 
     checkout: fork_worktrees.Checkout | None = None
 

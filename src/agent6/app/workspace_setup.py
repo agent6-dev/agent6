@@ -5,7 +5,8 @@
 A `run --worktree` worktree, a fork's worktree, a lane's clone and a machine state's clone
 hold tracked files only. `[parallel].setup_command` runs once in each, through the session's
 own dispatcher, so it gets the jail every command of that run gets. A session's manifest
-records that its workspace is set up.
+records that its workspace is set up. With no command configured, the `## Setup command`
+block of the origin's AGENTS.md supplies it.
 """
 
 from __future__ import annotations
@@ -13,7 +14,9 @@ from __future__ import annotations
 import pathlib
 import shlex
 
+from agent6 import verify_infer
 from agent6.app import reporter as app_reporter
+from agent6.config import Config
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, results
 from agent6.tools import errors as tools_errors
@@ -26,6 +29,33 @@ def _output_tail(res: results.ExecResult) -> list[str]:
     """Return the last lines of the command's output, stdout before stderr."""
     lines = [line for part in (res.stdout, res.stderr) for line in part.rstrip().splitlines()]
     return lines[-_TAIL_LINES:]
+
+
+def infer_if_unset(cfg: Config, origin: pathlib.Path, *, reporter: app_reporter.Reporter) -> Config:
+    """Return the config with the setup command AGENTS.md states, when none is configured.
+
+    Read once, in the origin, and carried in the config, so the workspace and every lane
+    run the command the start named.
+
+    Args:
+        cfg: The session's config.
+        origin: The checkout whose AGENTS.md is read.
+        reporter: Receives the line naming what was inferred.
+
+    Returns:
+        The config, its setup command set when the `## Setup command` block gives one.
+    """
+    if cfg.parallel.setup_command:
+        return cfg
+    agents_md = verify_infer.read_agents_md(origin, cfg.sandbox.hide_paths)
+    argv = verify_infer.setup_from_agents_md(agents_md)
+    if argv is None:
+        return cfg
+    reporter.note(
+        f"setup_command not set; inferred from AGENTS.md: {shlex.join(argv)}\n"
+        "         (pin it with parallel.setup_command in your per-repo config)"
+    )
+    return cfg.with_setup_command(argv)
 
 
 def session_needs_setup(session_dir: pathlib.Path) -> bool:

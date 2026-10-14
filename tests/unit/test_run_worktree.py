@@ -767,3 +767,50 @@ def test_a_failed_setup_leaves_the_workspace_not_set_up(
     assert not sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU07")).workspace_set_up
     (event,) = _setup_events(repo, "wt-SETU07")
     assert event["exit_code"] == 3
+
+
+def _commit_agents_md(repo: pathlib.Path, block: str) -> None:
+    (repo / "AGENTS.md").write_text(
+        f"# Agents\n\n## Setup command\n\n```bash\n{block}\n```\n", encoding="utf-8"
+    )
+    _git(repo, "add", "AGENTS.md")
+    _git(repo, "commit", "-q", "-m", "agents")
+
+
+def test_the_setup_command_is_inferred_from_the_agents_md_block(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A repository that states its setup in AGENTS.md needed a config line to have it run."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _commit_agents_md(repo, "echo from-agents-md > .setup-ran")
+    _script(monkeypatch)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU08", "task"]) == 0
+    err = capsys.readouterr().err
+
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU08")).worktree
+    assert worktree is not None
+    assert (worktree / ".setup-ran").read_text(encoding="utf-8") == "from-agents-md\n"
+    assert (
+        "setup_command not set; inferred from AGENTS.md: sh -c 'echo from-agents-md > .setup-ran'"
+    ) in err
+    (event,) = _setup_events(repo, "wt-SETU08")
+    assert event["cmd"] == ["sh", "-c", "echo from-agents-md > .setup-ran"]
+
+
+def test_a_configured_setup_command_outranks_the_agents_md_block(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The operator's config is the pin; the repository's block is the fallback."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _commit_agents_md(repo, "echo from-agents-md > .setup-ran")
+    _with_setup(repo, '["sh", "-c", "echo configured > .setup-ran"]')
+    _script(monkeypatch)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU09", "task"]) == 0
+    err = capsys.readouterr().err
+
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU09")).worktree
+    assert worktree is not None
+    assert (worktree / ".setup-ran").read_text(encoding="utf-8") == "configured\n"
+    assert "inferred from AGENTS.md" not in err

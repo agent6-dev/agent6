@@ -9,7 +9,8 @@ loose tests), then an injected LLM call over the manifests and AGENTS.md. A
 command whose first word is a bare name the jail PATH lacks is passed over for
 the next source, and the reason is kept. The result lives in memory for one run
 and is never written to config. A shell pipeline is wrapped as `sh -c`; `sh` and
-operator tools such as `uv` resolve on the jail PATH.
+operator tools such as `uv` resolve on the jail PATH. The `## Setup command` section
+of AGENTS.md is read here too, by the same fence reader.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from agent6.tools import _path_safety
 _SHELL_META = re.compile(r"[|&;<>`$*]")
 _ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 _VERIFY_HEADING = re.compile(r"^#{1,6}\s*(verify|test)\b", re.IGNORECASE)
+_SETUP_HEADING = re.compile(r"^#{1,6}\s*setup command\b", re.IGNORECASE)
 _INLINE_VERIFY = re.compile(r"^\s*(?:verify|test)\s*:\s*(.+)$", re.IGNORECASE)
 _MAKE_TARGET = re.compile(r"^([A-Za-z0-9_-]+)\s*:", re.MULTILINE)
 # The test script `npm init` writes, which exists to fail.
@@ -159,18 +161,31 @@ def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
     A `## Verify command` or `## Test` heading followed by a fenced block, or an
     inline `Verify:` or `Test:` line.
     """
-    if not agents_md:
-        return None
-    lines = agents_md.splitlines()
-    for i, line in enumerate(lines):
-        if _VERIFY_HEADING.match(line.strip()):
-            block = _first_fenced_block(lines, i + 1)
-            if block is not None and (argv := _block_to_argv(block)) is not None:
-                return argv
-    for line in lines:
+    if (argv := _heading_block_argv(agents_md, _VERIFY_HEADING)) is not None:
+        return argv
+    for line in agents_md.splitlines():
         m = _INLINE_VERIFY.match(line)
         if m and (argv := line_to_argv(_unquote_code(m.group(1)))) is not None:
             return argv
+    return None
+
+
+def setup_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
+    """Return the setup command AGENTS.md states, or None.
+
+    A `## Setup command` heading followed by a fenced block, read as the verify block is.
+    """
+    return _heading_block_argv(agents_md, _SETUP_HEADING)
+
+
+def _heading_block_argv(agents_md: str, heading: re.Pattern[str]) -> tuple[str, ...] | None:
+    """Return the first fenced block under a matching heading as one argv, or None."""
+    lines = agents_md.splitlines()
+    for i, line in enumerate(lines):
+        if heading.match(line.strip()):
+            block = _first_fenced_block(lines, i + 1)
+            if block is not None and (argv := _block_to_argv(block)) is not None:
+                return argv
     return None
 
 

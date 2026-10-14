@@ -425,6 +425,19 @@ class Config(pydantic.BaseModel):
         data.setdefault("harness", {})["verify_command"] = list(argv)
         return Config.model_validate(data)
 
+    def with_setup_command(self, argv: tuple[str, ...]) -> Config:
+        """Return a copy whose `parallel.setup_command` is the argv AGENTS.md states.
+
+        Args:
+            argv: The setup command.
+
+        Returns:
+            The config with the setup command set.
+        """
+        data = self.model_dump(mode="python")
+        data.setdefault("parallel", {})["setup_command"] = list(argv)
+        return Config.model_validate(data)
+
     def cleartext_credential_endpoints(self) -> tuple[str, ...]:
         """Return the endpoints that send a credential over plain http off loopback.
 

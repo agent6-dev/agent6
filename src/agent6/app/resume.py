@@ -16,7 +16,7 @@ from collections.abc import Callable
 
 from agent6 import budget, directive, event_log, git_ops, kinds
 from agent6 import paths as agent6_paths
-from agent6.app import _execution, _session, _setup, preflight, run, stamps
+from agent6.app import _execution, _session, _setup, preflight, run, stamps, workspace_setup
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.config import (
@@ -443,6 +443,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             reporter.error(str(exc))
             return 2
         cfg, explicit_leaves = effective.config, effective.explicit_leaves
+        if workspace_setup.session_needs_setup(layout.session_dir):
+            cfg = workspace_setup.infer_if_unset(cfg, repo, reporter=reporter)
 
         # Needs the config: the away grant is per scope, one per configured MCP server.
         app_frontend.settle_away_mode(layout.session_dir, cfg)

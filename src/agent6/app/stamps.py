@@ -111,7 +111,7 @@ def write_session_manifest(
             fork in its source's worktree).
         fanout: A `run --parallel` coordinator's own record.
     """
-    lineage = _parallel_lineage()
+    lineage = parallel_lineage()
     # A fresh run carries the configured gate until `pin_gate` stamps the pair it resolved.
     verify_command, verify_origin = gate or (
         cfg.harness.verify_command,
@@ -157,7 +157,7 @@ def write_session_manifest(
     write_manifest(layout.manifest_path, m)
 
 
-def _parallel_lineage() -> manifest.ParallelLineage | None:
+def parallel_lineage() -> manifest.ParallelLineage | None:
     """Return the fan-out lineage the spawner stamped into this lane's environment, or None.
 
     `AGENT6_PARALLEL_LINEAGE=<coordinator>:<group>:<lane>`. Read at the manifest's write so the
