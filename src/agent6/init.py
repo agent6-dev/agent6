@@ -201,7 +201,7 @@ def _setup_verify_command(
         return
     shown = " ".join(inferred.argv)
     warn = " (OVERRIDES the current value)" if already else ""
-    if not ask(f"  Set harness.verify_command to `{shown}` (from {inferred.source}){warn}?", True):
+    if not ask(f"  Set harness.verify_command to `{shown}` (from {inferred.label}){warn}?", True):
         print("  skipped verify_command.")
         return
     try:

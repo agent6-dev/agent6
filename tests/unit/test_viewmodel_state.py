@@ -39,6 +39,20 @@ def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:
     )
 
 
+def test_end_summary_reaches_the_wire_and_clears_on_resume() -> None:
+    """Run headers carry the journaled end sentence without holding it over a resume."""
+    summary = "operator stopped the run after step 4"
+    s = viewmodel_state.fold_session(
+        [
+            {"type": "session.start", "mode": "run"},
+            {"type": "session.end", "reason": "steer_abort", "summary": summary},
+        ]
+    )
+    assert viewmodel_state.session_state_as_dict(s)["end_summary"] == summary
+    s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
+    assert viewmodel_state.session_state_as_dict(s)["end_summary"] == ""
+
+
 def test_a_log_line_is_one_line() -> None:
     """The log-line scrubber keeps newlines, and every log pane paints one row per line.
 

@@ -213,7 +213,9 @@ class Harness:
                 "steer_abort" if declined else "prompt_revision_failed"
             )
             self._log(f"LOOP: prompt revision {'declined' if declined else 'failed'}: {exc}")
-            self._emit("session.end", reason=end_reason, iterations=0, all_passed=False)
+            self._emit(
+                "session.end", reason=end_reason, summary=str(exc), iterations=0, all_passed=False
+            )
             return _snapshot.SessionResult(
                 completed=False, reason=end_reason, summary=str(exc), iterations=0, tool_calls=0
             )
@@ -1882,6 +1884,7 @@ class Harness:
             self._emit(
                 "session.end",
                 reason=end.reason,
+                summary=end.summary,
                 iterations=iteration,
                 all_passed=False,
                 verified=verified,
@@ -1893,6 +1896,7 @@ class Harness:
             self._emit(
                 "session.end",
                 reason=end.reason,
+                summary=end.summary,
                 iterations=iteration,
                 all_passed=self.gate.tree_green(state.verify) if grounded else True,
                 scoped=state.verify.scoped if grounded else end.scoped,

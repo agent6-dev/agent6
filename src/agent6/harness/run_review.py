@@ -13,13 +13,14 @@ import collections
 import dataclasses
 import json
 from collections.abc import Sized
-from typing import Literal
+from typing import Any, Literal
 
 from agent6 import memory
 from agent6.prompts import review
 from agent6.providers import Provider, ProviderError, ProviderResponse
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import sessions
+from agent6.tools import operator_prompts, sessions
+from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import summarize_session_dir
 
 # The harness's own interventions, named with their counts.
@@ -39,6 +40,8 @@ _NOTICE_EVENTS = (
 _STEERS_MAX = 20
 _STEER_CHARS = 500
 _DECISIONS_MAX = 20
+_UNANSWERED_MAX = 20
+_QUESTION_CHARS = 500
 _VERIFY_SHOWN = 3
 _VERIFY_TAIL_CHARS = 400
 _TOOL_ERRORS_SHOWN = 5
@@ -88,6 +91,7 @@ class RunDigest:
         cost_usd: The session's cost.
         steers: The operator's steers.
         decisions: The (question, answer) rulings recorded.
+        unanswered_questions: The questions nobody saw, across executions.
         verify_runs: The last verify runs.
         errors_by_tool: The (tool, count) failures, most common first.
         first_errors: The first failures as "[tool] summary".
@@ -97,6 +101,7 @@ class RunDigest:
         conversation: The conversation's tail.
         steers_total: The steers the journal holds.
         decisions_total: The decisions the journal holds.
+        unanswered_total: The unseen questions the journal holds.
         verify_total: The verify runs the journal holds.
     """
 
@@ -112,6 +117,7 @@ class RunDigest:
     cost_usd: float
     steers: tuple[str, ...] = ()
     decisions: tuple[tuple[str, str], ...] = ()
+    unanswered_questions: tuple[str, ...] = ()
     verify_runs: tuple[VerifyRun, ...] = ()
     errors_by_tool: tuple[tuple[str, int], ...] = ()
     first_errors: tuple[str, ...] = ()
@@ -121,6 +127,7 @@ class RunDigest:
     conversation: str = ""
     steers_total: int = 0
     decisions_total: int = 0
+    unanswered_total: int = 0
     verify_total: int = 0
 
     def render(self) -> str:
@@ -137,6 +144,13 @@ class RunDigest:
         if self.decisions:
             lines.append(f"\nrulings recorded ({_shown(self.decisions, self.decisions_total)}):")
             lines.extend(f"- Q: {q}\n  A: {a}" for q, a in self.decisions)
+        if self.unanswered_questions:
+            lines.append(
+                "\nquestions nobody answered "
+                f"({_shown(self.unanswered_questions, self.unanswered_total)}):"
+            )
+            lines.extend(f"- {question}" for question in self.unanswered_questions)
+            lines.append(f"model was told: {operator_prompts.UNANSWERED_NOTE}")
         if self.verify_runs:
             lines.append(f"\nverify runs ({_shown(self.verify_runs, self.verify_total)}):")
             lines.extend(
@@ -167,6 +181,31 @@ def _shown(shown: Sized, total: int) -> str:
     return f"{len(shown)}, {left} more not shown" if left > 0 else str(len(shown))
 
 
+def _unseen_questions(
+    event: dict[str, Any], prompts: dict[str, tuple[str, ...]]
+) -> tuple[str, ...]:
+    """Pair an unseen answer with its prompt; consumed ids may be reused on resume.
+
+    Args:
+        event: The journal event.
+        prompts: The outstanding prompts by id, updated in place.
+
+    Returns:
+        The questions an unseen answer left unanswered, or none.
+    """
+    if event.get("type") not in ("question.prompt", "question.answer"):
+        return ()
+    match viewmodel_events.parse_event(event):
+        case viewmodel_events.QuestionPrompt(id=qid, questions=questions):
+            prompts[qid] = tuple(q.question for q in questions)
+        case viewmodel_events.QuestionAnswer(id=qid, unseen=unseen):
+            texts = prompts.pop(qid, ())
+            return texts if unseen else ()
+        case _:
+            pass
+    return ()
+
+
 def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     layout: sessions_layout.SessionLayout, *, max_chars: int = CONVERSATION_MAX_CHARS
 ) -> RunDigest:
@@ -184,6 +223,8 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     summary = summarize_session_dir(layout.session_dir)
     steers: list[str] = []
     decisions: list[tuple[str, str]] = []
+    prompts: dict[str, tuple[str, ...]] = {}
+    unanswered: list[str] = []
     verify_runs: list[VerifyRun] = []
     errors: collections.Counter[str] = collections.Counter()
     first_errors: list[str] = []
@@ -204,6 +245,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
             continue
         if not isinstance(event, dict):
             continue
+        unanswered.extend(_clip(q, _QUESTION_CHARS) for q in _unseen_questions(event, prompts))
         etype = str(event.get("type", ""))
         if etype == "loop.steer.injected":
             steers.append(_clip(str(event.get("text", "")), _STEER_CHARS))
@@ -216,7 +258,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
                 VerifyRun(
                     exit_code=execution_rc,
                     duration_s=float(event.get("duration_s") or 0.0),
-                    tail=_clip(tail.strip(), _VERIFY_TAIL_CHARS),
+                    tail=_clip_tail(tail.strip(), _VERIFY_TAIL_CHARS),
                 )
             )
         elif etype == "loop.resume.start":
@@ -261,6 +303,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         cost_usd=summary.cost_usd,
         steers=tuple(steers[:_STEERS_MAX]),
         decisions=tuple(decisions[:_DECISIONS_MAX]),
+        unanswered_questions=tuple(unanswered[:_UNANSWERED_MAX]),
         verify_runs=tuple(verify_runs[-_VERIFY_SHOWN:]),
         errors_by_tool=tuple(errors.most_common()),
         first_errors=tuple(first_errors),
@@ -270,6 +313,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         conversation=sessions.conversation(layout, max_chars=max_chars),
         steers_total=len(steers),
         decisions_total=len(decisions),
+        unanswered_total=len(unanswered),
         verify_total=len(verify_runs),
     )
 
@@ -312,6 +356,24 @@ def review_digest(
 def _clip(text: str, limit: int) -> str:
     """Return the text clipped to the limit, with the cut marked."""
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _clip_tail(text: str, limit: int) -> str:
+    """Keep the end, with a marked cut at a line boundary when one exists.
+
+    Args:
+        text: The existing output tail.
+        limit: The character cap, including the cut mark.
+
+    Returns:
+        The marked trailing lines, or trailing characters for a single long line.
+    """
+    if len(text) <= limit:
+        return text
+    start = len(text) - limit + 2
+    if text[start - 1] != "\n" and (boundary := text.find("\n", start)) >= 0:
+        start = boundary + 1
+    return "…\n" + text[start:]
 
 
 def _int(value: object) -> int:

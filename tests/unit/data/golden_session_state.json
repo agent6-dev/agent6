@@ -1,5 +1,6 @@
 {
   "session_id": "golden-run-GLDN01",
+  "mode": "run",
   "user_task": "# Fix the bug\n\nRestore the thing.",
   "tasks": [
     {
@@ -171,6 +172,7 @@
   "verify_scoped": false,
   "end_reason": "finish_session",
   "stranded": false,
+  "end_summary": "all green",
   "unattended_questions": 0,
   "undone_to": "",
   "undone_text": "",

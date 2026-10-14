@@ -78,9 +78,8 @@ def _cmd_plan_show(session_id: str) -> int:
     resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
         return 2
-    sys.stdout.write(
-        errors.read_operator_file(_common._plans_dir(pathlib.Path.cwd()) / resolved / "plan.md")
-    )
+    plan = errors.read_operator_file(_common._plans_dir(pathlib.Path.cwd()) / resolved / "plan.md")
+    sys.stdout.write(plan if plan.endswith("\n") else plan + "\n")
     return 0
 
 

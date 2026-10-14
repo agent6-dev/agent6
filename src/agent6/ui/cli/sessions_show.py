@@ -154,6 +154,9 @@ def _status_state(
     word, reason = row.status, row.reason
     cell = format.listing_status_label(row.mode, row.status, row.reason, unmerged=row.unmerged)
     if scan.finished:
+        if scan.end_summary:
+            # The `ended:` line carries the run's own sentence; the raw reason would repeat it.
+            return word, cell, ""
         if scan.end_reason == "provider_error":
             # The label names the failure; the provider's own text, on one clean line, says why.
             error = terminal.scrub_terminal_controls(scan.provider_error)
@@ -210,6 +213,10 @@ def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resumable: 
         gated: The session is a run, the one mode a gate judges.
         resumable: The session stopped short of its end and has a loop to resume.
     """
+    if scan.finished and scan.end_summary:
+        # The run's own end sentence, on one clean line.
+        ended = " ".join(terminal.scrub_terminal_controls(scan.end_summary).split())
+        print(f"ended:      {ended}")
     if scan.setup_output:
         # A setup that worked is one line; a failed one keeps its output, the diagnostic.
         failed = scan.end_reason == "setup_command_failed"
@@ -316,6 +323,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "status": status,
                     "label": status_cell,
                     "detail": status_detail,
+                    "end_summary": scan.end_summary or None,
                     "alive": alive,
                     "pid": pid,
                     "iteration": scan.iteration,

@@ -23,7 +23,8 @@ Below 100 columns `updated` keeps only the time for today's runs and only the da
 
 ## Conversation
 
-Opening a run lands on its conversation, the text `agent6 sessions transcript` prints: the task, the model's reasoning and every tool call, following live.
+Opening a run lands on its conversation: the task, the model's reasoning and every tool call, following live.
+The conversation opens with the task headline and the session's policy line, as `agent6 attach` does.
 A live run keeps a steer bar at the bottom; the pane above it streams the model call and the tool calls in flight until their results land.
 The composer takes the [steer directives](usage.md#follow-and-steer-a-run).
 

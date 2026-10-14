@@ -17,6 +17,36 @@ def _read(path: str) -> list[dict[str, object]]:
     ]
 
 
+def test_session_start_opens_the_conversation_with_the_task() -> None:
+    """The shared fold supplies the clipped task headline on every conversation surface."""
+    from agent6.viewmodel import listing, transcript, transcript_style
+
+    task = "x" * 230 + "\nsecond line"
+    items = fold_transcript([{"type": "session.start", "user_task": task}])
+    assert len(items) == 1
+    assert items[0].kind == "task"
+    assert items[0].body == listing.task_snippet(task, max_chars=200)
+    assert transcript_style.item_lines(items[0], detail="hidden") == [
+        [(f"{transcript.DONE} {items[0].body}", "task")]
+    ]
+    assert fold_transcript([{"type": "session.start", "user_task": ""}]) == []
+
+
+def test_done_line_says_why_a_stopped_run_ended() -> None:
+    """A stop carries its journaled summary, never an earlier finish call's success prose."""
+    items = fold_transcript(
+        [
+            {"type": "tool.call", "name": "finish_session", "args": {"summary": "not finished"}},
+            {
+                "type": "session.end",
+                "reason": "steer_abort",
+                "summary": "operator stopped after step 3",
+            },
+        ]
+    )
+    assert items[-1].body == "operator stopped after step 3"
+
+
 def test_tool_only_turn_has_no_empty_text_item() -> None:
     # A turn that reasons then calls a tool, emitting NO assistant text, must not
     # produce a blank `text` item -- the bug behind the empty response blocks.
@@ -784,9 +814,10 @@ def test_a_dead_workers_open_call_settles_for_a_reader_that_knows() -> None:
         {"type": "session.start", "user_task": "x"},
         {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}},
     ]
-    (item,) = fold_transcript(events)
+    (_headline, item) = fold_transcript(events)
     assert item.ok is None
-    (item,) = fold_transcript(events, worker_dead=True)
+    (headline, item) = fold_transcript(events, worker_dead=True)
+    assert headline.kind == "task"
     assert item.ok is False and item.detail == "no result (the run died)"
     assert "[FAILED] run_command sleep 60: no result (the run died)" in restate(
         events, worker_dead=True

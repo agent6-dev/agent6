@@ -1,5 +1,15 @@
 [
   {
+    "kind": "task",
+    "body": "Fix the bug",
+    "name": "",
+    "arg": "",
+    "ok": null,
+    "detail": "",
+    "tail": "",
+    "call_id": ""
+  },
+  {
     "kind": "thinking",
     "body": "Let me read the file.",
     "name": "",

@@ -305,6 +305,7 @@ class SessionState:
 
     Attributes:
         session_id: The session's id, "" until an event carries it.
+        mode: The session's mode, "" until known.
         user_task: The task text.
         tasks: The live task tree in DFS pre-order.
         cursor_task_id: The task the worker is on.
@@ -324,6 +325,7 @@ class SessionState:
         verify_scoped: The judging gate ran scoped.
         end_reason: The session.end reason word.
         stranded: This execution finished with its edits uncommitted and no commit landed.
+        end_summary: The end sentence the journal carries, "" when it carries none.
         unattended_questions: Questions the harness answered empty because nobody was
             attached, in the current execution.
         undone_to: The child session /undo forked, which surfaces follow.
@@ -342,6 +344,7 @@ class SessionState:
     """
 
     session_id: str = ""
+    mode: str = ""
     user_task: str = ""
     tasks: tuple[TaskNodeView, ...] = ()
     cursor_task_id: str | None = None
@@ -360,6 +363,7 @@ class SessionState:
     verify_scoped: bool = False
     end_reason: str = ""
     stranded: bool = False
+    end_summary: str = ""
     unattended_questions: int = 0
     undone_to: str = ""
     undone_text: str = ""
@@ -441,10 +445,12 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             return dataclasses.replace(
                 state,
                 user_task=task,
+                mode=str(event.get("mode", state.mode)),
                 started=True,
                 finished=False,
                 end_reason="",
                 stranded=False,
+                end_summary="",
                 last_role=None,
                 finish_summary="",
                 last_verify=None,
@@ -457,10 +463,12 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             # The new execution's counters start fresh: bank the spend, zero the rest.
             return dataclasses.replace(
                 state,
+                mode=str(event.get("mode", state.mode)),
                 started=True,
                 finished=False,
                 end_reason="",
                 stranded=False,
+                end_summary="",
                 last_role=None,
                 finish_summary="",
                 last_verify=None,
@@ -714,12 +722,15 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
         case events.SteerRequested():
             return dataclasses.replace(state, steer_requests=state.steer_requests + 1)
 
-        case events.SessionEnd(all_passed=all_passed, reason=reason, scoped=scoped):
+        case events.SessionEnd(
+            all_passed=all_passed, reason=reason, summary=summary, scoped=scoped
+        ):
             return dataclasses.replace(
                 state,
                 finished=True,
                 all_passed=all_passed,
                 end_reason=reason,
+                end_summary=listing.end_text(reason, summary, state.finish_summary),
                 verify_scoped=scoped,
             )
 
@@ -938,12 +949,13 @@ def context_fill(state: SessionState) -> int | None:
 
 
 def session_state_as_dict(
-    state: SessionState, session_dir: pathlib.Path | None = None
+    state: SessionState, session_dir: pathlib.Path | None = None, *, unmerged: bool = False
 ) -> dict[str, Any]:
     """Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
     Args:
         state: The folded state.
+        unmerged: The manifest header's fact that the run holds unmerged work.
         session_dir: The session's state dir; with it `status` is the dir-aware word,
             `live` says whether a steer or stop would reach anything, `ports` and
             `shells` are live probes, a plan's `plan_md` is its deliverable, and the
@@ -1003,7 +1015,11 @@ def session_state_as_dict(
             stranded=facts.stranded,
         )
     d["status"] = word
-    d["status_label"] = format.status_label(word, reason)
+    d["status_label"] = (
+        format.listing_status_label(d["mode"], word, reason, unmerged=unmerged)
+        if session_dir is not None
+        else format.status_label(word, reason)
+    )
     d["task_line"] = listing.task_snippet(d["user_task"])
     d["dead_state"] = format.dead_run_note(word, reason)[0]
     # From the fold, so a dir-less consumer still gets the "blocked, not working" signal.

@@ -76,7 +76,12 @@ def _with_idle_age(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _late_merge_header(
-    session_dir: pathlib.Path, repo: pathlib.Path, header: dict[str, Any], *, finished: bool
+    session_dir: pathlib.Path,
+    repo: pathlib.Path,
+    header: dict[str, Any],
+    *,
+    finished: bool,
+    status: str,
 ) -> dict[str, Any] | None:
     """Re-read the manifest header on a finished run's heartbeat.
 
@@ -88,13 +93,14 @@ def _late_merge_header(
         repo: The repository the run worked in.
         header: The header last sent.
         finished: The fold's finished flag.
+        status: The run's status word, which the caller already holds.
 
     Returns:
         The refreshed header, or None while the run is live or nothing changed.
     """
     if not finished:
         return None
-    refreshed = manifest_header(session_dir, repo=repo)
+    refreshed = manifest_header(session_dir, repo=repo, status=status)
     return refreshed if refreshed != header else None
 
 
@@ -131,7 +137,10 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
 
     def frame(*, dead: bool = False) -> dict[str, Any]:
         # The dir is read per frame: a resumed parked run changes the label and `live`.
-        d = {**session_state_as_dict(state, session_dir), **header}
+        d = {
+            **session_state_as_dict(state, session_dir, unmerged=bool(header.get("unmerged"))),
+            **header,
+        }
         if state.last_event_ep is not None:
             # Server-computed so a browser on another machine needs no clock agreement.
             d["last_event_age_s"] = max(0.0, time.time() - state.last_event_ep)
@@ -174,7 +183,9 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
                 if word != "parked" and died_without_end(word):
                     chan.send(frame(dead=True))
                     return
-                refreshed = _late_merge_header(session_dir, repo, header, finished=state.finished)
+                refreshed = _late_merge_header(
+                    session_dir, repo, header, finished=state.finished, status=word
+                )
                 if refreshed is not None:
                     header = refreshed
                     if not chan.send(frame()):
@@ -182,6 +193,9 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
                 continue
             # One frame per queued batch: a frame per replayed event is quadratic (13 MB at 502).
             last_type, ended = drain(ev)
+            if last_type == "session.end":
+                # The end is when the unmerged mark first applies; later merges ride the heartbeat.
+                header = manifest_header(session_dir, repo=repo)
             if ended:
                 chan.send(frame())
                 return

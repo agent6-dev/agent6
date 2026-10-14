@@ -105,7 +105,7 @@ def draft_workspace(
 
 
 def draft_step_diff_payload(
-    workspace: pathlib.Path, sha: str, *, cumulative: bool
+    workspace: pathlib.Path, session_dir: pathlib.Path, sha: str, *, cumulative: bool
 ) -> tuple[dict[str, Any] | None, str]:
     """Return the patch one draft step introduced, or the whole bundle as of that step.
 
@@ -113,12 +113,18 @@ def draft_step_diff_payload(
 
     Args:
         workspace: The draft's workspace.
-        sha: The step's commit.
+        session_dir: The draft's journal directory.
+        sha: The step's commit; "" selects the latest journaled commit.
         cumulative: Whole bundle instead of the one step.
 
     Returns:
         The payload and "", or None and the reason.
     """
+    if not sha:
+        steps = fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False)).steps
+        if not steps:
+            return None, "no commit yet"
+        sha = steps[-1].sha
     return _diff_payload(
         workspace,
         sha,
@@ -393,7 +399,7 @@ def step_diff_payload(
     Args:
         repo: The repository the run worked in.
         session_dir: The run's directory.
-        sha: The step's commit.
+        sha: The step's commit; "" selects the latest journaled commit.
         cumulative: The chain `base..sha` instead of the one step.
 
     Returns:
@@ -405,6 +411,11 @@ def step_diff_payload(
         return None, f"unreadable manifest: {exc}"
     if m.git_control == "model":
         return None, "the model owns git in this run: no step chain to select from"
+    if not sha:
+        steps = fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False)).steps
+        if not steps:
+            return None, "no commit yet"
+        sha = steps[-1].sha
     return _diff_payload(
         repo,
         sha,

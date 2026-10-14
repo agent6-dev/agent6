@@ -71,6 +71,7 @@ _STYLE_RICH: dict[transcript_style.StyleName, str] = {
     "body": "",
     "done-detail": "dim",
     "operator": "bold green",
+    "task": "bold cyan",
 }
 
 
@@ -336,7 +337,13 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
             self._pending.pop(item.call_id, None)
         self._item_starts.append(self._content_lines)
         wrote = False
-        for line in _item_renderables(item, detail=self._detail):
+        lines = _item_renderables(item, detail=self._detail)
+        if item.kind == "task":
+            policy_line = policy.session_policy(self._logs_path.parent).line()
+            if policy_line and lines:
+                # Under the headline, before the blank line that ends the item.
+                lines.insert(len(lines) - 1, rich_text.Text(f"  {policy_line}", style="dim"))
+        for line in lines:
             self._content.append_text(line)
             self._content.append("\n")
             self._content_lines += 1
@@ -460,7 +467,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
             live.display = True
             live.update(
                 rich_text.Text(
-                    format.status_label(*self._host.dir_status),
+                    self._host.status_label,
                     style="bold yellow",
                 )
             )
@@ -523,26 +530,30 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         self.query(".conv-sealed").remove()
         self._live_think.clear()
         self._live_text.clear()
-        wrote = False
+        wrote = replied = False
         items = 0
         for event in self._tail.read():
             self._track_event(event)
             for item in self._fold.feed(event):
-                items += 1
-                wrote = self._append(item) or wrote
+                appended = self._append(item)
+                wrote = appended or wrote
+                if item.kind != "task":
+                    # The task line alone is no reply: the notes below still apply under it.
+                    items += 1
+                    replied = appended or replied
         if wrote:
             self._flush_tail()
-        elif items and self._detail == "hidden":
-            # Reasoning and tool calls alone render no line at this level; the empty placeholder
-            # would lie over them.
-            note = "(reasoning and tool calls are hidden at this detail level; Ctrl+T shows them)"
-            self._tail_widget().update(rich_text.Text(note, style="dim italic"))
-        else:
+        note = ""
+        if not items:
             # Past tense only when the host positively knows the session ended.
             ended = not self._host.session_controllable()
             word, detail = self._host.dir_status
-            empty = empty_conversation_note(word, detail, ended=ended)
-            self._tail_widget().update(rich_text.Text(empty, style="dim italic"))
+            note = empty_conversation_note(word, detail, ended=ended)
+        elif not replied and self._detail == "hidden":
+            # Reasoning and tool calls alone render no line at this level.
+            note = "(reasoning and tool calls are hidden at this detail level; Ctrl+T shows them)"
+        if note:
+            self._tail_widget().update(self._tail_text + rich_text.Text(note, style="dim italic"))
         self._render_live()
         self._sync_input()
         self._scroll().scroll_end(animate=False)

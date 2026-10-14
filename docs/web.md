@@ -112,6 +112,11 @@ curl -sN -b jar localhost:7658/api/session/<id>/events      # SSE: a snapshot pe
 - every write goes through the same spawn and answer-file contracts as the CLI; machine names and answer ids validate to one path component
 - the page and its PWA assets, served without the cookie (they hold no state): `/`, `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/favicon.svg`
 
+Session snapshots and streams use the hub's status label, including the mode and the `unmerged` mark on ended runs.
+The mark is refreshed after a merge.
+A run or draft `/diff` without `sha` returns its latest journaled commit, or 422 with `no commit yet`.
+With `cumulative=1`, the patch covers the chain through that commit.
+
 ## Remote access (Tailscale)
 
 The server binds `127.0.0.1` by default and speaks plain HTTP.

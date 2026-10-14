@@ -451,6 +451,10 @@ function paintRun(cards, s) {
   add('task', s.task_line || '(none)');
   add('id', s.session_id || cards._id || ''); // older logs carry no session_id in session.start
   add('state', runState(s));
+  // The harness's end sentence (a stop, a failure, a guard); an end the model wrote
+  // itself is the conversation's last line, beside this panel.
+  const modelEnds = ['answered', 'finish_planning', 'finish_session', 'silent_finish'];
+  if (s.finished && s.end_summary && !modelEnds.includes(s.end_reason)) add('ended', s.end_summary);
   // Where the run's work lives and where Merge lands: consecutive spawns chain
   // branches, which is invisible without this line.
   if (s.forked_from) add('forked from', s.forked_from);

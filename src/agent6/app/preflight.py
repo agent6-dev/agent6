@@ -40,6 +40,17 @@ class SessionRefusedError(Exception):
         self.rc = rc
 
 
+def _by_model(pairs: Iterable[tuple[str, str]]) -> list[str]:
+    """Return one entry per model with the roles that use it: `'m' (planner, worker)`."""
+    roles: dict[str, set[str]] = {}
+    for role, model in pairs:
+        roles.setdefault(model, set()).update({role} if role else ())
+    return [
+        f"{model!r} ({', '.join(sorted(used))})" if used else repr(model)
+        for model, used in sorted(roles.items())
+    ]
+
+
 def budget_preflight(
     cfg: Config,
     routes: Iterable[tuple[str, str]] | None = None,
@@ -50,7 +61,7 @@ def budget_preflight(
 
     A zero `max_tokens_fallback` refuses an unpriced model, a zero `max_usd` refuses a
     priced one, a zero `max_percent` refuses a plan-metered one; otherwise each unpriced
-    or plan-metered model gets a notice naming the bound that covers it. A model chosen
+    or plan-metered model gets a notice naming its configured role and bound. A model chosen
     later (a `/parallel` lane spec) is caught by the tracker's runtime backstop.
 
     Args:
@@ -63,49 +74,59 @@ def budget_preflight(
         The refusal, or None when the budget admits every route.
     """
     if routes is None:
-        reachable = {(rm.provider, rm.model) for rm in cfg.models.configured().values()}
+        reachable = {(role, rm.provider, rm.model) for role, rm in cfg.models.configured().items()}
         for spec in cfg.review.seats:
-            _persona, seat_provider, seat_model = parse_seat_spec(spec)
+            persona, seat_provider, seat_model = parse_seat_spec(spec)
             if seat_model:
-                reachable.add((seat_provider, seat_model))
+                reachable.add((f"review seat {persona}", seat_provider, seat_model))
     else:
-        reachable = {(prov, m) for prov, m in routes if m}
+        # A machine's states carry routes with no role of the run's config.
+        reachable = {("", prov, m) for prov, m in routes if m}
 
     # Plan-metered routes live in the percent ledger, never in the fallback spend.
-    plan_models = sorted({m for prov, m in reachable if plan_metered(cfg.providers.get(prov))})
-    metered = {(prov, m) for prov, m in reachable if not plan_metered(cfg.providers.get(prov))}
+    plan_models = _by_model(
+        (role, m) for role, prov, m in reachable if plan_metered(cfg.providers.get(prov))
+    )
+    metered = {
+        (role, prov, m) for role, prov, m in reachable if not plan_metered(cfg.providers.get(prov))
+    }
     if cfg.budget.max_percent == 0.0 and plan_models:
         return (
             "the plan cap is 0 (plan-metered calls refused), but "
-            f"{', '.join(repr(m) for m in plan_models)} route"
+            f"{', '.join(plan_models)} route"
             f"{'s' if len(plan_models) == 1 else ''} through a subscription plan."
             " Raise --max-percent or [budget].max_percent, or reroute those roles."
         )
-    unpriced = sorted({m for prov, m in metered if pricing.lookup_price(m, prov) is None})
-    priced = sorted({m for prov, m in metered if pricing.lookup_price(m, prov) is not None})
+    unpriced = _by_model(
+        (role, m) for role, prov, m in metered if pricing.lookup_price(m, prov) is None
+    )
+    priced = _by_model(
+        (role, m) for role, prov, m in metered if pricing.lookup_price(m, prov) is not None
+    )
     if cfg.budget.max_tokens_fallback == 0 and unpriced:
         return (
             "[budget].max_tokens_fallback is 0 (unmetered calls refused), but "
-            f"{', '.join(repr(m) for m in unpriced)} carr{'ies' if len(unpriced) == 1 else 'y'}"
+            f"{', '.join(unpriced)} carr{'ies' if len(unpriced) == 1 else 'y'}"
             " no price data. Raise max_tokens_fallback or use priced models."
         )
     if cfg.budget.max_usd == 0.0 and priced:
         return (
             "[budget].max_usd is 0 (metered calls refused), but "
-            f"{', '.join(repr(m) for m in priced)} {'is' if len(priced) == 1 else 'are'} priced."
+            f"{', '.join(priced)} {'is' if len(priced) == 1 else 'are'} priced."
             " Raise max_usd or use unpriced/local models."
         )
     if unpriced and cfg.budget.max_usd != 0.0:
         fb = cfg.budget.max_tokens_fallback
         bound = "unlimited tokens" if fb == -1 else f"{fb:,} fallback tokens"
         reporter.note(
-            f"{', '.join(repr(m) for m in unpriced)} ha"
+            f"{', '.join(unpriced)} ha"
             f"{'s' if len(unpriced) == 1 else 've'} no price data: that spend is not"
             f" metered by max_usd and is bounded by {bound} instead."
         )
     if plan_models:
         pct = cfg.budget.max_percent
-        bound = "the plan itself" if pct == -1 else f"max_percent {pct:g} points per run"
+        point = "point" if pct == 1 else "points"
+        bound = "the plan itself" if pct == -1 else f"max_percent {pct:g} {point} per run"
         tick = (
             " The account reports whole percents, so a cap this small can end the run on"
             " its first tick."
@@ -113,7 +134,7 @@ def budget_preflight(
             else ""
         )
         reporter.note(
-            f"{', '.join(repr(m) for m in plan_models)} draw"
+            f"{', '.join(plan_models)} draw"
             f"{'s' if len(plan_models) == 1 else ''} on a subscription plan"
             f" (no dollars; bounded by {bound}).{tick}"
         )
@@ -656,7 +677,7 @@ def infer_verify_if_unset(
             )
         return cfg
     reporter.note(
-        f"verify_command not set; inferred from {inferred.source}:"
+        f"verify_command not set; inferred from {inferred.label}:"
         f" {shlex.join(inferred.argv)}\n         (this run only; pin it with"
         f" harness.verify_command in your per-repo config){passed_line}"
     )

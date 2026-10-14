@@ -115,6 +115,56 @@ def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: pathlib.Path) -
     asyncio.run(scenario())
 
 
+def test_end_hold_title_uses_the_listing_label(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A finished TUI title includes the unmerged mark its hub row shows."""
+    from agent6 import git_ops
+    from agent6.sessions import manifest
+
+    monkeypatch.chdir(tmp_path)
+    subprocess.run(["git", "init", "-q"], check=True)
+    (tmp_path / "a").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "add", "a"], check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], check=True)
+    base = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    (tmp_path / "a").write_text("work\n", encoding="utf-8")
+    subprocess.run(["git", "commit", "-qam", "work"], check=True)
+    tip = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    d = tmp_path / "session"
+    d.mkdir()
+    (d / "manifest.json").write_text(
+        manifest.SessionManifest(session_id=d.name, mode="run", base_sha=base).model_dump_json(),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "update-ref", git_ops.chain_ref_for(d.name), tip], check=True)
+    (d / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "user_task": "work"})
+        + "\n"
+        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + "\n",
+        encoding="utf-8",
+    )
+    app = tui_app.Agent6TUI(d)
+    app._seed_from_disk()
+    app._end_hold = True
+    assert "passed · unmerged" in app.screen_title("conversation")
+    (d / "manifest.json").write_text(
+        manifest.SessionManifest(
+            session_id=d.name,
+            mode="run",
+            base_sha=base,
+            merged=manifest.MergeStamp(into="main", sha=tip, tip=tip),
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    app._refresh_dir_status()
+    assert "unmerged" in app.screen_title("conversation")  # re-read every few beats, not each
+    app._unmerged_due = 0.0
+    app._refresh_dir_status()
+    assert "unmerged" not in app.screen_title("conversation")
+
+
 def test_the_task_count_credits_an_obsolete_task_as_done(tmp_path: pathlib.Path) -> None:
     """The top line's `tasks: N/M` counts a retired task as done, like a skipped one."""
     d = tmp_path / "obsolete1"

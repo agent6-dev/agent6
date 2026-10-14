@@ -33,7 +33,7 @@ OPERATOR = "❯"  # noqa: RUF001  # a prompt glyph, not a mistyped >
 # Literals, so the viewmodel needs no tools import.
 _FINISH_TOOLS = frozenset({"finish_session", "finish_planning"})
 
-ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done", "operator"]
+ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done", "operator", "task"]
 
 
 # Events that render between turns: type -> (kind, the field holding the text).
@@ -565,7 +565,12 @@ class TranscriptFold:
                 out.append(TranscriptItem(kind, body=body))
             return out
         if etype in viewmodel_events.SESSION_START_EVENTS:
-            return self.settle_open_calls("the run ended")
+            out = self.settle_open_calls("the run ended")
+            if etype == "session.start":
+                task = listing.task_snippet(str(event.get("user_task", "")), max_chars=200)
+                if task:
+                    out.append(TranscriptItem("task", body=task))
+            return out
         if etype == "session.end":
             out = self.settle_open_calls("the run ended")
             out.extend(self._flush_message())
@@ -580,8 +585,7 @@ class TranscriptFold:
                 gate_red=self._verify is not None and not self._verify[0],
                 gate_timed_out=self._verify is not None and self._verify[2],
             )
-            # On a failure or stop the summary is an earlier finish call's and reads as success.
-            body = self._finish if reason in ("", "finish_session", "finish_planning") else ""
+            body = listing.end_text(reason, str(event.get("summary", "")), self._finish)
             out.append(
                 TranscriptItem(
                     "done",

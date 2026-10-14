@@ -55,6 +55,11 @@ class InferredVerify:
     source: str
     passed_over: tuple[tuple[str, str], ...] = ()
 
+    @property
+    def label(self) -> str:
+        """The source name for notices; the journal keeps `source` as its token."""
+        return "AGENTS.md" if self.source == "agents_md" else self.source
+
 
 def passed_over_text(inferred: InferredVerify) -> str:
     """Return what inference passed over and why, as one clause; "" when it used everything."""

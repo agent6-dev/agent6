@@ -729,6 +729,7 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             else:
                 payload, why = model.draft_step_diff_payload(
                     workspace,
+                    draft_dir,
                     (q.get("sha") or [""])[0],
                     cumulative=(q.get("cumulative") or ["0"])[0] in ("1", "true"),
                 )

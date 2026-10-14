@@ -2470,6 +2470,21 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
     assert ends and ends[-1]["all_passed"] is False
 
 
+def test_session_end_journals_its_summary() -> None:
+    """The harness journals the same end sentence it returns, for stops and clean finishes."""
+    for end in (
+        _snapshot.End("steer_abort", "operator stopped the run after step 4", checkpoint=False),
+        _snapshot.End(
+            "finish_session", "implemented addition", verdict="grounded", checkpoint=False
+        ),
+    ):
+        ev = _EventCapture()
+        wf = _wf(mode="run", events=ev)
+        result = wf._finish(_state(), end, iteration=4)  # pyright: ignore[reportPrivateUsage]
+        (recorded,) = [e for e in ev.events if e["type"] == "session.end"]
+        assert recorded.get("summary") == result.summary == end.summary
+
+
 def test_session_end_carries_the_gates_word_for_the_final_tree() -> None:
     """`session.end` carried `all_passed` alone, which an operator stop always writes false.
 

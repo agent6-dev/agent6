@@ -24,23 +24,20 @@ import argcomplete
 from agent6 import errors, event_log, paths
 from agent6.ui.cli import _common, _terminal_guard
 from agent6.ui.cli import parser as cli_parser
-
-
-def _first_markdown_line(text: str, max_len: int = 80) -> str:
-    """Return the first non-empty line of a markdown doc, heading and bullet marks stripped."""
-    for raw in text.splitlines():
-        line = raw.strip().lstrip("#").lstrip("-*").strip()
-        if line:
-            return line[:max_len]
-    return "(untitled plan)"
+from agent6.viewmodel import listing
 
 
 def _plan_title(plan_md: str) -> str:
-    """Return a plan's title: its first line, less the `# Plan: <title>` convention."""
-    title = _first_markdown_line(plan_md)
+    """Return the plan's first line, without its Plan prefix, with a mark when clipped."""
+    title = "(untitled plan)"
+    for raw in plan_md.splitlines():
+        line = raw.strip().lstrip("#").lstrip("-*").strip()
+        if line:
+            title = line
+            break
     if title.lower().startswith("plan:"):
         title = title[len("plan:") :].strip() or title
-    return title
+    return listing.task_snippet(title, max_chars=80)
 
 
 def _from_plan_task(plan_md: str, session_id: str) -> str:

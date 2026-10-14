@@ -32,7 +32,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6 import paths
+from agent6 import git_ops, paths
 from agent6.app import fork, reporter, stop, undo
 from agent6.config import layer
 from agent6.models import choices
@@ -130,6 +130,8 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self._continue_child = ""
         # Set by action_detach_exit; run_tui reads it to print the reattach hint.
         self.detached = False
+        self._unmerged = False
+        self._unmerged_due = 0.0
         # The (word, reason) the hub row shows too, refreshed on the ~1/s heartbeat; derived,
         # never latched, so a crash then a resume reads as running again.
         self.dir_status: tuple[str, str] = listing.status_for_session_dir(
@@ -190,11 +192,15 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             The context and the task, plus the status and how to leave once the run ended.
         """
         if self._end_hold:
-            return (
-                f"{context} · {self._task_lead()} · {format.status_label(*self.dir_status)}"
-                " · Ctrl+Q to leave"
-            )
+            return f"{context} · {self._task_lead()} · {self.status_label} · Ctrl+Q to leave"
         return f"{context} · {self._task_lead()}"
+
+    @property
+    def status_label(self) -> str:
+        """The listing label for every run screen, with its mode and unmerged mark."""
+        return format.listing_status_label(
+            self.state.mode or self.mode, *self.dir_status, unmerged=self._unmerged
+        )
 
     def run_title(self) -> str:
         """Return the dashboard's subtitle: the mode word and the task."""
@@ -242,9 +248,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             self._seen_steer = seeded.steer_requests
             self._seed_log_count = seeded.log_count
             self._reader_start_at = position
-            self.dir_status = listing.status_for_session_dir(
-                self.session_dir, state.status_facts(seeded)
-            )
+            self._refresh_dir_status()
 
     def on_unmount(self) -> None:
         """Stop the reader and drop this process's front-end claim."""
@@ -316,8 +320,19 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         its next event-driven paint.
         """
         status = listing.status_for_session_dir(self.session_dir, state.status_facts(self.state))
-        if status != self.dir_status:
+        has_unmerged = self._unmerged and self.state.finished
+        # An ended run's mark, re-read every few beats: a merge elsewhere clears it.
+        if self.state.finished and time.monotonic() >= self._unmerged_due:
+            self._unmerged_due = time.monotonic() + 5.0
+            has_unmerged = False
+            with contextlib.suppress(sessions_manifest.ManifestError):
+                manifest = sessions_manifest.read_manifest(self.session_dir)
+                has_unmerged = listing.unmerged(
+                    manifest, status[0], git_ops.run_ref_tips(pathlib.Path.cwd())
+                )
+        if status != self.dir_status or has_unmerged != self._unmerged:
             self.dir_status = status
+            self._unmerged = has_unmerged
             self._dirty = True
             self._conv.refresh_liveness()
 
@@ -368,9 +383,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             self._end_hold = True
             self.sub_title = self.run_title()
             self.notify(
-                f"{format.status_label(*self.dir_status)} · Ctrl+Q to leave, or type below "
-                "to continue"
-                " the session",
+                f"{self.status_label} · Ctrl+Q to leave, or type below to continue the session",
                 timeout=8.0,
             )
             self._dirty = True

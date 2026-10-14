@@ -33,6 +33,7 @@ StyleName = Literal[
     "body",
     "done-detail",
     "operator",
+    "task",
 ]
 Span = tuple[str, StyleName]
 Line = list[Span]
@@ -137,6 +138,8 @@ def item_lines(item: transcript.TranscriptItem, *, detail: DetailLevel) -> list[
         lines.extend([(ln, "text")] for ln in item.body.split("\n"))
     elif item.kind == "tool":
         lines.extend(_tool_lines(item, expanded=detail == "expanded"))
+    elif item.kind == "task":
+        lines.append([(f"{transcript.DONE} {item.body}", "task")])
     elif item.kind == "operator":
         body_lines = item.body.split("\n")
         lines.append([(f"{transcript.OPERATOR} ", "operator"), (body_lines[0], "operator")])

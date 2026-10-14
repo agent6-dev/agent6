@@ -186,6 +186,26 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
     assert listed == ["chatgpt"]  # the signed-in path refreshes the listing
 
 
+def test_budget_notices_name_every_configured_role(capsys: pytest.CaptureFixture[str]) -> None:
+    """A plan-mode notice identifies worker and planner routes instead of implying the driver."""
+    from agent6.app import preflight
+
+    cfg = Config.model_validate(
+        {
+            "providers": {"chatgpt": {"api_format": "chatgpt"}, "local": {"api_format": "openai"}},
+            "models": {
+                "worker": {"provider": "chatgpt", "model": "plan-model"},
+                "planner": {"provider": "chatgpt", "model": "plan-model"},
+                "reviewer": {"provider": "local", "model": "unpriced-model"},
+            },
+        }
+    )
+    assert preflight.budget_preflight(cfg) is None
+    notices = capsys.readouterr().err
+    assert "'plan-model' (planner, worker) draws on a subscription plan" in notices
+    assert "'unpriced-model' (reviewer) has no price data" in notices
+
+
 def test_plan_metered_routes_skip_the_fallback_note(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -236,7 +256,9 @@ def test_a_plan_cap_under_three_points_is_flagged_at_run_start(
         assert preflight.budget_preflight(cfg) is None
         return capsys.readouterr().err
 
-    assert "whole percents" in _with_cap(1)
+    one = _with_cap(1)
+    assert "max_percent 1 point per run" in one
+    assert "whole percents" in one
     assert "whole percents" in _with_cap(2.5)
     assert "whole percents" not in _with_cap(3)
     assert "whole percents" not in _with_cap(-1)
@@ -260,7 +282,7 @@ def test_claude_code_routes_are_plan_metered(
     assert preflight.budget_preflight(cfg) is None
     out = capsys.readouterr().err
     assert "fallback tokens" not in out
-    assert "'claude-haiku-4-5' draws on a subscription plan" in out
+    assert "'claude-haiku-4-5' (worker) draws on a subscription plan" in out
 
     refused = Config.model_validate(
         {

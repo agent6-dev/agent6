@@ -114,12 +114,10 @@ class RunHeader(widgets.Static):
 
     def _end_label(self) -> str:
         """Return the status label in its colour: the hub row's word; "" while running."""
-        word, reason = self._tui.dir_status
+        word, _reason = self._tui.dir_status
         if word == "running":
             return ""
-        return (
-            f"[b {theme.status_style(word)}]{markup.escape(format.status_label(word, reason))}[/]"
-        )
+        return f"[b {theme.status_style(word)}]{markup.escape(self._tui.status_label)}[/]"
 
     def _compare_top(self) -> str:
         """Return a lane's compare line, cached once stamped; "" for a non-lane run."""

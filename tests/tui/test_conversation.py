@@ -66,6 +66,26 @@ def _hosted(
     return tui_app.Agent6TUI(run)
 
 
+def test_conversation_opens_with_the_task_and_policy_line(tmp_path: pathlib.Path) -> None:
+    """The TUI conversation opens with the same task and policy as the CLI stream."""
+    from agent6.viewmodel import policy
+
+    async def scenario() -> None:
+        app = _hosted(tmp_path / "run", _EVENTS)
+        (app.session_dir / "manifest.json").write_text(
+            json.dumps({"mode": "run", "policy": {"isolation": "strict", "run_commands": "ask"}}),
+            encoding="utf-8",
+        )
+        assert policy.session_policy(app.session_dir).line()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            # The policy sits directly under the headline, no blank line between them.
+            lines = [line.strip() for line in _body_text(app).splitlines()]
+            assert lines[:3] == ["● do X", policy.session_policy(app.session_dir).line(), ""]
+
+    asyncio.run(scenario())
+
+
 def test_conversation_screen_cycles_detail_level(tmp_path: pathlib.Path) -> None:
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", _EVENTS)

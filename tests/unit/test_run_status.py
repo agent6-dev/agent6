@@ -281,6 +281,31 @@ def test_status_prints_the_final_iteration_count_from_the_receipt(
     assert json.loads(capsys.readouterr().out)["iteration"] == 7
 
 
+@pytest.mark.parametrize("reason", ["steer_abort", "finish_session"])
+def test_show_words_the_end_instead_of_the_reason_token(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    reason: str,
+) -> None:
+    """Text shows the end sentence while JSON retains the raw reason for scripts."""
+    summary = "operator stopped the run after step 4" if reason == "steer_abort" else "added mul"
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"type": "session.start", "mode": "run"},
+            {"type": "session.end", "reason": reason, "summary": summary, "all_passed": True},
+        ],
+    )
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
+    text = capsys.readouterr().out
+    assert f"ended:      {summary}\n" in text and reason not in text
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    obj = json.loads(capsys.readouterr().out)
+    assert obj["end_summary"] == summary and obj["reason"] == reason
+
+
 def test_status_leads_with_the_listing_word_then_the_raw_reason(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

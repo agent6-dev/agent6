@@ -49,6 +49,8 @@ A fresh run runs the gate once before its first turn, so a gate that was red bef
 A red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
 [`[harness]`](config.md#harness) has the inference order and `verify_when`.
 
+The start banner's budget notices name each model once, with the roles that use it (`'m' (planner, worker)`).
+
 `agent6 run` streams in your terminal; `--tui` opens the full-screen view ([terminal UI](terminal.md)) and `-i` drives it from a stdin REPL.
 
 ## Follow and steer a run
@@ -89,6 +91,9 @@ A fan-out's report ends with the plan's latest reading among its lanes (`plan us
 The tokens and the points against `max_percent` on `sessions show` are the latest execution's.
 `elapsed` on a resumed run is the wall time from its first start to its last event, the time between executions included.
 `N questions unanswered` beside a status counts the questions of the current execution that nobody was attached to see; a resume starts the count again.
+
+`sessions show` and the conversation's last line print the sentence the run ended on; `--json` keeps the `reason` word for scripts.
+A `steer` reaches the model at its next step, and `steer --now` interrupts the call in flight; every surface acknowledges it in those words.
 
 `agent6 exec` runs your own command on your own stdio.
 
@@ -217,7 +222,7 @@ agent6 ask "how does the task-graph curator work?"
 ```
 
 - `review --reviewers 3 --personas security,correctness,tests`: a panel whose findings are checked against the diff, so only real problems gate; a seat pins its model in `[review].seats` (`security@openrouter/<model-id>`)
-- `sessions review` reports how the run ended, what went wrong, what you corrected, and candidate memory facts and AGENTS.md lines with their evidence; it writes nothing (`agent6 memory add` lands a candidate)
+- `sessions review` reports how the run ended, what went wrong, what you corrected, the questions nobody answered, and candidate memory facts and AGENTS.md lines with their evidence; it writes nothing (`agent6 memory add` lands a candidate)
 - every review is saved under `<state-dir>/reviews/`; the path prints on stderr
 - `ask` runs in any directory; `run` and `plan` need a git repository
 

@@ -70,6 +70,34 @@ def test_plan_show_omit_id_uses_most_recent_plan(
     assert "# Plan: the latest" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("length", [80, 100])
+def test_from_plan_title_strips_the_prefix_before_marking_a_cut(length: int) -> None:
+    """The Plan prefix consumes no title space and a clipped title carries an ellipsis."""
+    from agent6.viewmodel import listing
+
+    title = "x" * length
+    plan = f"# Plan: {title}\n\n1. implement"
+    task = entry._from_plan_task(plan, "plan-id")
+    assert task.splitlines()[0] == (
+        "Execute the prepared plan: " + listing.task_snippet(title, max_chars=80)
+    )
+    assert plan in task
+
+
+@pytest.mark.parametrize("newline", ["", "\n"])
+def test_plan_show_ends_with_one_newline(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    newline: str,
+) -> None:
+    """Plan output terminates its last line without adding a blank line to terminated files."""
+    monkeypatch.chdir(tmp_path)
+    _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: foo\n\nbody" + newline)
+    assert main(["plan", "show", "happy-tree-abcd"]) == 0
+    assert capsys.readouterr().out == "# Plan: foo\n\nbody\n"
+
+
 def test_from_plan_task_leads_with_the_plan_title() -> None:
     # The run's task reads as the plan, not the 'The following plan was prepared...' boilerplate.
     from agent6 import task_text

@@ -176,6 +176,7 @@ main { padding: 0; }
 .conv .s-done-ok { color: var(--ok); font-weight: 700; }
 .conv .s-done-fail { color: var(--warn); font-weight: 700; }
 .conv .s-done-neutral { font-weight: 700; }
+.conv .s-task { color: var(--accent); font-weight: 700; }
 .conv .s-operator { color: var(--ok); font-weight: 600; }
 .conv-live { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
 .conv-live .lt { color: var(--accent); font-weight: 600; }

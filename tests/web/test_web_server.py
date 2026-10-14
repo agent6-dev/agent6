@@ -477,8 +477,9 @@ def test_run_conversation_endpoint(
     payload = json.loads(body)
     assert set(payload) == {"items", "operator_inputs"}
     kinds = [it["kind"] for it in payload["items"]]
-    assert kinds == ["tool", "done"]
-    tool = payload["items"][0]
+    assert kinds == ["task", "tool", "done"]
+    assert payload["items"][0]["lines"] == [[["● task c", "task"]]]
+    tool = payload["items"][1]
     flat = "".join(text for line in tool["lines"] for text, _style in line)
     assert "read_file" in flat and "12 bytes" in flat
 
@@ -1851,6 +1852,122 @@ def _git_chain(repo: pathlib.Path) -> tuple[str, str, str]:
     git("commit", "-q", "-m", "step two")
     c2 = git("rev-parse", "HEAD")
     return base, c1, c2
+
+
+@pytest.mark.parametrize("merged", [False, True])
+def test_session_api_hub_and_attach_give_one_label(
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    merged: bool,
+) -> None:
+    """The run snapshot and attach keep the listing's unmerged mark, including after merge."""
+    from agent6 import git_ops
+    from agent6.sessions import manifest
+    from agent6.viewmodel import listing, wire
+
+    monkeypatch.chdir(tmp_path)
+    base, _c1, tip = _git_chain(tmp_path)
+    sid = "parity-run"
+    subprocess.run(["git", "update-ref", git_ops.chain_ref_for(sid), tip], check=True)
+    _make_run(
+        tmp_path,
+        sid,
+        [
+            {"type": "session.start", "mode": "run", "user_task": "work"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    d = paths.state_dir(tmp_path) / "sessions" / "runs" / sid
+    (d / "manifest.json").write_text(
+        manifest.SessionManifest(
+            session_id=sid,
+            mode="run",
+            base_sha=base,
+            merged=manifest.MergeStamp(into="main", sha=tip, tip=tip) if merged else None,
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    expected = "passed" if merged else "passed · unmerged"
+    row = listing.summary_row(
+        listing.summarize_session_dir(d, branch_tips=git_ops.run_ref_tips(tmp_path))
+    )
+    assert row["label"] == expected
+    assert wire.session_snapshot(d, repo=tmp_path)["status_label"] == expected
+    _srv, port = server
+    assert json.loads(_get(port, f"/api/session/{sid}")[1])["status_label"] == expected
+    assert json.loads(_get(port, "/api/hub")[1])["sessions"][0]["label"] == expected
+    assert main(["sessions", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)[0]["label"] == expected
+    assert main(["attach", sid, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["status_label"] == expected
+
+
+def test_plan_session_label_folds_the_mode_like_the_hub(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
+    """A live plan snapshot carries the same mode prefix as its hub row."""
+    _srv, port = server
+    _make_run(tmp_path, "live-plan", [{"type": "session.start", "mode": "plan"}])
+    d = paths.state_dir(tmp_path) / "sessions" / "runs" / "live-plan"
+    ipc.write_worker_pid(d, os.getpid())
+    try:
+        snap = json.loads(_get(port, "/api/session/live-plan")[1])
+        row = json.loads(_get(port, "/api/hub")[1])["sessions"][0]
+        assert snap["status_label"] == row["label"] == "plan · running"
+    finally:
+        ipc.clear_worker_pid(d)
+
+
+@pytest.mark.parametrize("draft", [False, True])
+@pytest.mark.parametrize("cumulative", [False, True])
+def test_bare_diff_returns_the_latest_commit(
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    draft: bool,
+    cumulative: bool,
+) -> None:
+    """Bare run and draft diff routes select their last journaled commit, including cumulative."""
+    from agent6.app import _workdirs
+    from agent6.config import layer
+
+    _srv, port = server
+    base, c1, c2 = _git_chain(tmp_path)
+    sid = "latest-run"
+    if draft:
+        cfg = layer.load_effective(tmp_path, None).config
+        workspace = _workdirs.subordinate_workdir_root(cfg, tmp_path, sid)
+        workspace.mkdir(parents=True)
+        base, c1, c2 = _git_chain(workspace)
+    bucket = "machines" if draft else "runs"
+    d = paths.state_dir(tmp_path) / "sessions" / bucket / sid
+    d.mkdir(parents=True)
+    (d / "manifest.json").write_text(
+        json.dumps({"mode": "run", "base_sha": base}), encoding="utf-8"
+    )
+    (d / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "user_task": "work"})
+        + "\n"
+        + json.dumps({"type": "loop.auto_commit", "sha": c1, "iteration": 1})
+        + "\n"
+        + json.dumps({"type": "loop.auto_commit", "sha": c2, "iteration": 2})
+        + "\n",
+        encoding="utf-8",
+    )
+    route = f"/api/{'draft' if draft else 'session'}/{sid}/diff"
+    suffix = f"cumulative={int(cumulative)}"
+    explicit = _get(port, f"{route}?sha={c2}&{suffix}")
+    assert explicit[0] == 200
+    assert _get(port, f"{route}?{suffix}")[:2] == explicit[:2]
+    if not cumulative:
+        assert _get(port, route)[:2] == explicit[:2]
+    (d / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "user_task": "work"}) + "\n", encoding="utf-8"
+    )
+    status, raw, _ = _get(port, route)
+    assert status == 422
+    assert json.loads(raw)["error"] == "no commit yet"
 
 
 def test_step_diff_serves_one_step_or_the_cumulative_chain(

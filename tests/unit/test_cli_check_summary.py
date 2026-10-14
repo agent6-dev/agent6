@@ -137,7 +137,7 @@ def test_run_header_prints_the_inferred_gate_as_check_verify_does(
         budget=agent6_budget.BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=-1.0),
     )
     header = capsys.readouterr().err
-    assert f"verify_command not set; inferred from agents_md: {command}\n" in header
+    assert f"verify_command not set; inferred from AGENTS.md: {command}\n" in header
     assert shlex.split(command) == list(cfg.harness.verify_command)
 
 

@@ -33,6 +33,15 @@ def test_the_step_picker_fetches_with_the_cards_own_id() -> None:
     assert body.count("cards._base") >= 2
 
 
+def test_the_ended_row_holds_only_the_harness_end_sentence() -> None:
+    """An end the model wrote itself is the conversation's last line, not a panel row."""
+    body = _paint_run_body()
+    ended = next(line for line in body.splitlines() if "add('ended'" in line)
+    assert "s.end_reason" in ended
+    for reason in ("answered", "finish_planning", "finish_session", "silent_finish"):
+        assert f"'{reason}'" in body
+
+
 def test_the_machine_watch_gates_on_the_shared_refusals() -> None:
     """Every machine input consumes the wire refusals, without a second gate."""
     start = page.CLIENT_JS.index("function paintMachine(")

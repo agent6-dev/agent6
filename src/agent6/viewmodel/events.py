@@ -429,12 +429,14 @@ class SessionEnd:
         all_passed: True when the final tree was observed verify-green, False when not
             (red, stale or error), None when no verify command gated it.
         reason: The end reason word.
+        summary: The end sentence; "" for a journal that carries none.
         scoped: The gate ran scoped to the tests nearest the run's diff because the
             full command overran `verify_timeout_s`, so a pass is qualified.
     """
 
     all_passed: bool | None
     reason: str
+    summary: str = ""
     scoped: bool = False
 
 
@@ -679,6 +681,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             return SessionEnd(
                 all_passed=None if raw_ap is None else bool(raw_ap),
                 reason=str(raw.get("reason", "") or ""),
+                summary=str(raw.get("summary", "") or ""),
                 scoped=bool(raw.get("scoped", False)),
             )
         case other:

@@ -468,12 +468,10 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         )
         if s.finished:
             # How it ended, the closing summary, and a plan's deliverable.
-            word, reason = tui.dir_status
-            st.append(
-                format.status_label(word, reason) + "\n", style=f"bold {theme.status_style(word)}"
-            )
-            if s.finish_summary and s.end_reason in ("", "finish_session", "finish_planning"):
-                st.append(s.finish_summary, style="dim")
+            word, _reason = tui.dir_status
+            st.append(tui.status_label + "\n", style=f"bold {theme.status_style(word)}")
+            if s.end_summary:
+                st.append(s.end_summary, style="dim")
             if plan := tui.plan_md():
                 st.append("\n\n" + plan)
         elif streaming:
@@ -484,7 +482,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             if role.streamed_text:
                 st.append(role.streamed_text[-1200:])
         elif tui.dir_status[0] == "waiting":
-            st.append(format.status_label(*tui.dir_status), style="bold yellow")
+            st.append(tui.status_label, style="bold yellow")
         elif active and role is not None:
             spinner = format.spinner_frame(tui.spin)
             secs = tui.seconds_since_event()

@@ -58,7 +58,7 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
     if not did:
         _common.error(f"{said} ({layout.session_id})")
         return 1
-    print(f"{said} for {layout.session_id}.")
+    print(f"{layout.session_id}: {said}.")
     summary = listing.summarize_session_dir(layout.session_dir)
     if summary.status == "waiting" and summary.reason:
         # Parked on an operator prompt, only the answer ends the wait; approvals need a front-end.

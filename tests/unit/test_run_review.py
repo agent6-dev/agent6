@@ -138,6 +138,55 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
         assert heading in text
 
 
+def test_digest_lists_questions_nobody_answered(repo: pathlib.Path) -> None:
+    """Unseen questions survive prompt-id reuse on resume and carry the model's fallback note."""
+    from agent6 import event_log
+    from agent6.tools import operator_prompts, schema
+
+    layout = _write_session(repo, events=[])
+    sink = event_log.EventSink(layout.logs_path)
+    sink.emit("session.start", mode="run")
+    prompts = operator_prompts.OperatorPrompts(journal=sink.emit, session_dir=layout.session_dir)
+    answer = prompts.ask((schema.UserQuestion(question="keep the public API?"),))
+    assert answer.unseen
+    sink.emit("loop.resume.start")
+    prompts = operator_prompts.OperatorPrompts(journal=sink.emit, session_dir=layout.session_dir)
+    assert prompts.ask((schema.UserQuestion(question="allow the migration?"),)).unseen
+
+    def seen(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
+        return operator_prompts.QuestionAnswer(("",), "frontend")
+
+    prompts = operator_prompts.OperatorPrompts(questioner=seen, journal=sink.emit)
+    prompts.ask((schema.UserQuestion(question="a question the operator saw"),))
+    text = run_review.run_digest(layout).render()
+    assert "questions nobody answered (2):" in text
+    assert "keep the public API?" in text and "allow the migration?" in text
+    assert "a question the operator saw" not in text
+    assert operator_prompts.UNANSWERED_NOTE in text
+
+
+@pytest.mark.parametrize("field", ["stdout_tail", "stderr_tail"])
+def test_verify_tail_keeps_the_last_complete_lines(repo: pathlib.Path, field: str) -> None:
+    """Clipping an existing verify tail preserves the final test summary and complete lines."""
+    tail = "\n".join([*(f"line-{n}: context" for n in range(70)), "2 failed, 100 passed"])
+    layout = _write_session(
+        repo,
+        events=[
+            {
+                "type": "verify.end",
+                "exit_code": 1,
+                "duration_s": 1,
+                field: tail,
+            }
+        ],
+    )
+    (verify,) = run_review.run_digest(layout).verify_runs
+    assert len(verify.tail) <= 400
+    assert verify.tail.startswith("…\n")
+    assert verify.tail.endswith("2 failed, 100 passed")
+    assert all(line.startswith("line-") for line in verify.tail.splitlines()[1:-1])
+
+
 def test_every_writer_of_a_fact_is_credited_not_only_the_first_and_last(repo: pathlib.Path) -> None:
     """A creates a fact, B edits it, C edits it.
 

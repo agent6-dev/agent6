@@ -340,7 +340,7 @@ class VerifyGate:
             return
         state.verify.adopted = inferred.argv
         cmd = " ".join(inferred.argv)
-        self.log(f"LOOP: verify adopted from {inferred.source}: {cmd}")
+        self.log(f"LOOP: verify adopted from {inferred.label}: {cmd}")
         self.emit(
             "loop.verify_inferred",
             command=list(inferred.argv),

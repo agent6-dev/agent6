@@ -25,6 +25,7 @@ def _run_session(tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:
 def test_steer_queues_for_a_live_run(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """A queued steer acknowledgement tells the operator when the model receives it."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-AAAA11")
@@ -32,7 +33,7 @@ def test_steer_queues_for_a_live_run(
 
     assert main(["steer", "tiny-run", "land your best patch now"]) == 0
     out = capsys.readouterr().out
-    assert "steering for tiny-run-AAAA11" in out
+    assert "tiny-run-AAAA11: steer queued; it reaches the model at the next step." in out
     # The one shared channel: request marker + answer, exactly what the
     # composers write and the loop consumes. A plain steer never carries the
     # interrupt urgency; --now writes it into the marker.

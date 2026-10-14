@@ -384,8 +384,8 @@ def test_the_task_headline_is_the_first_line_clipped() -> None:
     assert "# Plan" not in out and "1. add" not in out
 
 
-def test_the_receipt_reads_the_mode_from_the_start_the_console_prints_itself() -> None:
-    """The fold still sees session.start though the console prints its own headline for it."""
+def test_the_receipt_reads_the_mode_from_the_shared_task_headline() -> None:
+    """The console renders the fold's opening item once and preserves its mode for the receipt."""
     out = _render(
         [
             {"type": "session.start", "mode": "ask", "user_task": "why?"},
@@ -396,7 +396,9 @@ def test_the_receipt_reads_the_mode_from_the_start_the_console_prints_itself() -
     )
     assert "1 tool" in out
     assert "0 commits" not in out
-    assert out.count("why?") == 1  # the headline once, no operator item for the start
+    assert out.count("why?") == 1
+    # The headline sits at the margin; everything the run did is indented under it.
+    assert [ln for ln in out.splitlines() if "why?" in ln] == ["● why?"]
 
 
 def test_the_cli_prints_a_tool_once_when_it_settles() -> None:

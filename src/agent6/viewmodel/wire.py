@@ -14,7 +14,7 @@ from agent6 import budget, git_ops
 from agent6.machine import MachineJournal, load_machine
 from agent6.sessions import ipc, layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.viewmodel import format, machine_state, tail
+from agent6.viewmodel import format, listing, machine_state, tail
 from agent6.viewmodel import state as viewmodel_state
 
 
@@ -125,7 +125,7 @@ def branch_facts(
 
 
 def manifest_header(
-    session_dir: pathlib.Path, *, repo: pathlib.Path | None = None
+    session_dir: pathlib.Path, *, repo: pathlib.Path | None = None, status: str = ""
 ) -> dict[str, Any]:
     """Return the session-header fields the event fold does not carry.
 
@@ -135,9 +135,11 @@ def manifest_header(
     Args:
         session_dir: The session's state dir.
         repo: The repository, or None to take the manifest's word on branches.
+        status: The status word from the caller's own fold; "" scans the log for it.
 
     Returns:
-        The branch facts, `git_control`, `base_sha`, the fork lineage as `forked_from`,
+        The branch facts, `unmerged` when the repo is given, `git_control`, `base_sha`,
+        the fork lineage as `forked_from`,
         the `worktree` and the fan-out `compare` outcome with its `line`; empty for a
         run with no readable manifest.
     """
@@ -146,6 +148,11 @@ def manifest_header(
     except sessions_manifest.ManifestError:
         return {}
     header: dict[str, Any] = dict(branch_facts(m, repo))
+    if repo is not None:
+        if not status:
+            scan = listing.scan_session_log(session_dir / layout.LOGS_NAME)
+            status, _reason = listing.status_for_session_dir(session_dir, scan.status_facts())
+        header["unmerged"] = listing.unmerged(m, status, git_ops.run_ref_tips(repo))
     header["git_control"] = m.git_control
     header["base_sha"] = m.base_sha
     lineage = format.format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)
@@ -195,9 +202,13 @@ def session_snapshot(
         as_of = {"iteration": at.steps[-1].iteration, "sha": at.steps[-1].sha}
     else:
         state = viewmodel_state.fold_session(events)
-    snap = viewmodel_state.session_state_as_dict(state, session_dir)
+    word, _reason = listing.status_for_session_dir(session_dir, viewmodel_state.status_facts(state))
+    header = manifest_header(session_dir, repo=repo, status=word)
+    snap = viewmodel_state.session_state_as_dict(
+        state, session_dir, unmerged=bool(header.get("unmerged"))
+    )
     snap["as_of"] = as_of
-    snap.update(manifest_header(session_dir, repo=repo))
+    snap.update(header)
     return snap
 
 

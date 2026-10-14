@@ -19,7 +19,7 @@ from typing import Any, TextIO
 
 from agent6 import terminal
 from agent6.ui.cli import _task_tree, _terminal_guard
-from agent6.viewmodel import events, format, listing, transcript, transcript_style
+from agent6.viewmodel import events, format, transcript, transcript_style
 
 _ANSI = {
     "dim": "\033[2m",
@@ -55,6 +55,7 @@ _STYLE_ANSI: dict[transcript_style.StyleName, str] = {
     "body": "",
     "done-detail": _ANSI["dim"],
     "operator": _ANSI["bold"] + _ANSI["green"],
+    "task": _ANSI["bold"] + _ANSI["cyan"],
 }
 
 _FLUSH_EVERY_S = 0.03  # coalesces streaming-delta flushes; see ConsoleView._raw
@@ -169,16 +170,6 @@ class ConsoleView:
                 # A pause message is about to print; an open dim block would bleed into it.
                 self._end_block()
                 return
-            if etype == "session.start":
-                # Clipped: a `--from` task carries the whole plan.
-                task = listing.task_snippet(str(event.get("user_task", "")), max_chars=200)
-                self._line(self._c("bold", self._c("cyan", transcript.DONE) + " " + task) + "\n")
-                policy = self._policy() if self._policy is not None else ""
-                if policy:
-                    self._line(self._c("dim", f"  {policy}") + "\n")
-                # The fold reads the start for the receipt; its operator item is this headline.
-                self._fold.feed(event)
-                return
             if etype == "btw.answered":
                 # Queued: printed now, it would break up a streaming turn.
                 self._btw.append(str(event.get("block", "")))
@@ -199,6 +190,10 @@ class ConsoleView:
             for item in self._fold.feed(event):
                 self._end_block()
                 self._render(item)
+                if item.kind == "task" and self._policy is not None:
+                    policy = self._policy()
+                    if policy:
+                        self._line(self._c("dim", f"  {policy}") + "\n")
 
     def _stream(self, piece: str, *, thinking: bool) -> None:
         """Write a delta inline, opening the prose block it belongs to."""
@@ -247,9 +242,11 @@ class ConsoleView:
         """Print a fold item's lines in ANSI behind a two-space gutter.
 
         An in-flight tool call prints nothing; the settled item prints the call whole.
+        The task headline sits at the margin, over everything the run did.
         """
         if item.kind == "tool" and item.ok is None:
             return
+        gutter = "" if item.kind == "task" else "  "
         for line in transcript_style.item_lines(item, detail="collapsed"):
             rendered = "".join(
                 f"{_STYLE_ANSI[style]}{text}{_ANSI['reset']}"
@@ -257,7 +254,7 @@ class ConsoleView:
                 else text
                 for text, style in line
             )
-            self._line(("  " + rendered if rendered else "") + "\n")
+            self._line((gutter + rendered if rendered else "") + "\n")
 
     def _c(self, name: str, text: str) -> str:
         """Return the text in the named colour, when colour is on."""

@@ -366,6 +366,25 @@ def summary_row(
 OPERATOR_STOPS = frozenset({"interactive_stop", "interrupted", "steer_abort", "steer_exit"})
 
 
+def end_text(reason: str, summary: str = "", finish_summary: str = "") -> str:
+    """Return the sentence a session's end carries, "" when it carries none.
+
+    Args:
+        reason: The session.end reason token.
+        summary: The journaled end sentence.
+        finish_summary: The finish tool's summary; only a clean end may use it.
+
+    Returns:
+        The journaled sentence, else a clean end's finish summary; a journal with neither
+        has the reason word its label already shows.
+    """
+    if summary.strip():
+        return summary.strip()
+    if reason in ("", "finish_session", "finish_planning"):
+        return finish_summary.strip()
+    return ""
+
+
 def status_word(
     *,
     finished: bool,
@@ -623,6 +642,7 @@ class LogScan:
         end_reason: The session.end reason word.
         stranded: The latest execution finished with its edits uncommitted and no commit landed.
         setup_output: The workspace's setup command and retained output, or its failure diagnostic.
+        end_summary: The journaled end sentence, "" while an execution runs or none was recorded.
         verified: The gate's word for the final tree, as the last session.end carried it:
             `passed`, `failed`, `unverified` or `not_applicable`; "" while a later execution
             runs, and for an end that carried none.
@@ -668,6 +688,7 @@ class LogScan:
     end_reason: str = ""
     stranded: bool = False
     setup_output: str = ""
+    end_summary: str = ""
     verified: str = ""
     end_tree: str = ""
     provider_error: str = ""
@@ -877,7 +898,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         The scan; an empty one when the file cannot be read.
     """
     mode, task = "?", ""
-    finished, end_reason, verified = False, "", ""
+    finished, end_reason, end_summary, verified = False, "", "", ""
     stranded = False
     end_tree = ""
     setup_output = ""
@@ -939,6 +960,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                 if etype == "session.start":
                     saw_start = True
                     finished, stranded, verified = False, False, ""
+                    end_summary = ""
                     end_tree = ""
                     mode = str(ev.get("mode", mode))
                     task = str(ev.get("user_task", ""))
@@ -958,6 +980,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     all_passed = None if raw_ap is None else bool(raw_ap)
                     verify_scoped = bool(ev.get("scoped", False))
                     end_reason = str(ev.get("reason", ""))
+                    end_summary = str(ev.get("summary", ""))
                     if end_reason == "setup_command_failed" and ev.get("summary"):
                         setup_output = terminal.scrub_terminal_controls(str(ev["summary"]))
                     verified = str(ev.get("verified") or "")
@@ -979,6 +1002,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     saw_start = True
                     mode = str(ev.get("mode", mode))
                     finished, stranded, verified = False, False, ""
+                    end_summary = ""
                     end_tree = ""
                     pending_prompts.clear()
                     unattended_questions = 0
@@ -1032,6 +1056,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         verify_scoped=verify_scoped,
         end_reason=end_reason,
         stranded=stranded,
+        end_summary=end_summary,
         verified=verified,
         setup_output=setup_output,
         end_tree=end_tree,
@@ -1070,6 +1095,35 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         verify_timeout_s=verify_timeout_s,
         pins=tuple(pins),
         left_out=tuple(left_out.items()),
+    )
+
+
+def unmerged(
+    manifest: sessions_manifest.SessionManifest, word: str, branch_tips: Mapping[str, str]
+) -> bool:
+    """Return whether the run holds work outside its merge stamp.
+
+    Args:
+        manifest: The run's manifest.
+        word: The dir-aware status word; an undone run's child carries its work.
+        branch_tips: The caller's `git_ops.run_ref_tips` snapshot.
+
+    Returns:
+        Whether its chain or branch has a tip beyond the base and outside the stamp.
+    """
+    if word == "undone":
+        return False
+    tips = {
+        tip
+        for tip in (
+            branch_tips.get(git_ops.chain_ref_for(manifest.session_id)),
+            branch_tips.get(manifest.run_branch or ""),
+        )
+        if tip
+    }
+    # The branch may carry the operator's own commits; a merge stamps whichever tip it merged.
+    return bool(tips - {manifest.base_sha}) and (
+        manifest.merged is None or manifest.merged.tip not in tips
     )
 
 
@@ -1116,27 +1170,18 @@ def summarize_session_dir(
             asked = next((ln.strip() for ln in body if ln.strip()), "")
             task = asked[:200] or transcript.strip()[:200]
     lineage = manifest.parallel if manifest is not None else None
-    unmerged = False
-    if branch_tips is not None and manifest is not None and word != "undone":
-        tips = {
-            tip
-            for tip in (
-                branch_tips.get(git_ops.chain_ref_for(manifest.session_id)),
-                branch_tips.get(manifest.run_branch or ""),
-            )
-            if tip
-        }
-        # The branch may carry the operator's own commits; a merge stamps whichever tip it merged.
-        unmerged = bool(tips - {manifest.base_sha}) and (
-            manifest.merged is None or manifest.merged.tip not in tips
-        )
+    has_unmerged = (
+        unmerged(manifest, word, branch_tips)
+        if branch_tips is not None and manifest is not None
+        else False
+    )
     return SessionSummary(
         session_id=session_dir.name,
         mode=mode,
         task=task,
         status=word,
         reason=reason,
-        unmerged=unmerged,
+        unmerged=has_unmerged,
         cost_usd=scan.cost_usd or 0.0,
         usd_partial=scan.usd_partial,
         mtime=session_mtime(session_dir),

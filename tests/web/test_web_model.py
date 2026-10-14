@@ -156,7 +156,8 @@ def test_conversation_payload_folds_the_event_log(tmp_path: pathlib.Path) -> Non
     )
     payload = model.conversation_payload(d)
     assert set(payload) == {"items", "operator_inputs"}
-    (item,) = payload["items"]
+    (headline, item) = payload["items"]
+    assert headline["kind"] == "task"
     assert item["kind"] == "tool"
     flat = "".join(text for line in item["lines"] for text, _style in line)
     assert "(+2 more lines)" in flat
@@ -742,11 +743,11 @@ def test_conversation_payload_carries_an_in_flight_call(tmp_path: pathlib.Path) 
         items = model.conversation_payload(d)["items"]
         return ["".join(t for line in it["lines"] for t, _s in line) for it in items]
 
-    assert flat_items() == ["→ run_command  sleep 60  · running"]
+    assert flat_items() == ["● x", "→ run_command  sleep 60  · running"]
     result = {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"}
     with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({**result, "call_id": 1}) + "\n")
-    (settled,) = flat_items()
+    (_headline, settled) = flat_items()
     assert "exit 0" in settled and "running" not in settled
 
 
@@ -755,7 +756,8 @@ def test_a_dead_workers_open_call_reads_dead_not_running(tmp_path: pathlib.Path)
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
     d = _run(tmp_path, "r4", [{"type": "session.start", "user_task": "x"}, {**call, "call_id": 1}])
     (d / "worker.pid").write_text("4194304", encoding="utf-8")  # past pid_max: gone
-    (item,) = model.conversation_payload(d)["items"]
+    (headline, item) = model.conversation_payload(d)["items"]
+    assert headline["kind"] == "task"
     flat = "".join(t for line in item["lines"] for t, _s in line)
     assert "no result (the run died)" in flat and "running" not in flat
     assert "no result (the run died)" in model.restate_payload(d)["text"]
