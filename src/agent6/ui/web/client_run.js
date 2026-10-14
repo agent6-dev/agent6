@@ -117,7 +117,7 @@ async function renderRun(id, opts, gen) {
       try {
         const d = await postJSON(base + '/run_plan', {});
         toast('run started: ' + d.run_id);
-        location.hash = '#session/' + encodeURIComponent(d.run_id);
+        location.hash = '#/session/' + encodeURIComponent(d.run_id);
       } catch (e) { toast(e.message, true); }
     };
     // A new run from the latest checkpoint, unstarted (the CLI's `fork --no-run`,
@@ -128,7 +128,7 @@ async function renderRun(id, opts, gen) {
       try {
         const d = await postJSON(base + '/fork', {});
         toast('forked to ' + d.new_session_id + '; type what it should do');
-        location.hash = '#session/' + encodeURIComponent(d.new_session_id);
+        location.hash = '#/session/' + encodeURIComponent(d.new_session_id);
       } catch (e) { toast(e.message, true); }
     };
     // A read-only review of a finished run's record (`sessions review`): a
@@ -233,7 +233,7 @@ async function renderRun(id, opts, gen) {
       // /undo landed: follow the fork with the undone text back to edit.
       toast('undone: forked to ' + s.undone_to);
       pendingComposerFill = s.undone_text || '';
-      location.hash = '#session/' + encodeURIComponent(s.undone_to);
+      location.hash = '#/session/' + encodeURIComponent(s.undone_to);
       return;
     }
     paintRun(cards, s);

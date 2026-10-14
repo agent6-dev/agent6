@@ -1061,7 +1061,7 @@ function makeComposer(id) {
         .then(d => {
           toast('undone: forked to ' + d.new_session_id + (d.notice ? '\n' + d.notice : ''));
           pendingComposerFill = d.undone_text || '';
-          location.hash = '#session/' + encodeURIComponent(d.new_session_id);
+          location.hash = '#/session/' + encodeURIComponent(d.new_session_id);
         })
         .catch(err => toast(err.message, true));
       return;
