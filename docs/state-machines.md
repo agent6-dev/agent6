@@ -536,7 +536,7 @@ Unset keys read straight through to the lower layers, so a machine only states w
 **Sandbox keys: never wider than your own config.** An overlay may set any `sandbox` key, bounded by your own layers alone (defaults, global, repo, preset, `--config FILE`).
 
 - the machine's `[config.sandbox]` narrows for every state; a state's `config.sandbox` sets its own value, bounded by your config and not by the machine's, so it can widen back up to yours
-- `machine check` and `machine run` refuse a wider value before anything runs, naming the state, the key, its value and yours
+- `machine check` and `machine run` refuse a wider value before anything runs, naming the state, the key, its value, yours and the command that grants it
 
 | key | an overlay may set |
 |---|---|

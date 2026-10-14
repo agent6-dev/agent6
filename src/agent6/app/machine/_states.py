@@ -12,17 +12,26 @@ from __future__ import annotations
 import dataclasses
 import os
 import pathlib
+import shlex
 from collections.abc import Callable, Iterable, Mapping
 
 from agent6 import kinds
-from agent6.config import Config, ConfigError, SandboxConfig, layer
+from agent6.config import Config, ConfigError, SandboxConfig, io, layer
 from agent6.machine import AgentState, MachineSpec, ToolState
 from agent6.sandbox import detect
 from agent6.tools import policy as tools_policy
 
 
 class SandboxWidenedError(ConfigError):
-    """An overlay sets a sandbox key wider than the operator's config."""
+    """An overlay sets a sandbox key wider than the operator's config.
+
+    Attributes:
+        problems: One line per key, each naming its table, both values and the remedy.
+    """
+
+    def __init__(self, problems: list[str]) -> None:
+        self.problems = problems
+        super().__init__("\n".join(problems))
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -88,16 +97,13 @@ def _covered(path: str, trees: Iterable[str]) -> bool:
 _ISOLATION_RANK = {"none": 0, "hardened": 1, "strict": 2}
 _RUN_COMMANDS_RANK = {"no": 0, "ask": 1, "yes": 2}
 
-# Per sandbox key: whether the overlay's value is no wider than the operator's. A key with
-# no rule must equal the operator's value.
+# Per scalar sandbox key: whether the overlay's value is no wider than the operator's. A key
+# with no rule here or in `_COVERS` must equal the operator's value.
 _WITHIN: dict[str, Callable[[_Side, _Side], bool]] = {
     "isolation": lambda op, st: _ISOLATION_RANK[st.isolation] >= _ISOLATION_RANK[op.isolation],
     "network": lambda op, st: st.network != "host" or op.network == "host",
     "run_commands": lambda op, st: (
         _RUN_COMMANDS_RANK[st.sandbox.run_commands] <= _RUN_COMMANDS_RANK[op.sandbox.run_commands]
-    ),
-    "fetch_hosts": lambda op, st: (
-        "*" in op.sandbox.fetch_hosts or set(st.sandbox.fetch_hosts) <= set(op.sandbox.fetch_hosts)
     ),
     "protect_git": lambda op, st: st.sandbox.protect_git or not op.sandbox.protect_git,
     "home": lambda op, st: st.sandbox.home in (op.sandbox.home, "tmp"),
@@ -105,24 +111,35 @@ _WITHIN: dict[str, Callable[[_Side, _Side], bool]] = {
         op.sandbox.memory_limit_mb == 0
         or 0 < st.sandbox.memory_limit_mb <= op.sandbox.memory_limit_mb
     ),
-    # Write implies read, so a read entry may sit under the operator's write list.
-    "extra_read_paths": lambda op, st: all(
-        _covered(p, (*op.sandbox.extra_read_paths, *op.sandbox.extra_write_paths))
-        for p in st.sandbox.extra_read_paths
-    ),
-    "extra_write_paths": lambda op, st: all(
-        _covered(p, op.sandbox.extra_write_paths) for p in st.sandbox.extra_write_paths
-    ),
-    # A device is one node: the operator's own entry, whatever its spelling.
-    "extra_device_paths": lambda op, st: (
-        {os.path.normpath(p) for p in st.sandbox.extra_device_paths}
-        <= {os.path.normpath(p) for p in op.sandbox.extra_device_paths}
-    ),
-    # Hiding more is narrower: each of the operator's entries stays under one of the state's.
-    "hide_paths": lambda op, st: all(
-        _covered(p, st.sandbox.hide_paths) for p in op.sandbox.hide_paths
-    ),
 }
+
+# Per list sandbox key: whether a sandbox covers one entry. An overlay's grant is within the
+# bound when the operator's sandbox covers each of its entries. `hide_paths` runs the other
+# way, since hiding more is narrower: the overlay's sandbox covers each of the operator's.
+_COVERS: dict[str, Callable[[SandboxConfig, str], bool]] = {
+    "fetch_hosts": lambda sandbox, host: "*" in sandbox.fetch_hosts or host in sandbox.fetch_hosts,
+    # Write implies read, so a read entry may sit under the write list.
+    "extra_read_paths": lambda sandbox, path: _covered(
+        path, (*sandbox.extra_read_paths, *sandbox.extra_write_paths)
+    ),
+    "extra_write_paths": lambda sandbox, path: _covered(path, sandbox.extra_write_paths),
+    # A device is one node: the operator's own entry, whatever its spelling.
+    "extra_device_paths": lambda sandbox, path: (
+        os.path.normpath(path) in {os.path.normpath(p) for p in sandbox.extra_device_paths}
+    ),
+    "hide_paths": lambda sandbox, path: _covered(path, sandbox.hide_paths),
+}
+
+
+def _grant(verb: str, leaf: str, values: Iterable[str]) -> str:
+    """Return the remedy for a key the operator grants: one config command per value."""
+    commands = ", ".join(
+        f"`agent6 config {verb} --repo sandbox.{leaf} {shlex.quote(value)}`" for value in values
+    )
+    return (
+        f"Grant it in your own config ({commands}, or `agent6 --config FILE machine run` for"
+        " this machine alone), or drop it"
+    )
 
 
 def sandbox_widening(
@@ -132,6 +149,9 @@ def sandbox_widening(
     state_isolation: kinds.IsolationLevel,
 ) -> list[str]:
     """Return one line per sandbox key a config sets wider than the operator's.
+
+    Each line gives both values as TOML and the remedy: the config command that grants the
+    value, or for `hide_paths` the entries the overlay has to keep.
 
     Args:
         operator: The operator's config, the ceiling.
@@ -145,13 +165,29 @@ def sandbox_widening(
     op, st = _Side(operator, operator_isolation), _Side(state, state_isolation)
     problems: list[str] = []
     for leaf in SandboxConfig.model_fields:
-        within = _WITHIN.get(leaf)
         ours, theirs = getattr(op.sandbox, leaf), getattr(st.sandbox, leaf)
-        if theirs == ours or (within is not None and within(op, st)):
+        if theirs == ours:
             continue
-        shown = list(theirs) if isinstance(theirs, tuple) else theirs
-        ceiling = list(ours) if isinstance(ours, tuple) else ours
-        problems.append(f"sandbox.{leaf} = {shown!r}, wider than your config's {ceiling!r}")
+        shown = io.format_toml_value(theirs)
+        remedy = _grant("set", leaf, [theirs if isinstance(theirs, str) else shown])
+        if covers := _COVERS.get(leaf):
+            hide = leaf == "hide_paths"
+            bound, entries = (st.sandbox, ours) if hide else (op.sandbox, theirs)
+            outside = [entry for entry in entries if not covers(bound, entry)]
+            if not outside:
+                continue
+            kept = ", ".join(io.format_toml_value(entry) for entry in outside)
+            remedy = (
+                f"Keep {kept} in that list, or drop the key"
+                if hide
+                else _grant("add", leaf, outside)
+            )
+        elif (within := _WITHIN.get(leaf)) is not None and within(op, st):
+            continue
+        problems.append(
+            f"sandbox.{leaf} = {shown}, wider than your config's {io.format_toml_value(ours)}."
+            f" {remedy} from the machine file."
+        )
     return problems
 
 
@@ -196,12 +232,7 @@ def resolve_configs(
         isolation = detect.resolve_isolation(eff.config.sandbox.isolation, env)
         problems = sandbox_widening(operator, operator_isolation, eff.config, isolation)
         if problems:
-            raise SandboxWidenedError(
-                f"{where} sets {'; '.join(problems)}. An overlay may narrow the sandbox,"
-                " never widen it: grant it in your own config (`agent6 config set --repo"
-                " sandbox.<key> <value>`, or `agent6 --config FILE machine run` for this"
-                " machine alone), or drop it from the machine file."
-            )
+            raise SandboxWidenedError([f"{where} sets {problem}" for problem in problems])
         return StateConfig(
             eff.config.with_sandbox_overrides(auto_approve=auto_approve, no_commands=no_commands),
             eff.explicit_leaves,

@@ -305,7 +305,11 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             auto_approve=auto_approve,
             no_commands=no_commands,
         )
-    except (_states.SandboxWidenedError, detect.IsolationUnavailableError) as exc:
+    except _states.SandboxWidenedError as exc:
+        for problem in exc.problems:
+            reporter.refuse(problem)
+        return 2
+    except detect.IsolationUnavailableError as exc:
         reporter.refuse(str(exc))
         return 2
     except ConfigError as exc:

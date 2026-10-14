@@ -27,6 +27,7 @@ depends_on = [
   "agent6.child_env",
   "agent6.commit_message",
   "agent6.config",
+  "agent6.config.io",
   "agent6.config.layer",
   "agent6.directive",
   "agent6.event_log",

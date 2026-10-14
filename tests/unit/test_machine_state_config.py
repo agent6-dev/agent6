@@ -220,7 +220,7 @@ def test_a_knob_and_its_config_leaf_are_one_spelling(tmp_path: pathlib.Path) -> 
 
 def test_every_sandbox_key_has_a_rule() -> None:
     """A new sandbox key fails here until it gets a rule."""
-    assert set(_states._WITHIN) == set(SandboxConfig.model_fields)
+    assert set(_states._WITHIN) | set(_states._COVERS) == set(SandboxConfig.model_fields)
 
 
 def test_a_key_with_no_rule_must_equal_the_operators(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -306,6 +306,64 @@ def test_an_overlay_may_not_widen(
     assert f"sandbox.{leaf} = " in problems and "wider than your config's" in problems
 
 
+@pytest.mark.parametrize(
+    ("operator", "state", "said", "command"),
+    [
+        (
+            {},
+            {"network": "host"},
+            'sandbox.network = "host", wider than your config\'s "auto"',
+            "`agent6 config set --repo sandbox.network host`",
+        ),
+        (
+            {},
+            {"protect_git": False},
+            "sandbox.protect_git = false, wider than your config's true",
+            "`agent6 config set --repo sandbox.protect_git false`",
+        ),
+        (
+            {"memory_limit_mb": 512},
+            {"memory_limit_mb": 1024},
+            "sandbox.memory_limit_mb = 1024, wider than your config's 512",
+            "`agent6 config set --repo sandbox.memory_limit_mb 1024`",
+        ),
+        (
+            {"extra_read_paths": ["/a"]},
+            {"extra_read_paths": ["/a", "/b c", "/d"]},
+            'sandbox.extra_read_paths = ["/a", "/b c", "/d"], wider than your config\'s ["/a"]',
+            "(`agent6 config add --repo sandbox.extra_read_paths '/b c'`,"
+            " `agent6 config add --repo sandbox.extra_read_paths /d`, or",
+        ),
+        (
+            {"fetch_hosts": ["a.example"]},
+            {"fetch_hosts": ["*"]},
+            'sandbox.fetch_hosts = ["*"], wider than your config\'s ["a.example"]',
+            "(`agent6 config add --repo sandbox.fetch_hosts '*'`, or",
+        ),
+    ],
+)
+def test_the_refusal_prints_the_command_that_grants_the_value(
+    operator: dict[str, Any], state: dict[str, Any], said: str, command: str
+) -> None:
+    """The values read as the operator writes them in TOML, the command as they type it."""
+    problem = _widening(_cfg(**operator), _cfg(**{**operator, **state}))
+    assert problem.startswith(said + ". Grant it in your own config (")
+    assert command in problem
+    assert problem.endswith(
+        "or `agent6 --config FILE machine run` for this machine alone),"
+        " or drop it from the machine file."
+    )
+
+
+def test_the_refusal_of_a_dropped_hide_path_points_at_the_machine_file() -> None:
+    """Hiding is granted by the overlay, so no command on the operator's config restores it."""
+    problem = _widening(_cfg(hide_paths=["/h", "/kept"]), _cfg(hide_paths=["/kept"]))
+    assert problem == (
+        'sandbox.hide_paths = ["/kept"], wider than your config\'s ["/h", "/kept"].'
+        ' Keep "/h" in that list, or drop the key from the machine file.'
+    )
+
+
 def test_a_path_is_compared_by_where_it_really_is(tmp_path: pathlib.Path) -> None:
     """A symlink inside a granted tree that points outside it is a grant of the outside."""
     granted, outside = tmp_path / "granted", tmp_path / "outside"
@@ -373,8 +431,9 @@ def test_a_state_wider_than_the_operator_is_refused_by_name(
     with pytest.raises(SandboxWidenedError) as refused:
         resolve_configs(spec, tmp_path, _setup.detect_env())
     said = str(refused.value)
-    assert said.startswith("[states.judge.config] sets sandbox.extra_write_paths = ['/srv/outbox']")
-    assert "wider than your config's []" in said and "agent6 config set --repo" in said
+    assert said.startswith('[states.judge.config] sets sandbox.extra_write_paths = ["/srv/outbox"]')
+    assert "wider than your config's []" in said
+    assert "`agent6 config add --repo sandbox.extra_write_paths /srv/outbox`" in said
 
 
 def test_the_ceiling_is_the_operators_layers_alone(
@@ -508,13 +567,13 @@ def test_run_and_check_refuse_a_widening_before_anything_runs(
     mfile = _write(tmp_path, MACHINE)
     assert main(["machine", "check", str(mfile)]) == 1
     assert (
-        "[states.scan.config] sets sandbox.extra_read_paths = ['/srv/inbox']"
+        '[states.scan.config] sets sandbox.extra_read_paths = ["/srv/inbox"]'
         in capsys.readouterr().err
     )
     reporter = mock.MagicMock()
     assert run.run_machine(mfile, reporter) == 2
     said = " ".join(str(c.args[0]) for c in reporter.refuse.call_args_list)
-    assert "[states.scan.config] sets sandbox.extra_read_paths = ['/srv/inbox']" in said
+    assert '[states.scan.config] sets sandbox.extra_read_paths = ["/srv/inbox"]' in said
     assert ran == []
 
 

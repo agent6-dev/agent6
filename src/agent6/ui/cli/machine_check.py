@@ -18,6 +18,7 @@ from typing import Any
 from agent6 import errors
 from agent6.app import _setup
 from agent6.app.machine import (
+    SandboxWidenedError,
     lint_and_typecheck,
     resolve_configs,
     run_offline_tests,
@@ -83,6 +84,8 @@ def _load_validated(
         return None, bundle_problems, "bundle"
     try:
         resolve_configs(spec, pathlib.Path.cwd(), _setup.detect_env(), config_path=config_path)
+    except SandboxWidenedError as exc:
+        return None, exc.problems, "config"
     except (ConfigError, detect.IsolationUnavailableError) as exc:
         return None, [str(exc)], "config"
     return spec, [], ""
