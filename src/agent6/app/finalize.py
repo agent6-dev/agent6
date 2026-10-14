@@ -239,7 +239,7 @@ def _print_stale_gate(result: _snapshot.SessionResult, *, reporter: app_reporter
     reporter.out("  nothing changed. To adopt it:")
     # `config set` takes argv as a JSON array; the inference's tokeniser wraps a pipeline.
     argv = json.dumps(list(verify_infer.line_to_argv(result.stale_gate) or ()))
-    reporter.out(f"    agent6 config set harness.verify_command {shlex.quote(argv)}")
+    reporter.out(f"    agent6 config set --repo harness.verify_command {shlex.quote(argv)}")
 
 
 def print_session_end(

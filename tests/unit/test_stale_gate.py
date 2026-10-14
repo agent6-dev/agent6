@@ -6,12 +6,17 @@ from __future__ import annotations
 
 import contextlib
 import io
+import pathlib
+import shlex
+import subprocess
 
 import pytest
 
+from agent6 import paths
 from agent6.app import reporter
 from agent6.harness import _snapshot
 from agent6.tools import results
+from agent6.ui import cli
 from agent6.viewmodel import listing
 
 
@@ -73,8 +78,42 @@ def test_the_operator_gets_a_paste_ready_line() -> None:
     # argv, as `config set` accepts it: the shell string it proposes is
     # rejected with "Input should be a valid tuple".
     assert (
-        'agent6 config set harness.verify_command \'["uv", "run", "pytest", "tests/unit"]\'' in text
+        "agent6 config set --repo harness.verify_command"
+        ' \'["uv", "run", "pytest", "tests/unit"]\'' in text
     )
+
+
+def test_the_adopt_line_pins_the_gate_for_this_repo_only(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The printed adopt command writes the per-repo config and leaves the global one alone.
+
+    A proposed gate names repo-local paths (`venv/bin/python`); in the global config it
+    would judge every repository on the machine.
+    """
+    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.chdir(tmp_path)
+    finalize._print_stale_gate(
+        _snapshot.SessionResult(
+            completed=True,
+            reason="gate_stale",
+            summary="s",
+            iterations=1,
+            tool_calls=1,
+            stale_gate="venv/bin/python -m pytest -q",
+            verified="failed",
+        ),
+        reporter=reporter.STDIO_REPORTER,
+    )
+    adopt = shlex.split(capsys.readouterr().out.splitlines()[-1])
+    assert adopt[0] == "agent6"
+
+    assert cli.main(adopt[1:]) == 0
+
+    assert not paths.global_config_path().exists()
+    assert "venv/bin/python" in paths.repo_config_path(tmp_path).read_text(encoding="utf-8")
 
 
 def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
