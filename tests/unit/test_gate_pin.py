@@ -170,6 +170,9 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
     out = capsys.readouterr().out
     assert "nothing checked it before this run started" in out
     assert "uv run pytest" in out
+    # One blank line on each side of the note: after the summary, before the cost receipt.
+    assert "  s\n\nthe gate is red" in out
+    assert "uv run pytest)\n\nToken + cost summary:" in out
 
 
 def test_a_run_records_the_isolation_it_actually_ran_under(tmp_path: pathlib.Path) -> None:

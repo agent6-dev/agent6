@@ -275,13 +275,12 @@ def print_session_end(
         # The stream's done line carries a clean finish's summary only; a failure's reason
         # reaches the operator here alone.
         reporter.out(f"  {result.summary}")
-    reporter.out("")
     if unreachable := _sandbox_unreachable_tools(layout):
         # One remedy for the set, not one per binary.
         names = ", ".join(f"`{b}`" for b in unreachable)
         verb = "is" if len(unreachable) == 1 else "are"
         reporter.out(
-            f"WARNING: {names} {verb} installed on this machine but did not work"
+            f"\nWARNING: {names} {verb} installed on this machine but did not work"
             " inside agent6's sandbox."
         )
         reporter.out(
@@ -296,6 +295,7 @@ def print_session_end(
     _print_unknown_baseline(result, layout=layout, reporter=reporter)
     _print_unverified(result, layout=layout, reporter=reporter)
     _print_stale_gate(result, reporter=reporter)
+    reporter.out("")
     reporter.cost(budget.format_summary())
     _print_run_total_across_executions(layout, reporter=reporter)
     _print_run_branch_footer(result, layout=layout, cwd=cwd, reporter=reporter)
