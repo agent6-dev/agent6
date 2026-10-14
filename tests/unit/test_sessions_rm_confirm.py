@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from agent6 import git_ops, paths
+from agent6 import git_ops, paths, portable
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import _steer, main
 
@@ -64,12 +64,19 @@ def _ended_unmerged_run(repo: pathlib.Path) -> sessions_layout.SessionLayout:
     return layout
 
 
-def cli_under_pty(argv: list[str]) -> tuple[int, int]:
-    """Fork a child under a fresh pty that runs `agent6 <argv>` on that terminal."""
+def cli_under_pty(argv: list[str], *, stdout: pathlib.Path | None = None) -> tuple[int, int]:
+    """Fork a child under a fresh pty that runs `agent6 <argv>` on that terminal.
+
+    Args:
+        argv: The arguments after `agent6`.
+        stdout: A file the child's stdout goes to in place of the pty, as `> file` does.
+    """
     pid, master = pty.fork()
     if pid == 0:  # pragma: no cover - child process
         code = 1
         try:
+            if stdout is not None:
+                os.dup2(os.open(stdout, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644), 1)
             # The pty, in place of the streams pytest captured.
             sys.stdin = open(0, closefd=False)  # noqa: SIM115  # held until the child exits
             sys.stdout = open(1, "w", closefd=False)  # noqa: SIM115  # held until the child exits
@@ -176,12 +183,36 @@ def test_rm_asks_on_a_terminal_before_clearing_the_asks(
     assert asks.is_dir()
 
 
+def test_a_redirected_stdout_does_not_skip_the_question(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`sessions rm > log` at a terminal deleted the newest session with no question.
+
+    The question goes to the terminal itself, whatever stdin and stdout are.
+    """
+    monkeypatch.chdir(tmp_path)
+    layout = _ended_unmerged_run(tmp_path)
+    log = tmp_path / "out.log"
+    pid, master = cli_under_pty(["sessions", "rm"], stdout=log)
+    try:
+        asked = read_pty(master, b"[y/N]: ")
+        assert asked.endswith("[y/N]: "), asked
+        os.write(master, b"n\n")
+        read_pty(master, b"\x00", seconds=10.0)
+        assert reap(pid) == 0
+    finally:
+        os.close(master)
+    assert layout.session_dir.exists()
+    assert "nothing was deleted" in log.read_text(encoding="utf-8")
+
+
 def test_rm_without_a_terminal_deletes_without_asking(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With no terminal on stdin and stdout `rm` never asks, so a script keeps working."""
+    """With no controlling terminal `rm` never asks, so a script keeps working."""
     monkeypatch.chdir(tmp_path)
     layout = _ended_unmerged_run(tmp_path)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
 
     def never(*_args: object, **_kwargs: object) -> str | None:
         raise AssertionError("rm asked with no terminal")

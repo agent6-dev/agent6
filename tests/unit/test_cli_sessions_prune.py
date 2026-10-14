@@ -15,6 +15,14 @@ from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
 
 
+@pytest.fixture(autouse=True)
+def _no_controlling_terminal(  # pyright: ignore[reportUnusedFunction]
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run as CI does, with no controlling terminal: `rm` without `--yes` asks on one."""
+    monkeypatch.setattr("agent6.portable.has_controlling_tty", lambda: False)
+
+
 def _git(repo: pathlib.Path, *args: str, check: bool = True) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=check, capture_output=True, text=True

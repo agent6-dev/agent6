@@ -12,6 +12,14 @@ from agent6 import memory, paths
 from agent6.ui.cli import memory_cmds
 
 
+@pytest.fixture(autouse=True)
+def _no_controlling_terminal(  # pyright: ignore[reportUnusedFunction]
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run as CI does, with no controlling terminal: `rm` without `--yes` asks on one."""
+    monkeypatch.setattr("agent6.portable.has_controlling_tty", lambda: False)
+
+
 @pytest.fixture
 def env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

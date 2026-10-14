@@ -9,7 +9,7 @@ import pathlib
 
 import pytest
 
-from agent6 import memory, paths
+from agent6 import memory, paths, portable
 from agent6.ui.cli import _steer, main
 from tests.unit import test_sessions_rm_confirm as pty_cli
 
@@ -68,9 +68,10 @@ def test_memory_rm_yes_deletes_on_a_terminal_without_asking(
 def test_memory_rm_without_a_terminal_deletes_without_asking(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With no terminal on stdin and stdout `memory rm` never asks, so a script keeps working."""
+    """With no controlling terminal `memory rm` never asks, so a script keeps working."""
     monkeypatch.chdir(tmp_path)
     fact = _fact(tmp_path)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
 
     def never(*_args: object, **_kwargs: object) -> str | None:
         raise AssertionError("memory rm asked with no terminal")

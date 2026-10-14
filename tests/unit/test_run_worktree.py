@@ -28,6 +28,15 @@ from agent6.tools import dispatch, results
 from agent6.ui.cli import cli_main
 from agent6.ui.cli import run as cli_run
 
+
+@pytest.fixture(autouse=True)
+def _no_controlling_terminal(  # pyright: ignore[reportUnusedFunction]
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run as CI does, with no controlling terminal: `rm` without `--yes` asks on one."""
+    monkeypatch.setattr("agent6.portable.has_controlling_tty", lambda: False)
+
+
 _CONFIG = """
 [sandbox]
 isolation = "none"

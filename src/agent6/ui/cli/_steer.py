@@ -16,7 +16,7 @@ import termios
 from collections.abc import Callable, Generator
 from typing import Any
 
-from agent6 import budget, event_log
+from agent6 import budget, event_log, portable
 from agent6.app import frontend
 from agent6.sessions import ipc
 from agent6.ui import keymap, steer
@@ -168,18 +168,22 @@ def tty_message(text: str) -> None:
 
 
 def delete_confirmed(what: str, question: str) -> bool:
-    """Return whether a delete goes ahead, asking first when stdin and stdout are a terminal.
+    """Return whether a delete goes ahead, asking first on the controlling terminal.
 
-    With either off a terminal nothing is asked, so a script keeps working. Every verb that
-    deletes a record asks here.
+    The question goes to the terminal itself, so a redirected stdin or stdout does not skip
+    it and piped input is never read as the answer. With no controlling terminal nothing is
+    asked, so a script keeps working. `sessions rm` and `memory rm` ask here.
 
     Args:
         what: The lines naming what will go.
         question: The question, without its `[y/N]` suffix.
     """
-    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+    if not portable.has_controlling_tty():
         return True
-    typed = tty_prompt(f"{what}\n{question} {keymap.approval_prompt_suffix(standing=False)}")
+    typed = tty_prompt(
+        f"{what}\n{question} {keymap.approval_prompt_suffix(standing=False)}",
+        fall_back_to_stdin=False,
+    )
     if keymap.answer_for(typed or "", standing=False) == "yes":
         return True
     print("nothing was deleted")
