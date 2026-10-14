@@ -193,6 +193,8 @@ def _python(repo_root: pathlib.Path) -> str:
 
 
 Signal = tuple[tuple[str, ...], str]
+# The sources that each name one ecosystem's own test runner.
+_ECOSYSTEM_SOURCES = frozenset({"Cargo.toml", "go.mod", "package.json", "pyproject"})
 
 
 def _verify_sh(repo_root: pathlib.Path) -> Signal | None:
@@ -347,6 +349,8 @@ def infer_verify_command(
     """Infer a verify command: AGENTS.md, then the repo's files, then the LLM.
 
     A candidate whose first word does not resolve in the jail is passed over for the next.
+    When one ecosystem's manifest gives the gate, the other ecosystems' manifests are recorded
+    as passed over too.
 
     Args:
         repo_root: The repository.
@@ -371,8 +375,16 @@ def infer_verify_command(
     argv = verify_from_agents_md(agents_md)
     if argv is not None and runnable(argv, "AGENTS.md"):
         return InferredVerify(argv, "agents_md", tuple(passed))
-    for argv, source in repo_signals(repo_root, hide):
+    signals = repo_signals(repo_root, hide)
+    for i, (argv, source) in enumerate(signals):
         if runnable(argv, source):
+            if source in _ECOSYSTEM_SOURCES:
+                # One ecosystem's runner is the gate; the other ecosystems here are named.
+                passed += [
+                    (other, f"names `{shlex.join(cmd)}`, which this gate does not run")
+                    for cmd, other in signals[i + 1 :]
+                    if other in _ECOSYSTEM_SOURCES
+                ]
             return InferredVerify(argv, source, tuple(passed))
     readable = bool(agents_md.strip()) or any(
         (repo_root / name).is_file() for name in _MANIFEST_FILES

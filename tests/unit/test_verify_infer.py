@@ -300,6 +300,36 @@ def test_a_runner_given_as_a_path_is_not_judged_by_the_jail_path(
     assert got.passed_over == ()
 
 
+def test_the_manifests_an_ecosystem_gate_leaves_out_are_named(tmp_path: pathlib.Path) -> None:
+    """One ecosystem's runner is the gate, and the other ecosystems' manifests are named.
+
+    Unnamed, a repo with three manifests ran one suite and said nothing of the other two.
+    """
+    (tmp_path / "go.mod").write_text("module x\n", encoding="utf-8")
+    (tmp_path / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
+    got = verify_infer.infer_verify_command(tmp_path, "")
+    assert (got.argv, got.source) == (("npm", "test", "--silent"), "package.json")
+    assert got.passed_over == (
+        ("Cargo.toml", "names `cargo test --quiet`, which this gate does not run"),
+        ("go.mod", "names `go test ./...`, which this gate does not run"),
+    )
+
+
+def test_one_ecosystem_or_a_repo_entry_point_names_no_other_manifest(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Loose tests beside a Python manifest are one gate, and a verify.sh speaks for the repo."""
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    (tmp_path / "test_calc.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
+    got = verify_infer.infer_verify_command(tmp_path, "")
+    assert (got.source, got.passed_over) == ("pyproject", ())
+    (tmp_path / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
+    (tmp_path / "verify.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    got = verify_infer.infer_verify_command(tmp_path, "")
+    assert (got.source, got.passed_over) == ("verify.sh", ())
+
+
 def test_gather_repo_manifests_clips_and_includes(tmp_path: pathlib.Path) -> None:
     (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     ctx = verify_infer.gather_repo_manifests(tmp_path, "Verify: pytest", cap=10)

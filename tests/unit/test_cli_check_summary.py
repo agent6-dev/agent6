@@ -184,6 +184,39 @@ def test_check_verify_and_the_run_header_say_why_a_manifest_was_passed_over(
     assert f"\n         {why}\n" in header
 
 
+@pytest.mark.usefixtures("jail_bin")
+def test_check_verify_and_the_run_header_name_the_manifests_the_gate_leaves_out(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Beside the manifest the gate came from, the other ecosystems' manifests are named.
+
+    Unnamed, a Go regression passed a gate that ran only the Node tests, with no word of it.
+    """
+    from agent6.ui.cli import main
+
+    (tmp_path / "go.mod").write_text("module x\n", encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
+    left_out = "passed over: go.mod names `go test ./...`, which this gate does not run"
+    monkeypatch.chdir(tmp_path)
+    assert main(["check", "verify"]) == 0
+    assert f"unset; a run here infers npm test --silent from package.json; {left_out}\n" in (
+        capsys.readouterr().out
+    )
+
+    cfg = preflight.infer_verify_if_unset(
+        Config(),
+        tmp_path,
+        mode="run",
+        events=event_log.EventSink(tmp_path / "logs.jsonl"),
+        transcript_sink=mock.MagicMock(),
+        budget=agent6_budget.BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=-1.0),
+    )
+    header = capsys.readouterr().err
+    assert cfg.harness.verify_command == ("npm", "test", "--silent")
+    assert "verify_command not set; inferred from package.json: npm test --silent\n" in header
+    assert f"\n         {left_out}\n" in header
+
+
 def test_boundaries_reports_spawned_mcp_as_unconfined_without_a_jail(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
