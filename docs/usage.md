@@ -109,7 +109,7 @@ Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scr
 | Code | Meaning |
 |---|---|
 | `0` | finished with a green gate, or nothing to gate on; a review panel's PASS |
-| `1` | the run broke (crash, provider error); a review panel whose every seat abstained |
+| `1` | ended unfinished: stopped with `agent6 stop`, out of turns, stuck, a provider error, a crash; a review panel whose every seat abstained |
 | `2` | operator error (bad flag or config, a refusal before anything ran) |
 | `3` | budget exhausted |
 | `4` | finished over a red or never-run verify gate; a review panel's BLOCK |
