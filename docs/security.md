@@ -19,7 +19,8 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 **Holds**
 
 - No writes outside the workspace
-    - `sandbox.extra_write_paths` and the per-repo memory dir widen it, visibly in `config show`; so does the jail's persistent `HOME` (below), visible in `agent6 check boundaries`
+    - `sandbox.extra_write_paths` widens it, visible in `agent6 config show`
+    - the per-repo memory dir (file tools only) and the jail's persistent `HOME` (below) widen it, visible in `agent6 check boundaries`
 - No reads outside the workspace and a read-only system set for installed toolchains
     - `strict`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, whose `/etc` holds nothing else off the host network, plus a curated `/dev`
     - `hardened`: Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc`, `/dev`
@@ -247,7 +248,7 @@ Every path they take resolves through `Workspace`:
     - a `pyvenv.cfg` dir, a `site-packages` ancestor, and an operator protect path (a machine bundle's `.asm.toml` and `scripts/`) refuse the same way, whatever `protect_git` says
 - Rewriting an editable-install `.pth` corrupts a venv invisibly (venvs are gitignored), so those writes refuse
     - reads stay allowed; an editable install still imports itself inside the jail (the repo is bound at its real path)
-- Inside the state dir the edit tools may write the memory dir (`<state-dir>/<repo-id>/memory/`) and nothing else (the exempt list in `tools/_path_safety.py`).
+- Inside the per-repo state dir (`$XDG_STATE_HOME/agent6/<repo-id>/`), the edit tools may write `memory/` and nothing else, except `memory/DECISIONS.md`, which is read-only (`tools/policy.py` fills the exempt list).
 - Uncovered: with `isolation = "none"` and `run_commands = "yes"`, a command reads a denied path directly (`run_command` argv is not screened)
 
 **Prompt reads.** The agent process itself reads `AGENTS.md` and the manifests the verify inference uses (`pyproject.toml`, `package.json`, a Makefile and the like), and their text reaches the provider.

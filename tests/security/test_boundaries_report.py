@@ -104,6 +104,36 @@ def test_boundaries_report_covers_every_actor(
     assert "secrets.toml" in out
 
 
+def test_boundaries_report_names_the_memory_dir_for_the_file_tools_only(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The report hid the file tools' memory exception under the state-base denial."""
+    _force(monkeypatch, "strict")
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    subdir = repo / "src"
+    subdir.mkdir()
+    monkeypatch.chdir(subdir)
+    state_home = tmp_path / "statehome"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_home))
+    mem = paths.state_dir(repo) / "memory"
+    assert mem.is_relative_to(paths.state_base())
+
+    checks = check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    files, commands = out.split("  jailed commands", 1)
+    assert checks == []
+    assert (
+        f"    rw  {mem}  (repo memory, inside the hidden state dir; DECISIONS.md read-only)"
+    ) in files
+    assert f"    --  {paths.state_base()}  (hidden: tools refuse it)" in files
+    assert not any(
+        str(mem) in line and "sandbox.extra_write_paths" in line for line in out.splitlines()
+    )
+    assert f"rw  {mem}" not in commands
+    assert not state_home.exists(), "reporting the memory exception must not create the store"
+
+
 def test_boundaries_report_warns_about_a_grant_of_the_home_directory(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

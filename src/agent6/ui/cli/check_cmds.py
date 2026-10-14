@@ -11,7 +11,7 @@ import shlex
 import shutil
 from typing import Literal
 
-from agent6 import git_ops, kinds, verify_infer
+from agent6 import git_ops, kinds, memory, verify_infer
 from agent6 import paths as agent6_paths
 from agent6.app import _setup, confine, fork_worktrees
 from agent6.config import (
@@ -604,8 +604,11 @@ def _check_boundaries_section(
     if cfg.sandbox.isolation == "auto" and reason is not None:
         print(f"  not strict: {reason}")
 
-    grants = tools_policy.resolve_grants(cfg, pathlib.Path.cwd())
-    ws = tools_policy.workspace_for(cfg, pathlib.Path.cwd(), grants=grants)
+    root = pathlib.Path.cwd()
+    grants = tools_policy.resolve_grants(cfg, root)
+    ws = tools_policy.workspace_for(
+        cfg, root, memory_dir=memory.memory_dir(agent6_paths.state_dir(root)), grants=grants
+    )
     out: list[_DoctorCheck] = []
     refusal = confine.check_network_support(cfg, selected) or confine.config_refusal(
         cfg, selected, ws.root, explicit_leaves=explicit_leaves
@@ -625,6 +628,8 @@ def _check_boundaries_section(
     print(f"    rw  {ws.root}  (the workspace)")
     for line in _grant_lines(grants):
         print(line)
+    for p in sorted(ws.exempt):
+        print(f"    rw  {p}  (repo memory, inside the hidden state dir; DECISIONS.md read-only)")
     for p in sorted(ws.denied):
         print(f"    --  {p}  (hidden: tools refuse it)")
 
