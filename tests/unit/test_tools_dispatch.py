@@ -1640,6 +1640,153 @@ def test_rejected_tool_emits_call_and_result_pair(tmp_path: pathlib.Path) -> Non
     assert "Unknown tool" in results[1]["summary"]
 
 
+@pytest.mark.parametrize("reason", ["stop now", "abort", "check-in", "after step"])
+def test_command_hand_back_distinguishes_operator_stop_from_checkin(
+    tmp_path: pathlib.Path, reason: str
+) -> None:
+    """An operator-ended command must not reach the model or journal as a live background job."""
+    import json
+    from collections.abc import Callable
+
+    from agent6 import event_log
+    from agent6.sandbox import jail
+    from agent6.sessions import ipc
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    session_dir = tmp_path / "session"
+    logs = session_dir / "logs.jsonl"
+    cfg = Config.model_validate(
+        {"sandbox": {"run_commands": "yes"}, "harness": {"command_checkin_s": 10.0}}
+    )
+    d = dispatch.ToolDispatcher(
+        root=root, config=cfg, session_dir=session_dir, events=event_log.EventSink(logs)
+    )
+    session = mock.Mock(spec=jail.JailSession)
+    session.status_background.return_value = jail.BackgroundStatus(
+        running=True, returncode=None, error=""
+    )
+    session.stop_background.return_value = jail.Stopped(returncode=-15, survivors=frozenset())
+    session.sweep_for.return_value = frozenset()
+    stopped = reason in ("stop now", "abort")
+    duration = 8.0 if stopped else 10.0
+
+    def run(
+        argv: tuple[str, ...],
+        *,
+        env: tuple[tuple[str, str], ...],
+        timeout_s: float,
+        checkin_s: float,
+        log_dir: str,
+        interrupted: Callable[[], bool],
+    ) -> kinds.BackgroundHandoff:
+        assert argv == ("sleep", "40") and timeout_s == 0.0 and checkin_s == 10.0
+        log = pathlib.Path(log_dir) / "foreground.log"
+        log.write_text("starting\nwarning\n", encoding="utf-8")
+        if reason == "abort":
+            ipc.submit_steer(session_dir, "abort", now=True)
+        elif reason == "stop now":
+            ipc.request_stop(session_dir, now=True)
+        elif reason == "after step":
+            ipc.request_stop(session_dir)
+        assert interrupted() is stopped
+        return kinds.BackgroundHandoff(
+            argv=argv,
+            pid=42,
+            log=str(log),
+            stdout="starting\n",
+            stderr="warning\n",
+            duration_s=duration,
+            before=kinds.ChildSnapshot(1, frozenset()),
+        )
+
+    session.run.side_effect = run
+    try:
+        with mock.patch.object(dispatch.ToolDispatcher, "_run_session", return_value=session):
+            result = d.dispatch("run_command", {"argv": ["sleep", "40"]})
+        out = result.to_wire()
+        assert out.get("stopped_by_operator", False) is stopped
+        assert out["stdout"] == "starting\n" and out["stderr"] == "warning\n"
+        assert out["duration_s"] == duration and out["exec_failed"] is False
+        read = d.dispatch("read_background", {"id": "bg1", "wait_s": 0}).to_wire()
+        assert read["output"] == "starting\nwarning"
+        events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
+        command_result = next(
+            e for e in events if e["type"] == "tool.result" and e["name"] == "run_command"
+        )
+        if stopped:
+            assert out["returncode"] == -15
+            assert "still_running" not in out and "background_id" not in out
+            assert "operator's stop ended the command before it finished" in result.summary()
+            assert "stopped" in str(read["shells"]) and "running" not in str(read["shells"])
+            assert command_result["stopped_by_operator"] is True
+            assert command_result["summary"] == result.summary()
+            assert not any(e["type"] == "command.backgrounded" for e in events)
+        else:
+            assert "stopped_by_operator" not in out
+            assert out["returncode"] is None and out["still_running"] is True
+            assert out["background_id"] == "bg1"
+            assert "running" in str(read["shells"])
+            assert any(e["type"] == "command.backgrounded" for e in events)
+        assert command_result["stdout_tail"] == "starting\n"
+        assert command_result["stderr_tail"] == "warning\n"
+    finally:
+        d.close()
+
+    record = json.loads((session_dir / "shells" / "bg1" / "result.json").read_text())
+    assert record["returncode"] == -15
+    resumed = dispatch.ToolDispatcher(root=root, config=cfg, session_dir=session_dir)
+    try:
+        with pytest.raises(errors.ToolError, match=r"earlier execution.*ended with it"):
+            resumed.dispatch("read_background", {"id": "bg1", "wait_s": 0})
+    finally:
+        resumed.close()
+
+
+def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: pathlib.Path) -> None:
+    """A failed stop must not claim the command ended, and teardown must retry its cleanup."""
+    from agent6.sandbox import jail
+    from agent6.sessions import ipc
+
+    session_dir = tmp_path / "session"
+    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
+    ipc.request_stop(session_dir, now=True)
+    log = session_dir / "shells" / "logs" / "foreground.log"
+    log.write_text("starting\n", encoding="utf-8")
+    session = mock.Mock(spec=jail.JailSession)
+    session.run.return_value = kinds.BackgroundHandoff(
+        argv=("sleep", "40"),
+        pid=42,
+        log=str(log),
+        stdout="starting\n",
+        stderr="",
+        duration_s=8.0,
+        before=kinds.ChildSnapshot(1, frozenset()),
+    )
+    session.status_background.return_value = jail.BackgroundStatus(
+        running=True, returncode=None, error=""
+    )
+    session.stop_background.side_effect = [
+        jail.Stopped(returncode=-15, survivors=frozenset({777})),
+        jail.Stopped(returncode=-15, survivors=frozenset()),
+    ]
+    session.sweep_for.return_value = frozenset()
+    try:
+        with (
+            mock.patch.object(dispatch.ToolDispatcher, "_run_session", return_value=session),
+            pytest.raises(errors.ToolError, match=r"operator's stop.*777"),
+        ):
+            d.dispatch("run_command", {"argv": ["sleep", "40"]})
+        read = d.dispatch("read_background", {"id": "bg1", "wait_s": 0}).to_wire()
+        assert "stop failed" in str(read["shells"]) and "777" in str(read["shells"])
+        assert read["output"] == "starting"
+    finally:
+        d.close()
+    roster = d.dispatch("read_background", {}).to_wire()["shells"]
+    assert "stopped" in str(roster) and "stop failed" not in str(roster)
+
+
 def test_run_command_result_carries_output_tails(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -294,6 +294,26 @@ def test_wire_run_command(tmp_path: pathlib.Path) -> None:
     )
 
 
+@pytest.mark.parametrize("returncode", [-15, None])
+def test_wire_exec_result_stopped_by_operator(returncode: int | None) -> None:
+    """An operator stop stays on the wire even when the command's exit code is unknown."""
+    from agent6.tools import results
+
+    result = results.ExecResult(
+        returncode=returncode,
+        stdout="starting\n",
+        stderr="warning\n",
+        duration_s=8.0,
+        exec_failed=False,
+        stopped_by_operator=True,
+    )
+    code = "null" if returncode is None else "-15"
+    assert _dumps(result) == (
+        f'{{"returncode": {code}, "stdout": "starting\\n", "stderr": "warning\\n",'
+        ' "duration_s": 8.0, "exec_failed": false, "stopped_by_operator": true}'
+    )
+
+
 def test_wire_run_command_clip_names_dropped_chars(tmp_path: pathlib.Path) -> None:
     """Output over the 20k cap leads with a marker naming the dropped char count.
 

@@ -546,7 +546,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self.push_screen(
             modals.ConfirmModal(
                 "Stop this session now?",
-                "Its model call is cut and a running command is handed back; the run ends "
+                "Its model call is cut and a running command is ended; the run ends "
                 "at once and can be resumed later with `agent6 resume`. A worker that does "
                 "not answer within 5 s is killed.",
                 confirm_label="Stop now",

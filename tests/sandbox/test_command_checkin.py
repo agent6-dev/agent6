@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A model's command is handed back, never killed for taking too long.
+"""A model's command is handed back rather than killed at its check-in.
 
 A wall-clock timeout has to answer a question it cannot: whether a command that
 has run twenty minutes is stuck or working. `[harness].command_checkin_s`
@@ -256,17 +256,12 @@ def test_a_wait_still_waits_when_nobody_asked_to_stop(tmp_path: pathlib.Path) ->
 
 
 @pytest.mark.parametrize("stop", ["stop now", "lane stop"])
-def test_an_immediate_stop_hands_a_running_command_back_at_once(
+def test_an_immediate_stop_ends_a_running_command_at_once(
     tmp_path: pathlib.Path, stop: str
 ) -> None:
-    """An immediate stop during a synchronous `run_command` hands the command back as `bg<N>`.
+    """An immediate stop ends a foreground command without leaving a live handle in its result.
 
-    The dispatcher blocks reading the launcher's answer pipe, so the stop would sit unread until
-    the check-in elapsed (measured: 18s of a 20s command, and the default check-in is 900). The
-    launcher takes a second reason to hand back, on its own pipe, because the request channel is
-    in lockstep and this side is blocked on the answer to the very request being interrupted.
-    The command is not killed. `agent6 stop` writes the abort steer; a fan-out stops its lanes
-    with the marker's `now` urgency.
+    `agent6 stop` writes the abort steer; a fan-out stops its lanes with the marker's `now` urgency.
     """
     from agent6.sessions import ipc
 
@@ -281,9 +276,10 @@ def test_an_immediate_stop_hands_a_running_command_back_at_once(
         out = _run(d, "sleep 30")
         waited = time.monotonic() - started
         assert waited < 5.0, f"the stop was ignored for {waited:.1f}s of a 900s check-in"
-        assert out["returncode"] is None and out["still_running"] is True
-        assert out["background_id"] == "bg1"
-        d.dispatch("stop_background", {"id": "bg1"})
+        assert out["stopped_by_operator"] is True and out["returncode"] != 0
+        assert "still_running" not in out and "background_id" not in out
+        read = d.dispatch("read_background", {"id": "bg1", "wait_s": 0}).to_wire()
+        assert "stopped" in str(read["shells"]) and "running" not in str(read["shells"])
     finally:
         d.close()
 

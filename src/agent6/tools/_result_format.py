@@ -95,10 +95,13 @@ def output_tails(name: str, result: results.ToolResult) -> dict[str, Any]:
         written = [p for p, _ in result.files] or [result.path]
         return {"paths": [p for p in written if p not in result.deleted]}
     if isinstance(result, results.ExecResult | results.MetricResult) and name in _EXEC_OUTPUT_TOOLS:
-        return {
+        tails: dict[str, Any] = {
             "stdout_tail": result.stdout[-_TOOL_OUTPUT_TAIL:],
             "stderr_tail": result.stderr[-_TOOL_OUTPUT_TAIL:],
         }
+        if isinstance(result, results.ExecResult) and result.stopped_by_operator:
+            tails["stopped_by_operator"] = True
+        return tails
     if isinstance(result, results.ReadFileResult):
         head = "\n".join(result.content.splitlines()[:_READ_HEAD_LINES])
         return {

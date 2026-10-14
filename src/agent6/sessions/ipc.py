@@ -1344,7 +1344,7 @@ def request_stop(session_dir: pathlib.Path, *, now: bool = False) -> bool:
 
     Args:
         session_dir: The session directory.
-        now: Write the urgency into the marker, so a running command is handed back at once
+        now: Write the urgency into the marker, so a running foreground command is ended at once
             and the step ends there. The model call in flight is cut by the steer `abort`.
 
     Returns:

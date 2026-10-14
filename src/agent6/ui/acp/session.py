@@ -181,7 +181,7 @@ class Sessions:
                 session.thread.join(timeout=max(0.0, deadline - time.monotonic()))
 
     def cancel(self, session: Session) -> None:
-        """Cut a model call in flight and hand a running command back at once.
+        """Cut a model call in flight and end a running foreground command at once.
 
         What the run had not committed stays in the tree for the next prompt. The worker is
         the ACP server, so the cancel never waits for or signals it.

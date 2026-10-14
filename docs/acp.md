@@ -59,7 +59,7 @@ A session is one conversation in one directory.
 - `session/new` carries an absolute `cwd`, a git repository, whose own layered config applies
 - the first prompt starts an `agent6 run`; every later prompt resumes it with the text as its steering instruction (a turn that died before its first checkpoint starts a new run, and the editor is told)
 - a busy session refuses a prompt rather than queueing it; one connection runs one prompt at a time across its sessions, and a prompt on another session waits its turn and says for which session
-- `session/cancel` cuts a model call in flight and hands a running command back at once, without waiting for or signalling the worker (the ACP server itself).
+- `session/cancel` cuts a model call in flight and ends a running foreground command at once, without waiting for or signalling the worker (the ACP server itself).
   The run ends as `cancelled`, and what it had not yet committed stays in the tree for the next prompt, which resumes it; a prompt still waiting its turn answers `cancelled` at once.
 
 ## Not implemented

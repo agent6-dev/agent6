@@ -654,7 +654,7 @@ class ToolDispatcher:
         )
 
     def _run_model_command(self, argv: tuple[str, ...]) -> results.ExecResult:
-        """Run a command the model chose, handing it back at the check-in where the mode can.
+        """Run a model command; check-ins hand it back and an immediate stop ends it.
 
         The check-in needs a jail session to own the running command, a background roster to
         hand it to, and a mode whose tools can read the hand-back; otherwise this is a bounded
@@ -664,7 +664,7 @@ class ToolDispatcher:
             The outcome, or the hand-back with the output so far.
 
         Raises:
-            ToolError: The jail is unavailable.
+            ToolError: The jail is unavailable or the operator's stop could not end the command.
         """
         session = self._run_session()
         shells = self._shells
@@ -692,14 +692,25 @@ class ToolDispatcher:
         if isinstance(outcome, kinds.CommandResult):
             return _result_format.exec_result(outcome)
         view = shells.adopt(outcome, session=session)
-        self._emit("command.backgrounded", id=view.id, pid=outcome.pid, seconds=outcome.duration_s)
+        stopped_by_operator = self._operator_wants_out_now()
+        if stopped_by_operator:
+            view = shells.stop(view.id)
+            if view.detail:
+                raise tools_errors.ToolError(
+                    f"operator's stop could not end the command: {view.detail}"
+                )
+        else:
+            self._emit(
+                "command.backgrounded", id=view.id, pid=outcome.pid, seconds=outcome.duration_s
+            )
         return results.ExecResult(
-            returncode=None,
+            returncode=view.returncode if stopped_by_operator else None,
             stdout=_result_format.clip_tail(outcome.stdout),
             stderr=_result_format.clip_tail(outcome.stderr),
             duration_s=outcome.duration_s,
             exec_failed=False,
-            background_id=view.id,
+            background_id="" if stopped_by_operator else view.id,
+            stopped_by_operator=stopped_by_operator,
         )
 
     def _operator_wants_out(self) -> bool:

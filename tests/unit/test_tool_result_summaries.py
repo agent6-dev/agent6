@@ -174,6 +174,18 @@ CASES: list[tuple[str, results_mod.ToolResult, str]] = [
         "exit=124 (timed out at 240s) in 240.1s",
     ),
     (
+        "exec_stopped_by_operator",
+        results_mod.ExecResult(
+            returncode=-15,
+            stdout="starting\n",
+            stderr="",
+            duration_s=8.0,
+            exec_failed=False,
+            stopped_by_operator=True,
+        ),
+        "operator's stop ended the command before it finished (8.0s)",
+    ),
+    (
         "metric",
         results_mod.MetricResult(
             returncode=0,

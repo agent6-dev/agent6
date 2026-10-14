@@ -337,11 +337,11 @@ class FetchResult(ToolResult):
 class ExecResult(ToolResult):
     """The jailed command's outcome, for run_command and run_verify_command.
 
-    One shape whether the command finished or is still running: a `returncode` of None with a
-    `background_id` means it outlived its check-in and was handed back.
+    A `background_id` means the command was handed back and still runs.
+    `stopped_by_operator` means an immediate stop ended it before it finished, with no live handle.
 
     Attributes:
-        returncode: The exit code, or None while the command still runs.
+        returncode: The exit code, or None while running or when the code is unknown.
         stdout: The output so far.
         stderr: The errors so far.
         duration_s: The wall-clock time until the result.
@@ -350,6 +350,7 @@ class ExecResult(ToolResult):
         background_id: The background job the command continues as, when handed back.
         timeout_s: The wall-clock cap the runner enforced, 0 when none; with rc 124 it tells a
             timeout from a failure.
+        stopped_by_operator: The operator's immediate stop ended the command before it finished.
     """
 
     returncode: int | None
@@ -360,6 +361,7 @@ class ExecResult(ToolResult):
     command: tuple[str, ...] = ()
     background_id: str = ""
     timeout_s: float = 0.0
+    stopped_by_operator: bool = False
 
     def to_wire(self) -> dict[str, Any]:
         """Return the wire dict."""
@@ -375,13 +377,17 @@ class ExecResult(ToolResult):
         if self.returncode == 124 and self.timeout_s > 0:
             wire["timed_out"] = True
             wire["timeout_s"] = self.timeout_s
-        if self.background_id:
+        if self.stopped_by_operator:
+            wire["stopped_by_operator"] = True
+        elif self.background_id:
             wire["still_running"] = True
             wire["background_id"] = self.background_id
         return wire
 
     def summary(self) -> str:
         """Return the one-line summary."""
+        if self.stopped_by_operator:
+            return f"operator's stop ended the command before it finished ({self.duration_s:.1f}s)"
         if self.background_id:
             return f"still running as {self.background_id} after {self.duration_s:.1f}s"
         if self.returncode == 124 and self.timeout_s > 0:

@@ -441,13 +441,16 @@ Two shared layers sit under them.
 A run started from a hub, or detached mid-run with `/detach`, keeps going with no terminal on it (`ui/spawn.py`); `agent6 attach <id>` opens it again, tailing the same journal every other surface folds.
 
 **Stopping a run** is one function ([app/stop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/stop.py)) behind `agent6 stop`, the TUI's Run menu, `/stop` in every composer, the web stop route and an ACP cancel.
-It writes an abort steer, which cuts a model call in flight, and the `stop.request` marker with its `now` urgency, which hands a running command back at once.
+It writes an abort steer, which cuts a model call in flight, and the `stop.request` marker with its `now` urgency, which ends a running foreground command at once.
 Unless it is request-only, it waits for the run to end.
 A worker still alive after that wait (5 s for a run, 30 s for a fan-out draining its lanes) gets SIGTERM and, 3 s later, SIGKILL, along with the background commands it started on the host.
 Every target is named by process identity (pid plus start time), so a recycled pid is never signalled.
 `--after-step` writes the plain marker alone, so the step's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
-A fan-out stops its lanes with the `now` marker, which hands a lane's running command back at once.
+A fan-out stops its lanes with the `now` marker.
 An ACP cancel is request-only: it writes both requests without waiting for or signalling the worker, which is the ACP server itself.
+An immediate stop ends a foreground `run_command` the launcher hands back.
+Its tool result carries `stopped_by_operator: true` and the output so far, without `still_running` or `background_id`, so the conversation a resume reads says the stop ended the command.
+A check-in with no immediate stop still returns a running command and its background id.
 
 The journal is durable by contract.
 An append failure on anything but the streaming deltas stops the run loudly (`EventWriteError`), and in-process listeners see an event only after its write landed.
@@ -460,7 +463,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `session.start` | `user_task` |
 | `loop.resume.start` | the execution a `resume` opens: `session_id`, `mode`, `iteration`, `messages` |
 | `loop.resume.interrupted` | the resumed execution found a turn its predecessor died in: `iteration`, and `tools`, the calls that never returned and are not re-run |
-| `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail` |
+| `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail`; a `run_command` ended by an immediate operator stop carries `stopped_by_operator: true` |
 | `verify.start` / `.end` | `cmd`, `exit_code`, `duration_s`, `*_tail` |
 | `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `memory/DECISIONS.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
 | `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`resumed`: an adopted gate carried into a new execution; `agents_md`; a repo signal: `verify.sh`, `package.json`, `Makefile:<target>`, `pyproject`, `Cargo.toml`, `go.mod` or `test_*.py`; `llm`; `none`; `disabled`; `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
@@ -471,7 +474,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `session.steer_requested` | `source` (`"sigint"`): mid-run Ctrl-C |
 | `session.undone` | `/undo`: the turn taken back and the fork that continues from it |
 | `btw.opened` / `.answered` | a `/btw` side question and its answer block |
-| `command.backgrounded` | a `run_command` handed back as a background job (`id`, `pid`, `seconds`) |
+| `command.backgrounded` | a `run_command` handed back at its check-in as a background job (`id`, `pid`, `seconds`), not one ended by an immediate stop |
 | `metric.start` / `.end` | `cmd` (argv); the end adds `exit_code`, `duration_s`, `*_tail`, `score` |
 | `jail.degraded` | `detail`: the sandbox came up weaker than asked, or a process survived the sweep at the run's jail session or a spawned MCP server's close |
 | `workspace.setup` | the setup command of a session's own worktree or clone finished: `cmd` (argv), `exit_code`, `duration_s`; one per workspace, since the manifest's `workspace_set_up` keeps a resume from running it again |
