@@ -51,6 +51,7 @@ class OperatorBridge:
         compact_clear: Consumes the compact request.
         stop_requested: Polled at each completed-iteration boundary; a positive ends the run
             cleanly there. The mid-turn immediate stop is the steer "abort" answer.
+        stop_is_now: Whether the stop marker asks to interrupt the step's running command.
         stop_clear: Consumes the stop request.
         should_abort: Polled during a streaming call; True once the operator asked to stop.
         should_interrupt: Polled during a streaming call; True once the operator asked to steer,
@@ -73,6 +74,7 @@ class OperatorBridge:
     compact_requested: Callable[[], str | None] = dataclasses.field(default=lambda: None)
     compact_clear: Callable[[], None] = dataclasses.field(default=lambda: None)
     stop_requested: Callable[[], bool] = dataclasses.field(default=lambda: False)
+    stop_is_now: Callable[[], bool] = dataclasses.field(default=lambda: False)
     stop_clear: Callable[[], None] = dataclasses.field(default=lambda: None)
     should_abort: Callable[[], bool] = dataclasses.field(default=lambda: False)
     should_interrupt: Callable[[], bool] = dataclasses.field(default=lambda: False)

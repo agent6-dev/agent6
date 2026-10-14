@@ -57,7 +57,8 @@ Ids are exact or a unique prefix and default to the most recent run.
 agent6 attach                 # follow live; --raw tails events, --tui full screen, --json one snapshot
 agent6 steer ID "focus on X"  # an instruction at the next step; --now interrupts the call in flight
 agent6 answer ID "yes"        # answer a live run's question (bare: print the question)
-agent6 stop ID                # stop now (the worker killed if it does not answer); --after-step, --all
+agent6 stop ID                # stop during the current step (the worker killed if it does not answer); --all
+agent6 stop ID --after-step   # finish the current step, then stop
 agent6 sessions show          # status, iteration, elapsed, cost, the gate's word, where the changes are; --json
 agent6 sessions diff          # the git diff the run produced; --stat, --path P
 agent6 sessions commits       # the run's per-step commits
@@ -74,6 +75,11 @@ agent6 forward ID 8000        # reach a port inside the run's network; --local-p
 agent6 history search <text>  # grep every session's persisted data; --regex
 agent6 ps                     # live sessions of every repository on the machine; --lanes, --json
 ```
+
+`agent6 stop ID` ends the run as `stopped`, with `operator stopped the run during step N` in the end block.
+The end block adds `running command was cut short` when the stop ended a running command, or `model call was cut short` when it cut the model call.
+`--after-step` leaves `running · stopping after this step` in listings until the step ends, then prints `operator stopped the run after step N`.
+A starting or waiting run keeps that status and adds `stopping after this step` beside its other details.
 
 A session's cost covers every execution, in dollars or in plan points; `sessions list`, `sessions show`, the end-of-run total and the fan-out report print the same figure.
 The tokens and the points against `max_percent` on `sessions show` are the latest execution's.

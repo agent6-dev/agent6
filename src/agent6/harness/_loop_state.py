@@ -46,6 +46,7 @@ class LoopState:
             fires only once the context grew 25% past it. Execution-local.
         verify: The verify verdict every "is the run green" consumer reads.
         ever_edited: True once any edit landed.
+        command_cut: An immediate stop ended a running command this execution.
         plan_injected: The plan.md text the planner was last shown; fresh per
             execution, so a resumed planner is re-shown the operator's edits.
         root_task_id: The DAG root task id, set once by the loop.
@@ -77,6 +78,7 @@ class LoopState:
         default_factory=_verify_verdict.VerifyVerdict
     )
     ever_edited: bool = False
+    command_cut: bool = False
     plan_injected: str = ""
     root_task_id: str | None = None
     system: str = ""

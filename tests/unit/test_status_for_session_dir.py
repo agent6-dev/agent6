@@ -19,6 +19,7 @@ import pathlib
 
 import pytest
 
+from agent6.sessions import ipc
 from agent6.viewmodel import format, listing, transcript
 from agent6.viewmodel import state as viewmodel_state
 
@@ -238,6 +239,55 @@ def test_harness_end_labels_agree_across_the_scan_and_both_folds(
     assert format.listing_status_label(summary.mode, summary.status, summary.reason) == label
     done = next(it for it in transcript.fold_transcript(events) if it.kind == "done")
     assert done.name == label
+
+
+@pytest.mark.parametrize(
+    ("events", "pid", "now", "word", "reason"),
+    [
+        ([_START, _TOOL], LIVE, False, "running", "stopping after this step"),
+        ([_START, _TOOL], LIVE, True, "running", ""),
+        ([_START, _TOOL], DEAD, False, "stale", ""),
+        ([_START, _end("steer_abort")], LIVE, False, "stopped", ""),
+        ([], LIVE, False, "starting", "stopping after this step"),
+        ([_START, _QUESTION], LIVE, False, "waiting", "needs answer · stopping after this step"),
+    ],
+    ids=["running", "immediate", "dead", "ended", "starting", "waiting"],
+)
+def test_pending_step_stop_labels_agree_in_the_listing_and_typed_fold(
+    tmp_path: pathlib.Path,
+    events: list[dict[str, object]],
+    pid: int,
+    now: bool,
+    word: str,
+    reason: str,
+) -> None:
+    """A pending after-step stop is visible on live runs in both status fact producers."""
+    d = _mk(tmp_path, "stop-AAAAAA", events, pid=pid)
+    assert ipc.request_stop(d, now=now)
+    fold = viewmodel_state.fold_session(events)
+    scan = listing.scan_session_log(d / "logs.jsonl")
+    assert listing.status_for_session_dir(d, scan.status_facts()) == (word, reason)
+    assert listing.status_for_session_dir(d, viewmodel_state.status_facts(fold)) == (word, reason)
+    row = listing.summarize_session_dir(d)
+    assert (row.status, row.reason) == (word, reason)
+    assert viewmodel_state.session_state_as_dict(fold, d)["status_label"] == format.status_label(
+        word, reason
+    )
+    assert listing.summary_row(row)["label"] == format.status_label(word, reason)
+
+
+def test_clearing_a_pending_step_stop_clears_its_label(tmp_path: pathlib.Path) -> None:
+    """The stop detail follows the marker, not a cached event or a prior listing."""
+    events = [_START, _TOOL]
+    d = _mk(tmp_path, "clear-AAAAAA", events, pid=LIVE)
+    fold = viewmodel_state.fold_session(events)
+    assert ipc.request_stop(d)
+    assert viewmodel_state.session_state_as_dict(fold, d)["status_label"] == (
+        "running · stopping after this step"
+    )
+    ipc.clear_stop_request(d)
+    assert listing.summarize_session_dir(d).reason == ""
+    assert viewmodel_state.session_state_as_dict(fold, d)["status_label"] == "running"
 
 
 def test_resume_clears_orphaned_pending_prompts() -> None:

@@ -368,6 +368,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 compact_requested=lambda: ipc.read_compact_request(layout.session_dir),
                 compact_clear=lambda: ipc.clear_compact_request(layout.session_dir),
                 stop_requested=lambda: ipc.stop_request_pending(layout.session_dir),
+                stop_is_now=lambda: ipc.stop_request_is_now(layout.session_dir),
                 stop_clear=lambda: ipc.clear_stop_request(layout.session_dir),
                 should_abort=steer_state.abort_pending,
                 should_interrupt=steer_state.interrupt,

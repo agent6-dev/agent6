@@ -171,7 +171,7 @@ class SessionSummary:
         status: The status word (created, starting, running, waiting, stale, passed,
             answered, planned, finished, stopped, undone, failed).
         reason: The detail beside the word: the end reason when failed, what it waits
-            on when waiting, else "".
+            on when waiting, or a pending stop after the step.
         cost_usd: The cumulative spend across executions.
         usd_partial: `cost_usd` is a lower bound: some execution had unpriced spend.
         mtime: The last-activity time as epoch seconds.
@@ -477,11 +477,11 @@ class StatusFacts:
 def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tuple[str, str]:
     """Decide the status word and detail for a session that has a dir on disk.
 
-    The dir supplies what events cannot: a parked submission (the manifest) and
-    worker liveness (the pid file). A started session is live iff its worker is: the
-    pid is written before session.start, so no pid file means the worker cleared it
-    on the way out. Log silence cannot stand in for this: a `kill -9` leaves the pid
-    file while an abnormal exit through the finally clears it.
+    The dir supplies what events cannot: a parked submission (the manifest), a pending
+    stop (the marker) and worker liveness (the pid file). A started session is live iff
+    its worker is. The pid is written before session.start, so no pid file means the
+    worker cleared it on the way out. Log silence cannot stand in for this: a `kill -9`
+    leaves the pid file while an abnormal exit through the finally clears it.
 
     Args:
         session_dir: The session's state dir.
@@ -503,17 +503,29 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
             note = f"{n} question{'s' if n != 1 else ''} unanswered"
             reason = f"{reason} · {note}" if reason else note
         return word, reason
-    if facts.operator_blocked and ipc.worker_is_alive(session_dir):
+    live = ipc.worker_is_alive(session_dir)
+    if facts.operator_blocked and live:
         # Before session.start too: a run asks about uncommitted changes before it starts.
+        word = "waiting"
         if facts.blocked_kind and facts.blocked_since_ep is not None:
             age = format.format_age(time.time() - facts.blocked_since_ep)
-            return "waiting", f"{facts.blocked_kind} {age}"
-        return "waiting", "needs answer"
-    if not facts.started:
-        return _unstarted_status(session_dir)
-    if not ipc.worker_is_alive(session_dir):
+            reason = f"{facts.blocked_kind} {age}"
+        else:
+            reason = "needs answer"
+    elif not facts.started:
+        word, reason = _unstarted_status(session_dir)
+    elif not live:
         return "stale", ""
-    return "running", ""
+    else:
+        word, reason = "running", ""
+    if (
+        word in LIVE_STATUS_WORDS
+        and ipc.stop_request_pending(session_dir)
+        and not ipc.stop_request_is_now(session_dir)
+    ):
+        note = "stopping after this step"
+        reason = f"{reason} · {note}" if reason else note
+    return word, reason
 
 
 def _unstarted_status(session_dir: pathlib.Path) -> tuple[str, str]:

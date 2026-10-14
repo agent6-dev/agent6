@@ -155,6 +155,26 @@ def _live(session_dir: pathlib.Path, manifest: dict[str, object]) -> None:
     ipc.write_worker_pid(session_dir, os.getpid())
 
 
+@pytest.mark.parametrize(
+    "args",
+    [["sessions"], ["sessions", "show", "step-AAAAAA"], ["ps"]],
+)
+def test_pending_step_stop_is_visible_on_cli_listings(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    args: list[str],
+) -> None:
+    """A stop after the step must not stay plain running on sessions, show or ps."""
+    monkeypatch.chdir(tmp_path)
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "step-AAAAAA"
+    _live(session_dir, {"mode": "run", "session_id": "step-AAAAAA", "user_task": "t"})
+    assert main(["stop", "step-AAAAAA", "--after-step"]) == 0
+    assert "stops after its current step" in capsys.readouterr().out
+    assert main(args) == 0
+    assert "running · stopping after this step" in capsys.readouterr().out
+
+
 def test_ps_folds_a_live_lane_under_its_live_coordinator(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

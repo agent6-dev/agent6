@@ -866,12 +866,13 @@ class Harness:
             )
         except ProviderAborted:
             self.bridge.steer_clear()  # consume the stop; don't leave it on disk to re-read
-            self._log(f"LOOP: operator stopped the run mid-turn at iter {iteration}")
+            self._log(f"LOOP: operator stop during step {iteration}; model call was cut short")
             return self._finish(
                 state,
                 _snapshot.End(
                     "steer_abort",
-                    f"operator stopped the run at iter {iteration}{self._dirty_tree_note()}",
+                    f"operator stopped the run during step {iteration}; model call was cut short"
+                    f"{self._dirty_tree_note()}",
                     checkpoint=False,
                 ),
                 iteration=iteration,
@@ -1146,6 +1147,9 @@ class Harness:
             # The result carries the questions the dispatcher accepted; the input is not reparsed.
             for question, answer in zip(result.asked, result.answers, strict=False):
                 self._record_decision(state, question, answer)
+        state.command_cut = state.command_cut or (
+            isinstance(result, results.ExecResult) and result.stopped_by_operator
+        )
         if name == "run_verify_command" and isinstance(result, results.ExecResult):
             # A timed-out model gate gets the same scoped follow-up as the harness gate.
             if not (
@@ -2258,14 +2262,21 @@ class Harness:
         """
         # A background command's ending reaches disk only when observed; `/shells` reads it.
         self.dispatcher.settle_background()
-        if self.bridge.stop_requested():
+        if self.bridge.stop_requested() or self.bridge.should_abort():
+            immediate = self.bridge.stop_is_now() or self.bridge.should_abort()
             self.bridge.stop_clear()
-            self._log(f"LOOP: operator stop at the step boundary (iter {iteration})")
+            when = f"during step {iteration}" if immediate else f"after step {iteration}"
+            cut = "; running command was cut short" if immediate and state.command_cut else ""
+            if immediate:
+                self.bridge.steer_clear()
+                self._log(f"LOOP: operator stop {when}{cut}")
+            else:
+                self._log(f"LOOP: operator stop at the step boundary (iter {iteration})")
             return self._finish(
                 state,
                 _snapshot.End(
                     "steer_abort",
-                    f"operator stopped the run after step {iteration}{self._dirty_tree_note()}",
+                    f"operator stopped the run {when}{cut}{self._dirty_tree_note()}",
                     checkpoint=False,
                 ),
                 iteration=iteration,

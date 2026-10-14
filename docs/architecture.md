@@ -449,9 +449,12 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
 **Stopping a run** is one function ([app/stop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/stop.py)) behind `agent6 stop`, the TUI's Run menu, `/stop` in every composer, the web stop route and an ACP cancel.
 It writes an abort steer, which cuts a model call in flight, and the `stop.request` marker with its `now` urgency, which ends a running foreground command at once.
 Unless it is request-only, it waits for the run to end.
+The loop logs `operator stop during step N` and the `stopped` end block says `operator stopped the run during step N`; both add `running command was cut short` when the stop ended a running command, or `model call was cut short` when it cut the model call.
 A worker still alive after that wait (5 s for a run, 30 s for a fan-out draining its lanes) gets SIGTERM and, 3 s later, SIGKILL, along with the background commands it started on the host.
 Every target is named by process identity (pid plus start time), so a recycled pid is never signalled.
 `--after-step` writes the plain marker alone, so the step's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
+While that marker is pending on a live run, every listing's status adds `stopping after this step` (`running · stopping after this step` on `sessions`, `sessions show`, `ps`, the TUI hub and the web list); a starting or waiting run keeps its own detail beside it.
+The end block then says `operator stopped the run after step N`.
 A fan-out stops its lanes with the `now` marker.
 An ACP cancel is request-only: it writes both requests without waiting for or signalling the worker, which is the ACP server itself.
 An immediate stop ends a foreground `run_command` the launcher hands back.

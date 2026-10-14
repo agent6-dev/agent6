@@ -10,12 +10,17 @@ import pathlib
 import subprocess
 import sys
 import time
+from typing import Any, Literal
+from unittest import mock
 
 import pytest
 
 from agent6 import paths
+from agent6 import providers as provider_api
+from agent6.app import providers
 from agent6.app import stop as stop_mod
 from agent6.sessions import ipc
+from agent6.tools import dispatch, results
 from agent6.ui.cli import main
 from agent6.ui.cli import parser as cli_parser
 
@@ -56,6 +61,133 @@ def _run(repo: pathlib.Path, name: str, *, finished: bool = False) -> pathlib.Pa
         encoding="utf-8",
     )
     return d
+
+
+def _worker_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """Set up a run with a scripted provider and no nested sandbox."""
+    monkeypatch.chdir(tmp_path)
+    subprocess.run(["git", "init", "-q"], check=True)
+    (tmp_path / "seed.txt").write_text("seed\n", encoding="utf-8")
+    subprocess.run(["git", "add", "seed.txt"], check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], check=True)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[sandbox]\nisolation = "none"\nrun_commands = "yes"\n'
+        '[harness]\nverify_when = "never"\nverify_infer = false\n'
+        '[models.worker]\nprovider = "p"\nmodel = "m"\n'
+        '[providers.p]\napi_format = "openai"\nbase_url = "http://127.0.0.1:1"\n'
+        'api_key_env = "STOP_TEST_KEY"\n[review]\ntrigger = "off"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOP_TEST_KEY", "test-key")
+    return cfg
+
+
+@pytest.mark.parametrize(
+    ("urgency", "command", "when", "cut"),
+    [
+        ("after_step", False, "after step 1", ""),
+        ("now", False, "during step 1", ""),
+        ("abort", False, "during step 1", ""),
+        ("now", True, "during step 1", "; running command was cut short"),
+        ("abort", True, "during step 1", "; running command was cut short"),
+        ("after_step", True, "after step 1", ""),
+    ],
+)
+def test_worker_stop_words_match_the_request(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    urgency: Literal["after_step", "now", "abort"],
+    command: bool,
+    when: str,
+    cut: str,
+) -> None:
+    """An immediate stop must not claim the step finished, including a command hand-back."""
+    cfg = _worker_repo(tmp_path, monkeypatch)
+    session_id = "words-AAAAAA"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / session_id
+
+    def call(**_kwargs: Any) -> provider_api.ProviderResponse:
+        if urgency == "abort":
+            assert ipc.submit_steer(session_dir, "abort", now=True)
+        else:
+            assert ipc.request_stop(session_dir, now=urgency == "now")
+        tool = {
+            "type": "tool_use",
+            "id": "t1",
+            "name": "run_command" if command else "read_file",
+            "input": {"argv": ["sleep", "40"]} if command else {"path": "seed.txt"},
+        }
+        return provider_api.ProviderResponse(
+            text="",
+            tool_uses=(tool,),
+            stop_reason="tool_use",
+            input_tokens=1,
+            output_tokens=1,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            raw={"content": [tool]},
+        )
+
+    class Worker:
+        def call(self, **kwargs: Any) -> provider_api.ProviderResponse:
+            return call(**kwargs)
+
+    monkeypatch.setattr(providers, "build_role_provider", mock.Mock(return_value=Worker()))
+    # The launcher cannot run nested here: the result is the one the dispatcher builds for a
+    # command an immediate stop ended, or for one a stop after the step let finish.
+    cut_now = urgency != "after_step"
+    monkeypatch.setattr(
+        dispatch.ToolDispatcher,
+        "_run_model_command",
+        mock.Mock(
+            return_value=results.ExecResult(
+                returncode=-15 if cut_now else 0,
+                stdout="",
+                stderr="",
+                duration_s=8.0,
+                exec_failed=False,
+                stopped_by_operator=cut_now,
+            )
+        ),
+    )
+    assert main(["--config", str(cfg), "run", "--session-id", session_id, "task"]) == 130
+    output = capsys.readouterr().out
+    assert "tool_error:" not in output
+    assert f"operator stopped the run {when}{cut}" in output
+    assert "stopped" in output
+    if urgency == "after_step":
+        assert "LOOP: operator stop at the step boundary (iter 1)" in output
+        assert "cut short" not in output
+    else:
+        assert f"LOOP: operator stop during step 1{cut}" in output
+        assert "operator stop at the step boundary" not in output
+        assert "after step 1" not in output
+
+
+def test_worker_stop_during_a_model_call_names_the_interruption(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A cut model call must read as a stop during the step, not a completed step."""
+    cfg = _worker_repo(tmp_path, monkeypatch)
+    session_id = "model-AAAAAA"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / session_id
+
+    class Worker:
+        def call(self, **kwargs: Any) -> provider_api.ProviderResponse:
+            assert ipc.submit_steer(session_dir, "abort", now=True)
+            assert kwargs["should_abort"]()
+            raise provider_api.ProviderAborted("operator stop")
+
+    monkeypatch.setattr(providers, "build_role_provider", mock.Mock(return_value=Worker()))
+    assert main(["--config", str(cfg), "run", "--session-id", session_id, "task"]) == 130
+    output = capsys.readouterr().out
+    assert "operator stopped the run during step 1; model call was cut short" in output
+    assert "LOOP: operator stop during step 1; model call was cut short" in output
+    assert "after step 1" not in output
 
 
 def test_stop_is_a_top_level_verb_and_sessions_stop_is_gone() -> None:
