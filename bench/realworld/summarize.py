@@ -8,8 +8,8 @@ Usage:
 
 Reads ``<root>/_logs/<task>_<toolset>/result.json`` for each task that
 ran in each root and emits a markdown table to stdout. Multiple roots
-make it easy to compare configurations side-by-side (e.g. one root with
-worker_loop=true and one with worker_loop=false).
+make it easy to compare configurations side-by-side (e.g. one root per
+toolset arm or worker model).
 """
 
 from __future__ import annotations
@@ -44,14 +44,19 @@ def _format_markdown(roots: list[Path]) -> str:
     out.append("|------|------|--------|-------:|-----:|-----:|---:|----:|")
     grand_pass = 0
     grand_total = 0
+    grand_unscored = 0
     grand_cost = 0.0
     for root in roots:
         rows = _scan_root(root)
         for r in rows:
-            verdict = "PASS" if r.get("verify_pass") else "FAIL"
-            if r.get("verify_pass"):
-                grand_pass += 1
-            grand_total += 1
+            unscored = r.get("unscored")
+            if unscored:
+                verdict = f"UNSCORED: {unscored}"
+                grand_unscored += 1
+            else:
+                verdict = "PASS" if r.get("verify_pass") else "FAIL"
+                grand_pass += bool(r.get("verify_pass"))
+                grand_total += 1
             cost = float(r.get("cost_usd", 0.0) or 0.0)
             grand_cost += cost
             wall = float(r.get("wall_seconds", 0.0) or 0.0)
@@ -70,7 +75,9 @@ def _format_markdown(roots: list[Path]) -> str:
                 f"${cost:.4f} | {wall:.1f}s | {in_tok} | {out_tok} |"
             )
     out.append("")
-    out.append(f"**Total: {grand_pass}/{grand_total} pass, ${grand_cost:.4f}**")
+    out.append(
+        f"**Total: {grand_pass}/{grand_total} pass, {grand_unscored} unscored, ${grand_cost:.4f}**"
+    )
     return "\n".join(out)
 
 

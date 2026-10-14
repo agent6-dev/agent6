@@ -12,10 +12,13 @@
 # dispatcher reads.
 #
 # Usage:
-#   ANTHROPIC_API_KEY=... bash bench/realworld/run_realworld.sh
+#   bash bench/realworld/run_realworld.sh
+#   AGENT6_REALWORLD_MODEL=provider/model bash bench/realworld/run_realworld.sh
+#
+# The worker is the operator's configured one unless AGENT6_REALWORLD_MODEL names another.
 #
 # Outputs: $BENCH_ROOT/results_<toolset>.md
-#          $BENCH_ROOT/<task>/result.json
+#          $BENCH_ROOT/_logs/<task>_<toolset>/result.json
 
 set -euo pipefail
 
@@ -23,22 +26,22 @@ REPO="${AGENT6_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 BENCH_ROOT=${BENCH_ROOT:-/tmp/agent6-realworld}
 TOOLSET=${AGENT6_REALWORLD_TOOLSET:-index}
 PER_TASK_BUDGET_USD=${PER_TASK_BUDGET_USD:-1.00}
-MODEL=${AGENT6_REALWORLD_MODEL:-claude-sonnet-4-5}
-SUMMARY_MODEL=${AGENT6_REALWORLD_SUMMARY_MODEL:-claude-haiku-4-5}
-# The Python used to create each task's venv. We default to /usr/bin/python3
-# (whatever ships with the system) rather than a uv-managed interpreter,
-# because the agent6 sandbox bind-mounts /usr but not ~/.local, so a
-# /home/.../python symlink in .venv/bin/python would be invisible to the
-# in-sandbox verify command. Override with PYTHON_BIN if your system python
-# is too new/old for the task's pinned pytest.
+# Plan points one task may use; unset keeps the operator's [budget].max_percent.
+PER_TASK_MAX_PERCENT=${PER_TASK_MAX_PERCENT:-}
+# [PROVIDER/]MODEL for `run --model`; unset runs the operator's configured worker.
+MODEL=${AGENT6_REALWORLD_MODEL:-}
+# Wall-clock bound on one task's `agent6 run`.
+TASK_TIMEOUT_S=${AGENT6_REALWORLD_TASK_TIMEOUT_S:-3600}
+# Default: python3 on PATH. Use PYTHON_BIN to match the task's pinned pytest.
+# The interpreter must be visible in the sandbox, such as /usr/bin/python3.
 PYTHON_BIN=${PYTHON_BIN:-$(command -v python3)}
 export PYTHON_BIN
 
 cd "$REPO"
-export AGENT6_JAIL_BIN="${AGENT6_JAIL_BIN:-$REPO/src/agent6/jail/target/release/agent6-jail}"
 AGENT6_BIN="$REPO/.venv/bin/agent6"
-[ -x "$AGENT6_BIN" ] || { echo "agent6 not found at $AGENT6_BIN — run 'uv sync' in $REPO first" >&2; exit 1; }
-[ -x "$AGENT6_JAIL_BIN" ] || { echo "jail launcher missing at $AGENT6_JAIL_BIN" >&2; exit 1; }
+[ -x "$AGENT6_BIN" ] || { echo "agent6 not found at $AGENT6_BIN, run 'uv sync' in $REPO first" >&2; exit 1; }
+# Nobody answers an approval here: deny it rather than park the run.
+export AGENT6_DETACHED_AWAY="${AGENT6_DETACHED_AWAY:-deny}"
 
 mkdir -p "$BENCH_ROOT"
 
@@ -49,36 +52,6 @@ emit_toml() {
   cat <<EOF
 [agent6]
 config_version = 1
-
-$(if [[ "$MODEL" == moonshotai/* || -n "${AGENT6_REALWORLD_OPENROUTER:-}" ]]; then cat <<PROV
-[providers.openrouter]
-api_format = "openai"
-api_key_env = "OPENROUTER_API_KEY"
-base_url = "https://openrouter.ai/api/v1"
-
-[models.worker]
-provider = "openrouter"
-model = "$MODEL"
-
-[models.reviewer]
-provider = "openrouter"
-model = "$MODEL"
-PROV
-else cat <<PROV
-[providers.anthropic]
-api_format = "anthropic"
-api_key_env = "ANTHROPIC_API_KEY"
-prompt_caching = true
-
-[models.worker]
-provider = "anthropic"
-model = "$MODEL"
-
-[models.reviewer]
-provider = "anthropic"
-model = "$MODEL"
-PROV
-fi)
 
 [sandbox]
 isolation = "auto"
@@ -96,7 +69,7 @@ verify_command = $verify_cmd_json
 [review]
 # Optional critic-in-loop. Set AGENT6_REALWORLD_CRITIC=before_finish (or
 # on_verify_fail / periodic) to evaluate critic modes against the
-# premature-finish task variants. Default "off" mirrors the prior bench config.
+# premature-finish task variants. Default: "off".
 trigger = "${AGENT6_REALWORLD_CRITIC:-off}"
 
 [prompt]
@@ -104,8 +77,9 @@ revise_prompt = "${AGENT6_REALWORLD_REVISE_PROMPT:-off}"
 ${metric_block}
 
 [budget]
-max_usd = 10.0
+max_usd = $PER_TASK_BUDGET_USD
 max_tokens_fallback = 1500000
+$(if [ -n "$PER_TASK_MAX_PERCENT" ]; then echo "max_percent = $PER_TASK_MAX_PERCENT"; fi)
 EOF
 }
 
@@ -189,9 +163,7 @@ if _dirty != 0:
 # Write TASK.md (after the commit so the agent doesn't blame TASK.md changes
 # on itself; .agent6/ is auto-added to .gitignore by agent6 on first run).
 (dir / "TASK.md").write_text(task["task_md"])
-# Drop in a minimal AGENTS.md so agent6's critic doesn't raise the
-# "no AGENTS.md found" open question (which halts the workflow). The fixture
-# repos don't ship their own, and we want triage/critic to focus on the gap.
+# The fixture repos ship no AGENTS.md; this one states the task's ground rules.
 if not (dir / "AGENTS.md").exists():
     (dir / "AGENTS.md").write_text(
         "# AGENTS.md (bench harness)\n\n"
@@ -208,6 +180,12 @@ if not (dir / "AGENTS.md").exists():
 subprocess.run(["git", "-C", str(dir), "add", "-A"], check=True)
 subprocess.run(["git", "-C", str(dir), "commit", "-q", "-m", "bench: add TASK.md"], check=True)
 PY
+}
+
+# Print one field of the `sessions show --json` capture, or nothing when it is absent.
+session_field() {
+  python3 -c "import json,sys; v=json.load(open(sys.argv[1])).get(sys.argv[2]); print('' if v is None else v)" \
+    "$1" "$2" 2>/dev/null || true
 }
 
 # ----- main loop --------------------------------------------------------------
@@ -233,6 +211,8 @@ total_in=0
 total_out=0
 pass=0
 total=0
+unscored_n=0
+run_model=""
 results_file="$BENCH_ROOT/results_${TOOLSET}.md"
 
 for task_json in "$REPO"/bench/realworld/tasks/*.json; do
@@ -283,24 +263,20 @@ PY
   echo "  $desc"
   echo "================================================================"
 
-  # Per-task setup (clone + venv + pip install) can fail for reasons
-  # unrelated to the agent — a flaky mirror, a too-new system python, or
-  # the tmpfs running out of space. Don't let one task's setup failure abort
-  # the whole (often multi-hour) run and discard every result collected so
-  # far: record it as a setup failure and move on.
+  # A setup failure is unscored; keep the other tasks' results and continue.
   set +e
   setup_task "$task_json" "$dir"
   setup_exit=$?
   set -e
   if [ "$setup_exit" -ne 0 ]; then
-    echo "  SETUP FAILED (exit $setup_exit) — skipping $name" >&2
+    echo "  SETUP FAILED (exit $setup_exit), skipping $name" >&2
     logdir="$BENCH_ROOT/_logs/${name}_${TOOLSET}"
     mkdir -p "$logdir"
     cat > "$logdir/result.json" <<EOF
 {
   "task": "$name",
   "toolset": "$TOOLSET",
-  "setup_failed": true,
+  "unscored": "setup failed (exit $setup_exit)",
   "agent_exit": null,
   "wall_seconds": 0,
   "verify_pass": false,
@@ -308,18 +284,19 @@ PY
   "metric_goal": "$metric_goal",
   "cost_usd": 0,
   "input_tokens": 0,
-  "output_tokens": 0
+  "output_tokens": 0,
+  "plan_points": 0
 }
 EOF
-    total=$((total + 1))
-    echo "  agent_exit=-  verify=SETUP_FAIL  metric=-  wall=0s  cost=\$0"
+    unscored_n=$((unscored_n + 1))
+    echo "  agent_exit=-  verify=UNSCORED (setup failed, exit $setup_exit)  metric=-  wall=0s  cost=\$0"
     continue
   fi
   emit_toml "$verify_cmd_json" "$metric_block" > "$dir/agent6.toml"
-  # Fail on a dead config key here, in 200ms, not after a task's spend:
+  # Fail on an invalid config before any provider call:
   # `config show` loads the same merged layers the run will.
   ( cd "$dir" && "$AGENT6_BIN" --config agent6.toml config show >/dev/null ) || exit 1
-  # agent6.toml is now untracked; add it to .gitignore so it doesn't dirty the tree.
+  # Ignore the untracked agent6.toml so it doesn't dirty the tree.
   # Ensure a trailing newline before appending (some upstream .gitignores end
   # without one, which would join our pattern to the previous line).
   [ -f "$dir/.gitignore" ] && [ -s "$dir/.gitignore" ] && \
@@ -333,12 +310,12 @@ EOF
 
   task_text=$(cat "$dir/TASK.md")
 
-  # The current CLI takes only a positional `task` arg; legacy --yes /
-  # --no-tui / --v2 flags have been removed. v2 is the
-  # default workflow now.
+  model_args=()
+  if [ -n "$MODEL" ]; then model_args=(--model "$MODEL"); fi
   start_ns=$(date +%s%N)
   set +e
-  ( cd "$dir" && "$AGENT6_BIN" --config agent6.toml run "$task_text" ) \
+  ( cd "$dir" && timeout --kill-after=30 "$TASK_TIMEOUT_S" \
+      "$AGENT6_BIN" --config agent6.toml run ${model_args[@]+"${model_args[@]}"} "$task_text" ) \
     > "$logdir/agent6.stdout" 2> "$logdir/agent6.stderr"
   ag_exit=$?
   set -e
@@ -378,59 +355,102 @@ PY
   # exits 1 and kills the whole (often multi-hour) run AFTER the task already
   # passed, and the regex-validate fallbacks below never get to run. The
   # summary format is allowed to drift; the numbers just fall back to 0.
-  cost=$( { cat $combined 2>/dev/null | grep -oE 'cost~\$[0-9.]+' | tail -1 | tr -d '$' | sed 's/cost~//'; } || true)
+  cost=$( { cat $combined 2>/dev/null | grep -oE 'cost[~=]\$[0-9.]+' | tail -1 | sed 's/cost[~=]\$//'; } || true)
   [[ "$cost" =~ ^[0-9]+(\.[0-9]+)?$ ]] || cost=0
   in_tok=$( { cat $combined 2>/dev/null | grep -oE 'TOTAL: in=[0-9]+' | tail -1 | sed 's/TOTAL: in=//'; } || true)
   [[ "$in_tok" =~ ^[0-9]+$ ]] || in_tok=0
   out_tok=$( { cat $combined 2>/dev/null | grep -oE 'TOTAL: in=[0-9]+ out=[0-9]+' | tail -1 | sed 's/.* out=//'; } || true)
   [[ "$out_tok" =~ ^[0-9]+$ ]] || out_tok=0
 
+  # The session's end reason separates provider failures from agent failures.
+  # Plan points are what a subscription run costs.
+  sid=$( { cat $combined 2>/dev/null | grep -oE 'session id: [^ ]+' | head -1 | sed 's/session id: //'; } || true)
+  : > "$logdir/session.json"
+  if [ -n "$sid" ]; then
+    ( cd "$dir" && "$AGENT6_BIN" --config agent6.toml sessions show "$sid" --json ) \
+      > "$logdir/session.json" 2>/dev/null || true
+  fi
+  end_reason=$(session_field "$logdir/session.json" reason)
+  plan_points=$(session_field "$logdir/session.json" plan_consumed)
+  [[ "$plan_points" =~ ^[0-9]+(\.[0-9]+)?$ ]] || plan_points=0
+  model_ran=$(session_field "$logdir/session.json" model)
+  # The header names the last model that ran.
+  if [ -n "$model_ran" ]; then run_model="$model_ran"; fi
+
+  # A verdict needs a run that ended on agent6's own terms.
+  unscored=""
+  case "$ag_exit" in
+    0|3|4|5) ;;
+    1) case "$end_reason" in
+         provider_error) unscored="provider error" ;;
+         verify_command_unexecutable) unscored="verify command cannot run in the jail" ;;
+         "") unscored="agent6 exit 1, end reason unread" ;;
+       esac ;;
+    2) unscored="agent6 refused to start (exit 2)" ;;
+    124|137) unscored="timeout after ${TASK_TIMEOUT_S}s" ;;
+    *) unscored="agent6 exit $ag_exit" ;;
+  esac
+  if [ -n "$unscored" ]; then verdict="UNSCORED ($unscored)"
+  elif [ $ver_exit -eq 0 ]; then verdict=PASS
+  else verdict=FAIL; fi
+  unscored_json=null
+  if [ -n "$unscored" ]; then unscored_json="\"$unscored\""; fi
+
   cat > "$logdir/result.json" <<EOF
 {
   "task": "$name",
   "toolset": "$TOOLSET",
   "agent_exit": $ag_exit,
+  "session_id": "$sid",
+  "model": "$model_ran",
+  "end_reason": "$end_reason",
+  "unscored": $unscored_json,
   "wall_seconds": $wall_s,
   "verify_pass": $([ $ver_exit -eq 0 ] && echo true || echo false),
   "metric_score": $metric_score,
   "metric_goal": "$metric_goal",
   "cost_usd": $cost,
+  "plan_points": $plan_points,
   "input_tokens": $in_tok,
   "output_tokens": $out_tok
 }
 EOF
   metric_disp="-"
   [ "$metric_score" != "null" ] && metric_disp="$metric_score"
-  echo "  agent_exit=$ag_exit  verify=$([ $ver_exit -eq 0 ] && echo PASS || echo FAIL)  metric=$metric_disp  wall=${wall_s}s  cost=\$${cost}  in=${in_tok}  out=${out_tok}"
+  echo "  agent_exit=$ag_exit  verify=$verdict  metric=$metric_disp  wall=${wall_s}s  cost=\$${cost}  plan=${plan_points}pt  in=${in_tok}  out=${out_tok}"
 
   total_cost=$(awk -v a="$total_cost" -v b="$cost" 'BEGIN{printf "%.4f", a+b}')
   total_wall=$(awk -v a="$total_wall" -v b="$wall_s" 'BEGIN{printf "%.1f", a+b}')
   total_in=$((total_in + in_tok))
   total_out=$((total_out + out_tok))
-  total=$((total + 1))
-  [ $ver_exit -eq 0 ] && pass=$((pass + 1))
+  if [ -n "$unscored" ]; then
+    unscored_n=$((unscored_n + 1))
+  else
+    total=$((total + 1))
+    if [ $ver_exit -eq 0 ]; then pass=$((pass + 1)); fi
+  fi
 done
 
 {
   echo "# agent6 real-world benchmark — toolset: $TOOLSET"
   echo
-  echo "Model: $MODEL (summary: $SUMMARY_MODEL). Per-task budget cap: \$$PER_TASK_BUDGET_USD."
+  echo "Model: ${run_model:-${MODEL:-operator config}}. Per-task caps: \$$PER_TASK_BUDGET_USD metered, ${PER_TASK_MAX_PERCENT:-operator config} plan points, ${TASK_TIMEOUT_S}s wall."
   echo
-  printf "| Task | verify | wall | cost | in toks | out toks |\n"
-  printf "|------|--------|------|------|---------|----------|\n"
+  printf "| Task | verify | wall | cost | plan pts | in toks | out toks |\n"
+  printf "|------|--------|------|------|----------|---------|----------|\n"
   for d in "$BENCH_ROOT"/_logs/*_"${TOOLSET}"/; do
     [ -f "$d/result.json" ] || continue
     python3 -c "
 import json
 r = json.load(open('$d/result.json'))
-verify = 'SETUP_FAIL' if r.get('setup_failed') else ('PASS' if r['verify_pass'] else 'FAIL')
-print(f'| {r[\"task\"]} | {verify} | {r[\"wall_seconds\"]:.1f}s | \${r[\"cost_usd\"]:.4f} | {r[\"input_tokens\"]} | {r[\"output_tokens\"]} |')
+verify = f'UNSCORED: {r[\"unscored\"]}' if r.get('unscored') else ('PASS' if r['verify_pass'] else 'FAIL')
+print(f'| {r[\"task\"]} | {verify} | {r[\"wall_seconds\"]:.1f}s | \${r[\"cost_usd\"]:.4f} | {r.get(\"plan_points\", 0):g} | {r[\"input_tokens\"]} | {r[\"output_tokens\"]} |')
 "
   done
   echo
-  echo "**Total: $pass/$total verify pass, \$$total_cost, ${total_wall}s wall, in=${total_in} out=${total_out} tokens.**"
+  echo "**Total: $pass/$total verify pass, $unscored_n unscored, \$$total_cost, ${total_wall}s wall, in=${total_in} out=${total_out} tokens.**"
 } > "$results_file"
 
 echo
 echo "Summary written to $results_file"
-echo "Total: $pass/$total PASS, \$$total_cost, ${total_wall}s wall"
+echo "Total: $pass/$total PASS, $unscored_n unscored, \$$total_cost, ${total_wall}s wall"
