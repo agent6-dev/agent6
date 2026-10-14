@@ -4,10 +4,13 @@
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import os
 import pathlib
 import shutil
 import tempfile
+import termios
 
 import pytest
 import tree_sitter_language_pack
@@ -34,6 +37,21 @@ def pytest_configure(config: pytest.Config) -> None:
         home = base / name.lower()
         home.mkdir()
         os.environ[name] = str(home)
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Detach the session from its controlling terminal, as CI and the gate unit have none.
+
+    A test that reaches a `/dev/tty` prompt (`sessions rm` without `--yes`) then gets the
+    headless path instead of waiting on the developer's keyboard. A pty test forks its own
+    session leader, which takes the pty as its terminal unaffected.
+    """
+    with contextlib.suppress(OSError):
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+        try:
+            fcntl.ioctl(fd, termios.TIOCNOTTY)
+        finally:
+            os.close(fd)
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
