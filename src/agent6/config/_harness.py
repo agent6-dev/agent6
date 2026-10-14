@@ -91,8 +91,10 @@ class HarnessConfig(pydantic.BaseModel):
         description=(
             "The command that decides whether a step succeeded, as argv (no shell; wrap a pipeline "
             'as `["sh", "-c", "a && b"]`). Set it to pin the gate. Unset: each run infers one and '
-            "prints it (an AGENTS.md `## Verify command` block first, then a root `verify.sh`, "
-            "the repo's manifest files, and loose `test_*.py` files, then a model call over "
+            "prints it (an AGENTS.md `## Verify command` block first, one command per line "
+            "joined with `&&`, so a `for` or `if` spanning lines is not one; then a root "
+            "`verify.sh`, the repo's manifest files, and loose `test_*.py` files, then a model "
+            "call over "
             "those manifests; a command whose first word the sandbox PATH lacks is passed over, "
             "and the run names it; a package.json test script that is one plain command runs as "
             "itself when the sandbox PATH has its runner but no `npm`); a run that can infer "
