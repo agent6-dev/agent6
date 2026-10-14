@@ -1036,6 +1036,43 @@ def test_jail_operator_hide_paths_mask_a_file(
     assert private.read_text(encoding="utf-8") == "token\n"
 
 
+def test_a_hidden_file_refuses_writes_as_a_hidden_directory_does(
+    jail_bin: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
+    """A jailed write to a hidden file fails, and the file still reads empty.
+
+    Masked with the null device, a hidden file took the write and discarded it, so the
+    command read success for data that was gone. A hidden directory refuses.
+    """
+    private = tmp_path / "cred.txt"
+    private.write_text("token\n", encoding="utf-8")
+    hidden_dir = tmp_path / "secret"
+    hidden_dir.mkdir()
+    (hidden_dir / "key").write_text("key\n", encoding="utf-8")
+    probe = (
+        "{ echo data > cred.txt; } 2>/dev/null && echo FILE-WRITTEN || echo file-refused; "
+        "{ echo data >> cred.txt; } 2>/dev/null && echo FILE-APPENDED || echo append-refused; "
+        "{ echo data > secret/new.txt; } 2>/dev/null && echo DIR-WRITTEN || echo dir-refused; "
+        'echo "bytes=$(wc -c < cred.txt) entries=$(ls -A secret | wc -l)"; '
+        "test -f cred.txt && echo regular-file"
+    )
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", probe),
+            hide_paths=(private, hidden_dir),
+            timeout_s=10.0,
+        )
+    )
+    out = res.stdout + res.stderr
+    assert "file-refused" in res.stdout and "FILE-WRITTEN" not in res.stdout, out
+    assert "append-refused" in res.stdout and "FILE-APPENDED" not in res.stdout, out
+    assert "dir-refused" in res.stdout and "DIR-WRITTEN" not in res.stdout, out
+    assert "bytes=0 entries=0" in res.stdout, out
+    assert "regular-file" in res.stdout, out
+    assert private.read_text(encoding="utf-8") == "token\n"
+
+
 def test_jail_home_exists_in_the_private_tmpfs(
     jail_bin: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:

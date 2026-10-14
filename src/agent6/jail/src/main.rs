@@ -84,8 +84,8 @@ struct Policy {
     tool_paths: Vec<PathBuf>,
     /// Paths masked from the child even when a broader grant covers them
     /// (agent6's own config + state dirs, plus operator additions):
-    /// a dir masks as an empty tmpfs, a file as a bind of /dev/null. Masked
-    /// LAST, after every bind, so no grant exposes them from above; a policy
+    /// a dir masks as an empty tmpfs, a file as an empty file, both read-only.
+    /// Masked LAST, after every bind, so no grant exposes them from above; a policy
     /// grant BENEATH a hidden root is then re-bound through the mask (the
     /// machine data contract: explicit holes in a default-deny cover).
     #[serde(default)]
@@ -1291,7 +1291,8 @@ fn bind_grants(policy: &Policy, new_root: &Path, inside_cwd: bool) -> io::Result
 }
 
 /// Mask the policy's hidden paths out of the assembled root: an empty RO
-/// tmpfs over a dir, a /dev/null bind over a file. Runs after EVERY bind so
+/// tmpfs over a dir, a RO bind of one empty file over a file, so a read
+/// returns nothing and a write fails. Runs after EVERY bind so
 /// no grant (workspace, extras, tools) exposes a hidden path from above --
 /// mount order means the mask always wins. Policy grants BENEATH a hidden
 /// root are then re-bound through the mask at their REAL path (the contract
@@ -1301,6 +1302,11 @@ fn bind_grants(policy: &Policy, new_root: &Path, inside_cwd: bool) -> io::Result
 /// so a re-bound RW hole keeps its writability).
 fn mask_hidden_paths(policy: &Policy, new_root: &Path) -> io::Result<()> {
     let mut masked_dirs: Vec<PathBuf> = Vec::new();
+    // The one empty file every hidden file is masked with, in the jail's own
+    // root tmpfs. Unlinked once the masks are bound: the mounts keep it, and
+    // no path is left to write it through.
+    let empty = new_root.join(".agent6-hidden-file");
+    let mut empty_made = false;
     // One target per hidden path: every mount is at its real location, so
     // there is no second door to close.
     for hp in &policy.hide_paths {
@@ -1321,15 +1327,34 @@ fn mask_hidden_paths(policy: &Policy, new_root: &Path) -> io::Result<()> {
             .map_err(|e| io::Error::other(format!("mask {}: {e}", dst.display())))?;
             masked_dirs.push(dst);
         } else {
+            if !empty_made {
+                File::create(&empty)?;
+                empty_made = true;
+            }
             mount(
-                Some(Path::new("/dev/null")),
+                Some(empty.as_path()),
                 &dst,
                 Some(""),
                 MsFlags::MS_BIND,
                 Some(""),
             )
             .map_err(|e| io::Error::other(format!("mask {}: {e}", dst.display())))?;
+            mount(
+                Some(""),
+                &dst,
+                Some(""),
+                MsFlags::MS_BIND
+                    | MsFlags::MS_REMOUNT
+                    | RO_FLOOR
+                    | MsFlags::MS_NOEXEC
+                    | carried_mount_flags(&dst),
+                Some(""),
+            )
+            .map_err(|e| io::Error::other(format!("mask remount-ro {}: {e}", dst.display())))?;
         }
+    }
+    if empty_made {
+        fs::remove_file(&empty)?;
     }
     // Re-open the policy's own grants beneath hidden roots. Failures are LOUD:
     // the policy promised these paths, and a mask must not silently eat one.

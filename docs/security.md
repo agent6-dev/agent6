@@ -161,6 +161,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
       A linked worktree agent6 did not record gets no grant
     - the record reaches every policy consumer, the hardened exposure scan included: a `hide_paths` entry inside it refuses like any other unmaskable exposure
 - Masked last, after every bind (`strict`): the config dir, the state base, `[sandbox].hide_paths`
+    - a hidden directory reads as an empty directory and a hidden file as an empty file; a write to either fails with `Read-only file system`
     - a grant at or inside a private dir is refused at config load
     - `hardened` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
     - a `hide_paths` entry hides a path, not content git tracks: a tracked file still reads through git's objects (`git show HEAD:<file>`) and in every clone or worktree a lane, a fork or a machine state works in
