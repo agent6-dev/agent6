@@ -425,7 +425,8 @@ class MachineSummary:
         machine: The spec's declared name; "" when unreadable.
         current: Where the machine is; "" when unreadable.
         status: The dir-aware status word, or "unreadable".
-        reason: A failed end's reason, or what a live instance waits on; else "".
+        reason: A failed end's reason, what a live instance waits on, or "no worker" for a
+            parked instance nothing is driving; else "".
         mtime: The last-activity time as epoch seconds.
     """
 
@@ -599,6 +600,8 @@ def summarize_machine_dir(machine_dir: pathlib.Path) -> MachineSummary:
     reason = ms.ended.reason if ms.ended is not None and ms.ended.status == "failed" else ""
     if probes.execution.blocked_in:
         reason = f"waiting on an answer in {probes.execution.blocked_in}"
+    elif ms.ended is None and probes.parked and not probes.alive:
+        reason = "no worker"
     return MachineSummary(
         name=machine_dir.name,
         machine=ms.machine,
@@ -705,18 +708,25 @@ def machine_verb_refusals(machine_dir: pathlib.Path, name: str) -> dict[MachineV
     return probe_instance(machine_dir, ms).refusals(name, ms)
 
 
-def wait_line(machine_id: str, state: str, wake_at: str) -> str:
+def wait_line(machine_id: str, state: str, wake_at: str, *, alive: bool) -> str:
     """Return the sentence naming where a parked machine waits, when it wakes and how to wake it.
 
     Args:
         machine_id: The instance's name.
         state: The wait state's name.
         wake_at: The scheduled wake time, "" for a wait on a poke alone.
+        alive: The worker pid is live; without a worker only `machine run` moves the machine.
 
     Returns:
         The sentence `machine status` and the foreground `machine run` share.
     """
     poke = f"agent6 machine poke {machine_id} [--message TEXT]"
+    if not alive:
+        due = f"due at {wake_at}" if wake_at else "waiting for a poke"
+        return (
+            f"parked in {state!r} with no worker running ({due}): resume with"
+            f" `agent6 machine run`; a poke wakes it on that run: {poke}"
+        )
     if wake_at:
         return f"waiting in {state!r}: wakes at {wake_at}; a poke wakes it now: {poke}"
     return f"waiting in {state!r} for a poke: {poke}"

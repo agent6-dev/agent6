@@ -8,12 +8,14 @@ import json
 import os
 import pathlib
 import subprocess
+import threading
+import time
 
 import pytest
 
 from agent6 import errors, paths
 from agent6.app import _setup, machine_agent
-from agent6.machine import MachineJournal
+from agent6.machine import MachineJournal, write_stop_request
 from agent6.sandbox import detect
 from agent6.sessions import ipc
 from agent6.ui.cli import main
@@ -130,10 +132,73 @@ def test_status_reports_waiting_state_and_spend(
     assert "waiter_delayed" in out
     # A parked instance reads "waiting", not the engine's raw "incomplete".
     assert "status: waiting" in out
-    # A timed wait wakes on its own; the poke is offered as the way to wake it NOW.
-    assert "waiting in 'poll': wakes at " in out
-    assert "a poke wakes it now: agent6 machine poke waiter_delayed" in out
     assert "spend: $0.0000" in out
+
+
+def test_status_of_a_parked_instance_with_no_worker_names_the_resume_command(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no worker alive, status names `machine run` and never says a poke wakes it now."""
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()  # drop run output
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
+    assert not ipc.worker_is_alive(root)
+
+    assert main(["machine", "status", "waiter_delayed"]) == 0
+
+    out = capsys.readouterr().out
+    assert "wakes it now" not in out
+    assert "parked in 'poll' with no worker running (due at " in out
+    assert "resume with `agent6 machine run`" in out
+    assert "a poke wakes it on that run: agent6 machine poke waiter_delayed" in out
+
+
+def test_status_after_an_operator_stop_names_the_resume_command(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run stopped inside its wait leaves no worker: status says so, with the resume command."""
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
+
+    def stop_once_parked() -> None:
+        deadline = time.monotonic() + 30
+        while not MachineJournal(root).wait_path.is_file() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        write_stop_request(root)
+
+    stopper = threading.Thread(target=stop_once_parked)
+    stopper.start()
+    try:
+        assert main(["machine", "run", str(f)]) == 0
+    finally:
+        stopper.join()
+    assert "STOPPED: waiter_delayed parked in 'poll'" in capsys.readouterr().out
+
+    assert main(["machine", "status", "waiter_delayed"]) == 0
+
+    out = capsys.readouterr().out
+    assert "wakes it now" not in out
+    assert "parked in 'poll' with no worker running (due at " in out
+    assert "resume with `agent6 machine run`" in out
+
+
+def test_attach_to_a_parked_instance_with_no_worker_names_the_resume_command(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no worker alive, the watch's exit line names `machine run`, not a poke that resumes."""
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()  # drop run output
+
+    assert main(["attach", "waiter_delayed"]) == 0
+
+    out = capsys.readouterr().out
+    assert "poke to resume" not in out
+    assert "WAITING in 'poll' with no worker running: resume with `agent6 machine run`" in out
 
 
 def test_status_hints_poke_for_a_live_foreground_wait(

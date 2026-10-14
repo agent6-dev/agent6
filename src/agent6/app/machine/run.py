@@ -491,8 +491,11 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 """Print the wait line; a silent in-process wait reads as a hang."""
                 pending = journal.read_pending_wait()
                 if pending is not None:
+                    # This process is the worker, so the wait is live.
                     reporter.note(
-                        machine_state.wait_line(spec.machine, pending.state, pending.wake_at)
+                        machine_state.wait_line(
+                            spec.machine, pending.state, pending.wake_at, alive=True
+                        )
                     )
 
             def say_tool_failure(state: str, outcome: ToolExecResult) -> None:

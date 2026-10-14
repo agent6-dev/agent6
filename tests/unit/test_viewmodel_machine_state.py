@@ -490,6 +490,21 @@ def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(
         tail.tail_events = real_tail
 
 
+def test_a_parked_summary_with_no_worker_says_so(tmp_path: pathlib.Path) -> None:
+    """A parked instance nothing drives reads "no worker" in the listing; a live wait does not."""
+    (tmp_path / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    machine_journal.MachineJournal(tmp_path).write_pending_wait(
+        machine_journal.PendingWait(state="route", wake_epoch=None)
+    )
+
+    parked = machine_state.summarize_machine_dir(tmp_path)
+    assert (parked.status, parked.reason) == ("waiting", "no worker")
+
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    live = machine_state.summarize_machine_dir(tmp_path)
+    assert (live.status, live.reason) == ("waiting", "")
+
+
 def test_an_unreadable_summary_keeps_its_reason_to_one_line(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -285,8 +285,9 @@ def _cmd_machine_status(machine_id: str) -> int:
         f" (in={spend.input_tokens} tok, out={spend.output_tokens} tok{cached})"
     )
     if pending is not None:
-        # The armed record is the wait a poke wakes; a timed one wakes on its own too.
-        print("  " + machine_state.wait_line(machine_id, pending.state, pending.wake_at))
+        # The armed record is the wait a poke wakes; a timed one wakes on its own under a worker.
+        line = machine_state.wait_line(machine_id, pending.state, pending.wake_at, alive=alive)
+        print(f"  {line}")
     if pending_note:
         print(f"  pending wait: unreadable ({pending_note})")
     poked, poke_payload = journal.read_pending_poke()
@@ -406,7 +407,8 @@ def _watch_liveness_exit(root: pathlib.Path, machine_id: str, ms: MachineState) 
     current = next((st.name for st in ms.states if st.is_current), "?")
     if word == "waiting" and not ipc.worker_is_alive(root):
         print(
-            f"\nWAITING in {current!r} (poke to resume):"
+            f"\nWAITING in {current!r} with no worker running: resume with"
+            f" `agent6 machine run`; a poke wakes it on that run:"
             f" agent6 machine poke {machine_id} [--message TEXT]"
         )
         return 0
