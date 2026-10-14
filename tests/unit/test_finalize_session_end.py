@@ -1379,3 +1379,24 @@ def test_a_plan_ends_without_the_no_commit_footer(
         outs[mode] = capsys.readouterr().out
     assert "no changes were committed" not in outs["plan"]
     assert "no changes were committed" in outs["run"]
+
+
+def test_the_left_out_list_prints_names_on_one_line(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A name holding a newline is printed quoted, so it cannot forge a line of the report."""
+    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a\nb.txt").write_text("x\n", encoding="utf-8")
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="r-left11")
+    layout.ensure()
+    layout.logs_path.write_text(
+        json.dumps({"type": "loop.edit.left_out", "iteration": 1, "untracked": ["a\nb.txt"]})
+        + "\n",
+        encoding="utf-8",
+    )
+    finalize._print_left_out(layout, cwd=repo, ref="", reporter=reporter.STDIO_REPORTER)
+    out = capsys.readouterr().out
+    assert '"a\\nb.txt" (untracked before the run)' in out and "\na" not in out

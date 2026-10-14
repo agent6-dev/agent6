@@ -16,7 +16,7 @@ import subprocess
 from collections.abc import Callable, Collection, Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import child_env, commit_message, event_log, git_ops
+from agent6 import child_env, commit_message, event_log, git_ops, terminal
 from agent6.app import merge
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, NotifyConfig
@@ -479,7 +479,7 @@ def _print_left_out(
     reasons = {"ignored": "ignored by git", "untracked": "untracked before the run"}
     # A path a later commit holds, or one gone from disk, is no longer left out.
     items = [
-        f"{path} ({reasons[why]})"
+        f"{terminal.printable_name(path)} ({reasons[why]})"
         for path, why in left_out
         if path not in held and (cwd / path).is_file()
     ]
