@@ -317,7 +317,7 @@ def test_machine_pins_carry_their_provider_into_the_notes(
         "anthropic-model",
         {"anthropic": {"api_format": "anthropic"}, "chatgpt": {"api_format": "chatgpt"}},
     )
-    assert preflight.budget_preflight(cfg, extra_routes=[("chatgpt", "gpt-5.6-sol")]) is None
+    assert preflight.budget_preflight(cfg, routes=[("chatgpt", "gpt-5.6-sol")]) is None
     err = capsys.readouterr().err
     assert "'gpt-5.6-sol' draws on a subscription plan" in err
     assert "gpt-5.6-sol' ha" not in err.replace("draws on", "")  # not in the fallback note

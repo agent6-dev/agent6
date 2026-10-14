@@ -121,11 +121,11 @@ def machine_file(given: pathlib.Path) -> pathlib.Path:
 
 
 def _no_instance_hint(machine_id: str, cwd: pathlib.Path) -> str:
-    """Return a "Did you mean" suffix for a missing-instance error, or "".
+    """Return the next step for a missing-instance error.
 
     `machine run` takes a file; status, replay, poke, stop and `agent6 attach` take an
     instance id. Given an `.asm.toml` file, its `machine` name suggests the instance id;
-    else the closest existing instance name is offered.
+    else the closest name or the available instances and list/start commands are offered.
 
     Args:
         machine_id: The argument as given.
@@ -150,7 +150,14 @@ def _no_instance_hint(machine_id: str, cwd: pathlib.Path) -> str:
             f" That is a machine file that does not load; see `agent6 machine check {machine_id}`."
         )
     close = difflib.get_close_matches(candidate.name, existing, n=1)
-    return f" Did you mean {close[0]!r}?" if close else ""
+    if close:
+        return f" Did you mean {close[0]!r}?"
+    available = (
+        f" Existing instances: {', '.join(repr(name) for name in existing)}."
+        if existing
+        else " No instances exist yet."
+    )
+    return f"{available} `agent6 machine` lists them; `agent6 machine run <file>` starts one."
 
 
 def machine_instance_root(machine_id: str, cwd: pathlib.Path) -> pathlib.Path | None:
@@ -177,9 +184,9 @@ def _existing_machine_root(machine_id: str, cwd: pathlib.Path) -> pathlib.Path |
     root = machine_instance_root(machine_id, cwd)
     if root is not None and root.is_dir():
         return root
-    machines = layout.machines_root(paths.state_dir(cwd))
-    location = f"at {root}" if root is not None else f"for id {machine_id!r} under {machines}"
-    _common.error(f"no machine instance {location}.{_no_instance_hint(machine_id, cwd)}")
+    _common.error(
+        f"no machine instance {machine_id!r} in repo {cwd}.{_no_instance_hint(machine_id, cwd)}"
+    )
     return None
 
 

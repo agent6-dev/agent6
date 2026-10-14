@@ -232,8 +232,9 @@ def _cmd_machine_test(
             else ""
         )
         print(
-            f"\nOK: {path} dry-run passed ({_common.plural(len(report.states), 'state')}, "
-            f"{_common.plural(len(report.branches), 'branch', 'branches')}){skipped}"
+            f"\nOK: {path} dry-run passed ({_common.plural(len(spec.states), 'state')}, "
+            f"including {_common.plural(len(report.branches), 'branch', 'branches')}); "
+            f"{_common.plural(offline.ran, 'offline script test')} passed{skipped}"
         )
         return 0
     print(f"\nFAIL: {path} dry-run found problems", file=sys.stderr)

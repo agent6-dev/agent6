@@ -42,7 +42,7 @@ class SessionRefusedError(Exception):
 
 def budget_preflight(
     cfg: Config,
-    extra_routes: Iterable[tuple[str, str]] = (),
+    routes: Iterable[tuple[str, str]] | None = None,
     *,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> str | None:
@@ -55,23 +55,25 @@ def budget_preflight(
 
     Args:
         cfg: The run's config.
-        extra_routes: Further `(provider, model)` pins, such as a machine's per-state
-            routes; an unknown provider rides as "".
+        routes: The exact `(provider, model)` routes to judge; None uses the config's
+            roles and review seats.
         reporter: Receives the notices.
 
     Returns:
         The refusal, or None when the budget admits every route.
     """
-    routes = {(rm.provider, rm.model) for rm in cfg.models.configured().values()}
-    for spec in cfg.review.seats:
-        _persona, seat_provider, seat_model = parse_seat_spec(spec)
-        if seat_model:
-            routes.add((seat_provider, seat_model))
-    routes.update((prov, m) for prov, m in extra_routes if m)
+    if routes is None:
+        reachable = {(rm.provider, rm.model) for rm in cfg.models.configured().values()}
+        for spec in cfg.review.seats:
+            _persona, seat_provider, seat_model = parse_seat_spec(spec)
+            if seat_model:
+                reachable.add((seat_provider, seat_model))
+    else:
+        reachable = {(prov, m) for prov, m in routes if m}
 
     # Plan-metered routes live in the percent ledger, never in the fallback spend.
-    plan_models = sorted({m for prov, m in routes if plan_metered(cfg.providers.get(prov))})
-    metered = {(prov, m) for prov, m in routes if not plan_metered(cfg.providers.get(prov))}
+    plan_models = sorted({m for prov, m in reachable if plan_metered(cfg.providers.get(prov))})
+    metered = {(prov, m) for prov, m in reachable if not plan_metered(cfg.providers.get(prov))}
     if cfg.budget.max_percent == 0.0 and plan_models:
         return (
             "the plan cap is 0 (plan-metered calls refused), but "

@@ -7,9 +7,12 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
+import shlex
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 
 import pytest
 
@@ -95,6 +98,39 @@ def test_a_foreground_wait_says_where_it_parked(
     assert "waiting in 'poll': wakes at " in captured.err
     assert "agent6 machine poke waiter_delayed" in captured.err
     assert "OK: waiter_delayed ended in 'done'" in captured.out
+
+
+def test_a_polling_run_prints_the_poke_hint_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Polling prints each wake time but the same poke command only once per invocation."""
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "poller.asm.toml"
+    f.write_text(
+        'machine = "poller"\nversion = 1\ninitial = "poll"\n'
+        "[budget]\nmax_transitions = 2\n"
+        '[states.poll]\nkind = "wait"\nevery_secs = "1"\n'
+        'on = { tick = "poll", signal = "done" }\n'
+        '[states.done]\nkind = "terminal"\nstatus = "ok"\nreason = "poked"\n',
+        encoding="utf-8",
+    )
+    assert main(["machine", "run", str(f)]) == 1
+    captured = capsys.readouterr()
+    assert captured.err.count("wakes at") == 2
+    assert captured.err.count("agent6 machine poke poller") == 1
+
+
+def test_the_waiting_line_names_its_state_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The WAITING ending does not repeat its state inside the engine's reason."""
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    out = capsys.readouterr().out
+    assert "WAITING: waiter_delayed paused in 'poll'" in out
+    assert out.count("'poll'") == 1
+    assert "until " in out
 
 
 def test_run_prints_a_notify_on_the_foreground_terminal(
@@ -375,6 +411,34 @@ def test_status_missing_instance_errors(
     code = main(["machine", "status", "nope"])
     assert code == 2
     assert "no machine instance" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("verb", ["status", "replay", "poke", "stop"])
+@pytest.mark.parametrize("existing", [False, True])
+def test_a_missing_instance_names_available_instances_and_the_run_command(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    verb: str,
+    existing: bool,
+) -> None:
+    """A missing id names this repo and the list/start commands, never its internal state path."""
+    monkeypatch.chdir(tmp_path)
+    if existing:
+        f = _write_machine(tmp_path)
+        assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+        capsys.readouterr()
+    assert main(["machine", verb, "nosuch"]) == 2
+    err = capsys.readouterr().err
+    assert "no machine instance 'nosuch'" in err
+    assert str(tmp_path) in err
+    assert str(paths.state_dir(tmp_path)) not in err
+    if existing:
+        assert "Existing instances: 'waiter_delayed'" in err
+    else:
+        assert "No instances exist yet" in err
+    assert "`agent6 machine` lists them" in err
+    assert "`agent6 machine run <file>` starts one" in err
 
 
 def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
@@ -755,6 +819,42 @@ def test_run_refuses_rerun_of_ended_instance(
     assert result.status == "ok"
 
 
+def test_the_fresh_start_remedy_is_a_command_outside_machines(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The printed archive command preserves the instance without leaving a listing row."""
+    from agent6.viewmodel import machine_state
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path.parent / f"{tmp_path.name} state"))
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert main(["machine", "run", str(f)]) == 0
+    capsys.readouterr()
+    state_dir = paths.state_dir(tmp_path)
+    root = state_dir / "machines" / "tiny"
+    # Moving inside machines/ still produces an instance row, even with an invalid id.
+    ghost = root.with_name("tiny.archived-1")
+    root.rename(ghost)
+    assert machine_state.machine_instance_dirs(state_dir) == [ghost]
+    ghost.rename(root)
+
+    assert main(["machine", "run", str(f)]) == 2
+    err = capsys.readouterr().err
+    match = re.search(r"`(mv -- [^`]+)`", err)
+    assert match is not None, err
+    argv = shlex.split(match[1])
+    source, target = map(pathlib.Path, argv[-2:])
+    assert source == root
+    assert target.parent == root.parent.parent
+    assert target.name.startswith("tiny.archived-")
+    subprocess.run(argv, check=True)
+    assert not root.exists()
+    assert (target / "machine.asm.toml").is_file()
+    assert machine_state.machine_instance_dirs(state_dir) == []
+    assert main(["machine", "run", str(f)]) == 0
+
+
 def test_poke_drops_signal_for_waiting_machine(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -998,6 +1098,144 @@ def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
 
     monkeypatch.setattr(machine_agent, "build_machine_agent_runner", build)
     assert main(["--config", str(cfg), "machine", "run", str(machine)]) == 0
+
+
+def _stub_agent_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent6.machine import AgentExecResult, AgentRequest
+
+    def build(
+        *_args: object, **_kwargs: object
+    ) -> Callable[[AgentRequest, pathlib.Path | None], AgentExecResult]:
+        def run(_request: AgentRequest, _log: pathlib.Path | None) -> AgentExecResult:
+            return AgentExecResult(
+                reason="finish_session",
+                payload={"ok": True},
+                usd=0.02,
+                input_tokens=123,
+                output_tokens=45,
+            )
+
+        return run
+
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", build)
+
+
+@pytest.mark.parametrize(
+    ("pin", "role", "percent", "signed_in", "plan_note"),
+    [
+        (True, "", 10, True, False),
+        (True, "", 0, True, False),
+        (True, "", 10, False, False),
+        (False, "", 10, True, True),
+        (True, "reviewer", 10, True, True),
+        (True, "planner", 10, True, True),
+    ],
+)
+def test_machine_preflight_judges_the_states_routes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    pin: bool,
+    role: str,
+    percent: int,
+    signed_in: bool,
+    plan_note: bool,
+) -> None:
+    """A pinned worker leaves out an unused operator route, but inherited roles stay judged."""
+    from agent6 import secret_store
+    from agent6.models import cache
+
+    monkeypatch.chdir(tmp_path)
+    _stub_agent_result(monkeypatch)
+    monkeypatch.setattr(secret_store, "load_secrets", dict)
+
+    def stored(*_args: object, **_kwargs: object) -> object:
+        return object()
+
+    def listed(*_args: object, **_kwargs: object) -> list[str]:
+        return []
+
+    if signed_in:
+        monkeypatch.setattr(secret_store, "load_oauth_tokens", stored)
+    monkeypatch.setattr(cache, "list_models", listed)
+    cards = paths.cache_dir() / "models"
+    cards.mkdir(parents=True, exist_ok=True)
+    (cards / "paid.json").write_text(
+        json.dumps({"models": ["priced-model"], "pricing": {"priced-model": [1, 2]}}),
+        encoding="utf-8",
+    )
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[sandbox]\nisolation = "none"\n'
+        '[providers.plan]\napi_format = "chatgpt"\n'
+        '[providers.paid]\napi_format = "openai"\nbase_url = "http://127.0.0.1:9"\n'
+        '[models.worker]\nprovider = "plan"\nmodel = "plan-model"\n'
+        f"[budget]\nmax_percent = {percent}\n"
+        + (f'[models.{role}]\nprovider = "plan"\nmodel = "plan-model"\n' if role else ""),
+        encoding="utf-8",
+    )
+    machine = tmp_path / "pinned.asm.toml"
+    machine.write_text(
+        AGENT_MACHINE_HARD
+        + (
+            '\n[states.judge.config.models.worker]\nprovider = "paid"\nmodel = "priced-model"\n'
+            if pin
+            else ""
+        ),
+        encoding="utf-8",
+    )
+
+    assert main(["--config", str(config), "machine", "run", str(machine)]) == 0
+    err = capsys.readouterr().err
+    assert ("'plan-model' draws on a subscription plan" in err) is plan_note
+
+
+@pytest.mark.parametrize("ending", ["ok", "waiting", "stopped"])
+def test_machine_run_end_line_carries_spend_and_tokens(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    ending: str,
+) -> None:
+    """Run reports journaled dollars and tokens whether it ends, parks or stops."""
+    monkeypatch.chdir(tmp_path)
+    _stub_agent_result(monkeypatch)
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[sandbox]\nisolation = "none"\n'
+        '[providers.p]\napi_format = "openai"\nbase_url = "http://127.0.0.1:9"\n'
+        '[models.worker]\nprovider = "p"\nmodel = "m"\n',
+        encoding="utf-8",
+    )
+    machine = tmp_path / "spend.asm.toml"
+    text = AGENT_MACHINE_HARD
+    if ending != "ok":
+        text = text.replace('= "done"', '= "park"').replace(
+            "[states.done]",
+            '[states.park]\nkind = "wait"\nevery_secs = "3600"\n'
+            'on = { tick = "done", signal = "done" }\n\n[states.done]',
+        )
+    machine.write_text(text, encoding="utf-8")
+    root = paths.state_dir(tmp_path) / "machines" / "hard-usd"
+
+    def stop_once_parked() -> None:
+        deadline = time.monotonic() + 30
+        while not MachineJournal(root).wait_path.is_file() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        write_stop_request(root)
+
+    stopper = threading.Thread(target=stop_once_parked) if ending == "stopped" else None
+    if stopper is not None:
+        stopper.start()
+    flags = ["--exit-on-wait"] if ending == "waiting" else []
+    try:
+        assert main(["--config", str(config), "machine", "run", str(machine), *flags]) == 0
+    finally:
+        if stopper is not None:
+            stopper.join()
+    out = capsys.readouterr().out
+    assert f"{ending.upper()}: hard-usd" in out
+    assert "spent $0.02 (in=123 tok, out=45 tok)" in out
 
 
 def test_run_warns_on_mode_run_states_under_ask_policy(

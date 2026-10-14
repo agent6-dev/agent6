@@ -639,6 +639,10 @@ Mirrors the existing per-run layout under the per-repo state dir, out of the wor
 - each `agent` state execution emits a `logs.jsonl` stream under `states/<seq>-<state>/` (the same `role.*_delta` / `tool.*` events a run emits): a running machine follows live like a run
 - the heavy per-state logs prune to the most recent `state_log_keep` (default 50); the journal stays the complete transition history
 
+Journal spend is the sum of agent facts in step records, `attempt.spend` records and any unbooked slice in `machine.end`.
+The dollar and token fields on `machine.end` carry only an agent slice with no step record, such as a capture that could not be reduced; they are not machine totals.
+A normal end records zeros because the steps already booked the spend.
+
 Sizing for long-running machines:
 
 - the journal grows one line per transition; a 10-minute-interval machine makes ~150k transitions a year (3 per idle tick)
@@ -648,6 +652,10 @@ Sizing for long-running machines:
     - replay and recovery fold the whole journal and never read a snapshot
 - per-state reasoning logs grow with agent-state executions only, and self-prune
 - the journal has no rotation: archive or delete an instance dir when replay no longer needs it; `[budget] max_transitions` is the primary runaway guard
+
+Fresh-start refusals print a shell-quoted `mv` command that moves the instance to `<state>/<id>.archived-<UTC timestamp>`, beside `machines/`.
+Keep archives outside `machines/`; renaming an instance inside it still lists the renamed directory.
+Moving the directory preserves its journal and recorded bundle, but does not remove a run-mode machine's git chain; a fresh run names any chain work that must be merged or discarded.
 
 ### 5.4 Idempotency and crash recovery
 
@@ -669,7 +677,7 @@ Sizing for long-running machines:
     - a `wait` blocks in-process or persists the next wake and exits 0, re-armed by a systemd timer / cron
     - the journal is the source of truth either way: a reboot loses nothing
 - **Runaway guards**
-    - `[budget]` USD and `[budget].max_transitions` stop the machine when crossed
+    - `[budget]` USD and `[budget].max_transitions` stop a non-terminal machine when reached
     - a no-wait, no-spend loop is still bounded by `max_transitions`
 - **Single writer**: `machine.lock` (flock) guarantees one process per machine id; a second invocation refuses
 - **Health/visibility**
@@ -698,9 +706,23 @@ Sizing for long-running machines:
 | `agent6 config show/get/set/unset/add/remove/fix --machine-file FILE` | read and write the machine's own `[config]` overlay through the config surfaces, with the same refusals as hand-editing it. |
 
 `check`, `test`, `graph` and `run` take the file's path or the name `agent6 machine` lists it under; an existing path wins.
+Run instance commands from the repo where the instance was started.
+
+`machine run` prints cumulative dollars and input/output tokens when it ends, waits or stops, as `machine status` does.
+Its budget preflight judges the agent states' resolved model routes, including inherited roles, not an unused operator worker.
+
+A foreground polling run prints each wait's wake time, with the poke command on its first wait line only; `machine status` always includes the poke command for an armed wait.
+
+`machine create` prints dollars and input/output tokens summed across all drafting attempts.
+A leading `~` marks dollar totals that omit unpriced usage; the `run`, `status` and `create` summaries do not report subscription-plan usage.
 
 `machine check` names each problem with its state and rule (``state 'act': branch is not total (no final `else`)``).
 It warns when a `tool` state's binary is not on the jail's PATH.
+
+`machine test` runs each `scripts/**/*_test.py` as `python3 <file>`, not through test discovery; a nonzero exit fails the script.
+Plain assertions can run at top level; a file using `unittest.TestCase` must call `unittest.main()` after all test definitions, usually under `if __name__ == "__main__":`.
+The verdict counts script files that ran and files skipped, not individual test cases.
+Its state count includes the branches, matching `machine check`.
 
 ### 7.1 `machine create`
 
@@ -717,8 +739,9 @@ It is an ordinary agent6 run handed this document's grammar, writing the `.asm.t
     - the mock tests run under `strict` only: elsewhere they are counted as skipped
     - agent6 runs those validators itself between attempts (they need agent6, which no jailed command can reach) and hands the problems back
     - up to `--max-attempts` (default 3); the agent patches the files it wrote
-- the result is a draft: `-o <file>` overwrites freely, else `<name>.asm.toml` in the cwd, never clobbered (a collision prints to stdout, exits non-zero)
-    - scripts land in `scripts/`
+- the result is a draft: `-o <file>` overwrites the file and same-named files in the `scripts/` directory beside it
+    - without `-o`, `<name>.asm.toml` in the cwd and its script targets are never clobbered (a collision prints the machine to stdout, exits non-zero)
+    - the OK line names the files it replaced
 - each attempt is watchable: a draft dir under the state dir carries the prompt, the transcript, and a `logs.jsonl` the TUI/web follow live
     - the CLI streams in the foreground; the TUI and web start detached and follow the dir
 - the [Security considerations](#9-security-considerations) invariant holds: `create` drafts into the working tree only; the operator reviews and commits; `machine run` refuses an uncommitted bundle

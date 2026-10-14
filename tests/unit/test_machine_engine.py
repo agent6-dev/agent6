@@ -762,12 +762,13 @@ def test_resume_finished_machine_is_idempotent(tmp_path: pathlib.Path) -> None:
 
 
 def test_max_transitions_halts_loop(tmp_path: pathlib.Path) -> None:
+    """A transition count equal to its cap is reached, not exceeded."""
     journal, f = _load(tmp_path, SPINNER)
     spec = _semantics.load_machine(f)
     world = FakeWorld({"noop": _ok()})
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "failed"
-    assert "max_transitions" in result.reason
+    assert result.reason == "max_transitions (3) reached"
     assert result.transitions == 3
 
 

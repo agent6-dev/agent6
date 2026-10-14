@@ -708,7 +708,9 @@ def machine_verb_refusals(machine_dir: pathlib.Path, name: str) -> dict[MachineV
     return probe_instance(machine_dir, ms).refusals(name, ms)
 
 
-def wait_line(machine_id: str, state: str, wake_at: str, *, alive: bool) -> str:
+def wait_line(
+    machine_id: str, state: str, wake_at: str, *, alive: bool, include_poke: bool = True
+) -> str:
     """Return the sentence naming where a parked machine waits, when it wakes and how to wake it.
 
     Args:
@@ -716,6 +718,7 @@ def wait_line(machine_id: str, state: str, wake_at: str, *, alive: bool) -> str:
         state: The wait state's name.
         wake_at: The scheduled wake time, "" for a wait on a poke alone.
         alive: The worker pid is live; without a worker only `machine run` moves the machine.
+        include_poke: Append the poke command; a polling run includes it only on its first line.
 
     Returns:
         The sentence `machine status` and the foreground `machine run` share.
@@ -723,13 +726,16 @@ def wait_line(machine_id: str, state: str, wake_at: str, *, alive: bool) -> str:
     poke = f"agent6 machine poke {machine_id} [--message TEXT]"
     if not alive:
         due = f"due at {wake_at}" if wake_at else "waiting for a poke"
+        hint = f"; a poke wakes it on that run: {poke}" if include_poke else ""
         return (
             f"parked in {state!r} with no worker running ({due}): resume with"
-            f" `agent6 machine run {machine_id}`; a poke wakes it on that run: {poke}"
+            f" `agent6 machine run {machine_id}`{hint}"
         )
     if wake_at:
-        return f"waiting in {state!r}: wakes at {wake_at}; a poke wakes it now: {poke}"
-    return f"waiting in {state!r} for a poke: {poke}"
+        hint = f"; a poke wakes it now: {poke}" if include_poke else ""
+        return f"waiting in {state!r}: wakes at {wake_at}{hint}"
+    hint = f": {poke}" if include_poke else ""
+    return f"waiting in {state!r} for a poke{hint}"
 
 
 def verb_answer(machine_dir: pathlib.Path, name: str, verb: MachineVerb) -> tuple[bool, str]:

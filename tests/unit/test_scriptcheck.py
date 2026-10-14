@@ -153,6 +153,50 @@ def _fake_jail(returncode: int, stderr: str = "") -> object:
     return run
 
 
+def _run_python_script(policy: kinds.JailPolicy) -> kinds.CommandResult:
+    """Execute a known test fixture at the jail seam, without building a nested sandbox."""
+    import os
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, *policy.argv[1:]],
+        cwd=policy.cwd,
+        env={**os.environ, **dict(policy.env)},
+        capture_output=True,
+        text=True,
+        timeout=policy.timeout_s,
+        check=False,
+    )
+    return kinds.CommandResult(
+        argv=policy.argv,
+        returncode=result.returncode,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        duration_s=0.0,
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "assert 1 + 1 == 2\n",
+        "import unittest\n\nclass NeverRun(unittest.TestCase):\n"
+        "    def test_failure(self):\n        self.fail('no main call')\n",
+    ],
+)
+def test_offline_tests_count_script_executions_not_discovered_cases(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str
+) -> None:
+    """Offline tests are scripts: a TestCase with no main call exits zero but is not discovered."""
+    _write(tmp_path / "scripts", "thing_test.py", source)
+    monkeypatch.setattr(scriptcheck, "run_in_jail", _run_python_script)
+    outcome = scriptcheck.run_offline_tests(tmp_path, "strict")
+    assert outcome.problems == ()
+    assert outcome.ran == 1
+    assert outcome.skipped == 0
+
+
 def test_offline_tests_pass(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
     monkeypatch.setattr(scriptcheck, "run_in_jail", _fake_jail(0))

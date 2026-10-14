@@ -201,11 +201,13 @@ class OfflineTestOutcome:
 
     Attributes:
         problems: One entry per failed test.
+        ran: How many script files executed, not individual test cases.
         skipped: How many tests could not run.
         skip_reason: Why they could not.
     """
 
     problems: tuple[str, ...] = ()
+    ran: int = 0
     skipped: int = 0
     skip_reason: str = ""
 
@@ -257,6 +259,7 @@ def _run_offline_tests_in(
         return OfflineTestOutcome(skipped=len(tests), skip_reason=reason)
     data_dir = bundle_dir / ".scriptcheck_data"
     problems: list[str] = []
+    ran = 0
     try:
         for test in tests:
             # Fresh per test: a record-style script's state must not reach the next test.
@@ -279,11 +282,13 @@ def _run_offline_tests_in(
                 res = run_in_jail(policy)
             except jail.JailUnavailableError as exc:
                 return OfflineTestOutcome(
+                    ran=ran,
                     problems=(
                         f"could not run offline tests in a jail ({exc});"
                         " static checks still applied",
-                    )
+                    ),
                 )
+            ran += 1
             if res.returncode != 0:
                 detail = (res.stderr or res.stdout or "").strip()
                 # The diagnostic feeds the authoring prompt and the journal: no host paths.
@@ -295,4 +300,4 @@ def _run_offline_tests_in(
                 )
     finally:
         shutil.rmtree(data_dir, ignore_errors=True)
-    return OfflineTestOutcome(problems=tuple(problems))
+    return OfflineTestOutcome(problems=tuple(problems), ran=ran)

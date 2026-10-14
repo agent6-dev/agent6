@@ -24,6 +24,7 @@ import datetime
 import json
 import os
 import pathlib
+import shlex
 import shutil
 from collections.abc import Generator
 from typing import Annotated, Any, Literal
@@ -49,6 +50,7 @@ __all__ = [
     "StepEvent",
     "ToolFact",
     "WaitFact",
+    "fresh_start_remedy",
     "machine_lock",
     "read_source",
     "write_source",
@@ -66,6 +68,21 @@ class JournalError(schema.MachineError):
 
     def __init__(self, message: str) -> None:
         super().__init__([message])
+
+
+def fresh_start_remedy(root: pathlib.Path) -> str:
+    """Return a command that archives an instance outside the machines listing.
+
+    Args:
+        root: The instance directory under `machines/`.
+
+    Returns:
+        The remedy sentence; the archive sits beside `machines/`, not inside it.
+    """
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    target = root.parent.parent / f"{root.name}.archived-{stamp}"
+    command = shlex.join(("mv", "--", str(root), str(target)))
+    return f"To start fresh, archive the instance directory with `{command}`."
 
 
 def _now_iso() -> str:

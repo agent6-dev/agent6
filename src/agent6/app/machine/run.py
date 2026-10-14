@@ -46,6 +46,7 @@ from agent6.machine import (
     machine_lock,
     write_bundle,
 )
+from agent6.machine import journal as machine_journal
 from agent6.sandbox import detect, jail
 from agent6.sessions import ipc, layout
 from agent6.tools import _result_format
@@ -363,19 +364,20 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 reporter.refuse(f"{label}{refusal}")
                 return 2
         if agent_states:
-            # Every agent state's pin is checked now: a dead route found later wastes the run.
-            routes = []
+            # A state can inherit roles besides its worker; the ceiling itself makes no calls.
+            routes: set[tuple[str, str]] = set()
             for name, state in agent_states.items():
-                route = agent_config(name, state).models.resolve("worker")
-                if route is not None:
-                    routes.append((route.provider, route.model))
-            pinned_providers = [provider for provider, _model in routes]
-            missing = _setup.check_provider_keys(cfg, extra_providers=pinned_providers)
-            if missing is not None:
-                reporter.err(missing)
-                return 2
+                state_cfg = agent_config(name, state)
+                missing = _setup.check_provider_keys(state_cfg)
+                if missing is not None:
+                    reporter.err(missing)
+                    return 2
+                routes.update(
+                    (route.provider, route.model)
+                    for route in state_cfg.models.configured().values()
+                )
             # After check_provider_keys, which refreshed the price cache.
-            budget_err = preflight.budget_preflight(cfg, extra_routes=routes, reporter=reporter)
+            budget_err = preflight.budget_preflight(cfg, routes=routes, reporter=reporter)
             if budget_err is not None:
                 reporter.refuse(budget_err)
                 return 2
@@ -435,8 +437,8 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 reporter.refuse(
                     f"{spec.machine} already ended in {end.state!r}"
                     f" ({end.status}: {end.reason})."
-                    " Replay it with `agent6 machine replay`, or archive the"
-                    f" instance directory to start fresh: {journal.root}"
+                    f" Replay it with `agent6 machine replay {spec.machine}`."
+                    f" {machine_journal.fresh_start_remedy(journal.root)}"
                 )
                 return 2
             if journal.exists():
@@ -444,9 +446,8 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 drift = bundle_drift(root, path)
                 if drift is not None:
                     reporter.refuse(
-                        f"{drift}. A live instance runs the bundle it"
-                        " recorded; archive the instance directory to start"
-                        f" fresh with the edited machine: {journal.root}"
+                        f"{drift}. A live instance runs the bundle it recorded."
+                        f" {machine_journal.fresh_start_remedy(journal.root)}"
                     )
                     return 2
             paths.mkdir_for_real_user(data_dir)
@@ -487,16 +488,24 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 if operator_hook is not None:
                     operator_hook(kind, state, message, level)
 
+            poke_hint_shown = False
+
             def say_where_it_parked() -> None:
                 """Print the wait line; a silent in-process wait reads as a hang."""
+                nonlocal poke_hint_shown
                 pending = journal.read_pending_wait()
                 if pending is not None:
                     # This process is the worker, so the wait is live.
                     reporter.note(
                         machine_state.wait_line(
-                            spec.machine, pending.state, pending.wake_at, alive=True
+                            spec.machine,
+                            pending.state,
+                            pending.wake_at,
+                            alive=True,
+                            include_poke=not poke_hint_shown,
                         )
                     )
+                    poke_hint_shown = True
 
             def say_tool_failure(state: str, outcome: ToolExecResult) -> None:
                 """Name a failed tool step here: a bare `nonzero` edge reads as progress."""
@@ -537,23 +546,27 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     except (JournalError, EngineError) as exc:
         reporter.error(str(exc))
         return 1
+    spend, _ = machine_state.machine_spend(journal.read(), root, alive=False)
+    spend_line = (
+        f"spent {budget.format_usd(spend.usd, partial=spend.partial)}"
+        f" (in={spend.input_tokens} tok, out={spend.output_tokens} tok)"
+    )
     if result.status == "waiting":
         reporter.out(
             f"WAITING: {spec.machine} paused in {result.state!r}"
-            f" after {_transitions(result.transitions)} ({result.reason})"
+            f" after {_transitions(result.transitions)} ({result.reason}); {spend_line}"
         )
     elif result.status == "stopped":
         reporter.out(
             f"STOPPED: {spec.machine} parked in {result.state!r}"
             f" after {_transitions(result.transitions)} ({result.reason});"
-            f" resume with `agent6 machine run {spec.machine}`."
+            f" resume with `agent6 machine run {spec.machine}`. {spend_line}"
         )
     else:
-        spend, _ = machine_state.machine_spend(journal.read(), root, alive=False)
         reporter.out(
             f"{result.status.upper()}: {spec.machine} ended in {result.state!r}"
             f" after {_transitions(result.transitions)} ({result.reason});"
-            f" spent {budget.format_usd(spend.usd, partial=spend.partial)}"
+            f" {spend_line}"
         )
     # A machine with run states commits to its own branch: the ending names it, as a run's does.
     branch = git_ops.machine_branch_for(spec.machine)

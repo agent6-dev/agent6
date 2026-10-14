@@ -13,7 +13,7 @@ import contextlib
 import pathlib
 import shutil
 
-from agent6 import event_log, git_ops, kinds, paths, portable
+from agent6 import budget, event_log, git_ops, kinds, paths, portable
 from agent6.app import _session, _setup, _workdirs, machine_agent, preflight
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import _bundle, _scriptcheck
@@ -236,6 +236,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     valid_path: pathlib.Path | None = None
     valid_scripts: dict[str, str] = {}
     total_usd = 0.0
+    total_partial = False
     total_in = 0
     total_out = 0
     # One ledger across attempts: each subprocess is otherwise a fresh tracker. -1 = unlimited.
@@ -245,7 +246,8 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         if create_cap is not None and total_usd >= create_cap:
             reporter.err(
                 f"machine create: budget max_usd (${create_cap}) exhausted after"
-                f" {attempt} attempt(s) (spent ~${total_usd:.4f}); stopping."
+                f" {attempt} attempt(s)"
+                f" (spent {budget.format_usd(total_usd, partial=total_partial)}); stopping."
             )
             break
         attempt = next_attempt
@@ -266,6 +268,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
             events_log,
         )
         total_usd += result.usd
+        total_partial |= result.usd_partial
         total_in += result.input_tokens
         total_out += result.output_tokens
         candidate_path, missing = _machine_file(workspace)
@@ -323,7 +326,10 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         if result.reason in _CREATE_STOP_REASONS:
             break
 
-    reporter.err(f"machine create: spent ~${total_usd:.4f}")
+    reporter.err(
+        f"machine create: spent {budget.format_usd(total_usd, partial=total_partial)}"
+        f" (in={total_in} tok, out={total_out} tok)"
+    )
     # Each attempt's subprocess logs its own budget.update; the fold's last one must be the total.
     events.emit(
         "budget.update",
@@ -345,23 +351,20 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     draft_text = valid_path.read_text(encoding="utf-8")
     payload = draft_text if draft_text.endswith("\n") else draft_text + "\n"
     target = output if output is not None else cwd / f"{spec.machine}.asm.toml"
-    if output is None:
-        # The default path clobbers nothing, scripts included; `-o` overwrites freely.
-        clashes = [
-            p
-            for p in (target, *(target.parent / rel for rel in valid_scripts))
-            if p.exists() or p.is_symlink()
-        ]
-        if clashes:
-            events.emit(
-                "session.end", reason="output_collision", iterations=attempt, all_passed=False
-            )
-            reporter.err("REFUSING to overwrite existing file(s):")
-            for clash in clashes:
-                reporter.err(f"  {clash}")
-            reporter.err(f"The validated bundle is in {workspace}; it is also on stdout.")
-            reporter.out(payload.removesuffix("\n"))
-            return 2
+    existing = [
+        p
+        for p in (target, *(target.parent / rel for rel in sorted(valid_scripts)))
+        if p.exists() or p.is_symlink()
+    ]
+    # The default path clobbers nothing, scripts included; `-o` replaces existing targets.
+    if output is None and existing:
+        events.emit("session.end", reason="output_collision", iterations=attempt, all_passed=False)
+        reporter.err("REFUSING to overwrite existing file(s):")
+        for clash in existing:
+            reporter.err(f"  {clash}")
+        reporter.err(f"The validated bundle is in {workspace}; it is also on stdout.")
+        reporter.out(payload.removesuffix("\n"))
+        return 2
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         # Scripts first, the machine file last: a death mid-publish leaves inert scripts.
@@ -383,8 +386,12 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         return 1
     events.emit("session.end", reason="machine_created", iterations=attempt, all_passed=True)
     scripts_note = f" + {len(valid_scripts)} script(s)" if valid_scripts else ""
+    replaced_note = (
+        f"; replaced {', '.join(repr(str(path)) for path in existing)}" if existing else ""
+    )
     reporter.err(
-        f"OK: wrote draft to {target} ({spec.machine}, {len(spec.states)} states){scripts_note}."
+        f"OK: wrote draft to {target} ({spec.machine}, {len(spec.states)} states)"
+        f"{scripts_note}{replaced_note}."
     )
     reporter.err("Review and commit it; `machine run` only accepts committed machines.")
     # A failure keeps the workspace: the draft in it is what the operator reads.

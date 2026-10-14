@@ -790,7 +790,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
     state = eng.state
     transitions = eng.transitions
     spent_usd = eng.spent_usd
-    remedy = " Archive the instance directory to start fresh."
+    remedy = f" {machine_journal.fresh_start_remedy(eng.journal.root)}"
     for event in events:
         if isinstance(event, machine_journal.AttemptSpend):
             spent_usd += event.usd  # a crashed attempt's slice counts; it moves no position
@@ -801,8 +801,8 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
         if state_spec is None:
             raise EngineError(
                 f"journal references state {state!r}, which the loaded machine no"
-                " longer declares (the file was edited since this instance started);"
-                f" archive the instance directory to start fresh: {eng.journal.root}"
+                " longer declares (the file was edited since this instance started)."
+                f"{remedy}"
             )
         if event.state != state:
             raise EngineError(
@@ -875,8 +875,8 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
         if current is None:
             raise EngineError(
                 f"journal resumes at state {state!r}, which the loaded machine no"
-                " longer declares (the file was edited since this instance started);"
-                f" archive the instance directory to start fresh: {journal.root}"
+                " longer declares (the file was edited since this instance started)."
+                f" {machine_journal.fresh_start_remedy(journal.root)}"
             )
         # A notify fires on entry, at least once across a crash; an armed wait is not a fresh
         # entry, else every --exit-on-wait tick would re-page the operator for one park.
@@ -913,7 +913,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
             )
             return result
         if transitions >= spec.budget.max_transitions:
-            reason = f"max_transitions ({spec.budget.max_transitions}) exceeded"
+            reason = f"max_transitions ({spec.budget.max_transitions}) reached"
             return _emit_end(
                 journal, world, status="failed", reason=reason, state=state, transitions=transitions
             )
@@ -936,9 +936,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
                         detail = f"until {pending.wake_at}"
                     else:
                         detail = "until a signal poke"
-                    return MachineResult(
-                        "waiting", f"waiting in {state!r} {detail}", state, transitions
-                    )
+                    return MachineResult("waiting", detail, state, transitions)
                 label, goto, fact = fired
             elif isinstance(current, schema.WaitState):
                 blocked = _block_on_wait(current, blackboard, journal, world, state, transitions)
@@ -1029,18 +1027,18 @@ def drive(
     events = journal.read()
     if events and not isinstance(events[0], machine_journal.MachineBegin):
         raise EngineError(
-            "journal must start with a machine.begin event;"
-            f" archive the instance directory to start fresh: {journal.root}"
+            "journal must start with a machine.begin event."
+            f" {machine_journal.fresh_start_remedy(journal.root)}"
         )
     if any(isinstance(event, machine_journal.MachineBegin) for event in events[1:]):
         raise EngineError(
-            "journal contains more than one machine.begin event;"
-            f" archive the instance directory to start fresh: {journal.root}"
+            "journal contains more than one machine.begin event."
+            f" {machine_journal.fresh_start_remedy(journal.root)}"
         )
     if any(isinstance(event, machine_journal.MachineEnd) for event in events[:-1]):
         raise EngineError(
-            "journal contains events after machine.end;"
-            f" archive the instance directory to start fresh: {journal.root}"
+            "journal contains events after machine.end."
+            f" {machine_journal.fresh_start_remedy(journal.root)}"
         )
 
     # The instance is keyed by the machine id alone, so another file can land on the journal.
@@ -1051,8 +1049,8 @@ def drive(
         raise EngineError(
             f"this journal was started by machine {begin.machine!r} v{begin.version},"
             f" but the file declares {spec.machine!r} v{spec.version}. A different"
-            " machine reused the id, or the file changed since this instance began;"
-            f" archive the instance directory to start fresh: {journal.root}"
+            " machine reused the id, or the file changed since this instance began."
+            f" {machine_journal.fresh_start_remedy(journal.root)}"
         )
 
     if not events and live:
@@ -1075,8 +1073,8 @@ def drive(
             raise EngineError(
                 "journal machine.end disagrees with its replayed position:"
                 f" records state {end.state!r} after {end.transitions} transitions,"
-                f" replay reaches {eng.state!r} after {eng.transitions};"
-                f" archive the instance directory to start fresh: {journal.root}"
+                f" replay reaches {eng.state!r} after {eng.transitions}."
+                f" {machine_journal.fresh_start_remedy(journal.root)}"
             )
         return MachineResult.from_end(end)
 

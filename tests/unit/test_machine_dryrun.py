@@ -188,6 +188,42 @@ def test_cli_machine_test_passes(
     assert "dry-run passed" in out
 
 
+def test_machine_test_verdict_names_the_offline_tests_that_ran(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A successful dry-run names the number of offline script files actually executed."""
+    from agent6.app.machine import _scriptcheck
+    from agent6.ui.cli import main
+    from tests.unit import test_scriptcheck
+
+    f = _write(tmp_path)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in ("a_test.py", "b_test.py"):
+        (scripts / name).write_text("assert 1 + 1 == 2\n", encoding="utf-8")
+    strict = dataclasses.replace(_setup.detect_env(), userns_supported=True)
+    monkeypatch.setattr(_setup, "detect_env", lambda: strict)
+    monkeypatch.setattr(_scriptcheck, "run_in_jail", test_scriptcheck._run_python_script)
+
+    assert main(["machine", "test", str(f)]) == 0
+    out = capsys.readouterr().out
+    assert "; 2 offline script tests passed" in out
+    assert "not run" not in out
+
+
+def test_check_and_test_count_states_the_same(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A branch belongs to the total state count in both check and test verdicts."""
+    from agent6.ui.cli import main
+
+    f = _write(tmp_path)
+    assert main(["machine", "check", str(f)]) == 0
+    assert "5 states" in capsys.readouterr().out
+    assert main(["machine", "test", str(f)]) == 0
+    assert "5 states, including 1 branch" in capsys.readouterr().out
+
+
 def test_cli_machine_test_verdict_names_unrun_offline_tests(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

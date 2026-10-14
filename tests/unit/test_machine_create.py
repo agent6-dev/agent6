@@ -265,7 +265,48 @@ def test_create_writes_default_path(
     assert written.exists()
     assert written.read_text(encoding="utf-8").startswith('machine = "greeter"')
     assert "wrote draft" in out.err
-    assert "spent ~$0.0200" in out.err
+    assert "spent $0.02 (in=0 tok, out=0 tok)" in out.err
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_create_spend_line_has_tokens_and_an_accurate_partial_marker(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    partial: bool,
+) -> None:
+    """Create sums tokens and keeps an unpriced marker from any attempt, not every draft."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            (
+                {},
+                AgentExecResult(
+                    reason="finish_session",
+                    usd=0.01,
+                    usd_partial=partial,
+                    payload=None,
+                    input_tokens=100,
+                    output_tokens=20,
+                ),
+            ),
+            (
+                _draft(VALID_MACHINE),
+                AgentExecResult(
+                    reason="finish_session",
+                    payload=None,
+                    usd=0.02,
+                    input_tokens=150,
+                    output_tokens=30,
+                ),
+            ),
+        ],
+    )
+    assert main(["machine", "create", "Greet the user", "--max-attempts", "2"]) == 0
+    mark = "~" if partial else ""
+    assert f"machine create: spent {mark}$0.03 (in=250 tok, out=50 tok)" in capsys.readouterr().err
 
 
 def test_create_writes_watchable_event_log(
@@ -389,7 +430,7 @@ def test_create_retries_then_succeeds(
     out = capsys.readouterr()
     assert (tmp_path / "greeter.asm.toml").exists()
     # both attempts' spend summed
-    assert "spent ~$0.0400" in out.err
+    assert "spent $0.04 (in=0 tok, out=0 tok)" in out.err
     assert "attempt 2/3" in out.err
 
 
@@ -501,6 +542,57 @@ def test_create_output_flag_overwrites(
     code = main(["machine", "create", "Greet the user", "-o", str(target)])
     assert code == 0
     assert target.read_text(encoding="utf-8").startswith('machine = "greeter"')
+
+
+@pytest.mark.parametrize("existing_output", [False, True])
+def test_create_output_flag_names_the_files_it_replaced(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    existing_output: bool,
+) -> None:
+    """Explicit output replaces sibling scripts and names only files that already existed."""
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "custom.asm.toml"
+    if existing_output:
+        target.write_text("# old draft\n", encoding="utf-8")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    old_script = scripts / "run.py"
+    old_script.write_text("# operator's script\n", encoding="utf-8")
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            (
+                _draft(SCRIPT_MACHINE, **{"run.py": SCRIPT_BODY, "new.py": "print('new')\n"}),
+                AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+            )
+        ],
+    )
+
+    assert main(["machine", "create", "Run a script", "-o", str(target)]) == 0
+    assert "print(json.dumps({}))" in old_script.read_text(encoding="utf-8")
+    assert target.read_text(encoding="utf-8").startswith('machine = "scripted"')
+    ok = next(line for line in capsys.readouterr().err.splitlines() if line.startswith("OK:"))
+    assert "; replaced " in ok
+    replacements = ok.split("; replaced ", 1)[1]
+    assert str(old_script) in replacements
+    assert (str(target) in replacements) is existing_output
+    assert "new.py" not in replacements
+
+
+def test_create_output_help_discloses_sibling_script_overwrites(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Output help names the scripts directory whose same-named files the flag replaces."""
+    with pytest.raises(SystemExit) as exc:
+        main(["machine", "create", "--help"])
+    assert exc.value.code == 0
+    help_text = " ".join(capsys.readouterr().out.split()).replace("- ", "-")
+    assert (
+        "overwrites the file and same-named files in the scripts/ directory beside it" in help_text
+    )
 
 
 def test_create_never_valid_exits_1(

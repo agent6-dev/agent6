@@ -150,8 +150,9 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         type=pathlib.Path,
         default=None,
         help=(
-            "Write the draft here (overwriting freely). Default: <machine-name>.asm.toml"
-            " in cwd, which is never overwritten."
+            "Write the draft here; overwrites the file and same-named files in the scripts/"
+            " directory beside it. Default: <machine-name>.asm.toml in cwd,"
+            " with no existing file or script overwritten."
         ),
     )
     machine_create.add_argument(
