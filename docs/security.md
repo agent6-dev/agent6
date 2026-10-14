@@ -175,6 +175,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - the record reaches every policy consumer, the hardened exposure scan included: a `hide_paths` entry inside it refuses like any other unmaskable exposure
 - Masked last, after every bind (`strict`): the config dir, the state base, `[sandbox].hide_paths`
     - each is masked under its given name and under the path it resolves to, so an entry spelled through a symlink covers the real directory
+    - a hidden path inside the tree a symlinked grant resolves to is masked under the grant's spelled name too, where the jail shows that tree
     - a hidden directory reads as an empty directory and a hidden file as an empty file; a write to either fails with `Read-only file system`
     - a grant at or inside a private dir is refused at config load
     - `hardened` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses

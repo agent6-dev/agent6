@@ -301,6 +301,24 @@ fn main() {
         .filter(|real| !policy.hide_paths.contains(real))
         .collect();
     policy.hide_paths.extend(real_hidden);
+    // A grant bound at its spelled name shows its resolved tree there: a
+    // hidden path inside that tree is masked under the spelled name too.
+    let aliased: Vec<PathBuf> = policy
+        .hide_paths
+        .iter()
+        .flat_map(|hp| {
+            policy.grant_sources.iter().filter_map(move |(name, real)| {
+                let rel = hp.strip_prefix(real).ok()?;
+                Some(if rel.as_os_str().is_empty() {
+                    name.clone()
+                } else {
+                    name.join(rel)
+                })
+            })
+        })
+        .filter(|alias| !policy.hide_paths.contains(alias))
+        .collect();
+    policy.hide_paths.extend(aliased);
 
     if !matches!(policy.network.as_str(), "host" | "session" | "none") {
         die(format!("unknown network: {}", policy.network));

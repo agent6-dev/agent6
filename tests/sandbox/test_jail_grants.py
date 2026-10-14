@@ -225,3 +225,32 @@ def test_a_grant_is_never_mounted_through_a_link_an_earlier_grant_shows(
     with pytest.raises(jail.JailUnavailableError, match=f"write grant {link}: a symbolic link"):
         jail.run_in_jail(dataclasses.replace(base, extra_ro_paths=(held,), extra_rw_paths=(link,)))
     assert target.read_text(encoding="utf-8") == "host content\n"
+
+
+def test_a_hidden_path_is_masked_under_a_grants_spelled_name_too(scratch: pathlib.Path) -> None:
+    """A hidden path inside a symlinked grant stayed readable through the grant's name.
+
+    The grant is bound from its resolved tree at its spelled name, and the mask sat only where
+    the hidden path itself points, a place the jail does not show.
+    """
+    real, link, repo = scratch / "tool-1.2", scratch / "tool", scratch / "repo"
+    (real / "secret").mkdir(parents=True)
+    (real / "secret" / "key").write_text("HIDDEN\n", encoding="utf-8")
+    (real / "VERSION").write_text("1.2\n", encoding="utf-8")
+    link.symlink_to(real, target_is_directory=True)
+    repo.mkdir()
+    cfg = Config.model_validate(
+        {
+            "sandbox": {
+                "extra_read_paths": [str(link)],
+                "hide_paths": [str(real / "secret")],
+            }
+        }
+    )
+    script = f"cat {link}/VERSION; cat {link}/secret/key; ls {link}/secret | wc -l"
+    built = tools_policy.jail_policy(
+        repo, cfg, "strict", ("sh", "-c", script), network="none", timeout_s=10.0
+    )
+    res = jail.run_in_jail(built)
+    assert "HIDDEN" not in res.stdout + res.stderr, res
+    assert res.stdout.splitlines() == ["1.2", "0"], res
