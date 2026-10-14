@@ -249,6 +249,40 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
     assert seen == [Config().harness.max_iterations]
 
 
+def test_create_takes_the_budget_flags_run_takes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--max-percent` and its siblings cap every drafting attempt, as they cap a run.
+
+    `machine create` had no budget flags: the cap on a plan-metered model took a config copy.
+    """
+    from agent6.config import layer
+
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    seen: list[tuple[float, float | None]] = []
+
+    def fake_build(
+        overlays: dict[str, machine_agent.StateOverlay],
+        root: pathlib.Path,
+        transcript_dir: pathlib.Path,
+        **_kw: object,
+    ) -> Callable[[AgentRequest], AgentExecResult]:
+        budget = layer.load_effective_with_overlay(root, overlays[""].overlay).config.budget
+
+        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+            seen.append((budget.max_percent, request.max_usd))
+            _write_draft(root, _draft(VALID_MACHINE))
+            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
+
+        return run
+
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    argv = ["machine", "create", "--max-percent", "30", "--max-usd", "2", "Greet the user"]
+    assert main(argv) == 0
+    assert seen == [(30.0, 2.0)]
+
+
 def test_create_writes_default_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

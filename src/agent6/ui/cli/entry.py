@@ -891,6 +891,7 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
 
 def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     """Return the exit code of a `agent6 machine` verb."""  # noqa: DOC501  # the last raise is unreachable
+    from agent6.app import _setup
     from agent6.app import reporter as app_reporter
     from agent6.app.machine import create
     from agent6.app.machine import run as machine_run
@@ -936,6 +937,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
             output=args.output,
             max_attempts=args.max_attempts,
             config_path=args.config,
+            budget_overrides=_setup.BudgetOverrides.from_args(args),
         )
     raise AssertionError("unreachable")  # pragma: no cover -- machine subparser is required
 

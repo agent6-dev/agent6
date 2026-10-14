@@ -144,6 +144,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     output: pathlib.Path | None,
     max_attempts: int,
     config_path: pathlib.Path | None = None,
+    budget_overrides: _setup.BudgetOverrides | None = None,
 ) -> int:
     """Draft, validate and write a machine.
 
@@ -154,6 +155,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
             refuses to overwrite anything.
         max_attempts: How many authoring attempts to make.
         config_path: An explicit config file, else the effective one.
+        budget_overrides: The `--max-*` flags, capping the attempts as they cap a run.
 
     Returns:
         The exit code: 0 on a written bundle, 1 on a failed draft, 2 on a refusal.
@@ -165,6 +167,8 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     try:
         eff = layer.load_effective(cwd, config_path)
         cfg = eff.config
+        if budget_overrides is not None:
+            cfg = budget_overrides.apply(cfg)
         cfg.require_runnable("worker")
     except ConfigError as exc:
         reporter.error(str(exc))

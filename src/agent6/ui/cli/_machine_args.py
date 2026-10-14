@@ -162,3 +162,4 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         metavar="N",
         help="Maximum draft->check->fix attempts before giving up (default: 3).",
     )
+    _common._add_budget_flags(machine_create)
