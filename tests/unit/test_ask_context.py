@@ -431,6 +431,26 @@ def test_ask_run_digest_reports_unavailable_diff(
     assert "diff unavailable" in digest
 
 
+def test_ask_run_digest_of_a_run_with_no_commit_says_so(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `/btw` beside a run that had not committed yet got git's unknown-revision error."""
+    rid = _make_run(tmp_path)
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / rid
+    m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
+    _git(tmp_path, "checkout", "-q", m["base_sha"])
+    _git(tmp_path, "branch", "-D", "agent6/run")
+    (session_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "user_task": "make x equal 2"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    digest = _build_ask_session_digest(tmp_path, rid, latest=False)
+    assert digest is not None
+    assert "(no diff: the run has made no commit yet)" in digest
+    assert "unknown revision" not in digest
+
+
 def _session(
     tmp_path: pathlib.Path, bucket: str, sid: str, mode: str, *, run_branch: str | None
 ) -> None:
