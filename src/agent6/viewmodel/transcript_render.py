@@ -542,12 +542,14 @@ def render_markdown(
         header = f"## {tn.role}"
         if tn.role == "assistant":
             header += f"  (seq {tn.seq})"
-        out.append(header)
+        body: list[str] = []
         if tn.thinking and show_thinking:
-            out.append(f"<thinking>\n{tn.thinking}\n</thinking>")
+            body.append(f"<thinking>\n{tn.thinking}\n</thinking>")
         if tn.text:
-            out.append(tn.text)
+            body.append(tn.text)
         if tn.tool_calls and tools != "none":
-            out.extend(f"-> {name}({args})" for name, args in tn.tool_calls)
-        out.append("")
+            body.extend(f"-> {name}({args})" for name, args in tn.tool_calls)
+        if not body and (tn.thinking or tn.tool_calls):
+            continue  # the flags hide all the turn holds; an empty turn keeps its heading
+        out.extend([header, *body, ""])
     return "\n".join(out).rstrip() + "\n"

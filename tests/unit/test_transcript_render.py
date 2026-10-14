@@ -917,3 +917,33 @@ def test_two_text_blocks_in_one_turn_render_as_two_paragraphs() -> None:
     for data in (anthropic, responses):
         turn = next(t for t in transcript_render.fold_conversation(data) if t.role == "assistant")
         assert turn.text == "First message.\n\nSecond message."
+
+
+def test_a_turn_whose_content_the_flags_hide_prints_no_heading(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions transcript --tools none` printed a bare heading for every tool-only turn."""
+    from agent6.ui.cli import main
+
+    transcripts = json.loads(json.dumps(_OPENAI))
+    first = transcripts[0]["response"]["body"]["choices"][0]["message"]
+    first["content"] = ""
+    del first["reasoning_content"]
+    transcripts[1]["request"]["body"]["messages"][2]["content"] = ""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "st"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    tdir = paths.state_dir(repo) / "sessions" / "runs" / "my-run" / "transcripts"
+    tdir.mkdir(parents=True)
+    (tdir.parent / "logs.jsonl").write_text("{}\n", encoding="utf-8")
+    for t in transcripts:
+        (tdir / f"20260101-00000{t['seq']}.json").write_text(json.dumps(t), encoding="utf-8")
+
+    assert main(["sessions", "transcript", "my-run", "--tools", "none"]) == 0
+    out = capsys.readouterr().out
+    assert "## assistant  (seq 1)" not in out
+    assert "## assistant  (seq 2)\nall done" in out
+
+    assert main(["sessions", "transcript", "my-run"]) == 0
+    assert "## assistant  (seq 1)\n-> read_file(" in capsys.readouterr().out
