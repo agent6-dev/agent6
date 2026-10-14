@@ -111,6 +111,7 @@ def test_check_verify_reads_the_agents_md_fence_as_shell(
     assert f"unset; a run here infers {command} from AGENTS.md\n" in capsys.readouterr().out
 
 
+@pytest.mark.usefixtures("jail_bin")
 def test_run_header_prints_the_inferred_gate_as_check_verify_does(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
