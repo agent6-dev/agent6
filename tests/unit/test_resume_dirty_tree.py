@@ -548,3 +548,63 @@ def test_resume_keeps_the_runs_own_uncommitted_work(
     assert asked == []
     assert _git(repo, "stash", "list") == ""
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5  # the run\n"
+
+
+@pytest.mark.parametrize(("policy", "rc"), [("", 2), ('dirty_tree = "include"\n', 0)])
+def test_a_run_killed_before_it_recorded_a_tree_treats_unwritten_changes_as_outside(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    policy: str,
+    rc: int,
+) -> None:
+    """With no end tree, a tracked change no tool of the run wrote follows the dirty-tree policy.
+
+    Taken silently into the run's next commit, another run's edits left in the checkout read as
+    this run's work.
+    """
+    repo = _setup(tmp_path, monkeypatch, policy)
+    _stopped_run(repo, monkeypatch, "tree-KILL01", _edit("z.txt", "1\n"))
+    logs = _session_dir(repo, "tree-KILL01") / "logs.jsonl"
+    kept = [ln for ln in logs.read_text(encoding="utf-8").splitlines() if '"session.end"' not in ln]
+    logs.write_text("\n".join(kept) + "\n", encoding="utf-8")  # as a SIGKILL leaves it
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # never written by the run
+    (repo / "z.txt").write_text("2\n", encoding="utf-8")  # the run's own file, unfinished
+    capsys.readouterr()
+
+    assert _resume(monkeypatch, "tree-KILL01", [_finish()]) == rc
+
+    err = capsys.readouterr().err
+    if rc == 2:
+        assert "a.py" in err and "recorded no tree" in err and "z.txt" not in err
+    else:
+        assert "recorded no tree" not in err
+
+
+def test_a_killed_runs_own_edit_to_a_committed_file_is_not_stashed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no end tree, a stash would take back the run's own work on a file it committed.
+
+    The chain tip stands in for the missing tree: a path the run's commits changed blocks the
+    stash, as it does after a clean end.
+    """
+    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\n')
+    _stopped_run(repo, monkeypatch, "tree-KILL02", _edit("z.txt", "1\n"))
+    # A file a run command wrote and the run committed: no tool result names it.
+    (repo / "w.txt").write_text("1\n", encoding="utf-8")
+    ref = git_ops.chain_ref_for("tree-KILL02")
+    assert git_ops.chain_commit(
+        repo, "agent6 iter 2: w", ref=ref, fallback_parent=None, also_branch="agent6/tree-KILL02"
+    )
+    logs = _session_dir(repo, "tree-KILL02") / "logs.jsonl"
+    kept = [ln for ln in logs.read_text(encoding="utf-8").splitlines() if '"session.end"' not in ln]
+    logs.write_text("\n".join(kept) + "\n", encoding="utf-8")  # as a SIGKILL leaves it
+    (repo / "w.txt").write_text("2\n", encoding="utf-8")  # edited again by a command, then killed
+    capsys.readouterr()
+
+    assert _resume(monkeypatch, "tree-KILL02", [_finish()]) == 2
+
+    err = capsys.readouterr().err
+    assert "w.txt" in err and "blocks stashing (the run also changed it)" in err
+    assert (repo / "w.txt").read_text(encoding="utf-8") == "2\n"

@@ -592,6 +592,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         untracked_at_start = sessions_layout.read_untracked_at_start(layout.session_dir)
         outside: list[str] = []
         end_tree = ""
+        seed: str | None = None
         if mode == "run":
             # An untracked file the run did not leave, the chain does not hold and no tool wrote
             # arrived between executions, so it is the operator's; a git failure refuses, since
@@ -602,6 +603,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             chain_ref = git_ops.chain_ref_for(session_id)
             end_tree = scan.end_tree
             seed = git_ops.chain_tip(cwd, chain_ref) or resume_base_sha or None
+            written = _paths_the_run_wrote(layout.logs_path)
             if landed is not None:
                 # The run's work is in HEAD, so what differs from HEAD is the operator's.
                 end_tree, seed = f"{landed.head}^{{tree}}", landed.head
@@ -611,7 +613,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     - untracked_at_start
                     - git_ops.tree_paths(cwd, chain_ref)
                     - (git_ops.tree_paths(cwd, end_tree) if end_tree else frozenset())
-                    - _paths_the_run_wrote(layout.logs_path)
+                    - written
                 )
                 shown = _first_four(arrived)
                 if arrived and died_in_turn:
@@ -628,13 +630,18 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                         f"left out of this run's commits as yours: {shown} (arrived"
                         " between executions, unwritten by any tool of the run)"
                     )
-                # Tracked content that changed since the last end is the operator's too.
-                outside = _resume_tree.outside_edits(cwd, end_tree, seed, untracked_at_start)
+                # Tracked content that changed since the last end is the operator's too; a
+                # file taken as the run's above stays its own.
+                runs_own = written | arrived if died_in_turn else written
+                outside = _resume_tree.outside_edits(
+                    cwd, end_tree, seed, untracked_at_start, written=runs_own
+                )
                 unsettled = _resume_tree.refusal(
                     cwd,
                     policy=cfg.git.dirty_tree,
                     outside=outside,
                     end_tree=end_tree,
+                    seed=seed,
                     run_branch=manifest.run_branch,
                     answerable=frontend.capabilities.can_ask
                     or ipc.away_mode(layout.session_dir) == "wait",
@@ -653,6 +660,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             policy=cfg.git.dirty_tree,
             outside=outside,
             end_tree=end_tree,
+            seed=seed,
             run_branch=manifest.run_branch,
             session_id=session_id,
             ask=lambda question: prompts.ask((question,)).answers[0],

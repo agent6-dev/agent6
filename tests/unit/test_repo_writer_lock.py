@@ -831,13 +831,17 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
     state = paths.state_dir(repo)
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="run-K")
     layout.ensure()
+    head = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
     layout.manifest_path.write_text(
         json.dumps(
             {
                 "version": 2,
                 "session_id": "run-K",
                 "mode": "run",
-                "base_sha": "",
+                # A real base: with one, a file taken as the run's was then treated as outside.
+                "base_sha": head,
                 "base_branch": "main",
                 "run_branch": "agent6/run-K",
                 "user_task": "t",

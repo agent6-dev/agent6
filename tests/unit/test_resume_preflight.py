@@ -720,7 +720,10 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     sessions_layout.write_untracked_at_start(session_dir, {"notes.md"})
     (repo / "notes.md").write_text("the operator's, since before the run\n", encoding="utf-8")
     (repo / changed).write_text("edited between executions\n", encoding="utf-8")
-    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    # No end recorded a tree, so the tracked edit follows the policy: included, it is noted.
+    _stub_load_effective(
+        monkeypatch, _PLANNER_AND_WORKER + '[git]\ndirty_tree = "include"\n', tmp_path
+    )
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)
     monkeypatch.setattr(app__execution, "run_execution", _finished_execution)

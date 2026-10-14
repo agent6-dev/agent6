@@ -7,7 +7,9 @@ whose content differs from that tree changed outside the run: they are the opera
 follow `[git].dirty_tree`. "Differs from the chain tip" is not the test, because a run's own
 work can be uncommitted after a clean end: an operator stop skips the final checkpoint, and
 `commit_per_step = false`, `git.control = "model"` and a failed commit all leave it in the
-tree.
+tree. A run killed before it could record a tree (SIGKILL, a crash) leaves only the chain tip
+to go by: what differs from it and no tool of the run wrote follows the policy too, since
+nothing says whose it is.
 """
 
 from __future__ import annotations
@@ -26,7 +28,12 @@ _LISTED = 10
 
 
 def outside_edits(
-    cwd: pathlib.Path, end_tree: str, seed: str | None, exclude: Collection[str]
+    cwd: pathlib.Path,
+    end_tree: str,
+    seed: str | None,
+    exclude: Collection[str],
+    *,
+    written: Collection[str] = (),
 ) -> list[str]:
     """Return the paths whose content changed since the run's last execution ended.
 
@@ -36,28 +43,49 @@ def outside_edits(
             work landed there; "" when none was recorded.
         seed: The commit that tree was staged over: the chain tip, else the run's base.
         exclude: The operator's untracked files, left out of both trees.
+        written: The paths the run's own tools wrote, which stay its own when no tree was
+            recorded.
 
     Returns:
-        The differing paths; empty when no tree was recorded or nothing changed.
+        The differing paths; with no recorded tree, what differs from the seed that no tool
+        of the run wrote; empty when nothing changed.
     """
-    if not end_tree:
+    tree = git_ops.worktree_tree(cwd, seed, exclude)
+    if end_tree:
+        return git_ops.tree_diff_paths(cwd, end_tree, tree)
+    if seed is None:
         return []
-    return git_ops.tree_diff_paths(cwd, end_tree, git_ops.worktree_tree(cwd, seed, exclude))
+    return [p for p in git_ops.tree_diff_paths(cwd, seed, tree) if p not in written]
 
 
-def _also_the_runs(cwd: pathlib.Path, end_tree: str, outside: Sequence[str]) -> list[str]:
+def _description(end_tree: str) -> str:
+    """Return what the listed paths are, by whether the run's last end recorded a tree."""
+    if end_tree:
+        return "changed outside this run since it last ended"
+    return (
+        "changed since this run's last commit, which no tool of the run wrote; its last end"
+        " recorded no tree, so they may be yours or its own unfinished edits"
+    )
+
+
+def _also_the_runs(cwd: pathlib.Path, left: str, outside: Sequence[str]) -> list[str]:
     """Return the outside paths the run left changed against HEAD.
 
     A stash returns a path to HEAD's content, so it would take the run's work with the
     operator's edit.
+
+    Args:
+        cwd: The checkout.
+        left: The tree the run left: its recorded end tree, else its chain tip; "" for neither.
+        outside: The paths that changed outside the run.
     """
-    changed = set(git_ops.tree_diff_paths(cwd, "HEAD", end_tree))
+    if not left:
+        return []
+    changed = set(git_ops.tree_diff_paths(cwd, "HEAD", left))
     return [p for p in outside if p in changed]
 
 
-def _listing(
-    paths: Sequence[str], *, description: str = "changed outside this run since it last ended"
-) -> str:
+def _listing(paths: Sequence[str], *, description: str) -> str:
     n = len(paths)
     head = f"{n} {'file' if n == 1 else 'files'} {description}:"
     lines = [f"- {terminal.printable_name(p)}" for p in paths[:_LISTED]]
@@ -100,6 +128,7 @@ def refusal(
     policy: str,
     outside: Sequence[str],
     end_tree: str,
+    seed: str | None,
     run_branch: str | None,
     answerable: bool,
 ) -> str | None:
@@ -109,7 +138,8 @@ def refusal(
         cwd: The checkout.
         policy: `[git].dirty_tree`.
         outside: The paths that changed outside the run.
-        end_tree: The tree id the run's last end recorded.
+        end_tree: The tree id the run's last end recorded; "" when none was.
+        seed: The chain tip, else the run's base: what the run left when no tree was recorded.
         run_branch: The run's branch, or None.
         answerable: Whether a question would reach anyone.
 
@@ -122,15 +152,14 @@ def refusal(
         if answerable:
             return None
         return (
-            f"{_listing(outside)}\n"
+            f"{_listing(outside, description=_description(end_tree))}\n"
             "This resume has no terminal and no front-end to ask how to treat them. Stash"
             ' them first, or decide in config: [git].dirty_tree = "stash" stashes them for the'
             ' run; "include" lets the run\'s next commit record them.'
         )
-    shared = _also_the_runs(cwd, end_tree, outside)
-    return (
-        _shared_refusal(cwd, shared, end_tree=end_tree, run_branch=run_branch) if shared else None
-    )
+    left = end_tree or seed or ""
+    shared = _also_the_runs(cwd, left, outside)
+    return _shared_refusal(cwd, shared, end_tree=left, run_branch=run_branch) if shared else None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -152,6 +181,7 @@ def settle(
     policy: str,
     outside: Sequence[str],
     end_tree: str,
+    seed: str | None,
     run_branch: str | None,
     session_id: str,
     ask: Callable[[schema.UserQuestion], str],
@@ -163,7 +193,8 @@ def settle(
         cwd: The checkout.
         policy: `[git].dirty_tree`.
         outside: The paths that changed outside the run.
-        end_tree: The tree id the run's last end recorded.
+        end_tree: The tree id the run's last end recorded; "" when none was.
+        seed: The chain tip, else the run's base: what the run left when no tree was recorded.
         run_branch: The run's branch, or None.
         session_id: The run, which names the stash.
         ask: Asks the operator one question and returns the answer.
@@ -180,7 +211,7 @@ def settle(
             ask(
                 schema.UserQuestion(
                     question=(
-                        f"{_listing(outside)}\n"
+                        f"{_listing(outside, description=_description(end_tree))}\n"
                         "How should this run treat them?\n"
                         "stash: set them aside for the run (applied back over the run's work"
                         " at the end; a failed apply keeps the stash and prints the restore"
@@ -197,8 +228,9 @@ def settle(
             return None
         if choice == "include":
             return Settled()
-        if shared := _also_the_runs(cwd, end_tree, outside):
-            reporter.refuse(_shared_refusal(cwd, shared, end_tree=end_tree, run_branch=run_branch))
+        left = end_tree or seed or ""
+        if shared := _also_the_runs(cwd, left, outside):
+            reporter.refuse(_shared_refusal(cwd, shared, end_tree=left, run_branch=run_branch))
             return None
     try:
         git_ops.stash_tracked_changes(cwd, git_ops.auto_stash_message(session_id), outside)
@@ -207,7 +239,6 @@ def settle(
         return None
     names = ", ".join(terminal.printable_name(p) for p in outside[:4])
     shown = names + (f", +{len(outside) - 4} more" if len(outside) > 4 else "")
-    reporter.note(
-        f"stashed for this execution as yours: {shown} (changed since the run last ended)"
-    )
+    since = "the run last ended" if end_tree else "the run's last commit"
+    reporter.note(f"stashed for this execution as yours: {shown} (changed since {since})")
     return Settled(stashed=True, pop=asked)
