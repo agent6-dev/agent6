@@ -10,8 +10,9 @@ the machine narrows for every state and a state sets its own value back up to th
 from __future__ import annotations
 
 import dataclasses
+import os
 import pathlib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 
 from agent6 import kinds
 from agent6.config import Config, ConfigError, SandboxConfig, layer
@@ -75,6 +76,15 @@ class _Side:
         return tools_policy.resolve_network(self.config, self.isolation)
 
 
+def _covered(path: str, trees: Iterable[str]) -> bool:
+    """Return whether a path is at or below one of the trees, each by its real path.
+
+    Real paths, so a symlink inside a tree that points outside it is not covered.
+    """
+    real = pathlib.Path(os.path.realpath(path))
+    return any(real.is_relative_to(os.path.realpath(tree)) for tree in trees)
+
+
 _ISOLATION_RANK = {"none": 0, "hardened": 1, "strict": 2}
 _RUN_COMMANDS_RANK = {"no": 0, "ask": 1, "yes": 2}
 
@@ -95,18 +105,23 @@ _WITHIN: dict[str, Callable[[_Side, _Side], bool]] = {
         op.sandbox.memory_limit_mb == 0
         or 0 < st.sandbox.memory_limit_mb <= op.sandbox.memory_limit_mb
     ),
-    # Write implies read, so a read entry may come from the operator's write list.
-    "extra_read_paths": lambda op, st: (
-        set(st.sandbox.extra_read_paths)
-        <= {*op.sandbox.extra_read_paths, *op.sandbox.extra_write_paths}
+    # Write implies read, so a read entry may sit under the operator's write list.
+    "extra_read_paths": lambda op, st: all(
+        _covered(p, (*op.sandbox.extra_read_paths, *op.sandbox.extra_write_paths))
+        for p in st.sandbox.extra_read_paths
     ),
-    "extra_write_paths": lambda op, st: (
-        set(st.sandbox.extra_write_paths) <= set(op.sandbox.extra_write_paths)
+    "extra_write_paths": lambda op, st: all(
+        _covered(p, op.sandbox.extra_write_paths) for p in st.sandbox.extra_write_paths
     ),
+    # A device is one node: the operator's own entry, whatever its spelling.
     "extra_device_paths": lambda op, st: (
-        set(st.sandbox.extra_device_paths) <= set(op.sandbox.extra_device_paths)
+        {os.path.normpath(p) for p in st.sandbox.extra_device_paths}
+        <= {os.path.normpath(p) for p in op.sandbox.extra_device_paths}
     ),
-    "hide_paths": lambda op, st: set(op.sandbox.hide_paths) <= set(st.sandbox.hide_paths),
+    # Hiding more is narrower: each of the operator's entries stays under one of the state's.
+    "hide_paths": lambda op, st: all(
+        _covered(p, st.sandbox.hide_paths) for p in op.sandbox.hide_paths
+    ),
 }
 
 

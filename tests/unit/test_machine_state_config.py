@@ -237,7 +237,17 @@ def test_a_key_with_no_rule_must_equal_the_operators(monkeypatch: pytest.MonkeyP
         ({"extra_read_paths": ["/a"]}, {"extra_read_paths": []}),
         # Write implies read: a read entry may come from the operator's write list.
         ({"extra_write_paths": ["/w"]}, {"extra_write_paths": [], "extra_read_paths": ["/w"]}),
+        # A path at or below a grant is within it, however either side spells it.
+        ({"extra_read_paths": ["/a"]}, {"extra_read_paths": ["/a/"]}),
+        ({"extra_read_paths": ["/a/"]}, {"extra_read_paths": ["/a"]}),
+        ({"extra_read_paths": ["/a"]}, {"extra_read_paths": ["/a/sub"]}),
+        ({"extra_write_paths": ["/w"]}, {"extra_write_paths": ["/w/sub/"]}),
+        ({"extra_write_paths": ["/w"]}, {"extra_write_paths": [], "extra_read_paths": ["/w/sub"]}),
         ({"hide_paths": ["/h"]}, {"hide_paths": ["/h", "/more"]}),
+        # Hiding an ancestor hides the operator's entry with it.
+        ({"hide_paths": ["/h/secret"]}, {"hide_paths": ["/h"]}),
+        ({"hide_paths": ["/h"]}, {"hide_paths": ["/h/"]}),
+        ({"extra_device_paths": ["/dev/fuse"]}, {"extra_device_paths": ["/dev//fuse"]}),
         ({"run_commands": "yes"}, {"run_commands": "ask"}),
         ({"run_commands": "ask"}, {"run_commands": "no"}),
         ({"network": "host"}, {"network": "session"}),
@@ -261,12 +271,22 @@ def test_an_overlay_may_narrow(operator: dict[str, Any], state: dict[str, Any]) 
     [
         ({}, {"extra_read_paths": ["/a"]}, "extra_read_paths"),
         ({"extra_read_paths": ["/a"]}, {"extra_read_paths": ["/a", "/b"]}, "extra_read_paths"),
-        # A sub-path or a respelling is a new string: only the operator's own entries pass.
-        ({"extra_read_paths": ["/a"]}, {"extra_read_paths": ["/a/sub"]}, "extra_read_paths"),
+        # A sibling that shares the grant's spelling as a prefix, and the grant's parent.
+        ({"extra_read_paths": ["/a"]}, {"extra_read_paths": ["/ab"]}, "extra_read_paths"),
+        ({"extra_read_paths": ["/a/sub"]}, {"extra_read_paths": ["/a"]}, "extra_read_paths"),
         ({"extra_read_paths": ["/a"]}, {"extra_write_paths": ["/a"]}, "extra_write_paths"),
+        ({"extra_read_paths": ["/a"]}, {"extra_write_paths": ["/a/sub"]}, "extra_write_paths"),
         ({}, {"extra_device_paths": ["/dev/fuse"]}, "extra_device_paths"),
+        # A device is granted by its own node, never by a directory above it.
+        (
+            {"extra_device_paths": ["/dev/dri"]},
+            {"extra_device_paths": ["/dev/dri/card0"]},
+            "extra_device_paths",
+        ),
         ({"hide_paths": ["/h"]}, {"hide_paths": []}, "hide_paths"),
         ({"hide_paths": ["/h"]}, {"hide_paths": ["/other"]}, "hide_paths"),
+        # Hiding a subdirectory leaves the rest of the operator's entry visible.
+        ({"hide_paths": ["/h"]}, {"hide_paths": ["/h/sub"]}, "hide_paths"),
         ({"run_commands": "ask"}, {"run_commands": "yes"}, "run_commands"),
         ({"run_commands": "no"}, {"run_commands": "ask"}, "run_commands"),
         ({"network": "auto"}, {"network": "host"}, "network"),
@@ -284,6 +304,23 @@ def test_an_overlay_may_not_widen(
 ) -> None:
     problems = _widening(_cfg(**operator), _cfg(**{**operator, **state}))
     assert f"sandbox.{leaf} = " in problems and "wider than your config's" in problems
+
+
+def test_a_path_is_compared_by_where_it_really_is(tmp_path: pathlib.Path) -> None:
+    """A symlink inside a granted tree that points outside it is a grant of the outside."""
+    granted, outside = tmp_path / "granted", tmp_path / "outside"
+    (granted / "sub").mkdir(parents=True)
+    outside.mkdir()
+    (granted / "escape").symlink_to(outside)
+    (tmp_path / "alias").symlink_to(granted)
+    for leaf in ("extra_read_paths", "extra_write_paths"):
+        op = _cfg(**{leaf: [str(granted)]})
+        assert f"sandbox.{leaf}" in _widening(op, _cfg(**{leaf: [str(granted / "escape")]}))
+        assert _widening(op, _cfg(**{leaf: [str(tmp_path / "alias" / "sub")]})) == ""
+    # The operator hides the real directory; a state hiding only a link beside it hides less.
+    op = _cfg(hide_paths=[str(outside)])
+    assert _widening(op, _cfg(hide_paths=[str(granted / "escape")])) == ""
+    assert "sandbox.hide_paths" in _widening(op, _cfg(hide_paths=[str(granted)]))
 
 
 def test_isolation_is_compared_by_the_level_it_resolves_to() -> None:

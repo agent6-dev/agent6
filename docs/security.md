@@ -455,6 +455,7 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 
 - The machine's `[config]` and each state's `config` may set `sandbox` keys, each bounded by your own layers alone ([the rule per key](state-machines.md#47-machine-config-overlay-config))
     - the ceiling is read from one load of your layers (defaults, global, repo, preset, `--config FILE`), never from a config the machine file has merged into
+    - a path grant is at or below one of yours, compared by real path, so a symlink out of your tree is refused
     - a wider value refuses at `machine check` and at machine start, naming the state and the key
     - the other operator-only tables and leaves are rejected at load ([the list](state-machines.md#47-machine-config-overlay-config))
 - One resolved config per state feeds both enforcement sites: a `tool` state's jail, and an `agent` state's subprocess (its in-process file tools and its jailed commands)
