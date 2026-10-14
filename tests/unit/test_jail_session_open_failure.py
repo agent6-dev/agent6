@@ -85,3 +85,23 @@ def test_a_spec_write_failure_is_the_same_setup_death(
         jail.JailSession.open(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
     (proc,) = seen
     assert proc.returncode is not None
+
+
+def test_the_launchers_setup_error_is_the_error_both_transports_raise(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The launcher's sentence for a failed setup reaches the error a surface prints.
+
+    A grant the launcher cannot bind is named on its stderr only; a transport that dropped
+    it would leave the operator a bare exit code.
+    """
+    said = "agent6-jail: rootfs setup failed: write grant /data: bind: ENOENT"
+    fake = _fake_binary(tmp_path, f'echo "{said}" >&2; exit 2')
+    monkeypatch.setattr(jail, "_require_jail_binary", lambda: fake)
+    policy = kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",), isolation="hardened")
+    with pytest.raises(jail.JailUnavailableError) as one_shot:
+        jail.run_in_jail(policy)
+    with pytest.raises(jail.JailUnavailableError) as served:
+        jail.JailSession.open(policy)
+    assert str(one_shot.value) == f"agent6-jail launcher exited 2: {said}"
+    assert str(served.value) == f"jail session died during setup: {said}"

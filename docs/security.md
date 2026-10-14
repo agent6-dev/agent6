@@ -152,6 +152,8 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - every mount keeps the path it has outside
     - the workspace is mounted at its resolved path and the launcher starts the command there: under a workspace named through a symlink, `pwd` prints the resolved path
     - a grant that contains the workspace is mounted under it: the workspace stays writable under a read grant
+    - a grant the launcher cannot bind fails the launch, and the error names the grant, the step and the OS error (`write grant /srv: remount of submount cache: EPERM`); a read-only mount inside a write grant is such a case
+    - a grant on `/` or on `/dev` fails the launch by name: `/` would replace the jail's own root, and `/dev` would cover the jail's device nodes (name a device in `extra_device_paths`)
     - the paths kept read-only inside the workspace (`.git` under `protect_git`, a machine bundle) are bound after every grant: a grant that contains the workspace does not make them writable
     - a tool dir is mounted only when its identity clears a default-deny.
       Refused: a dir at, inside, or containing an agent6 private dir, and `$HOME` or an ancestor of it
