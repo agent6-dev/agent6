@@ -1,0 +1,212 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""The production `World`: tool states run in the jail, agent states through a runner, waits sleep.
+
+The agent runner, the tool policy and the jail runner are injected, so the engine stays a
+pure reducer and this module imports neither the harness nor config nor git.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import dataclasses
+import json
+import pathlib
+import shutil
+import time
+from collections.abc import Callable
+from typing import Any
+
+from agent6 import kinds, paths, portable
+from agent6.machine import engine
+from agent6.machine import journal as machine_journal
+from agent6.sandbox import jail
+from agent6.sessions import layout
+
+__all__ = ["LiveWorld", "ToolPolicyFactory"]
+
+
+# (argv, timeout_s, network, pass_env) -> the jail policy the shared builder produced.
+ToolPolicyFactory = Callable[
+    [tuple[str, ...], float, kinds.NetworkMode, tuple[str, ...]], kinds.JailPolicy
+]
+
+
+def _state_log_seq(p: pathlib.Path) -> int:
+    """Return the seq of a `<seq>-<state>` log dir name, so the sort is numeric."""
+    prefix = p.name.split("-", 1)[0]
+    return int(prefix) if prefix.isdigit() else -1
+
+
+def _prune_state_logs(root: pathlib.Path, *, keep: int) -> None:
+    """Keep the newest per-state log dirs, leaving room for the one about to be written.
+
+    Best effort; the journal keeps the full history regardless.
+
+    Args:
+        root: The per-state log root.
+        keep: The number to keep, including the next; 0 prunes nothing.
+    """
+    if keep == 0:
+        return
+    try:
+        dirs = sorted((p for p in root.iterdir() if p.is_dir()), key=_state_log_seq)
+    except OSError:
+        return
+    for stale in dirs[: max(0, len(dirs) - keep + 1)]:
+        shutil.rmtree(stale, ignore_errors=True)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class LiveWorld:
+    """The production world: tools go through the jail, waits sleep.
+
+    The agent runner, the tool policy and the jail runner are injected by the CLI, so this
+    module imports neither the harness nor config nor git.
+
+    Attributes:
+        cwd: The workspace.
+        journal: The instance's journal.
+        agent_runner: Runs an agent state given its request and its own logs.jsonl path;
+            reaching an agent state without one fails loudly.
+        poll_interval_s: How often a blocking wait checks for a poke or a stop.
+        tool_policy: Builds each tool jail's policy from the shared builder with the machine
+            deltas (bundle protect paths, the data dir grant), so a tool is confined like a
+            run command.
+        state_log_root: Where each agent state writes `<seq>-<state>/logs.jsonl`; None
+            disables per-state logs.
+        state_log_keep: How many per-state log dirs to keep (`[machine].state_log_keep`);
+            0 keeps all.
+        notify_hook: The operator's `[machine.notify].on_event` argv, run on the host; None
+            for no hook (the front-ends still render the journaled events).
+        data_dir: The machine's persistent scratch dir, `$AGENT6_MACHINE_DATA_DIR` to a tool,
+            outside the workspace; where a tool keeps durable state.
+        jail_runner: Executes one tool policy; the CLI overrides it for `mode = "run"`
+            machines so tools run in the machine's own tree. None is the plain jail.
+        on_wait: Fired once as a wait starts to block, so the foreground run names where it
+            parked; it cannot affect the sleep.
+    """
+
+    cwd: pathlib.Path
+    journal: machine_journal.MachineJournal
+    agent_runner: (
+        Callable[[engine.AgentRequest, pathlib.Path | None], engine.AgentExecResult] | None
+    ) = None
+    poll_interval_s: float = 0.5
+    tool_policy: ToolPolicyFactory | None = None
+    state_log_root: pathlib.Path | None = None
+    state_log_keep: int = 50
+    notify_hook: Callable[[str, str, str, str], None] | None = None
+    data_dir: pathlib.Path | None = None
+    jail_runner: Callable[[kinds.JailPolicy], kinds.CommandResult] | None = None
+    on_wait: Callable[[], None] | None = None
+
+    def run_tool(
+        self,
+        argv: tuple[str, ...],
+        timeout_s: float,
+        *,
+        network: kinds.NetworkMode = "none",
+        pass_env: tuple[str, ...] = (),
+    ) -> engine.ToolExecResult:
+        """Run one tool command in its jail.
+
+        The CLI gated `network` and `pass_env` at startup; the policy builder clamps the
+        network to what the isolation level provides.
+
+        Args:
+            argv: The rendered command.
+            timeout_s: The wall-clock cap.
+            network: `host` or `none`.
+            pass_env: The operator environment variables the command receives.
+
+        Returns:
+            The exit code, output and whether the command timed out.
+
+        Raises:
+            engine.EngineError: No tool policy is wired, or the jail is unavailable.
+        """
+        if self.tool_policy is None:
+            raise engine.EngineError("LiveWorld has no tool_policy factory wired")
+        try:
+            policy = self.tool_policy(tuple(argv), float(timeout_s), network, pass_env)
+            result = (self.jail_runner or jail.run_in_jail)(policy)
+        except jail.JailUnavailableError as exc:
+            raise engine.EngineError(f"jail unavailable: {exc}") from exc
+        # run_in_jail returns rc 124 on a timeout and never raises TimeoutExpired.
+        return engine.ToolExecResult(
+            exit_code=result.returncode,
+            stdout=result.stdout,
+            timed_out=result.returncode == 124,
+            stderr=result.stderr,
+        )
+
+    def run_agent(self, request: engine.AgentRequest) -> engine.AgentExecResult:
+        """Run one agent loop through the injected runner.
+
+        Returns:
+            The loop's result.
+
+        Raises:
+            engine.EngineError: No agent runner is configured.
+        """
+        if self.agent_runner is None:
+            raise engine.EngineError(
+                "machine reached an `agent` state but no agent runner is configured"
+            )
+        return self.agent_runner(request, self._state_log(request))
+
+    def _state_log(self, request: engine.AgentRequest) -> pathlib.Path | None:
+        """Return the agent state's own logs.jsonl path, pruning old ones first, or None."""
+        if self.state_log_root is None or not request.state_name:
+            return None
+        _prune_state_logs(self.state_log_root, keep=self.state_log_keep)
+        return (
+            self.state_log_root / f"{request.step_seq:04d}-{request.state_name}" / layout.LOGS_NAME
+        )
+
+    def now(self) -> float:
+        """Return the wall clock as an epoch."""
+        return time.time()
+
+    def sleep_until(self, wake_epoch: float | None) -> engine.WaitWake:
+        """Block until the wake instant, a poke or a stop request, whichever comes first.
+
+        Args:
+            wake_epoch: The instant; None is a timerless wait, until a poke.
+
+        Returns:
+            How the wait woke.
+        """
+        if self.on_wait is not None:
+            with contextlib.suppress(OSError):  # a dead terminal never stops a machine
+                self.on_wait()
+        while True:
+            signaled, payload = self.journal.take_signal()
+            if signaled:
+                return engine.WaitWake("signal", payload)
+            if machine_journal.stop_requested(self.journal.root):
+                return engine.WaitWake("stop")  # the pending wait stays armed for the next run
+            if wake_epoch is None:
+                time.sleep(self.poll_interval_s)
+                continue
+            remaining = wake_epoch - time.time()
+            if remaining <= 0:
+                return engine.WaitWake("tick")
+            time.sleep(min(remaining, self.poll_interval_s))
+
+    def materialize_poke(self, payload: Any) -> None:
+        """Write a poke's payload to `$AGENT6_MACHINE_DATA_DIR/poke.json` for the next tool.
+
+        Atomic, and called before the StepEvent is appended, so a durable step implies a
+        durable file. A no-op without a data dir.
+        """
+        if self.data_dir is None:
+            return
+        paths.mkdir_for_real_user(self.data_dir)
+        portable.atomic_write(self.data_dir / "poke.json", json.dumps(payload, sort_keys=True))
+
+    def notify(self, kind: str, state: str, message: str, level: str) -> None:
+        """Fire the operator hook, when one is wired."""
+        if self.notify_hook is not None:
+            self.notify_hook(kind, state, message, level)

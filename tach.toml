@@ -635,7 +635,7 @@ depends_on = ["agent6.graph.models", "agent6.graph.order", "agent6.graph.storage
 
 [[modules]]
 path = "agent6.machine"
-depends_on = ["agent6.machine._semantics", "agent6.machine.authoring", "agent6.machine.dryrun", "agent6.machine.engine", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.schema", "agent6.prompts"]
+depends_on = ["agent6.machine._semantics", "agent6.machine.authoring", "agent6.machine.dryrun", "agent6.machine.engine", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.live_world", "agent6.machine.schema", "agent6.prompts"]
 
 [[modules]]
 path = "agent6.machine.authoring"
@@ -670,7 +670,11 @@ depends_on = ["agent6.machine.schema", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.engine"
-depends_on = ["agent6.kinds", "agent6.machine._semantics", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sessions.layout"]
+depends_on = ["agent6.kinds", "agent6.machine._semantics", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template"]
+
+[[modules]]
+path = "agent6.machine.live_world"
+depends_on = ["agent6.kinds", "agent6.machine.engine", "agent6.machine.journal", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sessions.layout"]
 
 [[modules]]
 path = "agent6.machine.dryrun"

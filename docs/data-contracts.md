@@ -102,7 +102,7 @@ The append-only journal, the snapshots and the single-writer lock of one machine
 Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpend`
 
 - **Written by:** machine/{engine, journal}
-- **Read by:** app/machine/{_spend, run}, machine/{__init__, dryrun}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/{machine_state, wire}
+- **Read by:** app/machine/{_spend, run}, machine/{__init__, dryrun, live_world}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/{machine_state, wire}
 - **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (12 test files exercise it)
 
 ## TaskNode

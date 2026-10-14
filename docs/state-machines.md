@@ -695,6 +695,7 @@ Files (all `from __future__ import annotations`, strict pyright, pydantic only a
 - `machine/graph.py`: the mermaid/DOT renderers.
 - `machine/journal.py`: append-only event log, snapshots, locking, and persisted-wake state.
 - `machine/engine.py`: the deterministic reducer loop.
+- `machine/live_world.py`: the production `World` (the jail for a tool state, the injected runner for an agent state, the clock for a wait).
 - `machine/authoring.py`: the per-attempt prompt builder for `machine create`, around the grammar guide in `agent6.prompts.machine`; it imports nothing from the harness.
 
 No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).

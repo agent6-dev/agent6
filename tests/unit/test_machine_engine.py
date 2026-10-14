@@ -14,7 +14,7 @@ import pytest
 from agent6 import kinds
 from agent6.app.machine import run
 from agent6.config import Config
-from agent6.machine import _semantics
+from agent6.machine import _semantics, live_world
 from agent6.machine import engine as machine_engine
 from agent6.machine import journal as machine_journal
 from agent6.sandbox import jail
@@ -799,7 +799,7 @@ def test_run_tool_uses_the_injected_jail_runner(tmp_path: pathlib.Path) -> None:
             argv=policy.argv, returncode=0, stdout="{}", stderr="", duration_s=0.0
         )
 
-    world = machine_engine.LiveWorld(
+    world = live_world.LiveWorld(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
         tool_policy=lambda argv, timeout_s, network, pass_env: kinds.JailPolicy(
@@ -960,7 +960,7 @@ def test_terminal_notify_render_failure_keeps_status_but_is_never_silent(
 
 def test_live_world_materializes_poke_atomically(tmp_path: pathlib.Path) -> None:
     data_dir = tmp_path / "data"
-    world = machine_engine.LiveWorld(
+    world = live_world.LiveWorld(
         cwd=tmp_path, journal=machine_journal.MachineJournal(tmp_path / "i"), data_dir=data_dir
     )
     world.materialize_poke({"cmd": "go", "n": 2})
@@ -969,7 +969,7 @@ def test_live_world_materializes_poke_atomically(tmp_path: pathlib.Path) -> None
     # No leftover temp file (atomic temp+rename), so a reader never sees a torn file.
     assert not (data_dir / "poke.json.tmp").exists()
     # No data dir -> a silent no-op, never a crash.
-    machine_engine.LiveWorld(
+    live_world.LiveWorld(
         cwd=tmp_path, journal=machine_journal.MachineJournal(tmp_path / "i")
     ).materialize_poke("x")
 
@@ -992,7 +992,7 @@ def test_data_dir_env_matches_jail_mount(
 
     levels: tuple[kinds.IsolationLevel, ...] = ("strict", "hardened")
     for isolation in levels:
-        world = machine_engine.LiveWorld(
+        world = live_world.LiveWorld(
             cwd=tmp_path,
             journal=machine_journal.MachineJournal(tmp_path / "i"),
             data_dir=data_dir,
@@ -1021,7 +1021,7 @@ def test_tool_jails_carry_the_operator_hide_paths(
     monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
     hidden = tmp_path / "cred.txt"
     cfg = Config.model_validate({"sandbox": {"hide_paths": [str(hidden)]}})
-    world = machine_engine.LiveWorld(
+    world = live_world.LiveWorld(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
         tool_policy=run.machine_tool_policy_factory(
@@ -1044,7 +1044,7 @@ def test_live_world_run_tool_maps_rc124_to_timed_out(
         )
 
     monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
-    world = machine_engine.LiveWorld(
+    world = live_world.LiveWorld(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
         tool_policy=run.machine_tool_policy_factory(
@@ -1493,7 +1493,7 @@ def test_agent_without_runner_raises(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
     spec = _semantics.load_machine(f)
     journal.ensure_dirs()
-    world = machine_engine.LiveWorld(cwd=tmp_path, journal=journal, agent_runner=None)
+    world = live_world.LiveWorld(cwd=tmp_path, journal=journal, agent_runner=None)
     with pytest.raises(machine_engine.EngineError, match="no agent runner"):
         machine_engine.drive(spec, journal, world, live=True)
 
@@ -1513,7 +1513,7 @@ def test_per_state_agent_log_path_and_prune(tmp_path: pathlib.Path) -> None:
             events_log.write_text("{}\n", encoding="utf-8")
         return machine_engine.AgentExecResult(reason="finish_session", payload=None)
 
-    world = machine_engine.LiveWorld(
+    world = live_world.LiveWorld(
         cwd=tmp_path,
         journal=journal,
         agent_runner=fake_runner,
@@ -1545,7 +1545,7 @@ def test_state_log_keep_zero_disables_pruning(tmp_path: pathlib.Path) -> None:
             events_log.write_text("{}\n", encoding="utf-8")
         return machine_engine.AgentExecResult(reason="finish_session", payload=None)
 
-    world = machine_engine.LiveWorld(
+    world = live_world.LiveWorld(
         cwd=tmp_path,
         journal=journal,
         agent_runner=fake_runner,
@@ -1569,7 +1569,7 @@ def test_per_state_log_disabled_without_root(tmp_path: pathlib.Path) -> None:
         seen.append(events_log)
         return machine_engine.AgentExecResult(reason="finish_session", payload=None)
 
-    world = machine_engine.LiveWorld(
+    world = live_world.LiveWorld(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
         agent_runner=fake_runner,
@@ -1687,7 +1687,7 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
     monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
     monkeypatch.setattr("agent6.sandbox.tool_paths.operator_tool_paths", fake_tool_paths)
     monkeypatch.setenv("PATH", "/host/only/path")  # must NOT leak into the jail
-    world = machine_engine.LiveWorld(
+    world = live_world.LiveWorld(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path),
         tool_policy=run.machine_tool_policy_factory(
@@ -1812,7 +1812,7 @@ def test_live_world_sleep_wakes_on_a_stop_request(tmp_path: pathlib.Path) -> Non
 
     journal = machine_journal.MachineJournal(tmp_path / "inst")
     journal.ensure_dirs()
-    world = machine_engine.LiveWorld(cwd=tmp_path, journal=journal, poll_interval_s=0.01)
+    world = live_world.LiveWorld(cwd=tmp_path, journal=journal, poll_interval_s=0.01)
     machine_journal.write_stop_request(journal.root)
     assert world.sleep_until(_time.time() + 3600).woke_by == "stop"
 

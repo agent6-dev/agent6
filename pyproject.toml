@@ -253,6 +253,7 @@ banned-from = [
     "agent6.machine.engine",
     "agent6.machine.graph",
     "agent6.machine.journal",
+    "agent6.machine.live_world",
     "agent6.machine.predicate",
     "agent6.machine.schema",
     "agent6.machine.template",

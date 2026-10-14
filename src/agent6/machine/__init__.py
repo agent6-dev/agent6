@@ -21,10 +21,8 @@ from agent6.machine.engine import (  # noqa: ICN003  # re-export
     AgentExecResult,
     AgentRequest,
     EngineError,
-    LiveWorld,
     MachineResult,
     ToolExecResult,
-    ToolPolicyFactory,
     WaitWake,
     World,
     drive,
@@ -51,6 +49,7 @@ from agent6.machine.journal import (  # noqa: ICN003  # re-export
     write_source,
     write_stop_request,
 )
+from agent6.machine.live_world import LiveWorld, ToolPolicyFactory  # noqa: ICN003  # re-export
 from agent6.machine.schema import (  # noqa: ICN003  # re-export
     PROTECTED_OVERLAY_LEAVES,
     PROTECTED_OVERLAY_TABLES,

@@ -19,7 +19,7 @@ from agent6.app.machine import (
     validate_bundle,
 )
 from agent6.config import Config
-from agent6.machine import MachineJournal, ToolState, drive, engine, load_machine
+from agent6.machine import MachineJournal, ToolState, drive, engine, live_world, load_machine
 from agent6.ui.cli import machine_cmds
 
 # A two-tool machine: the first tool opts into the network, the second does not.
@@ -181,7 +181,7 @@ def _world(
     cfg: Config | None = None,
     protect_paths: tuple[pathlib.Path, ...] = (),
     data_dir: pathlib.Path | None = None,
-) -> engine.LiveWorld:
+) -> live_world.LiveWorld:
     """A LiveWorld wired exactly as run_machine wires it, through the shared policy builder."""
     factory = run.machine_tool_policy_factory(
         cfg or Config(),
@@ -190,7 +190,7 @@ def _world(
         protect_paths=protect_paths,
         data_dir=data_dir,
     )
-    return engine.LiveWorld(
+    return live_world.LiveWorld(
         cwd=tmp_path,
         journal=MachineJournal(tmp_path / "i"),
         tool_policy=factory,
