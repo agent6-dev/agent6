@@ -193,10 +193,17 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "rm",
         help=(
             "Delete a session's saved history, internal commit reference, and worktree."
-            " Its git branch, if present, remains."
+            " Its git branch, if present, remains. On a terminal it shows the session and"
+            " asks [y/N] first; with no terminal it deletes without asking."
         ),
     )
     _common._add_session_id(sessions_rm, completers._complete_session_ids)
+    sessions_rm.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Delete without asking.",
+    )
     sessions_rm.add_argument(
         "--asks",
         action="store_true",

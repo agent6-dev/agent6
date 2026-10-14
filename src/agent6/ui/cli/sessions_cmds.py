@@ -21,7 +21,8 @@ from agent6.app import fork_worktrees, resume
 from agent6.sessions import id, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import _common
+from agent6.ui import keymap
+from agent6.ui.cli import _common, _steer
 from agent6.viewmodel import (
     format,
     is_winner,
@@ -435,7 +436,25 @@ def _cmd_sessions_dir(session_id: str = "") -> int:
     return 0
 
 
-def _rm_asks(cwd: pathlib.Path, session_id: str) -> int:
+def _delete_confirmed(what: str, question: str) -> bool:
+    """Return whether a delete goes ahead, asking first when stdin and stdout are a terminal.
+
+    With either off a terminal nothing is asked, so a script keeps working.
+
+    Args:
+        what: The lines naming what will go.
+        question: The question, without its `[y/N]` suffix.
+    """
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return True
+    typed = _steer.tty_prompt(f"{what}\n{question} {keymap.approval_prompt_suffix(standing=False)}")
+    if keymap.answer_for(typed or "", standing=False) == "yes":
+        return True
+    print("nothing was deleted")
+    return False
+
+
+def _rm_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     """Clear this directory's asks bucket.
 
     Returns:
@@ -446,6 +465,15 @@ def _rm_asks(cwd: pathlib.Path, session_id: str) -> int:
         return 2
     bucket = sessions_layout.bucket_dir(agent6_paths.state_dir(cwd), "asks")
     gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
+    count = f"{gone} ask{'' if gone == 1 else 's'}"
+    if (
+        gone
+        and not yes
+        and not _delete_confirmed(
+            f"sessions rm --asks will delete {count} saved from {cwd}", "Delete them?"
+        )
+    ):
+        return 0
     try:
         shutil.rmtree(bucket)
     except FileNotFoundError:
@@ -453,7 +481,7 @@ def _rm_asks(cwd: pathlib.Path, session_id: str) -> int:
     except OSError as exc:
         _common.error(f"could not remove {bucket}: {exc}")
         return 1
-    print(f"removed {gone} ask{'' if gone == 1 else 's'} from {cwd}")
+    print(f"removed {count} from {cwd}")
     return 0
 
 
@@ -483,7 +511,28 @@ def _rm_refusal(
     )
 
 
-def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
+def _rm_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) -> str:
+    """Return the lines naming what `sessions rm` is about to delete.
+
+    Args:
+        cwd: The checkout git is read from.
+        layout: The session.
+    """
+    tips = git_ops.run_ref_tips(cwd)
+    summary = summarize_session_dir(layout.session_dir, branch_tips=tips)
+    lines = [
+        f"sessions rm will delete {layout.session_id}",
+        f"  task:    {task_snippet(summary.task, 100)}",
+        f"  state:   {format.status_label(summary.status, summary.reason)}",
+    ]
+    if summary.unmerged:
+        branch = git_ops.run_branch_for(layout.session_id)
+        kept = f"branch {branch} keeps them" if branch in tips else "they go with it"
+        lines.append(f"  commits: not merged; {kept}")
+    return "\n".join(lines)
+
+
+def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
     """Delete run history from the state dir, with the run's chain ref and a fork's worktree.
 
     The chain ref (`refs/agent6/<id>/head`) is the gc anchor: meaningless once the record is
@@ -492,15 +541,20 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     and its commits are git's and are left alone; `sessions prune` is the branch verb.
     `--asks` clears the asks made in this directory; asks made elsewhere are untouched.
 
+    On a terminal it names what will go and asks first; `yes` skips the question, and with
+    no terminal nothing is asked.
+
     Args:
         session_id: The session, or "" for the newest.
         asks: Clear the asks bucket instead.
+        yes: Delete without asking.
 
     Returns:
-        The exit code; 1 on a partial delete, 2 on a refusal.
+        The exit code; 0 also when the operator answered no, 1 on a partial delete, 2 on a
+        refusal.
     """
     if asks:
-        return _rm_asks(pathlib.Path.cwd(), session_id)
+        return _rm_asks(pathlib.Path.cwd(), session_id, yes=yes)
     cwd = fork_worktrees.sweep_checkout(pathlib.Path.cwd())
     try:
         # rm is the surface that deletes a husk, so it resolves one.
@@ -530,6 +584,30 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     if reason := _rm_refusal(layout, worktree if not sharing else None, tips):
         _common.refuse(f"{reason}")
         return 2
+    if not yes and not _delete_confirmed(_rm_preview(cwd, layout), "Delete it?"):
+        return 0
+    return _rm_session(cwd, layout, worktree, sharing, tips)
+
+
+def _rm_session(
+    cwd: pathlib.Path,
+    layout: sessions_layout.SessionLayout,
+    worktree: pathlib.Path | None,
+    sharing: list[str],
+    tips: tuple[str, ...],
+) -> int:
+    """Delete one session's record, then its worktree and chain ref, and print what went.
+
+    Args:
+        cwd: The checkout git runs from.
+        layout: The session.
+        worktree: The fork's worktree the manifest records, or None.
+        sharing: The other sessions that still name that worktree.
+        tips: The branch tips the worktree's commits must reach.
+
+    Returns:
+        The exit code; 1 on a partial delete.
+    """
     try:
         shutil.rmtree(layout.session_dir)
     except OSError as exc:

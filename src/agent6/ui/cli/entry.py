@@ -541,7 +541,9 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.sessions_command == "dir":
         return sessions_cmds._cmd_sessions_dir(args.session_id)
     if args.sessions_command == "rm":
-        return sessions_cmds._cmd_sessions_rm(session_id=args.session_id, asks=args.asks)
+        return sessions_cmds._cmd_sessions_rm(
+            session_id=args.session_id, asks=args.asks, yes=args.yes
+        )
     if args.sessions_command == "transcript":
         return history_cmds._cmd_history_transcript(
             args.session_id,
