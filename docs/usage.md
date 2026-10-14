@@ -117,12 +117,12 @@ Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scr
 | Code | Meaning |
 |---|---|
 | `0` | finished with a green gate, or nothing to gate on; a review panel's PASS |
-| `1` | ended unfinished: stopped with `agent6 stop`, out of turns, stuck, a provider error, a crash; a review panel whose every seat abstained |
+| `1` | ended unfinished: out of turns, stuck, a provider error, a crash; a review panel whose every seat abstained |
 | `2` | operator error (bad flag or config, a refusal before anything ran) |
 | `3` | budget exhausted |
 | `4` | finished over a red or never-run verify gate; a review panel's BLOCK |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_step = false`, stays `0`) |
-| `130` | interrupted |
+| `130` | interrupted, or stopped by the operator: Ctrl-C, `agent6 stop`, abort or exit at the pause menu, stop after a commit (a worker `agent6 stop` had to kill dies on the signal instead) |
 | `141` | the output pipe closed (`agent6 ... \| head`) |
 
 ## Plan, review, and ask

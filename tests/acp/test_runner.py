@@ -487,6 +487,17 @@ def test_the_stop_reason_is_one_acp_defines() -> None:
     assert runner.stop_reason(130) == "cancelled"
 
 
+def test_an_operator_stop_is_cancelled_not_a_refusal() -> None:
+    """`agent6 stop` on an editor's turn exited 1, which ACP was told as a refusal."""
+    from agent6.app import finalize
+    from agent6.harness import _snapshot
+
+    stopped = _snapshot.SessionResult(
+        completed=False, reason="steer_abort", summary="", iterations=1, tool_calls=1
+    )
+    assert runner.stop_reason(finalize.session_exit_code(stopped)) == "cancelled"
+
+
 def test_the_iteration_cap_uses_acps_specific_stop_reason() -> None:
     """The iteration cap is ACP's maximum agent requests between user turns, not a refusal."""
     assert runner.stop_reason(1, end_reason="max_iterations") == "max_turn_requests"

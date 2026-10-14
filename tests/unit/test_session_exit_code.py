@@ -2,17 +2,19 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 run`/`resume` process exit codes.
 
-CONFIG.md documents a budget-exhausted run as exit 3 (resumable: raise the cap
-and `agent6 resume`) and a finish over a red verify as exit 4; everything else
-completed=False is exit 1, a clean or ungated finish is 0.
+docs/usage.md documents a budget-exhausted run as exit 3 (resumable: raise the cap
+and `agent6 resume`), a finish over a red verify as exit 4 and an operator stop as
+exit 130; everything else completed=False is exit 1, a clean or ungated finish is 0.
 """
 
 from __future__ import annotations
 
 import pathlib
+from typing import get_args
 
 from agent6.app import finalize
 from agent6.harness import _snapshot
+from agent6.viewmodel import listing
 
 
 def _result(
@@ -41,8 +43,26 @@ def test_exit_code_budget_exhausted_is_three() -> None:
 
 
 def test_exit_code_other_failures_are_one() -> None:
-    for reason in ("provider_error", "max_iterations", "went_quiet", "steer_abort"):
+    for reason in ("provider_error", "max_iterations", "went_quiet", "no_progress", "crashed"):
         assert finalize.session_exit_code(_result(completed=False, reason=reason)) == 1
+
+
+def test_exit_code_operator_stop_is_130() -> None:
+    """An operator stop exited 1, the code a crash and a provider error share.
+
+    A script could not tell `agent6 stop` from a broken run.
+    """
+    for reason in ("steer_abort", "steer_exit", "interrupted"):
+        assert finalize.session_exit_code(_result(completed=False, reason=reason)) == 130
+    # The stop at the commit hook is a completed end, and the operator's stop whatever the gate.
+    for verified in get_args(_snapshot.Verification):
+        stopped = _result(completed=True, reason="interactive_stop", verified=verified)
+        assert finalize.session_exit_code(stopped, stranded=True) == 130
+    # One owner: exactly the ends the listing words "stopped" exit 130.
+    for reason in get_args(_snapshot.SessionEndReason):
+        word, _detail = listing.status_word(finished=True, all_passed=False, end_reason=reason)
+        code = finalize.session_exit_code(_result(completed=False, reason=reason))
+        assert (code == 130) == (word == "stopped"), reason
 
 
 def test_exit_code_finish_over_a_red_verify_is_four() -> None:

@@ -488,7 +488,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
 
     if interrupted:
         finalize.print_interrupt_end(layout=layout, cwd=cwd, budget=budget, reporter=reporter)
-        return ExecutionEnd(130)
+        return ExecutionEnd(finalize.EXIT_OPERATOR_STOP)
     if result is None:
         return ExecutionEnd(1)
 

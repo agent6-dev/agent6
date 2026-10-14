@@ -338,6 +338,10 @@ def summary_row(
     }
 
 
+# The operator's own stops: each reads "stopped" and exits 130.
+OPERATOR_STOPS = frozenset({"interactive_stop", "interrupted", "steer_abort", "steer_exit"})
+
+
 def status_word(
     *,
     finished: bool,
@@ -373,7 +377,7 @@ def status_word(
     if not finished:
         return "running", ""
     not_green = "gate timed out" if gate_timed_out else "gate red" if gate_red else "unverified"
-    if end_reason in ("steer_abort", "steer_exit", "interrupted", "interactive_stop"):
+    if end_reason in OPERATOR_STOPS:
         return "stopped", ""
     # An end with its own word, never "passed" and never "failed", whatever the gate said.
     own_word = {
