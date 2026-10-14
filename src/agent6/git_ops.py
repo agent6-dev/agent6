@@ -1025,8 +1025,12 @@ EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
 def worktree_matches(path: pathlib.Path, ref: str, paths: Collection[str]) -> bool:
-    """Return whether the worktree's content of the paths equals the ref's, ignoring the index."""
-    res = _run(path, "diff", "--quiet", ref, "--", *sorted(paths), check=False)
+    """Return whether the worktree's content of the paths equals the ref's, ignoring the index.
+
+    The paths are repo-relative, whichever directory of the checkout `path` is.
+    """
+    specs = (f":(top,literal){p}" for p in sorted(paths))
+    res = _run(path, "diff", "--quiet", ref, "--", *specs, check=False)
     return res.returncode == 0
 
 

@@ -1795,3 +1795,15 @@ def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: pat
     assert "diff --git a/README.md b/README.md" in diff
     assert "--- a/README.md" in diff and "+++ b/README.md" in diff
     assert _panel.is_grounded("README.md:2", _panel.diff_hunks(diff))
+
+
+def test_worktree_matches_reads_repo_relative_paths_from_a_subdirectory(
+    tmp_path: pathlib.Path,
+) -> None:
+    """From a subdirectory the pathspecs matched nothing, so any edit read as the ref's content."""
+    _init_repo(tmp_path)
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "README.md").write_text("edited\n", encoding="utf-8")
+
+    assert not git_ops.worktree_matches(tmp_path, "HEAD", ["README.md"])
+    assert not git_ops.worktree_matches(tmp_path / "sub", "HEAD", ["README.md"])
