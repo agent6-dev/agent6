@@ -19,7 +19,7 @@ import time
 from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.graph import models, order
-from agent6.harness import _advice, _dag_focus, _metric, _nudges, _snapshot
+from agent6.harness import _advice, _dag_focus, _finish_gates, _metric, _nudges, _snapshot
 from agent6.tools import results
 
 if TYPE_CHECKING:
@@ -283,7 +283,16 @@ def verify_settled(
             declared="settled",
             log=f"LOOP: verify_settled at iter {turn.iteration} (idle {guard.idle})",
         )
-    if guard.nudge_due():
+    # The nudge promises that a finish ends the run; while a red gate that is the model's to
+    # fix would send a finish back, it stays unspent for a green later in the streak.
+    refused = state.verify.last_ok is False and _finish_gates.red_gate_returns(
+        ctx.verify_when,
+        ctx.verify_retries,
+        state.verify,
+        state.gates.verify_retries_used,
+        gate_present=ctx.gate_present(),
+    )
+    if not refused and guard.nudge_due():
         return _advice.Nudge(
             _nudges.verify_settled_nudge(stop_after),
             event="loop.verify_settled.nudge",

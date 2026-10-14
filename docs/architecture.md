@@ -168,7 +168,7 @@ A red finish certification returns to the model with the gate's output `verify_r
 The settled stop ends a plain run after `harness.verify_settled_stop_after` consecutive idle turns (default 12) following a green verify of the run's own edits or a gateless editing step.
 A green on the untouched base tree, from the start gate or the model's own call, is the baseline's verdict and arms nothing.
 A verify run is neutral; an edit, a commit, a memory write, a tree change or an operator steer restarts the streak.
-`0` disables the stop, but the nudge at three idle turns still fires without announcing a stop.
+`0` disables the stop, but the nudge at three idle turns still fires without announcing a stop; over a red gate that is the model's to fix, the nudge is withheld while a finish would still go back.
 Over a green gate the stop reads `finished · settled` and exits 0, since the worker called no `finish_session`.
 Over a red gate it returns under the same cap, counted apart from the model's own finishes.
 

@@ -68,6 +68,61 @@ def test_idle_turns_draw_one_nudge_then_a_soft_declared_stop() -> None:
     assert end.reason == "verify_settled" and end.completed and end.verdict == "passed"
 
 
+def test_a_red_gate_draws_no_settled_nudge_but_the_stop_still_comes() -> None:
+    """The nudge says `finish_session ends the run`; over a red gate that finish is refused.
+
+    A gated run under `verify_when = "finish"` arms on an unjudged edit, so an idle model
+    was invited to a finish the gate then bounced.
+    """
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state.settled.gateless_ever_edited = True
+    state.verify.note_fail("boom")
+    ctx = turn_context(tree_sha=lambda: "tree", gate_present=lambda: True)
+    answers = [_guards.verify_settled(_turn(i), state, ctx) for i in range(1, 14)]
+    assert not [a for a in answers if isinstance(a, _advice.Nudge)]
+    stops = [a for a in answers if isinstance(a, _advice.Stop)]
+    assert len(stops) == 1 and answers[-1] is stops[0]
+    assert stops[0].end().reason == "settled"
+    assert "still red" in stops[0].end().summary
+    # Green again: the nudge is back on the next idle streak.
+    state.verify.note_pass()
+    state.settled.restart()
+    answers = [_guards.verify_settled(_turn(i, edited=i == 1), state, ctx) for i in range(1, 6)]
+    assert len([a for a in answers if isinstance(a, _advice.Nudge)]) == 1
+
+
+def test_a_nudge_withheld_over_a_red_gate_is_not_spent() -> None:
+    """A gate that goes green again within the idle streak still gets its one nudge.
+
+    A withheld nudge stays unsent, so a gate green again before the stop still draws it.
+    """
+    state = _green_state()
+    state.verify.note_fail("boom")
+    ctx = turn_context(tree_sha=lambda: "tree", gate_present=lambda: True)
+    red = [_guards.verify_settled(_turn(i), state, ctx) for i in range(1, 6)]
+    assert not [a for a in red if isinstance(a, _advice.Nudge)]
+    state.verify.note_pass()  # a green verify on the same tree, as a flaky test gives
+    green = [
+        _guards.verify_settled(_turn(i, verify_just_passed=i == 6), state, ctx) for i in range(6, 9)
+    ]
+    assert len([a for a in green if isinstance(a, _advice.Nudge)]) == 1
+
+
+def test_a_gate_red_at_start_still_draws_the_settled_nudge() -> None:
+    """A red start gate keeps the nudge: a finish over that red stands.
+
+    Withholding it would leave a run beside an unrelated failing test idling to the settled stop.
+    """
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state.verify.note_baseline(ok=False)
+    # Under `verify_when = "finish"` the model's unjudged edit arms the guard.
+    state.verify.note_edit()
+    state.settled.gateless_ever_edited = True
+    ctx = turn_context(tree_sha=lambda: "tree", gate_present=lambda: True)
+    answers = [_guards.verify_settled(_turn(i), state, ctx) for i in range(1, 6)]
+    assert len([a for a in answers if isinstance(a, _advice.Nudge)]) == 1
+
+
 def test_the_stop_waits_twelve_idle_turns_and_the_nudge_says_so() -> None:
     """The default stops at 12 idle turns and the nudge states that number."""
     state = _green_state()
