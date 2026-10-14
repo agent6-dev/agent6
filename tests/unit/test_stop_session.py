@@ -295,11 +295,12 @@ def test_a_stop_never_signals_its_own_process_group(tmp_path: pathlib.Path) -> N
     result = tmp_path / "stop.out"
     worker = _spawn(_GROUP_WORKER, str(d), str(result), _GROUP_STOPPER)
     try:
-        deadline = time.monotonic() + 5.0
+        # Two interpreters start before the result lands; a loaded box takes seconds for that.
+        deadline = time.monotonic() + 30.0
         while not result.exists() and time.monotonic() < deadline:
             time.sleep(0.05)
         assert result.read_text(encoding="utf-8") == "killed"
-        assert worker.wait(timeout=3.0) == -15
+        assert worker.wait(timeout=15.0) == -15
     finally:
         worker.kill()
         worker.wait()
