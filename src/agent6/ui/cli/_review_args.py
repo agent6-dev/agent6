@@ -29,7 +29,7 @@ def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         help=(
             "Check this host and repo before a run: the sandbox, the config and its"
             " provider keys, the file and network boundaries, the MCP servers, the verify"
-            " command. Reads only; changes nothing."
+            " command. Reads only; changes nothing in the repository."
         ),
     )
     check_p.add_argument(
