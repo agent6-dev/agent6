@@ -323,7 +323,7 @@ class SessionState:
         verify_scoped: The judging gate ran scoped.
         end_reason: The session.end reason word.
         unattended_questions: Questions the harness answered empty because nobody was
-            attached, across every execution.
+            attached, in the current execution.
         undone_to: The child session /undo forked, which surfaces follow.
         undone_text: The message /undo took back, for the composer to refill.
         finish_summary: The finish tool's summary, the agent's closing statement.
@@ -446,6 +446,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 last_verify=None,
                 pending_approvals=_answered_only(state.pending_approvals),
                 pending_questions=_answered_only(state.pending_questions),
+                unattended_questions=0,
             )
 
         case events.ResumeStart():
@@ -460,6 +461,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 last_verify=None,
                 pending_approvals=_answered_only(state.pending_approvals),
                 pending_questions=_answered_only(state.pending_questions),
+                unattended_questions=0,
                 budget=dataclasses.replace(
                     state.budget,
                     usd_prior_executions=state.budget.usd_total,

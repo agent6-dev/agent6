@@ -78,6 +78,7 @@ agent6 ps                     # live sessions of every repository on the machine
 A session's cost covers every execution, in dollars or in plan points; `sessions list`, `sessions show`, the end-of-run total and the fan-out report print the same figure.
 The tokens and the points against `max_percent` on `sessions show` are the latest execution's.
 `elapsed` on a resumed run is the wall time from its first start to its last event, the time between executions included.
+`N questions unanswered` beside a status counts the questions of the current execution that nobody was attached to see; a resume starts the count again.
 
 `agent6 exec` runs your own command on your own stdio.
 

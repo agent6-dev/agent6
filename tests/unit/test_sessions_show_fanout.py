@@ -304,6 +304,46 @@ def test_show_names_the_questions_nobody_answered(
     assert json.loads(capsys.readouterr().out)["unattended_questions"] == 1
 
 
+def test_show_drops_the_questions_line_after_a_resume(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions show` counts the questions nobody saw in the current execution.
+
+    A run resumed after such a question kept its `questions:` line and its JSON count.
+    """
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(repo, "asked", {})
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="asked")
+    lines = layout.logs_path.read_text(encoding="utf-8").splitlines()
+    asked = [
+        {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which?"}]},
+        {
+            "type": "question.answer",
+            "id": "q1",
+            "answers": [""],
+            "source": "headless-default",
+            "unseen": True,
+        },
+    ]
+    resumed = [
+        {"type": "loop.resume.start", "iteration": 3},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    layout.logs_path.write_text(
+        "\n".join([lines[0], *(json.dumps(e) for e in asked), *lines[1:]])
+        + "\n"
+        + "".join(json.dumps(e) + "\n" for e in resumed),
+        encoding="utf-8",
+    )
+    assert main(["sessions", "show", "asked"]) == 0
+    assert "questions:" not in capsys.readouterr().out
+    assert main(["sessions", "show", "asked", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["unattended_questions"] == 0
+
+
 def test_show_names_a_failed_end_once_beside_the_unanswered_count(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

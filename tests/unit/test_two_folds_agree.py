@@ -234,6 +234,14 @@ def test_the_listing_and_the_viewer_fold_agree(shape: str, tmp_path: pathlib.Pat
     assert listing == viewer, shape
 
 
+def test_the_viewer_fold_counts_unseen_questions_per_execution() -> None:
+    """The viewers' count of questions nobody saw starts again at a resume, as the listing's."""
+    shape = _SHAPES["asked_unseen_then_seen"]
+    resume = next(i for i, e in enumerate(shape) if e["type"] == "loop.resume.start")
+    assert viewmodel_state.fold_session(shape[:resume]).unattended_questions == 1
+    assert viewmodel_state.fold_session(shape).unattended_questions == 0
+
+
 def test_the_folds_agree_on_the_golden_log(tmp_path: pathlib.Path) -> None:
     from agent6.viewmodel import tail
 

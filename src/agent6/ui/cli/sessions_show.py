@@ -207,7 +207,7 @@ def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool) -> None:
         gated: The session is a run, the one mode a gate judges.
     """
     if n := scan.unattended_questions:
-        # Answered empty by the harness; the operator answers with a steer on resume.
+        # Answered empty by the harness in this execution; a resume starts the count again.
         print(
             f"questions:  {n} unanswered (nobody was attached):"
             f" agent6 sessions transcript {session_id}"

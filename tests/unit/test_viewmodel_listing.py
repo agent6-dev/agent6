@@ -1421,6 +1421,37 @@ def test_summary_names_the_questions_nobody_answered(tmp_path: pathlib.Path) -> 
     assert (s.status, s.reason) == ("passed", "1 question unanswered")
 
 
+def test_a_resume_starts_the_unanswered_count_again(tmp_path: pathlib.Path) -> None:
+    """The unanswered count covers the current execution.
+
+    It ran over the whole log, so a run resumed with a steer still read `1 question
+    unanswered` beside the steer's task.
+    """
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r9",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which?"}]},
+            {
+                "type": "question.answer",
+                "id": "q1",
+                "answers": [""],
+                "source": "headless-default",
+                "unseen": True,
+            },
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "loop.resume.start", "iteration": 3},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    (rd / "worker.pid").unlink()
+    assert listing.scan_session_log(rd / "logs.jsonl").unattended_questions == 0
+    s = summarize_session_dir(rd)
+    assert (s.status, s.reason) == ("passed", "")
+
+
 def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: pathlib.Path) -> None:
     """The unanswered count joins a detail the end already has, a failure's reason included.
 

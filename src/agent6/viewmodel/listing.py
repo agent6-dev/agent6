@@ -455,7 +455,8 @@ class StatusFacts:
         operator_blocked: An approval or question is still unanswered.
         blocked_kind: The oldest unanswered prompt's kind, "approval" or "question".
         blocked_since_ep: That prompt's asked-at epoch.
-        unattended_questions: Questions the harness answered empty because nobody was attached.
+        unattended_questions: Questions this execution's harness answered empty because nobody
+            was attached.
     """
 
     started: bool = False
@@ -622,7 +623,8 @@ class LogScan:
         last_verify_rc: This execution's last verify.end exit code.
         verify_timeout_s: The limit that verify ran out, 0.0 when it ended on its own.
         pins: The operator's pinned instructions in force.
-        unattended_questions: Questions answered empty because nobody was attached.
+        unattended_questions: This execution's questions answered empty because nobody was
+            attached.
     """
 
     saw_start: bool = False
@@ -861,6 +863,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     task = str(ev.get("user_task", ""))
                     # A new execution re-asks with restarted ids; a held-over prompt waits forever.
                     pending_prompts.clear()
+                    unattended_questions = 0
                     last_verify_rc = None
                     verify_timeout_s = 0.0
                     if start_ep is None:
@@ -895,6 +898,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     finished, verified = False, ""
                     end_tree = ""
                     pending_prompts.clear()
+                    unattended_questions = 0
                 elif etype == "verify.end":
                     rc = ev.get("exit_code")
                     if isinstance(rc, int) and not isinstance(rc, bool):
