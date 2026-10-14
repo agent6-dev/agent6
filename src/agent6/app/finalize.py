@@ -20,7 +20,7 @@ from agent6 import child_env, commit_message, event_log, git_ops, verify_infer
 from agent6.app import merge
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, NotifyConfig
-from agent6.harness import _snapshot
+from agent6.harness import _advice, _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import (
@@ -278,6 +278,10 @@ def print_session_end(
         reporter.out(f"\n{headline}")
         if result.summary:
             reporter.out(f"  {result.summary}")
+    elif result.reason == "silent_finish":
+        # The stream showed the model's closing text; the open-task note is the harness's own.
+        if note := _advice.open_tasks_note(result.summary):
+            reporter.out(f"  {note}")
     elif result.summary and result.reason not in ("finish_session", "finish_planning"):
         # The stream's done line carries a clean finish's summary only; a failure's reason
         # reaches the operator here alone.

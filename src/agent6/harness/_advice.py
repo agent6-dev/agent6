@@ -11,6 +11,7 @@ knobs. The advisors live in `_guards` and `_metric`, the gates in
 from __future__ import annotations
 
 import dataclasses
+import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -163,3 +164,12 @@ def with_open_tasks(summary: str, open_tasks: Sequence[tuple[str, str]]) -> str:
         return summary
     titles = ", ".join(title for _tid, title in open_tasks)
     return f"{summary} ({len(open_tasks)} open task(s): {titles})"
+
+
+_OPEN_TASKS_NOTE = re.compile(r"\(\d+ open task\(s\): .*\)\Z", re.DOTALL)
+
+
+def open_tasks_note(summary: str) -> str:
+    """Return the note `with_open_tasks` ended a summary with; "" when it added none."""
+    found = _OPEN_TASKS_NOTE.search(summary)
+    return found.group(0) if found else ""

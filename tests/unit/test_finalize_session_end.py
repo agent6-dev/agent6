@@ -15,7 +15,7 @@ import pytest
 from agent6 import budget, git_ops
 from agent6.app import finalize as _finalize
 from agent6.app import reporter
-from agent6.harness import _snapshot
+from agent6.harness import _advice, _snapshot
 from agent6.sessions import layout as sessions_layout
 
 
@@ -1046,6 +1046,44 @@ def test_a_clean_finish_does_not_repeat_the_summary_the_stream_showed(
     )
 
     assert "fixed it" not in capsys.readouterr().out
+
+
+def test_a_silent_finish_does_not_repeat_the_answer_the_stream_showed(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run that ends on the model's own text prints that text once, in the stream.
+
+    Its summary is that text, so the end block repeated the whole answer. The note of open
+    tasks ends the summary and the stream never carried it, so it still prints.
+    """
+    layout = _layout(
+        tmp_path,
+        "r-quiet",
+        [
+            {"type": "session.start", "session_id": "r-quiet", "user_task": "t"},
+            {"type": "session.end", "reason": "silent_finish", "all_passed": True},
+        ],
+    )
+
+    def end_block(summary: str) -> str:
+        result = _snapshot.SessionResult(
+            completed=True, reason="silent_finish", summary=summary, iterations=1, tool_calls=0
+        )
+        _finalize.print_session_end(
+            result,
+            layout=layout,
+            cwd=tmp_path,
+            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+            console_stream=True,
+            reporter=reporter.STDIO_REPORTER,
+        )
+        return capsys.readouterr().out
+
+    answer = "The fix is in calc.py (see add)."
+    assert answer not in end_block(answer)
+    out = end_block(_advice.with_open_tasks(answer, [("t2", "write the docs")]))
+    assert answer not in out
+    assert "  (1 open task(s): write the docs)\n" in out
 
 
 def test_the_sandbox_warning_states_its_remedy_once(
