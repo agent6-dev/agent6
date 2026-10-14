@@ -205,6 +205,7 @@ Every path they take resolves through `Workspace`:
 
 - The boundary comes from config values
     - a degradation (`auto` falling back to `hardened` or `none`, a host with no jail) leaves it unchanged; under `none` isolation it is the only boundary
+- A grant inside the workspace root or inside a write grant counts only while no component below that region is a symlink (a jailed command can re-point one); otherwise the file tools and the next jail launch both drop the grant
 - A denied path is refused with the reason
     - `list_dir` drops the entry and reports `hidden: N`
     - the jail masks the path instead (empty dir, empty file; [Sandbox](#2-sandbox))

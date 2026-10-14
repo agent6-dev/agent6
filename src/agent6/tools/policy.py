@@ -82,6 +82,45 @@ def jail_home_refusal(home: pathlib.Path) -> str | None:
     return f"the jail's HOME {str(home)!r} {problem}. {fix}"
 
 
+def _grant_root(grant: str, writable: tuple[pathlib.Path, ...]) -> pathlib.Path | None:
+    """Return a grant's real path, or None when a jailed command may have re-pointed it.
+
+    Below a region the run writes, a command can swap a component of the grant for a symlink
+    out of every grant, so there every component must be a real entry. A grant outside those
+    regions resolves as the operator linked it.
+
+    Args:
+        grant: The configured path.
+        writable: The resolved regions the run writes: the workspace root and the write grants.
+
+    Returns:
+        The path the grant covers, or None for a grant to drop.
+    """
+    path = pathlib.Path(grant)
+    real: pathlib.Path | None = None  # set from the first ancestor inside a writable region
+    for step in (*reversed(path.parents), path):
+        if real is not None:
+            if step.is_symlink():
+                return None
+            real /= step.name
+        elif step != path:
+            resolved = step.resolve()
+            if any(_path_safety.path_within(resolved, w) for w in writable):
+                real = resolved
+    return path.resolve() if real is None else real
+
+
+def _kept_grants(
+    config: Config, root: pathlib.Path
+) -> tuple[dict[str, pathlib.Path], dict[str, pathlib.Path]]:
+    """Return the read and the write grants `_grant_root` keeps, each as {configured: real}."""
+    sb = config.sandbox
+    regions = (root.resolve(), *(pathlib.Path(p).resolve() for p in sb.extra_write_paths))
+    readable = {p: r for p in sb.extra_read_paths if (r := _grant_root(p, regions))}
+    writable = {p: r for p in sb.extra_write_paths if (r := _grant_root(p, regions))}
+    return readable, writable
+
+
 def workspace_for(
     config: Config, root: pathlib.Path, *, memory_dir: pathlib.Path | None = None
 ) -> _path_safety.Workspace:
@@ -91,7 +130,8 @@ def workspace_for(
     them with no approval) and the jail is the fence that stops a command working around it.
     Both read the same hidden set (`agent6.paths.hidden_paths`), so the two cannot disagree.
     Derived from config values, never from the isolation level: a degradation must never widen
-    what the tools may touch.
+    what the tools may touch. A grant `_grant_root` drops reads as outside the boundary, and
+    `jail_policy` leaves it out of the mounts.
 
     Args:
         config: The run's config.
@@ -102,15 +142,14 @@ def workspace_for(
     Returns:
         The workspace.
     """
-    sb = config.sandbox
-    denied = paths.hidden_paths(pathlib.Path(p) for p in sb.hide_paths)
-    writable = tuple(pathlib.Path(p).resolve() for p in sb.extra_write_paths)
+    denied = paths.hidden_paths(pathlib.Path(p) for p in config.sandbox.hide_paths)
+    readable, writable = (tuple(kept.values()) for kept in _kept_grants(config, root))
     mem = (memory_dir.resolve(),) if memory_dir is not None else ()
     return _path_safety.Workspace(
         root=root.resolve(),
         denied=tuple(p.resolve() for p in denied),
         # Write implies read, matching the grants the jail mounts.
-        read_roots=(*(pathlib.Path(p).resolve() for p in sb.extra_read_paths), *writable, *mem),
+        read_roots=(*readable, *writable, *mem),
         write_roots=(*writable, *mem),
         exempt=mem,
         read_only=(memory_dir.resolve() / memory.DECISIONS_NAME,) if memory_dir is not None else (),
@@ -233,6 +272,7 @@ def jail_policy(
                 " a rewritten pointer grants nothing. Restore the pointer, or fork again."
             )
         git_dir = worktree_git_dir
+    readable, writable = _kept_grants(config, root)
     return kinds.JailPolicy(
         cwd=root,
         argv=argv,
@@ -241,12 +281,12 @@ def jail_policy(
         network=network,
         extra_protect_paths=tuple(protect_paths),
         extra_ro_paths=(
-            *(pathlib.Path(p) for p in config.sandbox.extra_read_paths),
+            *(pathlib.Path(p) for p in readable),
             *extra_ro_paths,
             *((git_dir,) if git_dir is not None else ()),
         ),
         extra_rw_paths=(
-            *(pathlib.Path(p) for p in config.sandbox.extra_write_paths),
+            *(pathlib.Path(p) for p in writable),
             *extra_rw_paths,
             *(() if persistent is None else (persistent,)),
         ),

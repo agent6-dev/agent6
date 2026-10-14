@@ -174,3 +174,77 @@ def test_write_contained_keeps_the_files_line_ending(tmp_path: pathlib.Path) -> 
     # A new file keeps the content's own endings: a CRLF fixture can be made.
     _path_safety.write_contained(ws.resolve_write("new-crlf.txt"), "x\r\ny\r\n")
     assert (root / "new-crlf.txt").read_bytes() == b"x\r\ny\r\n"
+
+
+def _granted(
+    tmp_path: pathlib.Path, read: pathlib.Path, write: pathlib.Path
+) -> _path_safety.Workspace:
+    from agent6.config import Config
+    from agent6.tools import policy
+
+    grants = {"extra_read_paths": [str(read)], "extra_write_paths": [str(write)]}
+    repo = tmp_path / "repo"
+    repo.mkdir(exist_ok=True)
+    return policy.workspace_for(Config.model_validate({"sandbox": grants}), repo)
+
+
+def test_a_grant_repointed_below_a_write_grant_is_dropped(tmp_path: pathlib.Path) -> None:
+    """A jailed command swapped a read grant inside a write grant for a link out of every grant.
+
+    The next Workspace resolved the read root to the link's target, and the read tools read it.
+    """
+    shared, outside = tmp_path / "shared", tmp_path / "outside"
+    (shared / "inbox").mkdir(parents=True)
+    outside.mkdir()
+    (outside / "secret.txt").write_text("host\n", encoding="utf-8")
+    (shared / "inbox" / "note.txt").write_text("granted\n", encoding="utf-8")
+    ws = _granted(tmp_path, shared / "inbox", shared)
+    note = ws.resolve_read(str(shared / "inbox" / "note.txt"))
+    assert note.base == shared / "inbox" and _path_safety.read_contained(note) == "granted\n"
+
+    (shared / "inbox" / "note.txt").unlink()
+    (shared / "inbox").rmdir()
+    (shared / "inbox").symlink_to(outside, target_is_directory=True)
+    ws = _granted(tmp_path, shared / "inbox", shared)
+    assert outside not in ws.read_roots
+    for path in (outside / "secret.txt", shared / "inbox" / "secret.txt"):
+        with pytest.raises(errors.ToolError, match="only allowed inside a granted path"):
+            ws.resolve_read(str(path))
+
+
+def test_a_grant_through_an_operator_link_outside_every_writable_region_resolves(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Dropping a re-pointable grant must not cost a grant at a symlinked toolchain dir."""
+    real, link = tmp_path / "toolchain-1.2", tmp_path / "toolchain"
+    real.mkdir()
+    (real / "VERSION").write_text("1.2\n", encoding="utf-8")
+    link.symlink_to(real, target_is_directory=True)
+    (tmp_path / "shared").mkdir()
+    ws = _granted(tmp_path, link, tmp_path / "shared")
+    assert _path_safety.read_contained(ws.resolve_read(str(link / "VERSION"))) == "1.2\n"
+    assert ws.write_roots == (tmp_path / "shared",)
+
+
+def test_a_repointed_grant_never_reaches_the_jail_launcher(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A re-pointed grant the file tools drop never reaches the next jail launch."""
+    from agent6.config import Config
+    from agent6.tools import policy
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    shared, outside, repo = tmp_path / "shared", tmp_path / "outside", tmp_path / "repo"
+    for made in (shared, outside, repo / "out"):
+        made.mkdir(parents=True)
+    (shared / "inbox").symlink_to(outside, target_is_directory=True)
+    (repo / "out").rmdir()
+    (repo / "out").symlink_to(outside, target_is_directory=True)
+    grants = {
+        "extra_read_paths": [str(shared / "inbox")],
+        "extra_write_paths": [str(shared), str(repo / "out")],
+    }
+    config = Config.model_validate({"sandbox": grants})
+    jail = policy.jail_policy(repo, config, "hardened", ("true",))
+    assert shared / "inbox" not in jail.extra_ro_paths
+    assert shared in jail.extra_rw_paths and repo / "out" not in jail.extra_rw_paths
