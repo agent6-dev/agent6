@@ -386,7 +386,10 @@ def loop_guard_notice(
         _nudges.loop_guard_words(tool, spiral.call_streak),
         event="loop.loop_guard.triggered",
         fields={"iteration": turn.iteration, "tool": tool, "streak": spiral.call_streak},
-        log=f"  loop-guard: {tool} called {spiral.call_streak}x in a row - injecting notice",
+        log=(
+            f"  loop guard: {tool} called {spiral.call_streak}x in a row;"
+            " the model is told to change course"
+        ),
     )
 
 
@@ -464,7 +467,10 @@ def stagnation(
         text.format(minutes=minutes),
         event="loop.stagnation.nudged",
         fields={"iteration": turn.iteration, "elapsed_s": int(elapsed)},
-        log=f"  stagnation: {minutes}m with no attempt - injecting notice",
+        log=(
+            f"  stagnation: {minutes}m with no edit and no verify;"
+            " the model is reminded the budget is finite"
+        ),
     )
 
 
@@ -546,7 +552,10 @@ def memory_flip(
         _nudges.MEMORY_FLIP_NUDGE,
         event="loop.memory_flip.nudged",
         fields={"iteration": turn.iteration},
-        log="  memory: verify flipped green - injecting memory advisory",
+        log=(
+            "  memory: verify flipped green with nothing recorded;"
+            " the model is asked to write the rule"
+        ),
     )
 
 
