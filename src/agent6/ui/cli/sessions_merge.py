@@ -15,7 +15,7 @@ import sys
 from typing import Literal
 
 from agent6 import commit_message, git_ops, paths
-from agent6.app import fork_worktrees, merge, parallel
+from agent6.app import _workdirs, fork_worktrees, merge
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import subrun
 from agent6.sessions import ipc
@@ -118,7 +118,7 @@ def _plan_merge(  # noqa: PLR0911
         return 2
     # An orphaned lane (its coordinator died before importing it) is adopted: fetched, then merged.
     try:
-        adopted = parallel.adopt_orphan_lane(cwd, cfg, layout, manifest)
+        adopted = _workdirs.adopt_orphan_lane(cwd, cfg, layout, manifest)
     except subrun.SubrunError as exc:
         _common.error(f"{exc}")
         return 2
@@ -510,7 +510,7 @@ def _sweep_workdirs(
     except ConfigError as exc:
         print(f"[agent6] workdir sweep skipped (config unreadable: {exc})", file=sys.stderr)
         return "", False
-    clones_swept, clones_kept = parallel.sweep_fanout_clones(cwd, cfg)
+    clones_swept, clones_kept = _workdirs.sweep_fanout_clones(cwd, cfg)
     if clones_kept:
         print(
             f"[agent6] kept {clones_kept} fan-out clone dir(s) holding a live lane or"

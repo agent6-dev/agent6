@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from agent6 import git_ops, paths
-from agent6.app import confine, parallel
+from agent6.app import _workdirs, confine
 from agent6.config import ConfigError, io, layer
 from agent6.models import choices
 from agent6.sessions import ipc, layout, manifest
@@ -100,7 +100,7 @@ def draft_workspace(
         cfg = layer.load_effective(cwd, config_path).config
     except ConfigError:
         return None
-    workspace = parallel.subordinate_workdir_root(cfg, cwd, name)
+    workspace = _workdirs.subordinate_workdir_root(cfg, cwd, name)
     return workspace if (workspace / ".git").exists() else None
 
 

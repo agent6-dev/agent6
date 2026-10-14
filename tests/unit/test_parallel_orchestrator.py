@@ -24,7 +24,7 @@ import pytest
 
 from agent6 import directive, git_ops, kinds, memory, paths, portable
 from agent6.app import _lane_watch as lane_watch
-from agent6.app import compare, parallel, reporter, stamps
+from agent6.app import _workdirs, compare, parallel, reporter, stamps
 from agent6.config import Config, ConfigError
 from agent6.harness import subrun
 from agent6.sessions import ipc
@@ -1103,7 +1103,7 @@ def test_run_parallel_removes_its_emptied_workdir_levels(
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
-    per_repo = parallel.workdir_base(cfg, origin)
+    per_repo = _workdirs.workdir_base(cfg, origin)
     lanes = parallel.build_lane_specs(
         "2", cfg=cfg, origin=origin, fanout_id="fan", workdir_root=per_repo / "fan"
     )
@@ -1775,7 +1775,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     origin_state = paths.state_dir(origin)
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-    per_repo = parallel.workdir_base(cfg, origin)
+    per_repo = _workdirs.workdir_base(cfg, origin)
     spec = subrun.LaneSpec(
         lane=1, session_id="co-p9-l1", workdir=per_repo / "co" / "grp" / "lane-1", route=None
     )
@@ -1865,7 +1865,7 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     # orphaned lane was never adopted.
     assert all(group == "co-p2" for (_l, _r, _t, group, _w) in seen)
     assert all(
-        str(parallel.subordinate_workdir_root(cfg, origin, group) / f"lane-{lane}") == workdir
+        str(_workdirs.subordinate_workdir_root(cfg, origin, group) / f"lane-{lane}") == workdir
         for (lane, _r, _t, group, workdir) in seen
     )
 
@@ -2084,7 +2084,7 @@ def test_lane_config_forces_a_run_branch(tmp_path: pathlib.Path) -> None:
     base = Config()
     cfg = base.model_copy(update={"git": base.git.model_copy(update={"branch_per_run": False})})
     spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "clone", route=None)
-    path = parallel._write_lane_config(cfg, spec)
+    path = _workdirs.write_lane_config(cfg, spec)
     written = tomllib.loads(path.read_text(encoding="utf-8"))
     assert written["git"]["branch_per_run"] is True
 
@@ -2108,7 +2108,7 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
         workdir=tmp_path / "clone",
         route=kinds.ModelRoute("p", "other"),
     )
-    written = tomllib.loads(parallel._write_lane_config(cfg, spec).read_text(encoding="utf-8"))
+    written = tomllib.loads(_workdirs.write_lane_config(cfg, spec).read_text(encoding="utf-8"))
     assert (written["models"]["worker"]["provider"], written["models"]["worker"]["model"]) == (
         "p",
         "other",
@@ -2473,7 +2473,7 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     for clone in (unmerged, merged):
         paths.jail_cache_home(clone).mkdir(parents=True)
 
-    swept, kept = parallel.sweep_fanout_clones(origin, cfg)
+    swept, kept = _workdirs.sweep_fanout_clones(origin, cfg)
     assert (swept, kept) == (1, 1)  # the foreign repo's dir is not counted
     assert (scoped / "fan-a").is_dir()  # unique commits: kept whole
     assert not (scoped / "fan-b").exists()
@@ -2501,17 +2501,17 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     subrun.clone_workspace(origin, lane)
     # No session dir yet: a lane between its clone and its first write looks
     # like one that never started, and a prune in that window must not win.
-    assert parallel.sweep_fanout_clones(origin, cfg) == (0, 1)
+    assert _workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
     session = paths.state_dir(lane) / "sessions" / "runs" / "fan-starting-l1"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text("", encoding="utf-8")  # a record, not a husk
     ipc.write_worker_pid(session, os.getpid())
 
-    assert parallel.sweep_fanout_clones(origin, cfg) == (0, 1)
+    assert _workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
     assert lane.is_dir()
 
     (session / "worker.pid").unlink()
-    assert parallel.sweep_fanout_clones(origin, cfg) == (1, 0)
+    assert _workdirs.sweep_fanout_clones(origin, cfg) == (1, 0)
     assert not lane.parent.exists()
 
     # A lane that died in preflight leaves a husk (a session dir with no
@@ -2519,7 +2519,7 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     subrun.clone_workspace(origin, lane)
     husk = paths.state_dir(lane) / "sessions" / "runs" / "fan-starting-l2"
     husk.mkdir(parents=True)
-    assert parallel.sweep_fanout_clones(origin, cfg) == (1, 0)
+    assert _workdirs.sweep_fanout_clones(origin, cfg) == (1, 0)
 
 
 def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
@@ -2548,7 +2548,7 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
     # The origin has the OBJECT (fetched) but no ref reaching it.
     sp.run(["git", "-C", str(origin), "fetch", str(lane), tip], check=True, capture_output=True)
 
-    swept, kept = parallel.sweep_fanout_clones(origin, cfg)
+    swept, kept = _workdirs.sweep_fanout_clones(origin, cfg)
 
     assert (swept, kept) == (0, 1)
     assert lane.is_dir(), "the last ref reaching the lane's work was deleted"
@@ -2573,7 +2573,7 @@ def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
     notes.mkdir()
     (notes / "todo.md").write_text("mine\n", encoding="utf-8")
 
-    swept, kept = parallel.sweep_fanout_clones(origin, cfg)
+    swept, kept = _workdirs.sweep_fanout_clones(origin, cfg)
     assert (swept, kept) == (0, 0)
     assert (theirs / "draft.txt").read_text(encoding="utf-8") == "uncommitted\n"
     assert (notes / "todo.md").read_text(encoding="utf-8") == "mine\n"
@@ -2804,4 +2804,4 @@ def test_a_relative_workdir_resolves_to_an_absolute_path(
     monkeypatch.chdir(tmp_path)
     cfg = Config.model_validate({"parallel": {"workdir": "wt"}})
 
-    assert parallel.workdir_base(cfg, origin) == tmp_path.resolve() / "wt" / paths.repo_id(origin)
+    assert _workdirs.workdir_base(cfg, origin) == tmp_path.resolve() / "wt" / paths.repo_id(origin)

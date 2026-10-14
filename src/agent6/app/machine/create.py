@@ -14,7 +14,7 @@ import pathlib
 import shutil
 
 from agent6 import event_log, git_ops, kinds, paths, portable
-from agent6.app import _session, _setup, machine_agent, parallel, preflight
+from agent6.app import _session, _setup, _workdirs, machine_agent, preflight
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import _bundle, _scriptcheck
 from agent6.config import ConfigError, layer
@@ -199,7 +199,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
     )
     # An empty repo of its own beside the other subordinate trees: the jail masks the state dir.
-    workspace = parallel.subordinate_workdir_root(cfg, cwd, scratch.name)
+    workspace = _workdirs.subordinate_workdir_root(cfg, cwd, scratch.name)
     try:
         workspace.mkdir(parents=True)
         git_ops.init_repo(workspace)

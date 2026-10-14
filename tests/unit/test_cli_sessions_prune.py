@@ -816,11 +816,11 @@ def _fork_with_worktree(
     A linked worktree of the repo under `[parallel].workdir` and a manifest naming it
     (`record=False`: the worktree of a session whose record `sessions rm` deleted).
     """
-    from agent6.app import parallel
+    from agent6.app import _workdirs
     from agent6.config import Config
 
     base = _git(repo, "rev-parse", "HEAD")
-    worktree = parallel.subordinate_workdir_root(Config(), repo, session_id)
+    worktree = _workdirs.subordinate_workdir_root(Config(), repo, session_id)
     git_ops.add_worktree(repo, worktree, base)
     _git(repo, "branch", f"agent6/{session_id}", base)
     git_ops.set_ref(repo, git_ops.chain_ref_for(session_id), base)
@@ -876,7 +876,7 @@ def test_prune_leaves_a_worktree_no_manifest_records_alone(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Only a worktree a session manifest records is agent6's to remove."""
-    from agent6.app import parallel
+    from agent6.app import _workdirs
     from agent6.config import Config
 
     monkeypatch.chdir(tmp_path)
@@ -884,7 +884,7 @@ def test_prune_leaves_a_worktree_no_manifest_records_alone(
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
-    foreign = parallel.subordinate_workdir_root(Config(), tmp_path, "my-experiment")
+    foreign = _workdirs.subordinate_workdir_root(Config(), tmp_path, "my-experiment")
     git_ops.add_worktree(tmp_path, foreign, _git(tmp_path, "rev-parse", "HEAD"))
     (foreign / "draft.txt").write_text("uncommitted\n", encoding="utf-8")
     forgotten = _fork_with_worktree(tmp_path, "fork-forgot11", merged=False, record=False)

@@ -161,6 +161,7 @@ banned-from = [
     "agent6.app._resume_tree",
     "agent6.app._session",
     "agent6.app._setup",
+    "agent6.app._workdirs",
     "agent6.app.btw",
     "agent6.app.compare",
     "agent6.app.confine",

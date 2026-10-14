@@ -19,17 +19,16 @@ import dataclasses
 import functools
 import os
 import pathlib
-import shutil
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from concurrent import futures as concurrent_futures
 from typing import Protocol
 
 from agent6 import directive, event_log, git_ops, kinds, memory, paths
-from agent6.app import _lane_watch, _setup, finalize, preflight, stamps, workspace_setup
+from agent6.app import _lane_watch, _setup, _workdirs, finalize, preflight, stamps, workspace_setup
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
-from agent6.config import Config, ConfigError, layer
+from agent6.config import Config, ConfigError
 from agent6.harness import judge, subrun
 from agent6.models import validate
 from agent6.providers import TranscriptSink
@@ -90,183 +89,6 @@ class LaneRuntime:
 # ---------------------------------------------------------------------------
 
 
-def subordinate_workdir_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
-    """Return the base dir for a group of subordinate working trees.
-
-    Fan-out ids, `machine-<id>` and fork ids are all groups, so one prune sweep
-    covers them; the dir is scoped by repo id, so another repo's clones never enter
-    a sweep.
-
-    Args:
-        cfg: The run's config.
-        origin: The repository.
-        group: The group's name.
-
-    Returns:
-        `<workdir base>/<repo id>/<group>`.
-    """
-    return workdir_base(cfg, origin) / group
-
-
-def workdir_base(cfg: Config, origin: pathlib.Path) -> pathlib.Path:
-    """Return the per-repo dir every subordinate working tree of the origin sits in.
-
-    Args:
-        cfg: The run's config.
-        origin: The repository.
-
-    Returns:
-        `[parallel].workdir` as an absolute path, or the cache's `parallel` dir, plus the
-        repo id.
-    """
-    return paths.parallel_base(cfg.parallel.workdir) / paths.repo_id(origin)
-
-
-def adopt_orphan_lane(
-    origin: pathlib.Path,
-    cfg: Config,
-    layout: sessions_layout.SessionLayout,
-    manifest: sessions_manifest.SessionManifest,
-) -> str | None:
-    """Import an orphaned fan-out lane so an ordinary merge can land it.
-
-    A coordinator death leaves a finished lane's branch only in its clone, with
-    the origin still holding the live-view symlink.
-
-    Args:
-        origin: The repository.
-        cfg: The run's config.
-        layout: The lane's layout in the origin.
-        manifest: The lane's manifest.
-
-    Returns:
-        The note to print, or None when the session is not an orphaned lane.
-
-    Raises:
-        SubrunError: The import failed; the symlink is restored.
-    """
-    if (
-        not manifest.run_branch
-        or manifest.parallel is None
-        or git_ops.branch_exists(origin, manifest.run_branch)
-        or not layout.session_dir.is_symlink()
-    ):
-        return None
-    lineage = manifest.parallel
-    clone = subordinate_workdir_root(cfg, origin, lineage.group) / f"lane-{lineage.lane}"
-    if not (clone / ".git").exists() or not git_ops.branch_exists(clone, manifest.run_branch):
-        return None
-    real = layout.session_dir.resolve()
-    layout.session_dir.unlink()
-    try:
-        subrun.import_run(origin, clone, manifest.run_branch, real, layout.state_dir)
-    except subrun.SubrunError:
-        layout.session_dir.symlink_to(real)
-        raise
-    return f"imported orphaned lane branch {manifest.run_branch} from {clone}"
-
-
-def _recorded_merged(origin: pathlib.Path, clone: pathlib.Path, tip: str) -> bool:
-    """Tell whether a session's manifest records the tip as merged into a live branch.
-
-    A squash-merged lane's commits are unreachable by design, so this is the second
-    proof that its clone may go.
-
-    Args:
-        origin: The repository.
-        clone: The lane's clone.
-        tip: The commit to prove.
-
-    Returns:
-        Whether a merge stamp covers it.
-    """
-    state = paths.state_dir(origin)
-    for branch in git_ops.list_run_branches(clone):
-        layout = sessions_layout.session_layout(state, branch.removeprefix("agent6/"))
-        if layout is None:
-            continue
-        try:
-            merged = sessions_manifest.read_manifest(layout.session_dir).merged
-        except sessions_manifest.ManifestError:
-            continue
-        if merged is not None and merged.tip == tip and git_ops.branch_exists(origin, merged.into):
-            return True
-    return False
-
-
-def _lane_may_run(clone: pathlib.Path) -> bool:
-    """Tell whether a clone still belongs to a lane: a live worker, or no session dir yet.
-
-    Args:
-        clone: The lane's clone.
-
-    Returns:
-        Whether the lane may still be running.
-    """
-    state = paths.state_dir(clone)
-    dirs = [
-        d
-        for bucket in sessions_layout.HUB_BUCKETS
-        for d in sessions_layout.bucket_dir(state, bucket).glob("*")
-        if d.is_dir()
-    ]
-    return not dirs or any(ipc.worker_is_alive(d) for d in dirs)
-
-
-def sweep_fanout_clones(origin: pathlib.Path, cfg: Config) -> tuple[int, int]:
-    """Delete fan-out clone dirs whose every tip the origin already reaches.
-
-    A clone holding a commit the origin lacks, or a live lane, keeps its whole
-    group dir: it may be the only copy. Only a dir holding `lane-*` clones is a
-    group; a fork's worktree or an operator's dir is left alone.
-
-    Args:
-        origin: The repository.
-        cfg: The run's config.
-
-    Returns:
-        `(swept, kept)` group counts.
-    """
-    base = workdir_base(cfg, origin)
-    if not base.is_dir():
-        return 0, 0
-    swept = kept = 0
-    for fanout in sorted(p for p in base.iterdir() if p.is_dir()):
-        clones = [c for c in sorted(fanout.glob("lane-*")) if (c / ".git").is_dir()]
-        if not clones:
-            continue
-        safe = True
-        for clone in clones:
-            try:
-                tips = [git_ops.chain_tip(clone, br) for br in git_ops.list_run_branches(clone)]
-                # A machine-state clone's work rides its chain ref, not a branch.
-                tips += [sha for _ref, sha in git_ops.list_chain_refs(clone)]
-            except git_ops.GitError:
-                safe = False
-                break
-            if not tips and _lane_may_run(clone):
-                # A starting lane's work is its working tree alone.
-                safe = False
-                break
-            # Reachability, not existence: a loose object is one `git gc` from gone.
-            if any(
-                tip is not None
-                and not git_ops.commit_is_reachable(origin, tip)
-                and not _recorded_merged(origin, clone, tip)
-                for tip in tips
-            ):
-                safe = False
-                break
-        if safe:
-            for clone in clones:
-                shutil.rmtree(paths.jail_cache_home(clone), ignore_errors=True)
-            shutil.rmtree(fanout, ignore_errors=True)
-            swept += 1
-        else:
-            kept += 1
-    return swept, kept
-
-
 def build_lane_specs(
     spec: str,
     *,
@@ -291,7 +113,7 @@ def build_lane_specs(
         ConfigError: A lane's model names nothing.
     """
     if workdir_root is None:
-        workdir_root = subordinate_workdir_root(cfg, origin, fanout_id)
+        workdir_root = _workdirs.subordinate_workdir_root(cfg, origin, fanout_id)
     routes = _lane_routes(cfg, directive.parse_spec(spec, limit=cfg.parallel.max_lanes))
     return [
         subrun.LaneSpec(
@@ -323,30 +145,6 @@ def _lane_routes(cfg: Config, models: Sequence[str | None]) -> list[kinds.ModelR
 # ---------------------------------------------------------------------------
 # The real (bridge) spawner: clone, write a lane config, spawn detached, locate
 # ---------------------------------------------------------------------------
-
-
-def _write_lane_config(cfg: Config, spec: subrun.LaneSpec) -> pathlib.Path:
-    """Write the lane's config file: the origin's effective config, the worker re-routed.
-
-    The clone's own per-repo config is empty, so the origin's settings ride in the
-    file the lane loads with `--config`.
-
-    Args:
-        cfg: The origin's effective config.
-        spec: The lane.
-
-    Returns:
-        The config file's path.
-    """
-    lane_cfg = cfg.with_model_route("worker", spec.route) if spec.route else cfg
-    # The import fetches the lane's branch, so branch_per_run stays on whatever the origin says.
-    lane_cfg = lane_cfg.model_copy(
-        update={"git": lane_cfg.git.model_copy(update={"branch_per_run": True})}
-    )
-    config_path = spec.workdir.parent / f"lane-{spec.lane}-config.toml"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(layer.materialize(lane_cfg), encoding="utf-8")
-    return config_path
 
 
 def bridge_spawner(
@@ -395,7 +193,7 @@ def bridge_spawner(
         return subrun.LaneResult(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
-    config_path = _write_lane_config(cfg, spec)
+    config_path = _workdirs.write_lane_config(cfg, spec)
     lane_state = paths.state_dir(spec.workdir)
     # The clone's state dir is empty; the origin's memory and rulings are seeded into it.
     memory.seed_store(paths.state_dir(origin), lane_state)
@@ -546,8 +344,11 @@ def run_lane_to_completion(
         reporter=reporter,
     )
     # Each lane removes its own dirs only; the group dir goes with whichever empties it last.
-    _cleanup(
-        [res.spec], workdir_root=res.spec.workdir.parent, base=workdir_base(cfg, origin), cfg=cfg
+    _workdirs.cleanup(
+        [res.spec],
+        workdir_root=res.spec.workdir.parent,
+        base=_workdirs.workdir_base(cfg, origin),
+        cfg=cfg,
     )
     summary = summarize_session_dir(dest)
     if not produced_result(summary.status):
@@ -618,7 +419,7 @@ def build_lane_spawner(
         # One name for the workdir, the lane ids and the stamped lineage: the sweeps derive
         # the clone path from it.
         group_id = f"{coordinator_session_id}-{group}"
-        workdir_root = subordinate_workdir_root(cfg, origin, group_id)
+        workdir_root = _workdirs.subordinate_workdir_root(cfg, origin, group_id)
         specs = [
             subrun.LaneSpec(
                 lane=i,
@@ -982,34 +783,6 @@ def _import_lanes(
     return candidates, rows, failed, imported
 
 
-def _cleanup(
-    imported: list[subrun.LaneSpec], *, workdir_root: pathlib.Path, base: pathlib.Path, cfg: Config
-) -> None:
-    """Tear down the clone, state dir, jail home and config of each imported lane, best-effort.
-
-    Every level from the group dir up to the per-repo base is removed once empty,
-    never the dir above it.
-
-    Args:
-        imported: The lanes whose import landed.
-        workdir_root: The group dir.
-        base: The per-repo base dir.
-        cfg: The run's config.
-    """
-    for spec in imported:
-        shutil.rmtree(paths.state_dir(spec.workdir), ignore_errors=True)
-        shutil.rmtree(paths.jail_cache_home(spec.workdir), ignore_errors=True)
-        shutil.rmtree(spec.workdir, ignore_errors=True)
-        (spec.workdir.parent / f"lane-{spec.lane}-config.toml").unlink(missing_ok=True)
-    level = workdir_root
-    while level.is_relative_to(base):
-        with contextlib.suppress(OSError):
-            level.rmdir()  # succeeds only when nothing was kept
-        if level == base:
-            break
-        level = level.parent
-
-
 def fanout_exit_code(candidates: list[judge.CandidateBrief]) -> int:
     """Map the lanes' gate verdicts to the fan-out's exit code.
 
@@ -1299,8 +1072,11 @@ def _drive_fanout(
             fanout=True,
             lanes=[{"session_id": res.spec.session_id, "detail": detail} for res, detail in failed],
         )
-    _cleanup(
-        imported, workdir_root=lanes[0].workdir.parent, base=workdir_base(cfg, origin), cfg=cfg
+    _workdirs.cleanup(
+        imported,
+        workdir_root=lanes[0].workdir.parent,
+        base=_workdirs.workdir_base(cfg, origin),
+        cfg=cfg,
     )
 
     outcome = app_compare.rank(

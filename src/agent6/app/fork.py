@@ -24,7 +24,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from agent6 import git_ops, kinds, paths, portable
-from agent6.app import _setup, fork_worktrees, parallel, resume, stamps, workspace_setup
+from agent6.app import _setup, _workdirs, fork_worktrees, resume, stamps, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
 from agent6.graph import replay, storage
@@ -426,7 +426,7 @@ def create_fork(
         reporter.refuse(gate_refusal)
         return "", 2
     if added:
-        path = parallel.subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
+        path = _workdirs.subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
         try:
             checkout = fork_worktrees.add_session_worktree(cwd, path, plan.forked_from_sha)
         except git_ops.GitError as exc:

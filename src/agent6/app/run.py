@@ -21,9 +21,9 @@ from agent6.app import (
     _execution,
     _session,
     _setup,
+    _workdirs,
     finalize,
     fork_worktrees,
-    parallel,
     preflight,
     stamps,
     workspace_setup,
@@ -263,7 +263,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             )
 
     if worktree:
-        path = parallel.subordinate_workdir_root(cfg, repo, effective_session_id)
+        path = _workdirs.subordinate_workdir_root(cfg, repo, effective_session_id)
         if path.is_relative_to(repo.resolve()):
             reporter.refuse(
                 f"[parallel].workdir puts the worktree inside this checkout ({path}), where it"
