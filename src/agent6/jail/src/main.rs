@@ -1306,15 +1306,34 @@ fn bind_grant(grant: &Path, source: &Path, new_root: &Path, read_only: bool) -> 
         return Err(named(&why));
     }
     let dst = new_root.join(grant.strip_prefix("/").unwrap_or(grant));
-    fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))
-        .and_then(|()| {
-            if source.is_dir() {
-                fs::create_dir_all(&dst)
-            } else {
-                fs::File::create(&dst).map(drop)
+    // An earlier bind may already hold the name: the same grant listed twice,
+    // or one inside a granted directory. That entry is the mount point, and
+    // this bind lands over it; creating it again would write through the
+    // earlier mount.
+    match fs::symlink_metadata(&dst) {
+        // A mount through a link lands where the link points, which the
+        // earlier bind decides. The name already shows the link, so a read
+        // grant adds nothing; a write grant cannot be honored.
+        Ok(meta) if meta.file_type().is_symlink() => {
+            if read_only {
+                return Ok(());
             }
-        })
-        .map_err(|e| named(&format_args!("mount point: {e}")))?;
+            return Err(named(
+                &"a symbolic link is already at its mount point, inside an earlier grant, \
+                  and no mount goes through a link. Grant the link's target.",
+            ));
+        }
+        Ok(_) => {}
+        Err(_) => fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))
+            .and_then(|()| {
+                if source.is_dir() {
+                    fs::create_dir_all(&dst)
+                } else {
+                    fs::File::create(&dst).map(drop)
+                }
+            })
+            .map_err(|e| named(&format_args!("mount point: {e}")))?,
+    }
     mount(
         Some(source),
         &dst,

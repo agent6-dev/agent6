@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import pathlib
 import shutil
@@ -171,3 +172,55 @@ def test_a_symlinked_grant_is_readable_at_its_spelled_name(
     assert built.extra_ro_paths[0] == link and built.grant_sources == ((link, real),)
     res = jail.run_in_jail(built)
     assert res.returncode == 0 and res.stdout == "1.2\n", res
+
+
+@pytest.mark.parametrize("shape", ["duplicate", "nested"])
+def test_a_file_grant_binds_over_a_mount_point_an_earlier_grant_made(
+    tmp_path: pathlib.Path, shape: str
+) -> None:
+    """A file granted twice, or inside a granted directory, binds over the earlier mount.
+
+    The launcher created every file grant's mount point, and creating one that an earlier
+    read-only bind already held failed the launch with "Read-only file system".
+    """
+    held = tmp_path / "held"
+    held.mkdir()
+    granted = held / "ca.crt"
+    granted.write_text("cert\n", encoding="utf-8")
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    probe = f"cat {granted}; {{ echo x >> {granted}; }} 2>/dev/null && echo WRITTEN || echo refused"
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
+            cwd=ws,
+            argv=("sh", "-c", probe),
+            isolation="strict",
+            extra_ro_paths=(granted if shape == "duplicate" else held, granted),
+            timeout_s=10.0,
+        )
+    )
+    assert res.returncode == 0 and res.stdout == "cert\nrefused\n", res
+    assert granted.read_text(encoding="utf-8") == "cert\n"
+
+
+def test_a_grant_is_never_mounted_through_a_link_an_earlier_grant_shows(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A symlink already at a grant's mount point is left as the earlier grant shows it.
+
+    The launcher created the mount point through the link, which emptied the host file the
+    link points to. A read grant there adds nothing to the link; a write grant fails by name.
+    """
+    held, target, ws = tmp_path / "held", tmp_path / "target.txt", tmp_path / "ws"
+    held.mkdir()
+    ws.mkdir()
+    target.write_text("host content\n", encoding="utf-8")
+    link = held / "link.txt"
+    link.symlink_to(target)
+    base = kinds.JailPolicy(cwd=ws, argv=("readlink", str(link)), isolation="strict")
+    res = jail.run_in_jail(dataclasses.replace(base, extra_ro_paths=(held, link)))
+    assert res.returncode == 0 and res.stdout.strip() == str(target), res
+    assert target.read_text(encoding="utf-8") == "host content\n"
+    with pytest.raises(jail.JailUnavailableError, match=f"write grant {link}: a symbolic link"):
+        jail.run_in_jail(dataclasses.replace(base, extra_ro_paths=(held,), extra_rw_paths=(link,)))
+    assert target.read_text(encoding="utf-8") == "host content\n"

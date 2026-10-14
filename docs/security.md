@@ -157,6 +157,8 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - a grant that contains the workspace is mounted under it: the workspace stays writable under a read grant
     - a grant the launcher cannot bind fails the launch, and the error names the grant, the step and the OS error (`write grant /srv: remount of submount cache: EPERM`); a read-only mount inside a write grant is such a case
     - a grant on `/` or on `/dev` fails the launch by name: `/` would replace the jail's own root, and `/dev` would cover the jail's device nodes (name a device in `extra_device_paths`)
+    - a grant whose path an earlier grant already shows (a file listed twice, a file inside a granted directory) is bound over it.
+      Where the earlier grant shows a symlink at that path, nothing is mounted through the link: a read grant leaves the link as it is, and a write grant fails the launch by name
     - a grant that is the home directory or a directory above it runs with a warning, at run start and in `agent6 check boundaries`: the run's commands and file tools then reach the credentials other tools keep there (`~/.ssh`, `~/.aws`, another agent's login).
       agent6 hides only its own config dir and state base; `sandbox.hide_paths` hides the paths you list, under `strict`
     - the paths kept read-only inside the workspace (`.git` under `protect_git`, a machine bundle) are bound after every grant: a grant that contains the workspace does not make them writable
@@ -278,7 +280,7 @@ The agent works within the environment it is given and cannot expand it:
     - under a sandbox with no route out (the default network), the command has to work offline
     - the recipe measured under `strict`, for a uv project:
         1. `agent6 config set --repo sandbox.home cache`, so jailed commands in this repository share one persistent `HOME` and its tool cache
-        2. warm that cache once with your own networked command, from the checkout: `agent6 --config net.toml exec --new -- uv sync`, where `net.toml` sets `[sandbox] home = "cache"`, `network = "host"` and `extra_read_paths` for the resolver and CA files (`/etc/resolv.conf`, `/etc/hosts`, `/etc/nsswitch.conf`, `/etc/ssl`)
+        2. warm that cache once with your own networked command, from the checkout: `agent6 --config net.toml exec --new -- uv sync`, where `net.toml` sets `[sandbox] home = "cache"` and `network = "host"` (the host network brings the resolver and CA files with it)
         3. `agent6 config set --repo parallel.setup_command '["uv", "sync", "--offline"]'`: a new worktree's `.venv` is then built from the cache with no route out (1.2 s for a two-package project), importing the worktree's own source
     - the warmed cache serves `run --worktree` and forks, whose worktrees share the repository's `HOME`; a lane's clone and a machine state's clone have a `HOME` of their own, where that cache is absent
 - Running agent6 as root needs `--allow-root` / `AGENT6_ALLOW_ROOT=1` (plus a banner) and weakens the boundary
