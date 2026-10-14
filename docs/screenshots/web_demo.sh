@@ -40,8 +40,9 @@ echo "web_demo: seeding fixtures into $TMP"
 python3 docs/screenshots/seed.py >/dev/null
 
 echo "web_demo: starting agent6 web on :$PORT"
-# The server requires a secret; web_demo.py signs in with this one.
-export AGENT6_WEB_SECRET="docs-screenshot-tour"
+# The server requires a secret; web_demo.py signs in with this one, fresh for every tour.
+AGENT6_WEB_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+export AGENT6_WEB_SECRET
 ( cd "$AGENT6_DEMO_REPO" && exec agent6 web --host 127.0.0.1 --port "$PORT" ) >/dev/null 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true; rm -rf "$TMP"' EXIT

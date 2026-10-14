@@ -90,8 +90,9 @@ AGENT6_PROXY_MODE=replay AGENT6_PROXY_CASSETTE="$CASSETTE" AGENT6_PROXY_PORT="$P
 sleep 1
 
 echo "web machine demo: starting agent6 web on :$WEB_PORT"
-# The server requires a secret; web_demo.py signs in with this one.
-export AGENT6_WEB_SECRET="docs-screenshot-tour"
+# The server requires a secret; web_demo.py signs in with this one, fresh for every tour.
+AGENT6_WEB_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+export AGENT6_WEB_SECRET
 ( cd "$DEMO_REPO" && exec agent6 web --host 127.0.0.1 --port "$WEB_PORT" ) >/dev/null 2>&1 &
 SERVER=$!
 for _ in $(seq 1 40); do
