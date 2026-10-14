@@ -77,7 +77,7 @@ agent6 sessions dir [<id>]    # the repo's run history, or that session's direct
 agent6 exec ID -- <command>   # a command inside the run's jail and network, on your terminal or pipe
 agent6 exec --new [<command>] # a command, or your shell, in a fresh sandbox built from the config; no run needed
 agent6 forward ID 8000        # reach a port inside the run's network; --local-port N
-agent6 history search <text>  # grep every session's persisted data; --regex
+agent6 history search <text>  # grep this repository's sessions' persisted data; --regex
 agent6 ps                     # live sessions of every repository on the machine; --lanes, --json
 ```
 

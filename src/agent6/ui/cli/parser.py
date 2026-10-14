@@ -272,10 +272,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     hist_p = _common._sub(
         sub,
         "history",
-        help=("Search every session's transcripts and records (`sessions` shows one session)."),
+        help=(
+            "Search this repository's sessions' transcripts and records (`sessions` shows"
+            " one session)."
+        ),
     )
     hist_sub = hist_p.add_subparsers(dest="history_command", required=True, metavar="<subcommand>")
-    hist_search = _common._sub(hist_sub, "search", help="ripgrep-backed search over all sessions.")
+    hist_search = _common._sub(
+        hist_sub, "search", help="ripgrep-backed search over this repository's sessions."
+    )
     hist_search.add_argument(
         "query",
         nargs="?",
@@ -289,7 +294,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--session",
         default="",
         metavar="SESSION_ID",
-        help="Restrict to a single session id (default: all sessions).",
+        help="Restrict to a single session id (default: every session of this repository).",
     )
     hist_search_session.completer = completers._complete_session_ids  # type: ignore[attr-defined]
 

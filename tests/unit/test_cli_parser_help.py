@@ -267,7 +267,7 @@ def test_sessions_help_matches_each_commands_target_scope() -> None:
     assert "recorded target" in squashed
     assert "recovery command" in squashed
     history_search = _find(_find(parser, "history"), "search")
-    assert history_search.description == "ripgrep-backed search over all sessions."
+    assert history_search.description == "ripgrep-backed search over this repository's sessions."
 
 
 def test_machine_help_covers_running() -> None:
