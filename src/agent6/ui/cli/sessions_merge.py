@@ -132,7 +132,12 @@ def _plan_merge(  # noqa: PLR0911
         )
         return 2
     if not git_ops.branch_exists(cwd, target):
-        _common.error(f"target branch {target!r} does not exist; pass --into <existing-branch>.")
+        why = (
+            "the run started on a detached HEAD, so it has no base branch"
+            if not into and target == git_ops.DETACHED_HEAD
+            else f"target branch {target!r} does not exist"
+        )
+        _common.error(f"{why}; pass --into <existing-branch>.")
         return 2
     identity = git_ops.CommitIdentity(
         name=cfg.git.commit.name,

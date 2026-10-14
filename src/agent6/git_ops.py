@@ -33,13 +33,16 @@ _GIT_TIMEOUT_S = 120.0
 # How long a timed-out git gets to unlink its lockfiles on SIGTERM before SIGKILL.
 _GIT_TERM_GRACE_S = 5.0
 
+# What `git rev-parse --abbrev-ref HEAD` prints on a detached HEAD, where no branch is checked out.
+DETACHED_HEAD = "HEAD"
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class GitStatus:
     """The worktree against HEAD.
 
     Attributes:
-        branch: The checked-out branch.
+        branch: The checked-out branch; `DETACHED_HEAD` when HEAD is detached.
         head_sha: HEAD's sha; "" on an unborn branch.
         is_clean: No tracked file is modified and no untracked file exists outside the
             caller's exclude set.

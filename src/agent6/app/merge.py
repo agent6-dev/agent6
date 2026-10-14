@@ -457,6 +457,15 @@ def execute_merge(
     )
 
 
+def merge_command(session_id: str, base_branch: str) -> str:
+    """Return the command that lands a run, as a hint prints it.
+
+    A run started on a detached HEAD recorded no base branch, so the operator names the target.
+    """
+    into = " --into BRANCH" if base_branch == git_ops.DETACHED_HEAD else ""
+    return f"agent6 sessions merge {session_id}{into}"
+
+
 def left_behind_line(target: str, outcome: MergeOutcome) -> str:
     """Return the line for merged files the checkout keeps its own version of, or "".
 

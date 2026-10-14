@@ -15,7 +15,7 @@ import time
 from collections.abc import Mapping
 
 from agent6 import git_ops
-from agent6.app import resume
+from agent6.app import merge, resume
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -391,7 +391,7 @@ def _changes(
         return _Changes(
             format.format_branch(run_branch, manifest.base_branch, stamp.into), stamp.into
         )
-    merge_hint = f"merge with: agent6 sessions merge {session_id}"
+    merge_hint = f"merge with: {merge.merge_command(session_id, manifest.base_branch)}"
     if not git_ops.branch_exists(cwd, run_branch):
         chain = git_ops.chain_ref_for(session_id)
         if git_ops.chain_tip(cwd, chain) is None:

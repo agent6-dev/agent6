@@ -331,6 +331,32 @@ def test_runs_merge_refuses_unknown_into_without_creating_it(
     assert "nonexistent-branch" not in branches  # a typo must not fabricate a branch
 
 
+def test_merge_of_a_run_cut_from_a_detached_head_says_head_is_detached(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run started on a detached HEAD has no base branch; the refusal says so.
+
+    It read "target branch 'HEAD' does not exist", as if a branch had been deleted.
+    """
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-DETA11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _git(tmp_path, "checkout", "-q", "--detach")
+    manifest_path = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="run-DETA11"
+    ).manifest_path
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    # What the preflight records as the base on this checkout.
+    manifest["base_branch"] = git_ops.status(tmp_path).branch
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+
+    assert main(["sessions", "merge", "run-DETA11"]) == 2
+    err = capsys.readouterr().err
+    assert "detached HEAD" in err and "--into <existing-branch>" in err
+    assert "does not exist" not in err
+    assert main(["sessions", "merge", "run-DETA11", "--into", "main"]) == 0
+    assert "merged agent6/run-DETA11 into main" in capsys.readouterr().out
+
+
 def test_runs_merge_refuses_self_merge(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

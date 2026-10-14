@@ -355,7 +355,7 @@ def _print_run_branch_footer(
     elif result.completed and manifest is not None and (where := wire.commits_ref(manifest, cwd)):
         # The run branch, or the chain ref a branchless run commits to.
         reporter.out(f"\nchanges are on {where}")
-        reporter.out(f"  merge with:  agent6 sessions merge {layout.session_id}")
+        reporter.out(f"  merge with:  {merge.merge_command(layout.session_id, base_branch)}")
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
         # An operator who checked the run branch out should know how to leave it.
         current = ""

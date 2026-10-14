@@ -471,6 +471,29 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
     assert "git switch main" in out
 
 
+def test_end_banner_of_a_run_cut_from_a_detached_head_names_the_into_form(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run started on a detached HEAD has no base branch, so the merge line asks for one.
+
+    The bare `agent6 sessions merge ID` it printed fails there: the target has to be named.
+    """
+    import subprocess as sp
+
+    repo = _seeded_repo(tmp_path)
+    sp.run(["git", "checkout", "-q", "--detach"], cwd=repo, check=True)
+    monkeypatch.chdir(repo)
+    sp.run(["git", "update-ref", git_ops.chain_ref_for("det"), "HEAD"], cwd=repo, check=True)
+    manifest: dict[str, object] = {
+        "session_id": "det",
+        "run_branch": None,
+        # What the preflight records as the base on this checkout.
+        "base_branch": git_ops.status(repo).branch,
+    }
+    out = _end_footer(tmp_path, repo, "det", manifest, capsys)
+    assert "  merge with:  agent6 sessions merge det --into BRANCH\n" in out
+
+
 def test_interrupt_end_prints_cost_resume_and_branch_hints(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import portable
+from agent6 import git_ops, portable
 from agent6.sessions import ipc as sessions_ipc
 from agent6.ui.cli import (
     _common,  # pyright: ignore[reportPrivateUsage]
@@ -844,6 +844,28 @@ def test_status_says_where_the_changes_are(
     out = show()
     assert "changes:    refs/agent6/winsome-dawn-YWH5ZS/head (" in out
     assert "is gone; the commits are kept); merge with: agent6 sessions merge" in out
+
+
+def test_status_of_a_run_cut_from_a_detached_head_offers_merge_into(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run started on a detached HEAD has no base branch, so the merge hint asks for one.
+
+    The bare `agent6 sessions merge ID` it offered fails there: the target has to be named.
+    """
+    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
+    cwd = pathlib.Path.cwd()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=cwd, check=True)
+    subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "base"], cwd=cwd, check=True)
+    subprocess.run(["git", "checkout", "-q", "--detach"], cwd=cwd, check=True)
+    branch = "agent6/winsome-dawn-YWH5ZS"
+    subprocess.run(["git", "branch", branch], cwd=cwd, check=True)
+    # What the preflight records as the base on this checkout.
+    _stamp_manifest(d, run_branch=branch, base_branch=git_ops.status(cwd).branch)
+
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
+    out = capsys.readouterr().out
+    assert "; merge with: agent6 sessions merge winsome-dawn-YWH5ZS --into BRANCH\n" in out
 
 
 def test_status_of_an_undone_run_does_not_offer_a_merge(
