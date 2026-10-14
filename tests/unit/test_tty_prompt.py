@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 
+from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import _interact
@@ -184,46 +185,122 @@ def test_questioner_marks_headless_defaults(
     assert answer_events and answer_events[0]["source"] == "headless-default"
 
 
-def test_a_wait_park_narrates_the_attach_remedy(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A detached-wait session parked on ask_user says where to answer.
+class _Events:
+    def emit(self, event_type: str, **fields: Any) -> None:
+        pass
 
-    It printed nothing, so a piped `resume` looked hung for 300s.
-    """
-    lines: list[str] = []
-    monkeypatch.setattr(cli__steer, "tty_message", lines.append)
+
+def _no_terminal(monkeypatch: pytest.MonkeyPatch, *, away: str) -> list[str]:
+    """A run with no controlling terminal under the away mode; returns what `/dev/tty` got."""
+    tty_lines: list[str] = []
+    monkeypatch.setattr(cli__steer, "tty_message", tty_lines.append)
 
     def _away(_d: object) -> str:
-        return "wait"
+        return away
+
+    def _no_tty() -> bool:
+        return False
 
     monkeypatch.setattr(sessions_ipc, "away_mode", _away)
+    monkeypatch.setattr(portable, "has_controlling_tty", _no_tty)
+    return tty_lines
+
+
+def _approve(session_dir: pathlib.Path) -> bool:
+    return operator_prompts.OperatorPrompts(
+        approver=_interact.build_approver(session_dir),
+        journal=_Events().emit,
+        session_dir=session_dir,
+    ).approve("Allow run_command: ls", scope=None)
+
+
+def test_a_headless_park_names_the_prompt_and_the_attach_command_on_stderr(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run with no terminal says on stderr what it waits on, and that it was answered.
+
+    The park line named no prompt and the answer printed nothing, so the stream a headless run
+    is read through never heard of either.
+    """
+    tty_lines = _no_terminal(monkeypatch, away="wait")
+
+    def _reply(_d: object, _r: object) -> str:
+        return "yes"
+
+    monkeypatch.setattr(sessions_ipc, "await_frontend_reply", _reply)
+
+    assert _approve(tmp_path) is True
+
+    err = capsys.readouterr().err.splitlines()
+    assert err == [
+        f"[agent6] waiting on approval-1 (run_command); answer it with: agent6 attach"
+        f" {tmp_path.name}",
+        "[agent6] approval-1 approved (await-frontend)",
+    ]
+    assert tty_lines == []
+
+
+def test_a_headless_park_behind_a_live_front_end_prints_too(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A headless run a front-end answers prints the same two lines; it printed nothing."""
+    _no_terminal(monkeypatch, away="")
+
+    def _live(_d: object) -> bool:
+        return True
+
+    def _answer(_d: object, _id: object, **_k: object) -> str:
+        return "no"
+
+    monkeypatch.setattr(sessions_ipc, "frontend_is_live", _live)
+    monkeypatch.setattr(sessions_ipc, "read_answer", _answer)
+
+    assert _approve(tmp_path) is False
+
+    err = capsys.readouterr().err.splitlines()
+    assert len(err) == 2 and "waiting on approval-1 (run_command)" in err[0]
+    assert err[1] == "[agent6] approval-1 denied (frontend)"
+
+
+def test_a_headless_away_deny_prints_its_source(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A headless run that denies by its away mode says so; the deny printed nothing."""
+    _no_terminal(monkeypatch, away="deny")
+
+    assert _approve(tmp_path) is False
+
+    assert capsys.readouterr().err.splitlines() == ["[agent6] approval-1 denied (away-deny)"]
+
+
+def test_a_headless_question_park_says_where_to_answer_and_that_it_was(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run parked on ask_user says on stderr where to answer, then that it was answered.
+
+    It printed nothing at the answer.
+    """
+    tty_lines = _no_terminal(monkeypatch, away="wait")
 
     def _reply(_d: object, _r: object) -> tuple[str, ...]:
         return ("yes",)
 
     monkeypatch.setattr(sessions_ipc, "await_frontend_reply", _reply)
-
-    class _Events:
-        def emit(self, event_type: str, **fields: Any) -> None:
-            pass
-
     ask = operator_prompts.OperatorPrompts(
         questioner=_interact.build_questioner(tmp_path),
         journal=_Events().emit,
         session_dir=tmp_path,
     ).ask
-    ask((schema.UserQuestion(question="pick?", options=("a", "b")),))
-    assert any("question awaits a front-end" in ln and "agent6 attach" in ln for ln in lines)
 
-    lines.clear()
-    approve = operator_prompts.OperatorPrompts(
-        approver=_interact.build_approver(tmp_path),
-        journal=_Events().emit,
-        session_dir=tmp_path,
-    ).approve
-    approve("Allow run_command: ls", scope=None)
-    assert any("approval awaits a front-end" in ln and "agent6 attach" in ln for ln in lines)
+    ask((schema.UserQuestion(question="pick?", options=("a", "b")),))
+
+    err = capsys.readouterr().err.splitlines()
+    assert err == [
+        f"[agent6] waiting on question-1; answer it with: agent6 attach {tmp_path.name}"
+        f" (or: agent6 answer {tmp_path.name} TEXT)",
+        "[agent6] question-1 answered (frontend)",
+    ]
+    assert tty_lines == []
 
 
 def test_tty_prompt_ends_once_until_holds(tmp_path: pathlib.Path) -> None:

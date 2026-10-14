@@ -24,6 +24,11 @@ def _pause(cv: _console_view.ConsoleView | None) -> contextlib.AbstractContextMa
     return cv.pause() if cv is not None else contextlib.nullcontext()
 
 
+def _note(text: str) -> None:
+    """Print one `[agent6]` line on stderr, the stream a run with no terminal is read through."""
+    print(f"[agent6] {text}", file=sys.stderr, flush=True)
+
+
 def lane_away_mode() -> ipc.AwayMode:
     """Return the away-mode a fan-out's lanes run with.
 
@@ -129,30 +134,47 @@ def build_approver(
 
     def approve(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
         """Return one approval's answer: the front-end's, the away-mode's, or the terminal's."""
+        # A run with no terminal says on stderr what it waits on and how it was answered.
+        headless = not portable.has_controlling_tty()
+        tool = approval_parts(request.prompt)[0].removeprefix("Allow ")
+        parked = False
+
+        def park() -> None:
+            nonlocal parked
+            if not parked:
+                _note(
+                    f"waiting on {request.id} ({tool}); answer it with:"
+                    f" agent6 attach {session_dir.name}"
+                )
+            parked = True
+
+        def answered(
+            approved: bool, source: operator_prompts.Source
+        ) -> operator_prompts.ApprovalAnswer:
+            if parked or headless:
+                _note(f"{request.id} {'approved' if approved else 'denied'} ({source})")
+            return operator_prompts.ApprovalAnswer(approved, source)
+
         # A live front-end is always asked; away-mode governs only when nothing is attached.
         if ipc.frontend_is_live(session_dir):
+            if headless:
+                park()
             answer = ipc.read_answer(session_dir, request.id)
             if answer is not None:
-                return operator_prompts.ApprovalAnswer(
-                    ipc.record_answer(session_dir, answer, request.scope), "frontend"
-                )
+                return answered(ipc.record_answer(session_dir, answer, request.scope), "frontend")
         # Nothing attached: the detached run's away-mode governs.
         away = ipc.away_mode(session_dir)
         if away == "deny":
-            return operator_prompts.ApprovalAnswer(False, "away-deny")
-        wait_for_frontend = away == "wait" or not portable.has_controlling_tty()
-        if wait_for_frontend:
+            return answered(False, "away-deny")
+        if away == "wait" or headless:
             # Block until a front-end answers; a deny would discard the run's work.
-            _steer.tty_message(
-                f"[agent6] waiting: an approval awaits a front-end; answer it with:"
-                f" agent6 attach {session_dir.name}\n"
-            )
+            park()
             reply = ipc.await_frontend_reply(
                 session_dir,
                 lambda: ipc.read_answer(session_dir, request.id, timeout_s=20.0, dead_grace_s=8.0),
             )
             approved = reply is not None and ipc.record_answer(session_dir, reply, request.scope)
-            return operator_prompts.ApprovalAnswer(approved, "await-frontend")
+            return answered(approved, "await-frontend")
         steer = steer_cell[0] if steer_cell else None
         # The view is attached after the prompts are built, so it is read now.
         with _pause(console_cell[0] if console_cell else None):
@@ -199,18 +221,30 @@ def build_questioner(
     def ask(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         """Return one question prompt's answers: the front-end's, the away-mode's, or the tty's."""
         questions = request.questions
+        parked = False
+
+        def park() -> None:
+            nonlocal parked
+            if not parked:
+                _note(
+                    f"waiting on {request.id}; answer it with: agent6 attach {session_dir.name}"
+                    f" (or: agent6 answer {session_dir.name} TEXT)"
+                )
+            parked = True
+
         # A live front-end is always asked; away-mode is the fallback without one.
         if ipc.frontend_is_live(session_dir):
+            # A run with no terminal says on stderr what it waits on and that it was answered.
+            if not portable.has_controlling_tty():
+                park()
             answers = ipc.read_question_answers(session_dir, request.id)
             if answers is not None:
+                if parked:
+                    _note(f"{request.id} answered (frontend)")
                 return operator_prompts.QuestionAnswer(answers, "frontend")
         if ipc.away_mode(session_dir) == "wait":
             # Block until a front-end answers.
-            _steer.tty_message(
-                f"[agent6] waiting: a question awaits a front-end; answer it with:"
-                f" agent6 attach {session_dir.name}"
-                f" (or, with no terminal: agent6 answer {session_dir.name} TEXT)\n"
-            )
+            park()
             reply = ipc.await_frontend_reply(
                 session_dir,
                 lambda: ipc.read_question_answers(
@@ -218,7 +252,9 @@ def build_questioner(
                 ),
             )
             if isinstance(reply, tuple):
+                _note(f"{request.id} answered (frontend)")
                 return operator_prompts.QuestionAnswer(reply, "frontend")
+            _note(f"{request.id} went unanswered (away-wait)")
             return operator_prompts.QuestionAnswer(
                 tuple("" for _ in questions), "away-wait", unseen=True
             )
