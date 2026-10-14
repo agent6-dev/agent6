@@ -561,6 +561,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
     - its scripts run only through the jailed command path, subject to `run_commands`
 - `use_skill` is read-only and path-contained: the skill's own dir through a component-walked descriptor (any symlink hop or `..` inside it refused)
     - a skill directory or `SKILL.md` that is itself a link is followed, and a read that lands under `sandbox.hide_paths` or an agent6 private directory is refused, as the workspace file tools refuse it
+    - a skill whose `SKILL.md` resolves under one of those paths is not loaded for a run at all: its name, description and text stay out of the prompt's skill index, the `always` injection and `/name`, and the run prints a line naming it; `agent6 skills list` still shows it
     - skill dirs are not mounted into the jail; content reaches the model engine-side
 - Repo-local `.claude/skills/` are not discovered; only the installed dir and `[skills].extra_dirs` are scanned
 

@@ -38,7 +38,11 @@ from agent6.viewmodel import session_policy
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
     """Return the task-prompt prefix for the `--skill` names, and an error text or ""."""
     resolved = agent6_skills.operator_skills(
-        cfg.skills.enabled, cfg.skills.extra_dirs, cfg.skills.state, paths.data_dir() / "skills"
+        cfg.skills.enabled,
+        cfg.skills.extra_dirs,
+        cfg.skills.state,
+        paths.data_dir() / "skills",
+        hidden=paths.hidden_paths(pathlib.Path(p) for p in cfg.sandbox.hide_paths),
     )
     by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
     blocks: list[str] = []

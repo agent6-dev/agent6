@@ -89,7 +89,11 @@ def skill_menu_table(config_path: pathlib.Path | None = None) -> dict[str, tuple
     try:
         cfg = layer.load_effective(pathlib.Path.cwd(), config_path).config
         resolved = agent6_skills.operator_skills(
-            cfg.skills.enabled, cfg.skills.extra_dirs, cfg.skills.state, paths.data_dir() / "skills"
+            cfg.skills.enabled,
+            cfg.skills.extra_dirs,
+            cfg.skills.state,
+            paths.data_dir() / "skills",
+            hidden=paths.hidden_paths(pathlib.Path(p) for p in cfg.sandbox.hide_paths),
         )
     except Exception as exc:  # the pause prompt survives any config error
         print(f"[agent6] skill commands unavailable: {exc}")

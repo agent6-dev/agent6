@@ -112,15 +112,26 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], list[str]]:
     return fields, warnings
 
 
-def _load_skill(skill_dir: pathlib.Path) -> tuple[Skill | None, list[str]]:
+def _load_skill(
+    skill_dir: pathlib.Path, hidden: Sequence[pathlib.Path] = ()
+) -> tuple[Skill | None, list[str]]:
     """Load one skill directory.
+
+    Args:
+        skill_dir: The directory holding `SKILL.md`.
+        hidden: Resolved trees hidden from runs. A skill whose `SKILL.md` resolves under one
+            does not load: its name, description and text would reach the model's prompt.
 
     Returns:
         The skill, or None when it does not load, and the warnings.
     """
     path = skill_dir / "SKILL.md"
     try:
-        text = path.read_text(encoding="utf-8")
+        real = path.resolve()
+        if any(real.is_relative_to(tree) for tree in hidden):
+            return None, [f"{path}: not loaded, it resolves to {real}, a path hidden from runs"]
+        # The checked path is the one read: the link is not followed a second time.
+        text = real.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         # Discovery runs at startup; one unreadable file must not take down every run.
         return None, [f"{path}: unreadable ({exc})"]
@@ -159,7 +170,9 @@ def _is_file(path: pathlib.Path) -> bool:
     return (mode := _mode(path)) is not None and stat.S_ISREG(mode)
 
 
-def discover_skills(dirs: Sequence[pathlib.Path]) -> tuple[tuple[Skill, ...], tuple[str, ...]]:
+def discover_skills(
+    dirs: Sequence[pathlib.Path], hidden: Sequence[pathlib.Path] = ()
+) -> tuple[tuple[Skill, ...], tuple[str, ...]]:
     """Scan directories for skills, the first directory winning a duplicate name.
 
     A directory holds skill subdirectories or is a single skill itself; dotted
@@ -167,10 +180,14 @@ def discover_skills(dirs: Sequence[pathlib.Path]) -> tuple[tuple[Skill, ...], tu
 
     Args:
         dirs: The directories, in precedence order.
+        hidden: The trees hidden from runs (`agent6.paths.hidden_paths`); a skill that
+            resolves under one is left out, with a warning. Empty for the operator's own
+            `skills` verbs, which show the operator their files.
 
     Returns:
         The skills and the warnings.
     """
+    hidden = tuple(tree.resolve() for tree in hidden)
     found: dict[str, Skill] = {}
     warnings: list[str] = []
     for base in dirs:
@@ -190,7 +207,7 @@ def discover_skills(dirs: Sequence[pathlib.Path]) -> tuple[tuple[Skill, ...], tu
             warnings.append(f"{base}: unreadable ({exc})")
             continue
         for skill_dir in candidates:
-            skill, warns = _load_skill(skill_dir)
+            skill, warns = _load_skill(skill_dir, hidden)
             warnings.extend(warns)
             if skill is None:
                 continue
@@ -228,7 +245,12 @@ def resolve_states(skills: Sequence[Skill], state: Mapping[str, str]) -> Resolve
 
 
 def operator_skills(
-    enabled: bool, extra_dirs: Sequence[str], state: Mapping[str, str], installed_dir: pathlib.Path
+    enabled: bool,
+    extra_dirs: Sequence[str],
+    state: Mapping[str, str],
+    installed_dir: pathlib.Path,
+    *,
+    hidden: Sequence[pathlib.Path] = (),
 ) -> ResolvedSkills:
     """Return the skills a run has, from `[skills]`.
 
@@ -239,13 +261,14 @@ def operator_skills(
         extra_dirs: The `[skills].extra_dirs` search paths.
         state: The `[skills.state]` map.
         installed_dir: Where `agent6 skills install` puts skills.
+        hidden: The trees hidden from runs; a skill that resolves under one is left out.
 
     Returns:
         The resolved skills.
     """
     if not enabled:
         return ResolvedSkills(enabled=(), always=(), warnings=())
-    found, warns = discover_skills(skill_search_dirs(extra_dirs, installed_dir))
+    found, warns = discover_skills(skill_search_dirs(extra_dirs, installed_dir), hidden)
     resolved = resolve_states(found, state)
     return ResolvedSkills(
         enabled=resolved.enabled,

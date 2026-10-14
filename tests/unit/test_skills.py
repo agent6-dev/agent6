@@ -259,3 +259,29 @@ def test_a_skill_dir_the_operator_cannot_search_warns_instead_of_vanishing(
         inner.chmod(0o700)
     assert not found
     assert any("myskill" in w for w in warnings)
+
+
+def test_a_skill_that_resolves_under_a_hidden_path_is_not_loaded(tmp_path: pathlib.Path) -> None:
+    """A skill linked under a hidden path put its name, description and text in the prompt.
+
+    `use_skill` refused the read, but discovery had already read the file for the index and
+    for an `always` skill's injected text. A linked skill elsewhere still loads.
+    """
+    hidden, store, installed = tmp_path / "hidden", tmp_path / "dotfiles", tmp_path / "skills"
+    secret = _write_skill(hidden, "vault", PLAIN.replace("name: tidy", "name: vault"))
+    plain = _write_skill(hidden, "linked", PLAIN.replace("name: tidy", "name: linked"))
+    kept = _write_skill(store, "tidy", PLAIN)
+    installed.mkdir()
+    (installed / "vault").symlink_to(secret)  # the skill directory is a link
+    (installed / "linked").mkdir()
+    (installed / "linked" / "SKILL.md").symlink_to(plain / "SKILL.md")  # the file is a link
+    (installed / "tidy").symlink_to(kept)
+
+    resolved = skills.operator_skills(True, (), {"vault": "always"}, installed, hidden=(hidden,))
+
+    assert [s.name for s in resolved.enabled] == ["tidy"]
+    assert resolved.always == ()
+    blocked = [w for w in resolved.warnings if "hidden from runs" in w]
+    assert len(blocked) == 2 and all(str(hidden) in w for w in blocked), resolved.warnings
+    # With nothing hidden the same three load, so the filter is the only reason they went.
+    assert len(skills.operator_skills(True, (), {}, installed).enabled) == 3
