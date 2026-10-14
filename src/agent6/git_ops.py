@@ -30,6 +30,9 @@ class GitError(Exception):
 # Local ops finish in well under a second; this fires only on a stuck filesystem or a held lock.
 _GIT_TIMEOUT_S = 120.0
 
+# A name handed to git as a pathspec is the file, never a glob: `a*.txt` matches only itself.
+_LITERAL = {"GIT_LITERAL_PATHSPECS": "1"}
+
 # How long a timed-out git gets to unlink its lockfiles on SIGTERM before SIGKILL.
 _GIT_TERM_GRACE_S = 5.0
 
@@ -360,7 +363,7 @@ def paths_dirty(path: pathlib.Path, rel_paths: tuple[str, ...]) -> bool:
     """
     if not rel_paths:
         return False
-    res = _run(path, "status", "--porcelain", "--", *rel_paths, check=False)
+    res = _run(path, "status", "--porcelain", "--", *rel_paths, check=False, env_extra=_LITERAL)
     return bool(res.stdout.strip())
 
 
@@ -953,7 +956,7 @@ def commit_paths(
     """
     if not paths:
         raise GitError("commit_paths requires at least one path")
-    _run(path, "add", "--", *paths)
+    _run(path, "add", "--", *paths, env_extra=_LITERAL)
     return _commit(path, message, trailers=trailers, identity=identity, only_paths=paths)
 
 
@@ -1394,7 +1397,7 @@ def _commit(
     Returns:
         The new HEAD sha.
     """
-    env_extra = _identity_env(identity)
+    env_extra = {**(_identity_env(identity) or {}), **_LITERAL}
     full_message = _full_message(message, trailers, identity)
     argv = ["commit", "-m", full_message]
     if only_paths is not None:
@@ -1726,7 +1729,7 @@ def read_file_at(path: pathlib.Path, ref: str, name: str) -> str:
     Raises:
         GitError: The ref cannot be read or git fails.
     """
-    entries = _run(path, "ls-tree", "-z", ref, "--", name).stdout.split("\0")
+    entries = _run(path, "ls-tree", "-z", ref, "--", name, env_extra=_LITERAL).stdout.split("\0")
     for entry in entries:
         metadata, _, found = entry.partition("\t")
         if found == name and metadata.startswith(("100644 blob ", "100755 blob ")):

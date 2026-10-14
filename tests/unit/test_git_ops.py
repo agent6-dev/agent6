@@ -1960,3 +1960,17 @@ def test_an_excluded_path_that_git_now_ignores_does_not_fail_the_tree(
 
     held = set(git_ops.tree_paths(tmp_path, tree))
     assert held == {"README.md", ".gitignore", "calc.py"}
+
+
+def test_a_name_handed_to_git_is_the_file_and_never_a_glob(tmp_path: pathlib.Path) -> None:
+    """`commit_paths` and `paths_dirty` take `a*.txt` as that one file, not as a pattern."""
+    _init_repo(tmp_path)
+    (tmp_path / "a*.txt").write_text("star\n", encoding="utf-8")
+    (tmp_path / "ab.txt").write_text("other\n", encoding="utf-8")
+    assert git_ops.paths_dirty(tmp_path, ("a*.txt",))
+    git_ops.commit_paths(tmp_path, "one file", ("a*.txt",))
+    tracked = subprocess.run(
+        ["git", "-C", str(tmp_path), "ls-files"], capture_output=True, text=True, check=True
+    ).stdout.split()
+    assert "a*.txt" in tracked and "ab.txt" not in tracked
+    assert not git_ops.paths_dirty(tmp_path, ("a*.txt",))
