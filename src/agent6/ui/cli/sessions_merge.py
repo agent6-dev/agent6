@@ -25,6 +25,7 @@ from agent6.ui.cli import _common, sessions_cmds
 from agent6.viewmodel import listing, scan_session_log, tail_events, worker_models
 
 _UNSTARTED_FORK = "unmerged; fork has not started"
+_NO_RECORD = "no session record"
 
 # The gate words that mean the gate did not certify the run's final tree.
 _UNVERIFIED_WARNINGS = {
@@ -303,7 +304,7 @@ def _session_stamp(
         fork (kept, never deleted), else ""; the stamp is None when the manifest records no merge.
     """
     if layout is None:
-        return None, "no session record"
+        return None, _NO_RECORD
     try:
         manifest = sessions_manifest.read_manifest(layout.session_dir)
     except sessions_manifest.ManifestError:
@@ -464,7 +465,8 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | Non
         _common.error(f"{exc}")
         return 2
     repo_state = paths.state_dir(cwd)
-    deleted = squashed_deleted = merged_kept = unmerged_kept = live_kept = 0
+    deleted = squashed_deleted = merged_kept = live_kept = 0
+    kept_why: collections.Counter[str] = collections.Counter()
     for br in branches:
         if br == current:
             print(f"[agent6] skipped {br} (checked out)", file=sys.stderr)
@@ -480,13 +482,10 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | Non
             deleted += 1
             print(f"[agent6] deleted {br} (merged)")
             continue
-        if why:
-            unmerged_kept += 1
-            print(f"[agent6] kept {br} ({why}; review, then: git branch -D {br})")
-            continue
-        if stamp is None or not stamp.sha:
-            unmerged_kept += 1
-            print(f"[agent6] kept {br} (unmerged; review, then: git branch -D {br})")
+        if why or stamp is None or not stamp.sha:
+            label = why or "unmerged"
+            kept_why[label] += 1
+            print(f"[agent6] kept {br} ({label}; review, then: git branch -D {br})")
             continue
         state = landed(cwd, stamp, git_ops.branch_tip_sha(cwd, br), delete_squashed=delete_squashed)
         if _prune_branch(cwd, br, stamp, state, current):
@@ -499,10 +498,15 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | Non
     if not branches and not (refs_deleted or refs_kept or swept_any):
         print("[agent6] nothing to prune: no agent6/* run branches, no chain refs.")
         return 0
-    kept = merged_kept + unmerged_kept + live_kept
+    # A branch with no record cannot be confirmed merged: the stamp that held the squash is gone.
+    unrecorded_kept = kept_why.pop(_NO_RECORD, 0)
+    unmerged_kept = sum(kept_why.values())
+    kept = merged_kept + unmerged_kept + live_kept + unrecorded_kept
     total_deleted = deleted + squashed_deleted
     squashed_note = f" ({squashed_deleted} squash-merged)" if squashed_deleted else ""
-    live_note = f", {live_kept} live" if live_kept else ""
+    live_note = (f", {live_kept} live" if live_kept else "") + (
+        f", {unrecorded_kept} without a record" if unrecorded_kept else ""
+    )
     refs_note = ""
     if refs_deleted or refs_kept:
         why = ", ".join(f"{n} {reason}" for reason, n in sorted(refs_kept.items()))

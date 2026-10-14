@@ -1469,3 +1469,28 @@ def test_prune_keeps_a_live_runs_branch_whatever_its_stamp_says(
     assert _branch_exists(tmp_path, "agent6/live1") and _branch_exists(tmp_path, "agent6/live2")
     assert "kept agent6/live1 (live)" in out and "kept agent6/live2 (live)" in out
     assert "2 live" in out
+
+
+def test_prune_counts_a_branch_without_a_record_apart_from_the_unmerged(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A squash-merged run whose record is gone is counted as one without a record.
+
+    Nothing can confirm the squash any more, so it is not an unmerged branch either.
+    """
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    _make_branch(tmp_path, "norec11", "n.txt")
+    _git(tmp_path, "merge", "--squash", "agent6/norec11")
+    _git(tmp_path, "commit", "-q", "-m", "squash norec11")
+
+    assert main(["sessions", "prune"]) == 0
+
+    out = capsys.readouterr().out
+    assert "kept agent6/norec11 (no session record; review, then: git branch -D" in out
+    assert "kept 1 (0 merged, 0 unmerged, 1 without a record)" in out
