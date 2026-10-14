@@ -30,6 +30,7 @@ class VerifyVerdict:
         ever_failed: Whether any verify failed this execution.
         adopted: The gate adopted mid-run, () when the gate is configured or absent.
         unadoptable: Every adopted argv that proved unrunnable, never re-adopted.
+        declined: The last reason inference adopted nothing, logged when it changes.
     """
 
     last_ok: bool | None = None
@@ -46,6 +47,7 @@ class VerifyVerdict:
     ever_failed: bool = False
     adopted: tuple[str, ...] = ()
     unadoptable: set[tuple[str, ...]] = dataclasses.field(default_factory=set)
+    declined: str = ""
 
     def note_pass(self) -> None:
         """Record a green verify: the tree as it stands is verified and the streaks reset."""

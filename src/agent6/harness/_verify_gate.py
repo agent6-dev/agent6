@@ -347,7 +347,9 @@ class VerifyGate:
         )
         if not inferred.argv:
             # A runner the jail cannot execute stays unadopted: the run settles, no abort.
-            if passed := verify_infer.passed_over_text(inferred):
+            passed = verify_infer.passed_over_text(inferred)
+            if passed and passed != state.verify.declined:
+                state.verify.declined = passed
                 self.log(f"LOOP: verify inference declined; {passed}")
             return
         if inferred.argv in state.verify.unadoptable:

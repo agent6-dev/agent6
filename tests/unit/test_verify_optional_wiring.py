@@ -740,6 +740,41 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: pathlib.Path
     assert wf.gate.command(_verify_verdict.VerifyVerdict()) == ()
 
 
+def test_the_decline_line_prints_when_its_reason_changes(
+    tmp_path: pathlib.Path, jail_bin: pathlib.Path
+) -> None:
+    """A gateless run's commits re-run inference; the same decline was logged after each one."""
+    from agent6.config import Config
+    from agent6.harness import _loop_state, loop
+
+    (jail_bin / "npm").unlink()
+    (tmp_path / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
+    lines: list[str] = []
+    wf = loop.Harness(
+        chain=_chain.RunChain(tmp_path),
+        config=Config(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
+        logger=lines.append,
+    )
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    for i in (1, 2, 3):
+        turn = _loop_state.TurnState(iteration=i, resp=mock.MagicMock(), assistant=mock.MagicMock())
+        wf.gate.maybe_adopt(state, turn)
+    declined = [line for line in lines if "verify inference declined" in line]
+    assert len(declined) == 1, lines
+    assert "the sandbox has no `npm`" in declined[0]
+    # A project whose runner the jail lacks for another reason gets its own line.
+    (tmp_path / "package.json").unlink()
+    (jail_bin / "cargo").unlink()
+    (tmp_path / "Cargo.toml").write_text('[package]\nname = "x"\n', encoding="utf-8")
+    turn = _loop_state.TurnState(iteration=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    wf.gate.maybe_adopt(state, turn)
+    declined = [line for line in lines if "verify inference declined" in line]
+    assert len(declined) == 2, lines
+    assert "the sandbox has no `cargo`" in declined[1]
+
+
 def test_prompt_says_nothing_commits_under_commit_per_step_off(tmp_path: pathlib.Path) -> None:
     """With `[git].commit_per_step = false` the prompt never promises a commit after a green."""
     repo = _repo(tmp_path)
