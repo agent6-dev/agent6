@@ -476,3 +476,16 @@ def test_show_offers_resume_for_a_run_that_stopped_short(
     assert main(["sessions", "show", "fan-l1"]) == 0
 
     assert "resume with:  agent6 resume fan-l1" in capsys.readouterr().out
+
+
+def test_show_json_and_the_listing_name_the_end_reason_alike(
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Both JSON forms carry `end_reason`; the listing's `reason` stays the label's detail."""
+    assert main(["sessions", "show", "fan-l1", "--json"]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["end_reason"] == "finish_session" and "reason" not in shown
+
+    assert main(["sessions", "list", "--json"]) == 0
+    lanes = {r["session_id"]: r for r in json.loads(capsys.readouterr().out)[0]["lanes"]}
+    assert (lanes["fan-l1"]["end_reason"], lanes["fan-l1"]["reason"]) == ("finish_session", "")

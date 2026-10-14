@@ -336,7 +336,7 @@ def test_show_words_the_end_instead_of_the_reason_token(
     assert f"ended:      {summary}\n" in text and reason not in text
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert obj["end_summary"] == summary and obj["reason"] == reason
+    assert obj["end_summary"] == summary and obj["end_reason"] == reason
 
 
 def test_status_leads_with_the_listing_word_then_the_raw_reason(

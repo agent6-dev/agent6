@@ -339,7 +339,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "last_event": scan.last_type,
                     "last_event_age_s": round(last_age, 1) if last_age is not None else None,
                     "elapsed_s": round(elapsed, 1) if elapsed is not None else None,
-                    "reason": scan.end_reason if scan.finished else None,
+                    "end_reason": scan.end_reason if scan.finished else None,
                     "verified": scan.verified or None,
                     "input_tokens": scan.input_tokens,
                     "output_tokens": scan.output_tokens,

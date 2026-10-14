@@ -92,7 +92,7 @@ The tokens and the points against `max_percent` on `sessions show` are the lates
 `elapsed` on a resumed run is the wall time from its first start to its last event, the time between executions included.
 `N questions unanswered` beside a status counts the questions of the current execution that nobody was attached to see; a resume starts the count again.
 
-`sessions show` and the conversation's last line print the sentence the run ended on; `--json` keeps the `reason` word for scripts.
+`sessions show` and the conversation's last line print the sentence the run ended on; `--json` keeps the `end_reason` word for scripts.
 A `steer` reaches the model at its next step, and `steer --now` interrupts the call in flight; every surface acknowledges it in those words.
 
 `agent6 exec` runs your own command on your own stdio.
@@ -163,7 +163,7 @@ Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scr
 Exit `0` also covers harness-declared and gateless ends, including a run that changed nothing.
 [`git.auto_merge`](config.md#git) lands a run only when the model ended it with `finish_session`; an exit `0` from any other end stays on its branch.
 
-Every end has one reason (`reason` in `agent6 sessions show --json`), and each reason one row:
+Every end has one reason (`end_reason` in `agent6 sessions show --json` and `sessions list --json`), and each reason one row:
 
 | End reason | Headline | Exit code |
 |---|---|---|

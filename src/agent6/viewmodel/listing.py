@@ -172,6 +172,7 @@ class SessionSummary:
             answered, planned, finished, stopped, undone, failed).
         reason: The detail beside the word: the end reason when failed, what it waits
             on when waiting, or a pending stop after the step.
+        end_reason: The last `session.end` reason word; "" while the session runs.
         cost_usd: The cumulative spend across executions.
         usd_partial: `cost_usd` is a lower bound: some execution had unpriced spend.
         mtime: The last-activity time as epoch seconds.
@@ -198,6 +199,7 @@ class SessionSummary:
     cost_usd: float
     usd_partial: bool
     mtime: float
+    end_reason: str = ""
     unmerged: bool = False
     verify_ok: bool | None = None
     coordinator: str = ""
@@ -340,6 +342,7 @@ def summary_row(
         "task_line": task_snippet(s.task),
         "status": s.status,
         "reason": s.reason,
+        "end_reason": s.end_reason,
         "label": format.listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
         "level": format.status_level(s.status),
         "mtime": s.mtime,
@@ -1195,6 +1198,7 @@ def summarize_session_dir(
         task=task,
         status=word,
         reason=reason,
+        end_reason=scan.end_reason if scan.finished else "",
         unmerged=has_unmerged,
         cost_usd=scan.cost_usd or 0.0,
         usd_partial=scan.usd_partial,
