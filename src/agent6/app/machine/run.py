@@ -36,6 +36,7 @@ from agent6.machine import (
     MachineEnd,
     MachineError,
     MachineJournal,
+    ToolExecResult,
     ToolPolicyFactory,
     ToolState,
     bundle_drift,
@@ -494,6 +495,13 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                         machine_state.wait_line(spec.machine, pending.state, pending.wake_at)
                     )
 
+            def say_tool_failure(state: str, outcome: ToolExecResult) -> None:
+                """Name a failed tool step here: a bare `nonzero` edge reads as progress."""
+                detail = machine_state.tool_failure(
+                    outcome.exit_code, outcome.timed_out, outcome.stderr or outcome.stdout
+                )
+                reporter.note(f"state {state!r}: {detail}")
+
             world = LiveWorld(
                 cwd=cwd,
                 journal=journal,
@@ -515,6 +523,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 state_log_keep=cfg.machine.state_log_keep,
                 notify_hook=surface_notify,
                 on_wait=say_where_it_parked,
+                on_tool_failure=say_tool_failure,
             )
             # Stamped after the last refusal; the finally always clears it.
             ipc.write_worker_pid(root, os.getpid())

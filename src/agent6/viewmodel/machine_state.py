@@ -115,27 +115,33 @@ class MachineState:
 
 def _transition_view(s: journal.StepEvent) -> TransitionView:
     """Return a step event as its view, with the detail and line rendered."""
-    detail = _fact_detail(s)
+    detail = fact_detail(s)
     line = format.format_transition(s.seq, s.state, s.label, s.goto, detail)
     return TransitionView(
         seq=s.seq, state=s.state, label=s.label, goto=s.goto, detail=detail, line=line
     )
 
 
-def _fact_detail(step: journal.StepEvent) -> str:
+def tool_failure(exit_code: int, timed_out: bool, output: str) -> str:
+    """Return a failed tool command's exit code and last output line, "" on success.
+
+    Args:
+        exit_code: The command's exit code.
+        timed_out: The command hit its timeout.
+        output: Its stderr, or its stdout when stderr is empty.
+    """
+    if exit_code == 0 and not timed_out:
+        return ""
+    tail = next((ln.strip() for ln in reversed(output.splitlines()) if ln.strip()), "")
+    head = "timed out" if timed_out else f"exit {exit_code}"
+    return f"{head}: {tail[:160]}" if tail else head
+
+
+def fact_detail(step: journal.StepEvent) -> str:
     """Return bounded failure evidence for one transition, "" on success."""
     fact = step.fact
-    if isinstance(fact, journal.ToolFact) and (fact.exit_code != 0 or fact.timed_out):
-        tail = next(
-            (
-                ln.strip()
-                for ln in reversed((fact.stderr or fact.stdout).splitlines())
-                if ln.strip()
-            ),
-            "",
-        )
-        head = "timed out" if fact.timed_out else f"exit {fact.exit_code}"
-        return f"{head}: {tail[:160]}" if tail else head
+    if isinstance(fact, journal.ToolFact):
+        return tool_failure(fact.exit_code, fact.timed_out, fact.stderr or fact.stdout)
     if isinstance(fact, journal.AgentFact) and fact.outcome != "ok":
         return f"{fact.outcome}: {fact.reason}"[:160]
     return ""

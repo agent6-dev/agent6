@@ -300,9 +300,10 @@ def _cmd_machine_status(machine_id: str) -> int:
     if step_events:
         print("  recent steps:")
         for event in step_events[-5:]:
-            print(
-                f"    {format.format_transition(event.seq, event.state, event.label, event.goto)}"
+            line = format.format_transition(
+                event.seq, event.state, event.label, event.goto, machine_state.fact_detail(event)
             )
+            print(f"    {line}")
     return 0
 
 

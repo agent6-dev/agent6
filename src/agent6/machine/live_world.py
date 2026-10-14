@@ -83,6 +83,8 @@ class LiveWorld:
             machines so tools run in the machine's own tree. None is the plain jail.
         on_wait: Fired once as a wait starts to block, so the foreground run names where it
             parked; it cannot affect the sleep.
+        on_tool_failure: Fired with the state and the result of a tool command that exited
+            nonzero or timed out, so the foreground run names it; it cannot affect the step.
     """
 
     cwd: pathlib.Path
@@ -98,6 +100,7 @@ class LiveWorld:
     data_dir: pathlib.Path | None = None
     jail_runner: Callable[[kinds.JailPolicy], kinds.CommandResult] | None = None
     on_wait: Callable[[], None] | None = None
+    on_tool_failure: Callable[[str, engine.ToolExecResult], None] | None = None
 
     def run_tool(
         self,
@@ -131,12 +134,16 @@ class LiveWorld:
         except jail.JailUnavailableError as exc:
             raise engine.EngineError(f"jail unavailable: {exc}") from exc
         # run_in_jail returns rc 124 on a timeout and never raises TimeoutExpired.
-        return engine.ToolExecResult(
+        outcome = engine.ToolExecResult(
             exit_code=result.returncode,
             stdout=result.stdout,
             timed_out=result.returncode == 124,
             stderr=result.stderr,
         )
+        if outcome.exit_code != 0 and self.on_tool_failure is not None:
+            with contextlib.suppress(OSError):  # a dead terminal never stops a machine
+                self.on_tool_failure(state, outcome)
+        return outcome
 
     def run_agent(self, request: engine.AgentRequest) -> engine.AgentExecResult:
         """Run one agent loop through the injected runner.

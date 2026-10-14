@@ -1501,3 +1501,61 @@ def test_a_name_two_files_declare_is_refused_with_both(
         (tmp_path / name).write_text(WAITER_DELAYED, encoding="utf-8")
     with pytest.raises(errors.OperatorError, match=r"a\.asm\.toml, b\.asm\.toml\); name the file"):
         main(["machine", "check", "waiter_delayed"])
+
+
+FAILING_TOOL = """
+machine = "failing_tool"
+version = 1
+initial = "check"
+
+[budget]
+max_transitions = 5
+
+[states.check]
+kind = "tool"
+command = ["true"]
+timeout_secs = 5
+on = { ok = "done", nonzero = "broken", timeout = "broken" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "checked"
+
+[states.broken]
+kind = "terminal"
+status = "failed"
+reason = "the check failed"
+"""
+
+
+def test_a_failed_tool_step_says_why_in_the_run_and_in_status(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A bare `nonzero` edge reads as progress: the exit code and last output line ride along."""
+    from agent6 import kinds
+    from agent6.app import reporter as app_reporter
+    from agent6.app.machine import run
+    from agent6.sandbox import jail
+
+    def failing(policy: kinds.JailPolicy) -> kinds.CommandResult:
+        return kinds.CommandResult(
+            argv=policy.argv,
+            returncode=3,
+            stdout="",
+            stderr="warming up\npython3: can't open file 'scripts/x.py'\n",
+            duration_s=0.0,
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(jail, "run_in_jail", failing)
+    mfile = tmp_path / "failing.asm.toml"
+    mfile.write_text(FAILING_TOOL, encoding="utf-8")
+    said: list[str] = []
+    assert run.run_machine(mfile, app_reporter.Reporter(out=said.append, err=said.append)) == 1
+    assert "[agent6] state 'check': exit 3: python3: can't open file 'scripts/x.py'" in said
+    assert main(["machine", "status", "failing_tool"]) == 0
+    assert (
+        "[0] check --nonzero--> broken -- exit 3: python3: can't open file 'scripts/x.py'"
+        in capsys.readouterr().out
+    )
