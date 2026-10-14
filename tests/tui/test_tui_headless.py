@@ -10,6 +10,7 @@ the approval is keyboard-answerable, and the steer composer writes the right bri
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import os
 import pathlib
@@ -25,7 +26,7 @@ from textual import widgets
 from agent6.app import stop as app_stop
 from agent6.sessions import ipc, manifest
 from agent6.ui import spawn
-from agent6.ui.tui import _dashboard_header, composer, modals
+from agent6.ui.tui import _dashboard_header, composer, modals, prompts
 from agent6.ui.tui import app as tui_app
 from agent6.viewmodel import state
 from tests.tui._waits import answer_written, focus_answers, wait_for
@@ -482,6 +483,98 @@ def test_start_question_before_session_start_is_answerable(tmp_path: pathlib.Pat
             ) == json.dumps(["stash"])
 
     asyncio.run(scenario())
+
+
+def test_a_question_answered_from_another_front_end_closes_the_modal(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A question another front-end answered closes its modal, which writes no answer.
+
+    The modal stayed up over a run that had moved on, and its later submit wrote an answer
+    file for a prompt already closed.
+    """
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"mode": "run", "session_id": tmp_path.name, "user_task": "t"}),
+        encoding="utf-8",
+    )
+    events = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {
+            "type": "question.prompt",
+            "id": "question-1",
+            "questions": [{"question": "Which name?", "options": ["left", "right"]}],
+        },
+    ]
+    logs = tmp_path / "logs.jsonl"
+    logs.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    answer = {
+        "type": "question.answer",
+        "id": "question-1",
+        "answers": ["left"],
+        "source": "frontend",
+    }
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await wait_for(
+                pilot,
+                lambda: (
+                    isinstance(app.screen, modals.QuestionModal)
+                    and bool(app.screen.query("#opt-0-0"))
+                ),
+                "the question modal",
+            )
+            assert "Which name?" in app.export_screenshot().replace("&#160;", " ")
+            with logs.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(answer) + "\n")
+            await wait_for(
+                pilot,
+                lambda: not isinstance(app.screen, modals.QuestionModal),
+                "the modal to close",
+            )
+            await pilot.pause()
+            assert "Which name?" not in app.export_screenshot().replace("&#160;", " ")
+            assert not (tmp_path / "questions" / "question-1.answer").exists()
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert notes == [ipc.ANSWERED_ELSEWHERE]
+
+    asyncio.run(scenario())
+
+
+def test_a_submit_on_a_question_answered_elsewhere_writes_nothing(tmp_path: pathlib.Path) -> None:
+    """A modal under another screen when its question closes writes nothing on its submit.
+
+    The submit wrote an answer file for a prompt the journal records as answered.
+    """
+    said: list[str] = []
+    callbacks: list[Any] = []
+
+    class _App:
+        screen = object()  # some other screen is on top
+
+        def push_screen(self, _modal: object, callback: Any) -> None:
+            callbacks.append(callback)
+
+        def notify(self, message: str, **_kw: object) -> None:
+            said.append(message)
+
+    dispatcher = prompts.PromptDispatcher(
+        _App(),  # pyright: ignore[reportArgumentType]
+        answerable=lambda: True,
+        lost="lost",
+    )
+    question = state.QuestionPrompt(id="question-1", questions=(state.Question("Which?"),))
+    fold = state.initial_state()
+    dispatcher.dispatch(tmp_path, dataclasses.replace(fold, pending_questions=(question,)))
+    closed = dataclasses.replace(question, answered=True)
+    dispatcher.dispatch(tmp_path, dataclasses.replace(fold, pending_questions=(closed,)))
+
+    callbacks[0](("late",))
+
+    assert said == [ipc.ANSWERED_ELSEWHERE]
+    assert not (tmp_path / "questions" / "question-1.answer").exists()
 
 
 def test_back_and_quit_exit_codes(tmp_path: pathlib.Path) -> None:

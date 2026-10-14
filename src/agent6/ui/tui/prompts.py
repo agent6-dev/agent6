@@ -4,7 +4,8 @@
 
 One modal per unanswered question (approvals dock as a row instead), its answer
 written to the session's file bridge, and the claim every surface takes a prompt
-through. Shared by the run views and the machine watch view.
+through. A question another front-end answered closes its modal, which writes
+nothing. Shared by the run views and the machine watch view.
 """
 
 from __future__ import annotations
@@ -37,19 +38,26 @@ class PromptDispatcher:
         self._answerable = answerable
         self._lost = lost
         self._seen: set[str] = set()
+        # The modals still waiting on the operator, by claim key.
+        self._open: dict[str, modals.QuestionModal] = {}
 
     def reset(self) -> None:
         """Forget every claimed prompt, at a session boundary."""
         self._seen.clear()
 
     def dispatch(self, session_dir: pathlib.Path, state: viewmodel_state.SessionState) -> None:
-        """Push a modal for each unanswered, unclaimed question in the state."""
+        """Push a modal for each unanswered, unclaimed question; close one answered elsewhere."""
         for qp in state.pending_questions:
-            if not qp.answered and self.claim(session_dir, qp.id):
-                self._app.push_screen(
-                    modals.QuestionModal(qp.id, qp.questions, from_harness=qp.from_harness),
-                    self._on_question(session_dir, qp.id),
-                )
+            key = f"{session_dir}|{qp.id}"
+            if qp.answered:
+                # The journal holds an answer this modal did not write: it takes none now.
+                closed = self._open.pop(key, None)
+                if closed is not None and self._app.screen is closed:
+                    closed.dismiss(None)
+            elif self.claim(session_dir, qp.id):
+                modal = modals.QuestionModal(qp.id, qp.questions, from_harness=qp.from_harness)
+                self._open[key] = modal
+                self._app.push_screen(modal, self._on_question(session_dir, qp.id))
 
     def claim(self, session_dir: pathlib.Path, prompt_id: str) -> bool:
         """Claim a prompt for one surface.
@@ -78,6 +86,9 @@ class PromptDispatcher:
         self, session_dir: pathlib.Path, prompt_id: str
     ) -> Callable[[tuple[str, ...] | None], None]:
         def cb(answers: tuple[str, ...] | None) -> None:
+            if self._open.pop(f"{session_dir}|{prompt_id}", None) is None:
+                self._app.notify(ipc.ANSWERED_ELSEWHERE, severity="warning", timeout=6.0)
+                return
             if not self._answerable():
                 self._app.notify(self._lost, severity="warning", timeout=6.0)
                 return
