@@ -142,8 +142,9 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         help=(
             "Send an instruction to a live run, as the TUI and web composers do; the"
             " run takes it at its next step. It takes the composer directives too, so"
-            " `/task <text>` queues work and `/btw <question>` asks beside the run"
-            " (pause-menu directives such as abort and /undo travel the same way)."
+            " `/task <text>` queues work and `/btw <question>` asks beside the run;"
+            " `/undo` needs a composer: the TUI, the web, a `run -i` prompt, or a live"
+            " run's pause menu (Ctrl-C)."
             " Live runs only: for a stopped session, `agent6 resume ID --steer TEXT`"
             " queues one for its next execution."
         ),
