@@ -283,55 +283,28 @@ def on_a_terminal(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]]:
     return spawned
 
 
-def test_on_a_terminal_the_command_takes_the_pty_through_setsid(
+def test_on_a_terminal_the_command_gets_the_pty_as_its_controlling_terminal(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, on_a_terminal: list[tuple[str, ...]]
 ) -> None:
-    setsid = _shell_on_path(tmp_path, monkeypatch, "setsid")
-    assert exec_cmds.run_attached(_unsandboxed(tmp_path, "true")) == 0
-    assert on_a_terminal == [(setsid, "--ctty", "--wait", "/bin/sh", "-c", "true")]
+    """The command runs as given, on a pty that is its controlling terminal.
 
-
-def test_on_the_pty_a_redirected_stderr_stays_the_operators(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, on_a_terminal: list[tuple[str, ...]]
-) -> None:
-    """`agent6 exec --new CMD 2> FILE` on a terminal writes the command's stderr to FILE."""
-    _shell_on_path(tmp_path, monkeypatch, "setsid")
+    A `setsid --ctty --wait` wrapper made job control depend on util-linux in the sandbox.
+    `agent6 exec --new CMD 2> FILE` on a terminal writes the command's stderr to FILE.
+    """
     stdio: list[dict[str, Any]] = []
 
-    def _spawn(_policy: kinds.JailPolicy, **given: Any) -> _Ended:
+    def _spawn(policy: kinds.JailPolicy, **given: Any) -> _Ended:
+        on_a_terminal.append(policy.argv)
         stdio.append(given)
         return _Ended()
 
     monkeypatch.setattr(jail, "spawn_in_jail", _spawn)
     assert exec_cmds.run_attached(_unsandboxed(tmp_path, "true")) == 0
-    [given] = stdio
-    assert given["stderr"] is None
-    assert given["stdin"] == given["stdout"] and given["stdin"] is not None
-
-
-def test_without_setsid_the_command_shares_the_terminal_and_a_note_says_so(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    on_a_terminal: list[tuple[str, ...]],
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """With no `setsid` a pty would leave the command deaf to Ctrl-C, so stdio passes through."""
-    _shell_on_path(tmp_path, monkeypatch, "zsh")
-
-    def no_pty() -> tuple[int, int]:
-        raise AssertionError("a pty was opened")
-
-    def modes(_fd: int) -> list[int]:
-        return [0]
-
-    monkeypatch.setattr(exec_cmds.pty, "openpty", no_pty)
-    monkeypatch.setattr(exec_cmds.termios, "tcgetattr", modes)
-    assert exec_cmds.run_attached(_unsandboxed(tmp_path, "true")) == 0
     assert on_a_terminal == [("/bin/sh", "-c", "true")]
-    assert (
-        "the sandbox has no `setsid`: the command shares this terminal, with no job control,"
-        " and Ctrl-C ends it." in capsys.readouterr().err
-    )
+    [given] = stdio
+    assert given["controlling_terminal"] is True
+    assert given["stdin"] == given["stdout"] and given["stdin"] is not None
+    assert given["stderr"] is None
 
 
 def _unsandboxed(tmp_path: pathlib.Path, script: str) -> kinds.JailPolicy:

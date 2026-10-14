@@ -117,22 +117,27 @@ _UNSANDBOXED = {"AGENT6_DANGEROUSLY_DISABLE_SANDBOX": "1"}
 
 
 @pytest.mark.parametrize(
-    "level",
+    ("level", "isolation"),
     [
-        pytest.param(_UNSANDBOXED, id="none"),
-        pytest.param({}, id="default", marks=pytest.mark.needs_namespaces),
+        pytest.param(_UNSANDBOXED, None, id="none"),
+        pytest.param({}, "hardened", id="hardened"),
+        pytest.param({}, None, id="default", marks=pytest.mark.needs_namespaces),
     ],
 )
 def test_a_terminal_gets_a_shell_with_job_control(
-    tmp_path: pathlib.Path, level: dict[str, str]
+    tmp_path: pathlib.Path, level: dict[str, str], isolation: str | None
 ) -> None:
     """On a terminal the shell reads what is typed, Ctrl-C ends only its job, and exit 3 is 3.
 
-    At the default level the launcher starts the command in a background process group: a
-    command that never took the pty stops at its first read.
+    The launcher starts a command in a process group of its own: left in the background of
+    its terminal, the shell stops at its first read.
     """
     env = {**os.environ, **level, "SHELL": "/bin/sh", "PS1": "$ "}
-    proc, master = _on_a_pty(_exec_new(), tmp_path, env)
+    config = None
+    if isolation is not None:
+        config = tmp_path / "level.toml"
+        config.write_text(f'[sandbox]\nisolation = "{isolation}"\n', encoding="utf-8")
+    proc, master = _on_a_pty(_exec_new(config=config), tmp_path, env)
     try:
         _read_until(master, rb"/bin/sh in a fresh sandbox, isolation \w+\.")
         os.write(master, b"echo MARK-$((6*7))\n")

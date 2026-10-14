@@ -99,9 +99,10 @@ It drops a control sequence inside text the model influenced (a file name, a com
 - the spinners and the interactive composer write their own erase and cursor sequences under the wrapper, the composer with its rows scrubbed
 - the ACP and MCP stdio transports write protocol bytes to their peer, not a terminal; the TUI and the web render text as text by construction
 - `agent6 exec` is the exception: the operator's own command writes the terminal unscrubbed, so `agent6 exec cat FILE` prints whatever sequences a model-written file holds
-    - with stdin and stdout on a terminal, and util-linux `setsid` on the sandbox's PATH, the command runs on a pty of its own and agent6 relays the bytes, so it never holds the operator's terminal device
+    - with stdin and stdout on a terminal the command runs on a pty of its own and agent6 relays the bytes, so it never holds the operator's terminal device.
+      The pty is the controlling terminal of the command's session, and the launcher puts the command's process group in its foreground before the command starts
     - otherwise it inherits agent6's stdin, stdout and stderr as they are, a terminal among them included: it can change that terminal's modes, which agent6 puts back when the command ends
-    - it runs in a session of its own, so an inherited terminal is never its controlling terminal: the kernel refuses it `TIOCSCTTY` on that terminal
+    - it runs in a session of its own, so an inherited terminal is never its controlling terminal: the kernel refuses it `TIOCSCTTY` on that terminal, and it takes no foreground there
 
 ### 2. Sandbox
 

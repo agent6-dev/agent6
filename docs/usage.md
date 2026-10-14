@@ -77,9 +77,10 @@ agent6 ps                     # live sessions of every repository on the machine
 
 `agent6 exec` runs your own command on your own stdio.
 
-- with stdin and stdout on a terminal the command gets a terminal of its own, with job control (it needs util-linux `setsid` on the sandbox's PATH, and shares your terminal without it); otherwise stdin, stdout and stderr pass through, so pipes and redirects work
+- with stdin and stdout on a terminal the command gets a terminal of its own, with job control; otherwise stdin, stdout and stderr pass through, so pipes and redirects work
+- Ctrl-Z stops a job of the shell you opened; a command you run directly keeps running, since no shell could resume it
 - inside strict there is no `/dev/pts` or `/dev/tty`: `tty` prints "not a tty", and a program that opens `/dev/tty` fails
-- a command a signal ended reports 137 under strict and hardened, whatever the signal; on a terminal it reports the signal's number instead, on every level, and `setsid` prints "did not exit normally"
+- a command a signal ended reports 128 plus the signal, on every level
 
 The steer directives work from every composer, the pause menu, and `agent6 steer ID "/task ..."` from a script.
 

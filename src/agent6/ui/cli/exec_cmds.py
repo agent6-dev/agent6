@@ -10,7 +10,6 @@ tests their sandbox settings by hand. `exec_policy` and `run_attached` also serv
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import fcntl
 import os
 import pathlib
@@ -152,11 +151,10 @@ def run_attached(policy: kinds.JailPolicy, session_net: jail.SessionNetwork | No
     """Run the policy's command on the operator's stdio and return its exit code.
 
     With stdin and stdout both on a terminal the command gets a pty of its own and this process
-    relays the bytes: nothing inside holds the operator's terminal. The launcher starts a
-    command in its own process group, so the command takes the pty as its controlling
-    terminal itself, through util-linux `setsid`. Otherwise, and where the sandbox has no
-    `setsid`, stdin, stdout and stderr pass straight through, so pipes and redirects work,
-    and a terminal among them gets back the modes it had.
+    relays the bytes: nothing inside holds the operator's terminal. The pty is the controlling
+    terminal of the command's session and the command runs in its foreground group, so the
+    pty's signals and job control reach it. Otherwise stdin, stdout and stderr pass straight
+    through, so pipes and redirects work, and a terminal among them gets back the modes it had.
     The command and everything it started end with this call, however it returns.
 
     Args:
@@ -164,8 +162,7 @@ def run_attached(policy: kinds.JailPolicy, session_net: jail.SessionNetwork | No
         session_net: The session network the command joins, when its policy names one.
 
     Returns:
-        The command's exit code. A command a signal ended reads as 128 plus the signal
-        unsandboxed, 137 through the launcher, and the signal's number through `setsid`.
+        The command's exit code; 128 plus the signal for a command a signal ended.
 
     Raises:
         JailUnavailableError: The launcher is missing or cannot be executed.
@@ -180,28 +177,22 @@ def run_attached(policy: kinds.JailPolicy, session_net: jail.SessionNetwork | No
     master = -1
     modes: dict[int, list[Any]] = {}
     try:
-        on_terminal = os.isatty(0) and os.isatty(1)
-        setsid = shutil.which("setsid", path=tool_paths.jail_search_path()) if on_terminal else None
-        if setsid is not None:
+        if os.isatty(0) and os.isatty(1):
             master, slave = pty.openpty()
             try:
                 proc = jail.spawn_in_jail(
-                    dataclasses.replace(policy, argv=(setsid, "--ctty", "--wait", *policy.argv)),
+                    policy,
                     stdin=slave,
                     stdout=slave,
                     # A redirected stderr stays the operator's file.
                     stderr=slave if os.isatty(2) else None,
                     session_net=session_net,
+                    controlling_terminal=True,
                 )
             finally:
                 os.close(slave)
             _relay(master, proc)
         else:
-            if on_terminal:
-                _common.note(
-                    "the sandbox has no `setsid`: the command shares this terminal, with no job"
-                    " control, and Ctrl-C ends it."
-                )
             modes = {fd: termios.tcgetattr(fd) for fd in (0, 1, 2) if os.isatty(fd)}
             proc = jail.spawn_in_jail(policy, session_net=session_net)
         code = proc.popen.wait()

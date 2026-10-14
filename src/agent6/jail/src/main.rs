@@ -2197,6 +2197,8 @@ fn apply_child_limits(cmd: &mut Command, memory_limit_mb: u64) {
 /// No timeout: the pipe closing is the lifetime. We stay alive as the child's
 /// parent (PID 1 of its namespace under strict) so it is reaped and so the
 /// namespace outlives no one.
+///
+/// A command a signal ended exits 128 plus the signal, as a shell reports it.
 fn run_child_exec(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
@@ -2209,9 +2211,57 @@ fn run_child_exec(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     cmd.stdin(Stdio::inherit());
     cmd.stdout(Stdio::inherit());
     cmd.stderr(Stdio::inherit());
-    let mut child = cmd.spawn()?;
-    let status = child.wait()?;
-    std::process::exit(status.code().unwrap_or(128 + libc::SIGKILL));
+    let on_terminal = unsafe { libc::isatty(0) } == 1;
+    if on_terminal {
+        take_terminal_foreground(&mut cmd);
+    }
+    let child = cmd.spawn()?;
+    let pid = Pid::from_raw(child.id() as i32); // == pgid, since process_group(0)
+    let wait_flags = on_terminal.then_some(WaitPidFlag::WUNTRACED);
+    loop {
+        match waitpid(pid, wait_flags) {
+            // On a terminal only. The command's parent is this launcher, in
+            // the same session, so the terminal's stop signals do stop it,
+            // and a command run directly has no shell to resume it: undo the
+            // stop. A shell's own jobs stop and resume under the shell.
+            Ok(WaitStatus::Stopped(..)) => unsafe {
+                libc::killpg(pid.as_raw(), libc::SIGCONT);
+            },
+            Ok(status) => {
+                if let Some(code) = wait_code(status) {
+                    std::process::exit(code);
+                }
+            }
+            Err(nix::errno::Errno::EINTR) => {}
+            Err(e) => return Err(io_err(e)),
+        }
+    }
+}
+
+/// Make the command's process group the foreground group of the terminal on
+/// stdin, in the child before exec, so a shell never starts in the background.
+///
+/// `build_command` puts the command in a group of its own, a background group
+/// of this session's controlling terminal: its first read from that terminal
+/// would stop it, and the terminal's signals (Ctrl-C, Ctrl-Z) would reach the
+/// launcher. A terminal that is not this session's controlling terminal has
+/// no foreground to take (ENOTTY), and the command starts as it is.
+fn take_terminal_foreground(cmd: &mut Command) {
+    unsafe {
+        cmd.pre_exec(|| {
+            // A background group that changes the foreground group is sent
+            // SIGTTOU unless it ignores it. signal, tcsetpgrp and getpid are
+            // async-signal-safe (pre_exec contract).
+            let old = libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+            let rc = libc::tcsetpgrp(0, libc::getpid());
+            let err = io::Error::last_os_error();
+            libc::signal(libc::SIGTTOU, old);
+            if rc != 0 && err.raw_os_error() != Some(libc::ENOTTY) {
+                return Err(err);
+            }
+            Ok(())
+        });
+    }
 }
 
 fn run_child(

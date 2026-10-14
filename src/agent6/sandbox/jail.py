@@ -13,6 +13,7 @@ import contextlib
 import ctypes
 import dataclasses
 import errno
+import fcntl
 import functools
 import json
 import os
@@ -23,6 +24,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import termios
 import threading
 import time
 from collections.abc import Callable, Sequence
@@ -55,6 +57,27 @@ def die_with_parent(parent_pid: int, sig: int = signal.SIGTERM) -> Callable[[], 
         _LIBC.prctl(1, sig)  # PR_SET_PDEATHSIG
         if os.getppid() != parent_pid:
             os._exit(128 + sig)
+
+    return _setup
+
+
+def _tied_to_agent(controlling_terminal: bool) -> Callable[[], None]:
+    """Return the `preexec_fn` of a child in its own session that dies with this process.
+
+    Args:
+        controlling_terminal: Make the terminal on stdin the new session's controlling
+            terminal, so its signals and job control reach the child's foreground group.
+
+    Returns:
+        The function to run in the child before exec, after it started its session.
+    """
+    tie = die_with_parent(os.getpid(), sig=signal.SIGKILL)
+    if not controlling_terminal:
+        return tie
+
+    def _setup() -> None:
+        tie()
+        fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
     return _setup
 
@@ -438,6 +461,7 @@ def _spawn_launcher(
     stderr: int | IO[bytes] | None,
     pass_fds: Sequence[int] = (),
     die_with_agent: bool = True,
+    controlling_terminal: bool = False,
 ) -> subprocess.Popen[bytes]:
     """Start the launcher in its own session and register it live for the escapee sweep.
 
@@ -452,6 +476,7 @@ def _spawn_launcher(
         stderr: The launcher's stderr.
         pass_fds: Descriptors the launcher inherits.
         die_with_agent: Tie the launcher to this process; a background job stays untied.
+        controlling_terminal: Make the terminal on stdin the launcher's controlling terminal.
 
     Returns:
         The launcher process.
@@ -469,7 +494,7 @@ def _spawn_launcher(
                 pass_fds=pass_fds,
                 start_new_session=True,
                 preexec_fn=(  # noqa: PLW1509
-                    die_with_parent(os.getpid(), sig=signal.SIGKILL) if die_with_agent else None
+                    _tied_to_agent(controlling_terminal) if die_with_agent else None
                 ),
                 env=_LAUNCHER_ENV,
             )
@@ -666,6 +691,7 @@ def spawn_in_jail(
     stdout: int | None = None,
     stderr: int | None = None,
     session_net: SessionNetwork | None = None,
+    controlling_terminal: bool = False,
 ) -> JailedProcess:
     """Start the policy's argv in the sandbox and return a handle to talk to it.
 
@@ -681,6 +707,8 @@ def spawn_in_jail(
         stdout: The child's stdout.
         stderr: The child's stderr.
         session_net: The run's session network, when one exists.
+        controlling_terminal: Make the terminal on stdin the controlling terminal of the
+            child's session, with the command in its foreground group.
 
     Returns:
         The handle; its `close` bounds the child's lifetime.
@@ -702,7 +730,7 @@ def spawn_in_jail(
                 env=dict(policy.env),
                 cwd=policy.cwd,
                 start_new_session=True,
-                preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
+                preexec_fn=_tied_to_agent(controlling_terminal),  # noqa: PLW1509
             )
             # In its own session, so unregistered a sibling handle's close would sweep it.
             _live_launchers.add(proc.pid)
@@ -722,6 +750,7 @@ def spawn_in_jail(
             stdout=stdout,
             stderr=stderr,
             pass_fds=(policy_r, *join_fds),
+            controlling_terminal=controlling_terminal,
         )
     except BaseException:
         os.close(policy_w)

@@ -232,7 +232,7 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " you see what the agent sees. The command is yours, not"
             " the model's, so it is never approved or recorded as a tool call."
             " With stdin and stdout on a terminal it gets a terminal of its own, with"
-            " job control (through util-linux `setsid` in the sandbox); otherwise stdin,"
+            " job control; otherwise stdin,"
             " stdout and stderr pass through, so pipes and redirects work (reach a server"
             " the agent runs with `agent6 forward`)."
             " `agent6 exec CMD...` runs in the newest"
