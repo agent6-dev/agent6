@@ -133,6 +133,31 @@ Arms: a memory-store write counts as an idle turn; a memory-store write restarts
 - Not exercised: a run that keeps writing memory restarts the count each time, so the twelve-turn stop never reaches it.
 - The restart is adopted.
 
+## The gate before the first turn
+
+gpt-6-astra, n=4 per task and arm, two tasks per family (48 runs); no task text asks for a verify first.
+Arms: no gate run of the harness's own before the first turn; one gate run before the first model call, recorded as the baseline, its verdict sent with the first turn when red.
+The gate is `python3 -m unittest` over 21 tests, 0.5 s.
+
+| family | measure | no start gate | start gate |
+|---|---|---|---|
+| an unrelated red test beside a feature task | ends `finished · gate was already red` | 0 of 8 | 8 of 8 |
+| | `finish_session` returned as not green, per run | 2.0 | 0.0 |
+| | turns | 13.0 | 8.9 |
+| | tokens out | 1022 | 645 |
+| | wall seconds | 104 | 77 |
+| the red test is the task | turns | 7.2 | 5.8 |
+| | hidden check passes | 8 of 8 | 8 of 8 |
+| a green base, a feature task | turns | 8.8 | 9.5 |
+| | gate runs per run | 1.62 | 2.88 |
+
+- With an unrelated red test every difference exceeds twice its standard error (turns 0.5, tokens out 64, wall 13.7).
+- Where the red test is the task, turns fall by 1.5 (twice the standard error is 1.0); on a green base no measure differs.
+- Without the start gate no feature run verified before its first edit, so none recorded a baseline.
+- The start gate adds one gate run to a run on a green base; a slow gate was not measured.
+- Two defects in the measured arm: a green start gate armed the settled count from the first turn, and a red one made every fix a red-to-green flip, so the memory advisory fired in 8 of 8 fix runs against 2 of 8.
+- Not adopted: the arm is on no release branch.
+
 ## Measured nulls
 
 | lever | measurement | result | state |
