@@ -14,7 +14,6 @@ import itertools
 import json
 import os
 import pathlib
-import re
 import shlex
 import shutil
 import threading
@@ -31,6 +30,7 @@ from agent6.sandbox import jail, tool_paths
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import (
+    _arguments,
     _control_tools,
     _dag_tools,
     _fs_tools,
@@ -49,143 +49,9 @@ from agent6.tools import (
 from agent6.tools import errors as tools_errors
 from agent6.tools import policy as tools_policy
 
-# A backslash JSON defines no escape for: a regex the model typed inside a JSON string.
-_LONE_BACKSLASH = re.compile(r'\\(?!["\\/bfnrtu])')
-
-
-def _coerce_stringified_args(
-    raw_input: dict[str, Any], exc: pydantic.ValidationError
-) -> dict[str, Any] | None:
-    """Recover a tool call whose array or object argument arrived as a JSON string.
-
-    For each top-level field the validation error names whose value is a str, the string's head
-    is parsed as JSON (`raw_decode` tolerates trailing junk; a lone backslash reads literally)
-    and substituted when it is a container. A field the schema declares as a string is safe: a
-    wrong substitution fails re-validation and the caller re-raises the original error.
-
-    Args:
-        raw_input: The arguments as they arrived.
-        exc: The validation error they raised.
-
-    Returns:
-        A coerced copy, or None when nothing was coercible.
-    """
-    decoder = json.JSONDecoder()
-    coerced: dict[str, Any] | None = None
-    for err in exc.errors():
-        loc = err.get("loc") or ()
-        key = loc[0] if loc else None
-        if not isinstance(key, str):
-            continue
-        val = raw_input.get(key)
-        if not isinstance(val, str):
-            continue
-        try:
-            parsed, _ = decoder.raw_decode(val.strip())
-        except ValueError:
-            try:
-                parsed, _ = decoder.raw_decode(_LONE_BACKSLASH.sub(r"\\\\", val.strip()))
-            except ValueError:
-                continue
-        if not isinstance(parsed, dict | list):
-            continue
-        if coerced is None:
-            coerced = dict(raw_input)
-        coerced[key] = parsed
-    return coerced
-
-
-# pydantic's container words in JSON's, for a model that writes JSON.
-_JSON_WORDS = {
-    "tuple_type": "expected an array",
-    "list_type": "expected an array",
-    "too_short": "expected a non-empty array",
-    "dict_type": "expected an object",
-    "model_type": "expected an object",
-}
-
-
-def invalid_arguments(exc: pydantic.ValidationError) -> str:
-    """Return one line per real argument problem, for the model and the log.
-
-    Each line is the dotted field and the message without pydantic's "Value error, " lead and
-    docs URL, a container's in JSON's words. A container error caused by an invalid item is
-    dropped: the item's own line says what to fix.
-    """
-    errors = exc.errors(include_url=False)
-    item_locs = [tuple(e["loc"]) for e in errors]
-    parts: list[str] = []
-    for err in errors:
-        loc = tuple(err["loc"])
-        if err["type"] == "too_short" and any(
-            other != loc and other[: len(loc)] == loc for other in item_locs
-        ):
-            continue
-        field = ".".join(str(p) for p in loc) or "arguments"
-        msg = _JSON_WORDS.get(err["type"]) or str(err["msg"]).removeprefix("Value error, ")
-        if err["type"] == "too_long":
-            ctx = err.get("ctx") or {}
-            msg = f"expected at most {ctx['max_length']} items in the array"
-        parts.append(f"{field}: {msg}")
-    return "invalid arguments: " + "; ".join(parts)
-
-
-# Tools whose tool.result event carries a capped output tail, so logs.jsonl shows the output.
-_EXEC_OUTPUT_TOOLS = frozenset({schema.RunCommandInput.TOOL_NAME, schema.RunMetricInput.TOOL_NAME})
-_TOOL_OUTPUT_TAIL = 2000  # chars, matching verify.end's stdout_tail/stderr_tail
-
-
 # An MCP approval prompt carries the full arguments up to this bound, then a session-dir file.
 _PAYLOAD_IDS = itertools.count(1)
 _APPROVAL_PROMPT_MAX_CHARS = 4096
-
-_READ_HEAD_LINES = 6
-_READ_HEAD_CHARS = 300
-
-
-def _output_tails(name: str, result: results.ToolResult) -> dict[str, Any]:
-    """Return the excerpts a tool's result carries into its tool.result event, else {}.
-
-    A command gets its output tails; read_file a head preview and the line count; an edit or
-    patch the paths it wrote, so a resume can tell the run's own untracked files from the
-    operator's.
-    """
-    if isinstance(result, results.EditResult):
-        return {"paths": [result.path]}
-    if isinstance(result, results.PatchResult):
-        written = [p for p, _ in result.files] or [result.path]
-        return {"paths": [p for p in written if p not in result.deleted]}
-    if isinstance(result, results.ExecResult | results.MetricResult) and name in _EXEC_OUTPUT_TOOLS:
-        return {
-            "stdout_tail": result.stdout[-_TOOL_OUTPUT_TAIL:],
-            "stderr_tail": result.stderr[-_TOOL_OUTPUT_TAIL:],
-        }
-    if isinstance(result, results.ReadFileResult):
-        head = "\n".join(result.content.splitlines()[:_READ_HEAD_LINES])
-        return {
-            "head_tail": head[:_READ_HEAD_CHARS],
-            "lines_total": result.lines_total,
-        }
-    return {}
-
-
-def _clip_tail(text: str, limit: int = 20_000) -> str:
-    """Return the last `limit` chars behind a marker naming what was dropped."""
-    if len(text) <= limit:
-        return text
-    return f"... {len(text) - limit} earlier chars clipped ...\n" + text[-limit:]
-
-
-def _exec_result(res: kinds.CommandResult, *, timeout_s: float = 0.0) -> results.ExecResult:
-    """Return the model's view of a finished command: the tails of both streams."""
-    return results.ExecResult(
-        returncode=res.returncode,
-        stdout=_clip_tail(res.stdout),
-        stderr=_clip_tail(res.stderr),
-        duration_s=res.duration_s,
-        exec_failed=res.exec_failed,
-        timeout_s=timeout_s,
-    )
 
 
 # Every tool that runs a command in the jail, governed by the one `run_commands` knob: the
@@ -456,7 +322,7 @@ class ToolDispatcher:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
         except pydantic.ValidationError as exc:
-            message = invalid_arguments(exc)
+            message = _arguments.invalid_arguments(exc)
             self._emit("tool.result", name=name, ok=False, summary=message, call_id=cid)
             raise tools_errors.ToolError(message) from exc
         except Exception as exc:
@@ -470,7 +336,7 @@ class ToolDispatcher:
             ok=True,
             summary=result.summary(),
             call_id=cid,
-            **_output_tails(name, result),
+            **_result_format.output_tails(name, result),
         )
         return result
 
@@ -534,7 +400,7 @@ class ToolDispatcher:
         try:
             return self._handlers[name](raw_input)
         except pydantic.ValidationError as exc:
-            coerced = _coerce_stringified_args(raw_input, exc)
+            coerced = _arguments.coerce_stringified_args(raw_input, exc)
             if coerced is None:
                 raise
             try:
@@ -802,13 +668,13 @@ class ToolDispatcher:
         except jail.JailUnavailableError as exc:
             raise tools_errors.ToolError(f"jail unavailable: {exc}") from exc
         if isinstance(outcome, kinds.CommandResult):
-            return _exec_result(outcome)
+            return _result_format.exec_result(outcome)
         view = shells.adopt(outcome, session=session)
         self._emit("command.backgrounded", id=view.id, pid=outcome.pid, seconds=outcome.duration_s)
         return results.ExecResult(
             returncode=None,
-            stdout=_clip_tail(outcome.stdout),
-            stderr=_clip_tail(outcome.stderr),
+            stdout=_result_format.clip_tail(outcome.stdout),
+            stderr=_result_format.clip_tail(outcome.stderr),
             duration_s=outcome.duration_s,
             exec_failed=False,
             background_id=view.id,
@@ -1002,7 +868,7 @@ class ToolDispatcher:
         score = _result_format.parse_metric_score(
             outcome.stdout, outcome.stderr, pattern=metric_cfg.pattern
         )
-        res = _exec_result(outcome, timeout_s=timeout_s)
+        res = _result_format.exec_result(outcome, timeout_s=timeout_s)
         self._emit(
             "metric.end",
             cmd=list(argv),
@@ -1121,4 +987,4 @@ class ToolDispatcher:
     ) -> results.ExecResult:
         """Return the model's view of an argv run in the jail."""
         outcome, timeout = self._run_argv_raw(argv, label=label, timeout_s=timeout_s)
-        return _exec_result(outcome, timeout_s=timeout)
+        return _result_format.exec_result(outcome, timeout_s=timeout)

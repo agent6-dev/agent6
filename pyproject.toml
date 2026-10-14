@@ -297,6 +297,7 @@ banned-from = [
     "agent6.skills",
     "agent6.task_text",
     "agent6.tools._agent6_docs",
+    "agent6.tools._arguments",
     "agent6.tools._control_tools",
     "agent6.tools._dag_tools",
     "agent6.tools._edit_diag",

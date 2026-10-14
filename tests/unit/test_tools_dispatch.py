@@ -12,7 +12,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.config import Config
-from agent6.tools import dispatch, errors, operator_prompts, schema
+from agent6.tools import _arguments, dispatch, errors, operator_prompts, schema
 from agent6.tools import results as tools_results
 
 _VALID_TOML = """
@@ -2537,7 +2537,7 @@ def test_a_too_long_array_is_named_in_json_words() -> None:
     """The size error names a JSON array, not pydantic's tuple."""
     with pytest.raises(pydantic.ValidationError) as info:
         schema.AskUserInput.model_validate({"questions": [{"question": f"q{i}"} for i in range(9)]})
-    assert dispatch.invalid_arguments(info.value) == (
+    assert _arguments.invalid_arguments(info.value) == (
         "invalid arguments: questions: expected at most 8 items in the array"
     )
 

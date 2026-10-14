@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Post-dispatch helpers: the jail passthrough env, metric parsing and argument previews."""
+"""Post-dispatch helpers: the jail env, metric parsing, argument previews and result shaping."""
 
 from __future__ import annotations
 
 import os
 import re
 from typing import Any
+
+from agent6 import kinds
+from agent6.tools import results, schema
 
 PASSTHROUGH_ENV_KEYS = ("LANG", "LC_ALL", "TERM", "CI")
 
@@ -69,3 +72,56 @@ def _clip_value(v: Any, max_value_chars: int) -> Any:
         items = [_clip_value(x, max_value_chars) for x in v[:10]]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
         return [*items, f"… ({len(v)} items)"] if len(v) > 10 else items
     return v
+
+
+# Tools whose tool.result event carries a capped output tail, so logs.jsonl shows the output.
+_EXEC_OUTPUT_TOOLS = frozenset({schema.RunCommandInput.TOOL_NAME, schema.RunMetricInput.TOOL_NAME})
+_TOOL_OUTPUT_TAIL = 2000  # chars, matching verify.end's stdout_tail/stderr_tail
+
+_READ_HEAD_LINES = 6
+_READ_HEAD_CHARS = 300
+
+
+def output_tails(name: str, result: results.ToolResult) -> dict[str, Any]:
+    """Return the excerpts a tool's result carries into its tool.result event, else {}.
+
+    A command gets its output tails; read_file a head preview and the line count; an edit or
+    patch the paths it wrote, so a resume can tell the run's own untracked files from the
+    operator's.
+    """
+    if isinstance(result, results.EditResult):
+        return {"paths": [result.path]}
+    if isinstance(result, results.PatchResult):
+        written = [p for p, _ in result.files] or [result.path]
+        return {"paths": [p for p in written if p not in result.deleted]}
+    if isinstance(result, results.ExecResult | results.MetricResult) and name in _EXEC_OUTPUT_TOOLS:
+        return {
+            "stdout_tail": result.stdout[-_TOOL_OUTPUT_TAIL:],
+            "stderr_tail": result.stderr[-_TOOL_OUTPUT_TAIL:],
+        }
+    if isinstance(result, results.ReadFileResult):
+        head = "\n".join(result.content.splitlines()[:_READ_HEAD_LINES])
+        return {
+            "head_tail": head[:_READ_HEAD_CHARS],
+            "lines_total": result.lines_total,
+        }
+    return {}
+
+
+def clip_tail(text: str, limit: int = 20_000) -> str:
+    """Return the last `limit` chars behind a marker naming what was dropped."""
+    if len(text) <= limit:
+        return text
+    return f"... {len(text) - limit} earlier chars clipped ...\n" + text[-limit:]
+
+
+def exec_result(res: kinds.CommandResult, *, timeout_s: float = 0.0) -> results.ExecResult:
+    """Return the model's view of a finished command: the tails of both streams."""
+    return results.ExecResult(
+        returncode=res.returncode,
+        stdout=clip_tail(res.stdout),
+        stderr=clip_tail(res.stderr),
+        duration_s=res.duration_s,
+        exec_failed=res.exec_failed,
+        timeout_s=timeout_s,
+    )
