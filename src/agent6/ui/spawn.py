@@ -82,7 +82,7 @@ def spawn_new_work(  # noqa: PLR0911
         return None, f"unknown mode {mode!r}"
     if not task.strip():
         return None, "empty task"
-    # The child refuses this too, but detached: nobody reads its stderr.
+    # The child refuses this too; refusing here answers before anything is spawned.
     if (problem := directive.steer_problem(task)) is not None:
         return None, problem
     segments = None
