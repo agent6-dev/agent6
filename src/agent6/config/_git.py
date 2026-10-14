@@ -191,9 +191,11 @@ class GitConfig(pydantic.BaseModel):
     auto_merge: bool = pydantic.Field(
         default=False,
         description=(
-            "After a run that finished with nothing red, merge its work into its base branch "
-            "automatically (never over a red or stale verify). With `branch_per_run` off it merges "
-            "the hidden chain ref. On a conflict nothing moves and the instructions are printed."
+            "Merge a run's work into its base branch automatically only when the model called "
+            "`finish_session` (end reason `finish_session`) and the verify gate passed or there "
+            "is no gate. Other ends skip auto-merge and print the reason. With `branch_per_run` "
+            "off it merges the hidden chain ref. "
+            "On a conflict nothing moves and the instructions are printed."
         ),
     )
     # The hidden chain ref stays as the run's record until `sessions rm`.

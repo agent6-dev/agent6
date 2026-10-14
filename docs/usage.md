@@ -34,7 +34,7 @@ agent6 run "add a --json output mode to the CLI"
 ```
 
 agent6 edits your working tree, commits each step to the run's own chain (an `agent6/<id>` branch by default), and certifies the finished tree with the verify command.
-Your branch, HEAD and index are never touched; `sessions merge` lands the work.
+Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#git) lands the work; `sessions merge` lands it by hand.
 
 - commands ask for approval by default (`sandbox.run_commands = "ask"`): allow one call or the whole session
 - without a terminal (CI, cron, a hub-spawned run) a prompt parks the run until a front-end answers it, or an away-mode decides it; a run whose commands are unsettled refuses to start and names the choices (`--auto-approve`, `--no-commands`, `AGENT6_DETACHED_AWAY`), see [approvals](security.md#6-approvals)
@@ -141,6 +141,7 @@ Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scr
 | `141` | the output pipe closed (`agent6 ... \| head`) |
 
 `passed` and exit `0` certify the finish and the gate, not the task; a gateless run that changed nothing stays `0`.
+[`git.auto_merge`](config.md#git) lands a run only when the model ended it with `finish_session`; an exit `0` from any other end stays on its branch.
 
 Every end has one reason (`reason` in `agent6 sessions show --json`), and each reason one row:
 

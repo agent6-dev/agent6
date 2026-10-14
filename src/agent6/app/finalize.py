@@ -108,15 +108,19 @@ def stranded_edits(
 
 
 def auto_merge_eligible(result: _snapshot.SessionResult) -> bool:
-    """Tell whether auto_merge may land the run.
+    """Tell whether the model finished the run over a green or absent gate.
 
     Args:
         result: The session's result.
 
     Returns:
-        Whether the finish was green or gateless.
+        Whether auto_merge may land the run.
     """
-    return result.completed and result.verified in ("passed", "not_applicable")
+    return (
+        result.completed
+        and result.reason == "finish_session"
+        and result.verified in ("passed", "not_applicable")
+    )
 
 
 def _sandbox_unreachable_tools(layout: sessions_layout.SessionLayout) -> list[str]:

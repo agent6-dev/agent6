@@ -11,6 +11,7 @@ import contextlib
 import dataclasses
 import json
 import pathlib
+import subprocess
 import types
 from collections.abc import Callable
 from typing import Any
@@ -18,7 +19,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import event_log, paths
+from agent6 import event_log, git_ops, paths
 from agent6.app import _execution, _session, _setup, finalize, reporter
 from agent6.app import frontend as app_frontend
 from agent6.app import providers as app_providers
@@ -26,6 +27,7 @@ from agent6.config import Config
 from agent6.harness import _snapshot
 from agent6.harness import loop as harness_loop
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import steer
 from agent6.ui.acp import frontend as acp_frontend
 
@@ -491,7 +493,7 @@ def _wired_frontend(
 ) -> Any:
     """An execution whose providers, tools and merge are recorders; `order` names the teardown."""
     session = types.SimpleNamespace(
-        budget=mock.MagicMock(),
+        budget=_setup.budget_tracker(cfg),
         rm_role=types.SimpleNamespace(model="m", provider="p"),
         provider=mock.MagicMock(),
         summariser_provider=None,
@@ -605,6 +607,150 @@ def test_the_chown_runs_after_the_auto_merge_writes(
         state_dir=state,
     )
     assert order == ["steer", "session", "dispatcher", "auto_merge", "chown"]
+
+
+@pytest.mark.parametrize(
+    ("reason", "verified", "auto_merge", "merged"),
+    [
+        ("verify_settled", "passed", True, False),
+        ("settled", "not_applicable", True, False),
+        ("silent_finish", "passed", True, False),
+        ("silent_finish", "not_applicable", True, False),
+        ("metric_plateau", "passed", True, False),
+        ("metric_plateau", "not_applicable", True, False),
+        ("finish_session", "passed", True, True),
+        ("finish_session", "not_applicable", True, True),
+        ("finish_session", "failed", True, False),
+        ("finish_session", "unverified", True, False),
+        ("settled", "not_applicable", False, False),
+        ("finish_session", "passed", False, False),
+    ],
+)
+def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: _snapshot.SessionEndReason,
+    verified: _snapshot.Verification,
+    auto_merge: bool,
+    merged: bool,
+) -> None:
+    """Harness ends must keep their branch and explain a skipped automatic merge.
+
+    Only finish_session with a green or absent gate lands on the base branch.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    (repo / "a.txt").write_text("base\n", encoding="utf-8")
+    git("add", "a.txt")
+    git("commit", "-qm", "base")
+    base = git("rev-parse", "main")
+    state = paths.state_dir(repo)
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-MERGE1")
+    layout.ensure()
+    branch = f"agent6/{layout.session_id}"
+    git("checkout", "-qb", branch)
+    (repo / "a.txt").write_text("run work\n", encoding="utf-8")
+    git("commit", "-qam", "step")
+    tip = git("rev-parse", branch)
+    git("update-ref", git_ops.chain_ref_for(layout.session_id), tip)
+    git("checkout", "-q", "main")
+    (repo / "a.txt").write_text("run work\n", encoding="utf-8")
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "session_id": layout.session_id,
+                "mode": "run",
+                "user_task": "do the thing",
+                "base_branch": "main",
+                "base_sha": base,
+                "run_branch": branch,
+            }
+        ),
+        encoding="utf-8",
+    )
+    events = event_log.EventSink(layout.logs_path)
+
+    class _Workflow:
+        iterations_reached = 1
+
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(self, _task: str) -> _snapshot.SessionResult:
+            events.emit("session.end", reason=reason, iterations=1, verified=verified)
+            return _snapshot.SessionResult(
+                completed=True,
+                reason=reason,
+                summary="done",
+                iterations=1,
+                tool_calls=0,
+                verified=verified,
+            )
+
+    cfg = Config.model_validate({"git": {"auto_merge": auto_merge}})
+    real_merge = finalize.finalize_auto_merge
+    frontend = _wired_frontend(monkeypatch, [], harness=_Workflow, cfg=cfg)
+    monkeypatch.setattr(finalize, "finalize_auto_merge", real_merge)
+    said: list[str] = []
+    _execution.run_execution(
+        cfg,
+        layout,
+        _execution.ExecutionInputs(
+            session_id=layout.session_id,
+            mode="run",
+            role="worker",
+            isolation="hardened",
+            tui_enabled=False,
+            interactive=False,
+            task="do the thing",
+            gate=lambda c, _b: c,
+            chain_branch=branch,
+            base_sha=base,
+            untracked_at_start=frozenset(),
+            resume_state_path=layout.session_dir / "loop_state.json",
+            undo_forker=lambda: None,
+            prompts=mock.MagicMock(),
+            ask_transcript_task=None,
+        ),
+        frontend=frontend,
+        reporter=reporter.Reporter(out=said.append, err=said.append),
+        events=events,
+        transcript_sink=mock.MagicMock(),
+        cwd=repo,
+        state_dir=state,
+    )
+
+    manifest = sessions_manifest.read_manifest(layout.session_dir)
+    assert git("rev-parse", branch) == tip
+    skipped = [line for line in said if "auto_merge skipped:" in line]
+    if merged:
+        assert git("rev-parse", "main") != base
+        assert git("show", "main:a.txt") == "run work"
+        assert manifest.merged is not None, "\n".join(said)
+        assert any("changes merged into main" in line for line in said)
+        assert not any("merge with:" in line for line in said)
+    else:
+        assert git("rev-parse", "main") == base
+        assert manifest.merged is None
+        assert any(f"changes are on {branch}" in line for line in said)
+        assert any("merge with:  agent6 sessions merge sess-MERGE1" in line for line in said)
+    if auto_merge and not merged:
+        assert len(skipped) == 1
+        assert "\n" not in skipped[0]
+        if reason != "finish_session":
+            assert reason in skipped[0] and "not finish_session" in skipped[0]
+        else:
+            assert verified in skipped[0]
+    else:
+        assert not skipped
 
 
 def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_end(
@@ -786,3 +932,72 @@ def test_a_closed_output_pipe_ends_the_run_as_a_stop_not_a_crash(tmp_path: pathl
     ended = [json.loads(line) for line in layout.logs_path.read_text().splitlines()][-1]
     assert reason == "interrupted"
     assert ended["type"] == "session.end" and ended["reason"] == "interrupted"
+
+
+def test_a_plan_under_auto_merge_prints_no_skipped_note(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plan or an ask never commits, so `auto_merge` has nothing to skip there."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    (repo / "a.txt").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+    state = paths.state_dir(repo)
+    layout = sessions_layout.SessionLayout(
+        state_dir=state, session_id="plan-MERGE1", subdir="plans"
+    )
+    layout.ensure()
+    events = event_log.EventSink(layout.logs_path)
+
+    class _Workflow:
+        iterations_reached = 1
+
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(self, _task: str) -> _snapshot.SessionResult:
+            events.emit("session.end", reason="finish_planning", iterations=1)
+            return _snapshot.SessionResult(
+                completed=True,
+                reason="finish_planning",
+                summary="planned",
+                iterations=1,
+                tool_calls=0,
+                verified="not_applicable",
+            )
+
+    cfg = Config.model_validate({"git": {"auto_merge": True}})
+    frontend = _wired_frontend(monkeypatch, [], harness=_Workflow, cfg=cfg)
+    said: list[str] = []
+    _execution.run_execution(
+        cfg,
+        layout,
+        _execution.ExecutionInputs(
+            explicit_leaves=frozenset(),
+            session_id=layout.session_id,
+            mode="plan",
+            role="planner",
+            isolation="hardened",
+            tui_enabled=False,
+            interactive=False,
+            task="plan the thing",
+            gate=lambda c, _b: c,
+            chain_branch=None,
+            base_sha="",
+            untracked_at_start=frozenset(),
+            resume_state_path=layout.session_dir / "loop_state.json",
+            undo_forker=lambda: None,
+            prompts=mock.MagicMock(),
+            ask_transcript_task=None,
+        ),
+        frontend=frontend,
+        reporter=reporter.Reporter(out=said.append, err=said.append),
+        events=events,
+        transcript_sink=mock.MagicMock(),
+        cwd=repo,
+        state_dir=state,
+    )
+    assert not [line for line in said if "auto_merge skipped:" in line], said

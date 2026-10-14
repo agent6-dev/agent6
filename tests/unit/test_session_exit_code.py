@@ -12,6 +12,8 @@ from __future__ import annotations
 import pathlib
 from typing import get_args
 
+import pytest
+
 from agent6.app import finalize
 from agent6.harness import _snapshot
 from agent6.viewmodel import listing
@@ -120,8 +122,8 @@ def test_exit_code_unverified_finish_is_four() -> None:
     )
 
 
-def test_auto_merge_needs_a_vouched_for_tree() -> None:
-    """auto_merge lands only work the gate vouched for, or that had no gate.
+def test_auto_merge_needs_a_model_finish_and_a_vouched_for_tree() -> None:
+    """Auto merge requires finish_session and a green or absent gate.
 
     A red or unverified finish stays on its branch; run and resume share the one predicate.
     """
@@ -129,7 +131,7 @@ def test_auto_merge_needs_a_vouched_for_tree() -> None:
         _result(completed=True, reason="finish_session", verified="passed")
     )
     assert finalize.auto_merge_eligible(
-        _result(completed=True, reason="settled", verified="not_applicable")
+        _result(completed=True, reason="finish_session", verified="not_applicable")
     )
     for bad in ("failed", "unverified"):
         assert not finalize.auto_merge_eligible(
@@ -137,6 +139,17 @@ def test_auto_merge_needs_a_vouched_for_tree() -> None:
         )
     assert not finalize.auto_merge_eligible(
         _result(completed=False, reason="max_iterations", verified="passed")
+    )
+
+
+@pytest.mark.parametrize("reason", ["verify_settled", "settled", "silent_finish", "metric_plateau"])
+@pytest.mark.parametrize("verified", ["passed", "not_applicable"])
+def test_auto_merge_rejects_a_harness_end(
+    reason: _snapshot.SessionEndReason, verified: _snapshot.Verification
+) -> None:
+    """A harness-ended run must not auto-merge even with a green or absent gate."""
+    assert not finalize.auto_merge_eligible(
+        _result(completed=True, reason=reason, verified=verified)
     )
 
 

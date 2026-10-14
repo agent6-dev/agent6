@@ -509,15 +509,18 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 cleanup.callback(steer_state.restore)
                 # A stop never read at a boundary would stop the next execution at its first.
                 cleanup.callback(ipc.clear_stop_request, layout.session_dir)
-            if (
-                not interrupted
-                and result is not None
-                and finalize.auto_merge_eligible(result)
-                and cfg.git.auto_merge
-            ):
-                finalize.finalize_auto_merge(
-                    cwd, layout=layout, cfg=cfg, reporter=reporter, budget=budget, events=events
-                )
+            if not interrupted and result is not None and cfg.git.auto_merge and mode == "run":
+                if finalize.auto_merge_eligible(result):
+                    finalize.finalize_auto_merge(
+                        cwd, layout=layout, cfg=cfg, reporter=reporter, budget=budget, events=events
+                    )
+                else:
+                    reason = (
+                        f"the run ended on {result.reason}, not finish_session"
+                        if result.reason != "finish_session"
+                        else f"the gate on the final tree is {result.verified}"
+                    )
+                    reporter.note(f"auto_merge skipped: {reason}")
         finally:
             # Never leave root-owned run state in the user's repo (the sudo case).
             paths.chown_to_real_user(state_dir)
