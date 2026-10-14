@@ -74,10 +74,10 @@ def budget_preflight(
     metered = {(prov, m) for prov, m in routes if not plan_metered(cfg.providers.get(prov))}
     if cfg.budget.max_percent == 0.0 and plan_models:
         return (
-            "[budget].max_percent is 0 (plan-metered calls refused), but "
+            "the plan cap is 0 (plan-metered calls refused), but "
             f"{', '.join(repr(m) for m in plan_models)} route"
             f"{'s' if len(plan_models) == 1 else ''} through a subscription plan."
-            " Raise max_percent or reroute those roles."
+            " Raise --max-percent or [budget].max_percent, or reroute those roles."
         )
     unpriced = sorted({m for prov, m in metered if pricing.lookup_price(m, prov) is None})
     priced = sorted({m for prov, m in metered if pricing.lookup_price(m, prov) is not None})

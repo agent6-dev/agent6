@@ -210,7 +210,9 @@ def test_plan_metered_routes_skip_the_fallback_note(
         }
     )
     err = preflight.budget_preflight(refused)
-    assert err is not None and "max_percent is 0" in err
+    assert err is not None and "the plan cap is 0" in err
+    # The flag or the key may have set it: the remedy names both.
+    assert "Raise --max-percent or [budget].max_percent" in err
 
 
 def test_a_plan_cap_under_three_points_is_flagged_at_run_start(
@@ -268,7 +270,7 @@ def test_claude_code_routes_are_plan_metered(
         }
     )
     err = preflight.budget_preflight(refused)
-    assert err is not None and "max_percent is 0" in err and "claude-haiku-4-5" in err
+    assert err is not None and "the plan cap is 0" in err and "claude-haiku-4-5" in err
 
     called: list[bool] = []
     monkeypatch.setattr(cache, "refresh_pricing_catalog", lambda: called.append(True))
