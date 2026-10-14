@@ -174,9 +174,15 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             pathlib.Path.cwd(), self.config_path, self.session_dir, preset=preset
         )
 
+    def manifest_task(self) -> str:
+        """Return the manifest's task, which a resume with new work restamps; "" without one."""
+        with contextlib.suppress(sessions_manifest.ManifestError):
+            return sessions_manifest.read_manifest(self.session_dir).user_task
+        return ""
+
     def _task_lead(self) -> str:
         """Return the clipped task for a title, or the session name before a task is known."""
-        task = self.state.user_task or self.fallback_task
+        task = self.manifest_task() or self.state.user_task or self.fallback_task
         return listing.task_snippet(task, max_chars=57) or self.session_dir.name
 
     def screen_title(self, context: str) -> str:

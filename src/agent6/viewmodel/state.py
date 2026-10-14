@@ -996,7 +996,8 @@ def session_state_as_dict(
         d["mode"] = d.get("mode") or ""
         with contextlib.suppress(sessions_manifest.ManifestError):
             manifest = sessions_manifest.read_manifest(session_dir)
-            d["user_task"] = d["user_task"] or manifest.user_task
+            # The manifest's task is current: a resume with new work restamps it there.
+            d["user_task"] = manifest.user_task or d["user_task"]
             d["mode"] = d["mode"] or manifest.mode
         d["ports"] = ipc.listening_ports(session_dir)
         # On every frame: the run view streams from this dict.

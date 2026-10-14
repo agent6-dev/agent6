@@ -1129,3 +1129,24 @@ def test_the_end_takes_the_cursor_off_the_task_in_progress() -> None:
         s, {"type": "session.end", "reason": "finish_session", "all_passed": True}
     )
     assert not s.tasks[1].is_cursor and s.tasks[1].glyph == "✓"
+
+
+def test_the_snapshot_takes_the_manifests_task_over_the_first_start(tmp_path: pathlib.Path) -> None:
+    """A resume with new work restamps the manifest's task; every surface's task line follows."""
+    from agent6.app import stamps
+    from agent6.sessions import manifest as sessions_manifest
+
+    session_dir = tmp_path / "state" / "sessions" / "runs" / "run-AAAA11"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    stamps.write_manifest(
+        session_dir / "manifest.json",
+        sessions_manifest.SessionManifest(
+            session_id="run-AAAA11", mode="run", user_task="the follow-up"
+        ),
+    )
+    s = viewmodel_state.apply_event(
+        viewmodel_state.initial_state(), {"type": "session.start", "user_task": "the first task"}
+    )
+    d = viewmodel_state.session_state_as_dict(s, session_dir)
+    assert d["user_task"] == "the follow-up" and d["task_line"] == "the follow-up"
