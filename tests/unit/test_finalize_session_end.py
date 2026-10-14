@@ -327,26 +327,7 @@ def test_the_stale_gate_proposal_survives_an_unverified_verdict(
         verified="unverified",
     )
     out = _end_output(tmp_path, "r-stale", result, capsys)
-    assert "it proposes: pytest -q tests/" in out
-
-
-def test_the_stale_gate_remedy_is_a_command_that_installs_that_gate(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], jail_bin: pathlib.Path
-) -> None:
-    """`harness.verify_command` is argv and takes no shell; a proposed pipeline wraps as `sh -c`."""
-    result = _snapshot.SessionResult(
-        completed=True,
-        reason="gate_stale",
-        summary="",
-        iterations=1,
-        tool_calls=1,
-        stale_gate="pytest -q tests/ && ruff check",
-        verified="failed",
-    )
-
-    out = _end_output(tmp_path, "r-stale2", result, capsys)
-
-    assert '\'["sh", "-c", "pytest -q tests/ && ruff check"]\'' in out
+    assert "it says: pytest -q tests/" in out
 
 
 def test_end_banner_does_not_claim_merged_from_a_prior_executions_stamp(

@@ -8,18 +8,14 @@ import contextlib
 import io
 import json
 import pathlib
-import shlex
-import subprocess
 from unittest import mock
 
 import pytest
 
-from agent6 import paths
 from agent6.app import reporter
 from agent6.config import Config
 from agent6.harness import _chain, _conversation, _loop_state, _operator, _snapshot, loop
 from agent6.tools import results
-from agent6.ui import cli
 from agent6.viewmodel import listing
 
 
@@ -60,12 +56,14 @@ def test_the_tool_result_says_nothing_changed() -> None:
     )
 
 
-def test_the_operator_gets_a_paste_ready_line(jail_bin: pathlib.Path) -> None:
-    """Applying the proposal is the operator's call, so the run prints the exact command instead."""
+def test_the_proposal_is_printed_for_the_operator_to_set() -> None:
+    """The proposal is shown as the worker's words, with no command that would install it.
+
+    agent6 cannot tell a gate that judges the work from one that always passes (`true`, a
+    `;` list ending in prose), so applying it stays the operator's call.
+    """
     from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
 
-    (jail_bin / "uv").write_text("#!/bin/sh\n", encoding="utf-8")
-    (jail_bin / "uv").chmod(0o755)
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         finalize._print_stale_gate(
@@ -81,53 +79,14 @@ def test_the_operator_gets_a_paste_ready_line(jail_bin: pathlib.Path) -> None:
             reporter=reporter.STDIO_REPORTER,
         )
     text = out.getvalue()
+    assert "  it says: uv run pytest tests/unit\n" in text
     assert "nothing changed" in text
-    # argv, as `config set` accepts it: the shell string it proposes is
-    # rejected with "Input should be a valid tuple".
-    assert (
-        "agent6 config set --repo harness.verify_command"
-        ' \'["uv", "run", "pytest", "tests/unit"]\'' in text
-    )
+    assert "agent6 config set --repo harness.verify_command" in text
+    assert json.dumps(["uv", "run", "pytest", "tests/unit"]) not in text
 
 
-def test_the_adopt_line_pins_the_gate_for_this_repo_only(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """The printed adopt command writes the per-repo config and leaves the global one alone.
-
-    A proposed gate names repo-local paths (`venv/bin/python`); in the global config it
-    would judge every repository on the machine.
-    """
-    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
-
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    monkeypatch.chdir(tmp_path)
-    finalize._print_stale_gate(
-        _snapshot.SessionResult(
-            completed=True,
-            reason="gate_stale",
-            summary="s",
-            iterations=1,
-            tool_calls=1,
-            stale_gate="venv/bin/python -m pytest -q",
-            verified="failed",
-        ),
-        reporter=reporter.STDIO_REPORTER,
-    )
-    adopt = shlex.split(capsys.readouterr().out.splitlines()[-1])
-    assert adopt[0] == "agent6"
-
-    assert cli.main(adopt[1:]) == 0
-
-    assert not paths.global_config_path().exists()
-    assert "venv/bin/python" in paths.repo_config_path(tmp_path).read_text(encoding="utf-8")
-
-
-def test_a_proposal_written_as_prose_gets_no_adopt_line() -> None:
-    """A paragraph is clipped and offered as no `config set` argv.
-
-    A worker's paragraph about the gate was printed whole, then wrapped as a 600-char argv.
-    """
+def test_a_long_proposal_is_clipped() -> None:
+    """A paragraph is printed clipped to one line, never as an argv."""
     from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
 
     prose = (
@@ -151,10 +110,9 @@ def test_a_proposal_written_as_prose_gets_no_adopt_line() -> None:
             reporter=reporter.STDIO_REPORTER,
         )
     text = out.getvalue()
-    assert "config set" not in text
-    assert "it says: The configured gate runs" in text
+    assert "it says: The configured gate runs" in text and text.count("...") == 1
     longest = max(len(line) for line in text.splitlines())
-    assert longest <= finalize.STALE_GATE_COMMAND_MAX_CHARS + 20
+    assert longest <= finalize.STALE_GATE_NOTE_MAX_CHARS + 20
 
 
 def test_a_short_prose_proposal_is_printed_whole_with_no_clip_mark() -> None:
@@ -180,60 +138,7 @@ def test_a_short_prose_proposal_is_printed_whole_with_no_clip_mark() -> None:
             reporter=reporter.STDIO_REPORTER,
         )
     text = out.getvalue()
-    assert "config set" not in text
-    assert f"  it says: {' '.join(note.split())}\n" in text
-
-
-def test_a_one_line_prose_proposal_gets_no_adopt_line(jail_bin: pathlib.Path) -> None:
-    """A sentence under the clip length was taken for a command.
-
-    Its words became the argv, or with a `;` an `sh -c` around the whole sentence.
-    """
-    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
-
-    note = "Narrow the gate to the parser tests; the database suite runs in CI."
-    out = io.StringIO()
-    with contextlib.redirect_stdout(out):
-        finalize._print_stale_gate(
-            _snapshot.SessionResult(
-                completed=True,
-                reason="gate_stale",
-                summary="s",
-                iterations=1,
-                tool_calls=1,
-                stale_gate=note,
-                verified="failed",
-            ),
-            reporter=reporter.STDIO_REPORTER,
-        )
-    text = out.getvalue()
-    assert "config set" not in text
-    assert f"  it says: {note}\n" in text
-
-
-def test_a_proposed_command_keeps_its_quoted_spacing(jail_bin: pathlib.Path) -> None:
-    """The adopt line keeps the proposal's spacing, inside quotes too."""
-    from agent6.app import finalize  # pyright: ignore[reportPrivateUsage]
-
-    command = "python3 -c \"print('a  b')\""
-    out = io.StringIO()
-    with contextlib.redirect_stdout(out):
-        finalize._print_stale_gate(
-            _snapshot.SessionResult(
-                completed=True,
-                reason="gate_stale",
-                summary="s",
-                iterations=1,
-                tool_calls=1,
-                stale_gate=command,
-                verified="failed",
-            ),
-            reporter=reporter.STDIO_REPORTER,
-        )
-    text = out.getvalue()
-    assert f"  it proposes: {command}\n" in text
-    adopt = shlex.split(text.splitlines()[-1])
-    assert adopt[-1] == '["python3", "-c", "print(\'a  b\')"]'
+    assert f"  it says: {' '.join(note.split())}\n" in text and "..." not in text
 
 
 def _stale_report(proposal: str) -> str:
@@ -256,52 +161,10 @@ def _stale_report(proposal: str) -> str:
     return out.getvalue()
 
 
-@pytest.mark.parametrize(
-    ("proposal", "argv"),
-    [
-        ("pytest -q tests/ && ruff check", ["sh", "-c", "pytest -q tests/ && ruff check"]),
-        (
-            "uv run pytest -q tests/unit  # don't run the slow suite",
-            ["uv", "run", "pytest", "-q", "tests/unit"],
-        ),
-        ("PYTHONPATH=src pytest -q", ["sh", "-c", "PYTHONPATH=src pytest -q"]),
-    ],
-)
-def test_a_command_line_keeps_its_adopt_line(
-    jail_bin: pathlib.Path, proposal: str, argv: list[str]
-) -> None:
-    """A real command keeps its adopt line.
-
-    A quote inside a trailing comment, or an environment assignment before the runner, does not
-    make it read as prose.
-    """
-    (jail_bin / "uv").write_text("#!/bin/sh\n", encoding="utf-8")
-    (jail_bin / "uv").chmod(0o755)
-    text = _stale_report(proposal)
-    assert f"  it proposes: {proposal}\n" in text
-    assert shlex.split(text.splitlines()[-1])[-1] == json.dumps(argv)
-
-
-@pytest.mark.parametrize(
-    "proposal", ["set the gate to `pytest -q tests/unit`", "cd into web/ and run npm test instead"]
-)
-def test_prose_opening_with_a_shell_builtin_gets_no_adopt_line(
-    jail_bin: pathlib.Path, proposal: str
-) -> None:
-    """A sentence opening with a builtin got an adopt line.
-
-    `sh -c "set the gate to ..."` exits 0 whatever the command in it does: a gate that always
-    passes.
-    """
-    text = _stale_report(proposal)
-    assert "config set" not in text
-    assert f"  it says: {proposal}\n" in text
-
-
-def test_a_bare_sh_c_proposal_is_prose_not_a_crash(jail_bin: pathlib.Path) -> None:
-    """`sh -c` with no line after it reads as prose, and the end-of-run block still prints."""
+def test_a_bare_sh_c_proposal_prints_as_it_is() -> None:
+    """`sh -c` with no line after it is printed as the worker's words."""
     text = _stale_report("sh -c")
-    assert "config set" not in text and "  it says: sh -c\n" in text
+    assert "  it says: sh -c\n" in text
 
 
 def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
@@ -439,7 +302,7 @@ def test_a_proposal_on_a_returned_finish_reaches_the_end_report(
     # The end is named by its own call, which made no claim.
     assert (result.reason, result.verified) == ("finish_session", "failed")
     finalize._print_stale_gate(result, reporter=reporter.STDIO_REPORTER)
-    assert "  it proposes: pytest tests/unit" in capsys.readouterr().out
+    assert "  it says: pytest tests/unit" in capsys.readouterr().out
 
 
 def test_the_latest_proposal_is_the_one_reported_at_any_end(tmp_path: pathlib.Path) -> None:
