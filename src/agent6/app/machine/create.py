@@ -247,7 +247,8 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     create_cap = None if cfg.budget.max_usd == -1 else cfg.budget.max_usd
     attempt = 0
     for next_attempt in range(1, max_attempts + 1):
-        if create_cap is not None and total_usd >= create_cap:
+        # A cap binds spend: a plan model's attempts spend no dollars and keep going.
+        if total_usd > 0 and create_cap is not None and total_usd >= create_cap:
             reporter.err(
                 f"machine create: budget max_usd (${create_cap}) exhausted after"
                 f" {attempt} attempt(s)"

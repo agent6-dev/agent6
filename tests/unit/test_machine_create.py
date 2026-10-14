@@ -1396,3 +1396,29 @@ def test_an_operator_stop_ends_create_instead_of_retrying(
     assert main(["machine", "create", "Greet the user", "--max-attempts", "3"]) == 1
     assert attempts == 1
     assert "no valid machine after 1 attempt(s)" in capsys.readouterr().err
+
+
+def test_create_under_a_zero_dollar_cap_still_runs_its_first_attempt(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--max-usd 0` caps the spend of each attempt; a plan model with no dollar spend drafts.
+
+    A cap binds spend, so attempts that spent nothing keep going to the retry too.
+    """
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            ({}, AgentExecResult(payload=None, reason="finish_session", usd=0.0)),
+            ({}, AgentExecResult(payload=None, reason="finish_session", usd=0.0)),
+            (
+                _draft(VALID_MACHINE),
+                AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+            ),
+        ],
+    )
+    assert (
+        main(["machine", "create", "--max-usd", "0", "--max-attempts", "3", "Greet the user"]) == 0
+    )
+    assert "exhausted after" not in capsys.readouterr().err
