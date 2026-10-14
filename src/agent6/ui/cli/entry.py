@@ -704,6 +704,7 @@ def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
             repo=args.repo,
             machine=args.machine_file,
             add=args.config_command == "add",
+            config_path=args.config,
         )
     if args.config_command == "fix":
         return config_cmds._cmd_config_fix(machine=args.machine_file)

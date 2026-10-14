@@ -303,6 +303,71 @@ def test_config_show_reads_through_a_machine_overlay(
     assert _refuse(["config", "show", "--machine-file", str(iso / "missing.asm.toml")]) == 2
 
 
+def test_machine_overlay_refuses_a_sandbox_widening_as_check_does(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A value `machine check` would refuse is refused at the write, which leaves the file."""
+    mf = _machine_file(iso)
+    before = mf.read_text(encoding="utf-8")
+    assert _run(["config", "set", "sandbox.protect_git", "false", "--machine-file", str(mf)]) == 2
+    assert (
+        "the machine's [config] sets sandbox.protect_git = false, wider than your config's true."
+        " Grant it in your own config (`agent6 config set --repo sandbox.protect_git false`,"
+    ) in capsys.readouterr().err
+    assert mf.read_text(encoding="utf-8") == before
+    assert (
+        _run(["config", "add", "sandbox.extra_read_paths", "/etc/ssl", "--machine-file", str(mf)])
+        == 2
+    )
+    assert "`agent6 config add --repo sandbox.extra_read_paths /etc/ssl`" in capsys.readouterr().err
+    assert mf.read_text(encoding="utf-8") == before
+    # Any spelling of the key is the same write: the section whole, a quoted leaf.
+    whole = ["config", "set", "sandbox", '{ protect_git = false, network = "session" }']
+    for spelled in (whole, ["config", "set", 'sandbox."protect_git"', "false"]):
+        assert _run([*spelled, "--machine-file", str(mf)]) == 2
+        assert "the machine's [config] sets sandbox.protect_git = false" in capsys.readouterr().err
+        assert mf.read_text(encoding="utf-8") == before
+
+
+def test_machine_overlay_write_leaves_a_widening_the_file_already_held(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only the edit's own widening blocks it; one already in the file is `machine check`'s."""
+    mf = _machine_file(iso)
+    with mf.open("a", encoding="utf-8") as f:
+        f.write("\n[config.sandbox]\nprotect_git = false\n")
+    assert (
+        _run(["config", "set", "review.trigger", "on_verify_fail", "--machine-file", str(mf)]) == 0
+    )
+    assert _run(["config", "set", "sandbox.run_commands", "no", "--machine-file", str(mf)]) == 0
+    assert _run(["config", "set", "sandbox.run_commands", "yes", "--machine-file", str(mf)]) == 2
+    err = capsys.readouterr().err
+    assert "sandbox.run_commands" in err and "sandbox.protect_git" not in err
+
+
+def test_machine_overlay_takes_a_sandbox_value_within_the_operators(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Narrowing is written, and so is a grant your own layers or `--config FILE` cover."""
+    mf = _machine_file(iso)
+    assert _run(["config", "set", "sandbox.run_commands", "no", "--machine-file", str(mf)]) == 0
+    assert _run(["config", "add", "--repo", "sandbox.extra_read_paths", "/srv/in"]) == 0
+    sub = ["config", "set", "sandbox.extra_read_paths", '["/srv/in/sub"]', "--machine-file"]
+    assert _run([*sub, str(mf)]) == 0
+    ops = iso / "ops.toml"
+    ops.write_text('[sandbox]\nextra_write_paths = ["/srv/out"]\n', encoding="utf-8")
+    out = ["config", "add", "sandbox.extra_write_paths", "/srv/out", "--machine-file", str(mf)]
+    assert _run(out) == 2
+    assert "wider than your config's []" in capsys.readouterr().err
+    assert _run(["--config", str(ops), *out]) == 0
+    sandbox = tomllib.loads(mf.read_text(encoding="utf-8"))["config"]["sandbox"]
+    assert sandbox == {
+        "run_commands": "no",
+        "extra_read_paths": ["/srv/in/sub"],
+        "extra_write_paths": ["/srv/out"],
+    }
+
+
 def test_machine_overlay_rejects_providers(iso: pathlib.Path) -> None:
     mf = _machine_file(iso)
     assert _run(["config", "set", "providers.x.kind", "anthropic", "--machine-file", str(mf)]) == 2

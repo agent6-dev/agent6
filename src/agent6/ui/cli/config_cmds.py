@@ -8,9 +8,11 @@ import math
 import pathlib
 import sys
 import tempfile
+import tomllib
 
 from agent6 import errors, paths, portable
-from agent6.app import confine
+from agent6.app import _setup, confine
+from agent6.app.machine import sandbox_widening
 from agent6.config import (
     ConfigError,
     io,
@@ -23,6 +25,7 @@ from agent6.machine import (
     protected_overlay_error,
     protected_overlay_key_error,
 )
+from agent6.sandbox import detect
 from agent6.ui.cli import _common
 from agent6.viewmodel import config_view
 
@@ -251,18 +254,83 @@ def _leaf_problems(text: str) -> str:
     return "\n".join(leaves) if leaves else text
 
 
+def _sandbox_problems(
+    overlay: dict[str, object], config_path: pathlib.Path | None
+) -> dict[str, str]:
+    """Return the problem `machine check` reports per sandbox key of a machine's `[config]`.
+
+    Empty where this host lacks an explicit isolation level: `machine check` reports that.
+
+    Args:
+        overlay: The `[config]` table.
+        config_path: The invocation's `--config`, part of the operator's ceiling.
+
+    Raises:
+        ConfigError: A layer does not load.
+    """
+    cwd, env = pathlib.Path.cwd(), _setup.detect_env()
+    operator = layer.load_effective(cwd, config_path).config
+    machine = layer.load_effective_with_overlay(cwd, overlay, explicit_path=config_path).config
+    try:
+        return sandbox_widening(
+            operator,
+            detect.resolve_isolation(operator.sandbox.isolation, env),
+            machine,
+            detect.resolve_isolation(machine.sandbox.isolation, env),
+        )
+    except detect.IsolationUnavailableError:
+        return {}
+
+
+def _added_widening(
+    prior_text: str | None, overlay: dict[str, object], config_path: pathlib.Path | None
+) -> str | None:
+    """Return the refusal for each sandbox widening an edit added to a machine's `[config]`.
+
+    Compared before and after the edit, so no spelling of the key slips past, and a widening
+    the file already held is left for `machine check`.
+
+    Args:
+        prior_text: The file before the write; None when it did not exist.
+        overlay: The `[config]` table as the file now holds it.
+        config_path: The invocation's `--config`, part of the operator's ceiling.
+
+    Raises:
+        ConfigError: A layer does not load.
+    """
+    after = _sandbox_problems(overlay, config_path)
+    if not after:
+        return None
+    try:
+        prior = tomllib.loads(prior_text or "").get("config", {})
+        before = _sandbox_problems(prior if isinstance(prior, dict) else {}, config_path)
+    except (tomllib.TOMLDecodeError, ConfigError):
+        before = {}
+    added = [
+        f"the machine's [config] sets {problem}"
+        for leaf, problem in after.items()
+        if before.get(leaf) != problem
+    ]
+    return "\n".join(added) or None
+
+
 def _revalidate_machine(
-    target: pathlib.Path, prior_text: str | None, *, held: bool = True
+    target: pathlib.Path,
+    prior_text: str | None,
+    *,
+    held: bool = True,
+    config_path: pathlib.Path | None = None,
 ) -> str | None:
     """Re-validate a machine file after an overlay write, restoring the prior text on failure.
 
-    Blocks only when the edit made a valid machine invalid; one already invalid is
-    left for the author to finish.
+    Blocks only when the edit made a valid machine invalid, or added a `sandbox` value wider
+    than the operator's config; a machine already invalid is left for the author to finish.
 
     Args:
         target: The machine file.
         prior_text: The file before the write; None when it did not exist.
         held: The lock was held; when not, a broken edit is kept, saying so.
+        config_path: The invocation's `--config`, part of the operator's ceiling.
 
     Returns:
         The error to print, or None.
@@ -271,11 +339,11 @@ def _revalidate_machine(
     try:
         data = io.read_toml_file(target)
         overlay = data.get("config", {})
-        layer.load_effective_with_overlay(
-            pathlib.Path.cwd(), overlay if isinstance(overlay, dict) else {}
-        )
+        overlay = overlay if isinstance(overlay, dict) else {}
+        layer.load_effective_with_overlay(pathlib.Path.cwd(), overlay, explicit_path=config_path)
         if "states" in data and _machine_is_valid(prior_text):
             load_machine(target)
+        err = _added_widening(prior_text, overlay, config_path)
     except ConfigError as exc:
         err = _leaf_problems(str(exc))
     except MachineError as exc:
@@ -363,7 +431,7 @@ def _cmd_config_set(
             prior = errors.read_operator_file(target) if target.is_file() else None
             io.read_toml_file(target)  # no line surgery on a file that does not parse
             io.upsert_toml_leaf(target, prefix + key, parsed)
-            err = _revalidate_machine(target, prior, held=held)
+            err = _revalidate_machine(target, prior, held=held, config_path=config_path)
     if err:
         _common.error(f"{err}")
         return 2
@@ -452,7 +520,13 @@ def _cmd_config_unset(
 
 
 def _config_list_edit(
-    key: str, value: str, *, repo: bool, machine: pathlib.Path | None, add: bool
+    key: str,
+    value: str,
+    *,
+    repo: bool,
+    machine: pathlib.Path | None,
+    add: bool,
+    config_path: pathlib.Path | None = None,
 ) -> int:
     """Add to or remove from a list leaf in the target file.
 
@@ -462,6 +536,7 @@ def _config_list_edit(
         repo: Edit the in-repo config.
         machine: Edit this machine file's overlay.
         add: Add the entry; False removes it.
+        config_path: The invocation's `--config`, part of the ceiling on a machine overlay.
 
     Returns:
         The exit code.
@@ -508,7 +583,7 @@ def _config_list_edit(
                 written=[(key, items)],
             )
         else:
-            err = _revalidate_machine(target, prior, held=held)
+            err = _revalidate_machine(target, prior, held=held, config_path=config_path)
         if err:
             _common.error(f"{value!r} is not valid for {key}:\n{err}")
             return 2

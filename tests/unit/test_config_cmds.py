@@ -215,7 +215,7 @@ def test_revalidate_machine_rejects_invalid_spec_and_rolls_back(
 def test_revalidate_machine_accepts_valid_spec(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(config_layer, "load_effective_with_overlay", _noop_overlay)
+    monkeypatch.chdir(tmp_path)
     target = tmp_path / "m.asm.toml"
     target.write_text(_GOOD, encoding="utf-8")
 

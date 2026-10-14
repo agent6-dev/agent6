@@ -137,7 +137,8 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             p,
             (
                 "Save the change in FILE's [config] section. Settings that could access the"
-                " host, plus providers, sandbox settings, presets, and MCP servers, are refused."
+                " host, plus providers, presets, and MCP servers, are refused, and so is a"
+                " sandbox setting wider than your own config."
             ),
         )
 
