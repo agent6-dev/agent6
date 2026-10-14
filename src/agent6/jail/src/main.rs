@@ -2294,7 +2294,17 @@ fn run_child_exec(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
             // the same session, so the terminal's stop signals do stop it,
             // and a command run directly has no shell to resume it: undo the
             // stop. A shell's own jobs stop and resume under the shell.
+            //
+            // The foreground first, as a shell's `fg` does: a command whose
+            // child took the terminal and died is in a background group, and
+            // resumed there it stops again at its next read. SIGTTOU is
+            // ignored around the call because this launcher is in a
+            // background group itself; a terminal that is not the session's
+            // controlling terminal answers ENOTTY and is left alone.
             Ok(WaitStatus::Stopped(..)) => unsafe {
+                let old = libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+                libc::tcsetpgrp(0, pid.as_raw());
+                libc::signal(libc::SIGTTOU, old);
                 libc::killpg(pid.as_raw(), libc::SIGCONT);
             },
             Ok(status) => {

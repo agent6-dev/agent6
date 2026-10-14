@@ -79,6 +79,42 @@ def test_the_command_runs_in_the_foreground_of_its_controlling_terminal(
 
 
 @pytest.mark.parametrize("isolation", _LEVELS)
+def test_a_command_that_lost_the_foreground_reads_its_terminal_again(
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
+) -> None:
+    """A command whose child took the terminal's foreground and died still reads the terminal.
+
+    The launcher answered the terminal's stop with SIGCONT alone. Still in a background group,
+    the command stopped again at the same read, and the two looped until the command was killed.
+    """
+    taker = (
+        "import os, signal; signal.signal(signal.SIGTTOU, signal.SIG_IGN); "
+        "os.setpgid(0, 0); os.tcsetpgrp(0, os.getpgrp())"
+    )
+    script = f'python3 -c "{taker}"; echo TAKEN; read line; echo GOT-$line'
+    master, slave = pty.openpty()
+    try:
+        proc = jail.spawn_in_jail(
+            _policy(tmp_path, isolation, script),
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            controlling_terminal=True,
+        )
+    finally:
+        os.close(slave)
+    try:
+        _read_until(master, rb"TAKEN")
+        os.write(master, b"typed\n")
+        _read_until(master, rb"GOT-typed", timeout_s=10.0)
+        assert proc.popen.wait(timeout=20) == 0
+    finally:
+        left = proc.close()
+        os.close(master)
+    assert not left
+
+
+@pytest.mark.parametrize("isolation", _LEVELS)
 def test_a_command_a_signal_ended_exits_128_plus_the_signal(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:

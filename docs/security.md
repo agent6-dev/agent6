@@ -103,7 +103,8 @@ It drops a control sequence inside text the model influenced (a file name, a com
 - the ACP and MCP stdio transports write protocol bytes to their peer, not a terminal; the TUI and the web render text as text by construction
 - `agent6 exec` is the exception: the operator's own command writes the terminal unscrubbed, so `agent6 exec cat FILE` prints whatever sequences a model-written file holds
     - with stdin and stdout on a terminal the command runs on a pty of its own and agent6 relays the bytes, so it never holds the operator's terminal device.
-      The pty is the controlling terminal of the command's session, and the launcher puts the command's process group in its foreground before the command starts
+      The pty is the controlling terminal of the command's session, and the launcher puts the command's process group in its foreground before the command starts.
+      A command the pty stops is resumed by the launcher, which first puts its group back in the foreground
     - otherwise it inherits agent6's stdin, stdout and stderr as they are, a terminal among them included: it can change that terminal's modes, which agent6 puts back when the command ends
     - it runs in a session of its own, so an inherited terminal is never its controlling terminal: the kernel refuses it `TIOCSCTTY` on that terminal, and it takes no foreground there
 
