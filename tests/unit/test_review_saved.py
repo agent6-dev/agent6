@@ -84,6 +84,32 @@ def test_the_freeform_review_is_saved_and_its_path_named(
     assert f"review saved: {saved[0]}" in out.err
 
 
+def test_a_review_over_budget_prints_the_ledger_reason_once(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The budget error already names its ledger; the command adds no second prefix.
+
+    A review at its plan cap printed "budget exhausted: plan budget exhausted: ...".
+    """
+    from agent6 import budget as agent6_budget
+
+    monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock())
+    monkeypatch.setattr(
+        code_review,
+        "review_diff",
+        mock.MagicMock(
+            side_effect=agent6_budget.BudgetExceededError("plan budget exhausted: 3.0 of 3pt")
+        ),
+    )
+
+    rc = review_cmds._cmd_review(None, base="", head="HEAD", paths=())  # pyright: ignore[reportPrivateUsage]
+
+    err = capsys.readouterr().err
+    assert rc == 3
+    assert "plan budget exhausted: 3.0 of 3pt" in err
+    assert err.count("budget exhausted") == 1
+
+
 class _PassingSeatProvider:
     def call(self, **_kwargs: Any) -> Any:
         from agent6.providers import ProviderResponse
