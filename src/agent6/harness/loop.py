@@ -1734,7 +1734,9 @@ class Harness:
         """Record the end and return the execution's result.
 
         A grounded end reads `all_passed` off the final tree: True when it is observed
-        green, False when red or stale, None when nothing gated it.
+        green, False when red or stale, None when nothing gated it. Every end carries
+        `verified`, the gate's word for that tree, which an operator stop's `all_passed`
+        cannot say.
 
         Args:
             state: The execution's state.
@@ -1749,12 +1751,14 @@ class Harness:
         roots = end.roots if end.roots is not None else end.verdict != "failed"
         if roots:
             self._pass_pending_root_tasks()
+        verified = self.gate.verification(state.verify)
         if end.event and end.verdict == "failed":
             self._emit(
                 "session.end",
                 reason=end.reason,
                 iterations=iteration,
                 all_passed=False,
+                verified=verified,
                 **end.fields,
             )
         elif end.event:
@@ -1765,11 +1769,12 @@ class Harness:
                 iterations=iteration,
                 all_passed=self.gate.tree_green(state.verify) if grounded else True,
                 scoped=state.verify.scoped if grounded else end.scoped,
+                verified=verified,
             )
         self._record_memory_use(state)
         return _snapshot.SessionResult(
             completed=end.completed,
-            verified=self.gate.verification(state.verify),
+            verified=verified,
             reason=end.reason,
             summary=end.summary,
             iterations=iteration,

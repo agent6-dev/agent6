@@ -58,10 +58,10 @@ agent6 attach                 # follow live; --raw tails events, --tui full scre
 agent6 steer ID "focus on X"  # an instruction at the next step; --now interrupts the call in flight
 agent6 answer ID "yes"        # answer a live run's question (bare: print the question)
 agent6 stop ID                # stop now (the worker killed if it does not answer); --after-step, --all
-agent6 sessions show          # status, iteration, elapsed, cost, where the changes are; --json
+agent6 sessions show          # status, iteration, elapsed, cost, the gate's word, where the changes are; --json
 agent6 sessions diff          # the git diff the run produced; --stat, --path P
 agent6 sessions commits       # the run's per-step commits
-agent6 sessions merge         # land the work on your branch; --strategy, --into BRANCH
+agent6 sessions merge         # land the work on your branch (warns first when the gate did not certify it); --strategy, --into BRANCH
 agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N, --tools calls|none
 agent6 sessions graph         # the task graph, each line led by the id /retire takes
 agent6 sessions compare <ids> # >=2 runs ranked by the reviewer model (minutes), or a fan-out's verdict; --rejudge

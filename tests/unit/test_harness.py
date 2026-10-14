@@ -2389,6 +2389,33 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
     assert ends and ends[-1]["all_passed"] is False
 
 
+def test_session_end_carries_the_gates_word_for_the_final_tree() -> None:
+    """`session.end` carried `all_passed` alone, which an operator stop always writes false.
+
+    A later command could not tell a stop on a green tree from one on a tree nothing verified.
+    """
+    stop = _snapshot.End("steer_abort", "operator stopped the run", checkpoint=False)
+    verdicts = {
+        "passed": _verify_verdict.VerifyVerdict(ever_passed=True, last_ok=True),
+        "failed": _verify_verdict.VerifyVerdict(last_ok=False),
+        "unverified": _verify_verdict.VerifyVerdict(
+            ever_passed=True, last_ok=True, edited_since=True
+        ),
+    }
+    for word, verdict in verdicts.items():
+        ev = _EventCapture()
+        wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
+        result = wf._finish(_state(verify=verdict), stop, iteration=4)  # pyright: ignore[reportPrivateUsage]
+        (end,) = [e for e in ev.events if e["type"] == "session.end"]
+        assert (end["all_passed"], end["verified"], result.verified) == (False, word, word)
+    ev = _EventCapture()
+    gateless = _wf(mode="run", events=ev)
+    done = _snapshot.End("finish_session", "done", completed=True, verdict="grounded")
+    gateless._finish(_state(), done, iteration=2)  # pyright: ignore[reportPrivateUsage]
+    (end,) = [e for e in ev.events if e["type"] == "session.end"]
+    assert (end["all_passed"], end["verified"]) == (None, "not_applicable")
+
+
 def test_settle_after_a_failed_reverify_reports_the_red_gate() -> None:
     """A settled tree whose latest verify failed reports that red, not "no reverify"."""
     wf = _wf(mode="run", config=_cfg_with_verify())

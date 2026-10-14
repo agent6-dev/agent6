@@ -1233,3 +1233,69 @@ def test_diff_reads_the_chain_ref_when_the_branch_is_gone(
     out = capfd.readouterr().out
     assert "+x = 1" in out
     assert "is gone" not in out
+
+
+@pytest.mark.parametrize(
+    ("verified", "warning"),
+    [
+        ("unverified", "nothing verified this run's final tree"),
+        ("failed", "the verify gate was red on this run's final tree"),
+        ("passed", ""),
+        ("not_applicable", ""),
+        (None, ""),
+    ],
+)
+def test_merge_warns_before_landing_a_tree_the_gate_did_not_certify(
+    verified: str | None,
+    warning: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`sessions merge` landed a stopped run's unverified tree without a word.
+
+    The merge still lands and exits 0; a green, gateless or unworded end draws no warning.
+    """
+    monkeypatch.chdir(tmp_path)
+    base = _setup_run(tmp_path, "run-VVVV11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="run-VVVV11"
+    )
+    end: dict[str, object] = {"type": "session.end", "reason": "steer_abort", "all_passed": False}
+    if verified is not None:
+        end["verified"] = verified
+    events = [{"type": "session.start", "mode": "run", "user_task": "t"}, end]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    assert main(["sessions", "merge", "run-VVVV11"]) == 0
+    captured = capsys.readouterr()
+    assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"
+    assert "merged agent6/run-VVVV11 into main" in captured.out
+    warnings = [ln for ln in captured.err.splitlines() if "warning:" in ln]
+    assert warnings == ([f"[agent6] warning: {warning}; merging it."] if warning else [])
+
+
+def test_merge_says_a_timed_out_gate_timed_out(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The merge warning says a gate that ran out its limit timed out."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-TTTT11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="run-TTTT11"
+    )
+    events: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "verify.end", "exit_code": 124, "timeout_s": 300.0},
+        {
+            "type": "session.end",
+            "reason": "finish_session",
+            "all_passed": False,
+            "verified": "failed",
+        },
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    assert main(["sessions", "merge", "run-TTTT11"]) == 0
+    err = capsys.readouterr().err
+    assert (
+        "[agent6] warning: the verify gate timed out on this run's final tree; merging it." in err
+    )

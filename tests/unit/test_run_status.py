@@ -1012,3 +1012,64 @@ def test_status_prints_the_task_and_names_a_plans_page(
     (d / "manifest.json").write_text(json.dumps({"mode": "plan"}))
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     assert "plan:       agent6 plan show winsome-dawn-YWH5ZS" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("verified", "line"),
+    [
+        ("passed", "verify:     green on the final tree"),
+        ("failed", "verify:     red on the final tree"),
+        ("unverified", "verify:     not verified: no verify covered the final tree"),
+        ("not_applicable", "verify:     no gate"),
+        (None, None),
+    ],
+)
+def test_show_says_whether_the_final_tree_was_verified(
+    verified: str | None,
+    line: str | None,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`sessions show` had no verify line, so a stopped run said nothing about its tree."""
+    end: dict[str, object] = {
+        "ts": _ts(3),
+        "type": "session.end",
+        "reason": "steer_abort",
+        "all_passed": False,
+    }
+    if verified is not None:
+        end["verified"] = verified
+    _make_run(tmp_path, monkeypatch, [{"ts": _ts(40), "type": "session.start", "mode": "run"}, end])
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
+    out = capsys.readouterr().out
+    assert [ln for ln in out.splitlines() if ln.startswith("verify:")] == ([line] if line else [])
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert json.loads(capsys.readouterr().out)["verified"] == verified
+
+
+def test_show_says_a_timed_out_gate_timed_out(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The `verify:` line reads "timed out" under a "gate timed out" headline."""
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "session.start", "mode": "run"},
+            {"ts": _ts(9), "type": "verify.end", "exit_code": 124, "timeout_s": 300.0},
+            {
+                "ts": _ts(3),
+                "type": "session.end",
+                "reason": "finish_session",
+                "all_passed": False,
+                "verified": "failed",
+            },
+        ],
+    )
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
+    out = capsys.readouterr().out
+    assert "state:      finished · gate timed out" in out
+    assert "verify:     timed out on the final tree" in out
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert json.loads(capsys.readouterr().out)["verified"] == "failed"

@@ -18,7 +18,7 @@ The loop-owned conversation: typed turns over the provider wire.
 
 - **Written by:** harness/loop
 - **Read by:** harness/{_compaction, _compactor, _loop_state, _operator, _parallel_dispatch, _standing, _verify_gate}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (23 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (24 test files exercise it)
 
 ## SessionManifest
 
@@ -42,7 +42,7 @@ Hold a session's end and the snapshot a resume re-enters.
 
 - **Written by:** harness/loop
 - **Read by:** app/{_execution, finalize, fork, frontend, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_state, _metric, _verify_gate}, ui/acp/frontend, ui/cli/_ask
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (23 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (24 test files exercise it)
 
 ## ToolResult family
 

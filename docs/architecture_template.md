@@ -407,7 +407,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget` | per-iteration usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
 | `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, decision, disarmed), `skipped`, and the finish gate's rejections |
-| `session.end` | `reason`, `iterations`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it); one shape from every exit path |
+| `session.end` | `reason`, `iterations`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it), `verified` (the gate's word for the final tree, on every end the loop writes: `passed`, `failed`, `unverified` or `not_applicable`; `sessions show` prints it and `sessions merge` warns on `failed` and `unverified`); one shape from every exit path |
 
 A `run_command` approval publishes as `approval.prompt`.
 

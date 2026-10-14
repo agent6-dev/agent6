@@ -22,7 +22,14 @@ from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common, sessions_cmds
-from agent6.viewmodel import tail_events, worker_models
+from agent6.viewmodel import scan_session_log, tail_events, worker_models
+
+# The gate words that mean the gate did not certify the run's final tree.
+_UNVERIFIED_WARNINGS = {
+    "failed": "the verify gate was red on this run's final tree",
+    "timed_out": "the verify gate timed out on this run's final tree",
+    "unverified": "nothing verified this run's final tree",
+}
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -217,6 +224,9 @@ def _cmd_merge(
         # A success line here would be indistinguishable from a real merge.
         print(f"[agent6] nothing to merge: run branch {plan.run_branch} has no commits.")
         return 0
+    # The merge lands whatever the gate said; the operator hears it first.
+    if unverified := _UNVERIFIED_WARNINGS.get(scan_session_log(plan.layout.logs_path).gate_word()):
+        print(f"[agent6] warning: {unverified}; merging it.", file=sys.stderr)
     outcome = merge.execute_merge(
         cwd,
         layout=plan.layout,

@@ -568,6 +568,9 @@ class LogScan:
         all_passed: The verify tri-state; None when no verify command gated the end.
         verify_scoped: The judging gate ran scoped.
         end_reason: The session.end reason word.
+        verified: The gate's word for the final tree, as the last session.end carried it:
+            `passed`, `failed`, `unverified` or `not_applicable`; "" while a later execution
+            runs, and for an end that carried none.
         provider_error: The last failed driving call's error, the reason behind a
             `provider_error` end; "" when none failed.
         cost_usd: The spend across every execution; None when no budget.update was seen.
@@ -600,6 +603,7 @@ class LogScan:
     all_passed: bool | None = False
     verify_scoped: bool = False
     end_reason: str = ""
+    verified: str = ""
     provider_error: str = ""
     cost_usd: float | None = None
     usd_partial: bool = False
@@ -640,6 +644,13 @@ class LogScan:
         if self.last_verify_rc is not None and self.last_verify_rc != 0:
             return False
         return None
+
+    def gate_word(self) -> str:
+        """Return `verified`, with `timed_out` for a red that is the gate running out its limit.
+
+        The one word `sessions show` and `sessions merge` describe the final tree by.
+        """
+        return "timed_out" if self.verified == "failed" and self.verify_timeout_s else self.verified
 
     def status_facts(self) -> StatusFacts:
         """Return this scan's answers to the status questions.
@@ -744,7 +755,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         The scan; an empty one when the file cannot be read.
     """
     mode, task = "?", ""
-    finished, end_reason = False, ""
+    finished, end_reason, verified = False, "", ""
     provider_error = ""
     all_passed: bool | None = False
     verify_scoped = False
@@ -800,7 +811,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         unattended_questions += 1
                 if etype == "session.start":
                     saw_start = True
-                    finished = False
+                    finished, verified = False, ""
                     mode = str(ev.get("mode", mode))
                     task = str(ev.get("user_task", ""))
                     # A new execution re-asks with restarted ids; a held-over prompt waits forever.
@@ -818,6 +829,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     all_passed = None if raw_ap is None else bool(raw_ap)
                     verify_scoped = bool(ev.get("scoped", False))
                     end_reason = str(ev.get("reason", ""))
+                    verified = str(ev.get("verified") or "")
                 elif etype == "loop.resume.start":
                     if saw_start:
                         # Each execution's budget starts at 0: bank the finished one's total.
@@ -831,7 +843,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         executions += 1
                     saw_start = True
                     mode = str(ev.get("mode", mode))
-                    finished = False
+                    finished, verified = False, ""
                     pending_prompts.clear()
                 elif etype == "verify.end":
                     rc = ev.get("exit_code")
@@ -872,6 +884,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         all_passed=all_passed,
         verify_scoped=verify_scoped,
         end_reason=end_reason,
+        verified=verified,
         provider_error=provider_error,
         cost_usd=(usd_prior_executions + usd_execution) if saw_budget else None,
         usd_partial=usd_partial,

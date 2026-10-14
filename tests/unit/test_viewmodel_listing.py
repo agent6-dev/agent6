@@ -1420,3 +1420,21 @@ def test_the_three_finishes_over_a_red_gate_share_a_word() -> None:
             finished=True, all_passed=False, gate_red=True, end_reason=reason
         )
         assert word == "finished", reason
+
+
+def test_the_scan_reads_the_gates_word_and_tolerates_its_absence(tmp_path: pathlib.Path) -> None:
+    """The scan folds `session.end.verified`; a log written without it folds ""."""
+    from agent6.viewmodel import listing
+
+    log = tmp_path / "logs.jsonl"
+    start = {"type": "session.start", "mode": "run", "user_task": "t"}
+    end = {"type": "session.end", "reason": "steer_abort", "all_passed": False}
+    log.write_text(json.dumps(start) + "\n" + json.dumps(end) + "\n", encoding="utf-8")
+    assert listing.scan_session_log(log).verified == ""
+    worded = {**end, "verified": "unverified"}
+    log.write_text(json.dumps(start) + "\n" + json.dumps(worded) + "\n", encoding="utf-8")
+    assert listing.scan_session_log(log).verified == "unverified"
+    # A later execution has not ended, so it has no word yet.
+    resumed = [start, worded, {"type": "loop.resume.start", "mode": "run"}]
+    log.write_text("".join(json.dumps(e) + "\n" for e in resumed), encoding="utf-8")
+    assert listing.scan_session_log(log).verified == ""

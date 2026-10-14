@@ -188,6 +188,35 @@ def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
     )
 
 
+# What the run's last end said the gate made of the final tree.
+_VERIFY_LINES = {
+    "passed": "green on the final tree",
+    "failed": "red on the final tree",
+    "timed_out": "timed out on the final tree",
+    "unverified": "not verified: no verify covered the final tree",
+    "not_applicable": "no gate",
+}
+
+
+def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool) -> None:
+    """Print the questions nobody answered and the gate's word for the final tree.
+
+    Args:
+        scan: The log scan.
+        session_id: The session.
+        gated: The session is a run, the one mode a gate judges.
+    """
+    if n := scan.unattended_questions:
+        # Answered empty by the harness; the operator answers with a steer on resume.
+        print(
+            f"questions:  {n} unanswered (nobody was attached):"
+            f" agent6 sessions transcript {session_id}"
+        )
+    # An end with no word (a crash, a log written before the field) prints no line.
+    if gated and (verify := _VERIFY_LINES.get(scan.gate_word())):
+        print(f"verify:     {verify}")
+
+
 def _usage_line(scan: LogScan) -> str:
     """Return the run's tokens and cost line.
 
@@ -286,6 +315,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "last_event_age_s": round(last_age, 1) if last_age is not None else None,
                     "elapsed_s": round(elapsed, 1) if elapsed is not None else None,
                     "reason": scan.end_reason if scan.finished else None,
+                    "verified": scan.verified or None,
                     "input_tokens": scan.input_tokens,
                     "output_tokens": scan.output_tokens,
                     "cache_read_tokens": scan.cache_read_tokens,
@@ -339,12 +369,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     print(f"elapsed:    {_fmt_dur(elapsed)}")
     if scan.input_tokens is not None or scan.cost_usd is not None:
         print(f"usage:      {_usage_line(scan)}")
-    if n := scan.unattended_questions:
-        # Answered empty by the harness; the operator answers with a steer on resume.
-        print(
-            f"questions:  {n} unanswered (nobody was attached):"
-            f" agent6 sessions transcript {target.name}"
-        )
+    _print_end_facts(scan, target.name, gated=mode_display == "run")
     if changes.line:
         print(f"changes:    {changes.line}")
     if mode_display == "plan":

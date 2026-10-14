@@ -101,7 +101,7 @@ class SessionResult:
         finish_payload: The finish tool's payload, when any.
         stale_gate: The replacement gate the worker last proposed in any finish_session call
             of the execution; recorded, never acted on.
-        verified: The gate's word, the same fact `session.end.all_passed` carries.
+        verified: The gate's word for the final tree, which `session.end` carries as `verified`.
     """
 
     completed: bool
