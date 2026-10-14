@@ -24,7 +24,7 @@ graph TD
     n_tools --> n_sandbox
 ```
 
-Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `commit_message`, `config`, `directive`, `errors`, `event_log`, `git_ops`, `graph`, `init`, `kinds`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secret_store`, `sessions`, `skills`, `task_text`, `verify_infer`, `viewmodel`.
+Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `commit_message`, `config`, `directive`, `errors`, `event_log`, `git_ops`, `graph`, `init`, `kinds`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secret_store`, `sessions`, `skills`, `task_text`, `terminal`, `verify_infer`, `viewmodel`.
 
 - **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root, over the shared read-model fold (`viewmodel`)
     - the four front-ends: `ui/cli`, `ui/tui`, `ui/web`, `ui/acp`
@@ -231,6 +231,11 @@ Either call emits a `session.end` event and returns control to the CLI.
 
 Every LLM tool call passes the same gates: audit events wrap it, the mode backstop refuses an out-of-surface name, MCP calls take an approval, and the handler table routes the rest by name.
 Commands and verify run jailed; file tools resolve through the workspace boundary.
+
+Command streams lose terminal escape sequences before their 20,000-character tail cap and the model's result-byte cap.
+Background reads scrub the decoded tail before selecting lines; the 1 MiB file-read cap still counts raw bytes.
+The shared patterns live in `terminal.py`; command shaping preserves non-escape characters, including carriage returns, while rendering drops stray controls.
+Metric scores parse raw, unclipped output, including escape bytes.
 
 ```mermaid
 graph TD

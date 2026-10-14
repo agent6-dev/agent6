@@ -106,36 +106,34 @@ def test_the_scrub_is_default_deny_not_a_csi_blocklist() -> None:
     Stripping CSI alone let a demonstrated OSC 52 write the operator's clipboard from command
     stdout. \n and \t stay; plain text and cut-off payloads surface as inert text.
     """
-    from agent6.viewmodel import transcript
+    from agent6 import terminal
 
     payload = "cGF5bG9hZA=="
     assert (
-        transcript.scrub_terminal_controls(f"\x1b]52;c;{payload}\x07after") == "after"
+        terminal.scrub_terminal_controls(f"\x1b]52;c;{payload}\x07after") == "after"
     )  # OSC 52, BEL-terminated
     assert (
-        transcript.scrub_terminal_controls(f"\x1b]52;c;{payload}\x1b\\after") == "after"
+        terminal.scrub_terminal_controls(f"\x1b]52;c;{payload}\x1b\\after") == "after"
     )  # OSC 52, ST-terminated
-    assert transcript.scrub_terminal_controls("\x1b]0;title\x07x") == "x"  # OSC 0 (window title)
-    assert transcript.scrub_terminal_controls("\x1bPq#payload\x1b\\x") == "x"  # DCS
+    assert terminal.scrub_terminal_controls("\x1b]0;title\x07x") == "x"  # OSC 0 (window title)
+    assert terminal.scrub_terminal_controls("\x1bPq#payload\x1b\\x") == "x"  # DCS
     assert (
-        transcript.scrub_terminal_controls("\x1b_apc\x1b\\x") == "x"
-        and transcript.scrub_terminal_controls("\x1b^pm\x1b\\x") == "x"
+        terminal.scrub_terminal_controls("\x1b_apc\x1b\\x") == "x"
+        and terminal.scrub_terminal_controls("\x1b^pm\x1b\\x") == "x"
     )  # APC / PM
-    assert transcript.scrub_terminal_controls("\x1b[31mred\x1b[0m") == "red"  # CSI still goes
+    assert terminal.scrub_terminal_controls("\x1b[31mred\x1b[0m") == "red"  # CSI still goes
     assert (
-        transcript.scrub_terminal_controls("\x9b31mx") == "31mx"
+        terminal.scrub_terminal_controls("\x9b31mx") == "31mx"
     )  # a C1 byte cannot reopen the door
-    assert (
-        transcript.scrub_terminal_controls("a\rb\x07c") == "abc"
-    )  # stray \r spoofing and BEL drop
-    assert transcript.scrub_terminal_controls("keep\nthese\ttwo") == "keep\nthese\ttwo"
+    assert terminal.scrub_terminal_controls("a\rb\x07c") == "abc"  # stray \r spoofing and BEL drop
+    assert terminal.scrub_terminal_controls("keep\nthese\ttwo") == "keep\nthese\ttwo"
     # Cut off mid-sequence (a stream chunk boundary): the opener's tail goes,
     # and the continuation is inert text on its own.
-    assert transcript.scrub_terminal_controls(f"\x1b]52;c;{payload[:4]}") == ""
-    assert transcript.scrub_terminal_controls(f"{payload[4:]}\x07done") == f"{payload[4:]}done"
+    assert terminal.scrub_terminal_controls(f"\x1b]52;c;{payload[:4]}") == ""
+    assert terminal.scrub_terminal_controls(f"{payload[4:]}\x07done") == f"{payload[4:]}done"
     # Idempotent: re-scrubbing accumulated tails changes nothing.
-    once = transcript.scrub_terminal_controls("\x1b]52;c;x\x07text\x1b[1mbold")
-    assert transcript.scrub_terminal_controls(once) == once == "textbold"
+    once = terminal.scrub_terminal_controls("\x1b]52;c;x\x07text\x1b[1mbold")
+    assert terminal.scrub_terminal_controls(once) == once == "textbold"
 
 
 def test_a_jail_degradation_is_a_marker_in_the_fold() -> None:

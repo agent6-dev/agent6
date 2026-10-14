@@ -14,46 +14,13 @@ from __future__ import annotations
 
 import dataclasses
 import difflib
-import re
 import shlex
 from collections.abc import Callable, Iterable
 from typing import Any, Literal
 
-from agent6 import budget, kinds
+from agent6 import budget, kinds, terminal
 from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import format, listing
-
-# Default-deny: CSI alone would let an OSC 52 clipboard write and DCS/SOS/PM/APC payloads
-# through, and a C1 byte opens the same doors 8-bit. Sequences drop whole; \n and \t stay.
-_CONTROL_RE = re.compile(
-    r"\x1b\[[0-9;?]*[ -/]*[@-~]"  # CSI
-    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?"  # OSC, BEL- or ST-terminated (or cut off)
-    r"|\x1b[PX^_][^\x1b]*(?:\x1b\\)?"  # DCS / SOS / PM / APC, ST-terminated
-    r"|\x1b."  # any other escape, with its final byte
-    r"|[\x00-\x08\x0b-\x1f\x7f\x80-\x9f]",  # stray C0 (keep \t \n) + DEL + C1
-    re.DOTALL,
-)
-
-
-def scrub_terminal_controls(text: str) -> str:
-    """Return the text without terminal control sequences and stray control characters.
-
-    Idempotent, so an accumulating stream tail re-scrubs for free.
-    """
-    return _CONTROL_RE.sub("", text)
-
-
-# SGR styling passes, conceal (SGR 8) excepted; a colour cannot move the cursor or rewrite a
-# line. The spinners' erase idiom goes under `ui/cli/_terminal_guard.raw_stream` instead.
-_TERMINAL_RE = re.compile(
-    r"(?P<own>\x1b\[(?!(?:[0-9;]*;)?0*8(?:;|m))[0-9;]*m)|" + _CONTROL_RE.pattern, re.DOTALL
-)
-
-
-def scrub_terminal_output(text: str) -> str:
-    """Return the text the CLI may write to its terminal: SGR styling kept, controls dropped."""
-    return _TERMINAL_RE.sub(lambda m: m.group("own") or "", text)
-
 
 # Text characters, not graphics, so every terminal font renders them.
 CALL = "→"
@@ -742,8 +709,8 @@ class TranscriptFold:
             dataclasses.replace(
                 pending,
                 ok=ok,
-                detail=scrub_terminal_controls(detail),
-                tail=scrub_terminal_controls(tail),
+                detail=terminal.scrub_terminal_controls(detail),
+                tail=terminal.scrub_terminal_controls(tail),
             )
         ]
 

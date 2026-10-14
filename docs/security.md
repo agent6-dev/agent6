@@ -95,7 +95,7 @@ Under `api_format = "claude_code"` the model runs inside the operator's installe
 Its only reach into the machine is agent6's tools served over the sdk MCP tunnel, so the dispatcher, the jail, and the approval gates are unchanged.
 The binary holds the operator's Claude login exactly as an interactive `claude` does, and agent6 never reads it.
 
-Every line the CLI prints to the operator's terminal, on stdout, stderr or `/dev/tty`, passes one scrubber (`scrub_terminal_output`).
+Every line the CLI prints to the operator's terminal, on stdout, stderr or `/dev/tty`, passes one scrubber (`terminal.scrub_terminal_output`).
 It drops a control sequence inside text the model influenced (a file name, a commit subject, a summary, a task a plan wrote), so the model cannot write the clipboard (OSC 52), retitle the window or forge a line.
 
 - SGR styling is the allowlist, conceal excepted; an approval prompt drops every sequence from the text under judgment

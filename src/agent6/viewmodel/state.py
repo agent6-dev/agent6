@@ -19,12 +19,13 @@ import pathlib
 from collections.abc import Callable, Iterable
 from typing import Any, Literal
 
+from agent6 import terminal
 from agent6.graph import models
 from agent6.models import registry
 from agent6.sessions import ipc, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import background
-from agent6.viewmodel import events, format, listing, log_line, policy, transcript
+from agent6.viewmodel import events, format, listing, log_line, policy
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
@@ -519,7 +520,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             last = state.last_role
             if last is None or not last.in_flight or not piece:
                 return state
-            joined = transcript.scrub_terminal_controls(last.streamed_text + piece)
+            joined = terminal.scrub_terminal_controls(last.streamed_text + piece)
             return dataclasses.replace(
                 state,
                 last_role=dataclasses.replace(last, streamed_text=joined[-_STREAM_TAIL:]),
@@ -529,7 +530,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             last = state.last_role
             if last is None or not last.in_flight or not piece:
                 return state
-            joined = transcript.scrub_terminal_controls(last.streamed_thinking + piece)
+            joined = terminal.scrub_terminal_controls(last.streamed_thinking + piece)
             return dataclasses.replace(
                 state,
                 last_role=dataclasses.replace(last, streamed_thinking=joined[-_STREAM_TAIL:]),

@@ -127,6 +127,28 @@ def test_stop_all_closes_every_log_descriptor(
     assert shells.stop_all() == []
 
 
+def test_read_background_output_is_scrubbed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Escape payloads drop before the line cap, so only command text counts as lines."""
+    job = _Job()
+
+    def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
+        return job
+
+    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
+    shells = background.BackgroundShells(tmp_path / "shells")
+    view = shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
+    log = shells.log_root / view.id / "out.log"
+    log.write_bytes(b"old\n\x1b[32mout\x1b[0m\n\x1b]0;hidden\npayload\x07")
+    try:
+        _view, output = shells.read(view.id, tail_lines=1)
+        assert output == "... 1 earlier lines ...\nout"
+        assert log.read_bytes() == b"old\n\x1b[32mout\x1b[0m\n\x1b]0;hidden\npayload\x07"
+    finally:
+        shells.stop_all()
+
+
 def test_read_names_the_size_when_the_byte_cap_cuts_the_output(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

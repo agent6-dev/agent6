@@ -22,7 +22,7 @@ import shlex
 import time
 from collections.abc import Callable
 
-from agent6 import kinds, paths
+from agent6 import kinds, paths, terminal
 from agent6.sandbox import jail
 from agent6.sessions import ipc
 
@@ -360,6 +360,7 @@ class BackgroundShells:
             size = os.lseek(shell.log_fd, 0, os.SEEK_END)
             start = max(size - _TAIL_BYTES, 0)
             text = os.pread(shell.log_fd, size - start, start).decode(errors="replace")
+            text = terminal.scrub_terminal_escapes(text)
             cut_mid_line = start > 0 and os.pread(shell.log_fd, 1, start - 1) != b"\n"
         except OSError as exc:
             return self._view(shell), f"(output unreadable: {exc})"

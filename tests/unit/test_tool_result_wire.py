@@ -23,10 +23,13 @@ from unittest import mock
 
 import pytest
 
+from agent6 import kinds
 from agent6.config import Config, load_config
 from agent6.graph import curator, models
+from agent6.harness import _compaction, _nudges
+from agent6.sandbox import jail
 from agent6.sessions import layout
-from agent6.tools import dispatch, errors, operator_prompts
+from agent6.tools import _result_format, dispatch, errors, operator_prompts
 
 _VALID_TOML = """
 [agent6]
@@ -245,6 +248,140 @@ def _cmd_result(**kw: Any):
     base = dict(argv=("x",), returncode=0, stdout="", stderr="", duration_s=0.5, exec_failed=False)
     base.update(kw)
     return kinds.CommandResult(**base)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "\x1b[32m.\x1b[0m",
+        "\x1b]0;title\x07.",
+        "\x1b]8;;https://example.org\x1b\\.\x1b]8;;\x1b\\",
+        "\x1bPpayload\x1b\\.",
+        "\x1b_apc\x1b\\\x1b^pm\x1b\\\x1bXsos\x1b\\.",
+        ".\x1b]0;unfinished",
+    ],
+)
+def test_exec_result_drops_terminal_escapes(text: str) -> None:
+    """Terminal escape sequences in either captured stream do not reach the model."""
+    result = _result_format.exec_result(_cmd_result(stdout=text, stderr=text)).to_wire()
+    assert result["stdout"] == result["stderr"] == "."
+
+
+def test_exec_result_preserves_non_escape_characters() -> None:
+    """Scrubbing command output preserves CRLF, progress frames and non-escape characters."""
+    text = "first\rsecond\r\n\tthird\n\x07\x08"
+    result = _result_format.exec_result(_cmd_result(stdout=text, stderr=text)).to_wire()
+    assert result["stdout"] == result["stderr"] == text
+
+
+def test_clip_tail_counts_text_after_the_scrub() -> None:
+    """Escape bytes do not consume the command tail's character budget."""
+    assert _result_format.clip_tail("\x1b[32m" + "." * 20_000 + "\x1b[0m") == "." * 20_000
+    assert _result_format.clip_tail("\x1b[32m" + "." * 20_003 + "\x1b[0m") == (
+        "... 3 earlier chars clipped ...\n" + "." * 20_000
+    )
+
+
+def test_command_escape_bytes_do_not_consume_the_wire_cap() -> None:
+    """The harness's byte cap sees command text without the escape bytes."""
+    text = "\x1b[32m.\x1b[0m" * 1000
+    payload = _dumps(_result_format.exec_result(_cmd_result(stdout=text)))
+    capped = _compaction.cap_tool_result(payload, tool_name="run_command", cap=2000)
+    assert json.loads(capped)["stdout"] == "." * 1000
+
+
+def test_a_coloured_failure_has_the_plain_failure_signature() -> None:
+    """Colour changes do not make the same verify failure read as a different failure."""
+    plain = _result_format.exec_result(_cmd_result(returncode=1, stderr="AssertionError: want 3"))
+    coloured = _result_format.exec_result(
+        _cmd_result(returncode=1, stderr="\x1b[31mAssertionError:\x1b[0m want 3")
+    )
+    assert _nudges.verify_failure_signature(coloured.stdout, coloured.stderr) == (
+        _nudges.verify_failure_signature(plain.stdout, plain.stderr)
+    )
+
+
+@pytest.mark.parametrize("name", ["run_command", "run_verify_command", "run_metric_command"])
+def test_command_results_and_log_tails_are_scrubbed(tmp_path: pathlib.Path, name: str) -> None:
+    """Every execution handler gives the model and the journal escape-free output."""
+    from agent6 import event_log
+
+    toml = _VALID_TOML.replace('isolation = "auto"', 'isolation = "auto"\nnetwork = "host"') + (
+        '\n[harness.metric]\ncommand = ["true"]\npattern = "score: ([0-9.]+)"\ngoal = "maximize"\n'
+    )
+    config_path = tmp_path / "agent6.toml"
+    config_path.write_text(toml, encoding="utf-8")
+    logs = tmp_path / "logs.jsonl"
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=load_config(config_path), events=event_log.EventSink(logs)
+    )
+    with mock.patch(
+        "agent6.sandbox.jail.run_in_jail",
+        return_value=_cmd_result(stdout="\x1b[32mscore: 42\x1b[0m", stderr="\x1b[31merr\x1b[0m"),
+    ):
+        out = d.dispatch(name, {"argv": ["true"]} if name == "run_command" else {}).to_wire()
+    assert out["stdout"] == "score: 42" and out["stderr"] == "err"
+    if name == "run_metric_command":
+        assert out["score"] == 42.0
+    events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
+    tail = next(event for event in events if "stdout_tail" in event)
+    assert tail["stdout_tail"] == "score: 42" and tail["stderr_tail"] == "err"
+
+
+def test_metric_pattern_reads_raw_output_before_the_scrub_and_clip(tmp_path: pathlib.Path) -> None:
+    """An operator's regex can still match escape bytes in an early score line."""
+    toml = _VALID_TOML.replace('isolation = "auto"', 'isolation = "auto"\nnetwork = "host"') + (
+        '\n[harness.metric]\ncommand = ["true"]\n'
+        'pattern = "\\\\x1b\\\\[31mSCORE: ([0-9.]+)"\ngoal = "maximize"\n'
+    )
+    config_path = tmp_path / "agent6.toml"
+    config_path.write_text(toml, encoding="utf-8")
+    d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(config_path))
+    with mock.patch(
+        "agent6.sandbox.jail.run_in_jail",
+        return_value=_cmd_result(stdout="\x1b[31mSCORE: 42\x1b[0m\n" + "y" * 25_000),
+    ):
+        out = d.dispatch("run_metric_command", {}).to_wire()
+    assert out["score"] == 42.0
+    assert out["stdout"] == "... 5010 earlier chars clipped ...\n" + "y" * 20_000
+
+
+def test_a_handed_back_command_is_scrubbed(tmp_path: pathlib.Path) -> None:
+    """A check-in hand-back scrubs both streams and retains a readable background handle."""
+    log = tmp_path / "handoff.log"
+    log.write_text("\x1b[32mout\x1b[0m\n", encoding="utf-8")
+    handoff = kinds.BackgroundHandoff(
+        argv=("sleep", "60"),
+        pid=42,
+        log=str(log),
+        stdout="\x1b[32mout\x1b[0m\n",
+        stderr="\x1b[31merr\x1b[0m\n",
+        duration_s=900.0,
+        before=kinds.ChildSnapshot(1, frozenset()),
+    )
+    session = mock.Mock(spec=jail.JailSession)
+    session.run.return_value = handoff
+    session.status_background.return_value = jail.BackgroundStatus(
+        running=True, returncode=None, error=""
+    )
+    session.stop_background.return_value = jail.Stopped(returncode=-9, survivors=frozenset())
+    session.sweep_for.return_value = frozenset()
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=_config(tmp_path), session_dir=tmp_path / "run"
+    )
+    with mock.patch.object(d, "_run_session", return_value=session):
+        try:
+            out = d.dispatch("run_command", {"argv": ["sleep", "60"]}).to_wire()
+            assert out["returncode"] is None and out["still_running"] is True
+            assert out["stdout"] == "out\n" and out["stderr"] == "err\n"
+            assert (
+                d.dispatch("read_background", {"id": out["background_id"], "wait_s": 0}).to_wire()[
+                    "output"
+                ]
+                == "out"
+            )
+        finally:
+            d.close()
 
 
 def test_wire_run_verify(tmp_path: pathlib.Path) -> None:

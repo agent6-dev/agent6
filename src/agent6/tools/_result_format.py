@@ -8,7 +8,7 @@ import os
 import re
 from typing import Any
 
-from agent6 import kinds
+from agent6 import kinds, terminal
 from agent6.tools import results, schema
 
 PASSTHROUGH_ENV_KEYS = ("LANG", "LC_ALL", "TERM", "CI")
@@ -112,7 +112,8 @@ def output_tails(name: str, result: results.ToolResult) -> dict[str, Any]:
 
 
 def clip_tail(text: str, limit: int = 20_000) -> str:
-    """Return the last `limit` chars behind a marker naming what was dropped."""
+    """Return the last `limit` chars after scrubbing escapes, naming what was dropped."""
+    text = terminal.scrub_terminal_escapes(text)
     if len(text) <= limit:
         return text
     return f"... {len(text) - limit} earlier chars clipped ...\n" + text[-limit:]

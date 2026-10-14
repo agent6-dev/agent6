@@ -14,7 +14,7 @@ import pathlib
 import time
 from collections.abc import Mapping
 
-from agent6 import git_ops
+from agent6 import git_ops, terminal
 from agent6.app import merge, resume
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
@@ -28,7 +28,6 @@ from agent6.viewmodel import (
     listing,
     scan_session_log,
     summarize_session_dir,
-    transcript,
 )
 
 
@@ -157,7 +156,7 @@ def _status_state(
     if scan.finished:
         if scan.end_reason == "provider_error":
             # The label names the failure; the provider's own text, on one clean line, says why.
-            error = transcript.scrub_terminal_controls(scan.provider_error)
+            error = terminal.scrub_terminal_controls(scan.provider_error)
             return word, cell, " ".join(error.split())
         # The raw end reason is the diagnostic, unless the label already carries it.
         end = "" if scan.end_reason in (word, *reason.split(" · ")) else scan.end_reason

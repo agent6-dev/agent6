@@ -17,6 +17,7 @@ import time
 from collections.abc import Callable, Generator
 from typing import Any, TextIO
 
+from agent6 import terminal
 from agent6.ui.cli import _task_tree, _terminal_guard
 from agent6.viewmodel import events, format, listing, transcript, transcript_style
 
@@ -202,7 +203,7 @@ class ConsoleView:
     def _stream(self, piece: str, *, thinking: bool) -> None:
         """Write a delta inline, opening the prose block it belongs to."""
         # A control sequence split across deltas cannot reassemble: the tail prints inert.
-        piece = transcript.scrub_terminal_controls(piece)
+        piece = terminal.scrub_terminal_controls(piece)
         want = "thinking" if thinking else "text"
         if self._phase != want:
             if not piece.strip():

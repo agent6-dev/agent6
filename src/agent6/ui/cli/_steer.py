@@ -16,12 +16,11 @@ import termios
 from collections.abc import Callable, Generator
 from typing import Any
 
-from agent6 import budget, event_log, portable
+from agent6 import budget, event_log, portable, terminal
 from agent6.app import frontend
 from agent6.sessions import ipc
 from agent6.ui import keymap, steer
 from agent6.ui.cli import _common, _console_view, _menu_input, _steer_menu
-from agent6.viewmodel import transcript
 
 
 @contextlib.contextmanager
@@ -159,7 +158,7 @@ def tty_message(text: str) -> None:
     """Print to the controlling terminal directly, through the same scrubber as stdout."""
     try:
         with open(TTY_PATH, "w", encoding="utf-8") as tty:  # noqa: PTH123
-            tty.write(transcript.scrub_terminal_output(text))
+            tty.write(terminal.scrub_terminal_output(text))
             tty.flush()
             return
     except OSError:
@@ -232,7 +231,7 @@ def tty_prompt(
             return None
     try:
         with tty:
-            tty.write(transcript.scrub_terminal_output(text))
+            tty.write(terminal.scrub_terminal_output(text))
             line = _menu_input.read_line_until(fd, until)
             if line is None and until is not None:
                 # Whatever was typed was aimed at a prompt that is over.

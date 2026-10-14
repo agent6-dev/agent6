@@ -19,8 +19,8 @@ import select
 import sys
 from collections.abc import Callable
 
+from agent6 import terminal
 from agent6.ui.cli import _terminal_guard
-from agent6.viewmodel import transcript
 
 try:
     import termios
@@ -208,7 +208,7 @@ class _Reader:
         rows, highlight = self._rows()
         # A row's text is data, scrubbed here: this writer bypasses the stream's scrubber.
         rows = [
-            (transcript.scrub_terminal_controls(label), transcript.scrub_terminal_controls(dim))
+            (terminal.scrub_terminal_controls(label), terminal.scrub_terminal_controls(dim))
             for label, dim in rows
         ]
         if rows:

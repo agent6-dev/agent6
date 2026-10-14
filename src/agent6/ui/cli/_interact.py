@@ -10,13 +10,13 @@ import pathlib
 import sys
 from collections.abc import Callable, Sequence
 
-from agent6 import portable
+from agent6 import portable, terminal
 from agent6.sessions import ipc
 from agent6.tools import operator_prompts, schema
 from agent6.ui import keymap
 from agent6.ui import steer as ui_steer
 from agent6.ui.cli import _console_view, _steer
-from agent6.viewmodel import approval_parts, transcript
+from agent6.viewmodel import approval_parts
 
 
 def _pause(cv: _console_view.ConsoleView | None) -> contextlib.AbstractContextManager[None]:
@@ -59,7 +59,7 @@ def default_stdin_approver(
     suffix = keymap.approval_prompt_suffix(standing=standing)
     bold, dim, yellow, reset = "\033[1m", "\033[2m", "\033[33m", "\033[0m"
     # The text under judgment carries no sequence at all: conceal (SGR 8) hides what it wraps.
-    head, payload = approval_parts(transcript.scrub_terminal_controls(prompt))
+    head, payload = approval_parts(terminal.scrub_terminal_controls(prompt))
     if payload:
         body = "\n".join(f"    {ln}" for ln in payload.splitlines())
         rendered = (
