@@ -28,6 +28,7 @@ from agent6.viewmodel import (
     listing,
     scan_session_log,
     summarize_session_dir,
+    transcript,
 )
 
 
@@ -156,6 +157,10 @@ def _status_state(
     word, reason = row.status, row.reason
     cell = format.listing_status_label(row.mode, row.status, row.reason, unmerged=row.unmerged)
     if scan.finished:
+        if scan.end_reason == "provider_error":
+            # The label names the failure; the provider's own text, on one clean line, says why.
+            error = transcript.scrub_terminal_controls(scan.provider_error)
+            return word, cell, " ".join(error.split())
         # The raw end reason is the diagnostic, unless the label already carries it.
         end = "" if scan.end_reason in (word, reason) else scan.end_reason
         return word, cell, end

@@ -15,7 +15,7 @@ import pathlib
 import time
 from collections.abc import Container, Iterable, Mapping, Sequence
 
-from agent6 import git_ops, task_text
+from agent6 import git_ops, kinds, task_text
 from agent6.sessions import ipc, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import events, format
@@ -545,6 +545,8 @@ class LogScan:
         all_passed: The verify tri-state; None when no verify command gated the end.
         verify_scoped: The judging gate ran scoped.
         end_reason: The session.end reason word.
+        provider_error: The last failed driving call's error, the reason behind a
+            `provider_error` end; "" when none failed.
         cost_usd: The spend across every execution; None when no budget.update was seen.
         usd_partial: Some execution had unpriced spend, so `cost_usd` is a lower bound.
         executions: One plus the completed resume executions.
@@ -574,6 +576,7 @@ class LogScan:
     all_passed: bool | None = False
     verify_scoped: bool = False
     end_reason: str = ""
+    provider_error: str = ""
     cost_usd: float | None = None
     usd_partial: bool = False
     executions: int = 1
@@ -716,6 +719,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     """
     mode, task = "?", ""
     finished, end_reason = False, ""
+    provider_error = ""
     all_passed: bool | None = False
     verify_scoped = False
     saw_start = False
@@ -804,6 +808,10 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     rc = ev.get("exit_code")
                     if isinstance(rc, int) and not isinstance(rc, bool):
                         last_verify_rc = rc
+                elif etype == "role.result":
+                    # A side call's failure never ends the run, so it is not the reason.
+                    if ev.get("ok") is False and not kinds.is_side_role(str(ev.get("role", ""))):
+                        provider_error = str(ev.get("error", ""))
                 elif etype == "loop.pin.added":
                     pins.append(str(ev.get("text", "")))
                 elif etype == "loop.pin.restored":
@@ -834,6 +842,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         all_passed=all_passed,
         verify_scoped=verify_scoped,
         end_reason=end_reason,
+        provider_error=provider_error,
         cost_usd=(usd_prior_executions + usd_execution) if saw_budget else None,
         usd_partial=usd_partial,
         executions=executions,

@@ -337,6 +337,43 @@ def test_status_error_reason_reads_failed(
     assert "state:      failed · provider error\n" in capsys.readouterr().out
 
 
+def test_status_of_a_provider_failure_keeps_the_providers_error(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run ended by a provider error shows the error its driving call journaled.
+
+    The detail was empty, so a 401 read only `failed · provider error`; a side call
+    failing after it is not the reason.
+    """
+    error = (
+        'Anthropic API error 401: {"type":"error","error":{"type":"authentication_error",'
+        '"message":"API key is invalid."},"request_id":null}'
+    )
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "session.start", "mode": "run"},
+            {"ts": _ts(4), "type": "role.call", "role": "worker", "model": "claude-sonnet-4-5"},
+            {"ts": _ts(3), "type": "role.result", "role": "worker", "ok": False, "error": error},
+            {"ts": _ts(3), "type": "loop.provider.fatal", "status_code": 401, "error": error},
+            {"ts": _ts(2), "type": "role.result", "role": "reviewer", "ok": False, "error": "x"},
+            {
+                "ts": _ts(1),
+                "type": "session.end",
+                "reason": "provider_error",
+                "iterations": 1,
+                "all_passed": False,
+            },
+        ],
+    )
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    obj = json.loads(capsys.readouterr().out)
+    assert (obj["label"], obj["detail"]) == ("failed · provider error", error)
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert f"state:      failed · provider error ({error})\n" in capsys.readouterr().out
+
+
 def test_status_shows_fan_out_compare_outcome(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
