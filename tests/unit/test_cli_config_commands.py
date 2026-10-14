@@ -363,16 +363,19 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: pathlib.Path) -> N
         results["set"] = _run(["config", "set", "sandbox.memory_limit_mb", "1234"])
         results["set_done"] = True
 
-    tf = threading.Thread(target=run_fill, daemon=True)
-    ts = threading.Thread(target=run_set, daemon=True)
+    tf = threading.Thread(target=run_fill)
+    ts = threading.Thread(target=run_set)
     tf.start()
     ts.start()
-    assert fill_holds_lock.wait(timeout=5)
-    time.sleep(0.3)  # let the set reach (and block on) the target lock
-    assert results.get("set_done") is None  # the set is queued behind fill
-    release_fill.set()
-    tf.join(timeout=10)
-    ts.join(timeout=10)
+    try:
+        assert fill_holds_lock.wait(timeout=5)
+        time.sleep(0.3)  # let the set reach (and block on) the target lock
+        assert results.get("set_done") is None  # the set is queued behind fill
+    finally:
+        # Both end inside the test: one that outlived it would write with the restored environment.
+        release_fill.set()
+        tf.join()
+        ts.join()
     assert results["fill"] == 0 and results["set"] == 0
     sandbox = _global_toml(iso)["sandbox"]
     assert isinstance(sandbox, dict)

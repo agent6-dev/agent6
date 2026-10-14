@@ -5,11 +5,39 @@
 from __future__ import annotations
 
 import os
+import pathlib
+import shutil
+import tempfile
 
 import pytest
 import tree_sitter_language_pack
 
 from tests.jail_env import require_userns_jail
+
+# Resolved once, with the operator's own environment: the grammars already downloaded.
+_GRAMMAR_CACHE = tree_sitter_language_pack.cache_dir()
+
+_XDG_HOMES = ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME")
+_SESSION_HOMES = pytest.StashKey[pathlib.Path]()
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Run the whole session on throwaway XDG homes, under the per-test ones.
+
+    A thread that outlives its test runs after the per-test environment is restored; it
+    lands here, never in the operator's config or state.
+    """
+    base = pathlib.Path(tempfile.mkdtemp(prefix="agent6-test-session-"))
+    config.stash[_SESSION_HOMES] = base
+    for name in _XDG_HOMES:
+        home = base / name.lower()
+        home.mkdir()
+        os.environ[name] = str(home)
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    """Remove the session's throwaway homes."""
+    shutil.rmtree(config.stash.get(_SESSION_HOMES, pathlib.Path(os.devnull)), ignore_errors=True)
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
@@ -37,10 +65,6 @@ def _hermetic_git(  # pyright: ignore[reportUnusedFunction]
     cfg.write_text("[user]\n\tname = t\n\temail = t@t\n", encoding="utf-8")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(cfg))
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
-
-
-# Resolved once, with the operator's own environment: the grammars already downloaded.
-_GRAMMAR_CACHE = tree_sitter_language_pack.cache_dir()
 
 
 @pytest.fixture(autouse=True)
