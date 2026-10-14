@@ -188,6 +188,34 @@ def test_a_dirty_origin_fans_out_under_stash_and_include(
     assert fanned == ["t", "t"]
 
 
+def test_a_fan_out_prints_the_sandbox_degrades_a_run_prints(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The lanes run detached, so the coordinator prints the unsandboxed warning once, up front."""
+    from agent6.config import Config
+    from agent6.ui.cli import parallel as cli_parallel
+
+    def _clear(_cfg: Config) -> None:
+        return None
+
+    def _clean(_origin: pathlib.Path) -> list[str]:
+        return []
+
+    def _fake_run_parallel(_task: str, *_a: object, **_kw: object) -> int:
+        return 0
+
+    monkeypatch.setattr(preflight, "budget_preflight", _clear)
+    monkeypatch.setattr(cli_parallel, "_parallel_approval_refusal", _clear)
+    monkeypatch.setattr(git_ops, "modified_paths", _clean)
+    monkeypatch.setattr(parallel, "run_parallel", _fake_run_parallel)
+    cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
+    assert (
+        cli_parallel.dispatch_parallel(cfg, "t", "2", explicit_leaves=frozenset(), cwd=tmp_path)
+        == 0
+    )
+    assert "running UNSANDBOXED (sandbox.isolation = 'none')" in capsys.readouterr().err
+
+
 def test_summary_hands_a_conflicted_lane_to_the_operator() -> None:
     """The summary hands a conflicted lane to the operator.
 

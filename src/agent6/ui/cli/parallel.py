@@ -13,9 +13,10 @@ import pathlib
 from collections.abc import Callable, Sequence
 
 from agent6 import directive, git_ops, paths, terminal
-from agent6.app import parallel, preflight
+from agent6.app import _setup, confine, parallel, preflight
 from agent6.config import Config, ConfigError
 from agent6.models import validate
+from agent6.sandbox import detect, jail
 from agent6.sessions import id
 from agent6.ui import spawn as ui_spawn
 from agent6.ui import steer
@@ -74,6 +75,23 @@ def _parallel_approval_refusal(cfg: Config) -> str | None:
     )
 
 
+def _sandbox_refusal(cfg: Config, origin: pathlib.Path) -> str | None:
+    """Print the sandbox's degrades once for the fan-out.
+
+    The lanes run detached, so the warnings a run prints at its start print here instead.
+
+    Returns:
+        The host's refusal of the isolation, or None.
+    """
+    try:
+        env = _setup.detect_env()
+        isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
+        confine.warn_sandbox_gaps(isolation, env, cfg, root=origin)
+    except (jail.JailUnavailableError, detect.IsolationUnavailableError) as exc:
+        return str(exc)
+    return None
+
+
 def dispatch_parallel(
     cfg: Config,
     task: str,
@@ -105,7 +123,11 @@ def dispatch_parallel(
     """
     origin = cwd
     origin_state = paths.state_dir(origin)
-    for err in (preflight.budget_preflight(cfg), _parallel_approval_refusal(cfg)):
+    for err in (
+        preflight.budget_preflight(cfg),
+        _parallel_approval_refusal(cfg),
+        _sandbox_refusal(cfg, origin),
+    ):
         if err is not None:
             _common.refuse(f"{err}")
             return 2
