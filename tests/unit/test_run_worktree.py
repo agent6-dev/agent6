@@ -919,3 +919,26 @@ def test_a_fork_whose_gate_is_on_an_untracked_path_refuses_before_its_worktree_e
     assert _nothing_was_created(repo, "wt-FORK04")
     assert "the verify gate runs `.venv/bin/python`" in err
     assert "a fork's new worktree" in err
+
+
+def test_a_setup_on_resume_leaves_the_runs_own_files_in_its_commits(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every untracked file after a late setup was left out, the run's earlier files included.
+
+    The chain commits without moving the worktree's index, so the run's own new files read
+    untracked there; only what the setup command itself leaves is the environment.
+    """
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU10", "add new.txt"]) == 0
+
+    _with_setup(repo, '["sh", "-c", "echo ready > .setup-ran"]')
+    _script(monkeypatch, _edit("new.txt", "two\n"))
+    assert cli_main(["resume", "wt-SETU10", "--steer", "rewrite new.txt"]) == 0
+    assert "setup command: sh -c" in capsys.readouterr().err
+
+    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-SETU10"))
+    assert tip is not None
+    assert _git(repo, "show", f"{tip}:new.txt") == "two\n"
+    assert ".setup-ran" not in _git(repo, "ls-tree", "--name-only", tip)

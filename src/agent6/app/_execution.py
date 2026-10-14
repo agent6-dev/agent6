@@ -306,6 +306,8 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         unready: str | None = None
         untracked_at_start = inputs.untracked_at_start
         if workspace_setup.session_needs_setup(layout.session_dir):
+            # The run's own earlier files read untracked too: the chain never moves the index.
+            before = git_ops.untracked_paths(cwd) if mode == "run" else frozenset[str]()
             prepared = workspace_setup.prepare(cfg, cwd, dispatcher=dispatcher, reporter=reporter)
             unready = prepared.problem
             if prepared.ran:
@@ -314,7 +316,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 except (sessions_manifest.ManifestError, OSError) as exc:
                     reporter.note(f"could not record that this workspace is set up: {exc}")
                 if mode == "run":
-                    untracked_at_start |= git_ops.untracked_paths(cwd)
+                    untracked_at_start |= git_ops.untracked_paths(cwd) - before
                     sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
 
         def _undo_forker() -> tuple[str, str] | None:
