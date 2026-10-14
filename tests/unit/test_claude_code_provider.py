@@ -250,7 +250,9 @@ def test_handshake_answers_mcp_initialize_first_and_advertises_tools_verbatim(
 def test_malformed_inline_frame_is_reported_instead_of_stranding_the_reader(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_stream, "STREAM_FIRST_DATA_TIMEOUT_S", 0.3)
+    # Long enough for the fake binary to start on a loaded box; a stranded reader still
+    # ends on this timeout, with the other message.
+    monkeypatch.setattr(_stream, "STREAM_FIRST_DATA_TIMEOUT_S", 10.0)
     binary, cap = _install(tmp_path, {"malformed_initialize": True})
 
     with pytest.raises(ProviderError, match="invalid stream-json message"):
