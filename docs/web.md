@@ -128,4 +128,5 @@ tailscale serve --bg 7658 # HTTPS + WireGuard, reachable on your tailnet
 ```
 
 - the tailnet decides who reaches the server and `tailscale serve` terminates HTTPS; each browser still [signs in](#sign-in) with the secret
+- the session cookie carries `Secure` when the proxy says it terminated HTTPS (`X-Forwarded-Proto: https`), so a browser never sends it over plain HTTP
 - a non-loopback bind sends the secret and the cookie over plain HTTP, where anyone on the network path can read them and then drive the agent, so it refuses without the opt-in: `[web].allow_non_loopback = true` for [`[web].host`](config.md#web), `--allow-non-loopback` for `--host`

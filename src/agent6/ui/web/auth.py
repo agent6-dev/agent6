@@ -22,7 +22,8 @@ SECRET_ENV = child_env.WEB_SECRET_ENV
 MIN_SECRET_CHARS = 12
 _MINTED_PAIRS = 3  # about 44 bits over the wordlist
 _SESSION_MESSAGE = b"agent6-web-session-v1"
-# No `Secure`: the server speaks plain HTTP on loopback, and TLS is the proxy's job.
+# `Secure` only behind a proxy that terminated TLS: the server speaks plain HTTP on loopback,
+# where a browser would drop a Secure cookie.
 _COOKIE_ATTRIBUTES = "HttpOnly; SameSite=Strict; Path=/; Max-Age=34560000"
 _WORD_BREAKS = re.compile(r"[\s-]+")
 
@@ -106,9 +107,13 @@ def cookie_name(port: int) -> str:
     return f"agent6_web_{port}"
 
 
-def set_cookie(port: int, token: str) -> str:
-    """Return the `Set-Cookie` header a successful login answers with."""
-    return f"{cookie_name(port)}={token}; {_COOKIE_ATTRIBUTES}"
+def set_cookie(port: int, token: str, *, secure: bool = False) -> str:
+    """Return the `Set-Cookie` header a successful login answers with.
+
+    `secure` adds `Secure`, for a browser that reached the server over HTTPS.
+    """
+    attributes = f"{_COOKIE_ATTRIBUTES}; Secure" if secure else _COOKIE_ATTRIBUTES
+    return f"{cookie_name(port)}={token}; {attributes}"
 
 
 def has_session(cookie_headers: list[str], port: int, token: str) -> bool:

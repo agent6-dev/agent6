@@ -128,6 +128,22 @@ def test_a_wrong_secret_is_refused_and_sets_no_cookie(port: int) -> None:
     assert set_cookie == ""
 
 
+def test_a_login_through_a_tls_proxy_gets_a_secure_cookie(port: int) -> None:
+    """Behind a proxy that terminated HTTPS the cookie carries `Secure`; on loopback it does not."""
+    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        payload = json.dumps({"secret": signin.SECRET}).encode()
+        headers = {"Content-Type": "application/json", "X-Forwarded-Proto": "https"}
+        conn.request("POST", "/api/login", payload, headers)
+        resp = conn.getresponse()
+        assert resp.status == 200, resp.read()
+        set_cookie = resp.getheader("Set-Cookie", "")
+    finally:
+        conn.close()
+    assert set_cookie.endswith("; Secure")
+    assert not signin.login(port)[2].endswith("Secure")
+
+
 def test_the_secret_typed_with_spaces_and_capitals_signs_in(port: int) -> None:
     """A phone keyboard capitalizes and spaces words: both sides normalize before comparing."""
     status, body, set_cookie = signin.login(port, "  Amber Acorn  agile-alder ALERT - arrow ")

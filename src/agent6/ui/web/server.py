@@ -521,7 +521,13 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             refusal = "that is not the secret this `agent6 web` was started with"
             self._send_json({"ok": False, "error": refusal}, status=403)
             return
-        self._send_json({"ok": True}, set_cookie=auth.set_cookie(self.server.server_port, token))
+        # The proxy that terminated TLS says so; a forged header only narrows where the
+        # cookie is sent.
+        secure = self.headers.get("X-Forwarded-Proto", "").lower() == "https"
+        self._send_json(
+            {"ok": True},
+            set_cookie=auth.set_cookie(self.server.server_port, token, secure=secure),
+        )
 
     def _post_not_found(self, message: str) -> None:
         """Send 404 for a POST whose body was never read, closing the connection."""
