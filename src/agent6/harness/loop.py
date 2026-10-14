@@ -253,6 +253,7 @@ class Harness:
             start_iteration=1,
             root_task_id=root_id,
             original_task=effective_task,
+            operator_task=user_task,
         )
 
     def resume(self) -> _snapshot.SessionResult:
@@ -331,6 +332,7 @@ class Harness:
             start_iteration=snapshot.next_iteration,
             root_task_id=snapshot.root_task_id,
             original_task=snapshot.original_task,
+            operator_task=snapshot.operator_task,
             resume_from=snapshot,
         )
 
@@ -493,6 +495,7 @@ class Harness:
             next_iteration=next_iteration,
             root_task_id=state.root_task_id,
             original_task=state.original_task,
+            operator_task=state.operator_task,
             verify_command=self.gate.command(state.verify),
             review_rejections_total=state.gates.review_total,
             verify_ever_passed=state.verify.ever_passed,
@@ -541,6 +544,7 @@ class Harness:
         start_iteration: int,
         root_task_id: str | None,
         original_task: str,
+        operator_task: str = "",
         resume_from: _snapshot.SessionSnapshot | None = None,
     ) -> _snapshot.SessionResult:
         """Drive the turns of one execution until a phase ends it.
@@ -555,6 +559,7 @@ class Harness:
             start_iteration: The first iteration of this execution.
             root_task_id: The root task the graph's nodes attach under.
             original_task: The task verbatim; the review panel grounds on it.
+            operator_task: The operator's words before any revision; "" when the same.
             resume_from: The snapshot a resumed execution restores; None for a fresh run.
 
         Returns:
@@ -562,6 +567,7 @@ class Harness:
         """
         state = _loop_state.LoopState(
             original_task=original_task,
+            operator_task=operator_task,
             tool_calls=tool_calls,
             root_task_id=root_task_id,
             system=system,
@@ -1257,7 +1263,8 @@ class Harness:
         if self.plan_output_path is None or not finish.plan_markdown:
             return
         plan_md = _finish_gates.with_original_task(
-            finish.plan_markdown, task_text.operator_task_text(state.original_task)
+            finish.plan_markdown,
+            task_text.operator_task_text(state.operator_task or state.original_task),
         )
         try:
             paths.mkdir_for_real_user(self.plan_output_path.parent)

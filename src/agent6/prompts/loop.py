@@ -168,7 +168,7 @@ as the new run's task description. The skeleton that pass reads:
 # Plan: <one-line title>
 
 ## Original task
-<the user's task verbatim>
+<leave empty: agent6 fills it with the operator's words>
 
 ## Context discovered
 <short prose: relevant files, existing patterns, constraints>

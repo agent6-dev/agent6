@@ -93,9 +93,11 @@ PLAN_HEADINGS = frozenset(
 def with_original_task(plan_md: str, task: str) -> str:
     """Return the plan with its `## Original task` section holding the operator's text.
 
-    The model quotes its first message there, harness lines included; the section is the
-    harness's to fill, up to the skeleton's next heading (a `## ` line inside the quote is the
-    operator's own). A plan without the section is returned as it came.
+    The section is the harness's to fill, up to the skeleton's next heading; the model is told
+    to leave it empty, and one that quotes its first message there instead, harness lines
+    included, loses the quote (a `## ` line inside the quote is the operator's own). An
+    unquoted copy holding a skeleton heading of the task's own ends the section there. A plan
+    without the section is returned as it came.
 
     Args:
         plan_md: The plan markdown.

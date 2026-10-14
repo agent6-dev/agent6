@@ -184,6 +184,8 @@ class SessionSnapshot(pydantic.BaseModel):
         root_task_id: The task graph's root, when the run has one.
         original_task: The exact task text the run launched with; the manifest holds a
             truncated display twin.
+        operator_task: The operator's words as given, which a plan's `## Original task` holds;
+            `original_task` is the revised text when `revise_prompt` is on.
         verify_command: The gate the run resolved, () when gateless; a resume reuses it rather
             than inferring again.
         review_rejections_total: The before-finish panel's rejection count, which disarms it.
@@ -239,6 +241,7 @@ class SessionSnapshot(pydantic.BaseModel):
     pins: tuple[str, ...] = ()
     head_sha: str = ""
     graph_version: int = 0
+    operator_task: str = ""
 
 
 def _load_state_object(path: pathlib.Path, what: str) -> dict[str, Any]:

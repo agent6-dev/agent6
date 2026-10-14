@@ -36,7 +36,8 @@ class LoopState:
     its pin.
 
     Attributes:
-        original_task: The task text the run started with.
+        original_task: The task text the run started with, revised when `revise_prompt` is on.
+        operator_task: The operator's words as given; "" in a state built without them.
         tool_calls: Dispatches so far.
         ok_tool_calls: Dispatches that executed without a ToolError; the standing
             goal's spin guard counts only these as work since the last re-entry.
@@ -82,6 +83,7 @@ class LoopState:
     plan_injected: str = ""
     root_task_id: str | None = None
     system: str = ""
+    operator_task: str = ""
     parallel_groups_dispatched: int = 0
     pins: list[str] = dataclasses.field(default_factory=list)
     spiral: _spiral.SpiralGuard = dataclasses.field(default_factory=_spiral.SpiralGuard)
