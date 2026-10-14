@@ -292,6 +292,14 @@ def stamp_continued_from(session_dir: pathlib.Path, sha: str, branch: str) -> No
     )
 
 
+def stamp_includes(session_dir: pathlib.Path, included: manifest.IncludedRun) -> None:
+    """Record the unmerged run whose work this run started on and carries in its commits."""
+    m = manifest.read_manifest(session_dir)
+    write_manifest(
+        session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"includes": included})
+    )
+
+
 def stamp_fork_task(session_dir: pathlib.Path, steer: str, *, source_dir: pathlib.Path) -> None:
     """Record the first steer that sends a fork elsewhere as the fork's own task.
 

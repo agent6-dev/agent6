@@ -112,6 +112,7 @@ State is snapshotted before each model call and checkpointed per turn.
 - a `--steer` on a fork, or on resuming a run the agent finished, becomes the new run's task and names its row and its merge subject
 - a resume after the run's work landed continues from the checkout's HEAD when HEAD holds the merge: the run's next commits, `sessions diff` and its next merge then hold only the new work, so nothing lands twice
 - a run merged into a branch that is not checked out continues on its own chain, and merges again from its landed tip
+- `sessions merge` over a file you edited leaves your copy alone and prints two commands that merge your edit with what landed
 - a commit you made on the run's `agent6/<id>` branch refuses the resume, which names it: `agent6 sessions merge <id>` lands it with the run, or `resume --force` continues without it
 - files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside, `include` lets the run's next commit take them ([Config](config.md))
 

@@ -342,7 +342,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             preflight.unmerged_run_holding_the_tree(
                 cwd, state, except_id=effective_session_id, modified=modified
             )
-            if must_ask
+            if modified and cfg.git.dirty_tree != "stash"
             else ""
         )
         if must_ask and not answerable:
@@ -454,6 +454,13 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             # The operator's files, untracked after any stash; every commit leaves them out.
             untracked_at_start = git_ops.untracked_paths(cwd)
             sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
+            if unmerged_run and not stashed:
+                # Included: when the tree is exactly that run's tip, this run's merge lands it.
+                included = preflight.included_run(
+                    cwd, unmerged_run, base_sha=base_sha, exclude=untracked_at_start
+                )
+                if included is not None:
+                    stamps.stamp_includes(layout.session_dir, included)
 
         def _gate(cfg: Config, budget: agent6_budget.BudgetTracker) -> Config:
             # Infer an unset gate, then drop it last when commands are withheld.

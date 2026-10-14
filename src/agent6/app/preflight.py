@@ -13,7 +13,7 @@ import contextlib
 import dataclasses
 import pathlib
 import shlex
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Literal
 
 from agent6 import budget as agent6_budget
@@ -260,6 +260,35 @@ def unmerged_run_holding_the_tree(
         except git_ops.GitError:
             return ""
     return ""
+
+
+def included_run(
+    cwd: pathlib.Path, session_id: str, *, base_sha: str, exclude: Collection[str]
+) -> manifest.IncludedRun | None:
+    """Return the unmerged run a new run takes in whole, when its start tree is that run's tip.
+
+    A tree holding more or less than the tip (an operator edit on top, a file the commits
+    leave out) records nothing: the run then stays unmerged.
+
+    Args:
+        cwd: The workspace.
+        session_id: The unmerged run whose work the tree holds.
+        base_sha: The commit the new run starts on, the seed of its first commit's tree.
+        exclude: The new run's `untracked_at_start`.
+
+    Returns:
+        The run and its chain tip, or None.
+    """
+    try:
+        tip = git_ops.chain_tip(cwd, git_ops.chain_ref_for(session_id))
+        if tip is None:
+            return None
+        start = git_ops.worktree_tree(cwd, base_sha or None, exclude)
+        if git_ops.tree_diff_paths(cwd, tip, start):
+            return None
+    except git_ops.GitError:
+        return None
+    return manifest.IncludedRun(session_id=session_id, tip=tip)
 
 
 def _dirty_tree_listing(paths: Sequence[str], *, cap: int = 10, unmerged_run: str = "") -> str:

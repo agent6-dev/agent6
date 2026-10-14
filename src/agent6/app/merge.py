@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as _dt
 import pathlib
+import shlex
 from collections.abc import Callable
 from typing import Literal
 
@@ -40,6 +41,7 @@ class MergeOutcome:
         stamp_error: Why the manifest stamp did not land; the merge happened either way.
         recorded: This call stamped a noop as merged, with NO_MERGE_COMMIT for the sha.
         left_behind: Paths the checkout kept its own version of (`left_behind_line`).
+        target_before: The target's tip before the merge, the base of those versions.
     """
 
     status: Literal["merged", "noop", "conflict", "error"]
@@ -49,6 +51,7 @@ class MergeOutcome:
     stamp_error: str = ""
     recorded: bool = False
     left_behind: tuple[str, ...] = ()
+    target_before: str = ""
 
 
 def record_merge_in_manifest(
@@ -58,6 +61,7 @@ def record_merge_in_manifest(
     merged_sha: str,
     merged_tip: str = "",
     into_tip: str = "",
+    via: str = "",
 ) -> str:
     """Stamp the merge into the run manifest, so `prune` can tell a merged branch.
 
@@ -70,6 +74,7 @@ def record_merge_in_manifest(
         merged_tip: The run-branch tip merged; `prune --delete-squashed` deletes only a branch
             still pointing there.
         into_tip: The target's tip a merge that added nothing saw.
+        via: The run whose merge landed this one, "" for its own.
 
     Returns:
         "" when the stamp landed, else why it did not.
@@ -85,6 +90,7 @@ def record_merge_in_manifest(
                 sha=merged_sha,
                 tip=merged_tip,
                 into_tip=into_tip,
+                via=via,
                 ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="seconds"),
             )
         }
@@ -448,12 +454,53 @@ def execute_merge(
         merged_tip=merged_tip,
         into_tip=target_tip_before if noop else "",
     )
+    if not noop:
+        _land_included_run(cwd, layout, manifest, target, result.merged_sha)
     return MergeOutcome(
         "noop" if noop else "merged",
         merged_sha=result.merged_sha,
         stamp_error=stamp_error,
         recorded=noop and not stamp_error,
         left_behind=result.left_behind,
+        target_before=target_tip_before,
+    )
+
+
+def _land_included_run(
+    cwd: pathlib.Path,
+    layout: sessions_layout.SessionLayout,
+    manifest: sessions_manifest.SessionManifest,
+    target: str,
+    merged_sha: str,
+) -> None:
+    """Stamp the run this one took in under `dirty_tree = "include"` as merged with it.
+
+    Only a run still at the tip this one started on: later commits of its own did not land.
+
+    Args:
+        cwd: The repository.
+        layout: The landed run's directory layout.
+        manifest: The landed run's manifest.
+        target: The branch it landed on.
+        merged_sha: Its merge commit.
+    """
+    included = manifest.includes
+    if included is None:
+        return
+    theirs = dataclasses.replace(layout, session_id=included.session_id)
+    try:
+        if sessions_manifest.read_manifest(theirs.session_dir).merged is not None:
+            return
+    except sessions_manifest.ManifestError:
+        return
+    if git_ops.chain_tip(cwd, git_ops.chain_ref_for(included.session_id)) != included.tip:
+        return
+    record_merge_in_manifest(
+        theirs,
+        merged_into=target,
+        merged_sha=merged_sha,
+        merged_tip=included.tip,
+        via=manifest.session_id,
     )
 
 
@@ -471,12 +518,22 @@ def left_behind_line(target: str, outcome: MergeOutcome) -> str:
 
     The plumbing brings the checkout forward only where a file still matches what the branch
     held, so an operator's edit is never overwritten; the tree they then test holds the older
-    content.
+    content. Committed as it is, such a file would undo the merged change, so the line carries
+    the two commands that merge the edit with what landed.
     """
     if not outcome.left_behind:
         return ""
     named = ", ".join(outcome.left_behind[:4]) + (", ..." if len(outcome.left_behind) > 4 else "")
-    return f"your checkout keeps its own {named}; {target} holds what was merged"
+    kept = f"your checkout keeps its own {named}; {target} holds what was merged"
+    if not outcome.target_before:
+        return kept
+    paths = " ".join(shlex.quote(p) for p in outcome.left_behind)
+    return (
+        f"{kept}\n"
+        "  to merge your edits with what landed (a conflict leaves its markers in the file):\n"
+        f"    git diff {outcome.target_before[:12]} -- {paths} > your-edits.patch\n"
+        f"    git checkout HEAD -- {paths} && git apply --3way your-edits.patch"
+    )
 
 
 def noop_merge_line(run_branch: str, target: str, outcome: MergeOutcome) -> str:

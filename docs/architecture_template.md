@@ -291,6 +291,7 @@ The working tree at start is the run's next gate, in the same shape.
 Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt. A resume adds the files that appeared between executions and the run cannot show it wrote, and its note names them.
 Uncommitted changes to tracked files are asked about over the `ask_user` channel: stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes".
 `[git].dirty_tree = "stash"` and `"include"` answer without asking, and a run nobody can answer refuses before writing a manifest, discarding the empty dir.
+An included tree that is exactly an unmerged run's tip is recorded (`includes` in the manifest): when the including run merges and that run is still at the tip, it is stamped merged too (`merged.via`), so its own merge has nothing left to land.
 Every end the loop reaches records the tree the run left (`session.end.tree`), and a resume applies the same policy to the paths that differ from it: those changed outside the run.
 `stash` sets aside exactly those paths, and refuses when the run also changed one of them, since the stash would take the run's work with the edit.
 A resume after a death, a detach or an older session has no recorded tree: its note names the changes no commit has, and the next commit takes them.

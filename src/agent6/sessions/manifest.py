@@ -146,6 +146,8 @@ class MergeStamp(pydantic.BaseModel):
             no other ref.
         into_tip: For a merge that added nothing, the base's own tip at the time, the commit
             that already held the run's content; the delete checks it as it checks `sha`.
+        via: The run whose merge landed this one, when a later run took its work in under
+            `dirty_tree = "include"`; "" for the run's own merge.
     """
 
     model_config = _MODEL_CONFIG
@@ -155,6 +157,7 @@ class MergeStamp(pydantic.BaseModel):
     ts: str = ""
     tip: str = ""
     into_tip: str = ""
+    via: str = ""
 
     @property
     def commit(self) -> str:
@@ -170,6 +173,20 @@ class MergeStamp(pydantic.BaseModel):
         if self.commit:
             return f"merged into {self.into} as {self.commit}"
         return f"already on {self.into}, no merge commit"
+
+
+class IncludedRun(pydantic.BaseModel):
+    """An unmerged run whose whole work this run's start tree held and its commits carry.
+
+    Attributes:
+        session_id: That run.
+        tip: Its chain tip at this run's start, the tree this run started on.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    session_id: str = ""
+    tip: str = ""
 
 
 class ParallelLineage(pydantic.BaseModel):
@@ -278,6 +295,8 @@ class SessionManifest(pydantic.BaseModel):
             clone; a resume runs it only while this is False. A fork's new worktree starts
             False, and an `/undo` fork carries its source's.
         merged: The merge record, None until the run branch is merged.
+        includes: The unmerged run this run took in under `dirty_tree = "include"`, stamped
+            merged when this run lands; None when it took none, or more than that run's tip.
         parallel: A fan-out lane's lineage, or None.
         compare: A fan-out lane's compare stamp, or None.
         fanout: A fan-out's own record on its coordinator, or None.
@@ -309,6 +328,7 @@ class SessionManifest(pydantic.BaseModel):
     worktree_git_dir: pathlib.Path | None = None
     workspace_set_up: bool = False
     merged: MergeStamp | None = None
+    includes: IncludedRun | None = None
     parallel: ParallelLineage | None = None
     compare: CompareStamp | None = None
     fanout: FanoutStamp | None = None

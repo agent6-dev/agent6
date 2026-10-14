@@ -131,11 +131,12 @@ class GitConfig(pydantic.BaseModel):
             "`cancel`, which parks the run for a later resume); a run nobody can answer refuses "
             "to start. `stash`: stash them without asking; at the end the stash is applied back "
             "per `auto_stash_pop`, else its `git stash apply <sha>` line is printed. `include`: "
-            "start without asking, the run's first commit records them. Untracked files never "
-            "count and are never committed. `--parallel` fans out under `stash` or `include` and "
-            "refuses under `ask`. A resume applies the same setting to the files that changed "
-            "since the run's last execution ended; `stash` refuses there when the run also "
-            "changed one of them."
+            "start without asking, the run's first commit records them; when they are exactly "
+            "an unmerged run's work, that run reads merged once this one lands. Untracked files "
+            "never count and are never committed. `--parallel` fans out under `stash` or "
+            "`include` and refuses under `ask`. A resume applies the same setting to the files "
+            "that changed since the run's last execution ended; `stash` refuses there when the "
+            "run also changed one of them."
         ),
     )
     # A run that edited leaves its work in the tree: this fires after auto_merge or a no-edit run.

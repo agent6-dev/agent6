@@ -49,6 +49,7 @@
   "worktree_git_dir": null,
   "workspace_set_up": false,
   "merged": null,
+  "includes": null,
   "parallel": null,
   "compare": null,
   "fanout": null
