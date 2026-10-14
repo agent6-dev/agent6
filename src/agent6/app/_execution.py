@@ -145,8 +145,12 @@ def detach_to_background(
 
 
 def _escape_reason(exc: BaseException) -> _snapshot.SessionEndReason:
-    """Return the end reason an escaping exception stands for."""
-    return "interrupted" if isinstance(exc, KeyboardInterrupt) else "crashed"
+    """Return the end reason an escaping exception stands for.
+
+    A closed output pipe (`agent6 run ... | head`) is the operator's side going away, an
+    interruption like Ctrl-C.
+    """
+    return "interrupted" if isinstance(exc, (KeyboardInterrupt, BrokenPipeError)) else "crashed"
 
 
 def _journal_escape(

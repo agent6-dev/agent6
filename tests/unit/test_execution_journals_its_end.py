@@ -767,3 +767,22 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
     assert end.rc == 0
     assert "\n[agent6] run had ended; its result stands" in said
     assert not [line for line in said if "resume with:" in line]
+
+
+def test_a_closed_output_pipe_ends_the_run_as_a_stop_not_a_crash(tmp_path: pathlib.Path) -> None:
+    """`agent6 run ... | head` journals an interrupted end when the reader goes away.
+
+    The write to the closed pipe raised out of the run and was journaled as `crashed`, so the
+    session read "failed · crashed" though the operator had closed its output.
+    """
+    import json
+
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="sess-PIPE")
+    layout.ensure()
+    events = event_log.EventSink(layout.logs_path)
+
+    reason = _execution._journal_escape(events, BrokenPipeError(32, "Broken pipe"), iterations=2)
+
+    ended = [json.loads(line) for line in layout.logs_path.read_text().splitlines()][-1]
+    assert reason == "interrupted"
+    assert ended["type"] == "session.end" and ended["reason"] == "interrupted"
