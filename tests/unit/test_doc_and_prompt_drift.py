@@ -14,6 +14,7 @@ import re
 import subprocess
 import tomllib
 
+from agent6 import directive
 from agent6.prompts import loop as prompts
 from agent6.tools import patch_apply
 from agent6.tools import schema as tool_schema
@@ -97,6 +98,15 @@ def test_every_tool_mention_in_the_prompts_is_a_registered_tool() -> None:
                 " nor in the non-tool allowlist: a rename left stale text, or"
                 " the allowlist needs the new parameter"
             )
+
+
+def test_usage_says_which_listed_directives_a_scripted_steer_refuses() -> None:
+    """usage.md listed `/undo` among the directives `agent6 steer` sends, which refuses it."""
+    usage = (REPO / "docs" / "usage.md").read_text(encoding="utf-8").splitlines()
+    listed = [ln for ln in usage if any(ln.startswith(f"- `{c}`") for c in directive.VIEW_COMMANDS)]
+    assert listed, "usage.md no longer lists a view directive"
+    for line in listed:
+        assert "`agent6 steer` refuses it" in line, line
 
 
 def test_readme_dependency_count_matches_pyproject() -> None:

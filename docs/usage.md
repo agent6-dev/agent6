@@ -87,7 +87,7 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 - `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had
 - `/pin <text>` survives every compaction; `/compact [focus]` compacts now; `/now <text>` interrupts the call in flight
 - `/btw <question>` asks a side question; `/parallel [spec] <task>` fans out lanes ([parallel](config.md#parallel))
-- `/undo` takes back the last message: the tree is committed on the run's chain, every tracked path the turn changed is put back, and the run continues as a fork in the same checkout; refused while another live run drives the checkout
+- `/undo` takes back the last message: the tree is committed on the run's chain, every tracked path the turn changed is put back, and the run continues as a fork in the same checkout; refused while another live run drives the checkout; it acts on a view of the run, so `agent6 steer` refuses it: type it in `agent6 attach`, the TUI or the web
 
 ## Answer a parked prompt
 
