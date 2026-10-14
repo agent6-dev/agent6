@@ -31,6 +31,7 @@ from agent6.harness import _chain, _loop_state, _snapshot, loop
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import (
     fork,  # pyright: ignore[reportPrivateUsage]
+    main,
     resume,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -1596,3 +1597,45 @@ def test_fork_refuses_a_run_the_model_controls_git_in(
     assert not sessions_layout.SessionLayout(
         state_dir=state, session_id="child-MOD22"
     ).manifest_path.exists()
+
+
+@pytest.mark.parametrize(("at_turn", "seed"), [(0, True), (4, False)])
+def test_a_fork_from_a_forks_seed_says_so(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    at_turn: int,
+    seed: bool,
+) -> None:
+    """A fork cut at a fork's seed read like one cut at its turn, though the two differ.
+
+    A fork's checkpoint 0 is its seed, which holds its source's turn: `--at-turn 0` and
+    `--at-turn 4` both print "@turn 4", and only the seed lacks what the fork did since.
+    """
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state = paths.state_dir(repo)
+    _seed_source_run(state, "source11", head_sha=head, turns=(4,))
+    assert main(["fork", "source11", "--at-turn", "4", "--no-run", "--session-id", "parent11"]) == 0
+    parent = sessions_layout.SessionLayout(state_dir=state, session_id="parent11")
+    seeded = _snapshot.load_session_snapshot(parent.checkpoint_path(0))
+    steered = seeded.model_copy(
+        update={"messages": [*seeded.messages, {"role": "user", "content": "another approach"}]}
+    )
+    parent.checkpoint_path(4).write_text(steered.model_dump_json(), encoding="utf-8")
+    capsys.readouterr()
+
+    assert (
+        main(["fork", "parent11", "--at-turn", str(at_turn), "--no-run", "--session-id", "child11"])
+        == 0
+    )
+
+    said = "".join(capsys.readouterr())
+    line = next(ln for ln in said.splitlines() if "forked parent11@turn 4" in ln)
+    assert ("(the seed parent11 started from)" in line) is seed
+    child = sessions_layout.SessionLayout(state_dir=state, session_id="child11")
+    copied = _snapshot.load_session_snapshot(child.session_dir / "loop_state.json")
+    assert copied.messages == (seeded.messages if seed else steered.messages)
+    manifest = json.loads(child.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["forked_from_turn"] == 4

@@ -190,6 +190,8 @@ class _ForkPlan:
         checkpoint_path: The snapshot the fork seeds from.
         graph_version: The DAG version to rebuild at.
         forked_from_turn: The turn the fork continues from.
+        from_seed: The snapshot is the seed a forked source started from, which holds that
+            turn before anything the source did.
         forked_from_sha: The committed HEAD at that turn.
         base_sha: The source's base commit, carried forward.
         base_branch: The source's base branch, carried forward.
@@ -208,6 +210,7 @@ class _ForkPlan:
     checkpoint_path: pathlib.Path
     graph_version: int
     forked_from_turn: int
+    from_seed: bool
     forked_from_sha: str
     base_sha: str
     base_branch: str
@@ -332,6 +335,8 @@ def _plan_fork(
         checkpoint_path=checkpoint_path,
         graph_version=checkpoint.graph_version,
         forked_from_turn=checkpoint.next_iteration,
+        # A fork's checkpoint 0 is its seed: it holds the source's turn, not turn 0.
+        from_seed=at_turn == 0 and checkpoint.next_iteration != 0,
         forked_from_sha=forked_from_sha,
         # A source whose work landed moved its base to where it continued from; a turn from
         # before that predates the base, and the fork's own work starts at the turn.
@@ -549,8 +554,9 @@ def _materialize_fork(
         else "("
     )
     where = f" in {checkout.worktree}" if checkout is not None else ""
+    seed = f" (the seed {src.session_id} started from)" if plan.from_seed else ""
     reporter.note(
-        f"forked {src.session_id}@turn {plan.forked_from_turn} -> {dst.session_id} "
+        f"forked {src.session_id}@turn {plan.forked_from_turn}{seed} -> {dst.session_id} "
         f"{at}at {plan.forked_from_sha[:12]}){where}"
     )
     return 0

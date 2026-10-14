@@ -126,6 +126,7 @@ State is snapshotted before each model call and checkpointed per turn.
 
 - `fork` continues a copy from a turn as a new run in its own git worktree ([isolated workspaces](#isolated-workspaces)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `rm` treat it like any run ([session state](architecture.md#session-state-on-disk))
   `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
+- `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
 - a `--parallel` lane continues through `agent6 fork <lane-id>`, in a worktree at the lane's last commit; `resume` refuses a lane from your checkout, whose tree is not the lane's
 - a fan-out stopped only by lane caps reads `failed · budget exhausted` and exits `3`; its report says to raise the budget cap and fork each stopped lane
 - a `--steer` on a fork, or on resuming a run the agent finished, becomes the new run's task and names its row and its merge subject
