@@ -349,6 +349,7 @@ seats = [
 ### `[harness.metric]` (optional)
 
 A continuous score for measurable goals; `command` runs in the jail like `verify_command`.
+Set its required fields together: `agent6 config set --repo harness.metric '{ command = ["python3", "bench.py"], pattern = "score: ([0-9.]+)", goal = "minimize" }'`.
 
 | Field | Default | Meaning |
 |---|---|---|

@@ -420,13 +420,52 @@ def revalidate_write(
         # settles whose fault it is, and the merged check below keeps a pre-broken config.
         if written_value_error(wkey, wvalue, repo_root=repo_root) is not None:
             return keep_or_rollback(target, prior, value_err, held=held)
-    err = merged_config_error(repo_root)
-    if err is None:
+    try:
+        layer.load_effective(repo_root, None)
+    except config_model.ConfigError as exc:
+        err = str(exc) + _whole_table_hint(exc, written, to_repo=to_repo)
+    else:
         return None
     # A target that no longer parses is always this write's doing, never another layer's.
     if not was_valid and not target_unparseable(target):
         return None  # broken before this edit; not ours to refuse
     return keep_or_rollback(target, prior, err, held=held)
+
+
+def _whole_table_hint(
+    exc: config_model.ConfigError, written: Sequence[tuple[str, object]], *, to_repo: bool
+) -> str:
+    """Return the line naming the one write that sets a table's required fields together.
+
+    A table with required fields (`harness.metric`) cannot be built one leaf at a time: each
+    write alone fails validation and rolls back.
+
+    Args:
+        exc: The merged config's load error.
+        written: The `(key, value)` pairs the edit wrote.
+        to_repo: The target is the repo layer, so the command keeps `--repo`.
+
+    Returns:
+        The hint, starting with a newline, or "" when no written table misses a field.
+    """
+    cause = exc.__cause__
+    if not isinstance(cause, pydantic.ValidationError):
+        return ""
+    missing: dict[str, list[str]] = {}
+    for issue in cause.errors():
+        if issue["type"] == "missing":
+            *table, field = (str(part) for part in issue["loc"])
+            missing.setdefault(".".join(table), []).append(field)
+    for key, _ in written:
+        table, _, leaf = key.rpartition(".")
+        if table in missing:
+            fields = ", ".join(f"{name} = ..." for name in (leaf, *missing[table]))
+            flag = " --repo" if to_repo else ""
+            return (
+                "\nset the table's fields in one write: "
+                f"`agent6 config set{flag} {table} '{{ {fields} }}'`"
+            )
+    return ""
 
 
 def _models_at(

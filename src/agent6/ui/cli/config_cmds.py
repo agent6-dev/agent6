@@ -406,12 +406,12 @@ def _cmd_config_set(
     machine: pathlib.Path | None,
     config_path: pathlib.Path | None = None,
 ) -> int:
-    """Set a scalar leaf in the target file.
+    """Set a leaf or table in the target file.
 
     Args:
-        key: The dotted leaf.
+        key: The dotted leaf or table.
         value: The value as typed.
-        repo: Write the in-repo config.
+        repo: Write the repo config.
         machine: Write this machine file's overlay.
         config_path: The invocation's `--config`, for the shadow note.
 
@@ -445,9 +445,7 @@ def _cmd_config_set(
 
 def _config_key_error(key: str, eff: layer.EffectiveConfig) -> str:
     """Return the error for a key that is a section or unknown, with its did-you-mean."""
-    if any(
-        candidate.startswith(key + ".") for candidate in confine.resolved_config_values(eff.config)
-    ):
+    if any(candidate.startswith(key + ".") for candidate in layer.leaf_keys(eff)):
         return f"{key!r} is not a config leaf (see `agent6 config show`)."
     return write.unknown_key_error(key, pathlib.Path.cwd(), eff=eff)
 

@@ -123,8 +123,8 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             val_arg = p.add_argument(
                 "value",
                 help=(
-                    f"Value to {action}. TOML booleans, numbers, quoted strings, and lists keep"
-                    " their types. Other text is treated as a string."
+                    f"Value to {action}. TOML booleans, numbers, quoted strings, lists, and inline"
+                    " tables keep their types. Other text is treated as a string."
                 ),
             )
             val_arg.completer = completers._complete_config_values  # type: ignore[attr-defined]
