@@ -64,7 +64,8 @@ def _plan_text_for_run(plan_path: pathlib.Path, session_id: str) -> str | None:
 def cli_main(argv: list[str] | None = None) -> int:
     """Run the CLI, sorting failures by fault.
 
-    An `OperatorError` prints as a refusal at exit 2, no traceback. Anything else
+    An `OperatorError` prints as a refusal at exit 2, no traceback. A closed output pipe
+    (`agent6 ... | head`) ends quietly at 141, as SIGPIPE would. Anything else
     is a bug: one line plus a saved traceback, exit 1; `AGENT6_DEBUG=1` re-raises it.
     `main` stays unguarded so tests see real tracebacks.
 
@@ -83,6 +84,10 @@ def cli_main(argv: list[str] | None = None) -> int:
         except errors.OperatorError as exc:
             _common.error(f"{exc}")
             return 2
+        except BrokenPipeError:
+            # The interpreter flushes stdout at exit: /dev/null takes what the closed pipe cannot.
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+            return 141
         except Exception as exc:  # the last resort; re-raised under AGENT6_DEBUG
             if os.environ.get("AGENT6_DEBUG") == "1":
                 raise

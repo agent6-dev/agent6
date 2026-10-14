@@ -2,13 +2,16 @@
 # Copyright 2026 Eric Lesiuta
 """The guarded console-script entry point `cli_main` sorts failures by fault.
 
-An OperatorError refuses at exit 2 with no traceback; anything else crash-reports at exit 1.
+An OperatorError refuses at exit 2 with no traceback; a closed stdout ends quietly at 141;
+anything else crash-reports at exit 1.
 """
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
@@ -137,3 +140,31 @@ def test_cli_main_handles_keyboard_interrupt(
     monkeypatch.setattr(entry, "main", _interrupt)
     assert cli_main() == 130
     assert "interrupted" in capsys.readouterr().err
+
+
+def test_a_closed_stdout_ends_quietly(tmp_path: pathlib.Path) -> None:
+    """A write after the reader closed ends at 141 like any SIGPIPE, with no crash report."""
+    read_end, write_end = os.pipe()
+    os.close(read_end)
+    env = os.environ | {
+        "XDG_CONFIG_HOME": str(tmp_path / "g"),
+        "XDG_STATE_HOME": str(tmp_path / "s"),
+        "TMPDIR": str(tmp_path),
+    }
+    env.pop("AGENT6_DEBUG", None)
+    script = "import sys; from agent6.ui.cli import cli_main; sys.exit(cli_main())"
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", script, "config", "show"],
+            cwd=tmp_path,
+            env=env,
+            stdout=write_end,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    finally:
+        os.close(write_end)
+    assert (proc.returncode, proc.stderr) == (141, "")
+    assert not list(tmp_path.glob("agent6-crash-*"))

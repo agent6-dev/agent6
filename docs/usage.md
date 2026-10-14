@@ -115,6 +115,7 @@ Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scr
 | `4` | finished over a red or never-run verify gate; a review panel's BLOCK |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_step = false`, stays `0`) |
 | `130` | interrupted |
+| `141` | the output pipe closed (`agent6 ... \| head`) |
 
 ## Plan, review, and ask
 
