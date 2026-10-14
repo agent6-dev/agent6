@@ -178,6 +178,7 @@ class _SteerOnce:
 
 def _config() -> Any:
     return types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,

@@ -217,6 +217,11 @@ Every path they take resolves through `Workspace`:
 - Inside the state dir the edit tools may write the memory dir (`<state-dir>/<repo-id>/memory/`) and nothing else (the exempt list in `tools/_path_safety.py`).
 - Uncovered: with `isolation = "none"` and `run_commands = "yes"`, a command reads a denied path directly (`run_command` argv is not screened)
 
+**Prompt reads.** The agent process itself reads `AGENTS.md` and the manifests the verify inference uses (`pyproject.toml`, `package.json`, a Makefile and the like), and their text reaches the provider.
+
+- A file is read only when its real path stays inside the workspace root (the git root for `AGENTS.md`), outside `.git` and outside the hidden set; anything else reads as absent.
+- A symlink that stays inside the root is followed (`AGENTS.md -> docs/AGENTS.md`).
+
 **Repo memory** is a prompt-injection persistence channel: `MEMORY.md` joins the system prompt of later runs on the same repo.
 
 - Entries are inert data.

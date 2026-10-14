@@ -183,7 +183,7 @@ class Harness:
             mode=self.mode,
         )
         self._log("LOOP: LOAD_CONTEXT")
-        repo = _context.load_repo_summary(self.chain.root)
+        repo = _context.load_repo_summary(self.chain.root, self.config.sandbox.hide_paths)
         system = _prompt_blocks.build_system_prompt(
             config=self.config,
             repo=repo,
@@ -1986,6 +1986,7 @@ class Harness:
             retries=wf.verify_retries,
             timeout_s=wf.verify_timeout_s,
             infer=wf.verify_infer,
+            hide=self.config.sandbox.hide_paths,
             mode=self.mode,
             chain=self.chain,
             dispatcher=self.dispatcher,
@@ -2052,6 +2053,7 @@ class Harness:
             take_requests=self.bridge.take_requests,
             revision=self.revision,
             root=self.chain.root,
+            hide=self.config.sandbox.hide_paths,
             log=self._log,
             emit=self._emit,
             emit_graph_snapshot=self._emit_graph_snapshot,
@@ -2089,6 +2091,7 @@ class Harness:
         return _reviewer.Reviewer(
             settings=self.review,
             chain=self.chain,
+            hide=self.config.sandbox.hide_paths,
             review_tools=lambda: _toolset.build_readonly_review_tools(self.dispatcher),
             budget_remaining=self._budget_fraction_remaining,
             log=self._log,

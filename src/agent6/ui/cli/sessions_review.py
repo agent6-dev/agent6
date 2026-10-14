@@ -79,7 +79,9 @@ def _cmd_sessions_review(  # noqa: PLR0911
     print(f"[agent6] reviewing run: {layout.session_id}", file=sys.stderr)
     try:
         text = run_review.review_digest(
-            reviewer, digest=digest.render(), agents_md=_context.agents_md_text(cwd)
+            reviewer,
+            digest=digest.render(),
+            agents_md=_context.agents_md_text(cwd, cfg.sandbox.hide_paths),
         )
     except run_review.RunReviewError as exc:
         print(f"REVIEW FAILED: {exc}", file=sys.stderr)

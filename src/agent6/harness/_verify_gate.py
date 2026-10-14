@@ -157,6 +157,7 @@ class VerifyGate:
         retries: The red finishes allowed.
         timeout_s: The gate's budget.
         infer: Whether a gateless run adopts an inferred command at a commit.
+        hide: `[sandbox].hide_paths`, which the inference reads nothing from.
         mode: The loop mode; only a run is gated.
         chain: The run's chain.
         dispatcher: The run's dispatcher, which runs the gate.
@@ -169,6 +170,7 @@ class VerifyGate:
     retries: int
     timeout_s: float
     infer: bool
+    hide: tuple[str, ...]
     mode: Literal["run", "plan", "ask", "agent"]
     chain: _chain.RunChain
     dispatcher: dispatch.ToolDispatcher
@@ -293,7 +295,10 @@ class VerifyGate:
         if not self.infer:
             return
         inferred = verify_infer.infer_verify_command(
-            self.chain.root, verify_infer.read_agents_md(self.chain.root), llm_call=None
+            self.chain.root,
+            verify_infer.read_agents_md(self.chain.root, self.hide),
+            llm_call=None,
+            hide=self.hide,
         )
         if inferred is None or inferred.argv in state.verify.unadoptable:
             return

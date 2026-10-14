@@ -14,12 +14,16 @@ the jail PATH.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 import os
 import pathlib
 import re
 import shlex
 from collections.abc import Callable
+
+from agent6 import git_ops
+from agent6.tools import _path_safety
 
 # A command line with any of these, or a leading assignment, is shell, wrapped in `sh -c`.
 _SHELL_META = re.compile(r"[|&;<>`$*]")
@@ -110,15 +114,13 @@ def _first_fenced_block(lines: list[str], start: int) -> list[str] | None:
     return None
 
 
-def read_agents_md(repo_root: pathlib.Path) -> str:
-    """Return the repo's AGENTS.md text; "" when absent or unreadable."""
-    path = repo_root / "AGENTS.md"
-    if not path.is_file():
-        return ""
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
+def read_agents_md(repo_root: pathlib.Path, hide: tuple[str, ...] = ()) -> str:
+    """Return the directory's AGENTS.md text; "" when absent, unreadable or out of the git root."""
+    base, here = git_ops.toplevel(repo_root), repo_root.resolve()
+    if base is None or not here.is_relative_to(base.resolve()):
+        return _path_safety.read_workspace_text(repo_root, "AGENTS.md", hide)
+    name = (here.relative_to(base.resolve()) / "AGENTS.md").as_posix()
+    return _path_safety.read_workspace_text(base.resolve(), name, hide)
 
 
 def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
@@ -172,14 +174,11 @@ def _verify_sh(repo_root: pathlib.Path) -> Signal | None:
     return (argv, "verify.sh")
 
 
-def _package_json(repo_root: pathlib.Path) -> Signal | None:
+def _package_json(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
     """Return `npm test` when package.json has a test script, or None."""
-    pkg = repo_root / "package.json"
-    if not pkg.is_file():
-        return None
     try:
-        data = json.loads(pkg.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        data = json.loads(_path_safety.read_workspace_text(repo_root, "package.json", hide))
+    except ValueError:
         data = {}
     scripts = data.get("scripts") if isinstance(data, dict) else None
     if isinstance(scripts, dict) and isinstance(scripts.get("test"), str):
@@ -187,16 +186,10 @@ def _package_json(repo_root: pathlib.Path) -> Signal | None:
     return None
 
 
-def _makefile(repo_root: pathlib.Path) -> Signal | None:
+def _makefile(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
     """Return `make test` or `make check` when a Makefile defines it, or None."""
     for mk in ("Makefile", "makefile", "GNUmakefile"):
-        p = repo_root / mk
-        if not p.is_file():
-            continue
-        try:
-            txt = p.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            txt = ""
+        txt = _path_safety.read_workspace_text(repo_root, mk, hide)
         for target in ("test", "check"):
             if _has_make_target(txt, target):
                 return (("make", target), f"Makefile:{target}")
@@ -232,21 +225,19 @@ def _loose_python_tests(repo_root: pathlib.Path) -> Signal | None:
     return None
 
 
-# Loose Python tests last, so a Rust or Go repo's `tests/` dir never reads as pytest.
-_REPO_SIGNALS = (
-    _verify_sh,
-    _package_json,
-    _makefile,
-    _python_manifest,
-    _cargo,
-    _go,
-    _loose_python_tests,
-)
-
-
-def verify_from_repo_signals(repo_root: pathlib.Path) -> Signal | None:
+def verify_from_repo_signals(repo_root: pathlib.Path, hide: tuple[str, ...] = ()) -> Signal | None:
     """Return the first repo signal that matches, or None."""
-    return next((found for probe in _REPO_SIGNALS if (found := probe(repo_root))), None)
+    # Loose Python tests last, so a Rust or Go repo's `tests/` dir never reads as pytest.
+    probes = (
+        _verify_sh,
+        functools.partial(_package_json, hide=hide),
+        functools.partial(_makefile, hide=hide),
+        _python_manifest,
+        _cargo,
+        _go,
+        _loose_python_tests,
+    )
+    return next((found for probe in probes if (found := probe(repo_root))), None)
 
 
 # The files fed to the LLM.
@@ -278,7 +269,9 @@ VERIFY_INFER_SYSTEM_PROMPT = (
 )
 
 
-def gather_repo_manifests(repo_root: pathlib.Path, agents_md: str, *, cap: int = 4000) -> str:
+def gather_repo_manifests(
+    repo_root: pathlib.Path, agents_md: str, hide: tuple[str, ...] = (), *, cap: int = 4000
+) -> str:
     """Return the clipped manifest files and AGENTS.md as the LLM call's context."""
     parts: list[str] = []
     try:
@@ -287,12 +280,8 @@ def gather_repo_manifests(repo_root: pathlib.Path, agents_md: str, *, cap: int =
         top = []
     parts.append("<top-level>\n" + " ".join(top[:80]) + "\n</top-level>")
     for name in _MANIFEST_FILES:
-        p = repo_root / name
-        if p.is_file():
-            try:
-                text = p.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
+        text = _path_safety.read_workspace_text(repo_root, name, hide)
+        if text:
             parts.append(f'<file path="{name}">\n{text[:cap]}\n</file>')
     if agents_md.strip():
         parts.append(f"<AGENTS.md>\n{agents_md[:cap]}\n</AGENTS.md>")
@@ -322,6 +311,7 @@ def infer_verify_command(
     agents_md: str,
     *,
     llm_call: Callable[[str], str] | None = None,
+    hide: tuple[str, ...] = (),
 ) -> InferredVerify | None:
     """Infer a verify command: AGENTS.md, then the repo's files, then the LLM.
 
@@ -330,6 +320,7 @@ def infer_verify_command(
         agents_md: The AGENTS.md text.
         llm_call: Takes the gathered context and returns the model's text; None skips
             the LLM tier, as does a repo with no manifest and no AGENTS.md prose.
+        hide: `[sandbox].hide_paths`, which no manifest is read from.
 
     Returns:
         The command and its source, or None when unknown.
@@ -337,14 +328,14 @@ def infer_verify_command(
     argv = verify_from_agents_md(agents_md)
     if argv is not None:
         return InferredVerify(argv=argv, source="agents_md")
-    sig = verify_from_repo_signals(repo_root)
+    sig = verify_from_repo_signals(repo_root, hide)
     if sig is not None:
         return InferredVerify(argv=sig[0], source=sig[1])
     readable = bool(agents_md.strip()) or any(
         (repo_root / name).is_file() for name in _MANIFEST_FILES
     )
     if llm_call is not None and readable:
-        context = gather_repo_manifests(repo_root, agents_md)
+        context = gather_repo_manifests(repo_root, agents_md, hide)
         try:
             raw = llm_call(context)
         except Exception:  # never fails the run

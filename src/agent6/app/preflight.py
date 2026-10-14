@@ -585,7 +585,8 @@ def infer_verify_if_unset(
                 " (per-step commits, no green gate; nothing is inferred or adopted)."
             )
         return cfg
-    agents_md = verify_infer.read_agents_md(cwd)
+    hide = cfg.sandbox.hide_paths
+    agents_md = verify_infer.read_agents_md(cwd, hide)
 
     def _llm_call(context: str) -> str:
         inner = providers.build_role_provider(
@@ -609,7 +610,7 @@ def infer_verify_if_unset(
         )
         return resp.text or ""
 
-    inferred = verify_infer.infer_verify_command(cwd, agents_md, llm_call=_llm_call)
+    inferred = verify_infer.infer_verify_command(cwd, agents_md, llm_call=_llm_call, hide=hide)
     if inferred is None:
         events.emit("loop.verify_inferred", command=[], source="none")
         if mode == "run":

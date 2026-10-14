@@ -407,7 +407,7 @@ def _cmd_review(  # noqa: PLR0911
     )
     recent_log = log_proc.stdout if log_proc.returncode == 0 else ""
 
-    agents_md = _context.agents_md_text(root)
+    agents_md = _context.agents_md_text(root, cfg.sandbox.hide_paths)
 
     # The reviewer route; the budget is per invocation, a one-shot.
     budget = _setup.budget_tracker(cfg)

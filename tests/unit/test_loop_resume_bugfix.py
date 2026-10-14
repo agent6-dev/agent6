@@ -107,6 +107,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: pathlib.Path) -> None:
     """verify_ever_passed, gateless_ever_edited and the metric summary survive the snapshot."""
     snap = tmp_path / "loop_state.json"
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -144,6 +145,7 @@ def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: pathlib.P
     """A resume keeps a prior red, the memory notices and the once-only finish deferral."""
     snap = tmp_path / "loop_state.json"
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -227,6 +229,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: pathlib
     """
     snap = tmp_path / "loop_state.json"
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -259,6 +262,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: pathlib.Path) -> None:
     """Operator /pin instructions are run-lifetime state; an older snapshot loads with none."""
     snap = tmp_path / "loop_state.json"
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -353,6 +357,7 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
     rejection.
     """
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -441,6 +446,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
     A fork's fresh log has no pin.added events, so the surfaces would show zero pins.
     """
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -522,6 +528,7 @@ def test_resume_start_carries_the_execution_identity(tmp_path: pathlib.Path) -> 
         encoding="utf-8",
     )
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -580,6 +587,7 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
     stand.
     """
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -653,6 +661,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: pathl
     _git_repo(repo)
     snap = repo / "loop_state.json"
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -795,6 +804,7 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: pathlib.
     repo = tmp_path / "repo"
     _git_repo(repo)
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -863,6 +873,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: pathlib.Path
     repo = tmp_path / "repo"
     _git_repo(repo)
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -908,6 +919,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
     from agent6.harness import _compaction
 
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -1169,6 +1181,7 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(
         encoding="utf-8",
     )
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -1241,6 +1254,7 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: pathlib.Path)
         encoding="utf-8",
     )
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(
@@ -1374,6 +1388,7 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
         encoding="utf-8",
     )
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
         budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         harness=types.SimpleNamespace(

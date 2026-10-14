@@ -29,6 +29,7 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
     )
     object.__setattr__(wf, "_emit", _quiet)
     wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+        sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
@@ -39,7 +40,7 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
             verify_retries=2,
             verify_timeout_s=60.0,
             verify_infer=True,
-        )
+        ),
     )
     # Gate presence reads the command policy first: a gate someone may run.
     wf.dispatcher = types.SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
@@ -209,6 +210,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     wf.chain = _chain.RunChain(pathlib.Path("/nonexistent"))
     wf.mode = "plan"
     wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+        sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
@@ -219,7 +221,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
             verify_retries=2,
             verify_timeout_s=60.0,
             verify_infer=True,
-        )
+        ),
     )
     wf.dispatcher = types.SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
     state = _state()
@@ -273,6 +275,7 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: path
     wf = _wf()
     wf.mode = "run"
     wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+        sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
@@ -283,7 +286,7 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: path
             verify_retries=2,
             verify_timeout_s=60.0,
             verify_infer=True,
-        )
+        ),
     )
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.last_ok = False

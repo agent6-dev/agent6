@@ -33,6 +33,7 @@ class OperatorTasks:
         revision: The `[prompt].revise_prompt` settings, applied to a queued task as to the
             initial one.
         root: The repository.
+        hide: `[sandbox].hide_paths`, which no AGENTS.md is read from.
         log: The run's text logger.
         emit: The run's event sink.
         emit_graph_snapshot: Publishes the graph after a write.
@@ -42,6 +43,7 @@ class OperatorTasks:
     take_requests: Callable[[], list[ipc.OperatorRequest]]
     revision: _prompt_revision.RevisionSettings
     root: pathlib.Path
+    hide: tuple[str, ...]
     log: Callable[[str], None]
     emit: Callable[..., None]
     emit_graph_snapshot: Callable[[], None]
@@ -228,7 +230,7 @@ class OperatorTasks:
             return _prompt_revision.revise_prompt(
                 dataclasses.replace(self.revision, mode="auto"),
                 text,
-                _context.load_repo_summary(self.root),
+                _context.load_repo_summary(self.root, self.hide),
                 log=self.log,
                 emit=self.emit,
             )

@@ -11,6 +11,7 @@ from __future__ import annotations
 import pathlib
 
 from agent6 import git_ops, kinds
+from agent6.tools import _path_safety
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6
@@ -18,52 +19,36 @@ _REPO_MAP_MAX_FILES_PER_DIR = 6
 AGENTS_MD_WARN_CHARS = 40_000
 
 
-def _read_text(path: pathlib.Path) -> str:
-    """Return the file's text, or "" when it is missing or unreadable.
-
-    A stray byte or a permission-denied file degrades instead of crashing the run
-    after session.start with no session.end.
-
-    Args:
-        path: The file to read.
-
-    Returns:
-        The text with undecodable bytes replaced, or "".
-    """
-    try:
-        return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
-    except OSError:
-        return ""
-
-
-def _agents_md_sources(root: pathlib.Path) -> tuple[tuple[pathlib.Path, str], ...]:
+def _agents_md_sources(
+    root: pathlib.Path, hide: tuple[str, ...]
+) -> tuple[tuple[pathlib.Path, str], ...]:
     """Return the readable AGENTS.md files from the git root through root, in order.
+
+    A file whose real path leaves the git root (the root itself outside git), or enters
+    `.git` or a hidden path, reads as absent.
 
     Args:
         root: The run's working directory.
+        hide: `[sandbox].hide_paths`.
 
     Returns:
         (path, text) pairs, toplevel first.
     """
+    base, directories = root, [pathlib.PurePath()]
     top = git_ops.toplevel(root)
-    if top is None:
-        candidates = (root / "AGENTS.md",)
-    else:
-        top = top.resolve()
-        current = root.resolve()
-        try:
-            relative = current.relative_to(top)
-        except ValueError:
-            candidates = (root / "AGENTS.md",)
-        else:
-            directories = [top]
-            for part in relative.parts:
-                directories.append(directories[-1] / part)
-            candidates = tuple(directory / "AGENTS.md" for directory in directories)
-    return tuple((path, text) for path in candidates if (text := _read_text(path)))
+    if top is not None and root.resolve().is_relative_to(top.resolve()):
+        base = top.resolve()
+        for part in root.resolve().relative_to(base).parts:
+            directories.append(directories[-1] / part)
+    names = [(directory / "AGENTS.md").as_posix() for directory in directories]
+    return tuple(
+        (base / name, text)
+        for name in names
+        if (text := _path_safety.read_workspace_text(base, name, hide))
+    )
 
 
-def agents_md_text(root: pathlib.Path) -> str:
+def agents_md_text(root: pathlib.Path, hide: tuple[str, ...] = ()) -> str:
     """Return the AGENTS.md text a session at root injects, whole.
 
     When root sits below a git toplevel, every ancestor file loads from the
@@ -72,13 +57,14 @@ def agents_md_text(root: pathlib.Path) -> str:
 
     Args:
         root: The run's working directory.
+        hide: `[sandbox].hide_paths`.
 
     Returns:
         The files' texts joined by blank lines, "" when none is readable.
     """
     top = git_ops.toplevel(root)
     parts: list[str] = []
-    for path, text in _agents_md_sources(root):
+    for path, text in _agents_md_sources(root, hide):
         directory = path.parent.resolve()
         if top is None or directory == top.resolve():
             parts.append(text)
@@ -90,7 +76,7 @@ def agents_md_text(root: pathlib.Path) -> str:
     return "\n\n".join(parts)
 
 
-def agents_md_notices(root: pathlib.Path) -> tuple[str, ...]:
+def agents_md_notices(root: pathlib.Path, hide: tuple[str, ...] = ()) -> tuple[str, ...]:
     """Return the session-start operator lines about the injected AGENTS.md.
 
     They name the files loaded when starting from a subdirectory, and warn on an
@@ -98,13 +84,14 @@ def agents_md_notices(root: pathlib.Path) -> tuple[str, ...]:
 
     Args:
         root: The run's working directory.
+        hide: `[sandbox].hide_paths`.
 
     Returns:
         The lines, empty when there is nothing to say.
     """
     out: list[str] = []
     top = git_ops.toplevel(root)
-    sources = _agents_md_sources(root)
+    sources = _agents_md_sources(root, hide)
     if top is not None and top.resolve() != root.resolve():
         own = any(path.parent.resolve() == root.resolve() for path, _ in sources)
         ancestors = [path for path, _ in sources if path.parent.resolve() != root.resolve()]
@@ -118,7 +105,7 @@ def agents_md_notices(root: pathlib.Path) -> tuple[str, ...]:
             )
             files = f"{len(ancestors)} ancestor AGENTS.md file{'s' if len(ancestors) != 1 else ''}"
             out.append(f"loading {files}{location}{also}")
-    text = agents_md_text(root)
+    text = agents_md_text(root, hide)
     total = len(text)
     if total > AGENTS_MD_WARN_CHARS:
         out.append(
@@ -166,7 +153,7 @@ def _build_repo_map(tracked: tuple[str, ...]) -> str:
     return "\n".join(rows)
 
 
-def load_repo_summary(root: pathlib.Path) -> kinds.RepoSummary:
+def load_repo_summary(root: pathlib.Path, hide: tuple[str, ...] = ()) -> kinds.RepoSummary:
     """Build the workspace's `RepoSummary`, shared by every mode.
 
     Outside a git repository (`agent6 ask` runs anywhere; run and plan refuse up
@@ -176,6 +163,7 @@ def load_repo_summary(root: pathlib.Path) -> kinds.RepoSummary:
 
     Args:
         root: The workspace directory.
+        hide: `[sandbox].hide_paths`, which no AGENTS.md is read from.
 
     Returns:
         The layout, AGENTS.md, recent commits and the repo map.
@@ -197,7 +185,7 @@ def load_repo_summary(root: pathlib.Path) -> kinds.RepoSummary:
         head_sha=st.head_sha if st is not None else "",
         file_count=len(tracked),
         top_level=top,
-        agents_md=agents_md_text(root),
+        agents_md=agents_md_text(root, hide),
         recent_log=git_ops.recent_log(root, n=20) if in_git else "",
         repo_map=_build_repo_map(tracked),
         is_git=in_git,

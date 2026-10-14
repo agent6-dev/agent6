@@ -38,8 +38,9 @@ def _cmd_prompt_show(
     cfg = eff.config
     if mode in ("run", "plan") and not cfg.harness.verify_command and cfg.harness.verify_infer:
         # The gate shapes the prompt, so infer it as a run does; the LLM tier spends, so not here.
+        hide = cfg.sandbox.hide_paths
         inferred = verify_infer.infer_verify_command(
-            cwd, verify_infer.read_agents_md(cwd), llm_call=None
+            cwd, verify_infer.read_agents_md(cwd, hide), llm_call=None, hide=hide
         )
         if inferred is not None:
             cfg = cfg.with_verify_command(inferred.argv)

@@ -105,6 +105,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path) -> Non
     curator = mock.MagicMock()
     curator.graph_version = 7
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
@@ -116,7 +117,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path) -> Non
             metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
-        )
+        ),
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap, curator=curator)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
@@ -145,6 +146,7 @@ def test_checkpoints_are_append_only(tmp_path: pathlib.Path) -> None:
     session_dir.mkdir()
     snap = session_dir / "loop_state.json"
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
@@ -156,7 +158,7 @@ def test_checkpoints_are_append_only(tmp_path: pathlib.Path) -> None:
             metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
-        )
+        ),
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
@@ -185,6 +187,7 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: pathlib
     session_dir.mkdir()
     snap = session_dir / "loop_state.json"
     config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
@@ -196,7 +199,7 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: pathlib
             metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
-        )
+        ),
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)

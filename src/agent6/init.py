@@ -120,17 +120,6 @@ def _accept_default(_prompt: str, default: bool) -> bool:
     return default
 
 
-def _read_agents_md(root: pathlib.Path) -> str:
-    """Return the AGENTS.md text; "" when absent or unreadable."""
-    p = root / "AGENTS.md"
-    if not p.is_file():
-        return ""
-    try:
-        return p.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
-
-
 def _missing_gitignore_entries(root: pathlib.Path, *, ecosystem: str) -> list[str]:
     """Return the secret and build-artifact entries `.gitignore` lacks.
 
@@ -167,14 +156,18 @@ def _setup_verify_command(
     root: pathlib.Path, *, ecosystem: str, ask: _Ask, config_path: pathlib.Path | None = None
 ) -> None:
     """Set `harness.verify_command` from the repo when unset, asking before an override."""
-    leaf = layer.effective_leaf(layer.load_effective(root, config_path), "harness.verify_command")
+    effective = layer.load_effective(root, config_path)
+    hide = effective.config.sandbox.hide_paths
+    leaf = layer.effective_leaf(effective, "harness.verify_command")
     value, source = leaf or ((), "default")
     already = bool(value)
     if already:
         print(f"  verify_command already set ({source}): {' '.join(value)}")
         if not ask("  Re-infer and replace it?", False):
             return
-    inferred = verify_infer.infer_verify_command(root, _read_agents_md(root))
+    inferred = verify_infer.infer_verify_command(
+        root, verify_infer.read_agents_md(root, hide), hide=hide
+    )
     if inferred is None:
         print(
             "  no verify command could be inferred from this repo. `agent6 run`"
@@ -199,10 +192,15 @@ def _setup_verify_command(
         print(f"  set harness.verify_command = {list(inferred.argv)}")
 
 
-def _setup_agents_md(root: pathlib.Path, *, ecosystem: str, ask: _Ask) -> None:
+def _setup_agents_md(
+    root: pathlib.Path, *, ecosystem: str, ask: _Ask, config_path: pathlib.Path | None = None
+) -> None:
     """Create a starter AGENTS.md, or append a verify section when the existing one lacks it."""
     agents = root / "AGENTS.md"
-    inferred = verify_infer.infer_verify_command(root, _read_agents_md(root))
+    hide = layer.load_effective(root, config_path).config.sandbox.hide_paths
+    inferred = verify_infer.infer_verify_command(
+        root, verify_infer.read_agents_md(root, hide), hide=hide
+    )
     verify_hint = " ".join(inferred.argv) if inferred else "# EDIT: your verify pipeline"
     if not agents.is_file():
         if ask("Create a starter AGENTS.md (how agents should work in this repo)?", True):
@@ -284,5 +282,5 @@ def init_workspace(
             print("  skipped .gitignore")
 
     # 4. AGENTS.md.
-    _setup_agents_md(root, ecosystem=detected, ask=ask)
+    _setup_agents_md(root, ecosystem=detected, ask=ask, config_path=config_path)
     return 0

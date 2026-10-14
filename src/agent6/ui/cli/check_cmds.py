@@ -725,9 +725,9 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
     argv = list(cfg.harness.verify_command)
     if not argv:
         # A run infers one from the deterministic tiers or goes gateless; say what this repo infers.
-        cwd = pathlib.Path.cwd()
+        cwd, hide = pathlib.Path.cwd(), cfg.sandbox.hide_paths
         inferred = verify_infer.infer_verify_command(
-            cwd, verify_infer.read_agents_md(cwd), llm_call=None
+            cwd, verify_infer.read_agents_md(cwd, hide), llm_call=None, hide=hide
         )
         origin = "AGENTS.md" if inferred and inferred.source == "agents_md" else ""
         detail = (

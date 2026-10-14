@@ -482,7 +482,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         )
 
         _session.warn_install_inside_workspace(cwd, reporter=reporter)
-        for line in _context.agents_md_notices(cwd):
+        for line in _context.agents_md_notices(cwd, cfg.sandbox.hide_paths):
             reporter.note(line)
 
         tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)

@@ -438,6 +438,7 @@ class Reviewer:
     Attributes:
         settings: The panel's settings.
         chain: The run's chain: the diff the panel grounds on and the AGENTS.md it reads.
+        hide: `[sandbox].hide_paths`, which no AGENTS.md is read from.
         review_tools: Builds the read-only tools and dispatch an explore seat gets.
         budget_remaining: The fraction of the budget left, or None without a tracker.
         log: The run's text logger.
@@ -446,6 +447,7 @@ class Reviewer:
 
     settings: ReviewSettings
     chain: _chain.RunChain
+    hide: tuple[str, ...]
     review_tools: Callable[[], tuple[list[ToolDefinition], ReviewDispatch]]
     budget_remaining: Callable[[], float | None]
     log: Callable[[str], None]
@@ -574,7 +576,7 @@ class Reviewer:
         )
         ctx = _panel.ReviewContext(
             task=state.original_task,
-            agents_md=_context.agents_md_text(self.chain.root),
+            agents_md=_context.agents_md_text(self.chain.root, self.hide),
             diff=diff,
             verify_ok=state.verify.last_ok,
             verify_output=state.verify.last_tail,

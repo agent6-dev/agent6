@@ -178,6 +178,7 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: pathlib.P
     wf = loop.Harness.__new__(loop.Harness)
     wf.chain = _chain.RunChain(tmp_path)
     wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+        sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
@@ -188,7 +189,7 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: pathlib.P
             verify_retries=2,
             verify_timeout_s=60.0,
             verify_infer=True,
-        )
+        ),
     )
     wf.dispatcher = mock.MagicMock()
     wf.dispatcher.command_policy.return_value = "no"  # denied mid-run

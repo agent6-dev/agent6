@@ -49,7 +49,7 @@ def system_prompt_for(
     Returns:
         The system prompt text.
     """
-    repo = _context.load_repo_summary(root)
+    repo = _context.load_repo_summary(root, config.sandbox.hide_paths)
     # Agent mode assembles without repo context: one gate for every recall block.
     recall = None if mode == "agent" else state_dir
     return _prompt_blocks.build_system_prompt(

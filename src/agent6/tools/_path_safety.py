@@ -15,7 +15,9 @@ import errno
 import os
 import pathlib
 import stat
+from collections.abc import Iterable
 
+from agent6 import paths
 from agent6.tools import errors as tools_errors
 
 
@@ -339,6 +341,30 @@ def read_contained(sp: SafePath, *, errors: str = "strict", limit_chars: int | N
     fd = open_contained(sp, os.O_RDONLY)
     with os.fdopen(fd, encoding="utf-8", errors=errors) as handle:
         return handle.read() if limit_chars is None else handle.read(limit_chars)
+
+
+def read_workspace_text(root: pathlib.Path, name: str, hide: Iterable[str] = ()) -> str:
+    """Return a workspace file's text for a host-side read, "" when it is out of bounds.
+
+    The agent reads these unconfined and their text reaches a prompt, so a link committed to
+    the repo must not pull in a host file: the real path stays inside the root, outside `.git`
+    and outside the hidden set, and the read walks a descriptor from the root.
+
+    Args:
+        root: The workspace root.
+        name: The file, relative to the root.
+        hide: `[sandbox].hide_paths`; agent6's private dirs are hidden without it.
+
+    Returns:
+        The text with undecodable bytes replaced; "" when the file is missing, unreadable,
+        not a regular file, or resolves out of bounds.
+    """
+    denied = (root / ".git", *paths.hidden_paths(pathlib.Path(p) for p in hide))
+    workspace = Workspace(root=root, denied=tuple(p.resolve() for p in denied))
+    try:
+        return read_contained(workspace.resolve_read(name), errors="replace")
+    except (OSError, tools_errors.ToolError):
+        return ""
 
 
 def read_bytes_contained(sp: SafePath) -> bytes:
