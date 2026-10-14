@@ -494,18 +494,24 @@ def _table(config: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any]:
     return node if isinstance(node, dict) else {}
 
 
-def protected_overlay_key_error(key: str) -> str | None:
-    """Return why a dotted machine-overlay key is operator-only, or None when it is allowed."""
+def protected_overlay_key_error(key: str, state: str = "") -> str | None:
+    """Return why a dotted overlay key is operator-only, or None when it is allowed.
+
+    Args:
+        key: The dotted key.
+        state: The state whose `config` table holds it; "" for the machine's `[config]`.
+    """
+    where = f"[states.{state}.config]" if state else "machine [config] overlays"
     for table in PROTECTED_OVERLAY_TABLES:
         if key == table or key.startswith(f"{table}."):
             return (
-                f"machine [config] overlays must not set {table}.*:"
+                f"{where} must not set {table}.*:"
                 " connections/secrets, strategy presets, and MCP servers are"
                 " operator-only (global/repo config)"
             )
     for dotted, why in PROTECTED_OVERLAY_LEAVES.items():
         if key == dotted or key.startswith(f"{dotted}."):
-            return f"machine [config] overlays must not set {dotted}: {why} (operator-only)"
+            return f"{where} must not set {dotted}: {why} (operator-only)"
     return None
 
 
@@ -524,7 +530,7 @@ def protected_overlay_error(config: dict[str, Any], *, state: str = "") -> str |
                     f"[states.{state}.config] must not set {key}.*: it is read once for the"
                     " whole machine; set it in the machine's [config]"
                 )
-            if problem := protected_overlay_key_error(key):
+            if problem := protected_overlay_key_error(key, state):
                 return problem
     return None
 

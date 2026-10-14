@@ -183,6 +183,33 @@ def test_an_overlay_reaches_neither_the_host_nor_the_operators_money(
         load_machine(_write(tmp_path, MACHINE + "\n" + table))
 
 
+@pytest.mark.parametrize(
+    ("table", "said"),
+    [
+        (
+            '[states.judge.config.skills]\nextra_dirs = ["/tmp/skills"]\n',
+            "[states.judge.config] must not set skills.extra_dirs:",
+        ),
+        (
+            '[states.judge.config.providers.x]\napi_format = "openai"\n',
+            "[states.judge.config] must not set providers.*:",
+        ),
+        (
+            '[config.skills]\nextra_dirs = ["/tmp/skills"]\n',
+            "machine [config] overlays must not set skills.extra_dirs:",
+        ),
+    ],
+)
+def test_an_operator_only_refusal_names_the_table_that_holds_the_key(
+    tmp_path: pathlib.Path, table: str, said: str
+) -> None:
+    """A key in a state's table is reported under that state, never as the machine's."""
+    with pytest.raises(MachineError) as refused:
+        load_machine(_write(tmp_path, MACHINE + "\n" + table))
+    assert said in str(refused.value)
+    assert str(refused.value).count("must not set") == 1
+
+
 def test_a_state_table_cannot_select_a_preset(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
