@@ -1842,7 +1842,9 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         }
     }
 
-    // Read+execute: system dirs the child needs to load libraries / spawn binaries.
+    // Read+execute: system dirs the child needs to load libraries / spawn binaries. Not
+    // /dev: a rule on the directory would cover the host's /dev/shm (every process of this
+    // user's shared memory), so the device nodes get rules of their own below.
     let mut ro_paths: Vec<PathBuf> = vec![
         PathBuf::from("/usr"),
         PathBuf::from("/bin"),
@@ -1850,7 +1852,6 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         PathBuf::from("/lib"),
         PathBuf::from("/lib64"),
         PathBuf::from("/etc"),
-        PathBuf::from("/dev"),
     ];
     for p in &policy.extra_ro_paths {
         ro_paths.push(policy.grant_source(p).to_path_buf());
@@ -1865,6 +1866,15 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, sets.read))
                 .map_err(|e| io::Error::other(format!("rule ro {}: {e}", p.display())))?;
+        }
+    }
+    // The device nodes a command reads: the set strict's /dev holds, one rule each.
+    for dev in ["null", "zero", "urandom", "random", "full"] {
+        let p = format!("/dev/{dev}");
+        if let Ok(fd) = PathFd::new(&p) {
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, AccessFs::ReadFile))
+                .map_err(|e| io::Error::other(format!("rule {p}: {e}")))?;
         }
     }
     // Same sink-device carve-out as strict; see comment there.

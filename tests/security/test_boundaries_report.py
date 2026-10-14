@@ -159,7 +159,7 @@ def test_boundaries_report_is_level_aware(
     out = capsys.readouterr().out
     assert checks == [], "the section reports facts; the summary owns verdicts"
     assert "not strict: userns blocked (test)" in out
-    assert "ro  system (Landlock): /usr /bin /sbin /lib /lib64 /etc /dev" in out
+    assert "ro  system (Landlock): /usr /bin /sbin /lib /lib64 /etc" in out
     assert f"rw  {paths.jail_cache_home(pathlib.Path.cwd())}  (HOME" in out and "persists" in out
     assert "denied by Landlock" in out
     assert "re-bound" not in out
@@ -173,8 +173,8 @@ def test_boundaries_report_says_what_hardened_leaves_writable(
     """Under hardened the report left out the host's /tmp and said nothing about `.git`.
 
     A jailed command writes both there: Landlock grants the host's /tmp, and no mount
-    namespace exists to re-bind `.git` read-only. It reads the host's /dev/shm under the /dev
-    grant, which the report names.
+    namespace exists to re-bind `.git` read-only. The host's /dev/shm is not granted, which
+    the report names beside the device nodes that are.
     """
     _force(monkeypatch, "hardened")
     check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
@@ -182,7 +182,7 @@ def test_boundaries_report_says_what_hardened_leaves_writable(
     assert "(the workspace; .git writable: hardened has no mount to re-bind it)" in out
     assert "rw  /tmp  (the host's /tmp, shared with every process of yours)" in out
     assert "--  /proc  (not granted under hardened" in out
-    assert "ro  /dev/shm  (the host's, under the /dev grant" in out
+    assert "--  /dev/shm  (the host's, not granted" in out
 
 
 def test_boundaries_report_lists_what_the_host_network_reads(

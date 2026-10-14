@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
@@ -743,3 +744,40 @@ def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: pathli
     combined = (proc.stdout + proc.stderr).decode(errors="replace")
     assert "unknown field" in combined.lower(), combined[:300]
     assert "a_field_from_a_newer_agent6" in combined
+
+
+def test_hardened_reads_the_device_nodes_but_not_the_hosts_dev_shm(tmp_path: pathlib.Path) -> None:
+    """Hardened grants the device nodes one by one; a rule on `/dev` covered the host's `/dev/shm`.
+
+    The host's `/dev/shm` holds every process of this user's shared memory, readable to a
+    jailed command through the directory rule.
+    """
+    from agent6.config import Config
+    from agent6.sandbox import jail
+    from agent6.tools import policy
+
+    shm = pathlib.Path("/dev/shm")
+    if not (shm.is_dir() and os.access(shm, os.W_OK)):
+        pytest.skip("/dev/shm not usable as a probe target")
+    probe = shm / "agent6-hardened-shm-probe"
+    probe.write_text("secret\n", encoding="utf-8")
+    try:
+        res = jail.run_in_jail(
+            policy.jail_policy(
+                tmp_path,
+                Config(),
+                "hardened",
+                (
+                    "sh",
+                    "-c",
+                    f"cat {probe} 2>&1; ls /dev/shm 2>&1; cat /dev/null && echo null-ok;"
+                    " head -c 1 /dev/urandom | wc -c",
+                ),
+                network="none",
+            )
+        )
+    finally:
+        probe.unlink(missing_ok=True)
+    out = res.stdout
+    assert "secret\n" not in out and out.count("Permission denied") == 2, out
+    assert "null-ok" in out and out.rstrip().endswith("1"), out

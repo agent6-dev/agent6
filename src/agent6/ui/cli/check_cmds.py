@@ -35,7 +35,7 @@ from agent6.tools import policy as tools_policy
 # Mirrors SYSTEM_BINDS in the jail's main.rs; tests/security pins the two against each other.
 _STRICT_SYSTEM_BINDS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/alternatives")
 # What hardened's Landlock grants read-only (main.rs ro_paths base set).
-_HARDENED_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev")
+_HARDENED_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc")
 
 
 def _isolation_means(isolation: kinds.IsolationLevel) -> str:
@@ -509,8 +509,8 @@ def _boundaries_commands(
         print(f"    ro  system (Landlock): {' '.join(_HARDENED_SYSTEM_RO)}")
         print(f"    --  /proc  (not granted under {selected}: `ps` fails there)")
         print(
-            "    ro  /dev/shm  (the host's, under the /dev grant: Python multiprocessing"
-            " cannot write there)"
+            "    --  /dev/shm  (the host's, not granted: Python multiprocessing cannot use it;"
+            " /dev/null, zero, urandom, random and full are)"
         )
     print(_home_line(cfg, selected, ws.root, git_grant))
     notes = tool_paths.tool_mount_notes()
