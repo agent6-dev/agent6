@@ -19,7 +19,7 @@ from agent6.harness import _context, run_review
 from agent6.providers import ProviderError, TranscriptSink
 from agent6.sessions import id
 from agent6.ui.cli import _common, review_cmds
-from agent6.viewmodel import session_is_live
+from agent6.viewmodel import scan_session_log, session_is_live
 
 
 def _cmd_sessions_review(  # noqa: PLR0911
@@ -54,6 +54,9 @@ def _cmd_sessions_review(  # noqa: PLR0911
             f"{layout.session_id} is live; its record is not complete. Review it once it"
             f" has ended (`agent6 stop {layout.session_id}` ends it now)."
         )
+        return 2
+    if not scan_session_log(layout.logs_path).saw_start:
+        _common.error(f"{layout.session_id} never started; there is no record to review.")
         return 2
     try:
         cfg = review_cmds._reviewer_config(config_path, model)

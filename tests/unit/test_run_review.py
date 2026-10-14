@@ -561,3 +561,17 @@ def test_a_live_session_is_refused_before_any_call(
     assert main(["sessions", "review", "run-AAAA11"]) == 2
     err = capsys.readouterr().err
     assert "run-AAAA11 is live" in err and "agent6 stop run-AAAA11" in err
+
+
+def test_the_verb_refuses_a_session_that_never_started(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fork that was never started has no record, so no model call is spent on it."""
+    _write_session(repo, events=[])
+    monkeypatch.setattr(
+        providers, "build_role_provider", mock.MagicMock(side_effect=AssertionError("called"))
+    )
+
+    assert main(["sessions", "review", "run-AAAA11"]) == 2
+
+    assert "never started" in capsys.readouterr().err
