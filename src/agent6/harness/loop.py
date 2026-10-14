@@ -957,7 +957,7 @@ class Harness:
                     state, turn, ctx, _guards.unreachable_tool(state, name, tool_input, result)
                 )
                 # Only a dispatched finish counts; a refused one is an error result.
-                self._capture_finish(turn, name, tool_input)
+                self._capture_finish(state, turn, name, tool_input)
             except errors.ToolError as exc:
                 content = self._note_tool_error(state, name, tool_input, exc)
                 self._take(state, turn, ctx, _guards.tool_error_ladder(turn, state, ctx))
@@ -1112,12 +1112,15 @@ class Harness:
             return True
         return False
 
-    def _capture_finish(self, turn: _loop_state.TurnState, name: str, tool_input: Any) -> None:
+    def _capture_finish(
+        self, state: _loop_state.LoopState, turn: _loop_state.TurnState, name: str, tool_input: Any
+    ) -> None:
         """Record a dispatched finish on the turn; a finish_planning also writes its plan.
 
-        The finish gates may still revoke it.
+        The finish gates may still revoke it; a gate proposal it carried stays for the end.
 
         Args:
+            state: The execution's state.
             turn: This turn's state.
             name: The tool that ran.
             tool_input: Its input.
@@ -1126,6 +1129,8 @@ class Harness:
         if finish is None:
             return
         turn.finish = finish
+        if finish.stale_gate:
+            state.gates.stale_gate = finish.stale_gate
         if finish.kind != "finish_planning":
             return
         if finish.plan_salvaged:
@@ -1553,7 +1558,6 @@ class Harness:
                     verdict="grounded" if finish.kind == "finish_session" else "passed",
                     checkpoint=False,
                     finish_payload=finish.payload,
-                    stale_gate=finish.stale_gate,
                 ),
                 iteration=turn.iteration,
             )
@@ -1771,7 +1775,7 @@ class Harness:
             iterations=iteration,
             tool_calls=state.tool_calls,
             finish_payload=end.finish_payload,
-            stale_gate=end.stale_gate,
+            stale_gate=state.gates.stale_gate,
         )
 
     def _pass_pending_root_tasks(self) -> None:

@@ -99,7 +99,8 @@ class SessionResult:
         iterations: The turns run.
         tool_calls: The tool calls made.
         finish_payload: The finish tool's payload, when any.
-        stale_gate: The replacement gate the worker proposed; recorded, never acted on.
+        stale_gate: The replacement gate the worker last proposed in any finish_session call
+            of the execution; recorded, never acted on.
         verified: The gate's word, the same fact `session.end.all_passed` carries.
     """
 
@@ -131,7 +132,6 @@ class End:
         roots: Whether to pass the pending root tasks; None passes them on a clean verdict only.
         scoped: Whether a scoped gate certified the tree, for a `passed` verdict.
         finish_payload: The finish tool's payload, when any.
-        stale_gate: The replacement gate the worker proposed.
         fields: Extra fields on the event.
     """
 
@@ -144,7 +144,6 @@ class End:
     roots: bool | None = None
     scoped: bool = False
     finish_payload: dict[str, Any] | None = None
-    stale_gate: str = ""
     fields: Mapping[str, object] = dataclasses.field(default_factory=dict)
 
 

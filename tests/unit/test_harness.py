@@ -343,6 +343,7 @@ def test_finish_planning_salvages_a_title_only_plan(tmp_path: pathlib.Path) -> N
     plan_path = tmp_path / "plan.md"
     wf = _wf(mode="plan", plan_output_path=plan_path)
     wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
+        _state(),
         _turn(),
         "finish_planning",
         {
@@ -360,6 +361,7 @@ def test_finish_planning_keeps_a_real_plan_markdown(tmp_path: pathlib.Path) -> N
     plan_path = tmp_path / "plan.md"
     wf = _wf(mode="plan", plan_output_path=plan_path)
     wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
+        _state(),
         _turn(),
         "finish_planning",
         {"summary": "short blurb", "plan_markdown": "# Plan: X\n\n1. real step\n2. another"},

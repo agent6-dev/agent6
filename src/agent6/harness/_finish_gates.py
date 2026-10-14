@@ -100,7 +100,7 @@ def _plan_is_title_only(plan_md: str) -> bool:
 
 @dataclasses.dataclass(slots=True)
 class FinishGates:
-    """The finish gates' counters.
+    """The finish gates' counters, and what a finish left for the end.
 
     Attributes:
         task_nudges_used: Open-task refusals sent; `TASK_FINISH_PATIENCE` caps them.
@@ -112,6 +112,8 @@ class FinishGates:
             cap lets the end through.
         review_total: The panel's run-total, persisted; past
             `max_total_rejections` the gate disarms to advisory.
+        stale_gate: The replacement gate the latest finish_session to carry one
+            proposed; the end reports it though a gate returned that finish.
     """
 
     task_nudges_used: int = 0
@@ -119,6 +121,7 @@ class FinishGates:
     settled_returns_used: int = 0
     review_consecutive: int = 0
     review_total: int = 0
+    stale_gate: str = ""
 
 
 def task_finish_nudge(open_tasks: Sequence[tuple[str, str]], gates: FinishGates) -> str | None:
