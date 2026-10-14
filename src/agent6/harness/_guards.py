@@ -466,13 +466,11 @@ def stagnation(
 class MemoryState:
     """The run's memory bookkeeping.
 
-    The two write nudges fire in run mode with a store wired, and both go
-    silent once the worker recorded anything.
+    The flip advisory goes silent once the worker recorded anything.
 
     Attributes:
         written: The worker edited anything under the store. Persisted.
         flip_nudged: The flip advisory went out. Persisted.
-        finish_nudged: The deferred finish_session backstop went out. Persisted.
         wrote: The facts this execution wrote, for the use record.
         created: The facts an edit tool made rather than changed.
         deleted: The facts this execution deleted.
@@ -481,7 +479,6 @@ class MemoryState:
 
     written: bool = False
     flip_nudged: bool = False
-    finish_nudged: bool = False
     wrote: list[str] = dataclasses.field(default_factory=list)
     created: list[str] = dataclasses.field(default_factory=list)
     deleted: list[str] = dataclasses.field(default_factory=list)
@@ -531,7 +528,7 @@ def memory_flip(
     if not (
         turn.verify_flipped_green
         and ctx.mode == "run"
-        and ctx.memory_wired
+        and ctx.memory_advisory
         and not state.memory.written
         and not state.memory.flip_nudged
     ):

@@ -210,7 +210,7 @@ A finish-time check reports any ruling missing from the file.
 - the index injects into every run's prompt as a capped `<memory>` block; depth is a file read
 - the worker writes through the ordinary edit tools under a narrow grant, in-process only; the jail never mounts it
 - run mode writes; plan and ask read; machine modes see none
-- models never write unprompted, so the loop nudges twice: an advisory when verify first recovers green, and a once-deferred `finish_session` after such a recovery with nothing recorded
+- models never write unprompted, so the loop sends one advisory per run, when verify first recovers green with nothing recorded; `[harness].memory_advisory = false` turns it off
 - `agent6 memory add/list/show/rm` is the operator surface over the same files
 - `<state-dir>/memory-use.json`, harness-written at each execution's end: per fact, the write that created it (when the record saw it), every write as a (session, when) touch in order, and its reads (count, last reader), the entry gone once the fact is deleted (by the model or `memory rm`); `memory list` prints it under each entry, and names the files the index does not list, so a stale, never-read or orphaned fact is visible where it is pruned
 

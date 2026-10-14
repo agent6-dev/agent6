@@ -263,13 +263,12 @@ def test_a_resumed_execution_starts_its_own_count_with_the_nudge_flags_carried()
     _loop_state.restore_completion_state(state, snap)
     assert (state.memory.written, state.memory.flip_nudged) == (True, True)
     assert (state.memory.wrote, state.memory.read) == ([], {})
-    # The shape itself: the snapshot carries the three flags and nothing
+    # The shape itself: the snapshot carries the two flags and nothing
     # else of the memory bookkeeping, so no restore can bring an execution's
     # touched facts into the next one.
     assert {f for f in _snapshot.SessionSnapshot.model_fields if f.startswith("memory_")} == {
         "memory_written",
         "memory_flip_nudged",
-        "memory_finish_nudged",
     }
 
 

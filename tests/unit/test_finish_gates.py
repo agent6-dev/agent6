@@ -34,7 +34,6 @@ def test_the_gates_run_in_precedence_order() -> None:
         "review_finish",
         "metric_early_finish",
         "open_tasks_finish",
-        "memory_finish",
         "standing_finish",
     ]
     assert [gate.__name__ for gate in _finish_gates.END_GATES] == [

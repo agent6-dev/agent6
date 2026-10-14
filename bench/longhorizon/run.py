@@ -378,10 +378,8 @@ def _extract_metrics(state_home: Path, session_id: str, traps: tuple[str, ...]) 
         "memory_writes": 0,
         "memory_reads": 0,
         "memory_invalidations": 0,  # memory files changed or removed by the session (file diff)
-        # Write-side nudges the loop fired (flip advisory / deferred finish);
-        # with memory_writes they show which surface converts models.
+        # Flip advisories the loop sent; beside memory_writes they show what converts models.
         "memory_flip_nudges": 0,
-        "memory_finish_nudges": 0,
         "trap_edits": 0,
     }
     logs = _find_logs(state_home, session_id)
@@ -417,8 +415,6 @@ def _extract_metrics(state_home: Path, session_id: str, traps: tuple[str, ...]) 
             m["surfaced"] += 1
         elif t == "loop.memory_flip.nudged":
             m["memory_flip_nudges"] += 1
-        elif t == "loop.memory_finish.gated":
-            m["memory_finish_nudges"] += 1
         elif t == "loop.compact.gists":
             m["gists_total"] += int(e.get("gisted") or 0)
             m["gist_demotions"] += int(e.get("demoted") or 0)
@@ -789,7 +785,7 @@ def main() -> None:
                         f" r{rec.get('rep')} {rec.get('session', '?')}"
                         f" score={rec.get('score')} drops={rec.get('drops_total')}"
                         f" rr={rec.get('redundant_reads')} memw={rec.get('memory_writes')}"
-                        f" nudges={rec.get('memory_flip_nudges')}/{rec.get('memory_finish_nudges')}"
+                        f" nudges={rec.get('memory_flip_nudges')}"
                         f" deps={rec.get('deps_added')} iters={rec.get('iterations')}"
                         f" ${rec.get('usd')} {rec.get('wall_s')}s"
                         f" reason={rec.get('end_reason')}"

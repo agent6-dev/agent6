@@ -141,8 +141,8 @@ def test_snapshot_persists_completion_scalars(tmp_path: pathlib.Path) -> None:
     assert loaded.metric_at_ceiling is True
 
 
-def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: pathlib.Path) -> None:
-    """A resume keeps a prior red, the memory notices and the once-only finish deferral."""
+def test_snapshot_preserves_run_lifetime_memory_state(tmp_path: pathlib.Path) -> None:
+    """A resume keeps a prior red, the memory write and the once-only flip advisory."""
     snap = tmp_path / "loop_state.json"
     config = types.SimpleNamespace(
         sandbox=types.SimpleNamespace(hide_paths=()),
@@ -166,7 +166,6 @@ def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: pathlib.P
     state.verify.ever_failed = True
     state.memory.written = True
     state.memory.flip_nudged = True
-    state.memory.finish_nudged = True
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
     wf._save_resume_snapshot(state, [], next_iteration=3)  # pyright: ignore[reportPrivateUsage]
 
@@ -177,7 +176,25 @@ def test_snapshot_preserves_run_lifetime_memory_finish_state(tmp_path: pathlib.P
     assert fresh.verify.ever_failed is True
     assert fresh.memory.written is True
     assert fresh.memory.flip_nudged is True
-    assert fresh.memory.finish_nudged is True
+
+
+def test_a_snapshot_with_the_retired_finish_flag_still_loads(tmp_path: pathlib.Path) -> None:
+    """A snapshot on disk that holds `memory_finish_nudged` loads, so its session resumes."""
+    snap = tmp_path / "loop_state.json"
+    current = _snapshot.SessionSnapshot(
+        system="s",
+        messages=[],
+        tool_calls=0,
+        next_iteration=3,
+        root_task_id=None,
+        original_task="go",
+        verify_command=(),
+        memory_flip_nudged=True,
+    )
+    raw = current.model_dump(mode="json")
+    assert "memory_finish_nudged" not in raw
+    snap.write_text(json.dumps({**raw, "memory_finish_nudged": True}), encoding="utf-8")
+    assert _snapshot.load_session_snapshot(snap) == current
 
 
 def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: pathlib.Path) -> None:

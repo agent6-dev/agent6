@@ -348,40 +348,6 @@ def verify_finish(
     )
 
 
-def memory_finish(
-    turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
-) -> _advice.Refusal | None:
-    """Defer once a run's first finish after a red-to-green recovery with no memory write.
-
-    The nudge asks for the root cause or an immediate re-finish; `_nudges` holds
-    the measurement behind it.
-
-    Args:
-        turn: The turn that declared the end.
-        state: The run's loop state.
-        ctx: The turn's facts.
-
-    Returns:
-        The refusal, or None.
-    """
-    if not (
-        ctx.mode == "run"
-        and ctx.memory_wired
-        and state.verify.ever_failed
-        and state.verify.last_ok is True
-        and not state.memory.written
-        and not state.memory.finish_nudged
-    ):
-        return None
-    state.memory.finish_nudged = True
-    return _advice.Refusal(
-        _nudges.MEMORY_FINISH_NUDGE,
-        event="loop.memory_finish.gated",
-        fields={"iteration": turn.iteration},
-        log=f"  finish_session deferred once: memory backstop at iter {turn.iteration}",
-    )
-
-
 def standing_finish(
     turn: _loop_state.TurnState, state: _loop_state.LoopState, ctx: _advice.TurnContext
 ) -> _advice.Refusal | None:
@@ -411,10 +377,9 @@ FINISH_GATES: tuple[_advice.Gate, ...] = (
     review_finish,
     _metric.metric_early_finish,
     open_tasks_finish,
-    memory_finish,
     standing_finish,
 )
-# A harness-declared end has no payload; its memory and standing rules sit at the stop.
+# A harness-declared end has no payload; its standing rule sits at the stop.
 END_GATES: tuple[_advice.Gate, ...] = (verify_finish, review_finish, open_tasks_finish)
 # A silent finish is a finish the model wrote in prose: the metric rule applies.
 SILENT_END_GATES: tuple[_advice.Gate, ...] = (

@@ -274,20 +274,13 @@ QUESTION_NUDGE = (
 )
 
 
-# Memory write nudges fire at the first red-to-green verify flip and the first finish after it.
-# Each fires at most once per run, in run mode with a memory store, while nothing is recorded.
+# The memory write advisory fires at the first red-to-green verify flip.
+# It fires at most once per run, in run mode with a memory store, while nothing is recorded.
 # Measured (bench/longhorizon/FINDINGS.md): a stored rule transfers, a stored instance does not.
 MEMORY_FLIP_NUDGE = (
     "[harness memory] Verify flipped green and nothing is recorded in the"
     " memory dir this run; it takes a durable non-obvious repo fact as a"
     " general rule (a new <name>.md plus its MEMORY.md line)."
-)
-
-MEMORY_FINISH_NUDGE = (
-    "[harness memory] finish_session deferred once: verify recovered earlier"
-    " and nothing is recorded. The memory dir takes a durable non-obvious"
-    " repo fact as a general rule; the next finish_session call is honored"
-    " either way."
 )
 
 

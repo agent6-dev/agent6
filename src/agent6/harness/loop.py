@@ -462,7 +462,6 @@ class Harness:
             verify_scoped=state.verify.scoped,
             memory_written=state.memory.written,
             memory_flip_nudged=state.memory.flip_nudged,
-            memory_finish_nudged=state.memory.finish_nudged,
             standing_tools_mark=state.standing.tools_mark,
             standing_fruitless=state.standing.fruitless,
             ok_tool_calls=state.ok_tool_calls,
@@ -1403,7 +1402,7 @@ class Harness:
             verify_retries=self.gate.retries,
             finish_validator=self.finish_validator,
             metric=self.metrics.goal is not None,
-            memory_wired=self.state_dir is not None,
+            memory_advisory=self.state_dir is not None and self.config.harness.memory_advisory,
             end_rejected=lambda turn, ending: self.reviewer.end_rejected(
                 state, turn, ending=ending
             ),

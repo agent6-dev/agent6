@@ -46,7 +46,7 @@ A capable model loses no score to the 16k regime on these tasks; it pays in re-r
 ## Cross-run memory
 
 - Unprompted, no model records a memory: 0 writes across 46 sessions on qwen3-coder-30b and kimi-k2.6, with a discovered non-obvious fact in hand (orchard's generated-file trap).
-- Two write-side nudges ship: an advisory at the first red-to-green verify flip, and a once-deferred `finish_session` after such a recovery when nothing was recorded. Writes went from 0.0 to 0.5 to 0.8 per session (qwen, n=4 per cell); the flip advisory converted about half the writers and the finish backstop the rest; decliners finished cleanly on the second call. Of 9 stores written, 8 are the durable trap facts, 1 a confidently wrong rationalisation, 0 task-progress junk.
+- Two write-side nudges were measured: an advisory at the first red-to-green verify flip, and a once-deferred `finish_session` after such a recovery when nothing was recorded. Writes went from 0.0 to 0.5 to 0.8 per session (qwen, n=4 per cell); the flip advisory converted about half the writers and the finish backstop the rest; decliners finished cleanly on the second call. Of 9 stores written, 8 are the durable trap facts, 1 a confidently wrong rationalisation, 0 task-progress junk.
 - The two nudges cost turns on a short green run (gpt-6-astra, five fix-the-failing-test tasks, n=20 runs per arm).
   With both nudges: 9.25 ± 2.17 turns and 74.2k tokens in per run.
   With neither firing after a red the run did not cause (the base-red rule): 6.95 ± 1.05 turns and 47.8k tokens in, lower by 2.30 turns (twice the standard error is 1.08).
@@ -58,6 +58,7 @@ A capable model loses no score to the 16k regime on these tasks; it pays in re-r
   Against no nudge it is higher by 1.65 turns (twice the standard error is 0.95).
   Runs with a memory write: 11 of 20 with both nudges, 11 of 20 with the advisory alone.
   On orchard the advisory alone added 0.58 memory files per session against 0.67 in the same-day control (n=12 sessions each, no measured difference); the deferral fired in 0 of 24 control sessions.
+  The deferred finish is removed; the advisory ships behind `harness.memory_advisory`, default on.
 - On three tasks green at the base (n=12 runs per arm), 8 runs per arm caused a red of their own.
   The base-red rule kept the writes (1.42 with both nudges, 1.33 under the rule, no measured difference); no nudge dropped them to 0.
 - On orchard the base-red rule ends the writes (gpt-6-astra, n=4 sequences per arm, 12 sessions).

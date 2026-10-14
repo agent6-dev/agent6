@@ -114,7 +114,6 @@ def restore_completion_state(state: LoopState, snap: _snapshot.SessionSnapshot) 
     state.settled.gateless_ever_edited = snap.gateless_ever_edited
     state.memory.written = snap.memory_written
     state.memory.flip_nudged = snap.memory_flip_nudged
-    state.memory.finish_nudged = snap.memory_finish_nudged
     state.parallel_groups_dispatched = snap.parallel_groups_dispatched
     state.pins = list(snap.pins)
     if snap.metric_at_ceiling or snap.metric_best_score is not None:

@@ -74,8 +74,8 @@ stylebook), `drops_total`/`drop_events`/`first_drop_at_tool_call` (tier-1),
 `gists_total`/`gist_demotions`/`gist_failures` (tier-1 gist elision),
 `compactions` (tier-2), `redundant_reads`/`repeat_path_reads` and their
 `_post_drop`/`_post_compact` splits, `memory_writes`/`memory_invalidations`
-plus `memory_flip_nudges`/`memory_finish_nudges` (the loop's write-side
-nudges) and a post-session store snapshot (`memories_ids`/`memories_bytes`),
+plus `memory_flip_nudges` (the loop's write-side advisory) and a
+post-session store snapshot (`memories_ids`/`memories_bytes`),
 `deps_added`/`deps_in_graph`, `trap_edits` (edit calls whose TARGET is one
 of orchard's generated feeds; matched on the `path` arg when present so a
 generator merely mentioning the feed in a docstring does not count),

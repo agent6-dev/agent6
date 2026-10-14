@@ -33,7 +33,6 @@ _NOTICE_EVENTS = (
     "loop.metric_early_finish.rejected",
     "loop.verify_settled.nudge",
     "loop.memory_flip.nudged",
-    "loop.memory_finish.gated",
     "loop.sandbox_tool_unreachable",
 )
 # The caps that keep the digest within any configured model's window.

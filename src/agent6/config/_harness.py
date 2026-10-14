@@ -174,6 +174,16 @@ class HarnessConfig(pydantic.BaseModel):
             "spiral makes few calls with long reasoning between them); 0 disables."
         ),
     )
+    # Measured in bench/longhorizon/FINDINGS.md: most memory writes follow this notice.
+    memory_advisory: bool = pydantic.Field(
+        default=True,
+        description=(
+            "Send the model one notice per run, the first time verify goes from red to green "
+            "while the run has written nothing to the repo's memory: the memory takes a durable "
+            "fact about the repo. Costs about two turns on a short fix; `false` sends none, and "
+            "the model can still read and write the memory."
+        ),
+    )
 
     # 900 because the hand-back is non-destructive: handing back early costs one poll cycle.
     command_checkin_s: float = pydantic.Field(

@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Cross-run memory write nudges.
+"""The cross-run memory write advisory.
 
-The one-shot memory advisory at the first red-to-green verify flip, and the once-deferred
-finish_session backstop after such a recovery. Both fire only in run mode with a memory store wired,
-and only while nothing has been recorded (bench/longhorizon FINDINGS #2).
+The one-shot advisory at the first red-to-green verify flip. It fires only in run mode with a
+memory store wired and `harness.memory_advisory` on, and only while nothing has been recorded
+(bench/longhorizon FINDINGS #2). A finish after such a recovery is honoured at once.
 """
 
 from __future__ import annotations
@@ -25,14 +25,13 @@ from agent6.harness import (
     loop,
 )
 from agent6.tools import results
-from tests.unit.turn_context import turn_context
 
 
 def _wf(**kw: Any) -> loop.Harness:
     kw.setdefault("state_dir", pathlib.Path("/tmp/state"))
+    kw.setdefault("config", Config.model_validate({}))
     return loop.Harness(
         chain=_chain.RunChain(pathlib.Path("/tmp")),
-        config=Config.model_validate({}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(),
         logger=lambda _m: None,
@@ -73,7 +72,7 @@ def _flip(
     wf: loop.Harness, state: _loop_state.LoopState, turn: _loop_state.TurnState
 ) -> str | None:
     """The flip advisory's text for this turn, as the advisor answers it."""
-    ctx = turn_context(mode=wf.mode, memory_wired=wf.state_dir is not None)
+    ctx = wf._turn_context(state, iteration=turn.iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     nudge = _guards.memory_flip(turn, state, ctx)
     return None if nudge is None else nudge.text
 
@@ -126,8 +125,8 @@ def test_flip_advisory_suppressed_without_store_write_or_run_mode() -> None:
 def test_memory_dir_edit_marks_memory_written() -> None:
     """An edit under the memory dir is a memory write.
 
-    The nudges go quiet and none of the workspace-edit bookkeeping applies (the verify gate's tree
-    is untouched).
+    The advisory goes quiet and none of the workspace-edit bookkeeping applies (the verify gate's
+    tree is untouched).
     """
     wf = _wf()
     state = _state()
@@ -150,8 +149,8 @@ def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
     """A memory-dir patch without a `path` marks memory written.
 
     `apply_patch`'s normal shape carries no `path` (the targets are the headers); counted as a
-    workspace edit, a memory-dir patch withdraws a green verify, leaves `memory_written` False (both
-    nudges then fire at a model that just wrote memory) and sets `ever_edited`. The targets come
+    workspace edit, a memory-dir patch withdraws a green verify, leaves `memory_written` False (the
+    advisory then fires at a model that just wrote memory) and sets `ever_edited`. The targets come
     from the patch; a patch over the store and the workspace together is workspace work.
     """
 
@@ -185,7 +184,7 @@ def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
 def test_a_preview_edit_is_no_edit() -> None:
     """A preview edit is no edit.
 
-    `preview=true` writes nothing, so it marks neither a memory write (both nudges would go quiet
+    `preview=true` writes nothing, so it marks neither a memory write (the advisory would go quiet
     over a dry run of the store) nor a tree edit (a green verify would be withdrawn over a tree
     nothing touched).
     """
@@ -224,54 +223,30 @@ def test_workspace_edit_does_not_mark_memory_written() -> None:
     assert state.ever_edited is True
 
 
-def test_finish_gate_defers_once_then_honours() -> None:
+def test_a_finish_after_a_recovery_is_honoured_at_once() -> None:
+    """A recovery with nothing recorded draws the flip advisory and its finish is not deferred."""
     wf = _wf()
-    state = _state(verify=_verify_verdict.VerifyVerdict(ever_failed=True, last_ok=True))
-
-    # Five idle turns behind it: the settle guard would have ended the run one
-    # turn later, before the memory note and the re-finish the nudge asks for.
-    state.settled.idle = 5
-    state.settled.nudged = True
-    first = _turn(5, finish=_finish_gates.FinishCall("finish_session", "done", {"k": "v"}))
-    ctx = wf._turn_context(state, iteration=5, execution_start=1)  # pyright: ignore[reportPrivateUsage]
-    wf._turn_finish_gates(state, first, ctx)  # pyright: ignore[reportPrivateUsage]
-    assert first.finish is None
-    assert _nudges.MEMORY_FINISH_NUDGE in _notice_texts(first)
-    assert state.memory.finish_nudged is True
-    assert state.settled.idle == 0 and state.settled.nudged is False
-
-    second = _turn(6, finish=_finish_gates.FinishCall("finish_session", "done"))
-    assert _finish_gates.memory_finish(second, state, ctx) is None
+    state = _state()
+    _verify(wf, state, _turn(1), rc=1)
+    flip = _turn(2, finish=_finish_gates.FinishCall("finish_session", "done"))
+    _verify(wf, state, flip, rc=0)
+    ctx = wf._turn_context(state, iteration=2, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    wf._turn_advisors(state, flip, ctx)  # pyright: ignore[reportPrivateUsage]
+    wf._turn_finish_gates(state, flip, ctx)  # pyright: ignore[reportPrivateUsage]
+    assert flip.finish is not None
+    assert _notice_texts(flip) == [_nudges.MEMORY_FLIP_NUDGE]
 
 
-def test_finish_gate_quiet_without_a_recovery_or_after_a_write() -> None:
-    wf = _wf()
-    cases = [
-        # Verify never failed: a smooth run is never interrogated.
-        (wf, _state(verify=_verify_verdict.VerifyVerdict(last_ok=True))),
-        # Still red at finish: nothing proven to record.
-        (wf, _state(verify=_verify_verdict.VerifyVerdict(ever_failed=True, last_ok=False))),
-        # The worker already recorded something.
-        (
-            wf,
-            _state(
-                memory=_guards.MemoryState(written=True),
-                verify=_verify_verdict.VerifyVerdict(ever_failed=True, last_ok=True),
-            ),
-        ),
-        # No memory store wired.
-        (
-            _wf(state_dir=None),
-            _state(verify=_verify_verdict.VerifyVerdict(ever_failed=True, last_ok=True)),
-        ),
-        # Not a run-mode harness.
-        (
-            _wf(mode="ask"),
-            _state(verify=_verify_verdict.VerifyVerdict(ever_failed=True, last_ok=True)),
-        ),
-    ]
-    for gated_wf, state in cases:
-        turn = _turn(5, finish=_finish_gates.FinishCall("finish_session", "done"))
-        ctx = turn_context(mode=gated_wf.mode, memory_wired=gated_wf.state_dir is not None)
-        assert _finish_gates.memory_finish(turn, state, ctx) is None
-        assert state.memory.finish_nudged is False
+def test_the_flip_advisory_follows_the_config_key() -> None:
+    """`harness.memory_advisory = false` sends no advisory at a recovery; the default sends it."""
+    assert Config.model_validate({}).harness.memory_advisory is True
+    for harness, sent in (({}, [_nudges.MEMORY_FLIP_NUDGE]), ({"memory_advisory": False}, [])):
+        wf = _wf(config=Config.model_validate({"harness": harness}))
+        state = _state()
+        _verify(wf, state, _turn(1), rc=1)
+        flip = _turn(2)
+        _verify(wf, state, flip, rc=0)
+        ctx = wf._turn_context(state, iteration=2, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+        wf._turn_advisors(state, flip, ctx)  # pyright: ignore[reportPrivateUsage]
+        assert _notice_texts(flip) == sent
+        assert state.memory.flip_nudged is bool(sent)

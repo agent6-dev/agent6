@@ -311,7 +311,7 @@ def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
     assert provider.last_user == "AGENTS.md:\n# rules\n\nRUN RECORD:\nsession x: task"
     assert "Candidate memory facts" in provider.last_system
     assert "Memory entries the record contradicts" in provider.last_system
-    # Not a fault: a finish the memory backstop deferred once, a task's own
+    # Not a fault: a finish the harness deferred once, a task's own
     # starting red verify. Not a fact: the code's state at the time, the
     # index's own entries.
     for line in (

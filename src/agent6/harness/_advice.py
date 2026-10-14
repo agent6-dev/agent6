@@ -90,8 +90,8 @@ class TurnContext:
     finish_validator: Callable[[dict[str, Any] | None], list[str]] | None
     # A metric goal is configured: the plateau and ceiling rules own the run's end.
     metric: bool
-    # A memory store is wired, so the memory nudges apply.
-    memory_wired: bool
+    # A memory store is wired and `[harness].memory_advisory` is on.
+    memory_advisory: bool
     gate_present: Callable[[], bool]
     verify_command: Callable[[], tuple[str, ...]]
     tree_sha: Callable[[], str]

@@ -154,6 +154,8 @@ class ResumeError(Exception):
 
 # Bump on any change to the persisted shape: an older in-flight run then refuses to resume or fork.
 SNAPSHOT_VERSION = 4
+# Keys a version-4 snapshot on disk may hold that nothing reads; the load drops them.
+_RETIRED_KEYS = ("memory_finish_nudged",)
 
 
 class SessionSnapshot(pydantic.BaseModel):
@@ -187,9 +189,8 @@ class SessionSnapshot(pydantic.BaseModel):
         baseline_ok: Whether the gate passed on the base commit, which a resume never moves.
         verify_scoped: Whether the full gate overran its timeout; a fact about the suite, so it
             carries unconditionally.
-        memory_written: Whether the worker wrote a memory fact; the nudges are once per run.
-        memory_flip_nudged: Whether the memory flip nudge fired.
-        memory_finish_nudged: Whether the memory finish nudge fired.
+        memory_written: Whether the worker wrote a memory fact; the flip advisory is once per run.
+        memory_flip_nudged: Whether the memory flip advisory fired.
         ok_tool_calls: The executed dispatches, for the standing spin guard.
         standing_tools_mark: The dispatch count at the last standing re-entry, -1 before any.
         standing_fruitless: The fruitless standing re-entries in a row.
@@ -223,7 +224,6 @@ class SessionSnapshot(pydantic.BaseModel):
     verify_scoped: bool = False
     memory_written: bool = False
     memory_flip_nudged: bool = False
-    memory_finish_nudged: bool = False
     ok_tool_calls: int = 0
     standing_tools_mark: int = -1
     standing_fruitless: int = 0
@@ -277,6 +277,8 @@ def load_session_snapshot(path: pathlib.Path) -> SessionSnapshot:
             f"run-state snapshot at {path} is version {version!r}, not {SNAPSHOT_VERSION}: this "
             "run predates a state-format change and cannot be resumed or forked. Start a new run."
         )
+    for key in _RETIRED_KEYS:
+        raw.pop(key, None)
     try:
         return SessionSnapshot.model_validate(raw)
     except pydantic.ValidationError as exc:
