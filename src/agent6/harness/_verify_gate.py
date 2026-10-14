@@ -294,21 +294,37 @@ class VerifyGate:
                 verdict.broken_warned = True
                 turn.tool_results.append(_conversation.Notice(_nudges.VERIFY_BROKEN_NUDGE))
                 self.emit("loop.verify_broken.nudge", iteration=turn.iteration)
-        if verdict.baseline_ok is None and self.judged_the_base_commit(verdict, result):
+        judged_base = self.judged_the_base_commit(verdict, result)
+        if judged_base and verdict.baseline_ok is None:
             verdict.baseline_ok = rc == 0
             self.emit("loop.baseline", ok=rc == 0, iteration=turn.iteration)
             if rc != 0:
                 turn.tool_results.append(_conversation.Notice(_nudges.BASELINE_RED_NOTICE))
         tail = f"{result.stdout}\n{result.stderr}"
         verdict.last_tail = tail.strip()[-2000:]
-        if rc == 0:
+        self._record_verdict(state, result, judged_base=judged_base)
+
+    def _record_verdict(
+        self, state: _loop_state.LoopState, result: results.ExecResult, *, judged_base: bool
+    ) -> None:
+        """Record the verdict's flags and streak.
+
+        A verdict on the untouched base is the baseline's, whoever ran it: the settled guard
+        waits for a pass of the run's own, and a red there starts no streak.
+        """
+        verdict = state.verify
+        ok = result.returncode == 0
+        if judged_base:
+            verdict.note_baseline(ok=ok)
+        elif ok:
             verdict.note_pass()
+        else:
+            verdict.note_fail(_nudges.verify_failure_signature(result.stdout, result.stderr))
+        if not ok:
+            verdict.red_tree = self.chain.tree_sha()
+        # A green, or a new stuck point, re-arms the nudges.
+        if ok or verdict.fail_streak == 1:
             state.no_progress.rearm()
-            return
-        verdict.note_fail(_nudges.verify_failure_signature(result.stdout, result.stderr))
-        verdict.red_tree = self.chain.tree_sha()
-        if verdict.fail_streak == 1:
-            state.no_progress.rearm()  # a new stuck point re-arms the nudges
 
     def maybe_adopt(self, state: _loop_state.LoopState, turn: _loop_state.TurnState) -> None:
         """Adopt a verify command a gateless run's commit makes inferable.

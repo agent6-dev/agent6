@@ -396,6 +396,40 @@ def test_a_green_start_gate_is_not_the_runs_own_pass(monkeypatch: pytest.MonkeyP
     assert state.verify.ever_passed is False  # the guard waits for a pass of the run's own
 
 
+@pytest.mark.parametrize("start_gate", [True, False])
+def test_a_green_the_model_runs_on_the_untouched_base_is_not_the_runs_own_pass(
+    start_gate: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The model's own `run_verify_command` on the base tree is the baseline's verdict too.
+
+    It set `ever_passed`, so a run that measured for twelve turns without an edit ended
+    `finished · settled` at exit 0 with the task untouched.
+    """
+    state, (wf, _) = _state(), _start_wf(0)
+    _patch_git(monkeypatch, wf)
+    if start_gate:
+        wf.gate.start_baseline(state)
+    wf.gate.note_result(state, _turn(), _verify(0))
+    assert state.verify.baseline_ok is True
+    assert state.verify.last_ok is True
+    assert state.verify.ever_passed is False
+
+
+def test_a_red_the_model_runs_on_the_untouched_base_is_not_the_runs_own_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A red on the base tree is the baseline's, as a green there is, whoever ran it.
+
+    Counted as the run's own, it set `ever_failed` and started the no-progress streak, so a
+    later green read as a flip the run made and the ladder fired a step early.
+    """
+    state, (wf, _) = _state(), _start_wf(1)
+    _patch_git(monkeypatch, wf)
+    wf.gate.note_result(state, _turn(), _verify(1))
+    assert state.verify.baseline_ok is False and state.verify.last_ok is False
+    assert state.verify.ever_failed is False and state.verify.fail_streak == 0
+
+
 def test_a_red_start_gate_is_not_the_runs_own_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """A red start gate would make every fix a red-to-green flip of the run's, advisory included."""
     state, (wf, _) = _state(), _start_wf(1)

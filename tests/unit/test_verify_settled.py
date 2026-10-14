@@ -222,6 +222,10 @@ def test_the_settled_end_says_why_it_is_not_a_pass() -> None:
         tree_green=lambda: False, verify_command=lambda: ("pytest",), gate_present=lambda: True
     )
     assert "the verify never passed" in _guards.settled_end(never, runnable).summary
+    # A green on the untouched base is the baseline's: the run never passed on its own.
+    base_green = _loop_state.LoopState(original_task="t", tool_calls=0)
+    base_green.verify.note_baseline(ok=True)
+    assert "the only green was the base's" in _guards.settled_end(base_green, runnable).summary
     passed = _guards.settled_end(_green_state(), turn_context(tree_green=lambda: True))
     assert passed.reason == "verify_settled" and passed.scoped is False
 

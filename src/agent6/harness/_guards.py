@@ -200,6 +200,10 @@ def settled_reason(state: _loop_state.LoopState, ctx: _advice.TurnContext) -> st
     """
     if state.verify.last_ok is False:
         return "the worker settled, but the verify gate is still red"
+    if state.verify.green_and_untouched and state.verify.baseline_ok:
+        return (
+            "the worker settled with the tree as it was at the start; the only green was the base's"
+        )
     if state.verify.ever_passed:
         return "the worker settled, but edits after the last green verify were never re-verified"
     if not ctx.verify_command():

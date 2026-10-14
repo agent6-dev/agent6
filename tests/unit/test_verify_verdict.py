@@ -45,3 +45,14 @@ def test_an_edit_after_green_withdraws_the_green() -> None:
     v.note_edit()
     assert not v.green_and_untouched
     assert v.last_ok is True  # the observation stands; only its coverage lapsed
+
+
+def test_a_green_baseline_ends_a_failure_streak() -> None:
+    """A green judged on the base commit mid-run resets the streak as any green does."""
+    v = _verify_verdict.VerifyVerdict()
+    v.note_fail("sig-a")
+    v.note_fail("sig-a")
+    v.note_baseline(ok=True)
+    assert v.fail_streak == 0 and v.fail_signature == ""
+    v.note_baseline(ok=False)
+    assert v.fail_streak == 0 and v.fail_signature == ""
