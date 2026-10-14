@@ -86,6 +86,13 @@ def _paths_the_run_wrote(logs_path: pathlib.Path) -> frozenset[str]:
     return frozenset(paths)
 
 
+def _first_four(paths: frozenset[str]) -> str:
+    """Return the first four paths in order, then how many more there are."""
+    named = sorted(paths)
+    more = f", +{len(named) - 4} more" if len(named) > 4 else ""
+    return ", ".join(named[:4]) + more
+
+
 def covering_stamp(
     repo: pathlib.Path, manifest: sessions_manifest.SessionManifest
 ) -> sessions_manifest.MergeStamp | None:
@@ -573,7 +580,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         if mode == "run":
             # An untracked file the run did not leave, the chain does not hold and no tool wrote
             # arrived between executions, so it is the operator's; a git failure refuses, since
-            # this decides what the run may commit.
+            # this decides what the run may commit. After a death mid-turn a call of that turn
+            # may have written it with no result to say so, and it stays the run's.
+            flight = _snapshot.read_turn_marker(layout.session_dir / _snapshot.TURN_IN_FLIGHT_NAME)
+            died_in_turn = flight is not None and flight.iteration == snapshot.next_iteration
             chain_ref = git_ops.chain_ref_for(session_id)
             end_tree = scan.end_tree
             seed = git_ops.chain_tip(cwd, chain_ref) or resume_base_sha or None
@@ -588,13 +598,17 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     - (git_ops.tree_paths(cwd, end_tree) if end_tree else frozenset())
                     - _paths_the_run_wrote(layout.logs_path)
                 )
-                if arrived:
+                shown = _first_four(arrived)
+                if arrived and died_in_turn:
+                    them = "it" if len(arrived) == 1 else "them"
+                    reporter.note(
+                        f"taken as this run's: {shown} (untracked since the turn the last"
+                        f" execution died in, whose calls may have written {them}; the run's"
+                        f" next commit holds {them})"
+                    )
+                elif arrived:
                     untracked_at_start = untracked_at_start | arrived
                     sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
-                    named = sorted(arrived)
-                    shown = ", ".join(named[:4])
-                    if len(named) > 4:
-                        shown += f", +{len(named) - 4} more"
                     reporter.note(
                         f"left out of this run's commits as yours: {shown} (arrived"
                         " between executions, unwritten by any tool of the run)"

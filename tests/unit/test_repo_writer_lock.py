@@ -812,6 +812,85 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     assert rc == 2 and seen == []
 
 
+def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A file the killed command wrote was classed as the operator's and left out of every commit.
+
+    The run then ended passed over a tree whose merge lacked the file. A call of the turn the
+    execution died in may have written what appeared, so it stays the run's; a clean end keeps
+    the rule that an arrival is the operator's.
+    """
+    from agent6 import secret_store
+    from agent6.app import _execution as app__execution
+    from agent6.app import _execution as execution_mod
+    from agent6.app import resume as resume_mod
+    from agent6.harness import _snapshot
+
+    secret_store.save_secret("anthropic", "x")  # the provider preflight runs before the execution
+    state = paths.state_dir(repo)
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="run-K")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "session_id": "run-K",
+                "mode": "run",
+                "base_sha": "",
+                "base_branch": "main",
+                "run_branch": "agent6/run-K",
+                "user_task": "t",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    # No session.end: the worker was killed while the turn's command ran.
+    layout.logs_path.write_text(
+        '{"type": "session.start", "mode": "run", "user_task": "t"}\n'
+        '{"type": "tool.call", "name": "run_command", "args": {"argv": ["sh", "gen.sh"]}}\n',
+        encoding="utf-8",
+    )
+    snapshot = _snapshot.SessionSnapshot(
+        system="s",
+        messages=[],
+        tool_calls=0,
+        next_iteration=1,
+        root_task_id=None,
+        original_task="t",
+        verify_command=(),
+    )
+    (layout.session_dir / "loop_state.json").write_text(
+        snapshot.model_dump_json(), encoding="utf-8"
+    )
+    call = {"type": "tool_use", "id": "t1", "name": "run_command", "input": {"argv": ["sh"]}}
+    marker = layout.session_dir / _snapshot.TURN_IN_FLIGHT_NAME
+    _snapshot.write_turn_marker(marker, _snapshot.TurnInFlight(iteration=1, assistant=(call,)))
+    (repo / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+    seen: list[frozenset[str]] = []
+
+    def _execution(
+        cfg: object, layout: object, inputs: app__execution.ExecutionInputs, **_k: object
+    ) -> app__execution.ExecutionEnd:
+        seen.append(inputs.untracked_at_start)
+        return app__execution.ExecutionEnd(rc=0)
+
+    monkeypatch.setattr(app__execution, "run_execution", _execution)
+    monkeypatch.setattr(execution_mod, "run_execution", _execution)
+
+    rc = resume_mod.resume_task(
+        None, "run-K", started_at=time.time(), frontend=mock.MagicMock(), force=False
+    )
+
+    assert rc == 0
+    assert seen == [frozenset()]
+    assert sessions_layout.read_untracked_at_start(layout.session_dir) == frozenset()
+    err = capsys.readouterr().err
+    assert "taken as this run's: helper.py" in err
+    assert "as yours" not in err
+
+
 def test_a_run_started_in_a_subdirectory_shares_the_checkouts_lock(tmp_path: pathlib.Path) -> None:
     """The lock is one per CHECKOUT, wherever the operator stood when they started the run.
 
