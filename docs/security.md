@@ -145,6 +145,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 
 - Mounts (`strict`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths`, a persistent `HOME` under `[sandbox].home = "cache"`, and operator tool dirs at their real paths
     - every mount keeps the path it has outside
+    - a grant that contains the workspace is mounted under it: the workspace stays writable under a read grant
     - the paths kept read-only inside the workspace (`.git` under `protect_git`, a machine bundle) are bound after every grant: a grant that contains the workspace does not make them writable
     - a tool dir is mounted only when its identity clears a default-deny.
       Refused: a dir at, inside, or containing an agent6 private dir, and `$HOME` or an ancestor of it

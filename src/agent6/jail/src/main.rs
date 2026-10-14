@@ -1031,6 +1031,9 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
         Some("mode=1777"),
     )
     .map_err(io_err)?;
+    // Grants outside the workspace first: the workspace bind below lands on
+    // top of a grant that contains it, and stays writable under a read grant.
+    bind_grants(policy, &new_root, false)?;
     // Bind the cwd RW, at its REAL path. Every mount in this root is at the
     // path it has outside -- tool dirs, operator grants, and the workspace
     // alike -- so a path means the same thing on both sides of the boundary.
@@ -1066,82 +1069,8 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     // a bind) carried it in with the recursive bind above; the floor is the
     // whole point there too.
     floor_submounts(&cwd_in, RW_FLOOR)?;
-    // Extra RO paths, at their REAL locations (matching tool_paths and the
-    // hardened, and the documented contract: a granted toolchain works
-    // via its own absolute paths and shebangs). A grant under a system bind is
-    // redundant (already visible read+exec) and skipped. Failures are LOUD:
-    // the operator listed the path, so a broken grant must not pass silently.
-    for src in &policy.extra_ro_paths {
-        if !src.exists() || under_system_bind(src) {
-            continue;
-        }
-        let dst = new_root.join(src.strip_prefix("/").unwrap_or(src));
-        fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))?;
-        if src.is_dir() {
-            fs::create_dir_all(&dst)?;
-        } else {
-            fs::File::create(&dst)?;
-        }
-        mount(
-            Some(src.as_path()),
-            &dst,
-            Some(""),
-            MsFlags::MS_BIND | MsFlags::MS_REC,
-            Some(""),
-        )
-        .map_err(io_err)?;
-        mount(
-            Some(""),
-            &dst,
-            Some(""),
-            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RO_FLOOR | carried_mount_flags(&dst),
-            Some(""),
-        )
-        .map_err(io_err)?;
-        floor_submounts(&dst, RO_FLOOR)?;
-    }
-    // Extra RW paths, at their REAL locations. Under a system bind the write
-    // grant cannot be honored (the covering mount is read-only): refuse loudly
-    // rather than mount a dead path.
-    for src in &policy.extra_rw_paths {
-        if !src.exists() {
-            continue;
-        }
-        if under_system_bind(src) {
-            return Err(io::Error::other(format!(
-                "extra_rw path {} sits under a read-only system mount",
-                src.display()
-            )));
-        }
-        let dst = new_root.join(src.strip_prefix("/").unwrap_or(src));
-        fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))?;
-        if src.is_dir() {
-            fs::create_dir_all(&dst)?;
-        } else {
-            fs::File::create(&dst)?;
-        }
-        mount(
-            Some(src.as_path()),
-            &dst,
-            Some(""),
-            MsFlags::MS_BIND | MsFlags::MS_REC,
-            Some(""),
-        )
-        .map_err(io_err)?;
-        // The nosuid/nodev floor every other bind here carries. This one is
-        // writable by design, which is the case that most needs it: without the
-        // remount a setuid binary or device node placed in a granted dir keeps
-        // those bits inside the jail.
-        mount(
-            Some(""),
-            &dst,
-            Some(""),
-            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RW_FLOOR | carried_mount_flags(&dst),
-            Some(""),
-        )
-        .map_err(io_err)?;
-        floor_submounts(&dst, RW_FLOOR)?;
-    }
+    // Grants inside the workspace, on top of it.
+    bind_grants(policy, &new_root, true)?;
     // Re-bind each protect path RO, after every grant bind: a grant at or
     // above a protect path would cover a bind made before it. Subdirs
     // and individual files are both supported; non-existent entries are
@@ -1273,6 +1202,91 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     fs::remove_dir("/.old_root").ok();
 
     chdir(&policy.cwd).map_err(io_err)?;
+    Ok(())
+}
+
+/// Bind the operator's extra grants at their REAL locations: the ones at or
+/// below the workspace when `inside_cwd`, the others when not. The others are
+/// bound before the workspace and these after it, so a grant that contains the
+/// workspace sits under it and a grant inside it sits on top.
+fn bind_grants(policy: &Policy, new_root: &Path, inside_cwd: bool) -> io::Result<()> {
+    let wanted = |src: &&PathBuf| src.starts_with(&policy.cwd) == inside_cwd;
+    // Extra RO paths, at their REAL locations (matching tool_paths and the
+    // hardened, and the documented contract: a granted toolchain works
+    // via its own absolute paths and shebangs). A grant under a system bind is
+    // redundant (already visible read+exec) and skipped. Failures are LOUD:
+    // the operator listed the path, so a broken grant must not pass silently.
+    for src in policy.extra_ro_paths.iter().filter(wanted) {
+        if !src.exists() || under_system_bind(src) {
+            continue;
+        }
+        let dst = new_root.join(src.strip_prefix("/").unwrap_or(src));
+        fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))?;
+        if src.is_dir() {
+            fs::create_dir_all(&dst)?;
+        } else {
+            fs::File::create(&dst)?;
+        }
+        mount(
+            Some(src.as_path()),
+            &dst,
+            Some(""),
+            MsFlags::MS_BIND | MsFlags::MS_REC,
+            Some(""),
+        )
+        .map_err(io_err)?;
+        mount(
+            Some(""),
+            &dst,
+            Some(""),
+            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RO_FLOOR | carried_mount_flags(&dst),
+            Some(""),
+        )
+        .map_err(io_err)?;
+        floor_submounts(&dst, RO_FLOOR)?;
+    }
+    // Extra RW paths, at their REAL locations. Under a system bind the write
+    // grant cannot be honored (the covering mount is read-only): refuse loudly
+    // rather than mount a dead path.
+    for src in policy.extra_rw_paths.iter().filter(wanted) {
+        if !src.exists() {
+            continue;
+        }
+        if under_system_bind(src) {
+            return Err(io::Error::other(format!(
+                "extra_rw path {} sits under a read-only system mount",
+                src.display()
+            )));
+        }
+        let dst = new_root.join(src.strip_prefix("/").unwrap_or(src));
+        fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))?;
+        if src.is_dir() {
+            fs::create_dir_all(&dst)?;
+        } else {
+            fs::File::create(&dst)?;
+        }
+        mount(
+            Some(src.as_path()),
+            &dst,
+            Some(""),
+            MsFlags::MS_BIND | MsFlags::MS_REC,
+            Some(""),
+        )
+        .map_err(io_err)?;
+        // The nosuid/nodev floor every other bind here carries. This one is
+        // writable by design, which is the case that most needs it: without the
+        // remount a setuid binary or device node placed in a granted dir keeps
+        // those bits inside the jail.
+        mount(
+            Some(""),
+            &dst,
+            Some(""),
+            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RW_FLOOR | carried_mount_flags(&dst),
+            Some(""),
+        )
+        .map_err(io_err)?;
+        floor_submounts(&dst, RW_FLOOR)?;
+    }
     Ok(())
 }
 
