@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shlex
 import subprocess as sp
 import time
 from typing import Any, cast
@@ -229,6 +230,89 @@ def test_resume_from_the_checkout_continues_in_the_worktree(
     tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-RESU01"))
     assert tip is not None
     assert git_ops.tree_diff_paths(repo, before[0].strip(), tip) == ["more.txt", "new.txt"]
+
+
+@pytest.mark.parametrize("forked", [False, True], ids=["worktree-run", "fork"])
+def test_resume_stash_restore_command_targets_the_sessions_worktree(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    forked: bool,
+) -> None:
+    """A worktree stash's restore command works from the origin without switching branches."""
+    config = (
+        _CONFIG
+        + '\n[git]\ndirty_tree = "stash"\n\n[parallel]\nworkdir = '
+        + json.dumps(str(tmp_path / "worktrees with spaces"))
+        + "\n"
+    )
+    repo = _repo(tmp_path, monkeypatch, config=config)
+    session_id = "wt-STAS01"
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+    if forked:
+        assert cli_main(["run", "--worktree", "--session-id", "wt-STAS00", "task"]) == 0
+        _script(monkeypatch, _edit("fork.txt", "fork work\n"))
+        assert cli_main(["fork", "wt-STAS00", "--session-id", session_id, "--steer", "task"]) == 0
+    else:
+        assert cli_main(["run", "--worktree", "--session-id", session_id, "task"]) == 0
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, session_id)).worktree
+    assert worktree is not None
+    before = _checkout_facts(repo)[:3]
+    worktree_head = _git(worktree, "rev-parse", "HEAD")
+    (worktree / "a.py").write_text("x = 3  # worktree draft\n", encoding="utf-8")
+    capsys.readouterr()
+    _script(monkeypatch, _edit("more.txt", "two\n"))
+
+    assert cli_main(["resume", session_id, "--steer", "add more.txt"]) == 0
+
+    err = capsys.readouterr().err
+    entry = git_ops.find_stash(repo, git_ops.auto_stash_message(session_id))
+    assert entry is not None
+    restore = next(
+        line.partition("restore them with: ")[2]
+        for line in err.splitlines()
+        if "restore them with: " in line
+    )
+    assert shlex.split(restore) == ["git", "-C", str(worktree), "stash", "apply", entry.sha]
+    assert (worktree / "a.py").read_text(encoding="utf-8") == "x = 1\n"
+
+    sp.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
+    assert (worktree / "a.py").read_text(encoding="utf-8") == "x = 3  # worktree draft\n"
+    assert (worktree / "more.txt").read_text(encoding="utf-8") == "two\n"
+    assert _checkout_facts(repo)[:3] == before
+    assert _git(worktree, "rev-parse", "HEAD") == worktree_head
+    assert _git(worktree, "branch", "--show-current") == ""
+
+
+def test_resume_auto_stash_pop_keeps_the_run_branch_checked_out_in_its_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Auto-restore stays in the worktree even when the run branch is checked out there."""
+    repo = _repo(
+        tmp_path,
+        monkeypatch,
+        config=_CONFIG + '\n[git]\ndirty_tree = "stash"\nauto_stash_pop = true\n',
+    )
+    session_id = "wt-STAS02"
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+    assert cli_main(["run", "--worktree", "--session-id", session_id, "task"]) == 0
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, session_id)).worktree
+    assert worktree is not None
+    _git(worktree, "add", "new.txt")
+    _git(worktree, "switch", "agent6/wt-STAS02")
+    before = _checkout_facts(repo)[:3]
+    (worktree / "a.py").write_text("x = 3  # worktree draft\n", encoding="utf-8")
+    capsys.readouterr()
+    _script(monkeypatch, _edit("more.txt", "two\n"))
+
+    assert cli_main(["resume", session_id, "--steer", "add more.txt"]) == 0
+
+    assert (worktree / "a.py").read_text(encoding="utf-8") == "x = 3  # worktree draft\n"
+    assert (worktree / "more.txt").read_text(encoding="utf-8") == "two\n"
+    assert _git(worktree, "branch", "--show-current").strip() == "agent6/wt-STAS02"
+    assert _checkout_facts(repo)[:3] == before
+    assert git_ops.find_stash(repo, git_ops.auto_stash_message(session_id)) is None
+    assert f"restored your pre-run changes in the worktree {worktree}" in capsys.readouterr().err
 
 
 def test_merge_lands_the_work_and_prune_removes_the_worktree(

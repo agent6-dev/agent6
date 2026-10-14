@@ -131,7 +131,9 @@ class GitConfig(pydantic.BaseModel):
             "ask_user channel (`stash` them for the run, `include` them in its commits, or "
             "`cancel`, which parks the run for a later resume); a run nobody can answer refuses "
             "to start. `stash`: stash them without asking; at the end the stash is applied back "
-            "per `auto_stash_pop`, else its `git stash apply <sha>` line is printed. `include`: "
+            "per `auto_stash_pop`, else a restore command naming the stash by sha is printed. "
+            "For a worktree session, that command names its directory without switching "
+            "branches. `include`: "
             "start without asking, the run's first commit records them; when they are exactly "
             "an unmerged run's work, that run reads merged once this one lands. Untracked files "
             "never count and are never committed. `--parallel` fans out under `stash` or "
@@ -140,13 +142,14 @@ class GitConfig(pydantic.BaseModel):
             "run also changed one of them."
         ),
     )
-    # A run that edited leaves its work in the tree: this fires after auto_merge or a no-edit run.
     auto_stash_pop: bool = pydantic.Field(
         default=False,
         description=(
-            "Apply the pre-run stash back when the run ends and the tree is clean (a clean apply, "
-            "no conflicts). On any doubt the stash stays and the apply line is printed. Never "
-            '`reset --hard`. Requires `dirty_tree = "stash"`.'
+            "Apply the pre-run stash over the working tree when the run or resume ends, even "
+            "with the run's uncommitted work. A worktree session restores there without "
+            "switching branches. Drop it only after a clean apply. A failed apply "
+            "preserves the stash and prints the restore command; check `git status` for "
+            'conflicts. Never `reset --hard`. Requires `dirty_tree = "stash"`.'
         ),
     )
     # The chain is refs/agent6/<session>/head, parented on HEAD at run start.

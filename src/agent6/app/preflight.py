@@ -327,8 +327,8 @@ def dirty_tree_question(paths: Sequence[str], *, unmerged_run: str = "") -> sche
         question=(
             f"{_dirty_tree_listing(paths, unmerged_run=unmerged_run)}\n"
             "How should this run treat them?\n"
-            "stash: set them aside for the run (applied back at the end when the tree is"
-            " clean, else the `git stash apply` line is printed)\n"
+            "stash: set them aside for the run (applied back over the run's work at the end;"
+            " a failed apply keeps the stash and prints the restore command)\n"
             "include: the run's first commit records them with its own work\n"
             f"{merge_hint}"
         ),

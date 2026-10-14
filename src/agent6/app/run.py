@@ -553,6 +553,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                         run_branch=run_branch,
                         auto_pop=stash_pop,
                         session_id=layout.session_id,
+                        in_worktree=checkout is not None,
                         exclude=untracked_at_start,
                         reporter=reporter,
                     )

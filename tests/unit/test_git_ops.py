@@ -81,6 +81,50 @@ def test_stash_tracked_changes_leaves_untracked_files_in_place(tmp_path: pathlib
     assert git_ops.untracked_paths(tmp_path) == {"notes.txt"}
 
 
+@pytest.mark.parametrize("rename", [False, True], ids=["staged-delete", "staged-rename"])
+def test_path_limited_stash_keeps_staged_deletions_and_renames(
+    tmp_path: pathlib.Path, rename: bool
+) -> None:
+    """A selected staged deletion or rename stashes without taking unrelated run edits."""
+    _init_repo(tmp_path)
+    (tmp_path / "run [work].py").write_text("x = 1\n", encoding="utf-8")
+    git_ops.commit_all(tmp_path, "track run file")
+    (tmp_path / "run [work].py").write_text("x = 5\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("operator notes\n", encoding="utf-8")
+    selected = {"README.md"}
+    destination = "README [draft].rst"
+    if rename:
+        subprocess.run(["git", "mv", "README.md", destination], cwd=tmp_path, check=True)
+        (tmp_path / destination).write_text("operator draft\n", encoding="utf-8")
+        selected.add(destination)
+    else:
+        subprocess.run(["git", "rm", "README.md"], cwd=tmp_path, check=True)
+
+    git_ops.stash_tracked_changes(tmp_path, "selected edits", selected)
+
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "hi\n"
+    assert not (tmp_path / destination).exists()
+    assert (tmp_path / "run [work].py").read_text(encoding="utf-8") == "x = 5\n"
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "operator notes\n"
+    entry = git_ops.find_stash(tmp_path, "selected edits")
+    assert entry is not None
+    saved_run = subprocess.run(
+        ["git", "show", f"{entry.sha}:run [work].py"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert saved_run == "x = 1\n"
+
+    assert git_ops.restore_stash(tmp_path, entry)
+    assert not (tmp_path / "README.md").exists()
+    if rename:
+        assert (tmp_path / destination).read_text(encoding="utf-8") == "operator draft\n"
+    assert (tmp_path / "run [work].py").read_text(encoding="utf-8") == "x = 5\n"
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "operator notes\n"
+
+
 def test_commit_paths_ignores_unrelated_staged_work(tmp_path: pathlib.Path) -> None:
     # Work the user already staged is not swept into the scaffold commit.
     _init_repo(tmp_path)

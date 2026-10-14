@@ -665,18 +665,20 @@ def finalize_auto_merge(
             )
 
 
-def _stash_apply_cmd(cwd: pathlib.Path, sha: str, base_branch: str) -> str:
+def _stash_apply_cmd(cwd: pathlib.Path, sha: str, base_branch: str, *, in_worktree: bool) -> str:
     """Word the manual-recovery command for a stash, by sha since a position rots.
 
     Args:
         cwd: The checkout.
         sha: The stash commit.
-        base_branch: The branch the stash belongs on.
+        base_branch: The base branch, used for a run without a worktree.
+        in_worktree: Whether cwd is the session's own worktree.
 
     Returns:
-        The command, prefixed with a checkout of the base only when the operator is
-        elsewhere.
+        The worktree's apply command, or an apply on the base branch for a checkout run.
     """
+    if in_worktree:
+        return shlex.join(["git", "-C", str(cwd), "stash", "apply", sha])
     apply = f"git stash apply {sha}"
     current = ""
     with contextlib.suppress(git_ops.GitError):
@@ -684,13 +686,16 @@ def _stash_apply_cmd(cwd: pathlib.Path, sha: str, base_branch: str) -> str:
     return f"git checkout {base_branch} && {apply}" if current != base_branch else apply
 
 
-def stash_recovery_hint(cwd: pathlib.Path, *, session_id: str, base_branch: str) -> str | None:
+def stash_recovery_hint(
+    cwd: pathlib.Path, *, session_id: str, base_branch: str, in_worktree: bool = False
+) -> str | None:
     """Word how to restore the run's pre-run auto-stash by hand.
 
     Args:
         cwd: The checkout.
         session_id: The run whose stash it is.
-        base_branch: The branch the stash belongs on.
+        base_branch: The base branch, used for a run without a worktree.
+        in_worktree: Whether cwd is the session's own worktree.
 
     Returns:
         The command, or None when the run pushed no stash.
@@ -698,7 +703,7 @@ def stash_recovery_hint(cwd: pathlib.Path, *, session_id: str, base_branch: str)
     entry = git_ops.find_stash(cwd, git_ops.auto_stash_message(session_id))
     if entry is None:
         return None
-    return _stash_apply_cmd(cwd, entry.sha, base_branch)
+    return _stash_apply_cmd(cwd, entry.sha, base_branch, in_worktree=in_worktree)
 
 
 def finalize_auto_stash(
@@ -708,6 +713,7 @@ def finalize_auto_stash(
     run_branch: str | None,
     auto_pop: bool,
     session_id: str,
+    in_worktree: bool = False,
     exclude: Collection[str] = (),
     reporter: app_reporter.Reporter,
 ) -> None:
@@ -718,11 +724,12 @@ def finalize_auto_stash(
 
     Args:
         cwd: The checkout.
-        base_branch: The branch the stash belongs on.
+        base_branch: The base branch, used for a run without a worktree.
         run_branch: The run's branch, or None.
         auto_pop: Whether to restore it; off prints the command instead.
         session_id: The run whose stash it is.
-        exclude: The operator's untracked files, which do not make the tree unclean.
+        in_worktree: Whether cwd is the session's own worktree.
+        exclude: The operator's untracked files, left out of the status check.
         reporter: Receives the notes.
     """
     message = git_ops.auto_stash_message(session_id)
@@ -732,18 +739,16 @@ def finalize_auto_stash(
         return
     # apply by sha keeps the stash; the operator drops it once confirmed.
     apply = f"git stash apply {entry.sha}"
-    recover = _stash_apply_cmd(cwd, entry.sha, base_branch)
+    recover = _stash_apply_cmd(cwd, entry.sha, base_branch, in_worktree=in_worktree)
     if not auto_pop:
         reporter.note(f"pre-run changes are stashed; restore them with: {recover}")
         return
     try:
         st = git_ops.status(cwd, exclude=exclude)
-    except git_ops.GitError:
-        st = None
-    if st is None or not st.is_clean:
-        reporter.note(f"pre-run changes left stashed (worktree not clean); restore with: {recover}")
+    except git_ops.GitError as exc:
+        reporter.note(f"could not read the worktree ({exc}); restore with: {recover}")
         return
-    if run_branch and st.branch == run_branch:
+    if not in_worktree and run_branch and st.branch == run_branch:
         if not git_ops.branch_exists(cwd, base_branch):
             reporter.note(
                 f"base branch {base_branch} no longer exists; pre-run changes left "
@@ -758,20 +763,21 @@ def finalize_auto_stash(
                 f"restore with: {recover}"
             )
             return
+    where = f"in the worktree {cwd}" if in_worktree else f"onto {base_branch}"
     try:
         restored = git_ops.restore_stash(cwd, entry)
     except git_ops.GitError as exc:
         # The apply landed; putting back a concurrent stash the drop displaced failed.
-        reporter.note(f"restored your pre-run changes onto {base_branch}, but {exc}")
+        reporter.note(f"restored your pre-run changes {where}, but {exc}")
         return
     if restored:
         reporter.note(
-            f"restored your pre-run changes onto {base_branch}",
+            f"restored your pre-run changes {where}",
         )
     else:
         reporter.note(
-            "restoring your pre-run changes hit a conflict; resolve the markers"
-            f" (your stash is preserved; re-apply with: git stash apply {entry.sha})"
+            "could not restore your pre-run changes; your stash is preserved."
+            f" Check git status for conflicts, then restore with: {recover}"
         )
 
 
@@ -783,6 +789,7 @@ def end_auto_stash(
     run_branch: str | None,
     auto_pop: bool,
     session_id: str,
+    in_worktree: bool = False,
     exclude: Collection[str] = (),
     reporter: app_reporter.Reporter,
 ) -> None:
@@ -794,11 +801,12 @@ def end_auto_stash(
     Args:
         cwd: The checkout.
         detached: Whether the run continues in the background.
-        base_branch: The branch the stash belongs on.
+        base_branch: The base branch, used for a run without a worktree.
         run_branch: The run's branch, or None.
         auto_pop: Whether to restore it; off prints the command instead.
         session_id: The run whose stash it is.
-        exclude: The operator's untracked files, which do not make the tree unclean.
+        in_worktree: Whether cwd is the session's own worktree.
+        exclude: The operator's untracked files, left out of the status check.
         reporter: Receives the notes.
     """
     if not detached:
@@ -808,11 +816,14 @@ def end_auto_stash(
             run_branch=run_branch,
             auto_pop=auto_pop,
             session_id=session_id,
+            in_worktree=in_worktree,
             exclude=exclude,
             reporter=reporter,
         )
         return
-    hint = stash_recovery_hint(cwd, session_id=session_id, base_branch=base_branch)
+    hint = stash_recovery_hint(
+        cwd, session_id=session_id, base_branch=base_branch, in_worktree=in_worktree
+    )
     reporter.note(
         "pre-run changes remain stashed while the run continues"
         f" in the background; after it ends, restore them with: {hint}"

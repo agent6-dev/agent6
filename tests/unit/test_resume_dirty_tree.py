@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
+import shlex
 import subprocess as sp
 from typing import Any
 
@@ -226,6 +227,94 @@ def test_resume_stashes_an_edit_made_outside_the_run_under_dirty_tree_stash(
     assert "restore them with: git stash apply" in err  # the resumed execution's own end line
 
 
+def test_resume_stashes_a_staged_rename_without_taking_run_work(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A staged rename of an untouched file is stashed without a missing-source pathspec error."""
+    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\n')
+    session_id = "tree-MOVE01"
+    monkeypatch.setattr(
+        providers, "build_role_provider", _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()]))
+    )
+    assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+    _git(repo, "mv", "b.py", "b.rst")
+    (repo / "b.rst").write_text("y = 2  # operator draft\n", encoding="utf-8")
+    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted([_finish()])))
+    capsys.readouterr()
+
+    assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
+
+    assert _chain_file(repo, session_id, "a.py") == "x = 5\n"
+    assert _chain_file(repo, session_id, "b.py") == "y = 1\n"
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
+    assert (repo / "b.py").read_text(encoding="utf-8") == "y = 1\n"
+    assert not (repo / "b.rst").exists()
+    entry = git_ops.find_stash(repo, git_ops.auto_stash_message(session_id))
+    assert entry is not None
+    assert "restore them with:" in capsys.readouterr().err
+
+    assert git_ops.restore_stash(repo, entry)
+    assert not (repo / "b.py").exists()
+    assert (repo / "b.rst").read_text(encoding="utf-8") == "y = 2  # operator draft\n"
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
+
+
+@pytest.mark.parametrize("resuming", [False, True], ids=["run", "resume"])
+def test_auto_stash_pop_restores_over_nonconflicting_run_work(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    resuming: bool,
+) -> None:
+    """A run or resume restores the operator's stash over the run's uncommitted work."""
+    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\nauto_stash_pop = true\n')
+    session_id = "tree-POP001"
+    if resuming:
+        monkeypatch.setattr(
+            providers, "build_role_provider", _use(_Scripted([_edit("b.py", "y = 2\n"), _finish()]))
+        )
+        assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+    (repo / "a.py").write_text("x = 2  # operator draft\n", encoding="utf-8")
+    capsys.readouterr()
+    script = [_edit("b.py", "y = 5  # the run\n"), _finish()]
+
+    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted(script)))
+    if resuming:
+        assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
+    else:
+        assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2  # operator draft\n"
+    assert (repo / "b.py").read_text(encoding="utf-8") == "y = 5  # the run\n"
+    assert _chain_file(repo, session_id, "a.py") == "x = 1\n"
+    assert _chain_file(repo, session_id, "b.py") == "y = 5  # the run\n"
+    assert _git(repo, "branch", "--show-current").strip() == "main"
+    assert _git(repo, "show", "HEAD:b.py") == "y = 1\n"
+    assert _git(repo, "stash", "list") == ""
+    assert "restored your pre-run changes onto main" in capsys.readouterr().err
+
+
+def test_auto_stash_pop_keeps_a_stash_that_would_overwrite_run_work(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A failed apply preserves the stash and run work without claiming markers exist."""
+    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\nauto_stash_pop = true\n')
+    (repo / "a.py").write_text("x = 2  # operator draft\n", encoding="utf-8")
+    monkeypatch.setattr(
+        providers, "build_role_provider", _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()]))
+    )
+
+    assert cli_main(["run", "--session-id", "tree-POP002", "task"]) == 0
+
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
+    entry = git_ops.find_stash(repo, git_ops.auto_stash_message("tree-POP002"))
+    assert entry is not None
+    err = capsys.readouterr().err
+    assert "stash is preserved" in err and f"git stash apply {entry.sha}" in err
+    assert "resolve the markers" not in err
+    assert _git(repo, "ls-files", "--unmerged") == ""
+
+
 def test_resume_refuses_to_stash_a_file_the_run_also_changed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -243,6 +332,86 @@ def test_resume_refuses_to_stash_a_file_the_run_also_changed(
     assert _git(repo, "stash", "list") == ""
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 6  # operator on top\n"
     assert git_ops.chain_tip(repo, git_ops.chain_ref_for("tree-BOTH01")) == tip
+
+
+@pytest.mark.parametrize("policy", ["stash", "ask"])
+def test_resume_stash_refusal_counts_blockers_and_restores_from_the_run_branch(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    policy: str,
+) -> None:
+    """The refusal counts only blockers and its restore command keeps the run's edits."""
+    repo = _setup(tmp_path, monkeypatch, f'dirty_tree = "{policy}"\n')
+    session_id = "tree-UNDO01"
+    monkeypatch.setattr(
+        providers, "build_role_provider", _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()]))
+    )
+    assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+    (repo / "a.py").write_text("x = 6  # operator on top\n", encoding="utf-8")
+    (repo / "b.py").write_text("y = 2  # operator draft\n", encoding="utf-8")
+    if policy == "ask":
+        _answering_frontend(monkeypatch, "stash")
+    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted([_finish()])))
+    capsys.readouterr()
+
+    assert cli_main(["resume", session_id, "--steer", "new work"]) == 2
+
+    err = capsys.readouterr().err
+    assert "1 file blocks stashing" in err
+    assert "- a.py" in err and "- b.py" not in err
+    assert "changed outside this run since it last ended:" not in err
+    restore = next(
+        line.strip() for line in err.splitlines() if line.strip().startswith("git restore")
+    )
+    assert shlex.split(restore) == [
+        "git",
+        "restore",
+        "--source",
+        "agent6/tree-UNDO01",
+        "--",
+        "a.py",
+    ]
+    assert _git(repo, "show", "HEAD:a.py") == "x = 1\n"
+    assert _git(repo, "stash", "list") == ""
+
+    sp.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
+    assert (repo / "b.py").read_text(encoding="utf-8") == "y = 2  # operator draft\n"
+    assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
+    assert _chain_file(repo, session_id, "a.py") == "x = 5\n"
+    assert _chain_file(repo, session_id, "b.py") == "y = 1\n"
+
+
+def test_resume_stash_refusal_restores_work_the_run_never_committed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no run commit, the refusal's restore command uses the recorded end tree."""
+    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\ncommit_per_step = false\n')
+    session_id = "tree-UNDO02"
+    monkeypatch.setattr(
+        providers, "build_role_provider", _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()]))
+    )
+    assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+    events = [
+        json.loads(line)
+        for line in (_session_dir(repo, session_id) / "logs.jsonl").read_text().splitlines()
+    ]
+    (end,) = [e for e in events if e["type"] == "session.end"]
+    (repo / "a.py").write_text("x = 6  # operator on top\n", encoding="utf-8")
+    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted([_finish()])))
+    capsys.readouterr()
+
+    assert cli_main(["resume", session_id, "--steer", "new work"]) == 2
+
+    err = capsys.readouterr().err
+    restore = next(
+        line.strip() for line in err.splitlines() if line.strip().startswith("git restore")
+    )
+    assert shlex.split(restore) == ["git", "restore", "--source", end["tree"], "--", "a.py"]
+    sp.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
+    assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
 
 
 def test_resume_refuses_an_outside_edit_nobody_can_answer_for(
@@ -264,11 +433,11 @@ def test_resume_refuses_an_outside_edit_nobody_can_answer_for(
 
 
 @pytest.mark.parametrize(
-    ("answer", "rc", "chain_a", "stashed"),
+    ("answer", "rc", "chain_a"),
     [
-        ("stash", 0, "x = 1\n", True),
-        ("include", 0, "x = 2\n", False),
-        ("cancel", 2, "x = 1\n", False),
+        ("stash", 0, "x = 1\n"),
+        ("include", 0, "x = 2\n"),
+        ("cancel", 2, "x = 1\n"),
     ],
 )
 def test_resume_asks_about_an_edit_made_outside_the_run(
@@ -277,7 +446,6 @@ def test_resume_asks_about_an_edit_made_outside_the_run(
     answer: str,
     rc: int,
     chain_a: str,
-    stashed: bool,
 ) -> None:
     """Under `dirty_tree = "ask"` a resume asks once, naming the file, and follows the answer."""
     repo = _setup(tmp_path, monkeypatch, "")
@@ -291,9 +459,9 @@ def test_resume_asks_about_an_edit_made_outside_the_run(
     assert "a.py" in asked[0].question and "z.txt" not in asked[0].question
     assert asked[0].options == ("stash", "include", "cancel")
     assert _chain_file(repo, "tree-ASK002", "a.py") == chain_a
-    assert bool(_git(repo, "stash", "list")) is stashed
+    assert _git(repo, "stash", "list") == ""
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2\n"
     if answer == "cancel":
-        assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2\n"
         assert not (_session_dir(repo, "tree-ASK002") / "worker.pid").exists()
 
 

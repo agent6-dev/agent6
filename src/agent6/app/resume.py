@@ -632,6 +632,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     policy=cfg.git.dirty_tree,
                     outside=outside,
                     end_tree=end_tree,
+                    run_branch=manifest.run_branch,
                     answerable=frontend.capabilities.can_ask
                     or ipc.away_mode(layout.session_dir) == "wait",
                 )
@@ -649,6 +650,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             policy=cfg.git.dirty_tree,
             outside=outside,
             end_tree=end_tree,
+            run_branch=manifest.run_branch,
             session_id=session_id,
             ask=lambda question: prompts.ask((question,)).answers[0],
             reporter=reporter,
@@ -766,6 +768,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                         run_branch=manifest.run_branch,
                         auto_pop=cfg.git.auto_stash_pop or stashed.pop,
                         session_id=session_id,
+                        in_worktree=manifest.worktree is not None,
                         exclude=untracked_at_start,
                         reporter=reporter,
                     )

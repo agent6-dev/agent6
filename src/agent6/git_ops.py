@@ -453,8 +453,22 @@ def stash_tracked_changes(path: pathlib.Path, message: str, paths: Collection[st
         message: The stash message, which the finalizer finds it by.
         paths: The repo-relative paths to stash; empty stashes every tracked change.
     """
-    specs = [f":(top,literal){rel}" for rel in sorted(paths)]
-    _run(path, "stash", "push", "--message", message, *(["--", *specs] if specs else []))
+    if not paths:
+        _run(path, "stash", "push", "--message", message)
+        return
+    tracked = tree_paths(path, "HEAD") | set(tracked_files(path))
+    # Select the root and exclude other tracked paths: stash's add rejects a staged deletion.
+    specs = [":/", *(f":(top,exclude,literal){rel}" for rel in sorted(tracked - set(paths)))]
+    _run(
+        path,
+        "stash",
+        "push",
+        "--message",
+        message,
+        "--pathspec-from-file=-",
+        "--pathspec-file-nul",
+        stdin_text="\0".join(specs),
+    )
 
 
 def auto_stash_message(session_id: str) -> str:

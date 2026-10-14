@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
+import shlex
 from collections.abc import Callable, Collection, Sequence
 
 from agent6 import git_ops
@@ -54,26 +55,51 @@ def _also_the_runs(cwd: pathlib.Path, end_tree: str, outside: Sequence[str]) -> 
     return [p for p in outside if p in changed]
 
 
-def _listing(paths: Sequence[str]) -> str:
+def _listing(
+    paths: Sequence[str], *, description: str = "changed outside this run since it last ended"
+) -> str:
     n = len(paths)
-    head = f"{n} {'file' if n == 1 else 'files'} changed outside this run since it last ended:"
+    head = f"{n} {'file' if n == 1 else 'files'} {description}:"
     lines = [f"- {p}" for p in paths[:_LISTED]]
     if n > _LISTED:
         lines.append(f"- ... {n - _LISTED} more")
     return "\n".join([head, *lines])
 
 
-def _shared_refusal(shared: Sequence[str]) -> str:
+def _shared_refusal(
+    cwd: pathlib.Path, shared: Sequence[str], *, end_tree: str, run_branch: str | None
+) -> str:
+    source = end_tree
+    if (
+        run_branch
+        and git_ops.branch_exists(cwd, run_branch)
+        and not git_ops.tree_diff_paths(cwd, run_branch, end_tree)
+    ):
+        source = run_branch
+    restore = shlex.join(["git", "restore", "--source", source, "--", *shared])
+    description = (
+        "blocks stashing (the run also changed it)"
+        if len(shared) == 1
+        else "block stashing (the run also changed them)"
+    )
     return (
-        f"{_listing(shared)}\n"
-        "Stashing them would take this run's own work with yours: the run also changed"
-        f" {'it' if len(shared) == 1 else 'them'}. Undo your edit, or set"
-        ' [git].dirty_tree = "include" so the run\'s next commit records it, then resume.'
+        f"{_listing(shared, description=description)}\n"
+        "Stashing would also set aside the run's work.\n"
+        "To discard only your edits and keep the run's last tree:\n"
+        f"    {restore}\n"
+        'Or set [git].dirty_tree = "include" so the run\'s next commit records your edits,'
+        " then resume."
     )
 
 
 def refusal(
-    cwd: pathlib.Path, *, policy: str, outside: Sequence[str], end_tree: str, answerable: bool
+    cwd: pathlib.Path,
+    *,
+    policy: str,
+    outside: Sequence[str],
+    end_tree: str,
+    run_branch: str | None,
+    answerable: bool,
 ) -> str | None:
     """Return why the resume cannot settle the outside edits, before it has a live worker.
 
@@ -82,6 +108,7 @@ def refusal(
         policy: `[git].dirty_tree`.
         outside: The paths that changed outside the run.
         end_tree: The tree id the run's last end recorded.
+        run_branch: The run's branch, or None.
         answerable: Whether a question would reach anyone.
 
     Returns:
@@ -99,7 +126,9 @@ def refusal(
             ' run; "include" lets the run\'s next commit record them.'
         )
     shared = _also_the_runs(cwd, end_tree, outside)
-    return _shared_refusal(shared) if shared else None
+    return (
+        _shared_refusal(cwd, shared, end_tree=end_tree, run_branch=run_branch) if shared else None
+    )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -121,6 +150,7 @@ def settle(
     policy: str,
     outside: Sequence[str],
     end_tree: str,
+    run_branch: str | None,
     session_id: str,
     ask: Callable[[schema.UserQuestion], str],
     reporter: app_reporter.Reporter,
@@ -132,6 +162,7 @@ def settle(
         policy: `[git].dirty_tree`.
         outside: The paths that changed outside the run.
         end_tree: The tree id the run's last end recorded.
+        run_branch: The run's branch, or None.
         session_id: The run, which names the stash.
         ask: Asks the operator one question and returns the answer.
         reporter: Receives a refusal.
@@ -149,8 +180,9 @@ def settle(
                     question=(
                         f"{_listing(outside)}\n"
                         "How should this run treat them?\n"
-                        "stash: set them aside for the run (applied back at the end when the"
-                        " tree is clean, else the `git stash apply` line is printed)\n"
+                        "stash: set them aside for the run (applied back over the run's work"
+                        " at the end; a failed apply keeps the stash and prints the restore"
+                        " command)\n"
                         "include: the run's next commit records them with its own work\n"
                         "cancel: do not resume; the tree stays as it is"
                     ),
@@ -164,7 +196,7 @@ def settle(
         if choice == "include":
             return Settled()
         if shared := _also_the_runs(cwd, end_tree, outside):
-            reporter.refuse(_shared_refusal(shared))
+            reporter.refuse(_shared_refusal(cwd, shared, end_tree=end_tree, run_branch=run_branch))
             return None
     try:
         git_ops.stash_tracked_changes(cwd, git_ops.auto_stash_message(session_id), outside)
