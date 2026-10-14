@@ -444,32 +444,32 @@ if __name__ == "__main__":
 ```
 
 ## Common mistakes (each fails `machine check`/`create` or silently misbehaves)
-  - Hardcoding `model = "..."` on an `agent` state — it is not a field and the
+  - Hardcoding `model = "..."` on an `agent` state: it is not a field and the
     file fails to load. Omit it (the state runs the worker model) unless pinning
     one on purpose, in the state's `config.models.worker` table.
   - A `tool` that calls the network without `network = "host"` in its own
-    `config.sandbox` table, under a `[config.sandbox]` that says `session` — it
+    `config.sandbox` table, under a `[config.sandbox]` that says `session`: it
     runs network-isolated and the call fails.
-  - Hardcoding a secret/token in a script or the `.asm.toml` — a jailed tool
+  - Hardcoding a secret/token in a script or the `.asm.toml`: a jailed tool
     sees no operator secret at all; say what the state needs in its comment.
-  - A bare `{{ listvar }}` inside an `agent` prompt or any other string —
+  - A bare `{{ listvar }}` inside an `agent` prompt or any other string:
     a list only interpolates as `{{ listvar | json }}` (or spliced as a
     standalone argv element). Bare list references fail `machine check`.
-  - A test that hits the REAL network — tests run with NO network and must
+  - A test that hits the REAL network: tests run with NO network and must
     mock the seam, or they fail the gate. A script with no `*_test.py` is not
     caught by the gate, so write one for every seam.
-  - A script that isn't typed or isn't lint-clean — `machine create` runs ruff +
+  - A script that isn't typed or isn't lint-clean: `machine create` runs ruff +
     ty and rejects it. Annotate functions; keep imports used.
-  - `list[record]` / `list[{...}]` types — unsupported. Append records to a
+  - `list[record]` / `list[{...}]` types: unsupported. Append records to a
     file from a tool script and keep a counter in the blackboard (see above).
-  - A `tool` script that exits non-zero or times out — capture does not fire
+  - A `tool` script that exits non-zero or times out: capture does not fire
     and the blackboard keeps its previous values. Exit 0 with empty or
     non-conforming stdout HALTS the machine: print one JSON object matching
     your `output_schema` on stdout and exit 0. stderr is free for diagnostics.
-  - A `tool` script that writes outside `$AGENT6_MACHINE_DATA_DIR` — on
+  - A `tool` script that writes outside `$AGENT6_MACHINE_DATA_DIR`: on
     `hardened` the rest of the workspace is read-only to tool jails (new
     top-level files are denied). Write to the data dir (or print to stdout).
-  - A non-total `branch` — the last clause MUST be `{ else = true, goto = ... }`.
+  - A non-total `branch`: the last clause MUST be `{ else = true, goto = ... }`.
 
 ## Validity requirements (the file must pass `machine check`)
   - Every `on`/`goto`/`initial` target names an existing state.
