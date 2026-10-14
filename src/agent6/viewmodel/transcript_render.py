@@ -41,7 +41,7 @@ class Turn:
         thinking: The assistant's reasoning.
         tool_calls: The assistant's calls as (name, args JSON).
         tool_name: The tool a "tool" turn is the result of.
-        seq: The transcript seq the turn was introduced by.
+        seq: The round trip the turn belongs to: a result's is its call's.
     """
 
     role: str
@@ -416,6 +416,7 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
     prev_msgs: list[Any] = []
     pending_response = False
     prev_output: list[Any] = []
+    call_seq = 0
     for t in transcripts:
         seq = t.get("seq", 0)
         if not isinstance(seq, int):
@@ -456,50 +457,19 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
                 tt for m in fresh if isinstance(m, dict) for tt in _message_turns(m, shape, names)
             ]
         for tt in new_turns:
-            tt.seq = seq
+            # A result answers the previous round's call and reads under that round's seq.
+            tt.seq = call_seq if tt.role == "tool" else seq
             turns.append(tt)
         response_turns = _response_turns(resp, shape, names)
         for rt in response_turns:
             rt.seq = seq
             turns.append(rt)
+        call_seq = seq if response_turns else call_seq
         prev_len = len(msgs)
         prev_msgs = list(msgs)
         pending_response = bool(response_turns)
         prev_output = list(resp.get("output") or []) if shape == "responses" else []
     return turns
-
-
-def window_turns(turns: list[Turn], lo: int, hi: int) -> list[Turn]:
-    """Select the turns whose seq falls in a window, calls and results kept together.
-
-    A tool result carries the seq of the request that echoes it back, one round
-    after its call, so a plain filter would split the pair at either edge.
-
-    Args:
-        turns: The folded turns.
-        lo: The first seq to keep.
-        hi: The last seq to keep.
-
-    Returns:
-        The turns in the window, each kept tool turn with its call and each kept
-        call with its results.
-    """
-    keep = [lo <= t.seq <= hi for t in turns]
-    for i, k in enumerate(keep):
-        if not k:
-            continue
-        if turns[i].role == "tool":
-            j = i - 1
-            while j >= 0 and turns[j].role == "tool":
-                j -= 1
-            if j >= 0:
-                keep[j] = True
-        elif turns[i].tool_calls:
-            j = i + 1
-            while j < len(turns) and turns[j].role == "tool":
-                keep[j] = True
-                j += 1
-    return [t for t, k in zip(turns, keep, strict=True) if k]
 
 
 def _clip(s: str, n: int) -> str:

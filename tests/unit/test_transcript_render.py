@@ -240,7 +240,7 @@ def test_fold_and_render_the_responses_shape() -> None:
         ("system", 1),
         ("user", 1),
         ("assistant", 1),
-        ("tool", 2),
+        ("tool", 1),
         ("assistant", 2),
     ]
     assert turns[0].text == "SYSTEM PROMPT" and turns[1].text == "do X"
@@ -310,26 +310,21 @@ def test_render_flags_hide_thinking_and_tools() -> None:
     assert "-> read_file(" in md2 and "FULL FILE CONTENTS" not in md2
 
 
-def test_seq_window_never_splits_a_call_from_its_result() -> None:
-    """`window_turns` extends the bound so a call and its result always show together.
+def test_a_tool_result_reads_under_its_calls_seq() -> None:
+    """A result is stamped with its call's seq, so `--seq N` shows round trip N alone.
 
-    A result is stamped with the seq of the request that echoes it back, one round after the
-    call, so windowing by that seq alone dropped one or the other.
+    A result is echoed back by the request one round after the call; stamped with that
+    request's seq, a window on the call's round lost the result and a window on the next
+    round showed the earlier call too.
     """
     turns = transcript_render.fold_conversation(_OPENAI)
     assert [(t.role, t.seq) for t in turns] == [
         ("system", 1),
         ("user", 1),
         ("assistant", 1),
-        ("tool", 2),
+        ("tool", 1),
         ("assistant", 2),
     ]
-    # A window ending at the call's own round (1) must still show its result.
-    kept = [t.role for t in transcript_render.window_turns(turns, 1, 1)]
-    assert kept == ["system", "user", "assistant", "tool"]
-    # A window starting at the result's round (2) must still show its call.
-    kept = [t.role for t in transcript_render.window_turns(turns, 2, 2)]
-    assert kept == ["assistant", "tool", "assistant"]
 
 
 def test_provider_retry_does_not_duplicate_history() -> None:
@@ -828,7 +823,7 @@ def test_a_replayed_message_stripped_of_its_id_is_not_printed_twice() -> None:
         ("system", 1),
         ("user", 1),
         ("assistant", 1),
-        ("tool", 2),
+        ("tool", 1),
         ("assistant", 2),
     ]
     assert transcript_render.render_markdown(turns, session_id="s").count("working on it") == 1

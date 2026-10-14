@@ -568,7 +568,7 @@ def _cmd_history_transcript(
     turns = transcript_render.fold_conversation(transcripts)
     if window is not None:
         lo, hi = window
-        turns = transcript_render.window_turns(turns, lo, hi)
+        turns = [t for t in turns if lo <= t.seq <= hi]
     print(
         transcript_render.render_markdown(
             turns, session_id=layout.session_id, show_thinking=not no_thinking, tools=tools
