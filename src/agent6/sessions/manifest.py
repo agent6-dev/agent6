@@ -249,8 +249,9 @@ class SessionManifest(pydantic.BaseModel):
             manifest that lost the key must not read as the more-privileged `run`.
         start_ts: When the session started.
         user_task: The task, truncated for display; `parked_task` holds it verbatim.
-        base_sha: The commit the run started on.
-        base_branch: The branch the run started on.
+        base_sha: The commit the run's un-landed work starts from: where it started, or the
+            commit a resume continued from after its work landed.
+        base_branch: The branch that commit was on.
         run_branch: The run's own branch, or None.
         git_control: `[git].control` at start; a `model` run has no chain or branch, and the
             git surfaces refuse through `model_git_refusal`.

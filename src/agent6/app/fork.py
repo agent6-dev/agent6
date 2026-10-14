@@ -333,7 +333,15 @@ def _plan_fork(
         graph_version=checkpoint.graph_version,
         forked_from_turn=checkpoint.next_iteration,
         forked_from_sha=forked_from_sha,
-        base_sha=sm.base_sha,
+        # A source whose work landed moved its base to where it continued from; a turn from
+        # before that predates the base, and the fork's own work starts at the turn.
+        base_sha=(
+            forked_from_sha
+            if sm.merged is not None
+            and sm.merged.tip == sm.base_sha
+            and not git_ops.is_ancestor(cwd, sm.base_sha, forked_from_sha)
+            else sm.base_sha
+        ),
         base_branch=sm.base_branch,
         user_task=sm.user_task,
         mode=src_mode,

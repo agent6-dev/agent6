@@ -17,6 +17,7 @@ from agent6 import budget, directive, event_log, git_ops, kinds
 from agent6 import paths as agent6_paths
 from agent6.app import (
     _execution,
+    _resume_chain,
     _resume_tree,
     _session,
     _setup,
@@ -406,6 +407,27 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 reporter.err("REFUSING to resume. Re-run with --force to override.")
                 return 2
 
+        # A run whose work landed continues from HEAD; any other run's next commits would
+        # leave behind a commit the operator made on its branch.
+        landed: _resume_chain.LandedStart | None = None
+        if mode == "run":
+            try:
+                landed = _resume_chain.landed_start(cwd, manifest)
+                off = None if landed else _resume_chain.branch_off_the_chain(cwd, manifest)
+            except git_ops.GitError as exc:
+                reporter.error(str(exc))
+                return 2
+            if off is not None:
+                branch, branch_tip, ahead = off
+                if not force:
+                    reporter.refuse(
+                        _resume_chain.off_chain_refusal(session_id, branch, branch_tip, ahead=ahead)
+                    )
+                    return 2
+                reporter.note(
+                    f"continuing on the chain; {branch} stays at {branch_tip[:12]}, off the run"
+                )
+
         try:
             effective = _setup.load_session_config(
                 repo,
@@ -544,17 +566,23 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         untracked_at_start = sessions_layout.read_untracked_at_start(layout.session_dir)
         outside: list[str] = []
+        end_tree = ""
         if mode == "run":
             # An untracked file the run did not leave, the chain does not hold and no tool wrote
             # arrived between executions, so it is the operator's; a git failure refuses, since
             # this decides what the run may commit.
             chain_ref = git_ops.chain_ref_for(session_id)
+            end_tree = scan.end_tree
+            seed = git_ops.chain_tip(cwd, chain_ref) or resume_base_sha or None
+            if landed is not None:
+                # The run's work is in HEAD, so what differs from HEAD is the operator's.
+                end_tree, seed = f"{landed.head}^{{tree}}", landed.head
             try:
                 arrived = (
                     git_ops.untracked_paths(cwd)
                     - untracked_at_start
                     - git_ops.tree_paths(cwd, chain_ref)
-                    - (git_ops.tree_paths(cwd, scan.end_tree) if scan.end_tree else frozenset())
+                    - (git_ops.tree_paths(cwd, end_tree) if end_tree else frozenset())
                     - _paths_the_run_wrote(layout.logs_path)
                 )
                 if arrived:
@@ -569,17 +597,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                         " between executions, unwritten by any tool of the run)"
                     )
                 # Tracked content that changed since the last end is the operator's too.
-                outside = _resume_tree.outside_edits(
-                    cwd,
-                    scan.end_tree,
-                    git_ops.chain_tip(cwd, chain_ref) or resume_base_sha or None,
-                    untracked_at_start,
-                )
+                outside = _resume_tree.outside_edits(cwd, end_tree, seed, untracked_at_start)
                 unsettled = _resume_tree.refusal(
                     cwd,
                     policy=cfg.git.dirty_tree,
                     outside=outside,
-                    end_tree=scan.end_tree,
+                    end_tree=end_tree,
                     answerable=frontend.capabilities.can_ask
                     or ipc.away_mode(layout.session_dir) == "wait",
                 )
@@ -596,7 +619,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             cwd,
             policy=cfg.git.dirty_tree,
             outside=outside,
-            end_tree=scan.end_tree,
+            end_tree=end_tree,
             session_id=session_id,
             ask=lambda question: prompts.ask((question,)).answers[0],
             reporter=reporter,
@@ -604,6 +627,17 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         if settled is None:
             return 2
         stashed = settled
+        if landed is not None:
+            try:
+                resume_base_sha = _resume_chain.continue_from_head(cwd, landed, manifest, identity)
+            except git_ops.GitError as exc:
+                reporter.error(f"cannot continue this run from HEAD: {exc}")
+                return 2
+            stamps.stamp_continued_from(layout.session_dir, resume_base_sha, landed.branch)
+            reporter.note(
+                f"this run's earlier work landed on {landed.into}; continuing from HEAD"
+                f" ({landed.head[:12]})"
+            )
         # Every preflight passed: the operator's new choices are recorded from here.
         if preset:
             stamps.stamp_preset(layout.session_dir, preset)

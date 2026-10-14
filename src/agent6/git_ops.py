@@ -1262,6 +1262,56 @@ def chain_merge(
     return sha
 
 
+def chain_continue_from(
+    path: pathlib.Path,
+    head: str,
+    message: str,
+    *,
+    ref: str,
+    tip: str,
+    identity: CommitIdentity | None = None,
+    also_branch: str | None = None,
+) -> str:
+    """Make the chain continue from a commit that already holds its landed work.
+
+    Refs only move forward: a tip the commit descends from fast-forwards to it, and any other
+    tip gets a commit with the head's tree and both as parents, so the run's earlier steps
+    stay reachable. No checkout and no working tree is touched.
+
+    Args:
+        path: The repository.
+        head: The commit to continue from.
+        message: The joining commit's message.
+        ref: The chain ref, moved to the result.
+        tip: The run's tip that landed.
+        identity: The author and committer overrides.
+        also_branch: A visible branch moved with the ref.
+
+    Returns:
+        The commit the chain continues from; the tip itself when it already holds the head.
+    """
+    if is_ancestor(path, head, tip):
+        sha = tip
+    elif is_ancestor(path, tip, head):
+        sha = head
+    else:
+        sha = _run(
+            path,
+            "commit-tree",
+            f"{head}^{{tree}}",
+            "-p",
+            tip,
+            "-p",
+            head,
+            "-m",
+            _full_message(message, None, identity),
+            env_extra=_identity_env(identity),
+        ).stdout.strip()
+    _run(path, "update-ref", ref, sha)
+    _advance_run_branch(path, also_branch, sha, expected=tip)
+    return sha
+
+
 def sync_worktree(path: pathlib.Path, from_rev: str, to_rev: str) -> None:
     """Move the worktree's files from one tree to another through a temp index.
 

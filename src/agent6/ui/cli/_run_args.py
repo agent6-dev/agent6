@@ -178,9 +178,10 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "--force",
         action="store_true",
         help=(
-            "Resume even when the saved commit and the session's current commit have diverged."
-            " Use only when its agent6/ID ref was rewritten or replaced; later commits made by"
-            " the same session do not require this."
+            "Resume even when the saved commit and the session's current commit have diverged,"
+            " or when its agent6/ID branch holds a commit the session did not make (the branch"
+            " is then left where it is). Later commits made by the same session do not require"
+            " this."
         ),
     )
     resume_preset = resume_p.add_argument(

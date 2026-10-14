@@ -59,8 +59,8 @@ class RunChain:
         per_step: `[git].commit_per_step`; False keeps the work in the worktree only,
             and resume-from-git, `sessions diff`, `merge` and a `/parallel` dispatch
             from a changed tree degrade.
-        base_sha: Where the run started, the base of the review diff and the gate's
-            scope; "" when unknown.
+        base_sha: Where the run's un-landed work starts, the base of the review diff and
+            the gate's scope; "" when unknown.
     """
 
     root: pathlib.Path

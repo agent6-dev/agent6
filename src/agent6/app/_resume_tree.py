@@ -31,8 +31,9 @@ def outside_edits(
 
     Args:
         cwd: The checkout.
-        end_tree: The tree id the last end recorded; "" when it recorded none.
-        seed: The commit the end's tree was staged over: the chain tip, else the run's base.
+        end_tree: The tree the run left: the one its last end recorded, or HEAD's once its
+            work landed there; "" when none was recorded.
+        seed: The commit that tree was staged over: the chain tip, else the run's base.
         exclude: The operator's untracked files, left out of both trees.
 
     Returns:
@@ -40,8 +41,7 @@ def outside_edits(
     """
     if not end_tree:
         return []
-    now = git_ops.worktree_tree(cwd, seed, exclude)
-    return [] if now == end_tree else git_ops.tree_diff_paths(cwd, end_tree, now)
+    return git_ops.tree_diff_paths(cwd, end_tree, git_ops.worktree_tree(cwd, seed, exclude))
 
 
 def _also_the_runs(cwd: pathlib.Path, end_tree: str, outside: Sequence[str]) -> list[str]:

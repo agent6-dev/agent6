@@ -273,6 +273,25 @@ def stamp_budget(session_dir: pathlib.Path, budget: manifest.BudgetStamp) -> Non
     write_manifest(session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"budget": budget}))
 
 
+def stamp_continued_from(session_dir: pathlib.Path, sha: str, branch: str) -> None:
+    """Move the run's base to the commit its chain continues from after its work landed.
+
+    The merge record's tip moves with it: the commit adds nothing over what landed, so the
+    run still reads merged, and its next merge starts from there.
+
+    Args:
+        session_dir: The session's directory.
+        sha: The commit the chain continues from.
+        branch: The base branch from here on.
+    """
+    m = manifest.read_manifest(session_dir)
+    merged = m.merged.model_copy(update={"tip": sha}) if m.merged is not None else None
+    write_manifest(
+        session_dir / manifest.MANIFEST_NAME,
+        m.model_copy(update={"base_sha": sha, "base_branch": branch, "merged": merged}),
+    )
+
+
 def stamp_fork_task(session_dir: pathlib.Path, steer: str, *, source_dir: pathlib.Path) -> None:
     """Record the first steer that sends a fork elsewhere as the fork's own task.
 

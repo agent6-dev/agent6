@@ -295,6 +295,12 @@ Every end the loop reaches records the tree the run left (`session.end.tree`), a
 `stash` sets aside exactly those paths, and refuses when the run also changed one of them, since the stash would take the run's work with the edit.
 A resume after a death, a detach or an older session has no recorded tree: its note names the changes no commit has, and the next commit takes them.
 
+A resume whose merge stamp covers everything the run committed, in a checkout whose HEAD holds the landing commit, continues from HEAD (`app/_resume_chain.py`).
+The chain ref and run branch only move forward: to HEAD after a `merge` or `ff` landing, else to a commit that joins the landed tip to HEAD's tree, so the earlier steps stay reachable for `fork --at-turn`.
+The manifest's `base_sha` and the merge stamp's tip move to that commit, so `sessions diff`, `sessions commits`, the squash message, the review diff and the next merge read only the new work.
+`base_branch` moves to the branch the merge landed on when the checkout has it out.
+A run branch that is not at the chain tip (a commit made on `agent6/<id>`) refuses the resume, naming the commit; `--force` continues on the chain and leaves the branch.
+
 ## Session state on disk
 
 Each session directory is `<state-dir>/sessions/<bucket>/<session-id>/`, where the bucket is the mode plus `s`: `runs/`, `plans/`, `asks/`, and `machines/` for `machine create` authoring.
