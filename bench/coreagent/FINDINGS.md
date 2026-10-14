@@ -156,7 +156,25 @@ The gate is `python3 -m unittest` over 21 tests, 0.5 s.
 - Without the start gate no feature run verified before its first edit, so none recorded a baseline.
 - The start gate adds one gate run to a run on a green base; a slow gate was not measured.
 - Two defects in the measured arm: a green start gate armed the settled count from the first turn, and a red one made every fix a red-to-green flip, so the memory advisory fired in 8 of 8 fix runs against 2 of 8.
-- Not adopted: the arm is on no release branch.
+
+The fixed arm records the start gate's verdict as the baseline's, not as a pass or a failure of the run's own, and sits behind `harness.verify_at_start`.
+gpt-6.1-sol, the same six tasks, the key off against on, n=2 per task and arm (24 runs, n=4 per family and arm):
+
+| family | measure | key off | key on |
+|---|---|---|---|
+| an unrelated red test beside a feature task | ends `finished · gate was already red` | 0 of 4 | 4 of 4 |
+| | turns | 12.2 | 8.5 |
+| | tokens out | 1096 | 675 |
+| the red test is the task | turns | 7.0 | 6.8 |
+| | memory advisory fired | 2 of 4 | 0 of 4 |
+| a green base, a feature task | turns | 7.0 | 7.5 |
+| | settled nudge before the first edit | 0 of 4 | 0 of 4 |
+
+- Beside an unrelated red test turns and tokens out fall by more than twice the standard error (1.1 and 66); nothing else differs beyond it.
+- Hidden checks pass in 4 of 4 runs in every cell.
+- With the key on no fix run verified red itself before editing, so the advisory, which waits for a red of the run's own, fired in none.
+- Adopted: `harness.verify_at_start`, default on.
+  A slow gate was not measured; the key turns the start gate off.
 
 ## A notice for an edit the run's commits leave out
 
