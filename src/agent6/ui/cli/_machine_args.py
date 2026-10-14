@@ -9,6 +9,14 @@ import pathlib
 
 from agent6.ui.cli import _common, completers
 
+_MACHINE_FILE_HELP = "The .asm.toml machine file, or the name `agent6 machine` lists it under."
+
+
+def _add_file(parser: argparse.ArgumentParser) -> None:
+    """Add the positional a file-taking machine verb reads: a path, or a listed name."""
+    arg = parser.add_argument("file", type=pathlib.Path, help=_MACHINE_FILE_HELP)
+    arg.completer = completers._complete_machine_targets  # type: ignore[attr-defined]
+
 
 def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `machine` and its subcommands over `.asm.toml` state machines."""
@@ -39,9 +47,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " bundle paths, and static script lint/types (ruff + ty). No execution."
         ),
     )
-    machine_check.add_argument(
-        "file", type=pathlib.Path, help="Path to the .asm.toml machine file."
-    )
+    _add_file(machine_check)
     machine_test = _common._sub(
         machine_sub,
         "test",
@@ -52,7 +58,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " No provider calls, no real network."
         ),
     )
-    machine_test.add_argument("file", type=pathlib.Path, help="Path to the .asm.toml machine file.")
+    _add_file(machine_test)
     machine_test.add_argument(
         "--blackboard",
         type=pathlib.Path,
@@ -65,9 +71,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         "graph",
         help="Emit the machine as a state diagram (mermaid or Graphviz dot).",
     )
-    machine_graph.add_argument(
-        "file", type=pathlib.Path, help="Path to the .asm.toml machine file."
-    )
+    _add_file(machine_graph)
     machine_graph.add_argument(
         "--format",
         choices=("mermaid", "dot"),
@@ -79,7 +83,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         "run",
         help="Run (or resume) a machine, driving its states to a terminal one.",
     )
-    machine_run.add_argument("file", type=pathlib.Path, help="Path to the .asm.toml machine file.")
+    _add_file(machine_run)
     machine_run.add_argument(
         "--exit-on-wait",
         action="store_true",
@@ -88,7 +92,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " not-ready wait instead of blocking, for an external scheduler to resume."
         ),
     )
-    # A machine's [config] overlay cannot set sandbox.*, so the grant comes from these flags.
+    # An overlay never widens the sandbox past the operator's config, so the grant comes here.
     _common._add_sandbox_flags(machine_run)
     machine_status = _common._sub(
         machine_sub,

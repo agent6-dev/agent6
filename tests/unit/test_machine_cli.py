@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 
-from agent6 import paths
+from agent6 import errors, paths
 from agent6.app import _setup, machine_agent
 from agent6.machine import MachineJournal
 from agent6.sandbox import detect
@@ -1476,3 +1476,28 @@ def test_machine_stop_refuses_an_instance_whose_journal_it_cannot_read(
     err = capsys.readouterr().err
     assert err.startswith("REFUSING: machine 'waiter_delayed':") and "journal" in err
     assert not any(p.name.startswith("signal") for p in root.iterdir())
+
+
+def test_a_machine_verb_takes_the_name_the_listing_prints(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`machine list` prints a name and a file; check, test, graph and run take either."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "machines").mkdir()
+    (tmp_path / "machines" / "nightly.asm.toml").write_text(WAITER_DELAYED, encoding="utf-8")
+    assert main(["machine", "check", "waiter_delayed"]) == 0
+    assert "machines/nightly.asm.toml" in capsys.readouterr().out
+    assert main(["machine", "graph", "waiter_delayed"]) == 0
+    # An existing path wins over a name.
+    (tmp_path / "waiter_delayed").write_text("not a machine", encoding="utf-8")
+    assert main(["machine", "check", "waiter_delayed"]) == 1
+
+
+def test_a_name_two_files_declare_is_refused_with_both(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    for name in ("a.asm.toml", "b.asm.toml"):
+        (tmp_path / name).write_text(WAITER_DELAYED, encoding="utf-8")
+    with pytest.raises(errors.OperatorError, match=r"a\.asm\.toml, b\.asm\.toml\); name the file"):
+        main(["machine", "check", "waiter_delayed"])

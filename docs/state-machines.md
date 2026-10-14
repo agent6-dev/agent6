@@ -688,6 +688,8 @@ Sizing for long-running machines:
 | `agent6 machine replay <id>`              | deterministic replay from the journal (no world I/O); backtesting. |
 | `agent6 config show/get/set/unset/add/remove/fix --machine-file FILE` | read and write the machine's own `[config]` overlay through the config surfaces, with the same refusals as hand-editing it. |
 
+`check`, `test`, `graph` and `run` take the file's path or the name `agent6 machine` lists it under; an existing path wins.
+
 `machine check` names each problem with its state and rule (``state 'act': branch is not total (no final `else`)``).
 It warns when a `tool` state's binary is not on the jail's PATH.
 

@@ -35,6 +35,7 @@ _STATE_DIR_CONSUMERS = [
     "_complete_machine_ids",
     "_complete_watch_targets",
     "_complete_machine_files",
+    "_complete_machine_targets",
 ]
 
 

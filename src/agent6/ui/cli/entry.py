@@ -813,6 +813,8 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
     if args.machine_command == "list":
         return machine_cmds._cmd_machine_list()
+    if args.machine_command in ("check", "test", "graph", "run"):
+        args.file = machine_cmds.machine_file(args.file)
     if args.machine_command == "check":
         return machine_check._cmd_machine_check(args.file, config_path=args.config)
     if args.machine_command == "test":

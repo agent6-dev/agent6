@@ -391,3 +391,17 @@ def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:
     if machines.is_dir():
         out.update(str(p) for p in machines.rglob("*.asm.toml"))
     return sorted(p for p in out if p.startswith(prefix))
+
+
+@_never_raises
+def _complete_machine_targets(prefix: str, **_kw: object) -> list[str]:
+    """Return the machine files `_complete_machine_files` offers, and the names they declare."""
+    from agent6.app.machine import listing  # noqa: PLC0415
+
+    cwd = pathlib.Path.cwd()
+    names = {
+        row.name
+        for row in listing.machine_rows(cwd, paths.state_dir(cwd))
+        if row.file is not None and row.name != "-"
+    }
+    return sorted({*_complete_machine_files(prefix), *(n for n in names if n.startswith(prefix))})

@@ -17,7 +17,7 @@ import sys
 import time
 from typing import Any
 
-from agent6 import budget, paths
+from agent6 import budget, errors, paths
 from agent6.app.machine import listing, machine_spend
 from agent6.machine import (
     EngineError,
@@ -91,6 +91,33 @@ def _cmd_machine_list() -> int:
             f"  {spec:<{spec_w}}  {file}"
         )
     return 0
+
+
+def machine_file(given: pathlib.Path) -> pathlib.Path:
+    """Return the machine file an argument names: a path, or the name `machine list` prints.
+
+    An existing path wins over a name; a name no authored file declares stays the path it
+    was typed as, so the loader reports it.
+
+    Raises:
+        OperatorError: Several authored files declare the name.
+    """
+    if given.exists():
+        return given
+    cwd = pathlib.Path.cwd()
+    files = sorted(
+        {
+            row.file
+            for row in listing.machine_rows(cwd, paths.state_dir(cwd))
+            if row.file is not None and row.name == str(given)
+        }
+    )
+    if len(files) > 1:
+        raise errors.OperatorError(
+            f"{given}: {len(files)} machine files declare this name"
+            f" ({', '.join(str(f.relative_to(cwd)) for f in files)}); name the file."
+        )
+    return files[0] if files else given
 
 
 def _no_instance_hint(machine_id: str, cwd: pathlib.Path) -> str:
