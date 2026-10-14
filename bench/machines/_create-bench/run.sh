@@ -33,10 +33,11 @@ for entry in "${MODELS[@]}"; do
   provider="${entry%%|*}"; model="${entry##*|}"
   slug="$(echo "$model" | tr '/.:' '___')"
   dir="$HERE/$slug"
-  rm -rf "$dir"; mkdir -p "$dir"
+  rm -rf "$dir" "${dir}-state"; mkdir -p "$dir"
   git -C "$dir" init -q
   git -C "$dir" -c user.email=b@b -c user.name=b commit -q --allow-empty -m init
-  export XDG_STATE_HOME="$dir/.state"
+  # agent6 refuses a state dir inside the workspace.
+  export XDG_STATE_HOME="${dir}-state"
   ( cd "$dir" && "$AGENT6" config set models.worker.provider "$provider" --repo >/dev/null \
       && "$AGENT6" config set models.worker.model "$model" --repo >/dev/null )
 

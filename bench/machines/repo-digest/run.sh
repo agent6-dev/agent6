@@ -14,10 +14,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT6="$(cd "$HERE/../../.." && pwd)/.venv/bin/agent6"
 WORK="${1:-/tmp/agent6-machine-repo-digest}"
 
-rm -rf "$WORK"; mkdir -p "$WORK/scripts"
+rm -rf "$WORK" "${WORK}-state"; mkdir -p "$WORK/scripts"
 cp "$HERE/repo-digest.asm.toml" "$WORK/"
 cp "$HERE/scripts/"*.py "$WORK/scripts/"
 git -C "$WORK" init -q
+# `machine run` only accepts a committed bundle: the first commit below records it.
+git -C "$WORK" add -A
 gc() { git -C "$WORK" -c user.email=dev@x -c user.name="$1" commit -q --allow-empty -m "$2"; }
 gc "Ana"   "feat(api): add pagination to the list endpoint"
 gc "Ben"   "fix(auth): reject expired refresh tokens"
@@ -25,7 +27,8 @@ gc "Cy"    "docs: document the rate-limit headers"
 gc "Ana"   "perf(db): add an index on events(created_at)"
 gc "Ben"   "test: cover the token-refresh edge cases"
 
-export XDG_STATE_HOME="$WORK/.agent6-state"
+# agent6 refuses a state dir inside the workspace.
+export XDG_STATE_HOME="${WORK}-state"
 
 echo "== running repo-digest =="
 (cd "$WORK" && AGENT6_FORCE_STREAM=1 "$AGENT6" machine run repo-digest.asm.toml)
@@ -34,4 +37,4 @@ echo "== status =="
 (cd "$WORK" && "$AGENT6" machine status repo-digest)
 echo
 echo "== digest.md =="
-find "$WORK/.agent6-state" -name digest.md -exec cat {} \;
+find "${WORK}-state" -name digest.md -exec cat {} \;

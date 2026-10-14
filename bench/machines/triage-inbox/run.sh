@@ -14,7 +14,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT6="$(cd "$HERE/../../.." && pwd)/.venv/bin/agent6"
 WORK="${1:-/tmp/agent6-machine-triage}"
 
-rm -rf "$WORK"; mkdir -p "$WORK/scripts" "$WORK/inbox"
+rm -rf "$WORK" "${WORK}-state"; mkdir -p "$WORK/scripts" "$WORK/inbox"
 cp "$HERE/triage-inbox.asm.toml" "$WORK/"
 cp "$HERE/scripts/"*.py "$WORK/scripts/"
 cat > "$WORK/inbox/01-outage.txt"  <<'EOF'
@@ -33,7 +33,8 @@ git -C "$WORK" init -q
 git -C "$WORK" -c user.email=b@b -c user.name=b add -A
 git -C "$WORK" -c user.email=b@b -c user.name=b commit -q -m "seed inbox"
 
-export XDG_STATE_HOME="$WORK/.agent6-state"
+# agent6 refuses a state dir inside the workspace.
+export XDG_STATE_HOME="${WORK}-state"
 
 echo "== running triage-inbox (drains $(ls "$WORK/inbox" | wc -l) items) =="
 time (cd "$WORK" && "$AGENT6" machine run triage-inbox.asm.toml)
