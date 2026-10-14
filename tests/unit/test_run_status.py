@@ -161,6 +161,39 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
     assert (obj["status"], obj["detail"]) == ("waiting", "needs answer; attach to respond")
 
 
+@pytest.mark.parametrize(
+    ("last", "detail"),
+    [
+        ({"type": "verify.start", "cmd": ["pytest"], "timeout_s": 1800}, "verify command running"),
+        ({"type": "tool.call", "name": "run_command", "args": {}}, "tool call running"),
+        ({"type": "role.call", "role": "worker"}, "provider call in flight"),
+        ({"type": "role.text_delta", "role": "worker", "text": "x"}, "provider call in flight"),
+        ({"type": "loop.auto_commit"}, "long step"),
+    ],
+)
+def test_status_names_what_a_long_step_waits_on(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    last: dict[str, object],
+    detail: str,
+) -> None:
+    """A step over two minutes old names what the journal's last event started.
+
+    A twenty-minute verify read "long step, likely a provider call", sending the operator
+    to wait on the wrong thing.
+    """
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [{"ts": _ts(400), "type": "session.start", "mode": "run"}, {"ts": _ts(300), **last}],
+    )
+    sessions_ipc.write_worker_pid(d, os.getpid())
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    obj = json.loads(capsys.readouterr().out)
+    assert (obj["status"], obj["detail"]) == ("running", detail)
+
+
 def test_status_crashed_when_pid_dead_and_no_run_end(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

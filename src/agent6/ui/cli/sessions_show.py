@@ -172,12 +172,21 @@ def _status_state(
         "created": "no events yet" if scan.last_type is None else "never started",
     }.get(word, "")
     if word == "running" and last_age is not None and last_age > 120:
-        detail = "long step, likely a provider call"
+        detail = _IN_FLIGHT.get(scan.last_type or "", "long step")
     return word, cell, detail
 
 
 # The status words of a session that stopped short of its end, which `agent6 resume` continues.
 _RESUMABLE = frozenset({"stale", "stopped", "failed"})
+
+# What a long-running step is doing, by the event the journal recorded last.
+_IN_FLIGHT = {
+    "verify.start": "verify command running",
+    "tool.call": "tool call running",
+    "role.call": "provider call in flight",
+    "role.text_delta": "provider call in flight",
+    "role.thinking_delta": "provider call in flight",
+}
 
 
 def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
