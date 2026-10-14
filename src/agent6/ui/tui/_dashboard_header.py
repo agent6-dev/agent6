@@ -77,9 +77,13 @@ class RunHeader(widgets.Static):
         # Tasks and cost are as of the selected step; ctx is live.
         done_n = sum(1 for t in ds.tasks if t.status in order.DONE_STATUSES)
         step = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
-        cost = (
-            f"[b]{agent6_budget.format_usd(ds.budget.usd_total, partial=ds.budget.usd_partial)}[/]"
-        )
+        cell = listing.cost_cell(
+            ds.budget.usd_total,
+            partial=ds.budget.usd_partial,
+            plan_consumed=ds.budget.plan_consumed,
+            plan_used_percent=ds.budget.plan_used_percent,
+        ) or agent6_budget.format_usd(0.0)
+        cost = f"[b]{cell}[/]"
         # This execution's metered spend against its cap: a resume re-arms the cap while
         # usd_total stays cumulative.
         budget = ""

@@ -180,7 +180,12 @@ def format_cost_cell(usd: float, *, partial: bool = False, plan_points: float | 
 
 
 def budget_usd_text(
-    usd_total: float, *, partial: bool, usd_cap: float, usd_prior_executions: float
+    usd_total: float,
+    *,
+    partial: bool,
+    usd_cap: float,
+    usd_prior_executions: float,
+    cell: str = "",
 ) -> str:
     """Return the run view's cost line.
 
@@ -189,12 +194,13 @@ def budget_usd_text(
         partial: The figure is a lower bound.
         usd_cap: This execution's cap; -1 for unlimited, 0 for none set.
         usd_prior_executions: The spend banked by earlier executions.
+        cell: The listings' cost cell (plan points, dollars or both), the figure when given.
 
     Returns:
         The cumulative figure, then this execution's spend against its cap when earlier
         executions spent; `(unlimited)` for a cap of -1.
     """
-    text = budget.format_usd(usd_total, partial=partial)
+    text = cell or budget.format_usd(usd_total, partial=partial)
     if usd_cap > 0:
         cap = budget.format_usd(usd_cap)
         if usd_prior_executions > 0:

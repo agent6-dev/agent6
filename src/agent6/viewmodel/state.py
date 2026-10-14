@@ -980,6 +980,12 @@ def session_state_as_dict(
         partial=state.budget.usd_partial,
         usd_cap=state.budget.usd_cap,
         usd_prior_executions=state.budget.usd_prior_executions,
+        cell=listing.cost_cell(
+            state.budget.usd_total,
+            partial=state.budget.usd_partial,
+            plan_consumed=state.budget.plan_consumed,
+            plan_used_percent=state.budget.plan_used_percent,
+        ),
     )
     for ap, row in zip(state.pending_approvals, d["pending_approvals"], strict=True):
         row["head"], row["payload"] = approval_parts(ap.prompt)

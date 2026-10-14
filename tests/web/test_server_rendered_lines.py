@@ -63,6 +63,10 @@ def test_the_budget_line_is_rendered_once() -> None:
     assert format.budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_executions=0.0) == (
         "$0.42 / $1.00"
     )
+    # A plan-metered run's figure is the listings' cell, the cap text unchanged.
+    assert format.budget_usd_text(
+        0.0, partial=False, usd_cap=1.0, usd_prior_executions=0.0, cell="2.5pt"
+    ) == ("2.5pt / $1.00")
     assert format.budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_executions=0.1) == (
         "$0.42 · execution $0.32 / $1.00"
     )
