@@ -526,6 +526,7 @@ def test_a_question_answered_from_another_front_end_closes_the_modal(
                 ),
                 "the question modal",
             )
+            await pilot.pause()
             assert "Which name?" in app.export_screenshot().replace("&#160;", " ")
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(answer) + "\n")
