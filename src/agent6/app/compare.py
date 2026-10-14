@@ -122,6 +122,7 @@ def print_ranked_candidates(
     *,
     rows: Mapping[str, listing.SessionSummary],
     merged_into: Mapping[str, str] | None = None,
+    committed: Mapping[str, bool] | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
     """Print the ranked table, the total spend and the judge's rationale.
@@ -134,6 +135,8 @@ def print_ranked_candidates(
         outcome: The ranking.
         rows: Each candidate's listing row, by session id.
         merged_into: Where a candidate is already merged, by session id.
+        committed: Whether a candidate's branch holds a commit, by session id; one named
+            False has nothing to merge.
         reporter: The output channels.
     """
     if not outcome.ranking:
@@ -147,7 +150,12 @@ def print_ranked_candidates(
         # A clean $0 is a blank cell in a listing; a report line spells it out.
         cost = rows[rid].cost_cell or agent6_budget.format_usd(0.0)
         into = (merged_into or {}).get(rid, "")
-        landing = f"merged into {into}" if into else f"merge with: agent6 sessions merge {rid}"
+        if into:
+            landing = f"merged into {into}"
+        elif (committed or {}).get(rid, True):
+            landing = f"merge with: agent6 sessions merge {rid}"
+        else:
+            landing = "nothing to merge (no commit)"
         reporter.out(f"  {rnk}. {rid}  {labels[rid]:<{width}}  {cost}   {landing}")
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)

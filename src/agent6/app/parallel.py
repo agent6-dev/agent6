@@ -881,6 +881,7 @@ def _print_report(
     failed: list[tuple[subrun.LaneResult, str]],
     *,
     rows: Mapping[str, listing.SessionSummary],
+    committed: Mapping[str, bool],
     fanout_id: str,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
@@ -891,13 +892,16 @@ def _print_report(
         outcome: The ranking.
         failed: The failed lanes with their reasons.
         rows: Each candidate's listing row, by session id.
+        committed: Whether each lane's import landed a branch, by session id.
         fanout_id: The fan-out's session id.
         reporter: Receives the lines.
     """
     reporter.out(
         f"\n[agent6] parallel fan-out {fanout_id} complete: {len(candidates)} candidate(s)"
     )
-    app_compare.print_ranked_candidates(candidates, outcome, rows=rows, reporter=reporter)
+    app_compare.print_ranked_candidates(
+        candidates, outcome, rows=rows, committed=committed, reporter=reporter
+    )
     if failed:
         reporter.out("\nfailed lanes:")
         for res, err in failed:
@@ -1201,6 +1205,11 @@ def _drive_fanout(
         outcome,
         batch.failed,
         rows=batch.rows,
+        # A lane that made no commit imports no branch.
+        committed={
+            spec.session_id: git_ops.branch_exists(origin, git_ops.run_branch_for(spec.session_id))
+            for spec in batch.imported
+        },
         fanout_id=fanout_id,
         reporter=reporter,
     )

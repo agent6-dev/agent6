@@ -228,6 +228,24 @@ def test_compare_prefix_resolution_and_mechanical_ranking(
     assert "total: candidates $0.10" in out and "+ judge" not in out
 
 
+def test_compare_row_of_a_run_without_a_commit_offers_no_merge(
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ranked run that committed nothing has no branch, so its row offers no merge."""
+    base = _init_repo(repo)
+    _setup_run(repo, "run-CCCC77", base_sha=base, commits=[("c.txt", "c\n", "add c")])
+    _setup_run(repo, "run-NNNN88", base_sha=base, commits=[], status="passed", cost=0.01)
+    _git(repo, "branch", "-D", "agent6/run-NNNN88")  # a run's branch appears at its first commit
+    assert main(["sessions", "compare", "run-CCCC77", "run-NNNN88"]) == 0
+    out = capsys.readouterr().out
+    assert next(ln for ln in out.splitlines() if "run-CCCC77" in ln).endswith(
+        "merge with: agent6 sessions merge run-CCCC77"
+    )
+    assert next(ln for ln in out.splitlines() if "run-NNNN88" in ln).endswith(
+        "nothing to merge (no commit)"
+    )
+
+
 def test_compare_row_of_a_merged_run_says_so(
     repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

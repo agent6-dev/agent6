@@ -219,10 +219,18 @@ def _cmd_compare(
         for layout, manifest in resolved
         if manifest.merged is not None and manifest.merged.into
     }
+    # A branch-per-run run's branch appears at its first commit; a chain run's is unknown here.
+    committed = {
+        layout.session_id: git_ops.branch_exists(cwd, manifest.run_branch)
+        for layout, manifest in resolved
+        if manifest.run_branch
+    }
     recorded = _recorded_outcome(resolved, candidates) if by_fanout and not rejudge else None
     if recorded is not None:
         print(f"[agent6] the recorded verdict for {_common.plural(len(candidates), 'lane')}:")
-        compare.print_ranked_candidates(candidates, recorded, rows=rows, merged_into=merged)
+        compare.print_ranked_candidates(
+            candidates, recorded, rows=rows, merged_into=merged, committed=committed
+        )
         print("\n(recorded when the fan-out ran; `--rejudge` spends a fresh judge call)")
         return 0
 
@@ -230,7 +238,9 @@ def _cmd_compare(
     # Advisory and stateless: only the fan-out's auto-compare stamps a manifest.
     outcome = _compare.rank(cfg, candidates, transcript_dir=paths.state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
-    compare.print_ranked_candidates(candidates, outcome, rows=rows, merged_into=merged)
+    compare.print_ranked_candidates(
+        candidates, outcome, rows=rows, merged_into=merged, committed=committed
+    )
     # Re-judging one fan-out's lanes can contradict its stamp, which the listings read: say so.
     groups = {manifest.parallel.group if manifest.parallel else None for _, manifest in resolved}
     if outcome.ranking and len(groups) == 1 and None not in groups:
