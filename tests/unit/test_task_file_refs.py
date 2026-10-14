@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pathlib
 
+from agent6 import task_text
 from agent6.ui.cli import _task_refs
 
 
@@ -16,8 +17,10 @@ def test_inlines_existing_file(tmp_path: pathlib.Path) -> None:
     assert "hello world" in out
     assert "</file>" in out
     # The surrounding sentence words are still there.
-    assert out.startswith("read ")
+    assert out.startswith("read @notes.md\n")
     assert out.rstrip().endswith("please")
+    # The operator's reference stays once the block is stripped, so every task line keeps it.
+    assert task_text.operator_task_text(out) == "read @notes.md\nplease"
 
 
 def test_leaves_missing_path_untouched(tmp_path: pathlib.Path) -> None:

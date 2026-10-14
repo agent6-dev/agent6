@@ -26,7 +26,7 @@ def expand_task_file_refs(task: str, root: pathlib.Path) -> str:
         root: The tree the references resolve under.
 
     Returns:
-        The task with each resolved reference replaced by a `<file>` block.
+        The task with a `<file>` block after each resolved reference, which stays as typed.
     """
     root_resolved = root.resolve()
 
@@ -54,6 +54,6 @@ def expand_task_file_refs(task: str, root: pathlib.Path) -> str:
                 f"\n... (truncated, {len(raw) - TASK_FILE_REF_MAX_BYTES} bytes omitted; "
                 "use read_file with an explicit range for the rest)"
             )
-        return f'\n<file path="{rel}">\n{text}{suffix}\n</file>\n'
+        return f'{match.group(0)}\n<file path="{rel}">\n{text}{suffix}\n</file>\n'
 
     return _TASK_FILE_REF_RE.sub(_replace, task)
