@@ -942,3 +942,34 @@ def test_parallel_joined_renders_a_failed_lanes_reason() -> None:
         ]
     )
     assert "failed  run-p1-l1  agent6/run-p1-l1  no result (stale); branch imported" in item.body
+
+
+def test_the_end_label_reads_the_gate_the_model_ran_and_a_stranded_finish() -> None:
+    """The transcript's end label agrees with the listing's status word.
+
+    A gate run as a tool call consumed the verdict with its result, so a finish over it read
+    `unverified` for `gate timed out`; a stranded finish read `passed` for `passed · not
+    committed`.
+    """
+    items = fold_transcript(
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "tool.call", "name": "run_verify_command", "args": {}, "call_id": 1},
+            {"type": "verify.end", "exit_code": 124, "timeout_s": 60, "duration_s": 60.0},
+            {"type": "tool.result", "name": "run_verify_command", "ok": False, "call_id": 1},
+            {"type": "session.end", "reason": "finish_session", "all_passed": False},
+        ]
+    )
+    assert [i.name for i in items if i.kind == "done"] == ["finished · gate timed out"]
+    # The stranded fact is journaled after the end: the end line is out, so it gets a line.
+    items = fold_transcript(
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stranded"},
+        ]
+    )
+    assert [(i.kind, i.name or i.body) for i in items[-2:]] == [
+        ("done", "passed"),
+        ("marker", "no commit landed: the edits sit uncommitted (not committed)"),
+    ]

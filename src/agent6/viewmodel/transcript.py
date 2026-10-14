@@ -411,6 +411,12 @@ class TranscriptFold:
         self._gated: dict[str, int] = {}
         # The last gate run a tool call has not claimed: passed, its badge, ended on its timeout.
         self._verify: tuple[bool, str, bool] | None = None
+        # The last gate verdict (ok, timed out), kept past the tool result that consumed it.
+        self._gate: tuple[bool, bool] | None = None
+        self._stranded = False
+        self._ended = False
+        # Items a receipt event produced, handed out with the next feed.
+        self._deferred: list[TranscriptItem] = []
         self._finish = ""
         self._tools = 0
         self._commits = 0
@@ -447,6 +453,9 @@ class TranscriptFold:
             self._usd = 0.0
             self._usd_partial = False
             self._verify = None
+            self._gate = None
+            self._stranded = False
+            self._ended = False
             self._finish = ""
         if etype == "budget.update":
             self._usd = float(event.get("usd_total", 0) or 0)
@@ -454,6 +463,17 @@ class TranscriptFold:
             return True
         if etype == "loop.auto_commit":
             self._commit_subject = str(event.get("subject", "")).strip()
+            return True
+        if etype == "session.stranded":
+            self._stranded = True
+            if self._ended:
+                # The end line is out: the stranded fact, journaled after it, gets its own.
+                self._deferred.append(
+                    TranscriptItem(
+                        "marker",
+                        body="no commit landed: the edits sit uncommitted (not committed)",
+                    )
+                )
             return True
         return False
 
@@ -510,7 +530,8 @@ class TranscriptFold:
         """
         etype = event.get("type", "")
         if self._fold_receipt(event, etype):
-            return []
+            deferred, self._deferred = self._deferred, []
+            return deferred
         if etype == "role.call":
             self._thinking.clear()
             self._text.clear()
@@ -538,6 +559,7 @@ class TranscriptFold:
             badge = "✓ pass" if code == 0 else f"✗ exit {code}"
             timed_out = viewmodel_events.verify_limit_hit(code, event.get("timeout_s")) > 0
             self._verify = (code == 0, f"{badge} · {dur:.1f}s", timed_out)
+            self._gate = (code == 0, timed_out)
             return []
         if etype == "tool.result":
             return self._complete_tool(event)
@@ -582,10 +604,12 @@ class TranscriptFold:
                 all_passed=all_passed if isinstance(all_passed, bool) else None,
                 end_reason=reason,
                 scoped=bool(event.get("scoped", False)),
-                gate_red=self._verify is not None and not self._verify[0],
-                gate_timed_out=self._verify is not None and self._verify[2],
+                gate_red=self._gate is not None and not self._gate[0],
+                gate_timed_out=self._gate is not None and self._gate[1],
+                stranded=self._stranded,
             )
             body = listing.end_text(reason, str(event.get("summary", "")), self._finish)
+            self._ended = True
             out.append(
                 TranscriptItem(
                     "done",
