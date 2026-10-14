@@ -87,23 +87,27 @@ def stop_session(
         )
     fanout = _is_fanout(session_dir)
     lanes = _live_lanes(session_dir) if fanout else []
+    with_lanes = f" with its {len(lanes)} live lane{'s' if len(lanes) > 1 else ''}" if lanes else ""
+    worker = ipc.read_live_worker_identity(session_dir)
+    # The session's own markers first: a coordinator reads its stop as its lanes end, and one
+    # written after they ended is never read.
+    written = (
+        ipc.request_stop(session_dir)
+        if after_step
+        else ipc.submit_steer(session_dir, "abort", now=True)
+        and ipc.request_stop(session_dir, now=True)
+    )
+    if not written:
+        return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
     for lane in lanes:
         stop_session(
             lane, after_step=after_step, request_only=request_only, wait_s=wait_s, grace_s=grace_s
         )
-    with_lanes = f" with its {len(lanes)} live lane{'s' if len(lanes) > 1 else ''}" if lanes else ""
-    worker = ipc.read_live_worker_identity(session_dir)
     if after_step:
-        if not ipc.request_stop(session_dir):
-            return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
         when = "their current steps" if lanes else "its current step"
         return StopOutcome(
             rid, True, "after_step", f"{rid} stops{with_lanes} after {when}", resumable=not fanout
         )
-    if not (
-        ipc.submit_steer(session_dir, "abort", now=True) and ipc.request_stop(session_dir, now=True)
-    ):
-        return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
     if request_only:
         return StopOutcome(
             rid, True, "requested", f"{rid} stop requested{with_lanes}", resumable=not fanout

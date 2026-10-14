@@ -359,3 +359,40 @@ def test_a_session_that_is_not_live_is_refused_with_its_state(tmp_path: pathlib.
     assert (out.ok, out.how) == (False, "not_live")
     assert "is already passed" in out.message and "nothing to stop" in out.message
     assert not (d / ipc.STOP_REQUEST_FILE).exists() and not (d / ipc.STEER_ANSWER_FILE).exists()
+
+
+def test_a_fan_outs_own_stop_markers_land_before_its_lanes_are_stopped(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The coordinator reads its stop as its lanes end; one written after they ended is never read.
+
+    Stopped lanes first, the coordinator ranked them and ended `lanes_ranked` at exit 0.
+    """
+    coordinator, lane = tmp_path / "fan", tmp_path / "fan-l1"
+    for d in (coordinator, lane):
+        d.mkdir()
+
+    def _live(_d: pathlib.Path) -> bool:
+        return True
+
+    def _fanout(d: pathlib.Path) -> bool:
+        return d == coordinator
+
+    def _lanes(d: pathlib.Path) -> list[pathlib.Path]:
+        return [lane] if d == coordinator else []
+
+    monkeypatch.setattr(stop, "session_is_live", _live)
+    monkeypatch.setattr(stop, "_is_fanout", _fanout)
+    monkeypatch.setattr(stop, "_live_lanes", _lanes)
+    pending_when_lane_stopped: list[bool] = []
+    real = stop.stop_session
+
+    def _recording(session_dir: pathlib.Path, **kw: object) -> stop.StopOutcome:
+        if session_dir == lane:
+            pending_when_lane_stopped.append(ipc.stop_request_pending(coordinator))
+        return real(session_dir, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(stop, "stop_session", _recording)
+    out = stop.stop_session(coordinator, request_only=True)
+    assert out.ok and out.how == "requested"
+    assert pending_when_lane_stopped == [True]
