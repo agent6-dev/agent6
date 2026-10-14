@@ -191,6 +191,15 @@ note = reporter.STDIO_REPORTER.note
 refuse = reporter.STDIO_REPORTER.refuse
 warn = reporter.STDIO_REPORTER.warn
 
+
+def note_removed_cwd(checkout: pathlib.Path) -> None:
+    """Say the shell's directory is gone when the command removed the worktree it was typed in."""
+    try:
+        pathlib.Path.cwd()
+    except FileNotFoundError:
+        note(f"this shell's directory is gone; cd {checkout}")
+
+
 # The one sentence every command's id argument prints.
 MACHINE_ID_HELP = "Machine id (a directory under the per-repo state dir's machines/)."
 REPO_FLAG_HELP = "Write to the per-repo config instead of the global config."

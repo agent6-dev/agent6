@@ -128,6 +128,16 @@ def worktree_owners(
     return owners
 
 
+def sweep_checkout(cwd: pathlib.Path) -> pathlib.Path:
+    """Return the checkout `sessions prune` and `sessions rm` run git from.
+
+    Inside a session's worktree that is the repository's own checkout: those verbs remove
+    the worktree, and git cannot run in a directory that is gone.
+    """
+    owned = {worktree.resolve() for worktree in worktree_owners(paths.state_dir(cwd))}
+    return paths.project_root(cwd) if paths.checkout_root(cwd) in owned else cwd
+
+
 def _still_needs_worktree(
     repo: pathlib.Path, session_dir: pathlib.Path, manifest: sessions_manifest.SessionManifest
 ) -> str:

@@ -499,9 +499,9 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     Returns:
         The exit code; 1 on a partial delete, 2 on a refusal.
     """
-    cwd = pathlib.Path.cwd()
     if asks:
-        return _rm_asks(cwd, session_id)
+        return _rm_asks(pathlib.Path.cwd(), session_id)
+    cwd = fork_worktrees.sweep_checkout(pathlib.Path.cwd())
     try:
         # rm is the surface that deletes a husk, so it resolves one.
         layout = _common.resolve_or_newest_layout(cwd, session_id, allow_husk=True)
@@ -568,4 +568,5 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     what = [layout.session_id, *went]
     removed = f"{', '.join(what[:-1])} and {what[-1]}" if went else what[0]
     print(f"removed {removed}{stays}")
+    _common.note_removed_cwd(cwd)
     return 0

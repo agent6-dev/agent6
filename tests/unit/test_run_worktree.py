@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from agent6 import git_ops, paths
-from agent6.app import _session, preflight, providers
+from agent6.app import _session, fork_worktrees, preflight, providers
 from agent6.app import run as run_lifecycle
 from agent6.config import layer
 from agent6.providers import ProviderResponse
@@ -262,6 +262,54 @@ def test_rm_removes_the_worktree_with_the_record(
     assert "its worktree" in capsys.readouterr().out
     assert not worktree.exists()
     assert _nothing_was_created(repo, "wt-GONE01")
+
+
+def test_prune_typed_in_a_worktree_removes_it_and_finishes_the_sweep(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Prune ran its git in the worktree it had just removed, and crashed mid-sweep."""
+    repo = _repo(tmp_path, monkeypatch)
+    _script(monkeypatch)
+    assert cli_main(["run", "--worktree", "--session-id", "wt-IDLE01", "look around"]) == 0
+    _script(monkeypatch, _edit("new.txt", "made by the run\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "wt-HERE01", "add new.txt"]) == 0
+    assert cli_main(["sessions", "merge", "wt-HERE01"]) == 0
+    here = sessions_manifest.read_manifest(_run_dir(repo, "wt-HERE01")).worktree
+    idle = sessions_manifest.read_manifest(_run_dir(repo, "wt-IDLE01")).worktree
+    assert here is not None and idle is not None
+    # The sweep takes the cwd's worktree first, so the other one is judged after it is gone.
+    assert list(fork_worktrees.worktree_owners(paths.state_dir(repo))) == [here, idle]
+    capsys.readouterr()
+    monkeypatch.chdir(here)
+
+    assert cli_main(["sessions", "prune"]) == 0
+    out, err = capsys.readouterr()
+    assert "removed wt-HERE01's worktree (merged)" in out
+    assert "removed wt-IDLE01's worktree (committed nothing)" in out
+    assert "kept agent6/wt-HERE01 (squash-merged into main" in out
+    assert "deleted 0; kept 1 (1 merged, 0 unmerged)" in out
+    assert f"this shell's directory is gone; cd {repo}" in err
+    assert _worktrees(repo) == [str(repo)]
+
+
+def test_rm_typed_in_the_worktree_removes_the_chain_ref_too(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Rm removed the record and the worktree, then crashed before the chain ref."""
+    repo = _repo(tmp_path, monkeypatch)
+    _script(monkeypatch, _edit("new.txt", "made by the run\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "wt-SELF01", "add new.txt"]) == 0
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-SELF01")).worktree
+    assert worktree is not None
+    capsys.readouterr()
+    monkeypatch.chdir(worktree)
+
+    assert cli_main(["sessions", "rm", "wt-SELF01"]) == 0
+    out, err = capsys.readouterr()
+    assert "removed wt-SELF01, its worktree and its chain ref" in out
+    assert f"this shell's directory is gone; cd {repo}" in err
+    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-SELF01")) is None
+    assert _nothing_was_created(repo, "wt-SELF01")
 
 
 def test_a_worktree_run_starts_while_another_run_drives_the_checkout(

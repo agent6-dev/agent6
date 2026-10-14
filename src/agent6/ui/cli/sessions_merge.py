@@ -417,7 +417,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | Non
     Returns:
         The exit code; 2 when git refuses.
     """
-    cwd = pathlib.Path.cwd()
+    cwd = fork_worktrees.sweep_checkout(pathlib.Path.cwd())
     if not git_ops.is_git_repo(cwd):
         _common.error("not a git repository")
         return 2
@@ -511,6 +511,7 @@ def _sweep_workdirs(
         print(f"[agent6] removed {fork_id}'s worktree ({why})")
     for fork_id, why in worktrees_kept:
         print(f"[agent6] kept {fork_id}'s worktree ({why})")
+    _common.note_removed_cwd(cwd)
     note = (
         f"; fan-out clones: swept {clones_swept}, kept {clones_kept}"
         if clones_swept or clones_kept
