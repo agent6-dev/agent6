@@ -10,7 +10,7 @@ merged) plus the conversation up to that turn; an uncommitted edit at the forked
 turn is absent from the tree. The DAG is rebuilt at the checkpoint's
 `graph_version` by `graph.replay`, not copied. A plan or ask fork reads the
 operator's checkout. `/undo` (`app/undo.py`) adds no worktree: the fork keeps the
-undone session's checkout, put back to the checkpoint's tree.
+undone session's checkout, with the run's paths put back to the checkpoint's tree.
 """
 
 from __future__ import annotations

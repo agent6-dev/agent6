@@ -655,19 +655,32 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
     assert seen["explicit_leaves"] == frozenset({"harness.max_iterations"})
 
 
+@pytest.mark.parametrize(
+    ("changed", "shown"),
+    [("seed.txt", "seed.txt"), ("x\n[agent6] forged.txt", '"x\\n[agent6] forged.txt"')],
+)
 def test_the_resume_note_leaves_the_untracked_at_start_files_out(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    changed: str,
+    shown: str,
 ) -> None:
     """The resume note leaves out the files that were untracked when the run started.
 
     Every chain commit leaves them out, so "the tree holds changes no commit has; this execution's
-    next commit takes them" must not name them.
+    next commit takes them" must not name them. A name holding a newline printed raw there, a
+    line of its own that reads as agent6's.
     """
     from unittest import mock
 
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
+    if changed != "seed.txt":
+        (repo / changed).write_text("seed\n", encoding="utf-8")
+        sp.run(["git", "add", "--", changed], cwd=repo, check=True)
+        sp.run(["git", "commit", "-q", "-m", "named"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
     base = sp.run(
@@ -706,7 +719,7 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     )
     sessions_layout.write_untracked_at_start(session_dir, {"notes.md"})
     (repo / "notes.md").write_text("the operator's, since before the run\n", encoding="utf-8")
-    (repo / "seed.txt").write_text("edited between executions\n", encoding="utf-8")
+    (repo / changed).write_text("edited between executions\n", encoding="utf-8")
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)
@@ -719,7 +732,7 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     )
     notes = [line for line in capsys.readouterr().err.splitlines() if "no commit has" in line]
     assert notes == [
-        "[agent6] the tree holds changes no commit has (seed.txt);"
+        f"[agent6] the tree holds changes no commit has ({shown});"
         " this execution's next commit takes them"
     ]
 

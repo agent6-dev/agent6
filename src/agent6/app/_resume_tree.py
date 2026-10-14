@@ -17,7 +17,7 @@ import pathlib
 import shlex
 from collections.abc import Callable, Collection, Sequence
 
-from agent6 import git_ops
+from agent6 import git_ops, terminal
 from agent6.app import preflight
 from agent6.app import reporter as app_reporter
 from agent6.tools import schema
@@ -60,7 +60,7 @@ def _listing(
 ) -> str:
     n = len(paths)
     head = f"{n} {'file' if n == 1 else 'files'} {description}:"
-    lines = [f"- {p}" for p in paths[:_LISTED]]
+    lines = [f"- {terminal.printable_name(p)}" for p in paths[:_LISTED]]
     if n > _LISTED:
         lines.append(f"- ... {n - _LISTED} more")
     return "\n".join([head, *lines])
@@ -76,7 +76,9 @@ def _shared_refusal(
         and not git_ops.tree_diff_paths(cwd, run_branch, end_tree)
     ):
         source = run_branch
-    restore = shlex.join(["git", "restore", "--source", source, "--", *shared])
+    # Literal pathspecs: a name holding `*`, `?` or `[` would restore other files too.
+    names = (f":(top,literal){terminal.printable_name(p)}" for p in shared)
+    restore = shlex.join(["git", "restore", "--source", source, "--", *names])
     description = (
         "blocks stashing (the run also changed it)"
         if len(shared) == 1
@@ -203,7 +205,8 @@ def settle(
     except git_ops.GitError as exc:
         reporter.refuse(f"stashing the edits made outside the run failed: {exc}")
         return None
-    shown = ", ".join(outside[:4]) + (f", +{len(outside) - 4} more" if len(outside) > 4 else "")
+    names = ", ".join(terminal.printable_name(p) for p in outside[:4])
+    shown = names + (f", +{len(outside) - 4} more" if len(outside) > 4 else "")
     reporter.note(
         f"stashed for this execution as yours: {shown} (changed since the run last ended)"
     )

@@ -1728,6 +1728,58 @@ def test_tree_diff_paths_names_what_changed_between_two_worktree_trees(
     assert staged.returncode == 0  # nothing reached the shared index
 
 
+def test_tree_diff_paths_reads_every_name_as_git_stores_it(tmp_path: pathlib.Path) -> None:
+    """A non-ASCII letter, a quote, a backslash or a control character made git quote a name.
+
+    Handed back to git it matched nothing: a resume's stash set nothing aside while saying it
+    had.
+    """
+    _init_repo(tmp_path)
+    before = git_ops.worktree_tree(tmp_path, "HEAD", ())
+    names = ["café.txt", 'say "hi".txt', "notes\\draft.txt", "a\nb.txt", "c\u2028d.txt"]
+    for name in names:
+        (tmp_path / name).write_text("x\n", encoding="utf-8")
+    after = git_ops.worktree_tree(tmp_path, "HEAD", ())
+    assert sorted(git_ops.tree_diff_paths(tmp_path, before, after)) == sorted(names)
+
+
+def test_a_name_that_does_not_print_as_it_is_prints_escaped_on_one_line() -> None:
+    """A quoted name escapes U+2028, U+2029, U+0085 and U+202E too.
+
+    Left raw, the first three break a line, and U+202E reverses the text after it on a terminal.
+    """
+    from agent6 import terminal
+
+    assert terminal.printable_name("café.txt") == "café.txt"
+    for name in ("a\nb", "u\u2028x", "p\u2029q", "n\x85m", "r\u202eTXT.exe"):
+        shown = terminal.printable_name(name)
+        assert shown.isascii() and shown.isprintable() and len(shown.splitlines()) == 1, shown
+
+
+def test_a_kept_worktree_names_its_uncommitted_files_on_one_line(tmp_path: pathlib.Path) -> None:
+    """A newline in a name `sessions prune` or `rm` prints would forge a line of its own."""
+    from agent6.app import fork_worktrees
+
+    _init_repo(tmp_path)
+    (tmp_path / "x\n[agent6] removed run-BBBB22's worktree (merged)").write_text("x\n")
+    phrase = fork_worktrees.uncommitted_in_worktree(tmp_path, ("HEAD",))
+    assert phrase.startswith("holds work no commit has: ") and "\n" not in phrase
+
+
+def test_the_dirty_tree_lists_name_each_file_on_one_line() -> None:
+    """Names git lists with `-z` printed raw: a newline in one forged a line of agent6's own.
+
+    Resume's notes on files that arrived between executions, and the start's dirty-tree refusal.
+    """
+    from agent6.app import preflight, resume
+
+    forged = "y\n[agent6] forged line"
+    note = resume._first_four(frozenset({forged}))  # pyright: ignore[reportPrivateUsage]
+    assert "\n" not in note
+    refusal = preflight.dirty_tree_refusal([forged])
+    assert not [line for line in refusal.splitlines() if line.startswith("[agent6]")]
+
+
 def test_plumb_merge_survives_a_recorded_but_missing_worktree(tmp_path: pathlib.Path) -> None:
     """A merge over a worktree record whose directory is gone lands and returns."""
     import shutil

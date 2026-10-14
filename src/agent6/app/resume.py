@@ -13,7 +13,7 @@ import json
 import os
 import pathlib
 
-from agent6 import budget, directive, event_log, git_ops, kinds
+from agent6 import budget, directive, event_log, git_ops, kinds, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import (
     _execution,
@@ -90,7 +90,7 @@ def _first_four(paths: frozenset[str]) -> str:
     """Return the first four paths in order, then how many more there are."""
     named = sorted(paths)
     more = f", +{len(named) - 4} more" if len(named) > 4 else ""
-    return ", ".join(named[:4]) + more
+    return ", ".join(map(terminal.printable_name, named[:4])) + more
 
 
 def covering_stamp(
@@ -713,7 +713,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     exclude=untracked_at_start,
                 )
                 if dirty:
-                    named = ", ".join(dirty[:4]) + (", ..." if len(dirty) > 4 else "")
+                    shown = map(terminal.printable_name, dirty[:4])
+                    named = ", ".join(shown) + (", ..." if len(dirty) > 4 else "")
                     reporter.note(
                         f"the tree holds changes no commit has ({named});"
                         " this execution's next commit takes them"

@@ -17,7 +17,7 @@ from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import event_log, git_ops, kinds, verify_infer
+from agent6 import event_log, git_ops, kinds, terminal, verify_infer
 from agent6.app import _setup, providers
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, parse_seat_spec, plan_metered
@@ -323,7 +323,7 @@ def _dirty_tree_listing(paths: Sequence[str], *, cap: int = 10, unmerged_run: st
         if unmerged_run
         else ":"
     )
-    lines = [f"- {p}" for p in paths[:cap]]
+    lines = [f"- {terminal.printable_name(p)}" for p in paths[:cap]]
     if n > cap:
         lines.append(f"- ... {n - cap} more")
     return "\n".join([head, *lines])

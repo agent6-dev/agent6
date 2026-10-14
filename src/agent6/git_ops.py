@@ -18,7 +18,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 
 from agent6 import child_env, commit_message, kinds
 
@@ -1132,9 +1132,12 @@ def tree_paths(path: pathlib.Path, ref: str) -> frozenset[str]:
 
 
 def tree_diff_paths(path: pathlib.Path, old_tree: str, new_tree: str) -> list[str]:
-    """Return the paths whose content differs between two trees."""
-    out = _run(path, "diff-tree", "-r", "--name-only", old_tree, new_tree).stdout
-    return [line for line in out.splitlines() if line]
+    """Return the paths whose content differs between two trees, unquoted.
+
+    Print one through `terminal.printable_name`: a name can hold a newline.
+    """
+    out = _run(path, "diff-tree", "-r", "-z", "--name-only", old_tree, new_tree).stdout
+    return [name for name in out.split("\0") if name]
 
 
 def chain_commit(
@@ -1347,6 +1350,33 @@ def sync_worktree(path: pathlib.Path, from_rev: str, to_rev: str) -> None:
         _run(path, "read-tree", from_rev, env_extra=env)
         _run(path, "update-index", "--refresh", env_extra=env, check=False)
         _run(path, "read-tree", "-m", "-u", from_rev, to_rev, env_extra=env)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def tree_with_paths_from(path: pathlib.Path, tree: str, rev: str, paths: Sequence[str]) -> str:
+    """Return a tree equal to `tree` with the given paths taken from a commit.
+
+    A path the commit lacks is dropped. Built in a temp index: HEAD and the shared index
+    stay untouched.
+
+    Args:
+        path: The repository.
+        tree: The tree to start from.
+        rev: The commit the paths are taken from.
+        paths: The repo-relative paths.
+
+    Returns:
+        The tree sha.
+    """
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="agent6-tree-"))
+    env = {"GIT_INDEX_FILE": str(tmp / "index")}
+    try:
+        _run(path, "read-tree", tree, env_extra=env)
+        if paths:
+            specs = (f":(top,literal){p}" for p in paths)
+            _run(path, "restore", "--staged", f"--source={rev}", "--", *specs, env_extra=env)
+        return _run(path, "write-tree", env_extra=env).stdout.strip()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

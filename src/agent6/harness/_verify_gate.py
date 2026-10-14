@@ -15,7 +15,7 @@ import dataclasses
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal
 
-from agent6 import git_ops, verify_infer
+from agent6 import git_ops, terminal, verify_infer
 from agent6.harness import (
     _chain,
     _conversation,
@@ -257,7 +257,8 @@ class VerifyGate:
                     turn.tool_results.append(
                         _conversation.Notice(_nudges.test_only_green_notice(paths))
                     )
-                    self.log(f"  verify flipped green over test-only edits: {' '.join(paths)}")
+                    shown = " ".join(map(terminal.printable_name, paths))
+                    self.log(f"  verify flipped green over test-only edits: {shown}")
                     self.emit(
                         "loop.test_only_green.notice", iteration=turn.iteration, paths=list(paths)
                     )

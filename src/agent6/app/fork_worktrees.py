@@ -13,7 +13,7 @@ import dataclasses
 import pathlib
 from collections.abc import Sequence
 
-from agent6 import git_ops, paths
+from agent6 import git_ops, paths, terminal
 from agent6.sessions import ipc, lock
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import session_dirs
@@ -109,7 +109,7 @@ def uncommitted_in_worktree(worktree: pathlib.Path, tips: tuple[str, ...]) -> st
         return ""
     if not held:
         return ""
-    named = ", ".join(held[:4]) + (", ..." if len(held) > 4 else "")
+    named = ", ".join(map(terminal.printable_name, held[:4])) + (", ..." if len(held) > 4 else "")
     return f"holds work no commit has: {named}"
 
 

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 # String-carrying families drop their payloads, including an unfinished trailing payload.
@@ -38,3 +39,8 @@ def scrub_terminal_controls(text: str) -> str:
 def scrub_terminal_output(text: str) -> str:
     """Return the text the CLI may write to its terminal: SGR styling kept, controls dropped."""
     return _TERMINAL_RE.sub(lambda m: m.group("own") or "", text)
+
+
+def printable_name(name: str) -> str:
+    """Return a file name to print on one line: as it is, else quoted with its escapes shown."""
+    return name if name.isprintable() else json.dumps(name)

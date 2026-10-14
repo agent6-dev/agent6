@@ -12,7 +12,7 @@ from __future__ import annotations
 import pathlib
 from collections.abc import Callable, Sequence
 
-from agent6 import directive, git_ops, paths
+from agent6 import directive, git_ops, paths, terminal
 from agent6.app import parallel, preflight
 from agent6.config import Config, ConfigError
 from agent6.models import validate
@@ -114,7 +114,7 @@ def dispatch_parallel(
         _common.error(f"{exc}")
         return 2
     if modified and cfg.git.dirty_tree == "ask":
-        listed = "\n".join(f"    {p}" for p in modified[:10])
+        listed = "\n".join(f"    {terminal.printable_name(p)}" for p in modified[:10])
         more = f"\n    ... {len(modified) - 10} more" if len(modified) > 10 else ""
         n = len(modified)
         _common.refuse(

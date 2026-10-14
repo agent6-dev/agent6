@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`/undo` puts the checkout back to the checkpoint's tree for every path the run changed.
+"""`/undo` puts back to the checkpoint's tree every path the run changed.
 
-The operator's own files stay, and the later chain commits stay on the undone session's ref.
+A path changed after the run ended stays the operator's, and the later chain commits stay on
+the undone session's ref.
 """
 
 from __future__ import annotations
@@ -234,6 +235,145 @@ def test_undo_of_a_finished_run_journals_its_undone_end(
         finished=scan.finished, all_passed=scan.all_passed, end_reason=scan.end_reason
     )
     assert word == "undone"
+
+
+def test_undo_puts_back_only_the_paths_the_run_changed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A finished run's end records its tree; what differs from it since is the operator's.
+
+    The rewind moved every path that differed from the checkpoint, so an operator's note left
+    the checkout for the undo commit, in a file the run never touched or in one it changed.
+    """
+    repo, c1, c2 = _run_that_moved_on(tmp_path, monkeypatch)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
+    # The run ended on the tree as it stands; the operator then edited two files.
+    tree = git_ops.worktree_tree(repo, c2, {"notes.md"})
+    events = [
+        {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    (repo / "same.txt").write_text("same\noperator note\n", encoding="utf-8")
+    (repo / "a.txt").write_text("three\noperator note\n", encoding="utf-8")
+    said: list[str] = []
+
+    assert undo.undo_fork(
+        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+    )
+    # The run's paths go back; an operator's edit since the end stays, on the run's paths too.
+    assert (repo / "a.txt").read_text(encoding="utf-8") == "three\noperator note\n"
+    assert not (repo / "gen.txt").exists() and not (repo / "more.txt").exists()
+    assert (repo / "same.txt").read_text(encoding="utf-8") == "same\noperator note\n"
+    assert _git(repo, "rev-parse", "HEAD") == c1
+    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("run-AAAA11"))
+    assert tip is not None and _git(repo, "show", f"{tip}:a.txt") == "three\noperator note"
+    text = "\n".join(said)
+    assert "put 2 path(s) back" in text and "): gen.txt, more.txt (HEAD" in text
+    assert "left as yours: a.txt, same.txt" in text
+
+
+def test_an_undo_that_leaves_every_path_says_it_put_nothing_back(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An undo that leaves every differing path as the operator's says it put nothing back."""
+    repo, _c1, c2 = _run_that_moved_on(tmp_path, monkeypatch)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
+    tree = git_ops.worktree_tree(repo, c2, {"notes.md"})
+    events = [
+        {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    for name in ("a.txt", "gen.txt", "more.txt"):
+        (repo / name).write_text("the operator's\n", encoding="utf-8")
+    said: list[str] = []
+
+    assert undo.undo_fork(
+        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+    )
+    text = "\n".join(said)
+    assert "nothing put back to turn 1" in text and "already matches" not in text
+    assert "left as yours: a.txt, gen.txt, more.txt" in text
+
+
+def test_undo_puts_back_a_path_git_quotes_or_reads_as_a_glob_and_only_it(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The run's paths reach `git restore` unquoted and literal.
+
+    A non-ASCII name is put back, and `page[1].txt` leaves the operator's `page1.txt` alone.
+    """
+    repo, _c1, c2 = _run_that_moved_on(tmp_path, monkeypatch)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
+    (repo / "café.txt").write_text("made by the run\n", encoding="utf-8")
+    (repo / "page[1].txt").write_text("made by the run\n", encoding="utf-8")
+    tree = git_ops.worktree_tree(repo, c2, {"notes.md"})
+    events = [
+        {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    (repo / "page1.txt").write_text("mine\n", encoding="utf-8")
+    said: list[str] = []
+
+    assert undo.undo_fork(
+        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+    )
+    assert not (repo / "café.txt").exists() and not (repo / "page[1].txt").exists()
+    assert (repo / "page1.txt").read_text(encoding="utf-8") == "mine\n"
+    assert "left as yours: page1.txt" in "\n".join(said)
+
+
+def test_undo_puts_back_a_name_git_quotes_and_prints_it_on_one_line(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A name holding a quote is put back, and one holding a newline forges no notice line."""
+    repo, _c1, c2 = _run_that_moved_on(tmp_path, monkeypatch)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
+    quoted, forged = 'say "hi".txt', "x\n[agent6] the checkout already matches turn 1"
+    for name in (quoted, forged):
+        (repo / name).write_text("made by the run\n", encoding="utf-8")
+    tree = git_ops.worktree_tree(repo, c2, {"notes.md"})
+    events = [
+        {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    said: list[str] = []
+
+    assert undo.undo_fork(
+        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+    )
+    assert not (repo / quoted).exists() and not (repo / forged).exists()
+    lines = "\n".join(said).splitlines()
+    assert not [line for line in lines if line.startswith("[agent6] the checkout already")]
+
+
+def test_undo_of_a_run_whose_work_landed_refuses_and_names_the_merge(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rewind deleted other sessions' merged work from the checkout.
+
+    The fork's diff then read their removal as its own change.
+    """
+    repo, _c1, c2 = _run_that_moved_on(tmp_path, monkeypatch)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
+    manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    manifest["merged"] = {"into": "main", "sha": c2, "tip": c2}
+    layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    said: list[str] = []
+    before = sorted(p.name for p in (layout.state_dir / "sessions" / "runs").iterdir())
+
+    result = undo.undo_fork(
+        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+    )
+
+    assert result is None
+    assert any(f"merged into main as {c2[:12]}" in line for line in said), said
+    assert (repo / "a.txt").read_text(encoding="utf-8") == "three\n"
+    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("run-AAAA11")) == c2
+    assert sorted(p.name for p in (layout.state_dir / "sessions" / "runs").iterdir()) == before
 
 
 def test_undo_leaves_a_staged_copy_in_the_index_and_says_so(

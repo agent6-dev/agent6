@@ -2,10 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """Rewind a session for `/undo`: fork it at the checkpoint before its last message.
 
-The fork keeps the undone session's checkout, which is put back to the checkpoint's tree.
-Nothing is lost: the tree as it stands is committed onto the undone session's ref first, so
-the later commits stay there. The operator's untracked-at-start files, HEAD and the index are
-left alone.
+The fork keeps the undone session's checkout, where every tracked path the session changed
+since the checkpoint is put back to its content there. Nothing is lost: the tree as it stands
+is committed onto the undone session's ref first, so the later commits stay there. The
+operator's edits since the session ended, their untracked-at-start files, HEAD and the index
+are left alone.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import os
 import pathlib
 from typing import Any
 
-from agent6 import event_log, git_ops, task_text
+from agent6 import event_log, git_ops, task_text, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import fork, fork_worktrees, resume
 from agent6.app import reporter as app_reporter
@@ -212,28 +213,52 @@ def _newest_checkpoint_below(
     )
 
 
-def _rewind_checkout(
-    checkout: pathlib.Path, *, tip: str, sha: str, exclude: frozenset[str]
-) -> list[str]:
-    """Put the checkout back to a commit's tree for every tracked path that differs.
+@dataclasses.dataclass(frozen=True, slots=True)
+class _Rewound:
+    """What the rewind moved and what it left.
 
-    The current content is staged as a tree first, so the two-tree sync moves only the paths
-    that differ. HEAD and the shared index stay untouched.
+    Attributes:
+        put_back: The run's paths put back to the checkpoint.
+        left: The paths the operator changed since the run ended, untouched.
+    """
+
+    put_back: list[str]
+    left: list[str]
+
+
+def _rewind_checkout(
+    checkout: pathlib.Path, *, tip: str, sha: str, end_tree: str, exclude: frozenset[str]
+) -> _Rewound:
+    """Put back to the checkpoint every tracked path the run changed and nobody changed since.
+
+    The run's paths are those that differ between the checkpoint and the tree its last end
+    recorded; one that differs from that tree now was changed after the end and stays. A run
+    with no recorded end tree (killed, or from before the field) owns every path that differs.
+    HEAD and the shared index stay untouched.
 
     Args:
         checkout: The checkout to rewind.
         tip: The chain commit holding the current content.
         sha: The commit to rewind to.
+        end_tree: The tree the run's last end recorded, "" when none.
         exclude: The session's untracked-at-start files, left alone.
 
     Returns:
-        The paths put back.
+        The paths put back and the paths left as the operator's.
     """
     current = git_ops.worktree_tree(checkout, tip, exclude)
-    paths = git_ops.tree_diff_paths(checkout, sha, current)
-    if paths:
-        git_ops.sync_worktree(checkout, current, sha)
-    return paths
+    differing = git_ops.tree_diff_paths(checkout, sha, current)
+    if not end_tree:
+        put_back, left = differing, []
+    else:
+        own = set(git_ops.tree_diff_paths(checkout, sha, end_tree))
+        since = set(git_ops.tree_diff_paths(checkout, end_tree, current))
+        put_back = [p for p in differing if p in own and p not in since]
+        left = [p for p in differing if p not in put_back]
+    if put_back:
+        target = git_ops.tree_with_paths_from(checkout, current, sha, put_back)
+        git_ops.sync_worktree(checkout, current, target)
+    return _Rewound(put_back, left)
 
 
 def _checkout_writer_lock(
@@ -272,6 +297,40 @@ def _checkout_writer_lock(
     return lock_fd, ""
 
 
+def _manifest_refusal(
+    cwd: pathlib.Path,
+    checkout: pathlib.Path,
+    session_id: str,
+    manifest: sessions_manifest.SessionManifest,
+) -> str:
+    """Return why the session's record rules out an undo, before anything is committed.
+
+    A model-controlled run has no chain, and a chain ref written for it is one auto_merge
+    lands. Landed work predates the checkpoint, other sessions' work included. A worktree
+    the manifest cannot place, or that is gone, leaves nothing to rewind.
+    """
+    if (refusal := sessions_manifest.model_git_refusal(manifest, "undo")) is not None:
+        return refusal
+    if (stamp := resume.covering_stamp(cwd, manifest)) is not None:
+        return (
+            f"cannot undo {session_id}: its commits are {stamp.landed()}; take them back in"
+            f" git, or continue from a turn with `agent6 fork {session_id} --at-turn N`."
+        )
+    if manifest.worktree is not None and manifest.worktree_git_dir is None:
+        return (
+            f"cannot undo {session_id}: its manifest names a worktree but not the repository"
+            f" git dir it points into; `agent6 fork {session_id}` continues its commits in a"
+            " new worktree."
+        )
+    if manifest.worktree is not None and not (checkout / ".git").exists():
+        return (
+            f"cannot undo {session_id}: its worktree {checkout} is gone (pruned or removed);"
+            f" {resume.commits_note(cwd, manifest)}; `agent6 fork {session_id}` continues it"
+            " in a new worktree."
+        )
+    return ""
+
+
 def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     config_path: pathlib.Path | None,
     session_id: str,
@@ -304,25 +363,9 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     except sessions_manifest.ManifestError as exc:
         reporter.error(f"cannot read the manifest of {undone.session_id}: {exc}")
         return None
-    refusal = sessions_manifest.model_git_refusal(manifest, "undo")
-    if refusal is not None:
-        # A model-controlled run has no chain; a chain ref written here is one auto_merge lands.
-        reporter.error(refusal)
-        return None
     checkout = manifest.worktree or cwd
-    if manifest.worktree is not None and manifest.worktree_git_dir is None:
-        reporter.error(
-            f"cannot undo {undone.session_id}: its manifest names a worktree but not the"
-            f" repository git dir it points into; `agent6 fork {undone.session_id}` continues"
-            " its commits in a new worktree."
-        )
-        return None
-    if manifest.worktree is not None and not (checkout / ".git").exists():
-        reporter.error(
-            f"cannot undo {undone.session_id}: its worktree {checkout} is gone (pruned or"
-            f" removed); {resume.commits_note(cwd, manifest)}; `agent6 fork {undone.session_id}`"
-            " continues it in a new worktree."
-        )
+    if refusal := _manifest_refusal(cwd, checkout, undone.session_id, manifest):
+        reporter.error(refusal)
         return None
     try:
         cfg = layer.load_effective(cwd, config_path).config
@@ -378,8 +421,12 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         sha = sessions_manifest.read_manifest(child_layout.session_dir).forked_from_sha or ""
         turn = f"turn {target.turn} ({sha[:12]})"
         try:
-            paths = _rewind_checkout(
-                checkout, tip=git_ops.chain_tip(checkout, ref) or sha, sha=sha, exclude=exclude
+            rewound = _rewind_checkout(
+                checkout,
+                tip=git_ops.chain_tip(checkout, ref) or sha,
+                sha=sha,
+                end_tree=listing.scan_session_log(undone.logs_path).end_tree,
+                exclude=exclude,
             )
         except git_ops.GitError as exc:
             reporter.error(
@@ -389,7 +436,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
             return child, target.undone_text
     finally:
         lock.release_single_writer(lock_fd)
-    _report_rewind(reporter, paths, turn=turn, kept=kept, where=where)
+    _report_rewind(reporter, rewound, turn=turn, kept=kept, where=where)
     if offline:
         _journal_undone(undone, child, target.undone_text)
     return child, target.undone_text
@@ -398,8 +445,8 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
 def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_text: str) -> None:
     """Append the undone end to a finished source's journal, so every surface reads it.
 
-    Without it the source kept reading passed with a merge line, and `sessions merge` landed
-    the taken-back work.
+    Without it the source would read passed with a merge line, and `sessions merge` would
+    land the taken-back work.
     """
     iterations = listing.scan_session_log(undone.logs_path).iteration or 0
     events = event_log.EventSink(undone.logs_path)
@@ -415,15 +462,25 @@ def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_te
 
 
 def _report_rewind(
-    reporter: app_reporter.Reporter, paths: list[str], *, turn: str, kept: str | None, where: str
+    reporter: app_reporter.Reporter, rewound: _Rewound, *, turn: str, kept: str | None, where: str
 ) -> None:
-    """Print the undo notice: the paths put back and where the earlier tree and commits live."""
+    """Print the undo notice: the paths put back, the paths left, and where the commits live."""
+    paths = rewound.put_back
     if paths:
-        shown = ", ".join(paths[:10]) + (f", +{len(paths) - 10} more" if len(paths) > 10 else "")
         reporter.note(
-            f"put {len(paths)} path(s) back to {turn}: {shown} (HEAD and the index are untouched)"
+            f"put {len(paths)} path(s) back to {turn}: {_shown(paths)} (HEAD and the index are"
+            " untouched)"
         )
-    else:
+    elif not rewound.left:
         reporter.note(f"the checkout already matches {turn}")
+    else:
+        reporter.note(f"nothing put back to {turn}")
+    if rewound.left:
+        reporter.note(f"left as yours: {_shown(rewound.left)} (changed since the run ended)")
     stood = f"the tree as it stood is commit {kept[:12]} on {where}; " if kept else ""
     reporter.note(f"{stood}the later commits stay on {where}")
+
+
+def _shown(paths: list[str]) -> str:
+    names = (terminal.printable_name(p) for p in paths[:10])
+    return ", ".join(names) + (f", +{len(paths) - 10} more" if len(paths) > 10 else "")

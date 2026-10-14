@@ -227,6 +227,29 @@ def test_resume_stashes_an_edit_made_outside_the_run_under_dirty_tree_stash(
     assert "restore them with: git stash apply" in err  # the resumed execution's own end line
 
 
+def test_resume_stashes_an_outside_edit_to_a_name_git_quotes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The name came back quoted, so the stash left the real file out and said it had stashed it.
+
+    The run's next commit then took the operator's edit as its own.
+    """
+    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\n')
+    odd = 'notes\\draft "v1".txt'
+    (repo / odd).write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "--", odd)
+    _git(repo, "commit", "-q", "-m", "odd")
+    _stopped_run(repo, monkeypatch, "tree-QUOTE1", _edit("z.txt", "1\n"))
+    (repo / odd).write_text("operator edit\n", encoding="utf-8")
+    capsys.readouterr()
+
+    assert _resume(monkeypatch, "tree-QUOTE1", [_edit("y.txt", "1\n"), _finish()]) == 0
+
+    assert _chain_file(repo, "tree-QUOTE1", odd) == "base\n"
+    assert (repo / odd).read_text(encoding="utf-8") == "base\n"
+    assert "agent6 auto-stash before run tree-QUOTE1" in _git(repo, "stash", "list")
+
+
 def test_resume_stashes_a_staged_rename_without_taking_run_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -370,7 +393,7 @@ def test_resume_stash_refusal_counts_blockers_and_restores_from_the_run_branch(
         "--source",
         "agent6/tree-UNDO01",
         "--",
-        "a.py",
+        ":(top,literal)a.py",
     ]
     assert _git(repo, "show", "HEAD:a.py") == "x = 1\n"
     assert _git(repo, "stash", "list") == ""
@@ -381,6 +404,41 @@ def test_resume_stash_refusal_counts_blockers_and_restores_from_the_run_branch(
     assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
     assert _chain_file(repo, session_id, "a.py") == "x = 5\n"
     assert _chain_file(repo, session_id, "b.py") == "y = 1\n"
+
+
+def test_resume_stash_refusal_restore_touches_only_the_files_it_names(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The printed `git restore` read `data[1].py` as a glob and took `data1.py` back too.
+
+    The operator's edit to `data1.py`, a file the run never touched, was lost.
+    """
+    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\n')
+    for name in ("data[1].py", "data1.py"):
+        (repo / name).write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "--", "data[1].py", "data1.py")
+    _git(repo, "commit", "-q", "-m", "data")
+    session_id = "tree-GLOB01"
+    monkeypatch.setattr(
+        providers,
+        "build_role_provider",
+        _use(_Scripted([_edit("data[1].py", "run\n"), _finish()])),
+    )
+    assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+    (repo / "data[1].py").write_text("operator on top\n", encoding="utf-8")
+    (repo / "data1.py").write_text("operator draft\n", encoding="utf-8")
+    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted([_finish()])))
+    capsys.readouterr()
+
+    assert cli_main(["resume", session_id, "--steer", "new work"]) == 2
+
+    err = capsys.readouterr().err
+    restore = next(
+        line.strip() for line in err.splitlines() if line.strip().startswith("git restore")
+    )
+    sp.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
+    assert (repo / "data[1].py").read_text(encoding="utf-8") == "run\n"
+    assert (repo / "data1.py").read_text(encoding="utf-8") == "operator draft\n"
 
 
 def test_resume_stash_refusal_restores_work_the_run_never_committed(
@@ -408,7 +466,14 @@ def test_resume_stash_refusal_restores_work_the_run_never_committed(
     restore = next(
         line.strip() for line in err.splitlines() if line.strip().startswith("git restore")
     )
-    assert shlex.split(restore) == ["git", "restore", "--source", end["tree"], "--", "a.py"]
+    assert shlex.split(restore) == [
+        "git",
+        "restore",
+        "--source",
+        end["tree"],
+        "--",
+        ":(top,literal)a.py",
+    ]
     sp.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
     assert cli_main(["resume", session_id, "--steer", "new work"]) == 0

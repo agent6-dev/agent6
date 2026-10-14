@@ -54,6 +54,7 @@ depends_on = [
   "agent6.sessions.lock",
   "agent6.sessions.manifest",
   "agent6.task_text",
+  "agent6.terminal",
   "agent6.tools",
   "agent6.tools.schema",
   "agent6.kinds",
@@ -144,6 +145,7 @@ depends_on = [
   # the agent's own scratchpad, injected beside them
   "agent6.skills",  # operator-installed skills indexed in the system prompt
   "agent6.task_text",  # the session.start headline is the operator's own words
+  "agent6.terminal",  # a changed path's name printed on one line
   "agent6.tools",
   "agent6.tools.schema",
   "agent6.kinds",
