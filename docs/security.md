@@ -145,6 +145,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 
 - Mounts (`strict`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths`, a persistent `HOME` under `[sandbox].home = "cache"`, and operator tool dirs at their real paths
     - every mount keeps the path it has outside
+    - the paths kept read-only inside the workspace (`.git` under `protect_git`, a machine bundle) are bound after every grant: a grant that contains the workspace does not make them writable
     - a tool dir is mounted only when its identity clears a default-deny.
       Refused: a dir at, inside, or containing an agent6 private dir, and `$HOME` or an ancestor of it
     - a fork's execution or a `run --worktree` run (cwd is its linked worktree) also grants the repository's `.git`: a read-only bind under `strict`, a Landlock read+exec rule under `hardened`, in both cases whatever `protect_git` says.
@@ -370,6 +371,7 @@ Under `none` isolation nothing is enforced or refused.
 
 - `protect_git` (default on) keeps `.git` unwritable under `strict`: re-bound read-only, recursively (a mount nested under it stays visible and read-only)
     - a rewrite fails; `push` has no egress
+    - a grant that contains the workspace does not lift it ([Sandbox](#2-sandbox))
 - `protect_git` is strict-only: on `hardened` the default degrades with a warning, an explicit `true` refuses to run
     - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`, which agent6's own auto-commit (a temp-index `git add -A` on the host) then runs, reaching `$HOME` and the network
     - Landlock cannot express the exclusion: a directory grant is recursive and stacked rulesets intersect, so denying `.git` means not granting the workspace root either
