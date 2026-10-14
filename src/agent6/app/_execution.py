@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import pathlib
+import sys
 from collections.abc import Callable, Sequence
 
 from agent6 import budget as agent6_budget
@@ -584,9 +585,11 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         return ExecutionEnd(0, detach_requested=True)
 
     if mode == "ask":
-        # stdout gets the answer alone; the REPL already printed and saved each turn.
+        # stdout gets the answer alone, for a pipe; when the stream (on stderr) and stdout are
+        # the one terminal, the stream showed it. The REPL already printed and saved each turn.
         if inputs.ask_transcript_task is not None:
-            reporter.out(result.summary)
+            if not (console_stream and sys.stdout.isatty() and sys.stderr.isatty()):
+                reporter.out(result.summary)
             frontend.save_ask_transcript(layout, inputs.ask_transcript_task, result.summary)
             reporter.err(f"\n[agent6] answer saved to {layout.session_dir / 'transcript.md'}")
         reporter.err(budget.format_summary())

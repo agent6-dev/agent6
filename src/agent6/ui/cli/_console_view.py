@@ -11,6 +11,7 @@ come from the fold the TUI and web skins share. One `ConsoleView` serves `run`
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import sys
 import threading
 import time
@@ -187,9 +188,13 @@ class ConsoleView:
                     + "\n"
                 )
                 return
+            # An ask's answer is the model's text, printed above as it came.
+            answered = event.get("reason") == "answered"
             for item in self._fold.feed(event):
                 self._end_block()
-                self._render(item)
+                self._render(
+                    dataclasses.replace(item, body="") if answered and item.kind == "done" else item
+                )
                 if item.kind == "task" and self._policy is not None:
                     policy = self._policy()
                     if policy:

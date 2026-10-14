@@ -498,3 +498,77 @@ def test_a_surface_without_the_revise_choice_skips_revision(
     assert end.rc == 0
     assert built["revision"].mode == "off"
     assert any("this surface has none" in s for s in said)
+
+
+@pytest.mark.parametrize(
+    ("stdout_is_tty", "stderr_is_tty"), [(True, True), (False, True), (True, False)]
+)
+def test_an_answer_streamed_to_the_terminal_is_not_printed_on_it_again(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stdout_is_tty: bool,
+    stderr_is_tty: bool,
+) -> None:
+    """A pipe keeps the answer on stdout; on the terminal the stream already showed it.
+
+    The stream writes to stderr, so `2> log` on a terminal leaves stdout the only place the
+    answer shows.
+    """
+    import sys
+
+    _stub_execution_internals(
+        monkeypatch,
+        _snapshot.SessionResult(
+            completed=True, reason="answered", summary="CoreTest", iterations=1, tool_calls=1
+        ),
+    )
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: stdout_is_tty)
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: stderr_is_tty)
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="asky-AAAAAA")
+    layout.ensure()
+    out: list[str] = []
+
+    def _save(_layout: sessions_layout.SessionLayout, _question: str, _answer: str) -> None:
+        return None
+
+    front = dataclasses.replace(
+        acp_frontend.acp_frontend(
+            ask=lambda _p, _o, _s, _c, _u=None: None,
+            capabilities=frontend.FrontendCapabilities(),
+            agent6_exe=lambda: "agent6",
+            spawn_detached_resume=lambda _cwd, _sid, _flags: "",
+        ),
+        save_ask_transcript=_save,
+    )
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    end = _execution.run_execution(
+        Config(),
+        layout,
+        _execution.ExecutionInputs(
+            explicit_leaves=frozenset(),
+            session_id=layout.session_id,
+            mode="ask",
+            role="worker",
+            isolation="hardened",
+            tui_enabled=False,
+            interactive=False,
+            task="name the class",
+            gate=lambda c, _b: c,
+            chain_branch=None,
+            base_sha="",
+            untracked_at_start=frozenset(),
+            resume_state_path=layout.session_dir / "loop_state.json",
+            undo_forker=lambda: None,
+            prompts=operator_prompts.OperatorPrompts(session_dir=layout.session_dir),
+            ask_transcript_task="name the class",
+        ),
+        frontend=front,
+        reporter=reporter.Reporter(out=out.append, err=lambda _s: None),
+        events=event_log.EventSink(layout.logs_path),
+        transcript_sink=None,  # type: ignore[arg-type]
+        cwd=cwd,
+        state_dir=tmp_path / "state",
+    )
+    assert end.rc == 0
+    assert out.count("CoreTest") == (0 if stdout_is_tty and stderr_is_tty else 1)

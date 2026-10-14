@@ -426,3 +426,37 @@ def test_a_provider_retry_says_so_instead_of_resetting_the_clock() -> None:
     )
     assert "retrying after a provider error (attempt 2)" in out
     assert "connection refused" in out
+
+
+def test_a_streamed_answer_is_not_repeated_on_the_answered_line() -> None:
+    """On a terminal `ask` printed its answer three times: streamed, in `● answered`, on stdout."""
+    out = _render(
+        [
+            {"type": "session.start", "user_task": "name the class", "mode": "ask"},
+            {"type": "role.call", "role": "worker"},
+            {"type": "role.text_delta", "role": "worker", "text": "CoreTest"},
+            {"type": "role.result", "role": "worker", "text": "CoreTest"},
+            {
+                "type": "session.end",
+                "all_passed": True,
+                "reason": "answered",
+                "summary": "CoreTest",
+            },
+        ]
+    )
+    assert out.count("CoreTest") == 1 and "answered" in out
+    # Unstreamed (no terminal), the worker's result line carries the answer, and only it.
+    out = _render(
+        [
+            {"type": "session.start", "user_task": "name the class", "mode": "ask"},
+            {"type": "role.call", "role": "worker"},
+            {"type": "role.result", "role": "worker", "text": "CoreTest"},
+            {
+                "type": "session.end",
+                "all_passed": True,
+                "reason": "answered",
+                "summary": "CoreTest",
+            },
+        ]
+    )
+    assert out.count("CoreTest") == 1
