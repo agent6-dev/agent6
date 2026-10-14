@@ -1252,6 +1252,22 @@ def test_run_warns_on_mode_run_states_under_ask_policy(
     assert "auto-denies" in err and "--auto-approve" in err
 
 
+def test_run_warns_naming_the_config_file_the_ask_came_from(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Under `--config FILE` the remedy is that file; `config set --repo` would not reach it."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "runwarn.asm.toml"
+    f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
+    config = tmp_path / "ask.toml"
+    config.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
+    assert main(["--config", str(config), "machine", "run", str(f)]) == 2
+    err = capsys.readouterr().err
+    assert f'set sandbox.run_commands = "yes" in {config}' in err
+    assert "config set --repo" not in err
+
+
 def test_run_auto_approve_suppresses_the_warning_and_sets_the_env_grant(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

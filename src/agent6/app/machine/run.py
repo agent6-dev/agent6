@@ -325,12 +325,16 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         for name, state in agent_states.items()
     ):
         # An unattended machine auto-denies every run_command under 'ask'.
+        always = (
+            f'set sandbox.run_commands = "yes" in {config_path}'
+            if config_path is not None
+            else "set `agent6 config set --repo sandbox.run_commands yes`"
+        )
         reporter.note(
             "this machine has mode='run' agent state(s) and"
             " sandbox.run_commands='ask'; an unattended machine auto-denies"
-            " run_command. Approve for this invocation with --auto-approve, or"
-            " set `agent6 config set --repo sandbox.run_commands yes` to always"
-            " allow. Edits and the auto-commit need no approval; verify shares"
+            f" run_command. Approve for this invocation with --auto-approve, or {always}"
+            " to always allow. Edits and the auto-commit need no approval; verify shares"
             " run_command's gate, so an unattended execution ends unverified."
         )
     snapshot_keep = cfg.machine.snapshot_keep
