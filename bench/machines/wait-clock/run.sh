@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Exercise the three timing behaviors: `until` (deadline), the `--exit-on-wait`
-# persisted-wake driver (pulse), and the v1 cron-raises limitation (cron-demo).
-# Pure wait/terminal machines, so this needs no provider keys and runs confined.
+# Exercise the two timing behaviors: `until` (deadline) and the `--exit-on-wait`
+# persisted-wake driver (pulse).
+# Pure wait/terminal machines, so this needs no provider keys.
 #
 # Usage:  bash bench/machines/wait-clock/run.sh [workdir]
 set -euo pipefail
@@ -33,9 +33,3 @@ echo "-- resume immediately: still waiting (wake not reached) --"
 echo "-- wait out the interval, then resume: advances to done --"
 sleep 5
 "$AGENT6" machine run pulse.asm.toml --exit-on-wait
-
-echo
-echo "== cron-demo: machine check REJECTS a cron wait at load time (fail-loud) =="
-set +e
-"$AGENT6" machine check cron-demo.asm.toml; echo "cron-demo check exit: $? (expected 1)"
-set -e

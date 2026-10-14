@@ -8,8 +8,8 @@ initial = "scan"
 # drains the machine terminates.
 #
 # Demonstrates: a `wait` state on `every_secs`, an enum-constrained agent schema,
-# a compound branch predicate (string == AND float >=), list-splicing a
-# `list[str]` into a tool's argv, and a self-terminating poll loop.
+# a compound branch predicate (string == AND float >=), and a self-terminating
+# poll loop.
 
 [budget]
 max_transitions = 200

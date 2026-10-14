@@ -4,8 +4,7 @@ initial = "juror_a"
 
 # A consensus machine: two jurors backed by DIFFERENT providers/models answer
 # the same yes/no question, a `branch` checks whether they agree, and a stronger
-# tiebreaker model only runs when they disagree. No tool states, so this runs
-# fully confined on any host (each agent's egress is pinned to its provider).
+# tiebreaker model only runs when they disagree. No tool states.
 #
 # Demonstrates: multiple providers in one machine, agent -> branch -> agent
 # routing, a record field compared across two agent outputs, and the `| json`

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The smallest useful machine: one `agent` state that returns a structured
-# greeting, then a terminal. No tools, fully confined, ~1 cent on anthropic.
+# greeting, then a terminal. No tools, ~1 cent on anthropic.
 #
 # Usage:  bash bench/machines/hello/run.sh [workdir]
 set -euo pipefail

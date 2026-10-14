@@ -7,19 +7,18 @@ self-contained bundle (`<name>.asm.toml` plus an optional `scripts/`) with a
 `run.sh` that drives it against a throwaway repo, so a run never touches this
 checkout.
 
-These were built and run to exercise the feature end to end; the bugs that shook
-out are fixed in the same branch (see the `fix(machine)` / `fix(cli)` commits).
-
 ## The machines
 
-| machine | demonstrates | run |
-|---|---|---|
-| [hello](hello/) | the smallest machine: one `agent` state → terminal | `bash hello/run.sh` |
-| [multi-model-council](multi-model-council/) | two jurors on different providers, a `branch` consensus, a stronger tiebreaker only on disagreement, `{{ x \| json }}` into a prompt | `bash multi-model-council/run.sh` |
-| [code-fixer](code-fixer/) | a real coding loop: a `mode="run"` agent edits to make a test pass, a `tool` verifies, a `branch` loops on an attempt counter | `bash code-fixer/run.sh` |
-| [repo-digest](repo-digest/) | `tool` (git log, typed capture) → `agent` (list-field schema) → `tool` (splice the agent's `list[str]` into argv, write to the data dir) | `bash repo-digest/run.sh` |
-| [triage-inbox](triage-inbox/) | the canonical poll → classify → act loop: a `wait`, an enum schema, a compound branch predicate, self-terminating when the inbox drains | `bash triage-inbox/run.sh` |
-| [wait-clock](wait-clock/) | timing: `until` (deadline), the `--exit-on-wait` persisted-wake driver (pulse), and the v1 cron-reject (cron-demo) | `bash wait-clock/run.sh` |
+| machine | demonstrates | provider | run |
+|---|---|---|---|
+| [hello](hello/) | the smallest machine: one `agent` state → terminal | `anthropic` | `bash hello/run.sh` |
+| [multi-model-council](multi-model-council/) | two jurors on different providers, a `branch` consensus, a stronger tiebreaker only on disagreement, `{{ x \| json }}` into a prompt | `anthropic` and `openrouter` | `bash multi-model-council/run.sh` |
+| [code-fixer](code-fixer/) | a real coding loop: a `mode="run"` agent edits to make a test pass, a `tool` verifies, a `branch` loops on an attempt counter | your `[models.worker]` | `bash code-fixer/run.sh` |
+| [repo-digest](repo-digest/) | `tool` (git log, typed capture) → `agent` (list-field schema) → `tool` (splice the agent's `list[str]` into argv, write to the data dir) | `anthropic` | `bash repo-digest/run.sh` |
+| [triage-inbox](triage-inbox/) | the canonical poll → classify → act loop: a `wait`, an enum schema, a compound branch predicate, self-terminating when the inbox drains | `openrouter` | `bash triage-inbox/run.sh` |
+| [wait-clock](wait-clock/) | timing: `until` (deadline) and the `--exit-on-wait` persisted-wake driver (pulse) | none | `bash wait-clock/run.sh` |
+
+An example that pins a provider needs that provider connected (`agent6 connect`), and its calls are billed to that account.
 
 Observed (one run each, 2026-06-29):
 
@@ -34,24 +33,17 @@ Observed (one run each, 2026-06-29):
 - **triage-inbox**: 4 items triaged over 26 transitions (~26s, paced by the
   `wait`); the outage escalated, the rest filed.
 - **wait-clock**: deadline fired immediately; pulse persisted its wake and
-  resumed to `done`; cron-demo is rejected by `machine check`.
+  resumed to `done`.
 
 ## Sandboxing
 
-All of these run under the **default** sandbox config. Each `tool` state gets its
-own network namespace from the jail launcher (the `strict` profile), and each
-`agent` state confines its egress to the provider API. That holds even on a host
-where the kernel blocks the user namespace the agent egress broker needs (the
-agent state falls back to the hardened profile, confining egress with Landlock
-instead); the tool jails keep their per-tool isolation regardless.
+All of these run under the **default** sandbox config (`sandbox.isolation = "auto"`, `sandbox.network = "auto"`).
+Under `strict`, each `tool` state gets its own network namespace from the jail launcher.
+The agent process's own egress is unbounded ([security model](../../docs/security.md#5-network)).
 
-On a host that supports **only** the hardened profile (no per-tool network
-namespace at all), a `tool` state is refused under the default
-`sandbox.network = "session"`. agent6 prints the exact one-line config opt-in
-to apply (`sandbox.network = "host"` + `sandbox.agent_network = "open"`,
-letting tools share the host network) and never relaxes the sandbox unattended.
-The pure-agent machines (hello, council) and the pure-timer machine (wait-clock)
-have no tool states and run confined on any profile.
+On a host that supports **only** `hardened` there is no network namespace.
+The default `sandbox.network = "auto"` then runs a `tool` state on the host's network with a warning; an explicit `sandbox.network = "session"` refuses to start.
+The pure-agent machines (hello, council) and the pure-timer machine (wait-clock) have no tool states.
 
 ## Test harnesses
 

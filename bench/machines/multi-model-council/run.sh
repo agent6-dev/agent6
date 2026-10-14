@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Run the council machine. Two jurors on different providers answer a yes/no
-# question; if they disagree a stronger model breaks the tie. No tool states, so
-# it runs fully confined (each agent's egress is pinned to its provider) on any
-# profile, including the hardened fallback used when strict's broker is blocked.
+# question; if they disagree a stronger model breaks the tie. No tool states.
+# Needs the `anthropic` and `openrouter` providers connected.
 #
 # Usage:  bash bench/machines/multi-model-council/run.sh [workdir] [question]
 set -euo pipefail

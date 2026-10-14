@@ -4,8 +4,9 @@
 # paces the loop with a real (journaled) sleep between cycles.
 #
 # Runs under the default sandbox config (tool states get their own network
-# namespace on strict). On a hardened-only host a tool state is refused under the
-# default `sandbox.network = "session"`; agent6 prints the opt-in to apply.
+# namespace on strict). On a hardened-only host the default
+# `sandbox.network = "auto"` degrades with a warning; an explicit `session`
+# refuses instead.
 #
 # Usage:  bash bench/machines/triage-inbox/run.sh [workdir]
 set -euo pipefail
