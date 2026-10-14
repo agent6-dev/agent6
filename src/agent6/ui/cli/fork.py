@@ -57,13 +57,15 @@ def _cmd_fork(
             " Drop --no-run, or start the fork later with `agent6 resume <id> --steer ...`."
         )
         return 2
-    if not no_run and not steer.strip() and at_turn is None:
-        # `resume` cannot see a finished parent from the child's empty log, so refuse here.
+    source_finished = False
+    if at_turn is None:
+        # `resume` cannot see a finished parent from the child's empty log, so it is read here.
         try:
             source = _common.resolve_or_newest_layout(pathlib.Path.cwd(), source_session_id)
         except id.SessionIdError:
             source = None
-        if source is not None and listing.finished_needs_new_work(source.session_dir):
+        source_finished = source is not None and listing.finished_needs_new_work(source.session_dir)
+        if source is not None and source_finished and not no_run and not steer.strip():
             _common.error(
                 f"run {source.session_id!r} already finished (the agent called"
                 " finish_session), so a fork of its last turn has nothing to do."
@@ -98,7 +100,9 @@ def _cmd_fork(
 
     if no_run:
         print(f"[agent6] fork created (not started): {child_id}", file=sys.stderr)
-        print(f"  resume it with: agent6 resume {child_id}", file=sys.stderr)
+        # A fork of a finished run's last turn has nothing to do until it is given new work.
+        work = ' --steer "<what to do next>"' if source_finished else ""
+        print(f"  resume it with: agent6 resume {child_id}{work}", file=sys.stderr)
         return 0
 
     # The fork's branch sits at the checkpoint's sha, so the head guard passes; force stays off.

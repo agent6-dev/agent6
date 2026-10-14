@@ -1694,3 +1694,26 @@ def test_a_fork_from_a_forks_seed_says_so(
     assert copied.messages == (seeded.messages if seed else steered.messages)
     manifest = json.loads(child.manifest_path.read_text(encoding="utf-8"))
     assert manifest["forked_from_turn"] == 4
+
+
+def test_a_no_run_fork_of_a_finished_run_hints_at_the_steer(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The resume hint names `--steer`: the fork of a finished run's last turn has nothing to do."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state = paths.state_dir(repo)
+    source = _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
+    source.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "do the thing"})
+        + "\n"
+        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True) == 0
+
+    err = capsys.readouterr().err
+    assert 'resume it with: agent6 resume child-BBBB22 --steer "<what to do next>"' in err
