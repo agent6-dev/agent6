@@ -474,6 +474,7 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
         forked_from_sha=c2,
         worktree=worktree,
         worktree_git_dir=(repo / ".git").resolve(),
+        workspace_set_up=True,
     )
     _checkpoint(fork, 0, head_sha=c2, ops=2)  # the seed: the parent's turn-2 conversation
 
@@ -489,6 +490,8 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
     )
     assert child_manifest["parent_session_id"] == "parent-AAAA11"
     assert child_manifest["worktree"] == str(worktree)
+    # The child stays in the fork's worktree, so a resume must not run the setup command again.
+    assert child_manifest["workspace_set_up"] is True
     assert (worktree / "a.txt").read_text(encoding="utf-8") == "one\n"  # the fork's, rewound
     assert (repo / "a.txt").read_text(encoding="utf-8") == "two\n"  # the operator's, untouched
 

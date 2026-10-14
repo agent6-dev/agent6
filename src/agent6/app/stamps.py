@@ -82,6 +82,7 @@ def write_session_manifest(
     forked_from_sha: str | None = None,
     worktree: pathlib.Path | None = None,
     worktree_git_dir: pathlib.Path | None = None,
+    workspace_set_up: bool = False,
     fanout: manifest.FanoutStamp | None = None,
 ) -> None:
     """Write the manifest.json a new run or fork starts with.
@@ -106,6 +107,8 @@ def write_session_manifest(
         forked_from_sha: The workspace sha at that turn.
         worktree: The session's own checkout, a fork's or a `run --worktree`'s.
         worktree_git_dir: The repository git dir the worktree points into.
+        workspace_set_up: Whether the checkout already ran its setup command (an `/undo`
+            fork in its source's worktree).
         fanout: A `run --parallel` coordinator's own record.
     """
     lineage = _parallel_lineage()
@@ -147,6 +150,7 @@ def write_session_manifest(
         forked_from_sha=forked_from_sha,
         worktree=worktree,
         worktree_git_dir=worktree_git_dir,
+        workspace_set_up=workspace_set_up,
         parallel=lineage,
         fanout=fanout,
     )
@@ -230,6 +234,14 @@ def stamp_execution(session_dir: pathlib.Path, cfg: Config, mode: str, isolation
                 "policy": _policy_stamp(cfg, isolation),
             }
         ),
+    )
+
+
+def stamp_workspace_set_up(session_dir: pathlib.Path) -> None:
+    """Record that the session's own worktree or clone ran its setup command."""
+    m = manifest.read_manifest(session_dir)
+    write_manifest(
+        session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"workspace_set_up": True})
     )
 
 

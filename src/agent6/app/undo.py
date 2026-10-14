@@ -357,7 +357,9 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
             cwd=cwd,
             worktree=False,
             checkout=(
-                fork_worktrees.Checkout(manifest.worktree, manifest.worktree_git_dir)
+                fork_worktrees.Checkout(
+                    manifest.worktree, manifest.worktree_git_dir, manifest.workspace_set_up
+                )
                 if manifest.worktree is not None and manifest.worktree_git_dir is not None
                 else None
             ),

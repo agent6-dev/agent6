@@ -394,6 +394,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `command.backgrounded` | a `run_command` handed back as a background job (`id`, `pid`, `seconds`) |
 | `metric.start` / `.end` | `cmd` (argv); the end adds `exit_code`, `duration_s`, `*_tail`, `score` |
 | `jail.degraded` | `detail`: the sandbox came up weaker than asked, or a process survived the sweep at the run's jail session or a spawned MCP server's close |
+| `workspace.setup` | the setup command of a session's own worktree or clone finished: `cmd` (argv), `exit_code`, `duration_s`; one per workspace, since the manifest's `workspace_set_up` keeps a resume from running it again |
 | `mcp.server_unavailable` | a configured MCP server that did not start; the run continues without it |
 | `budget.update` | input/output token totals, the cached read and creation totals, and the fallback cap, plus `usd_total`, `usd_partial`, `usd_cap`, `tokens_unmetered`, and the plan meter (`plan_used_percent`, `plan_consumed`, `plan_cap`, `plan_resets_at`) |
 | `approval.prompt` / `.answer` | `id`, `prompt`, `standing`, `call_id` (the gated tool call; null for a verify the harness runs itself) / `id`, `approved`, `source` (`stdin`, `frontend`, `await-frontend`, `away-deny`, `session`, `headless`, `acp`) |

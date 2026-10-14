@@ -496,6 +496,7 @@ def _materialize_fork(
         isolation=detect.resolve_isolation(plan.cfg.sandbox.isolation, _setup.detect_env()),
         worktree=checkout.worktree if checkout is not None else None,
         worktree_git_dir=checkout.git_dir if checkout is not None else None,
+        workspace_set_up=checkout.set_up if checkout is not None else False,
     )
 
     # Additive ref writes only, never a checkout; plan and ask sessions own no refs.

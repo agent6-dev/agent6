@@ -417,7 +417,14 @@ def run_one(
     )
     # A state's clone is fresh; a state in the checkout has the operator's environment.
     setup_left: frozenset[str] = frozenset()
-    if cfg.parallel.setup_command and not read_only and req.root != req.cwd:
+    if (
+        cfg.parallel.setup_command
+        and not read_only
+        and req.root != req.cwd
+        and not workspace_setup.withheld(
+            cfg.parallel.setup_command, dispatcher=dispatcher, reporter=reporter
+        )
+    ):
         unready = workspace_setup.run(
             cfg.parallel.setup_command, dispatcher=dispatcher, reporter=reporter
         )

@@ -36,6 +36,7 @@ from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import jail
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, operator_prompts
 
 
@@ -306,15 +307,22 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         untracked_at_start = inputs.untracked_at_start
         if (
             cfg.parallel.setup_command
-            and inputs.task is not None
-            and workspace_setup.session_is_isolated(layout.session_dir)
+            and workspace_setup.session_needs_setup(layout.session_dir)
+            and not workspace_setup.withheld(
+                cfg.parallel.setup_command, dispatcher=dispatcher, reporter=reporter
+            )
         ):
             unready = workspace_setup.run(
                 cfg.parallel.setup_command, dispatcher=dispatcher, reporter=reporter
             )
-            if unready is None and mode == "run":
-                untracked_at_start |= git_ops.untracked_paths(cwd)
-                sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
+            if unready is None:
+                try:
+                    stamps.stamp_workspace_set_up(layout.session_dir)
+                except (sessions_manifest.ManifestError, OSError) as exc:
+                    reporter.note(f"could not record that this workspace is set up: {exc}")
+                if mode == "run":
+                    untracked_at_start |= git_ops.untracked_paths(cwd)
+                    sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
 
         def _undo_forker() -> tuple[str, str] | None:
             """Return the `/undo` fork's outcome, kept for the end block."""

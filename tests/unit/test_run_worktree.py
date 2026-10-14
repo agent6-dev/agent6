@@ -8,6 +8,7 @@ worktree, the manifest, the chain and the sessions verbs are the real ones.
 
 from __future__ import annotations
 
+import json
 import pathlib
 import subprocess as sp
 import time
@@ -696,3 +697,73 @@ def test_a_lane_runs_the_setup_command_in_its_clone(
     capsys.readouterr()
 
     assert (repo / ".setup-ran").read_text(encoding="utf-8") == "ready\n"
+
+
+def _setup_events(repo: pathlib.Path, session_id: str) -> list[dict[str, Any]]:
+    log = _run_dir(repo, session_id) / "logs.jsonl"
+    events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    return [event for event in events if event["type"] == "workspace.setup"]
+
+
+def test_the_setup_is_journaled_and_a_resume_never_runs_it_again(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A resume that ran setup again would rebuild the environment under the run's own work."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _with_setup(repo, '["sh", "-c", "echo ran >> .setup-ran"]')
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU05", "add new.txt"]) == 0
+
+    manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU05"))
+    assert manifest.workspace_set_up and manifest.worktree is not None
+    (event,) = _setup_events(repo, "wt-SETU05")
+    assert event["cmd"] == ["sh", "-c", "echo ran >> .setup-ran"]
+    assert event["exit_code"] == 0 and event["duration_s"] >= 0
+
+    capsys.readouterr()
+    _script(monkeypatch, _edit("more.txt", "two\n"))
+    assert cli_main(["resume", "wt-SETU05", "--steer", "add more.txt"]) == 0
+
+    assert "setup command" not in capsys.readouterr().err
+    assert (manifest.worktree / ".setup-ran").read_text(encoding="utf-8") == "ran\n"
+    assert len(_setup_events(repo, "wt-SETU05")) == 1
+
+
+def test_a_fork_starts_not_set_up_and_runs_the_setup_command_in_its_own_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fork's worktree is new: its source's environment is in another directory."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _with_setup(repo, '["sh", "-c", "echo ran >> .setup-ran"]')
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU06", "add new.txt"]) == 0
+
+    assert cli_main(["fork", "wt-SETU06", "--session-id", "wt-FORK06", "--no-run"]) == 0
+    forked = sessions_manifest.read_manifest(_run_dir(repo, "wt-FORK06"))
+    assert forked.worktree is not None and not forked.workspace_set_up
+    assert not (forked.worktree / ".setup-ran").exists()
+
+    capsys.readouterr()
+    _script(monkeypatch, _edit("more.txt", "two\n"))
+    assert cli_main(["resume", "wt-FORK06", "--steer", "add more.txt"]) == 0
+
+    assert "setup command: sh -c" in capsys.readouterr().err
+    assert (forked.worktree / ".setup-ran").read_text(encoding="utf-8") == "ran\n"
+    assert sessions_manifest.read_manifest(_run_dir(repo, "wt-FORK06")).workspace_set_up
+    assert len(_setup_events(repo, "wt-FORK06")) == 1
+
+
+def test_a_failed_setup_leaves_the_workspace_not_set_up(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A workspace stamped set up after a failed command would never be built."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _with_setup(repo, '["sh", "-c", "exit 3"]')
+    _script(monkeypatch)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU07", "task"]) == 1
+    capsys.readouterr()
+
+    assert not sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU07")).workspace_set_up
+    (event,) = _setup_events(repo, "wt-SETU07")
+    assert event["exit_code"] == 3

@@ -590,6 +590,9 @@ class ToolDispatcher:
         """
         self._approve_command("setup_command", argv)
         res = self._run_argv_in_jail(argv, label="setup_command")
+        self._emit(
+            "workspace.setup", cmd=list(argv), exit_code=res.returncode, duration_s=res.duration_s
+        )
         return dataclasses.replace(res, command=argv)
 
     def _approve_command(self, name: str, argv: tuple[str, ...]) -> None:

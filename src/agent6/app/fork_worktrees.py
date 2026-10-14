@@ -26,10 +26,12 @@ class Checkout:
     Attributes:
         worktree: The linked worktree.
         git_dir: The repository git dir the worktree points into.
+        set_up: Whether the worktree ran its setup command; a new one has not.
     """
 
     worktree: pathlib.Path
     git_dir: pathlib.Path
+    set_up: bool = False
 
 
 def add_session_worktree(repo: pathlib.Path, path: pathlib.Path, sha: str) -> Checkout:

@@ -4,7 +4,8 @@
 
 A `run --worktree` worktree, a fork's worktree, a lane's clone and a machine state's clone
 hold tracked files only. `[parallel].setup_command` runs once in each, through the session's
-own dispatcher, so it gets the jail every command of that run gets.
+own dispatcher, so it gets the jail every command of that run gets. A session's manifest
+records that its workspace is set up.
 """
 
 from __future__ import annotations
@@ -27,13 +28,30 @@ def _output_tail(res: results.ExecResult) -> list[str]:
     return lines[-_TAIL_LINES:]
 
 
-def session_is_isolated(session_dir: pathlib.Path) -> bool:
-    """Return whether the session works in a worktree or a lane's clone of its own."""
+def session_needs_setup(session_dir: pathlib.Path) -> bool:
+    """Return whether the session's own worktree or clone has not run its setup command.
+
+    The manifest holds the state, so a resume never runs the command again and a fork's new
+    worktree does.
+    """
     try:
         manifest = sessions_manifest.read_manifest(session_dir)
     except sessions_manifest.ManifestError:
         return False
-    return manifest.worktree is not None or manifest.parallel is not None
+    isolated = manifest.worktree is not None or manifest.parallel is not None
+    return isolated and not manifest.workspace_set_up
+
+
+def withheld(
+    argv: tuple[str, ...], *, dispatcher: dispatch.ToolDispatcher, reporter: app_reporter.Reporter
+) -> bool:
+    """Return whether commands are withheld, noting that the setup command does not run."""
+    if dispatcher.command_policy() != "no":
+        return False
+    reporter.note(
+        f"commands are withheld, and the setup command is one ({shlex.join(argv)}): not run"
+    )
+    return True
 
 
 def run(
@@ -47,13 +65,9 @@ def run(
         reporter: Receives the command line and its output.
 
     Returns:
-        None when the command exited 0 or commands are withheld, else the failure, the
-        output tail under it.
+        None when the command exited 0, else the failure, the output tail under it.
     """
     line = shlex.join(argv)
-    if dispatcher.command_policy() == "no":
-        reporter.note(f"commands are withheld, and the setup command is one ({line}): not run")
-        return None
     reporter.note(f"setup command: {line}")
     try:
         res = dispatcher.run_setup(argv)

@@ -42,6 +42,7 @@
   "forked_from_sha": null,
   "worktree": null,
   "worktree_git_dir": null,
+  "workspace_set_up": false,
   "merged": null,
   "parallel": null,
   "compare": null,
