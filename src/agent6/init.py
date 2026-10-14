@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import shlex
 from collections.abc import Callable
 
 from agent6 import errors, paths, verify_infer
@@ -199,7 +200,7 @@ def _setup_verify_command(
             " harness.verify_command later to pin one."
         )
         return
-    shown = " ".join(inferred.argv)
+    shown = shlex.join(inferred.argv)
     warn = " (OVERRIDES the current value)" if already else ""
     if not ask(f"  Set harness.verify_command to `{shown}` (from {inferred.label}){warn}?", True):
         print("  skipped verify_command.")
@@ -225,7 +226,7 @@ def _setup_agents_md(
     inferred = verify_infer.infer_verify_command(
         root, verify_infer.read_agents_md(root, hide), hide=hide
     )
-    verify_hint = " ".join(inferred.argv) or "# EDIT: your verify pipeline"
+    verify_hint = shlex.join(inferred.argv) or "# EDIT: your verify pipeline"
     if not agents.is_file():
         if ask("Create a starter AGENTS.md (how agents should work in this repo)?", True):
             setup = next((cmd for lock, cmd in _LOCKFILE_SETUP if (root / lock).is_file()), "")

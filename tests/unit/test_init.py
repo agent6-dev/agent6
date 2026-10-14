@@ -269,3 +269,19 @@ def test_init_writes_no_setup_block_without_a_lockfile(tmp_path: pathlib.Path) -
     text = (repo / "AGENTS.md").read_text(encoding="utf-8")
     assert "## Setup command" not in text
     assert verify_infer.setup_from_agents_md(text) is None
+
+
+def test_the_starter_agents_md_quotes_the_inferred_command(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A verify block is read back as a shell line, so an argv with spaces lands quoted."""
+    repo = _repo(tmp_path)
+
+    def _inferred(*_a: object, **_k: object) -> verify_infer.InferredVerify:
+        return verify_infer.InferredVerify(("sh", "-c", "pytest -q && ruff check"), "pyproject", ())
+
+    monkeypatch.setattr(verify_infer, "infer_verify_command", _inferred)
+    init._setup_agents_md(repo, ecosystem="python", ask=lambda _p, _d: True)
+    text = (repo / "AGENTS.md").read_text(encoding="utf-8")
+    assert "sh -c 'pytest -q && ruff check'" in text
+    assert "sh -c pytest -q && ruff check" not in text
