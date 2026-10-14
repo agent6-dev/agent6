@@ -377,6 +377,69 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
     assert seen == {"network": "host", "borrowed": False}
 
 
+def test_exec_runs_in_the_sessions_worktree_with_its_recorded_git_dir(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`exec` on a worktree session runs in that worktree, not in the operator's checkout.
+
+    The policy was built from the operator's cwd, so `agent6 exec ID -- touch f` on a
+    `run --worktree` or fork session wrote into the checkout.
+    """
+    import types
+
+    from agent6 import kinds
+    from agent6.config import Config
+    from agent6.ui.cli import exec_cmds, net_cmds
+
+    checkout, worktree, git_dir = (tmp_path / n for n in ("checkout", "worktree", "gitdir"))
+    admin = git_dir / "worktrees" / "tree"
+    for d in (checkout, worktree, admin):
+        d.mkdir(parents=True)
+    (worktree / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    layout = sessions_layout.SessionLayout(
+        state_dir=tmp_path / "state", session_id="tree-run-AAAA11"
+    )
+    layout.ensure()
+    layout.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    ipc.write_worker_pid(layout.session_dir, os.getpid())
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": layout.session_id,
+                "mode": "run",
+                "policy": {"run_commands": "yes", "isolation": "strict", "network": "host"},
+                "worktree": str(worktree),
+                "worktree_git_dir": str(git_dir),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    seen: dict[str, Any] = {}
+
+    def fake_run(policy: kinds.JailPolicy, _session_net: Any = None) -> int:
+        seen["cwd"] = policy.cwd
+        seen["ro"] = policy.extra_ro_paths
+        return 0
+
+    def _strict(_req: str, _env: Any) -> str:
+        return "strict"
+
+    monkeypatch.setattr(_setup, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True))
+    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(exec_cmds, "run_attached", fake_run)
+
+    cfg = Config.model_validate({"sandbox": {"isolation": "strict", "network": "host"}})
+    assert net_cmds.exec_in_session(layout, cfg, checkout, ("pwd",)) == 0
+    assert seen["cwd"] == worktree
+    assert git_dir in seen["ro"]
+
+
 def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

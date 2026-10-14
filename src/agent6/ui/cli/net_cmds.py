@@ -227,10 +227,28 @@ def _stamped_policy(
     return stamp.isolation, network
 
 
+def _recorded_workspace(
+    layout: sessions_layout.SessionLayout, cwd: pathlib.Path
+) -> tuple[pathlib.Path, pathlib.Path | None]:
+    """Return where the run's commands run and the git dir recorded for it.
+
+    Returns:
+        The session's linked worktree and its repository git dir when the manifest records
+        one (`agent6 fork`, `run --worktree`); else the checkout and None.
+    """
+    try:
+        recorded = manifest.read_manifest(layout.session_dir)
+    except manifest.ManifestError:
+        return cwd, None
+    if recorded.worktree is None:
+        return cwd, None
+    return recorded.worktree, recorded.worktree_git_dir
+
+
 def exec_in_session(
     layout: sessions_layout.SessionLayout, cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]
 ) -> int:
-    """Run a command the way the run's own commands run: same jail, same network.
+    """Run a command in the jail, network and tree the run's own commands get.
 
     The operator's command, not the model's, so it is neither approved nor logged as a tool
     call; confined identically, so what you see is what the agent sees. Its stdio is the
@@ -241,7 +259,7 @@ def exec_in_session(
     Args:
         layout: The run.
         cfg: The effective config, the fallback when the run is unstamped.
-        cwd: The workspace.
+        cwd: The checkout, the workspace of a run that has no worktree of its own.
         argv: The command.
 
     Returns:
@@ -267,8 +285,11 @@ def exec_in_session(
         )
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, _setup.detect_env())
         network = "session" if pid else None
+    workspace, git_dir = _recorded_workspace(layout, cwd)
     try:
-        policy = exec_cmds.exec_policy(cwd, cfg, isolation, argv, network)
+        policy = exec_cmds.exec_policy(
+            workspace, cfg, isolation, argv, network, worktree_git_dir=git_dir
+        )
     except jail.JailUnavailableError as exc:
         _common.error(f"{exc}")
         return 2

@@ -111,6 +111,8 @@ def exec_policy(
     isolation: kinds.IsolationLevel,
     argv: tuple[str, ...],
     network: kinds.NetworkMode | None = None,
+    *,
+    worktree_git_dir: pathlib.Path | None = None,
 ) -> kinds.JailPolicy:
     """Build the policy of the operator's command: a run command's, with no time limit.
 
@@ -123,16 +125,26 @@ def exec_policy(
         isolation: The resolved isolation level.
         argv: The command.
         network: The run's recorded network; the config's when None.
+        worktree_git_dir: The repository git dir recorded for a session whose workspace is
+            a linked worktree.
 
     Returns:
         The policy.
 
     Raises:
-        JailUnavailableError: The jail's HOME is refused or cannot be created.
+        JailUnavailableError: The jail's HOME is refused or cannot be created, or the
+            worktree's `.git` pointer no longer names the recorded git dir.
     """
     env_base = child_env.without_provider_keys(dict(os.environ)) if isolation == "none" else None
     return tools_policy.jail_policy(
-        cwd, cfg, isolation, argv, network=network, timeout_s=0.0, env_base=env_base
+        cwd,
+        cfg,
+        isolation,
+        argv,
+        network=network,
+        timeout_s=0.0,
+        env_base=env_base,
+        worktree_git_dir=worktree_git_dir,
     )
 
 
