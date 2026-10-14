@@ -239,7 +239,7 @@ def test_show_usage_and_json_carry_the_plan_points(
     )
     assert main(["sessions", "show", "capped"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
-    assert usage.split(None, 1)[1] == "in=18 out=2194 plan=2.5/6pt"
+    assert usage.split(None, 1)[1] == "in=18 out=2194 plan=2.5/6pt  cost 2.5pt"
     assert main(["sessions", "show", "capped", "--json"]) == 0
     obj = json.loads(capsys.readouterr().out)
     assert (obj["plan_consumed"], obj["plan_cap"]) == (2.5, 6.0)

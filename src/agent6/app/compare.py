@@ -22,6 +22,7 @@ from agent6.config import Config
 from agent6.harness import judge as harness_judge
 from agent6.providers import Provider, ProviderError, TranscriptSink
 from agent6.sessions import manifest as sessions_manifest
+from agent6.viewmodel import format, listing
 
 # Builds the reviewer provider the judge call uses.
 BuildProvider = Callable[[Config, TranscriptSink, agent6_budget.BudgetTracker], Provider]
@@ -119,31 +120,35 @@ def print_ranked_candidates(
     candidates: list[harness_judge.CandidateBrief],
     outcome: RankOutcome,
     *,
+    rows: Mapping[str, listing.SessionSummary],
     merged_into: Mapping[str, str] | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
     """Print the ranked table, the total spend and the judge's rationale.
 
-    Prints nothing when the ranking is empty.
+    Each line carries the candidate's status label and cost cell as the listings spell
+    them. Prints nothing when the ranking is empty.
 
     Args:
         candidates: The ranked candidates.
         outcome: The ranking.
+        rows: Each candidate's listing row, by session id.
         merged_into: Where a candidate is already merged, by session id.
         reporter: The output channels.
     """
     if not outcome.ranking:
         return
-    by_id = {c.session_id: c for c in candidates}
+    labels = {
+        rid: format.status_label(rows[rid].status, rows[rid].reason) for rid in outcome.ranking
+    }
+    width = max(len(label) for label in labels.values())
     reporter.out("ranked candidates (best first):")
     for rnk, rid in enumerate(outcome.ranking, start=1):
-        c = by_id[rid]
-        verify = verify_word(c.verify_ok)
+        # A clean $0 is a blank cell in a listing; a report line spells it out.
+        cost = rows[rid].cost_cell or agent6_budget.format_usd(0.0)
         into = (merged_into or {}).get(rid, "")
         landing = f"merged into {into}" if into else f"merge with: agent6 sessions merge {rid}"
-        reporter.out(
-            f"  {rnk}. {rid}  {verify:<9} {agent6_budget.format_usd(c.cost_usd)}   {landing}"
-        )
+        reporter.out(f"  {rnk}. {rid}  {labels[rid]:<{width}}  {cost}   {landing}")
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)
         judge = outcome.judge_cost_usd

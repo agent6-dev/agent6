@@ -222,21 +222,18 @@ def _usage_line(scan: LogScan) -> str:
 
     `in` and `out`, the cached side when the journal recorded it, the plan points a
     percent-metered execution consumed against its cap, then the cost as the listing's cell
-    spells it (blank for a clean $0). Token counters and plan points are per execution and
-    the cost is banked across executions, so a resumed run says which is which.
+    spells it (blank for a clean $0). Token counters and the points against the cap are per
+    execution and the cost is banked across executions, so a resumed run says which is which.
     """
     tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
     if scan.cache_read_tokens is not None or scan.cache_creation_tokens is not None:
         tokens += f" cache_r={scan.cache_read_tokens or 0}"
         tokens += f" cache_c={scan.cache_creation_tokens or 0}"
     if scan.plan_cap > 0:
-        tokens += f" plan={scan.plan_consumed:g}/{scan.plan_cap:g}pt"
+        execution_pt = scan.plan_consumed - scan.plan_prior_executions
+        tokens += f" plan={execution_pt:g}/{scan.plan_cap:g}pt"
     execution_s = " (latest execution)" if scan.executions > 1 else ""
-    cell = (
-        format.format_cost_cell(scan.cost_usd, partial=scan.usd_partial)
-        if scan.cost_usd is not None
-        else ""
-    )
+    cell = scan.cost_cell
     executions_s = f" (all {scan.executions} executions)" if scan.executions > 1 else ""
     cost_s = f"  cost {cell}{executions_s}" if cell else ""
     return f"{tokens}{execution_s}{cost_s}"
@@ -366,7 +363,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         f"last event: {scan.last_type or '-'}"
         f"{f'  ({_fmt_dur(last_age)} ago)' if last_age is not None else ''}"
     )
-    print(f"elapsed:    {_fmt_dur(elapsed)}")
+    # First start to last event: the time between executions is in it.
+    spans = f" (wall, {scan.executions} executions)" if scan.executions > 1 else ""
+    print(f"elapsed:    {_fmt_dur(elapsed)}{spans}")
     if scan.input_tokens is not None or scan.cost_usd is not None:
         print(f"usage:      {_usage_line(scan)}")
     _print_end_facts(scan, target.name, gated=mode_display == "run")

@@ -58,6 +58,7 @@ def _write_fake_run(
     parallel_id: str | None = None,
     lane: int | None = None,
     coordinator: str | None = None,
+    points: float | None = None,
 ) -> None:
     session_dir.mkdir(parents=True)
     # A real lane's manifest records its lineage from birth (the spawn env);
@@ -83,6 +84,9 @@ def _write_fake_run(
         {"type": "session.start", "mode": "run", "user_task": task},
         {"type": "budget.update", "usd_total": cost},
     ]
+    if points is not None:
+        # A lane on a subscription plan: no dollars, the account's reading and its points.
+        events[1] = {"type": "budget.update", "plan_used_percent": 40.0, "plan_consumed": points}
     if status == "passed":
         events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
     elif status == "failed":
@@ -120,7 +124,9 @@ class _FakeSpawner:
         cost_by_lane: dict[int, float] | None = None,
         pid_lanes: set[int] | None = None,
         fanout_id: str | None = None,
+        points_by_lane: dict[int, float] | None = None,
     ) -> None:
+        self.points_by_lane = points_by_lane or {}
         self.origin = origin
         self.origin_state = origin_state
         self.state_root = state_root
@@ -160,6 +166,7 @@ class _FakeSpawner:
             lane=spec.lane if self.fanout_id is not None else None,
             status=self.status_by_lane.get(spec.lane, "passed"),
             cost=self.cost_by_lane.get(spec.lane, 0.05),
+            points=self.points_by_lane.get(spec.lane),
         )
         if spec.lane in self.pid_lanes:
             (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -1219,6 +1226,46 @@ def test_report_ranks_passing_lane_first(
     # The passing lane ranks first despite costing more.
     assert out.index("fan-l2") < out.index("fan-l1")
     assert "agent6 sessions merge fan-l2" in out
+
+
+def test_the_report_spells_a_lanes_cost_and_outcome_as_the_listing_does(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: parallel.LaneRuntime,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The fan-out report prints each lane's cost cell and status label, the listing's own.
+
+    A plan-metered lane read `$0.0000` in the report and `1pt` in `sessions`, and a lane that
+    finished over a red gate read `failed` in the report and `finished · gate red` there.
+    """
+    origin_state = paths.state_dir(origin)
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "fan", "2")
+    spawner = _FakeSpawner(
+        origin,
+        origin_state,
+        tmp_path / "lane-state",
+        status_by_lane={1: "gated_fail", 2: "passed"},
+        points_by_lane={1: 1.0, 2: 2.5},
+    )
+
+    parallel.run_parallel(
+        "t",
+        lanes,
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="fan",
+    )
+
+    ranked = [ln for ln in capsys.readouterr().out.splitlines() if "merge with:" in ln]
+    rows = {ln.split()[1]: ln for ln in ranked}
+    assert "passed" in rows["fan-l2"] and "2.5pt" in rows["fan-l2"]
+    assert "finished · gate red" in rows["fan-l1"] and "1pt" in rows["fan-l1"]
+    assert all("$0.0000" not in ln and "failed" not in ln for ln in ranked)
 
 
 def test_run_parallel_all_failed_returns_1(

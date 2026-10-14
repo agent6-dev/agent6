@@ -164,6 +164,16 @@ def test_format_summary_renders_known_and_unknown_prices() -> None:
     assert "TOTAL:" in summary
 
 
+def test_format_summary_names_no_ceiling_before_any_call() -> None:
+    """A run that made no model call names no dollar ceiling: nothing was metered against it.
+
+    The line read `cost=$0.0000 of $10.00` on a subscription-plan model, where a run that
+    made calls names no dollar ceiling.
+    """
+    t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    assert "  TOTAL: in=0 out=0 cost=$0.0000\n" in t.format_summary() + "\n"
+
+
 def test_format_summary_marks_exhausted() -> None:
     t = _t(fallback=5)
     t.record(

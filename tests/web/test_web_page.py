@@ -16,7 +16,7 @@ from importlib import resources
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "c59b3bd5f0dc5f90ed04f973cc633f37384519fbf498daf600019a3c4e680783"
+PAGE_SHA256 = "ee063a6c4cccc91b81f3060826c9d817ec03028b956607a3e0c4d88b66492546"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -32,6 +32,17 @@ def test_page_assets_load_non_empty() -> None:
     web = resources.files("agent6.ui.web")
     for name in (*page._CLIENT_FILES, "styles.css"):
         assert web.joinpath(name).read_text(encoding="utf-8").strip(), f"{name} is empty"
+
+
+def test_the_plan_bar_meters_this_executions_points() -> None:
+    """The run view's plan bar subtracts the points earlier executions banked.
+
+    The wire's `plan_consumed` sums every execution, and the sum against the cap a resume
+    re-armed would read a resumed run as over it.
+    """
+    client = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
+    assert "(b.plan_consumed || 0) - (b.plan_prior_executions || 0)" in client
+    assert "executionPt / planCap" in client
 
 
 def test_the_sessions_card_folds_a_fan_outs_lanes() -> None:

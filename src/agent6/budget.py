@@ -713,7 +713,7 @@ class BudgetTracker:
         total = format_usd(total_usd) + ("+" if any_unknown else "")
         # `of <cap>` names what meters this spend; with nothing USD-metered, max_usd meters none.
         cap = ""
-        if metered or not snap.per_model:
+        if metered:
             usd_cap = "unlimited" if snap.max_usd == -1 else format_usd(snap.max_usd)
             cap = f" of {usd_cap}"
         budget_line = (

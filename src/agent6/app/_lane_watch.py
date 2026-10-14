@@ -16,7 +16,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from agent6 import budget, paths
+from agent6 import paths
 from agent6.app import reporter as app_reporter
 from agent6.harness import subrun
 from agent6.sessions import ipc, layout
@@ -133,18 +133,18 @@ def await_lanes(
         True when interrupted, False when every lane ended.
     """
     pending = {r.spec.session_id: r for r in started}
-    seen: dict[str, tuple[str, str, float]] = {}
+    seen: dict[str, tuple[str, str, str]] = {}
 
     def poll_once() -> None:
         for rid, res in list(pending.items()):
             summary = summarize_session_dir(res.session_dir)
             # A "waiting" lane is blocked on a prompt no detached lane can answer.
             waiting = pending_prompt(res.session_dir) if summary.status == "waiting" else ""
-            key = (summary.status, waiting, round(summary.cost_usd, 4))
+            key = (summary.status, waiting, summary.cost_cell)
             if seen.get(rid) != key:
                 seen[rid] = key
                 print_lane_status(
-                    res.spec, summary.status, summary.cost_usd, waiting=waiting, reporter=reporter
+                    res.spec, summary.status, summary.cost_cell, waiting=waiting, reporter=reporter
                 )
             if lane_terminal(res.session_dir, summary.status, ipc.worker_is_alive):
                 pending.pop(rid)
@@ -221,14 +221,14 @@ def pending_prompt(session_dir: pathlib.Path) -> str:
 def print_lane_status(
     spec: subrun.LaneSpec,
     status: str,
-    cost: float,
+    cost: str,
     *,
     waiting: str = "",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
-    """Print one lane's status line."""
+    """Print one lane's status line, its cost as the listing's cell spells it."""
     model = f" ({spec.route.spec})" if spec.route else ""
-    cost_s = f"  {budget.format_usd(cost)}" if cost > 0 else ""
+    cost_s = f"  {cost}" if cost else ""
     state = (
         f"waiting on {waiting} (answer via agent6 attach {spec.session_id}, the web or TUI hub)"
         if waiting

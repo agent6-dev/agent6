@@ -193,7 +193,7 @@ def _shared_facts(
             scan.cache_read_tokens or 0,
             scan.cache_creation_tokens or 0,
         ),
-        "plan": (scan.plan_consumed, scan.plan_cap),
+        "plan": (scan.plan_consumed, scan.plan_prior_executions, scan.plan_cap),
         "pins": scan.pins,
         "blocked": scan.operator_blocked,
         "unattended": scan.unattended_questions,
@@ -214,7 +214,11 @@ def _shared_facts(
             state.budget.cache_read_total,
             state.budget.cache_creation_total,
         ),
-        "plan": (state.budget.plan_consumed, state.budget.plan_cap),
+        "plan": (
+            state.budget.plan_consumed,
+            state.budget.plan_prior_executions,
+            state.budget.plan_cap,
+        ),
         "pins": state.pins,
         "blocked": any(
             not p.answered for p in (*state.pending_approvals, *state.pending_questions)

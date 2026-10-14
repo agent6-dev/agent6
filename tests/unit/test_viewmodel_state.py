@@ -760,7 +760,7 @@ def test_resume_resets_the_execution_token_counters() -> None:
 
 
 def test_resume_resets_the_execution_plan_counters() -> None:
-    """Subscription-plan usage is execution-local, dropped at ResumeStart like the token counts."""
+    """A resume drops the plan cap and the account reading and banks the points consumed."""
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(s, {"type": "session.start", "user_task": "t"})
     s = viewmodel_state.apply_event(
@@ -778,9 +778,25 @@ def test_resume_resets_the_execution_plan_counters() -> None:
     )
     s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
     assert s.budget.plan_used_percent == 0.0
-    assert s.budget.plan_consumed == 0.0
+    assert s.budget.plan_consumed == s.budget.plan_prior_executions == 3.5
     assert s.budget.plan_cap == 0.0
     assert s.budget.plan_resets_at == 0.0
+
+
+def test_plan_points_cumulative_across_resume_executions() -> None:
+    """The view's plan points sum every execution's, with the banked part beside them.
+
+    The points were the latest execution's, so a resumed run's cost fell to what the resume
+    consumed.
+    """
+    s = viewmodel_state.initial_state()
+    s = viewmodel_state.apply_event(s, {"type": "session.start", "user_task": "t"})
+    update = {"type": "budget.update", "plan_used_percent": 42.0, "plan_cap": 6.0}
+    s = viewmodel_state.apply_event(s, {**update, "plan_consumed": 2.5})
+    s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
+    s = viewmodel_state.apply_event(s, {**update, "plan_consumed": 1.0})
+    assert s.budget.plan_consumed == 3.5
+    assert s.budget.plan_prior_executions == 2.5
 
 
 def test_concurrent_same_name_results_pair_by_call_id() -> None:

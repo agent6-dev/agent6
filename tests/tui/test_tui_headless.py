@@ -1091,6 +1091,32 @@ def test_working_timer_anchors_to_the_last_events_ts_not_the_attach(tmp_path: pa
     asyncio.run(scenario())
 
 
+def test_plan_meter_reads_this_executions_points_after_a_resume(tmp_path: pathlib.Path) -> None:
+    """The header meters this execution's plan points against the cap it re-armed.
+
+    The points are summed across executions, and the sum against the cap would read a
+    resumed run as over it.
+    """
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = tui_app.Agent6TUI(tmp_path)
+        plan = {"type": "budget.update", "plan_used_percent": 40.0, "plan_cap": 2.0}
+        async with app.run_test(size=(150, 40)) as pilot:
+            await _show_dashboard(pilot)
+            app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
+            app._handle_event(_ev(type="role.call", role="worker", model="m"))
+            app._handle_event(_ev(**plan, plan_consumed=2.0))
+            app._handle_event(_ev(type="loop.resume.start"))
+            app._handle_event(_ev(**plan, plan_consumed=0.5))
+            app._tick()
+            await pilot.pause()
+            top = str(app._dash.query_one("#top", widgets.Static).render())
+            assert "(run 0.5/2pt)" in top, top
+
+    asyncio.run(scenario())
+
+
 def test_budget_meter_reads_this_executions_spend_not_the_runs_total(
     tmp_path: pathlib.Path,
 ) -> None:

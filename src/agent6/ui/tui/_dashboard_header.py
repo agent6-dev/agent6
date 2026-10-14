@@ -92,7 +92,9 @@ class RunHeader(widgets.Static):
         if ds.budget.plan_used_percent > 0:
             budget += f"   plan: {ds.budget.plan_used_percent:g}%"
             if ds.budget.plan_cap > 0:
-                budget += f" (run {ds.budget.plan_consumed:g}/{ds.budget.plan_cap:g}pt)"
+                # This execution's points against the cap a resume re-armed.
+                execution_pt = ds.budget.plan_consumed - ds.budget.plan_prior_executions
+                budget += f" (run {execution_pt:g}/{ds.budget.plan_cap:g}pt)"
         pct = tui.context_pct()
         ctx = f"   ctx: {pct}%" if pct is not None else ""
         status = f"{finished}   " if finished else ""

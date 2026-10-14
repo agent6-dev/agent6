@@ -720,6 +720,40 @@ def test_end_banner_adds_the_run_total_across_resume_executions(
     assert "RUN TOTAL (all 2 executions): $0.03" in out
 
 
+def test_end_banner_run_total_carries_plan_points(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A resumed plan run's total is its points across executions, as the listing's cell.
+
+    The line printed dollars only, `$0.0000` for a run that spent plan points.
+    """
+    plan = {"type": "budget.update", "plan_used_percent": 40.0, "plan_cap": 2.0}
+    layout = _layout(
+        tmp_path,
+        "r9",
+        [
+            {"type": "session.start", "session_id": "r9", "user_task": "t"},
+            {**plan, "plan_consumed": 1.0},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "loop.resume.start", "iteration": 4},
+            {**plan, "plan_consumed": 0.0},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    result = _snapshot.SessionResult(
+        completed=True, reason="finish_session", summary="", iterations=5, tool_calls=2
+    )
+    _finalize.print_session_end(
+        result,
+        layout=layout,
+        cwd=tmp_path,
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=False,
+        reporter=reporter.STDIO_REPORTER,
+    )
+    assert "RUN TOTAL (all 2 executions): 1pt" in capsys.readouterr().out
+
+
 def test_end_banner_stays_quiet_on_a_single_execution_run(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

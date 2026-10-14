@@ -21,7 +21,7 @@ import os
 import pathlib
 import shutil
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent import futures as concurrent_futures
 from typing import Protocol
 
@@ -36,7 +36,7 @@ from agent6.providers import TranscriptSink
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.viewmodel import format, produced_result, summarize_session_dir
+from agent6.viewmodel import format, listing, produced_result, summarize_session_dir
 
 
 class ParallelError(Exception):
@@ -908,7 +908,12 @@ def _import_lanes(
     base_sha: str,
     task: str,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-) -> tuple[list[judge.CandidateBrief], list[tuple[subrun.LaneResult, str]], list[subrun.LaneSpec]]:
+) -> tuple[
+    list[judge.CandidateBrief],
+    dict[str, listing.SessionSummary],
+    list[tuple[subrun.LaneResult, str]],
+    list[subrun.LaneSpec],
+]:
     """Import each finished lane into the origin and build the candidate briefs.
 
     A lane that failed to start, is still running or refused its import is recorded
@@ -924,10 +929,11 @@ def _import_lanes(
         reporter: Receives the notes.
 
     Returns:
-        The candidates, the failed lanes with their reasons, and the imported specs
-        (the only ones safe to clean up).
+        The candidates, each one's listing row by session id, the failed lanes with
+        their reasons, and the imported specs (the only ones safe to clean up).
     """
     candidates: list[judge.CandidateBrief] = []
+    rows: dict[str, listing.SessionSummary] = {}
     failed: list[tuple[subrun.LaneResult, str]] = []
     imported: list[subrun.LaneSpec] = []
     for res in results:
@@ -968,6 +974,7 @@ def _import_lanes(
                 )
             )
             continue
+        rows[res.spec.session_id] = summary
         candidates.append(
             judge.CandidateBrief(
                 session_id=res.spec.session_id,
@@ -977,7 +984,7 @@ def _import_lanes(
                 cost_usd=summary.cost_usd,
             )
         )
-    return candidates, failed, imported
+    return candidates, rows, failed, imported
 
 
 def _cleanup(
@@ -1030,6 +1037,7 @@ def _print_report(
     outcome: app_compare.RankOutcome,
     failed: list[tuple[subrun.LaneResult, str]],
     *,
+    rows: Mapping[str, listing.SessionSummary],
     fanout_id: str,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
@@ -1039,13 +1047,14 @@ def _print_report(
         candidates: The ranked lanes.
         outcome: The ranking.
         failed: The failed lanes with their reasons.
+        rows: Each candidate's listing row, by session id.
         fanout_id: The fan-out's session id.
         reporter: Receives the lines.
     """
     reporter.out(
         f"\n[agent6] parallel fan-out {fanout_id} complete: {len(candidates)} candidate(s)"
     )
-    app_compare.print_ranked_candidates(candidates, outcome, reporter=reporter)
+    app_compare.print_ranked_candidates(candidates, outcome, rows=rows, reporter=reporter)
     if failed:
         reporter.out("\nfailed lanes:")
         for res, err in failed:
@@ -1257,7 +1266,7 @@ def _drive_fanout(
             results.append(res)
             if res.ok:
                 _lane_watch.symlink_lane(origin_state, res)
-                _lane_watch.print_lane_status(spec, "started", 0.0, reporter=reporter)
+                _lane_watch.print_lane_status(spec, "started", "", reporter=reporter)
             else:
                 reporter.note(f"lane {spec.lane} [{spec.session_id}]: FAILED to start: {res.error}")
         interrupted = _lane_watch.await_lanes(
@@ -1280,7 +1289,7 @@ def _drive_fanout(
 
     # The stop request is consumed with the session.
     ipc.clear_stop_request(coordinator_dir)
-    candidates, failed, imported = _import_lanes(
+    candidates, rows, failed, imported = _import_lanes(
         results,
         origin=origin,
         origin_state=origin_state,
@@ -1318,6 +1327,7 @@ def _drive_fanout(
         candidates,
         outcome,
         failed,
+        rows=rows,
         fanout_id=fanout_id,
         reporter=reporter,
     )

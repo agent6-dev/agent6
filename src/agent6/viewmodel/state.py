@@ -133,9 +133,9 @@ class VerifyView:
 class BudgetView:
     """The run's spend as every surface shows it.
 
-    Token and plan counters and the caps are the current execution's, pairing with
-    the per-execution enforcement; `usd_total` is cumulative across executions, as
-    the listing scan sums it, so the surfaces agree on what a run cost.
+    Token counters and the caps are the current execution's, pairing with the
+    per-execution enforcement; `usd_total` and `plan_consumed` are cumulative across
+    executions, as the listing scan sums them, so the surfaces agree on what a run cost.
 
     Attributes:
         input_total: This execution's input tokens.
@@ -149,7 +149,8 @@ class BudgetView:
         tokens_unmetered: Input and output tokens of calls the meter could not price.
         tokens_fallback_cap: `[budget].max_tokens_fallback`; -1 unlimited, 0 unknown.
         plan_used_percent: The account's reported plan usage; 0 until a plan call runs.
-        plan_consumed: This execution's consumed plan points.
+        plan_consumed: The plan points consumed across every execution.
+        plan_prior_executions: The points banked by completed executions.
         plan_cap: `[budget].max_percent`; 0 until a plan call runs.
         plan_resets_at: When the plan window resets, as epoch seconds.
     """
@@ -166,6 +167,7 @@ class BudgetView:
     tokens_fallback_cap: int = 0
     plan_used_percent: float = 0.0
     plan_consumed: float = 0.0
+    plan_prior_executions: float = 0.0
     plan_cap: float = 0.0
     plan_resets_at: float = 0.0
 
@@ -467,7 +469,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                     tokens_unmetered=0,
                     tokens_fallback_cap=0,
                     plan_used_percent=0.0,
-                    plan_consumed=0.0,
+                    plan_prior_executions=state.budget.plan_consumed,
                     plan_cap=0.0,
                     plan_resets_at=0.0,
                 ),
@@ -627,7 +629,8 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             plan_cap=plan_cap,
             plan_resets_at=plan_resets,
         ):
-            # The event's usd_total is this execution's; the view's is cumulative.
+            # The event's usd_total and plan_consumed are this execution's; the view's are
+            # cumulative.
             return dataclasses.replace(
                 state,
                 budget=BudgetView(
@@ -642,7 +645,8 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                     tokens_unmetered=unmet,
                     tokens_fallback_cap=fcap,
                     plan_used_percent=plan_pct,
-                    plan_consumed=plan_used,
+                    plan_consumed=state.budget.plan_prior_executions + plan_used,
+                    plan_prior_executions=state.budget.plan_prior_executions,
                     plan_cap=plan_cap,
                     plan_resets_at=plan_resets,
                 ),

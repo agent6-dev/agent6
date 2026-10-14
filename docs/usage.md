@@ -75,6 +75,10 @@ agent6 history search <text>  # grep every session's persisted data; --regex
 agent6 ps                     # live sessions of every repository on the machine; --lanes, --json
 ```
 
+A session's cost covers every execution, in dollars or in plan points; `sessions list`, `sessions show`, the end-of-run total and the fan-out report print the same figure.
+The tokens and the points against `max_percent` on `sessions show` are the latest execution's.
+`elapsed` on a resumed run is the wall time from its first start to its last event, the time between executions included.
+
 `agent6 exec` runs your own command on your own stdio.
 
 - with stdin and stdout on a terminal the command gets a terminal of its own, with job control; otherwise stdin, stdout and stderr pass through, so pipes and redirects work

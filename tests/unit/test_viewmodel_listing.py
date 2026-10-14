@@ -981,6 +981,65 @@ def test_summary_cost_sums_across_resume_executions(tmp_path: pathlib.Path) -> N
     assert abs(s.cost_usd - 0.027) < 1e-9  # 0.02 (execution 1) + 0.007 (execution 2), not 0.007
 
 
+def test_summary_plan_points_sum_across_resume_executions(tmp_path: pathlib.Path) -> None:
+    """A resumed plan run's cost cell holds every execution's points, as it does dollars.
+
+    The points reset at each resume, so a 1pt run read 0pt after a resume that consumed none.
+    """
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r1",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {
+                "type": "budget.update",
+                "plan_used_percent": 40.0,
+                "plan_consumed": 1.0,
+                "plan_cap": 2.0,
+            },
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "loop.resume.start", "iteration": 3},
+            {
+                "type": "budget.update",
+                "plan_used_percent": 40.0,
+                "plan_consumed": 0.0,
+                "plan_cap": 2.0,
+            },
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        ],
+    )
+    s = summarize_session_dir(rd)
+    assert s.cost_cell == "1pt"
+    assert listing.summary_row(s)["plan_consumed"] == 1.0
+
+
+def test_cost_cell_keeps_points_between_a_resume_and_its_first_budget_update(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A resumed plan run reads its points before the new execution's first call.
+
+    The reset at the resume left no plan reading, so the cell went blank.
+    """
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r1",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {
+                "type": "budget.update",
+                "plan_used_percent": 40.0,
+                "plan_consumed": 1.0,
+                "plan_cap": 2.0,
+            },
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "loop.resume.start", "iteration": 3},
+        ],
+    )
+    assert summarize_session_dir(rd).cost_cell == "1pt"
+
+
 def test_is_run_husk(tmp_path: pathlib.Path) -> None:
     # Neither manifest nor logs: never started, a husk.
     husk = tmp_path / "husk"

@@ -139,6 +139,27 @@ def is_winner(session_dir: pathlib.Path) -> bool:
     return compare is not None and compare.winner
 
 
+def cost_cell(
+    cost_usd: float, *, partial: bool, plan_consumed: float, plan_used_percent: float
+) -> str:
+    """Return a session's cost, the one spelling the listings, show and the reports print.
+
+    Args:
+        cost_usd: The dollars spent across executions.
+        partial: The dollar figure is a lower bound.
+        plan_consumed: The plan points consumed across executions.
+        plan_used_percent: The account's last plan reading.
+
+    Returns:
+        The points once a subscription plan answered a call, else the dollars; "" for a
+        clean $0.
+    """
+    metered = plan_used_percent > 0 or plan_consumed > 0
+    return format.format_cost_cell(
+        cost_usd, partial=partial, plan_points=plan_consumed if metered else None
+    )
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class SessionSummary:
     """One listing row: everything a hub or `sessions list` needs, uncolored.
@@ -161,7 +182,7 @@ class SessionSummary:
             compare table and the judge read it.
         coordinator: The session that dispatched this lane, the row it nests under.
         lane: The lane number within its fan-out.
-        plan_consumed: The plan points this execution consumed on a plan-metered provider.
+        plan_consumed: The plan points consumed across executions on a plan-metered provider.
         plan_cap: The plan's points cap, `[budget].max_percent`.
         plan_used_percent: The account's reading; 0 unless a plan provider answered.
         model: The manifest's provider/model route for this execution.
@@ -190,10 +211,13 @@ class SessionSummary:
 
     @property
     def cost_cell(self) -> str:
-        """The cost cell: plan points once a subscription plan answered a call, else USD."""
-        metered = self.plan_used_percent > 0 or self.plan_consumed > 0
-        points = self.plan_consumed if metered else None
-        return format.format_cost_cell(self.cost_usd, partial=self.usd_partial, plan_points=points)
+        """The session's cost as `cost_cell` spells it."""
+        return cost_cell(
+            self.cost_usd,
+            partial=self.usd_partial,
+            plan_consumed=self.plan_consumed,
+            plan_used_percent=self.plan_used_percent,
+        )
 
     def id_cell(self, *, winner: bool) -> str:
         """Return the id cell every listing shows: the id, then the winner and worktree marks."""
@@ -558,7 +582,8 @@ class LogScan:
 
     One owner, so the resume rules (bank the cost of past executions, un-finish) and
     the torn-line tolerances cannot drift between consumers. Token counters are the
-    current execution's; `cost_usd` is cumulative, matching the typed fold's BudgetView.
+    current execution's; `cost_usd` and `plan_consumed` are cumulative, matching the typed
+    fold's BudgetView.
 
     Attributes:
         saw_start: A session.start or loop.resume.start was seen; neither means unstarted.
@@ -582,9 +607,11 @@ class LogScan:
         output_tokens: This execution's output tokens.
         cache_read_tokens: The cached side of the input, None when the event lacked it.
         cache_creation_tokens: Cache-creation tokens, None when the event lacked it.
-        plan_consumed: The plan points this execution consumed; 0.0 until a plan call runs.
-        plan_cap: `[budget].max_percent`, 0.0 until a plan call runs.
-        plan_used_percent: The account's reading, 0.0 until a plan call runs.
+        plan_consumed: The plan points consumed across every execution; 0.0 until a plan
+            call runs.
+        plan_prior_executions: The points banked by completed executions.
+        plan_cap: `[budget].max_percent` for this execution, 0.0 until a plan call runs.
+        plan_used_percent: The account's last reading, 0.0 until a plan call runs.
         iteration: The last event's iteration.
         start_ep: session.start's epoch, else the first event's (a fork's log has none).
         last_ep: The last event's epoch.
@@ -616,6 +643,7 @@ class LogScan:
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
     plan_consumed: float = 0.0
+    plan_prior_executions: float = 0.0
     plan_cap: float = 0.0
     plan_used_percent: float = 0.0
     iteration: int | None = None
@@ -654,6 +682,18 @@ class LogScan:
         The one word `sessions show` and `sessions merge` describe the final tree by.
         """
         return "timed_out" if self.verified == "failed" and self.verify_timeout_s else self.verified
+
+    @property
+    def cost_cell(self) -> str:
+        """The session's cost as `cost_cell` spells it; "" before any budget.update."""
+        if self.cost_usd is None:
+            return ""
+        return cost_cell(
+            self.cost_usd,
+            partial=self.usd_partial,
+            plan_consumed=self.plan_consumed,
+            plan_used_percent=self.plan_used_percent,
+        )
 
     def status_facts(self) -> StatusFacts:
         """Return this scan's answers to the status questions.
@@ -773,7 +813,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
-    plan_consumed = plan_cap = plan_used_percent = 0.0
+    plan_consumed = plan_prior_executions = plan_cap = plan_used_percent = 0.0
     iteration: int | None = None
     start_ep: float | None = None
     first_ep: float | None = None
@@ -843,7 +883,10 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         usd_execution = 0.0
                         input_tokens = output_tokens = None
                         cache_read_tokens = cache_creation_tokens = None
-                        plan_consumed = plan_cap = plan_used_percent = 0.0
+                        # The account's reading stays: the run is plan-metered before its
+                        # next call too.
+                        plan_prior_executions += plan_consumed
+                        plan_consumed = plan_cap = 0.0
                         last_verify_rc = None
                         verify_timeout_s = 0.0
                         executions += 1
@@ -901,7 +944,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         output_tokens=output_tokens,
         cache_read_tokens=cache_read_tokens,
         cache_creation_tokens=cache_creation_tokens,
-        plan_consumed=plan_consumed,
+        plan_consumed=plan_prior_executions + plan_consumed,
+        plan_prior_executions=plan_prior_executions,
         plan_cap=plan_cap,
         plan_used_percent=plan_used_percent,
         unattended_questions=unattended_questions,

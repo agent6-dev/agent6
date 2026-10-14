@@ -547,6 +547,35 @@ def test_status_missing_id_and_empty_state_speak_human(
     assert 'no sessions yet. Start one with `agent6 run "<task>"`.' in capsys.readouterr().err
 
 
+def test_status_text_labels_plan_points_on_a_resumed_run(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A resumed plan run shows this execution's points against the cap and the session's cost.
+
+    The usage line held no whole-session figure, and `elapsed` did not say it spans the
+    time between executions.
+    """
+    plan = {"plan_used_percent": 40.0, "plan_cap": 2.0, "input_total": 10, "output_total": 5}
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(90), "type": "session.start", "mode": "run", "user_task": "t"},
+            {"ts": _ts(80), "type": "budget.update", **plan, "plan_consumed": 1.0},
+            {"ts": _ts(70), "type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"ts": _ts(60), "type": "loop.resume.start", "iteration": 4},
+            {"ts": _ts(10), "type": "budget.update", **plan, "plan_consumed": 0.0},
+            {"ts": _ts(5), "type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    sessions_ipc.write_worker_pid(d, 999999999)
+    sessions_show._cmd_status("winsome-dawn-YWH5ZS")
+    out = capsys.readouterr().out
+    assert "plan=0/2pt (latest execution)" in out
+    assert "cost 1pt (all 2 executions)" in out
+    assert "elapsed:    1m25s (wall, 2 executions)" in out
+
+
 def test_status_text_labels_execution_scoped_figures_on_a_resumed_run(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
