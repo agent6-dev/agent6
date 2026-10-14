@@ -397,7 +397,9 @@ def status_word(
     # Only an observed not-green words "failed"; a deliberate finish over one is "finished".
     if all_passed is False and end_reason:
         clean_end = end_reason in ("finish_session", "silent_finish", "metric_plateau")
-        return ("finished", not_green) if clean_end else ("failed", end_reason)
+        # A stale-gate claim is its own detail, as the raw reason so a surface names it once.
+        word = "finished" if clean_end or end_reason == "gate_stale" else "failed"
+        return word, not_green if clean_end else end_reason
     return "finished", ""
 
 

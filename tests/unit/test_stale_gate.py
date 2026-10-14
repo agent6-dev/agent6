@@ -20,13 +20,15 @@ from agent6.ui import cli
 from agent6.viewmodel import listing
 
 
-def test_the_reason_reads_as_a_failure_with_its_cause() -> None:
-    """A stale gate is a reason, not a new status word.
+def test_a_stale_gate_finish_reads_finished_with_its_cause() -> None:
+    """A finish over a gate the worker called stale read "failed · gate stale".
 
-    `died_without_end`, the compare gates and the TUI colours key off the existing set.
+    The same finish without the claim read "finished · gate red", so making the claim cost
+    the run its word. A stale gate is a detail, not a new status word: `died_without_end`,
+    the compare gates and the TUI colours key off the existing set.
     """
     assert listing.status_word(finished=True, all_passed=False, end_reason="gate_stale") == (
-        "failed",
+        "finished",
         "gate_stale",
     )
 

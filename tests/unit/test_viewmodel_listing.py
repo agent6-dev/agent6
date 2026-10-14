@@ -1409,3 +1409,14 @@ def test_a_timed_out_gate_reads_gate_timed_out_beside_gate_red_and_unverified() 
             "finished",
             "unverified",
         )
+
+
+def test_the_three_finishes_over_a_red_gate_share_a_word() -> None:
+    """A finish_session over a red gate is "finished" whatever the worker said about the gate."""
+    from agent6.viewmodel import listing
+
+    for reason in ("finish_session", "gate_red_at_base", "gate_stale"):
+        word, _detail = listing.status_word(
+            finished=True, all_passed=False, gate_red=True, end_reason=reason
+        )
+        assert word == "finished", reason

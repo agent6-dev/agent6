@@ -83,6 +83,13 @@ def test_exit_code_finish_over_a_red_verify_is_four() -> None:
     )
 
 
+def test_exit_code_stale_gate_finish_is_four() -> None:
+    """A stale-gate finish exits 4, as a red finish does, whatever its headline reads."""
+    for verified in ("failed", "unverified"):
+        stale = _result(completed=True, reason="gate_stale", verified=verified)
+        assert finalize.session_exit_code(stale) == 4
+
+
 def test_exit_code_verified_finish_is_zero() -> None:
     # Green, and gateless (nothing to verify) -- both are exit 0.
     assert (

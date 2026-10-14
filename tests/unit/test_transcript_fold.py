@@ -589,7 +589,7 @@ _DONE_LABELS = {
     "plan_unreadable": "failed · plan unreadable",
     "max_iterations": "failed · max iterations",
     "ask_repl_empty": "failed · ask repl empty",
-    "gate_stale": "failed · gate stale",
+    "gate_stale": "finished · gate stale",
     "gate_red_at_base": "finished · gate was already red",
     "no_lane_result": "failed · no lane result",
     "no_lane_passed": "failed · no lane passed",
