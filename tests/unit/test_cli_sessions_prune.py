@@ -585,7 +585,7 @@ def test_runs_rm_asks_clears_the_bucket(
     for name in ("ask-one", "ask-two"):
         (asks / name).mkdir(parents=True)
     assert main(["sessions", "rm", "some-id", "--asks"]) == 2
-    assert main(["sessions", "rm", "--asks"]) == 0
+    assert main(["sessions", "rm", "--asks", "--yes"]) == 0
     assert "removed 2 asks" in capsys.readouterr().out
     assert not asks.exists()
 

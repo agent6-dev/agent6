@@ -604,7 +604,7 @@ def _run_clear_asks_cli(
 ) -> tuple[bool, str]:
     """Return whether `agent6 sessions rm --asks` succeeded, and its output."""
     ok, msg = spawn.run_cli_capture(
-        [*spawn.agent6_argv(config_path), "sessions", "rm", "--asks"], repo_cwd
+        [*spawn.agent6_argv(config_path), "sessions", "rm", "--asks", "--yes"], repo_cwd
     )
     return ok, msg or ("saved asks cleared" if ok else "could not clear the saved asks")
 

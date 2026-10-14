@@ -543,7 +543,9 @@ def remove_asks(cwd: pathlib.Path, config_path: pathlib.Path | None = None) -> t
     Returns:
         Whether the CLI succeeded, and its message.
     """
-    return spawn.run_cli_capture([*spawn.agent6_argv(config_path), "sessions", "rm", "--asks"], cwd)
+    return spawn.run_cli_capture(
+        [*spawn.agent6_argv(config_path), "sessions", "rm", "--asks", "--yes"], cwd
+    )
 
 
 def set_config(

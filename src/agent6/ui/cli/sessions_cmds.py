@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 
-from agent6 import git_ops, kinds
+from agent6 import git_ops, kinds, portable
 from agent6 import paths as agent6_paths
 from agent6.app import fork_worktrees, resume
 from agent6.sessions import id, ipc
@@ -447,6 +447,11 @@ def _rm_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     bucket = sessions_layout.bucket_dir(agent6_paths.state_dir(cwd), "asks")
     gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
     count = f"{gone} ask{'' if gone == 1 else 's'}"
+    if gone and not yes and not portable.has_controlling_tty():
+        _common.refuse(
+            f"no controlling terminal to confirm deleting {count} saved from {cwd}; use --yes."
+        )
+        return 2
     if (
         gone
         and not yes
@@ -522,8 +527,9 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
     and its commits are git's and are left alone; `sessions prune` is the branch verb.
     `--asks` clears the asks made in this directory; asks made elsewhere are untouched.
 
-    On a terminal it names what will go and asks first; `yes` skips the question, and with
-    no terminal nothing is asked.
+    On a controlling terminal it names what will go and asks first; `yes` skips the question.
+    Without one, deleting the newest session or the asks requires `yes`; an explicit id
+    deletes without asking.
 
     Args:
         session_id: The session, or "" for the newest.
@@ -543,8 +549,15 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
     except id.SessionIdError as exc:
         _common.error(f"{exc}")
         return 2
-    if layout is None:
-        _common.print_nothing_yet()
+    if layout is None or (not session_id and not yes and not portable.has_controlling_tty()):
+        if layout is None:
+            _common.print_nothing_yet()
+        else:
+            _common.refuse(
+                "no session id and no controlling terminal to confirm deleting "
+                f"{layout.session_id}; pass the id "
+                f"(`agent6 sessions rm {layout.session_id}`) or use --yes."
+            )
         return 2
     worktree: pathlib.Path | None = None
     with contextlib.suppress(sessions_manifest.ManifestError):

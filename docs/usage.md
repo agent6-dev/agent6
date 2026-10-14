@@ -66,7 +66,7 @@ agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N
 agent6 sessions graph         # the task graph, each line led by the id /retire takes
 agent6 sessions compare <ids> # >=2 runs ranked by the reviewer model (minutes), or a fan-out's verdict; --rejudge
 agent6 sessions prune         # delete merged agent6/* branches and worktrees, report the rest; squash merges (the default) need --delete-squashed
-agent6 sessions rm            # delete one run's history, asking [y/N] first on a terminal; --yes skips the question, --asks clears saved asks
+agent6 sessions rm [<id>]     # delete one run's history; asks [y/N] on a controlling terminal, otherwise requires an id or --yes; --yes skips the question, --asks clears saved asks
 agent6 sessions dir [<id>]    # the repo's run history, or that session's directory
 agent6 exec ID -- <command>   # a command inside the run's jail and network, on your terminal or pipe
 agent6 exec --new [<command>] # a command, or your shell, in a fresh sandbox built from the config; no run needed

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions rm` asks before it deletes on a terminal, and never without one."""
+"""`agent6 sessions rm` confirms on a terminal or requires an id or `--yes` without one."""
 
 from __future__ import annotations
 
@@ -206,10 +206,33 @@ def test_a_redirected_stdout_does_not_skip_the_question(
     assert "nothing was deleted" in log.read_text(encoding="utf-8")
 
 
-def test_rm_without_a_terminal_deletes_without_asking(
+def test_rm_without_a_terminal_refuses_without_an_id(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With no controlling terminal `rm` never asks, so a script keeps working."""
+    """A bare `sessions rm` without a terminal must not delete an unnamed session."""
+    monkeypatch.chdir(tmp_path)
+    layout = _ended_unmerged_run(tmp_path)
+    chain_tip = git_ops.chain_tip(tmp_path, git_ops.chain_ref_for(_ID))
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
+
+    def never(*_args: object, **_kwargs: object) -> str | None:
+        raise AssertionError("rm asked with no terminal")
+
+    monkeypatch.setattr(_steer, "tty_prompt", never)
+    assert main(["sessions", "rm"]) == 2
+    out = capsys.readouterr()
+    assert "no controlling terminal" in out.err
+    assert f"agent6 sessions rm {_ID}" in out.err
+    assert "--yes" in out.err
+    assert "removed" not in out.out
+    assert layout.session_dir.exists()
+    assert git_ops.chain_tip(tmp_path, git_ops.chain_ref_for(_ID)) == chain_tip
+
+
+def test_rm_with_an_id_without_a_terminal_deletes_without_asking(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An explicit session id allows scripts to delete without a terminal or a question."""
     monkeypatch.chdir(tmp_path)
     layout = _ended_unmerged_run(tmp_path)
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
@@ -218,6 +241,51 @@ def test_rm_without_a_terminal_deletes_without_asking(
         raise AssertionError("rm asked with no terminal")
 
     monkeypatch.setattr(_steer, "tty_prompt", never)
-    assert main(["sessions", "rm"]) == 0
+    assert main(["sessions", "rm", _ID]) == 0
     assert f"removed {_ID}" in capsys.readouterr().out
     assert not layout.session_dir.exists()
+    assert git_ops.chain_tip(tmp_path, git_ops.chain_ref_for(_ID)) is None
+
+
+@pytest.mark.parametrize("flag", ["--yes", "-y"])
+def test_rm_yes_without_a_terminal_deletes_without_asking(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    flag: str,
+) -> None:
+    """`--yes` and `-y` allow a bare delete without a terminal or a question."""
+    monkeypatch.chdir(tmp_path)
+    layout = _ended_unmerged_run(tmp_path)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
+
+    def never(*_args: object, **_kwargs: object) -> str | None:
+        raise AssertionError("rm asked with no terminal")
+
+    monkeypatch.setattr(_steer, "tty_prompt", never)
+    assert main(["sessions", "rm", flag]) == 0
+    assert f"removed {_ID}" in capsys.readouterr().out
+    assert not layout.session_dir.exists()
+    assert git_ops.chain_tip(tmp_path, git_ops.chain_ref_for(_ID)) is None
+
+
+def test_rm_asks_without_a_terminal_refuses_without_yes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions rm --asks` names no session, so a script must say `--yes` to clear them."""
+    monkeypatch.chdir(tmp_path)
+    asks = paths.state_dir(tmp_path) / "sessions" / "asks"
+    for name in ("ask-one", "ask-two"):
+        (asks / name).mkdir(parents=True)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
+
+    def never(*_args: object, **_kwargs: object) -> str | None:
+        raise AssertionError("rm asked with no terminal")
+
+    monkeypatch.setattr(_steer, "tty_prompt", never)
+    assert main(["sessions", "rm", "--asks"]) == 2
+    err = capsys.readouterr().err
+    assert "no controlling terminal" in err and "2 asks" in err and "--yes" in err
+    assert asks.is_dir()
+    assert main(["sessions", "rm", "--asks", "--yes"]) == 0
+    assert not asks.exists()
