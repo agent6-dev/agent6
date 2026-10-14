@@ -120,7 +120,10 @@ class HarnessConfig(pydantic.BaseModel):
             "test files nearest the run's diff, and harness gates run scoped until a full run "
             "of the gate passes; a `finish_session` over a scoped green reads "
             "`passed · scoped gate`. A "
-            "model-chosen `run_command` is not bounded (see `command_checkin_s`)."
+            "model-chosen `run_command` is not bounded (see `command_checkin_s`). "
+            "The timeout bounds each gate call, not work reused from a cache: `go test` can "
+            "pass from a cache a model's `run_command` filled; `go test -count=1` disables "
+            "Go's test cache."
         ),
     )
     # Per execution: a standing run is not capped by the sum of its executions.
