@@ -630,11 +630,20 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
                 if ok:
                     self.action_to_hub()
 
+        worktree = None
+        with contextlib.suppress(sessions_manifest.ManifestError):
+            worktree = sessions_manifest.read_manifest(self.session_dir).worktree
+        goes = (
+            f" Its worktree {worktree} goes too when no other session names it and it holds no"
+            " uncommitted work."
+            if worktree
+            else ""
+        )
         self.push_screen(
             modals.ConfirmModal(
                 "Delete this session's history?",
                 "Removes its transcripts, events and manifest from the state dir. "
-                "The run branch and its commits are kept.",
+                f"The run branch and its commits are kept.{goes}",
                 confirm_label="Delete",
             ),
             _confirmed,

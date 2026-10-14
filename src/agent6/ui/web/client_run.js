@@ -86,14 +86,22 @@ async function renderRun(id, opts, gen) {
     const compactBtn = el('button', null, 'Compact context');
     compactBtn.onclick = post('compact', 'compaction requested');
     const mergeBtn = el('button', null, 'Merge'); // no glyph: U+2443 was tofu in common fonts
-    mergeBtn.onclick = post('merge', 'merged');
+    mergeBtn.onclick = async () => {
+      try {
+        const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/merge', {});
+        toast(d.message || 'merged');
+        paintRun(cards, await getJSON(base)); // the state and branch rows agree with the toast now
+      } catch (e) { toast(e.message, true); }
+    };
     cards._merge_btn = mergeBtn; // paintRun gates it on the run actually having a branch
     const rmBtn = el('button', 'danger', 'Delete');
     rmBtn.onclick = async () => {
       // History only, and not undoable, so it asks. The CLI refuses a live run.
-      // The branch is named only while it exists (the snapshot's run_branch).
+      // The branch is named only while it exists (the snapshot's run_branch); a fork's
+      // worktree goes with the record, uncommitted edits included.
       const kept = cards._run_branch ? ' The branch and its commits are kept.' : '';
-      if (!confirm('Delete this session\'s history?' + kept)) return;
+      const wt = cards._worktree ? ' Its worktree ' + cards._worktree + ' goes too when no other session names it and it holds no uncommitted work.' : '';
+      if (!confirm('Delete this session\'s history?' + kept + wt)) return;
       try {
         const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/rm', {});
         toast(d.message || 'removed');
@@ -138,6 +146,7 @@ async function renderRun(id, opts, gen) {
       } catch (e) { toast(e.message, true); }
       finally { reviewBtn.disabled = false; }
     };
+    cards._review_btn = reviewBtn; // paintRun gates it: the CLI refuses a live run's review
     for (const b of [stopBtn, stepBtn, compactBtn, planBtn, forkBtn, reviewBtn, mergeBtn, rmBtn]) actions.appendChild(b);
     cards._live_btns = [stopBtn, stepBtn, compactBtn]; // paintRun disables these once finished
     cards._rm_btn = rmBtn; // paintRun gates it the other way: the server refuses a live run
@@ -368,7 +377,7 @@ function paintDetails(cards, s, asOf) {
     const fbText = `${b.tokens_unmetered}${fbCap > 0 ? ' / ' + fbCap : (fbCap === -1 ? ' (unlimited)' : '')} tokens`;
     cards.budget.appendChild(barRow('unmetered', fbFrac, fbText));
   }
-  if (b.plan_used_percent > 0) {
+  if (b.plan_used_percent > 0 || b.plan_cap > 0) {
     // Subscription plan usage: the account's window fill; the bar meters this
     // execution's consumed points (plan_consumed - plan_prior_executions) against
     // max_percent when one is set, else the account percent itself. The cap re-arms
@@ -428,6 +437,11 @@ function paintRun(cards, s) {
   // already-merged work can't be merged. commits_ref is the run branch while
   // it exists, else the chain ref a branch_per_run=false run commits to.
   cards._run_branch = s.run_branch || '';
+  cards._worktree = s.worktree || '';
+  if (cards._review_btn) {
+    cards._review_btn.disabled = !isDead;
+    cards._review_btn.title = isDead ? 'review this run\'s record (a model call)' : 'the session is still live; its record is not complete';
+  }
   if (cards._merge_btn) {
     cards._merge_btn.disabled = !notLive(s) || !s.commits_ref || !!s.merged_into;
     cards._merge_btn.title = !notLive(s) ? 'the session is still live; stop or let it finish first'

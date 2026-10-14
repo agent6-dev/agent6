@@ -1547,6 +1547,19 @@ def test_the_scan_names_the_fork_an_undo_continues_as(tmp_path: pathlib.Path) ->
     )
 
 
+def test_branch_facts_name_a_forks_worktree(tmp_path: pathlib.Path) -> None:
+    """The run view learns the worktree a delete removes with the record."""
+    from agent6.sessions import manifest as sessions_manifest
+    from agent6.viewmodel import wire
+
+    m = sessions_manifest.SessionManifest(
+        session_id="fork-AAAA11", mode="run", worktree=tmp_path / "wt", base_branch="main"
+    )
+    assert wire.branch_facts(m, None)["worktree"] == str(tmp_path / "wt")
+    bare = sessions_manifest.SessionManifest(session_id="run-AAAA11", mode="run")
+    assert "worktree" not in wire.branch_facts(bare, None)
+
+
 @pytest.mark.parametrize(
     ("end_reason", "detail"),
     [

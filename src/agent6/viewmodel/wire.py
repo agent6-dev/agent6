@@ -105,6 +105,8 @@ def branch_facts(
         out["run_branch"] = run_branch
     if manifest.base_branch:
         out["base_branch"] = manifest.base_branch
+    if manifest.worktree is not None:
+        out["worktree"] = str(manifest.worktree)
     if repo is not None and (ref := commits_ref(manifest, repo)):
         out["commits_ref"] = ref
     stamp = manifest.merged
