@@ -18,6 +18,7 @@ from agent6 import kinds, memory
 from agent6 import skills as agent6_skills
 from agent6.config import Config, plan_metered
 from agent6.prompts import loop
+from agent6.tools import policy
 
 
 def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
@@ -305,6 +306,8 @@ def build_system_prompt(
     # `run_commands = "no"` withholds every command tool: gateless whatever the config says.
     # The caller's answer (a resumed run whose operator denied commands) wins over the config.
     allowed = config.sandbox.run_commands != "no" if commands_allowed is None else commands_allowed
+    offline = allowed and policy.resolve_network(config, isolation) != "host"
+    base = base.replace("__NETWORK_RULE__", loop.NETWORK_RULE if offline else "")
     has_gate = bool(config.harness.verify_command) and allowed
     base = base.replace("__PLAN_VERIFY_RULE__", loop.PLAN_VERIFY_RULE if has_gate else "")
     base = base.replace("__READONLY_COMMAND_RULE__", loop.READONLY_COMMAND_RULE if allowed else "")

@@ -29,6 +29,7 @@ user message is the task.
 """
     "__HARDENED_FS_RULE__"
     "__GIT_PROTECT_RULE__"
+    "__NETWORK_RULE__"
     "__AUTO_COMMIT_RULE__"
     """- finish_session requests the run end; the gates below may return it.
 </agent6>
@@ -80,6 +81,11 @@ MODEL_GIT_RULE_NO_COMMANDS = """- Nothing commits automatically in this run. Com
 GIT_PROTECT_RULE = """- `.git/` is read-only inside the jail: history-mutating git commands
   (`git checkout`, `git reset`) fail there. Prior content is readable
   (`git show HEAD:path`) and restorable with the edit tools.
+"""
+
+# Fills __NETWORK_RULE__ only where jailed commands join a network with no route out.
+NETWORK_RULE = """- Commands run with no route off this machine: a download or a package
+  install fails.
 """
 
 # Fills __HARDENED_FS_RULE__ only under hardened isolation with protect paths (Landlock denies new

@@ -274,6 +274,54 @@ def test_build_system_prompt_warns_against_git_checkout_revert(tmp_path: pathlib
     assert "git show HEAD:path" in text
 
 
+def _run_prompt(tmp_path: pathlib.Path, cfg: Config, isolation: kinds.IsolationLevel) -> str:
+    repo = kinds.RepoSummary(
+        root=tmp_path,
+        branch="main",
+        head_sha="0" * 40,
+        file_count=0,
+        top_level=(),
+        agents_md="",
+        recent_log="",
+    )
+    return _prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+        config=cfg, repo=repo, mode="run", skills=None, isolation=isolation
+    )
+
+
+def test_the_run_prompt_states_no_route_off_the_box_under_the_session_network(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A run whose commands join the session network is told a download or an install fails."""
+    text = _run_prompt(tmp_path, Config(), "strict")
+    assert "- Commands run with no route off this machine" in text
+    assert "__NETWORK_RULE__" not in text
+
+
+def test_the_run_prompt_has_no_network_rule_when_the_run_has_no_commands(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A run with `run_commands = "no"` has no command to describe: the rule would speak of none."""
+    cfg = Config.model_validate({"sandbox": {"run_commands": "no"}})
+    text = _run_prompt(tmp_path, cfg, "strict")
+    assert "no route off this machine" not in text
+    assert "__NETWORK_RULE__" not in text
+
+
+@pytest.mark.parametrize(
+    ("isolation", "network"),
+    [("hardened", "auto"), ("none", "auto"), ("strict", "host")],
+)
+def test_the_run_prompt_has_no_network_rule_under_the_host_network(
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel, network: str
+) -> None:
+    """A run whose commands share the host's network gets no offline claim."""
+    cfg = Config.model_validate({"sandbox": {"network": network}})
+    text = _run_prompt(tmp_path, cfg, isolation)
+    assert "no route off this machine" not in text
+    assert "__NETWORK_RULE__" not in text
+
+
 def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "agent6.toml"
     # `run_commands = "no"` withholds every command tool, the metric included,

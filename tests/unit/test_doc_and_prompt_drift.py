@@ -27,6 +27,7 @@ _PROMPT_CONSTANTS = (
     prompts.ASK_SYSTEM_PROMPT_BASE,
     prompts.AGENT_SYSTEM_PROMPT_BASE,
     prompts.GIT_PROTECT_RULE,
+    prompts.NETWORK_RULE,
     prompts.NO_AUTO_COMMIT_RULE,
     prompts.HARDENED_FS_RULE,
     prompts.DAG_RULES_OPTIONAL,
