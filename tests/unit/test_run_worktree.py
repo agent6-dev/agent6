@@ -12,17 +12,19 @@ import json
 import pathlib
 import subprocess as sp
 import time
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
-from agent6 import git_ops, paths
-from agent6.app import _session, fork_worktrees, preflight, providers
+from agent6 import git_ops, kinds, paths
+from agent6.app import _session, fork_worktrees, preflight, providers, workspace_setup
+from agent6.app import reporter as app_reporter
 from agent6.app import run as run_lifecycle
-from agent6.config import layer
+from agent6.config import Config, layer
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc, lock
 from agent6.sessions import manifest as sessions_manifest
+from agent6.tools import dispatch, results
 from agent6.ui.cli import cli_main
 from agent6.ui.cli import run as cli_run
 
@@ -689,11 +691,19 @@ def test_a_failed_setup_command_ends_the_session_before_any_turn(
         "  the setup command failed (exit 3): sh -c 'echo no lockfile >&2; exit 3'\n"
         "    no lockfile\n"
     ) in out
-    assert "no turn ran; start the run again once the setup command works" in out
+    assert (
+        "no turn ran, so there is nothing to resume: start the run again once the setup"
+        " command works"
+    ) in out
     assert "resume with:" not in out
     assert "setup command: sh -c" in err
     events = (_run_dir(repo, "wt-SETU02") / "logs.jsonl").read_text(encoding="utf-8")
     assert '"setup_command_failed"' in events
+    # A resume of it says what happened in the reader's terms, with no internal path.
+    assert cli_main(["resume", "wt-SETU02"]) == 2
+    refused = capsys.readouterr().err
+    assert "wt-SETU02 never reached its first turn" in refused
+    assert "loop_state.json" not in refused
 
 
 def test_a_run_in_the_checkout_runs_no_setup_command(
@@ -976,3 +986,73 @@ def test_a_setup_on_resume_leaves_the_runs_own_files_in_its_commits(
     assert tip is not None
     assert _git(repo, "show", f"{tip}:new.txt") == "two\n"
     assert ".setup-ran" not in _git(repo, "ls-tree", "--name-only", tip)
+
+
+class _FailingSetup:
+    """A dispatcher whose setup command exits 1 with a resolver error, at a given level."""
+
+    def __init__(self, isolation: kinds.IsolationLevel) -> None:
+        self.isolation = isolation
+
+    def command_policy(self) -> str:
+        return "yes"
+
+    def run_setup(self, argv: tuple[str, ...]) -> results.ExecResult:
+        return results.ExecResult(
+            returncode=1,
+            stdout="",
+            stderr="error: dns error: failed to lookup address information",
+            duration_s=0.1,
+            exec_failed=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("isolation", "network", "told"),
+    [("strict", "auto", True), ("strict", "host", False), ("hardened", "auto", False)],
+)
+def test_a_failed_setup_command_says_when_it_ran_with_no_route_out(
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel, network: str, told: bool
+) -> None:
+    """`uv sync` failed on a DNS error and nothing said the command had no route out.
+
+    The line prints only where the run's commands have no route off the machine.
+    """
+    cfg = Config.model_validate(
+        {"sandbox": {"network": network}, "parallel": {"setup_command": ["uv", "sync"]}}
+    )
+    dispatcher = cast("dispatch.ToolDispatcher", _FailingSetup(isolation))
+
+    found = workspace_setup.prepare(
+        cfg, tmp_path, dispatcher=dispatcher, reporter=app_reporter.STDIO_REPORTER
+    )
+
+    assert found.problem is not None and found.problem.startswith(
+        "the setup command failed (exit 1): uv sync"
+    )
+    pointer = (
+        "the command ran with no route off this machine (sandbox.network), so it has to work"
+        " offline. See docs/security.md."
+    )
+    assert (pointer in found.problem) is told
+
+
+def test_the_no_setup_refusal_says_the_command_runs_in_the_sandbox(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The refusal's example was `uv sync`, which fails under the default network."""
+    cfg = Config.model_validate(
+        {"harness": {"verify_command": [".venv/bin/python", "-m", "pytest"]}}
+    )
+    dispatcher = cast("dispatch.ToolDispatcher", _FailingSetup("strict"))
+
+    text = workspace_setup.prepare(
+        cfg, tmp_path, dispatcher=dispatcher, reporter=app_reporter.STDIO_REPORTER
+    ).problem
+
+    assert text is not None
+    assert """agent6 config set --repo parallel.setup_command '["uv", "sync"]'""" in text
+    assert (
+        "it runs in the run's own sandbox: with no route off the machine it has to work"
+        " offline (docs/security.md has the recipe)"
+    ) in text

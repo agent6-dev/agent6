@@ -425,7 +425,10 @@ def _print_run_branch_footer(
         and not (layout.session_dir / "loop_state.json").is_file()
     ):
         # A fresh run that never reached a turn has no snapshot for a resume to continue.
-        reporter.out("\nno turn ran; start the run again once the setup command works")
+        reporter.out(
+            "\nno turn ran, so there is nothing to resume: start the run again once the setup"
+            " command works"
+        )
     elif not result.completed:
         reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
 

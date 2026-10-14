@@ -19,12 +19,13 @@ import pathlib
 import shlex
 from collections.abc import Sequence
 
-from agent6 import git_ops, verify_infer
+from agent6 import git_ops, kinds, verify_infer
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, results
 from agent6.tools import errors as tools_errors
+from agent6.tools import policy as tools_policy
 
 # The lines of the command's output a failure's summary carries.
 _TAIL_LINES = 20
@@ -79,7 +80,9 @@ def _no_setup_text(path: str, workspace: str) -> str:
         f" {workspace}, which holds tracked files only, and no setup command builds it there.\n"
         "  - set one for this repository:  agent6 config set --repo parallel.setup_command"
         """ '["uv", "sync"]'\n"""
-        "  - or state it in AGENTS.md: a `## Setup command` heading over a fenced block"
+        "  - or state it in AGENTS.md: a `## Setup command` heading over a fenced block\n"
+        "  it runs in the run's own sandbox: with no route off the machine it has to work"
+        " offline (docs/security.md has the recipe)"
     )
 
 
@@ -172,7 +175,7 @@ def prepare(
             reporter.note(f"commands are withheld, and the setup command is one ({line}): not run")
         return Prepared(None, ran=False)
     if argv and (problem := run(argv, dispatcher=dispatcher, reporter=reporter)) is not None:
-        return Prepared(problem, ran=False)
+        return Prepared(problem + _no_route_line(cfg, dispatcher.isolation), ran=False)
     gate = cfg.harness.verify_command
     path = _gate_path(gate)
     if not path or (root / path).exists():
@@ -184,6 +187,16 @@ def prepare(
             ran=False,
         )
     return Prepared(_no_setup_text(gate[0], f"this workspace ({root})"), ran=False)
+
+
+def _no_route_line(cfg: Config, isolation: kinds.IsolationLevel) -> str:
+    """Return the line a failed setup command ends on where commands have no route out."""
+    if tools_policy.resolve_network(cfg, isolation) == "host":
+        return ""
+    return (
+        "\n  the command ran with no route off this machine (sandbox.network), so it has to"
+        " work offline. See docs/security.md."
+    )
 
 
 def run(

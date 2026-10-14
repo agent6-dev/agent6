@@ -223,6 +223,7 @@ agent6 ask "how does the task-graph curator work?"
 - Unset, a `## Setup command` fenced block in AGENTS.md supplies it, read as the `## Verify command` block is; the run prints the command and that AGENTS.md gave it.
 - The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
 - Its output is printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any model call (exit `1`).
+  No turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
 - The files it leaves untracked stay out of the run's commits.
 - It runs once per workspace: `resume` does not run it again, and a fork's new worktree runs it at the fork's first execution.
 - The verify gate is settled in your checkout and carried into the workspace: a gate inferred as `.venv/bin/python -m pytest -q` stays that.

@@ -371,7 +371,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         snapshot_path = layout.session_dir / "loop_state.json"
         if not snapshot_path.is_file():
-            reporter.error(f"no resume snapshot at {snapshot_path}; nothing to resume.")
+            reporter.error(
+                f"{session_id} never reached its first turn: no resume snapshot was written,"
+                " so there is nothing to resume. Start the task again with a new run."
+            )
             return 2
 
         # An ask is read-only and may run outside a git repo, so it skips the git preflight.
