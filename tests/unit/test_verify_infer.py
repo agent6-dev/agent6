@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 
 from agent6 import verify_infer
@@ -69,6 +70,30 @@ def test_agents_md_none_when_absent() -> None:
 
 def test_repo_signal_package_json(tmp_path: pathlib.Path) -> None:
     (tmp_path / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
+    assert verify_infer.verify_from_repo_signals(tmp_path) == (
+        ("npm", "test", "--silent"),
+        "package.json",
+    )
+
+
+def test_repo_signal_package_json_ignores_the_npm_placeholder(tmp_path: pathlib.Path) -> None:
+    """The test script `npm init` writes exists to fail, so it is no gate.
+
+    Taken as one, `npm test` made every run end red and `agent6 init --yes` saved it.
+    """
+    pkg = tmp_path / "package.json"
+    for script in (
+        'echo "Error: no test specified" && exit 1',
+        "  echo 'Error: no test specified'  &&  exit 1 ",
+        "echo Error: no test specified && exit 1",
+    ):
+        pkg.write_text(json.dumps({"scripts": {"test": script}}), encoding="utf-8")
+        assert verify_infer.verify_from_repo_signals(tmp_path) is None, script
+    (tmp_path / "Makefile").write_text("test:\n\t./run\n", encoding="utf-8")
+    assert verify_infer.verify_from_repo_signals(tmp_path) == (("make", "test"), "Makefile:test")
+    # Nothing wider: a script that only starts like the placeholder is a real one.
+    script = 'echo "Error: no test specified" && exit 1 || jest'
+    pkg.write_text(json.dumps({"scripts": {"test": script}}), encoding="utf-8")
     assert verify_infer.verify_from_repo_signals(tmp_path) == (
         ("npm", "test", "--silent"),
         "package.json",

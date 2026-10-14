@@ -31,6 +31,8 @@ _ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 _VERIFY_HEADING = re.compile(r"^#{1,6}\s*(verify|test)\b", re.IGNORECASE)
 _INLINE_VERIFY = re.compile(r"^\s*(?:verify|test)\s*:\s*(.+)$", re.IGNORECASE)
 _MAKE_TARGET = re.compile(r"^([A-Za-z0-9_-]+)\s*:", re.MULTILINE)
+# The test script `npm init` writes, which exists to fail.
+_NPM_PLACEHOLDER = re.compile(r"""echo\s+(["']?)Error: no test specified\1\s*&&\s*exit\s+1""")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -175,13 +177,14 @@ def _verify_sh(repo_root: pathlib.Path) -> Signal | None:
 
 
 def _package_json(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
-    """Return `npm test` when package.json has a test script, or None."""
+    """Return `npm test` when package.json has a test script other than npm's placeholder."""
     try:
         data = json.loads(_path_safety.read_workspace_text(repo_root, "package.json", hide))
     except ValueError:
         data = {}
     scripts = data.get("scripts") if isinstance(data, dict) else None
-    if isinstance(scripts, dict) and isinstance(scripts.get("test"), str):
+    script = scripts.get("test") if isinstance(scripts, dict) else None
+    if isinstance(script, str) and not _NPM_PLACEHOLDER.fullmatch(script.strip()):
         return (("npm", "test", "--silent"), "package.json")
     return None
 
