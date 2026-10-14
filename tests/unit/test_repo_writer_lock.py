@@ -179,6 +179,29 @@ def test_second_run_parks_with_the_verbatim_task(repo: pathlib.Path) -> None:
     assert (row.status, row.reason) == ("parked", "checkout busy")
 
 
+def test_the_parked_message_offers_a_run_in_its_own_worktree(
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run parked on a busy checkout was offered a resume and a lane, never `run --worktree`."""
+    holder_fd = lock.acquire_repo_writer(paths.state_dir(repo), repo, "run-LIVE")
+    try:
+        rc = app_run.run_task(
+            _load_cfg(),
+            "fix the thing",
+            started_at=time.time(),
+            frontend=mock.MagicMock(),
+            session_id="run-PARKED",
+            mode="run",
+        )
+    finally:
+        lock.release_single_writer(holder_fd)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "PARKED: run 'run-LIVE' is already driving this checkout" in err
+    assert "agent6 resume run-PARKED" in err and "/parallel 1 <the same task>" in err
+    assert 'agent6 run --worktree "<the same task>"' in err
+
+
 def test_resume_starts_a_parked_run_with_the_saved_task(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

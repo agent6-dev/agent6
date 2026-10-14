@@ -280,7 +280,7 @@ One live run-mode worker per checkout is the level above (`sessions/lock.py`, a 
 Run-mode workers share one working tree, so a second would interleave two runs' edits into each other's chain commits.
 A second `agent6 run` parks.
 The submitted task is saved verbatim in the new run's manifest (`parked_task`, with `parked_reason`, shown as "parked · checkout busy" in listings), and `agent6 resume <id>` starts it once the checkout is free.
-The message also offers a `/parallel 1 <task>` steer that hands it to the live run as an isolated lane.
+The message also offers `agent6 run --worktree "<task>"`, which runs it at once in its own worktree, and a `/parallel 1 <task>` steer that hands it to the live run as an isolated lane.
 Plan and ask expose no edit tools and spawn freely; a `run --parallel` fan-out takes no checkout lock, and its lanes work in isolated clones.
 
 The working tree at start is the run's next gate, in the same shape.

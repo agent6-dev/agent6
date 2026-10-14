@@ -397,6 +397,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                     f"run {holder!r} is already driving this checkout, and a second run-mode"
                     " worker would interleave auto-commits on the one working tree",
                     hint=(
+                        "or run it now in its own worktree, beside the live run:\n"
+                        '    agent6 run --worktree "<the same task>"\n'
                         f"or hand it to the live run as an isolated lane by steering"
                         f" {holder!r} with:\n    /parallel 1 <the same task>"
                     ),
