@@ -222,6 +222,25 @@ def test_new_refuses_a_workspace_under_a_hidden_path(
     assert "policy" not in host
 
 
+def test_new_warns_about_a_grant_of_the_home_directory(
+    tmp_path: pathlib.Path,
+    host: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`exec --new` would run its command under a `$HOME` grant without the warning a run prints."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    cfg = Config.model_validate(
+        {"sandbox": {"isolation": "strict", "extra_write_paths": [str(tmp_path)]}}
+    )
+    assert exec_cmds.exec_new(cfg, frozenset(), workspace, ("true",)) == 5
+    err = capsys.readouterr().err
+    assert f"[agent6] WARNING: sandbox.extra_write_paths grants {str(tmp_path)!r}" in err
+    assert "your home directory: the run's commands and file tools can read and write" in err
+
+
 def test_new_refuses_a_level_the_host_lacks(
     tmp_path: pathlib.Path,
     host: dict[str, Any],

@@ -104,6 +104,19 @@ def test_boundaries_report_covers_every_actor(
     assert "secrets.toml" in out
 
 
+def test_boundaries_report_warns_about_a_grant_of_the_home_directory(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`check boundaries` listed a `$HOME` grant as one more path, the credentials unsaid."""
+    _force(monkeypatch, "strict")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(tmp_path),)))
+    (check,) = check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    assert check.status == "WARN"
+    assert check.detail.startswith(f"sandbox.extra_read_paths grants {str(tmp_path)!r}")
+    assert f"  [WARN] {check.detail}" in capsys.readouterr().out
+
+
 def test_boundaries_report_is_level_aware(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -481,3 +481,58 @@ def test_unsandboxed_origin_says_auto_or_the_operator(
     confine.warn_sandbox_gaps("none", _env(0), _cfg(isolation="none"), root=tmp_path)
     err = capsys.readouterr().err
     assert "sandbox.isolation = 'none'" in err
+
+
+def test_a_grant_of_the_home_directory_or_above_it_warns(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A read or write grant of `$HOME` exposed other tools' credential files with no warning."""
+    home = tmp_path / "home" / "me"
+    (home / "sdk").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+
+    def lines(read: tuple[str, ...] = (), write: tuple[str, ...] = ()) -> tuple[str, ...]:
+        sandbox = SandboxConfig(extra_read_paths=read, extra_write_paths=write)
+        return confine.home_grant_warnings(Config(sandbox=sandbox))
+
+    (line,) = lines(read=(str(home),))
+    assert line.startswith(f"sandbox.extra_read_paths grants {str(home)!r}, your home directory:")
+    assert "can read what is under it, the credentials other tools keep there included" in line
+    assert "sandbox.hide_paths hides the paths you list, under 'strict'" in line
+    (line,) = lines(write=(str(home.parent),))
+    assert line.startswith(
+        f"sandbox.extra_write_paths grants {str(home.parent)!r},"
+        f" which holds your home directory ({home}):"
+    )
+    assert "can read and write what is under it" in line
+    assert len(lines(read=(str(home),), write=(str(home),))) == 1, "the write grant carries it"
+    assert lines(read=(str(home / "sdk"),), write=(str(tmp_path / "elsewhere"),)) == ()
+
+
+def test_a_run_start_prints_the_home_grant_warning(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run, a resume and a fork started under a `$HOME` grant without a word about it."""
+    from agent6.app import _session, _setup
+    from agent6.app import reporter as app_reporter
+
+    def _detected() -> detect.Environment:
+        return _env(4)
+
+    def _confirmed(_level: str, _cfg: Config) -> bool:
+        return True
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(_setup, "detect_env", _detected)
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    said: list[str] = []
+    cfg = Config(sandbox=SandboxConfig(isolation="strict", extra_read_paths=(str(tmp_path),)))
+    _session.select_isolation(
+        cfg,
+        cwd=workspace,
+        confirm_unconfined=_confirmed,
+        reporter=app_reporter.Reporter(out=said.append, err=said.append),
+    )
+    (line,) = (line for line in said if "sandbox.extra_read_paths grants" in line)
+    assert line.startswith(f"[agent6] WARNING: sandbox.extra_read_paths grants {str(tmp_path)!r}")

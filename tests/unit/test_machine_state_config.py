@@ -86,6 +86,32 @@ status = "failed"
 reason = "failed"
 """
 
+# One tool state under the operator's own sandbox: no config table anywhere.
+ONE_TOOL_STATE = """
+machine = "bounded"
+version = 1
+initial = "scan"
+
+[budget]
+max_transitions = 10
+
+[states.scan]
+kind = "tool"
+command = ["true"]
+timeout_secs = 5
+on = { ok = "done", nonzero = "fail", timeout = "fail" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "done"
+
+[states.fail]
+kind = "terminal"
+status = "failed"
+reason = "failed"
+"""
+
 OPERATOR = """
 [providers.local]
 api_format = "openai"
@@ -571,6 +597,28 @@ def test_an_agent_request_naming_no_state_ends_as_an_error(tmp_path: pathlib.Pat
     )
     result = runner(AgentRequest(prompt="p", timeout_s=5.0, state_name="ghost"), None)
     assert result.reason == "error: no config was resolved for state 'ghost'"
+
+
+def test_a_machine_run_prints_the_home_grant_warning(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A machine's states would run under a `$HOME` grant without the warning a run prints."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path.parent))
+    _operator(f'[sandbox]\nextra_read_paths = ["{tmp_path.parent}"]\n')
+
+    def ran(policy: kinds.JailPolicy) -> kinds.CommandResult:
+        return kinds.CommandResult(
+            argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0
+        )
+
+    monkeypatch.setattr(jail, "run_in_jail", ran)
+    said: list[str] = []
+    reporter = app_reporter.Reporter(out=said.append, err=said.append)
+    assert run.run_machine(_write(tmp_path, ONE_TOOL_STATE), reporter) == 0, said
+    warned = [line for line in said if "sandbox.extra_read_paths grants" in line]
+    assert len(warned) == 1 and "which holds your home directory" not in warned[0], said
+    assert f"grants {str(tmp_path.parent)!r}, your home directory" in warned[0]
 
 
 # --- the refusal reaches the operator at check and at run ------------------------------------

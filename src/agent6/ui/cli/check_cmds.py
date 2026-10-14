@@ -543,7 +543,8 @@ def _check_boundaries_section(
 ) -> list[_DoctorCheck]:
     """Print every boundary by actor: who is confined, what files it reaches, which network.
 
-    Resolved values only; the refusal a run would give is the section's one FAIL.
+    Resolved values only; the refusal a run would give is the section's one FAIL, and a grant
+    of the home directory its one WARN.
 
     Args:
         cfg: The config.
@@ -572,6 +573,9 @@ def _check_boundaries_section(
         detail = f"a run would refuse: {refusal}"
         print(f"  [FAIL] {detail}")
         out.append(_DoctorCheck(name="boundaries", status="FAIL", detail=detail))
+    for warning in confine.home_grant_warnings(cfg):
+        print(f"  [WARN] {warning}")
+        out.append(_DoctorCheck(name="boundaries", status="WARN", detail=warning))
     print()
     print(
         "  in-process file tools (read_file, list_dir, outline, find_definition,"

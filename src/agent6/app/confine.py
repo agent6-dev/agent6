@@ -163,6 +163,47 @@ def warn_cleartext_credential_endpoints(
         )
 
 
+def home_grant_warnings(cfg: Config) -> tuple[str, ...]:
+    """Return one warning per path grant that is the operator's home directory or above it.
+
+    Such a grant reaches the credentials other tools keep under the home directory. The grant
+    is the operator's to make, so it runs, with the cost named.
+    """
+    home = paths.effective_user().home.resolve()
+    sb = cfg.sandbox
+    grants = (
+        *(("extra_write_paths", "read and write", p) for p in sb.extra_write_paths),
+        # A write grant already reads: the same path granted both ways warns once.
+        *(
+            ("extra_read_paths", "read", p)
+            for p in sb.extra_read_paths
+            if p not in sb.extra_write_paths
+        ),
+    )
+    out: list[str] = []
+    for key, access, grant in grants:
+        real = pathlib.Path(grant).resolve()
+        if not home.is_relative_to(real):
+            continue
+        which = (
+            "your home directory" if real == home else f"which holds your home directory ({home})"
+        )
+        out.append(
+            f"sandbox.{key} grants {grant!r}, {which}: the run's commands and file tools can"
+            f" {access} what is under it, the credentials other tools keep there included."
+            " sandbox.hide_paths hides the paths you list, under 'strict'."
+        )
+    return tuple(out)
+
+
+def warn_home_grants(
+    cfg: Config, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
+) -> None:
+    """Warn once per grant `home_grant_warnings` names."""
+    for line in home_grant_warnings(cfg):
+        reporter.warn(line)
+
+
 def check_workspace_outside_private_dirs(root: pathlib.Path) -> str | None:
     """Return the refusal when the workspace and a private dir overlap either way, else None.
 

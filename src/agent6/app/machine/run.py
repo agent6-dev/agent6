@@ -406,13 +406,11 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         for label, resolved in _checked_configs(configs):
             if resolved is configs.operator:
                 continue  # the ceiling runs nothing itself
+            labelled = _labelled(reporter, label.removesuffix(": "))
             confine.warn_sandbox_gaps(
-                resolved.isolation,
-                env,
-                resolved.config,
-                root=cwd,
-                reporter=_labelled(reporter, label.removesuffix(": ")),
+                resolved.isolation, env, resolved.config, root=cwd, reporter=labelled
             )
+            confine.warn_home_grants(resolved.config, reporter=labelled)
     except jail.JailUnavailableError as exc:
         # The hardened exposure scan builds the run's policy, which creates the jail's HOME.
         reporter.refuse(str(exc))

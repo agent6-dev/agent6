@@ -154,6 +154,8 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - a grant that contains the workspace is mounted under it: the workspace stays writable under a read grant
     - a grant the launcher cannot bind fails the launch, and the error names the grant, the step and the OS error (`write grant /srv: remount of submount cache: EPERM`); a read-only mount inside a write grant is such a case
     - a grant on `/` or on `/dev` fails the launch by name: `/` would replace the jail's own root, and `/dev` would cover the jail's device nodes (name a device in `extra_device_paths`)
+    - a grant that is the home directory or a directory above it runs with a warning, at run start and in `agent6 check boundaries`: the run's commands and file tools then reach the credentials other tools keep there (`~/.ssh`, `~/.aws`, another agent's login).
+      agent6 hides only its own config dir and state base; `sandbox.hide_paths` hides the paths you list, under `strict`
     - the paths kept read-only inside the workspace (`.git` under `protect_git`, a machine bundle) are bound after every grant: a grant that contains the workspace does not make them writable
     - a tool dir is mounted only when its identity clears a default-deny.
       Refused: a dir at, inside, or containing an agent6 private dir, and `$HOME` or an ancestor of it
@@ -434,7 +436,10 @@ Under `none` isolation nothing is enforced or refused.
     - tokens live in `secrets.toml` under the same `0600` and executes-nothing rules
     - agent6 never sends a rating or feedback on a response and has no rating surface.
       The backend may use rated turns for training, and that choice is never made on the operator's behalf
-- `agent6 connect claude` stores nothing: Claude Code's own login (`~/.claude/.credentials.json`, `~/.claude.json`) is never read, copied, or mounted by agent6
+- `agent6 connect claude` stores nothing: agent6 never reads or copies Claude Code's own login (`~/.claude/.credentials.json`, `~/.claude.json`)
+    - no default mount or grant holds it.
+      A jailed command reads it when the workspace or a path grant (`sandbox.extra_read_paths`, `sandbox.extra_write_paths`) is the home directory or a directory above it, and under `isolation = "none"`
+    - a `sandbox.hide_paths` entry hides it from commands under `strict`
     - the child's environment carries no `ANTHROPIC_*` or `CLAUDE*` variable from the operator shell, so a shell API key cannot override the subscription login; `CLAUDE_CONFIG_DIR` is the one passthrough
     - `claude auth status --json` is parsed for `loggedIn` only; its body (email, org) is never printed or journaled
     - the binary's initialize handshake carries the account block.
