@@ -351,7 +351,8 @@ def status_word(
     The one place that decides how a run's outcome reads; headers and listings share
     it. "stopped" and "undone" are the operator's own acts, "planned" and "answered"
     the clean exits that verified nothing, "passed" every gate green, "finished" a
-    deliberate finish without all-passed, and anything else "failed" with the reason.
+    deliberate finish without all-passed or an end the harness declared over a green
+    gate, and anything else "failed" with the reason.
 
     Args:
         finished: A session.end was seen.
@@ -371,17 +372,19 @@ def status_word(
         return "running", ""
     if end_reason in ("steer_abort", "steer_exit", "interrupted", "interactive_stop"):
         return "stopped", ""
-    # A clean exit that verified nothing gets its own word, never "passed" and never "failed".
-    not_green = {
+    # An end with its own word, never "passed" and never "failed", whatever the gate said.
+    own_word = {
         "finish_planning": ("planned", ""),
         "answered": ("answered", ""),
         "undone": ("undone", ""),
+        # The harness ended the run over a green gate; the worker called no finish_session.
+        "verify_settled": ("finished", "settled"),
         "settled": ("finished", "gate red" if gate_red else "unverified"),
         # A verify against the unmodified tree proved the gate red before the run touched it.
         "gate_red_at_base": ("finished", "gate was already red"),
     }
-    if end_reason in not_green:
-        return not_green[end_reason]
+    if end_reason in own_word:
+        return own_word[end_reason]
     if all_passed:
         return "passed", "scoped gate" if scoped else ""
     # Only an observed not-green words "failed"; a deliberate finish over one is "finished".

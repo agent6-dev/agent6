@@ -600,10 +600,10 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     assert _settle(wf, state, turn) is None
     dispatcher.run_verify.assert_called_once_with(extra_argv=())
     assert turn.stops == [] and state.settled.idle == 0
-    assert state.gates.verify_retries_used == 1
+    assert state.gates.settled_returns_used == 1
     notices = [r.text for r in turn.tool_results if hasattr(r, "text")]
     assert any("[harness verify] finish" in n for n in notices)
-    assert any("the next red finish ends the run" in n for n in notices)
+    assert any("the next settled stop ends the run" in n for n in notices)
     # The return is spent: the next settled end stands, red and all.
     state.settled.idle = 12
     turn = _idle_turn()
@@ -617,6 +617,60 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     turn = _idle_turn()
     _settle(wf, state, turn)
     assert turn.stops and state.verify.green_and_untouched
+
+
+class _Events:
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def emit(self, event_type: str, /, **fields: Any) -> None:
+        self.events.append({"type": event_type, **fields})
+
+
+def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
+    """The settled stop over a red gate told the model "finish_session not honoured".
+
+    The model had called no finish, and the return came out of its own `verify_retries`.
+    """
+    from agent6.config import Config
+    from agent6.harness import _finish_gates
+
+    cfg = Config.model_validate(
+        {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
+    )
+    dispatcher = mock.MagicMock()
+    dispatcher.command_policy.return_value = "yes"
+    dispatcher.run_verify.return_value = results.ExecResult(
+        returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
+    )
+    events = _Events()
+    wf = _wf(
+        config=cfg, dispatcher=dispatcher, review=_reviewer.ReviewSettings(seats=[]), events=events
+    )
+    wf.mode = "run"
+    state = _settled_state()
+    turn = _idle_turn()
+    assert _settle(wf, state, turn) is None
+    assert turn.stops == [] and turn.end_returned
+    assert state.gates.verify_retries_used == 0 and state.gates.settled_returns_used == 1
+    notices = [r.text for r in turn.tool_results if hasattr(r, "text")]
+    assert not any("finish_session" in n for n in notices)
+    assert notices[-1] == (
+        "[harness settled] The tree stopped changing, but the verify gate is red, so the run"
+        " goes on (return 1 of 2); 1 more settled stop returns before the run ends red."
+    )
+    gated = [e for e in events.events if e["type"] == "loop.verify_finish.gated"]
+    assert gated == [
+        {"type": "loop.verify_finish.gated", "iteration": 9, "nudges_used": 1, "trigger": "settled"}
+    ]
+    # The model's own red finish still has both of its returns.
+    ctx = wf._turn_context(state, iteration=10, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    finishing = _idle_turn()
+    finishing.finish = _finish_gates.FinishCall("finish_session", "done")
+    finishing.ending = "finish_session"
+    refusal = _finish_gates.verify_finish(finishing, state, ctx)
+    assert refusal is not None and "finish_session not honoured" in refusal.text
+    assert "(return 1 of 2)" in refusal.text and refusal.fields["trigger"] == "finish_session"
 
 
 def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:

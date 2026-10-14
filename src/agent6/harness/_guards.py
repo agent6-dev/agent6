@@ -227,9 +227,8 @@ def settled_end(state: _loop_state.LoopState, ctx: _advice.TurnContext) -> _snap
         ctx: The turn's facts.
 
     Returns:
-        `verify_settled`, a pass, when a green verify covers the tree as it
-        stands; else `settled` with the reason it is not. Both name the open
-        subtasks.
+        `verify_settled` when a green verify covers the tree as it stands;
+        else `settled` with the reason none does. Both name the open subtasks.
     """
     if state.verify.ever_passed and ctx.tree_green() is not False:
         return _snapshot.End(

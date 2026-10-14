@@ -162,7 +162,7 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
         wf.config.harness.verify_when,
         wf.config.harness.verify_retries,
         state.verify,
-        state.gates,
+        state.gates.verify_retries_used,
         gate_present=wf.gate.present(state.verify),
     )
     assert (

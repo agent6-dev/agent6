@@ -2,15 +2,28 @@
 # Copyright 2026 Eric Lesiuta
 """The settled advisor: one nudge, then a soft stop the end gates judge.
 
-A plain run that reached a good state and made no progress; the stop's end is a pass only
-when a green verify covers the tree as it stands.
+A plain run that reached a good state and made no progress; the stop's end is
+`verify_settled` only when a green verify covers the tree as it stands.
 """
 
 from __future__ import annotations
 
+import pathlib
 from unittest import mock
 
-from agent6.harness import _advice, _conversation, _finish_gates, _guards, _loop_state, _nudges
+from agent6.config import Config
+from agent6.harness import (
+    _advice,
+    _chain,
+    _conversation,
+    _finish_gates,
+    _guards,
+    _loop_state,
+    _nudges,
+    _operator,
+    loop,
+)
+from agent6.viewmodel import listing
 from tests.unit.turn_context import turn_context
 
 
@@ -116,3 +129,45 @@ def test_the_settled_end_says_why_it_is_not_a_pass() -> None:
     assert "the verify never passed" in _guards.settled_end(never, runnable).summary
     passed = _guards.settled_end(_green_state(), turn_context(tree_green=lambda: True))
     assert passed.reason == "verify_settled" and passed.scoped is False
+
+
+def _steered(tmp_path: pathlib.Path, text: str | None) -> _loop_state.LoopState:
+    """Return a state one turn short of the settled stop, after the operator's steer landed."""
+    wf = loop.Harness(
+        chain=_chain.RunChain(tmp_path),
+        config=Config(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
+        logger=lambda _line: None,
+        mode="run",
+        bridge=_operator.OperatorBridge(
+            steer_requested=lambda: text is not None, steer_prompt=lambda: text
+        ),
+    )
+    state = _green_state()
+    state.settled = _guards.SettledGuard(
+        tree="tree", idle=_nudges.VERIFY_SETTLED_STOP_AFTER - 1, nudged=True
+    )
+    wf.steering.handle(_conversation.Conversation(), 4, state)
+    return state
+
+
+def test_an_operator_steer_restarts_the_idle_streak_and_its_nudge(tmp_path: pathlib.Path) -> None:
+    """A steer left the idle streak running, so the stop could cut the work the steer asked for."""
+    state = _steered(tmp_path, "run the six test files one at a time")
+    assert state.settled.idle == 0 and state.settled.nudged is False
+    ctx = turn_context(tree_sha=lambda: "tree")
+    assert _guards.verify_settled(_turn(5), state, ctx) is None
+    # No steer, or an empty one, leaves the streak as it was.
+    for text in (None, "  "):
+        untouched = _steered(tmp_path, text)
+        assert untouched.settled.idle == _nudges.VERIFY_SETTLED_STOP_AFTER - 1
+        assert untouched.settled.nudged is True
+
+
+def test_a_green_settled_end_reads_finished_settled_never_passed() -> None:
+    """The harness's own stop over a green gate read "passed", with no finish_session call."""
+    for scoped in (False, True):
+        assert listing.status_word(
+            finished=True, all_passed=True, end_reason="verify_settled", scoped=scoped
+        ) == ("finished", "settled")

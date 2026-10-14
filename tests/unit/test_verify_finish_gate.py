@@ -75,7 +75,7 @@ def test_a_red_gate_at_the_untouched_base_is_not_returned_to_the_worker() -> Non
         wf.config.harness.verify_when,
         wf.config.harness.verify_retries,
         state.verify,
-        state.gates,
+        state.gates.verify_retries_used,
         gate_present=wf.gate.present(state.verify),
     )
     assert "untouched base" in prompts_loop.V2_VERIFY_WHEN["finish"]

@@ -168,6 +168,8 @@ class Steering:
             self.emit(event)
             self.log(f"  {line}")
             return name
+        # The steer is new work: the idle turns before it say nothing about the turns after.
+        state.settled.restart()
         if (
             self.directive(conversation, iteration, state, steer_text)
             or self.pin(conversation, state, steer_text)

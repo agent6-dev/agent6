@@ -106,6 +106,8 @@ class FinishGates:
         task_nudges_used: Open-task refusals sent; `TASK_FINISH_PATIENCE` caps them.
         verify_retries_used: Red finish certifications returned; `verify_retries`
             caps them.
+        settled_returns_used: Settled stops returned over a red gate; `verify_retries`
+            caps them apart from the model's own finishes.
         review_consecutive: The before-finish panel's consecutive rejections; its
             cap lets the end through.
         review_total: The panel's run-total, persisted; past
@@ -114,6 +116,7 @@ class FinishGates:
 
     task_nudges_used: int = 0
     verify_retries_used: int = 0
+    settled_returns_used: int = 0
     review_consecutive: int = 0
     review_total: int = 0
 
@@ -150,7 +153,7 @@ def red_gate_returns(
     verify_when: Literal["finish", "step", "never"],
     verify_retries: int,
     verify: _verify_verdict.VerifyVerdict,
-    gates: FinishGates,
+    used: int,
     *,
     gate_present: bool,
 ) -> bool:
@@ -163,7 +166,7 @@ def red_gate_returns(
         verify_when: `[harness].verify_when`.
         verify_retries: `[harness].verify_retries`.
         verify: The run's verify verdict.
-        gates: The finish gates' counters.
+        used: The returns this kind of end already took.
         gate_present: A gate exists and is the harness's to run.
 
     Returns:
@@ -174,7 +177,7 @@ def red_gate_returns(
         verify_when != "never"
         and gate_present
         and (verify.baseline_ok is not False or verify.ever_passed)
-        and gates.verify_retries_used < verify_retries
+        and used < verify_retries
     )
 
 
@@ -312,8 +315,9 @@ def verify_finish(
     """Return a run's end over a tree the gate did not certify.
 
     The end returns `verify_retries` times, then stands: reported finished,
-    never passed. A gate that was red before the run touched anything is not
-    the model's to fix, so it is never returned.
+    never passed. The settled stop counts its own returns, since the model
+    asked for none of them. A gate that was red before the run touched anything
+    is not the model's to fix, so it is never returned.
 
     Args:
         turn: The turn that declared the end.
@@ -323,6 +327,9 @@ def verify_finish(
     Returns:
         The refusal with the red notice, or None.
     """
+    gates = state.gates
+    settled = turn.ending == "settled"
+    used = gates.settled_returns_used if settled else gates.verify_retries_used
     if not (
         ctx.mode == "run"
         and ctx.tree_green() is False
@@ -330,20 +337,26 @@ def verify_finish(
             ctx.verify_when,
             ctx.verify_retries,
             state.verify,
-            state.gates,
+            used,
             gate_present=ctx.gate_present(),
         )
     ):
         return None
-    state.gates.verify_retries_used += 1
-    used = state.gates.verify_retries_used
+    used += 1
+    if settled:
+        gates.settled_returns_used = used
+        notice = _verify_gate.settled_red_notice(used=used, retries=ctx.verify_retries)
+    else:
+        gates.verify_retries_used = used
+        notice = _verify_gate.finish_red_notice(used=used, retries=ctx.verify_retries)
+    ending = turn.ending or "finish_session"
     return _advice.Refusal(
-        _verify_gate.finish_red_notice(used=used, retries=ctx.verify_retries),
+        notice,
         event="loop.verify_finish.gated",
-        fields={"iteration": turn.iteration, "nudges_used": used},
+        fields={"iteration": turn.iteration, "nudges_used": used, "trigger": ending},
         log=(
-            f"  finish_session returned: verify not green (return #{used} of"
-            f" {ctx.verify_retries}) at iter {turn.iteration}"
+            f"  {'settled stop' if settled else 'finish_session'} returned: verify not green"
+            f" (return #{used} of {ctx.verify_retries}) at iter {turn.iteration}"
         ),
     )
 

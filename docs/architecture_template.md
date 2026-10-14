@@ -118,6 +118,8 @@ A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's ru
 It stays scoped until a full run of the gate passes.
 The notice lists the selected files, `session.end` carries `scoped`, and a scoped green reads `passed · scoped gate` on every surface.
 A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
+The settled stop is the harness's own end for a run whose turns stopped changing the tree: over a green gate it reads `finished · settled` and exits 0, since the worker called no `finish_session`.
+Over a red gate it returns under the same cap, counted apart from the model's own finishes, and an operator steer restarts its idle streak.
 
 **Per-step commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
 

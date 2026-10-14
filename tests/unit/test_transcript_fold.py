@@ -572,7 +572,7 @@ _DONE_LABELS = {
     "budget_exhausted": "failed · budget exhausted",
     "provider_error": "failed · provider error",
     "metric_plateau": "finished · unverified",
-    "verify_settled": "failed · verify settled",
+    "verify_settled": "finished · settled",
     "settled": "finished · unverified",
     "no_progress": "failed · no progress",
     "tool_error_stuck": "failed · tool error stuck",

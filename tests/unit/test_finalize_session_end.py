@@ -83,6 +83,44 @@ def test_all_green_finish_is_headlined_passed(tmp_path: pathlib.Path, capsys: ob
     assert "passed" in out
 
 
+def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The harness's own stop over a green gate was headlined "passed" with no way on.
+
+    The worker had called no finish_session and the task could be unbuilt.
+    """
+    layout = _layout(
+        tmp_path,
+        "r-settled",
+        [
+            {"type": "session.start", "session_id": "r-settled", "user_task": "t"},
+            {"type": "session.end", "reason": "verify_settled", "all_passed": True},
+        ],
+    )
+    result = _snapshot.SessionResult(
+        completed=True,
+        reason="verify_settled",
+        summary="verify passed and the worker stopped making changes",
+        iterations=9,
+        tool_calls=12,
+        verified="passed",
+    )
+    _finalize.print_session_end(
+        result,
+        layout=layout,
+        cwd=tmp_path,
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=False,
+        reporter=reporter.STDIO_REPORTER,
+    )
+    out = capsys.readouterr().out
+    assert out.split("\n")[1] == "finished · settled"
+    assert "the worker never called finish_session: the run ended after 12 turns" in out
+    assert "  if the task is unfinished:  agent6 resume r-settled" in out
+    assert _finalize.session_exit_code(result) == 0
+
+
 def _end_output(
     tmp_path: pathlib.Path,
     session_id: str,

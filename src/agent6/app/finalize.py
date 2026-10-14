@@ -20,7 +20,7 @@ from agent6 import child_env, commit_message, event_log, git_ops, verify_infer
 from agent6.app import merge
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, NotifyConfig
-from agent6.harness import _advice, _snapshot
+from agent6.harness import _advice, _nudges, _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import (
@@ -249,6 +249,30 @@ def _print_stale_gate(result: _snapshot.SessionResult, *, reporter: app_reporter
     reporter.out(f"    agent6 config set --repo harness.verify_command {shlex.quote(argv)}")
 
 
+def _print_settled(
+    result: _snapshot.SessionResult,
+    *,
+    layout: sessions_layout.SessionLayout,
+    reporter: app_reporter.Reporter,
+) -> None:
+    """Say the harness ended the run over a green gate, and how to go on with it.
+
+    The run exits 0, so this block tells the operator the worker declared nothing done.
+
+    Args:
+        result: The session's result.
+        layout: The session's layout.
+        reporter: Receives the lines.
+    """
+    if result.reason != "verify_settled":
+        return
+    reporter.out(
+        "\nthe worker never called finish_session: the run ended after"
+        f" {_nudges.VERIFY_SETTLED_STOP_AFTER} turns that changed nothing."
+    )
+    reporter.out(f"  if the task is unfinished:  agent6 resume {layout.session_id}")
+
+
 def print_session_end(
     result: _snapshot.SessionResult,
     *,
@@ -306,6 +330,7 @@ def print_session_end(
     _print_unknown_baseline(result, layout=layout, reporter=reporter)
     _print_unverified(result, layout=layout, cwd=cwd, reporter=reporter)
     _print_stale_gate(result, reporter=reporter)
+    _print_settled(result, layout=layout, reporter=reporter)
     reporter.out("")
     reporter.cost(budget.format_summary())
     _print_run_total_across_executions(layout, reporter=reporter)

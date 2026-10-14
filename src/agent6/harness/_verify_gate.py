@@ -143,6 +143,31 @@ def finish_red_notice(*, used: int, retries: int) -> str:
     )
 
 
+def settled_red_notice(*, used: int, retries: int) -> str:
+    """Return the notice for a settled stop the gate did not certify, with the returns left.
+
+    Args:
+        used: The red settled stops so far.
+        retries: The red settled stops allowed.
+
+    Returns:
+        The notice text.
+    """
+    left = retries - used
+    ending = (
+        "the next settled stop ends the run, reported as finished, not passed"
+        if left == 0
+        else (
+            f"{left} more settled stop{'s return' if left != 1 else ' returns'}"
+            " before the run ends red"
+        )
+    )
+    return (
+        "[harness settled] The tree stopped changing, but the verify gate is red, so the run"
+        f" goes on (return {used} of {retries}); {ending}."
+    )
+
+
 # A jailed command that hit its timeout, per sandbox.jail's contract.
 EXIT_TIMEOUT = 124
 
