@@ -775,6 +775,31 @@ def test_summary_ask_task_comes_from_transcript(tmp_path: pathlib.Path) -> None:
     assert task_snippet(s.task) == "what is the default port?"
 
 
+def test_summary_ask_task_is_the_question_behind_a_prior_run_block(tmp_path: pathlib.Path) -> None:
+    """A `/btw` or `ask --from` transcript listed as `<prior-run id="...">`, not its question."""
+    rd = _write_run(
+        tmp_path,
+        "asks",
+        "a3",
+        [
+            {"type": "session.start", "mode": "ask", "user_task": "q"},
+            {"type": "session.end", "all_passed": True},
+        ],
+    )
+    (rd / "transcript.md").write_text(
+        '# agent6 ask\n\n## Question\n\n<prior-run id="run-AAAA11">\n## Run task\nadd x\n'
+        "</prior-run>\nin one line, what does __all__ do?\n\n## Answer\n\nThe export list.\n",
+        encoding="utf-8",
+    )
+    s = summarize_session_dir(rd)
+    assert s.task == "in one line, what does __all__ do?"
+    (rd / "transcript.md").write_text(
+        "# agent6 ask\n\n## Question\n\n<div> is not centered, why?\n\n## Answer\n\nFlex.\n",
+        encoding="utf-8",
+    )
+    assert summarize_session_dir(rd).task == "<div> is not centered, why?"
+
+
 def test_summary_ask_task_is_the_question_even_when_it_starts_with_a_hash(
     tmp_path: pathlib.Path,
 ) -> None:

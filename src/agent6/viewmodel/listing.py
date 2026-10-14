@@ -1220,12 +1220,13 @@ def summarize_session_dir(
             transcript = (session_dir / "transcript.md").read_text(
                 encoding="utf-8", errors="replace"
             )
-            # The first non-heading line would be the answer whenever the question begins with `#`.
-            lines = transcript.splitlines()
+            # A `--from` run's context block goes first; then the first line after the heading is
+            # the question, which may itself begin with `#` or `<`.
+            asked = task_text.operator_task_text(transcript)
+            lines = asked.splitlines()
             heading = next((i for i, ln in enumerate(lines) if ln.startswith("## ")), None)
             body = lines[heading + 1 :] if heading is not None else []
-            asked = next((ln.strip() for ln in body if ln.strip()), "")
-            task = asked[:200] or transcript.strip()[:200]
+            task = next((ln.strip() for ln in body if ln.strip()), "")[:200] or asked[:200]
     lineage = manifest.parallel if manifest is not None else None
     has_unmerged = (
         unmerged(manifest, word, branch_tips)
