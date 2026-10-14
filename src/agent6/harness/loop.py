@@ -972,7 +972,10 @@ class Harness:
                     raise errors.ToolError(refusal)
                 tree_before = self._tree_before_command(name)
                 result = self.dispatcher.dispatch(name, tool_input)
-                content = json.dumps(result.to_wire(), ensure_ascii=False)
+                wire_result = result.to_wire()
+                if note := self._left_out_note(turn, name, result, tool_input):
+                    wire_result["note"] = note
+                content = json.dumps(wire_result, ensure_ascii=False)
                 self._note_tool_effects(
                     state, turn, name, result, tool_input, tree_before=tree_before
                 )
@@ -1021,6 +1024,47 @@ class Harness:
         except errors.OperatorCommandUnexecutableError as exc:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         return None
+
+    def _left_out_note(
+        self, turn: _loop_state.TurnState, name: str, result: results.ToolResult, tool_input: Any
+    ) -> str:
+        """Return the sentence for an edit the run's commits leave out, and log the paths.
+
+        Args:
+            turn: This turn's state.
+            name: The tool that ran.
+            result: The dispatched tool's result.
+            tool_input: The model's input to the tool.
+
+        Returns:
+            One sentence per left-out path; "" when the commits hold every path written.
+        """
+        if self.mode != "run":
+            return ""
+        # A memory write names its file inside the store, which is no path of the repository.
+        if _memory_touch.memory_store_facts(self.state_dir, name, result, tool_input) is not None:
+            return ""
+        if isinstance(result, results.EditResult):
+            paths: tuple[str, ...] = (result.path,)
+        elif isinstance(result, results.PatchResult):
+            written = tuple(p for p, _ in result.files) or (result.path,)
+            paths = tuple(p for p in written if p not in result.deleted)
+        else:
+            return ""
+        ignored, untracked = self.chain.left_out(paths)
+        if not (ignored or untracked):
+            return ""
+        self._emit(
+            "loop.edit.left_out",
+            iteration=turn.iteration,
+            ignored=list(ignored),
+            untracked=list(untracked),
+        )
+        tail = ": the edit is on disk, and this run's commits leave it out."
+        return " ".join(
+            [f"{p} is ignored by git{tail}" for p in ignored]
+            + [f"{p} was untracked when the run started{tail}" for p in untracked]
+        )
 
     def _mark_turn(self, turn: _loop_state.TurnState) -> None:
         """Write the in-flight marker: the turn's calls and the results that returned so far.

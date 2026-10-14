@@ -354,6 +354,9 @@ def print_session_end(
     _print_run_branch_footer(result, layout=layout, cwd=cwd, reporter=reporter)
 
 
+_LEFT_OUT_CAP = 10  # paths the end summary's left-out line names before it counts the rest
+
+
 def _print_run_branch_footer(
     result: _snapshot.SessionResult,
     *,
@@ -431,6 +434,43 @@ def _print_run_branch_footer(
         )
     elif not result.completed:
         reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
+    ref = merged_into or (wire.commits_ref(manifest, cwd) if manifest is not None else "")
+    _print_left_out(layout, cwd=cwd, ref=ref, reporter=reporter)
+
+
+def _print_left_out(
+    layout: sessions_layout.SessionLayout,
+    *,
+    cwd: pathlib.Path,
+    ref: str,
+    reporter: app_reporter.Reporter,
+) -> None:
+    """Print the edited paths the run's commits leave out, each checked against git.
+
+    Args:
+        layout: The session's layout.
+        cwd: The checkout.
+        ref: The ref holding the run's commits; "" when it recorded none.
+        reporter: Receives the line.
+    """
+    left_out = scan_session_log(layout.logs_path).left_out
+    if not left_out:
+        return
+    try:
+        held = git_ops.tree_paths(cwd, ref) if ref else frozenset[str]()
+    except git_ops.GitError:
+        return
+    reasons = {"ignored": "ignored by git", "untracked": "untracked before the run"}
+    # A path a later commit holds, or one gone from disk, is no longer left out.
+    items = [
+        f"{path} ({reasons[why]})"
+        for path, why in left_out
+        if path not in held and (cwd / path).is_file()
+    ]
+    if len(items) > _LEFT_OUT_CAP:
+        items[_LEFT_OUT_CAP:] = [f"... {len(items) - _LEFT_OUT_CAP} more"]
+    if items:
+        reporter.out(f"  not in the run's commits: {', '.join(items)}")
 
 
 def _print_no_commit_footer(

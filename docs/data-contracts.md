@@ -18,7 +18,7 @@ The loop-owned conversation: typed turns over the provider wire.
 
 - **Written by:** harness/loop
 - **Read by:** harness/{_compaction, _compactor, _loop_state, _operator, _parallel_dispatch, _snapshot, _standing, _verify_gate}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (24 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (25 test files exercise it)
 
 ## SessionManifest
 
@@ -42,7 +42,7 @@ Hold a session's end and the snapshot a resume re-enters.
 
 - **Written by:** harness/loop
 - **Read by:** app/{_execution, finalize, fork, frontend, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_state, _metric, _verify_gate}, ui/acp/frontend, ui/cli/_ask
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (25 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (26 test files exercise it)
 
 ## ToolResult family
 
@@ -56,7 +56,7 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResul
 
 - **Written by:** tools/{_control_tools, _dag_tools, _edit_diag, _fs_tools, _nav_tools, _skill_tools, dispatch}
 - **Read by:** app/workspace_setup, harness/{_guards, _memory_touch, _metric_sampler, _reviewer, _toolset, _verify_gate, loop}, tools/_result_format
-- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (27 test files exercise it)
+- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (29 test files exercise it)
 
 ## Event union
 

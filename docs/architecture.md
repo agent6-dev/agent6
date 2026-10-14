@@ -345,6 +345,7 @@ Plan and ask expose no edit tools and spawn freely; a `run --parallel` fan-out t
 
 The working tree at start is the run's next gate, in the same shape.
 Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt. A resume adds the files that appeared between executions and the run cannot show it wrote, and its note names them.
+An edit to one of them, or to a path git ignores, stays out of the run's commits: the edit's tool result says so (`loop.edit.left_out`), and the end summary lists the paths still on disk and absent from the commits.
 After an execution that died mid-turn the rule turns over: a call of that turn may have written what appeared, so those files stay the run's, and the note names them.
 Uncommitted changes to tracked files are asked about over the `ask_user` channel: stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes".
 `[git].dirty_tree = "stash"` and `"include"` answer without asking, and a run nobody can answer refuses before writing a manifest, discarding the empty dir.
@@ -481,7 +482,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.standing.set` | the standing goal the operator set mid-run (`/standing`): `id`, `title` |
 | `loop.task.retired` | a task the operator dropped from the graph (`/retire`): `id`, `title` |
 | `loop.request.refused` | a `/task`, `/standing` or `/retire` the run could not apply: `kind`, `text`, `error` |
-| `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.steer.*` |
+| `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.edit.left_out`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget` | per-iteration usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
 | `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, decision, disarmed), `skipped`, and the finish gate's rejections |
 | `session.end` | `reason`, `iterations`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it), `verified` (the gate's word for the final tree, on every end the loop writes: `passed`, `failed`, `unverified` or `not_applicable`; `sessions show` prints it and `sessions merge` warns on `failed` and `unverified`), `tree` (a run's end the loop reached: the tree id of the working tree it left, with no commit made for it); one shape from every exit path |

@@ -96,6 +96,26 @@ class RunChain:
             or ""
         )
 
+    def left_out(self, paths: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Return the given paths the chain's commits leave out, by reason.
+
+        Args:
+            paths: Repo-relative paths the run wrote.
+
+        Returns:
+            The paths git ignores, then the paths untracked when the run started; both
+            empty when the run never commits, and the first empty when git cannot say.
+        """
+        if self.ref is None or not self.per_step:
+            return (), ()
+        untracked = tuple(p for p in paths if p in self.untracked_at_start)
+        rest = tuple(p for p in paths if p not in self.untracked_at_start)
+        try:
+            kept = git_ops.unignored(self.root, rest)
+        except (git_ops.GitError, OSError):
+            return (), untracked
+        return tuple(p for p in rest if p not in kept), untracked
+
     def tip(self) -> str:
         """Return the chain's tip.
 

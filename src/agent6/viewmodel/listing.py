@@ -625,6 +625,8 @@ class LogScan:
         pins: The operator's pinned instructions in force.
         unattended_questions: This execution's questions answered empty because nobody was
             attached.
+        left_out: The (path, reason) of each edit the commits left out, across every
+            execution; the reason is `ignored` or `untracked` (`loop.edit.left_out`).
     """
 
     saw_start: bool = False
@@ -659,6 +661,7 @@ class LogScan:
     verify_timeout_s: float = 0.0
     pins: tuple[str, ...] = ()
     unattended_questions: int = 0
+    left_out: tuple[tuple[str, str], ...] = ()
 
     def verify_verdict(self) -> bool | None:
         """Return the gate verdict for judging candidates.
@@ -827,6 +830,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     last_verify_rc: int | None = None
     verify_timeout_s = 0.0
     pins: list[str] = []
+    left_out: dict[str, str] = {}
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:
             for line in fh:
@@ -908,6 +912,11 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     # A side call's failure never ends the run, so it is not the reason.
                     if ev.get("ok") is False and not kinds.is_side_role(str(ev.get("role", ""))):
                         provider_error = str(ev.get("error", ""))
+                elif etype == "loop.edit.left_out":
+                    for reason in ("ignored", "untracked"):
+                        raw_paths = ev.get(reason)
+                        for p in raw_paths if isinstance(raw_paths, list) else []:
+                            left_out[str(p)] = reason
                 elif etype == "loop.pin.added":
                     pins.append(str(ev.get("text", "")))
                 elif etype == "loop.pin.restored":
@@ -973,6 +982,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         last_verify_rc=last_verify_rc,
         verify_timeout_s=verify_timeout_s,
         pins=tuple(pins),
+        left_out=tuple(left_out.items()),
     )
 
 

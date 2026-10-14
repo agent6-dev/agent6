@@ -882,8 +882,9 @@ def unignored(path: pathlib.Path, candidates: tuple[str, ...]) -> tuple[str, ...
     if not candidates:
         return ()
     # check-ignore prints the ignored inputs and exits 1 when none match; only stdout is read.
-    res = _run(path, "check-ignore", "--", *candidates, check=False)
-    ignored = {line.strip() for line in res.stdout.splitlines() if line.strip()}
+    # The names go in on stdin, so one a model wrote never reaches the argv.
+    res = _run(path, "check-ignore", "-z", "--stdin", stdin_text="\0".join(candidates), check=False)
+    ignored = set(res.stdout.split("\0"))
     return tuple(c for c in candidates if c not in ignored)
 
 
