@@ -172,6 +172,9 @@ on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt
 # temperature = 0.2
 # max_usd = 1.5                    # this agent slice's metered-spend cap
 # max_tokens_fallback = 100000     # ...and its unmetered-token cap (-1/0/>0)
+
+# [states.classify.config.harness] # any other config key, for this state only
+# max_iterations = 20
 ```
 
 An `agent` state spins up a normal agent6 run: its own snapshot dir, transcript, budget slice, jail.
@@ -214,13 +217,14 @@ Where a run state's work lands:
 - grant per invocation with `--auto-approve` or `AGENT6_AUTO_APPROVE=1` (ask upgrades to yes; a withheld `no` stays no), or set `sandbox.run_commands = "yes"` in the repo config
 - `--no-commands` or `AGENT6_NO_COMMANDS=1` withholds every command tool
 - agent states alone read the two env names
-- a machine `[config]` overlay cannot grant it (sandbox policy is operator-only)
+- an overlay cannot grant it: a `sandbox` key is never wider than your own config ([Machine config overlay](#47-machine-config-overlay-config))
 - edits and the auto-commit need no approval; `run_verify_command` and the `verify_when` certification share the same gate: prefer `tool` states over shelling out
 
 The optional per-state knobs tune how that loop runs.
 
 - `provider` / `effort` / `temperature` select and tune the model; `max_usd` / `max_tokens_fallback` bound this one agent slice
 - each falls back through the effective config when omitted ([Machine config overlay](#47-machine-config-overlay-config))
+- the state's `config` table sets any other key for this state; a knob and the `config` leaf that says the same thing (`effort` and `config.models.worker.effort`) are one spelling, and setting both is a load error
 - secrets are never expressed here, only a `provider` name that must exist in the effective config
 
 #### `tool`
@@ -250,26 +254,30 @@ A single command, argv-style (never a shell string), through the existing `run_i
 - a `list`-typed variable spliced as a bare argv element (`"{{ pending }}"`) expands to one argument per element, and an empty list contributes no argument at all ([Templating and list-splicing](#44-templating-and-list-splicing))
 - `scan-inbox` is an illustrative stand-in: a `tool` state runs whatever audited command the operator names
 
-**Network (opt-in, host network off by default).**
+**Network.**
 
-- a `tool`'s `network` is `"auto"`, `"none"` or `"host"`
-    - `"auto"` (default): its own network where the host can give one, degrading to the host's with a warning on `hardened`
-    - `"none"`: its own network, required; refuses on `hardened`, which cannot isolate a single tool
-- only `network = "host"` reaches the host network
-- the engine is a host-netns supervisor (each `agent` state is its own subprocess; [Security considerations](#9-security-considerations)), so one opt-in `tool` can be networked while every other jailed command stays offline
-- a `tool` command is fixed and operator-reviewed: not the free exfiltration channel a networked `run_command` would be
-- honoring the opt-in is the operator's call via `sandbox.network` (global/repo config, never the machine overlay):
+- a state's network is `sandbox.network` in its own `config` table ([Machine config overlay](#47-machine-config-overlay-config)), for a `tool` and an `agent` state alike
+    - `host`: the host network, honored only when your own `sandbox.network` resolves to it
+    - `session`: a network of its own, required; refuses on `hardened`, which cannot isolate one state
+    - `auto` (default): its own where the host can give one, the host's with a warning on `hardened`
+- a `tool` state's network is never shared with another state: its processes die with the state
+- the machine's `[config.sandbox] network = "session"` keeps every state offline; one state sets `host` back:
 
-| `sandbox.network` | jailed commands | `tool` w/ `network="host"` |
-|---|---|---|
-| `auto` *(def)* | no host network on `strict` | ⛔ refuse to run |
-| `session` | the same (refuses on `hardened`) | ⛔ refuse to run |
-| `only_explicit_states` | no host network | **host network** |
-| `host` | host network | host network (and `run_command`) |
+```toml
+# your config, or a --config FILE for this machine: the ceiling
+[sandbox]
+network = "host"
 
-- the headline setup (offline commands + one networked reviewed tool): `sandbox.network = "only_explicit_states"` + `network = "host"` on that state
-- `only_explicit_states` and `session` need `strict`; an unhonorable tool-network config refuses at startup, naming the conflicting `sandbox.network` value and the fix
-- offline tool states each get their own network (separate launchers; no run-wide session network to share)
+# the machine file
+[config.sandbox]
+network = "session"                 # every state offline
+
+[states.fetch.config.sandbox]
+network = "host"                    # except this reviewed tool
+```
+
+- a `tool` command is fixed and operator-reviewed; `host` on an `agent` state gives the model's own commands the host network
+- the engine is a host-netns supervisor (each `agent` state is its own subprocess; [Security considerations](#9-security-considerations)), so one state can be networked while every other jailed command stays offline
 
 **Secrets (opt-in, none by default).**
 
@@ -498,33 +506,65 @@ Rules (all enforced at `machine check`):
 
 ### 4.7 Machine config overlay (`[config]`)
 
-A machine file may carry an optional top-level `[config]` table: an agent6 config fragment layered on the effective config for the run.
+A machine file may carry a top-level `[config]` table, and each `agent` or `tool` state a `config` table of its own: agent6 config fragments layered on the effective config.
 
-- the stack: defaults < global < repo < `--config FILE` < the machine overlay (highest)
-- most knobs `agent6 config show` lists are valid inside it; the refusals are below
+- the stack: defaults < global < repo < `--config FILE` < the machine's `[config]` < the state's `config`
+- most knobs `agent6 config show` lists are valid inside either; the refusals are below
+- a list replaces the list beneath it, as in every config layer
 
 ```toml
 [config.harness]
 verify_command = ["uv", "run", "pytest", "-q"]
 
-[config.review]
-trigger = "on_verify_fail"
-
 [config.budget]
 max_usd = 50.0
+
+[states.review.config.review]       # this state only
+trigger = "on_verify_fail"
 ```
 
 Unset keys read straight through to the lower layers, so a machine only states what it wants to change.
-Two hard rules:
 
-- **No connections/secrets, no sandbox policy, no presets, no MCP servers, no host hooks**
-    - `[config.providers.*]`, `[config.sandbox.*]`, `[config.presets.*]`, `[config.mcp.*]`, a top-level `preset`, `git.run_repo_hooks`, `git.run_repo_filters`, `machine.notify`, `machine.pass_env`, `notify.on_complete`, `prompt.system_prompt_file`: each a load-time error
-    - endpoints, key-env names, and secrets live in the global config / secrets store; sandbox policy, presets, MCP servers, and host-argv hooks are operator decisions in the global/repo config
-    - a machine file may be LLM-drafted or shared: it must not widen its own egress, weaken its jail, or run host code through the overlay
-    - a top-level `preset` is refused for the same reason: the operator's selection would resolve it into those same knobs
-    - the overlay only routes to a provider name that already exists, and sets benign knobs (commit identity)
-- Per-`agent`-state knobs ([State kinds](#43-state-kinds)) override the overlay for that one state
-    - agent-loop precedence: per-state knob > machine `[config]` > repo > global > built-in default
+**Operator-only keys.** Refused in both tables, each a load-time error:
+
+- `providers.*`, `presets.*`, `mcp.*`, a top-level `preset`, `git.run_repo_hooks`, `git.run_repo_filters`, `machine.notify`, `machine.pass_env`, `notify.on_complete`, `prompt.system_prompt_file`
+    - endpoints, key-env names, and secrets live in the global config / secrets store; presets, MCP servers, and host-argv hooks are operator decisions in the global/repo config
+    - a machine file may be LLM-drafted or shared: it must not route keys elsewhere or run host code through an overlay
+- a state's table also refuses `machine.*`, `parallel.*` and `git.commit.*`, which are read once for the whole machine: set them in `[config]`
+
+**Sandbox keys: never wider than your own config.** An overlay may set any `sandbox` key, bounded by your own layers alone (defaults, global, repo, preset, `--config FILE`).
+
+- the machine's `[config.sandbox]` narrows for every state; a state's `config.sandbox` sets its own value, bounded by your config and not by the machine's, so it can widen back up to yours
+- `machine check` and `machine run` refuse a wider value before anything runs, naming the state, the key, its value and yours
+
+| key | an overlay may set |
+|---|---|
+| `extra_read_paths`, `extra_write_paths`, `extra_device_paths`, `fetch_hosts` | a subset of your list, entry for entry; a read entry may come from your write list |
+| `hide_paths` | every entry of yours, plus more |
+| `network`, `isolation` | yours or tighter, compared by what the value resolves to on this host |
+| `run_commands` | yours or tighter (`yes`, then `ask`, then `no`) |
+| `protect_git`, `home` | yours, or the tighter value (`true`, `tmp`) |
+| `memory_limit_mb` | a cap no larger than yours; any value when you set none |
+
+```toml
+# your config: the ceiling
+[sandbox]
+extra_read_paths  = ["/srv/inbox"]
+extra_write_paths = ["/srv/outbox"]
+
+# the machine file
+[config.sandbox]                    # narrow for every state
+extra_read_paths  = []
+extra_write_paths = []
+
+[states.scan.config.sandbox]        # only this state reads the inbox
+extra_read_paths = ["/srv/inbox"]
+```
+
+- the ceiling is your regular config, so a grant a state needs is a grant a plain run under that config gets too; `agent6 --config ops.toml machine run <file>` keeps it to the machine
+- a machine file that narrows nothing gets your sandbox in every state, as a plain run does
+- a grant bounds what a state touches directly, not what it passes on to later states ([security](security.md#11-state-machines))
+- the configs are resolved when `machine run` starts and hold until it exits
 
 ---
 
@@ -636,7 +676,7 @@ Sizing for long-running machines:
 | command                                   | effect                                            |
 |-------------------------------------------|---------------------------------------------------|
 | `agent6 machine create <task> [-o <file>] [--max-attempts N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam), written into a drafting workspace of its own; per-draft gate: `machine check`, ruff, ty, mock tests in a no-network jail, dry-run; failures hand the problems back (`--max-attempts`, default 3); output: a draft for operator review + commit ([Security considerations](#9-security-considerations)) |
-| `agent6 machine check <file>`             | validate: the `[config]` overlay against the config schema (and its refusals); parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; script health (ruff with its own config discovery, the nearest `.ruff.toml`, `ruff.toml` or `pyproject.toml` `[tool.ruff]` above the bundle; ty on a private temp copy with no config); no execution, no network |
+| `agent6 machine check <file>`             | validate: the `[config]` overlay and every state's `config` against the config schema, their refusals and the sandbox bound; parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; script health (ruff with its own config discovery, the nearest `.ruff.toml`, `ruff.toml` or `pyproject.toml` `[tool.ruff]` above the bundle; ty on a private temp copy with no config); no execution, no network |
 | `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does; the bundle's `scripts/**/*_test.py` mock tests in a no-network jail (`strict` only: elsewhere they count as skipped on the verdict line); a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
 | `agent6 machine run <file> [--exit-on-wait] [--auto-approve\|--no-commands] [--dangerously-disable-sandbox]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. The approval and sandbox flags are the run flags, for the same reasons and with the same refusals. |
@@ -715,6 +755,7 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
     - `tool` states go through `run_in_jail`; each `agent` state is an ordinary run in its own subprocess, commands jailed like any run's
     - `mode = "run"` machines never touch the operator's checkout: fresh clones per state, commits on `agent6/machine-<id>`, tool-state tree writes discarded with the clone
     - per-state network and refusals: [security.md, Network](security.md#5-network)
+    - an overlay never widens the sandbox: [Machine config overlay](#47-machine-config-overlay-config)
 - **Spend bounds**
     - `[budget].max_transitions` is required and always binds
     - `max_usd` (optional) caps cumulative metered spend; an unpriced model is bounded per state by the agent6 config's `[budget].max_tokens_fallback` (`0` refuses unmetered models outright)

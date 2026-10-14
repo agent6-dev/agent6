@@ -3,9 +3,8 @@
 """`agent6 machine` lifecycle subcommands: argv adaptation and console rendering.
 
 The read-only commands (list, status, replay, poke, stop, the watch follower) load and
-render directly; run and create hand the lifecycle to `app.machine` behind the
-`MachineFrontend` seam. The interactive network-refusal resolver stays here, since it
-needs a TTY. The offline authoring gate is `machine_check`.
+render directly; run and create hand the lifecycle to `app.machine`. The offline authoring
+gate is `machine_check`.
 """
 
 from __future__ import annotations
@@ -18,21 +17,8 @@ import sys
 import time
 from typing import Any
 
-from agent6 import budget, kinds, paths
-from agent6.app import _setup, reporter
-from agent6.app.machine import (
-    MachineFrontend,
-    NetworkRefusal,
-    listing,
-    machine_network_refusal,
-    machine_spend,
-)
-from agent6.config import (
-    Config,
-    ConfigError,
-    io,
-    layer,
-)
+from agent6 import budget, paths
+from agent6.app.machine import listing, machine_spend
 from agent6.machine import (
     EngineError,
     JournalError,
@@ -40,12 +26,10 @@ from agent6.machine import (
     MachineJournal,
     PendingWait,
     StepEvent,
-    ToolState,
     drive,
     load_machine,
     write_stop_request,
 )
-from agent6.sandbox import detect
 from agent6.sessions import ipc, layout
 from agent6.ui import notify
 from agent6.ui.cli import _common, machine_check, plan_watch
@@ -107,77 +91,6 @@ def _cmd_machine_list() -> int:
             f"  {spec:<{spec_w}}  {file}"
         )
     return 0
-
-
-def _resolve_network_refusal(  # noqa: PLR0911
-    path: pathlib.Path,
-    refusal: NetworkRefusal,
-    cfg: Config,
-    isolation: kinds.IsolationLevel,
-    tool_states: list[ToolState],
-    cwd: pathlib.Path,
-    overlay: dict[str, Any],
-) -> int | tuple[Config, kinds.IsolationLevel]:
-    """Turn a hard network refusal into a choice.
-
-    Interactively: explain it, then offer to apply the minimal config fix and continue,
-    simulate the machine offline, or stop. Headless: print the exact fix and the simulate
-    command and exit non-zero; a sandbox setting is never relaxed unattended.
-
-    Args:
-        path: The machine file.
-        refusal: The refusal.
-        cfg: The effective config.
-        isolation: The resolved isolation.
-        tool_states: The machine's tool states.
-        cwd: The repo.
-        overlay: The machine's `[config]` overlay.
-
-    Returns:
-        The new `(cfg, isolation)` when the fix applied and re-validates clear, else the exit
-        code.
-    """
-    _common.refuse(refusal.message)
-    fix = refusal.fix
-    if not fix:
-        print(
-            f"  No sandbox-config change fixes this on the '{isolation}' isolation.",
-            file=sys.stderr,
-        )
-        print(f"  Simulate it offline instead:  agent6 machine test {path}", file=sys.stderr)
-        return 2
-    if not sys.stdin.isatty():
-        print("  To allow it, apply this to the per-repo config and re-run:", file=sys.stderr)
-        for key, value in fix:
-            print(f"    agent6 config set {key} {value} --repo", file=sys.stderr)
-        print(f"  Or simulate it offline now:    agent6 machine test {path}", file=sys.stderr)
-        return 2
-    print("  agent6 can apply the minimal fix now (writes the per-repo config):", file=sys.stderr)
-    for key, value in fix:
-        print(f"    {key} = {value}", file=sys.stderr)
-    choice = (_common.safe_input("  [a]pply & run, [s]imulate offline, or [Q]uit? ") or "").lower()
-    if choice == "s":
-        return machine_check._cmd_machine_test(path, blackboard=None)
-    if choice != "a":
-        print("Stopped; nothing changed.", file=sys.stderr)
-        return 2
-    target = paths.repo_config_path(cwd)
-    paths.mkdir_for_real_user(target.parent)
-    for key, value in fix:
-        io.upsert_toml_leaf(target, key, value)
-    paths.chown_to_real_user(target.parent)
-    paths.chown_to_real_user(target)
-    try:
-        new_cfg = layer.load_effective_with_overlay(cwd, overlay).config
-        new_profile = detect.resolve_isolation(new_cfg.sandbox.isolation, _setup.detect_env())
-    except (ConfigError, detect.IsolationUnavailableError) as exc:
-        print(f"  Applied, but the config no longer validates: {exc}", file=sys.stderr)
-        return 2
-    if machine_network_refusal(new_cfg, new_profile, tool_states) is not None:
-        print("  Applied, but a conflict remains; review the per-repo config.", file=sys.stderr)
-        return 2
-    print(f"  Applied to {target}. Continuing the run.", file=sys.stderr)
-    return new_cfg, new_profile
 
 
 def _no_instance_hint(machine_id: str, cwd: pathlib.Path) -> str:
@@ -561,14 +474,3 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
     except KeyboardInterrupt:
         print("\n[agent6] watch: stopped.", file=sys.stderr)
         return 0
-
-
-def _machine_frontend() -> MachineFrontend:
-    """Return the presentation seam `machine run` and `machine create` drive.
-
-    Stdio output plus the interactive network-refusal resolver, which needs a TTY, so it
-    stays on the CLI side; `create_machine` uses only the reporter.
-    """
-    return MachineFrontend(
-        reporter=reporter.STDIO_REPORTER, resolve_network_fix=_resolve_network_refusal
-    )

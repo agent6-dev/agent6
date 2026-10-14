@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Compose the engine and drive a machine to completion, for `agent6 machine run`.
 
-Resolves the isolation, egress, provider-key, budget and git-identity preflight, builds the
-per-`agent`-state runner and the `LiveWorld`, and calls `drive`. A tool-network refusal is
-handed to `frontend.resolve_network_fix`, the one interactive step.
+Resolves one config per state, the isolation, egress, provider-key, budget and git-identity
+preflight, builds the per-`agent`-state runner and the `LiveWorld`, and calls `drive`.
 """
 
 from __future__ import annotations
@@ -16,16 +15,16 @@ import pathlib
 import shutil
 import sys
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Mapping
 
 import pydantic
 
 from agent6 import budget, git_ops, kinds, paths
-from agent6.app import _session, _setup, confine, machine_agent, parallel, preflight
+from agent6.app import _setup, confine, machine_agent, parallel, preflight
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
-from agent6.app.machine import _bundle, _frontend, _preflight, _spend
-from agent6.config import Config, ConfigError, layer
+from agent6.app.machine import _bundle, _preflight, _spend, _states
+from agent6.config import Config, ConfigError
 from agent6.harness import subrun
 from agent6.machine import (
     AgentExecResult,
@@ -46,7 +45,7 @@ from agent6.machine import (
     machine_lock,
     write_bundle,
 )
-from agent6.sandbox import jail
+from agent6.sandbox import detect, jail
 from agent6.sessions import ipc, layout
 from agent6.tools import _result_format
 from agent6.tools import policy as tools_policy
@@ -156,23 +155,22 @@ def machine_tool_runner(
 
 
 def machine_tool_policy_factory(
-    cfg: Config,
+    states: Mapping[str, _states.StateConfig],
     cwd: pathlib.Path,
-    isolation: kinds.IsolationLevel,
     *,
     protect_paths: tuple[pathlib.Path, ...],
     data_dir: pathlib.Path | None,
 ) -> ToolPolicyFactory:
     """Return the per-call tool-jail policy builder for a machine.
 
-    The one shared `jail_policy` plus the machine deltas (the bundle's protect paths, the data
-    dir's grant and `$AGENT6_MACHINE_DATA_DIR`), so operator grants, `protect_git`, hidden
-    paths, env and tool mounts hold in machine tool jails as in run commands.
+    The one shared `jail_policy` over the state's own config, plus the machine deltas (the
+    bundle's protect paths, the data dir's grant and `$AGENT6_MACHINE_DATA_DIR`), so operator
+    grants, `protect_git`, hidden paths, env and tool mounts hold in a tool jail as in a run
+    command.
 
     Args:
-        cfg: The resolved config.
+        states: The resolved config of each state, bounded at startup.
         cwd: The repository.
-        isolation: The isolation level.
         protect_paths: The bundle's read-only paths.
         data_dir: The machine's writable scratch, when it has one.
 
@@ -187,20 +185,27 @@ def machine_tool_policy_factory(
         extra_rw = (data_dir,)
 
     def build(
-        argv: tuple[str, ...],
-        timeout_s: float,
-        network: kinds.NetworkMode,
-        pass_env: tuple[str, ...],
+        state: str, argv: tuple[str, ...], timeout_s: float, pass_env: tuple[str, ...]
     ) -> kinds.JailPolicy:
-        """Return one call's policy; the pass_env names were allowed at startup."""
+        """Return one call's policy; the pass_env names were allowed at startup.
+
+        Raises:
+            JailUnavailableError: No config was resolved for the state.
+        """
+        resolved = states.get(state)
+        if resolved is None:
+            raise jail.JailUnavailableError(f"no config was resolved for state {state!r}")
+        cfg, isolation = resolved.config, resolved.isolation
         env = {**env_base, **{k: os.environ[k] for k in pass_env if k in os.environ}}
+        # A tool's processes die with its state, so its network is its own, never a shared one.
+        network = tools_policy.resolve_network(cfg, isolation)
         return tools_policy.jail_policy(
             cwd,
             cfg,
             isolation,
             argv,
             timeout_s=timeout_s,
-            network=network,
+            network="host" if network == "host" else "none",
             extra_rw_paths=extra_rw,
             extra_protect_paths=protect_paths,
             env_base=env,
@@ -209,9 +214,31 @@ def machine_tool_policy_factory(
     return build
 
 
+def _labelled(reporter: app_reporter.Reporter, where: str) -> app_reporter.Reporter:
+    """Return a reporter whose stderr lines name the overlay they are about."""
+    if not where:
+        return reporter
+
+    def err(msg: str) -> None:
+        reporter.err(f"{msg} ({where})")
+
+    return dataclasses.replace(reporter, err=err)
+
+
+def _checked_configs(
+    configs: _states.MachineConfigs,
+) -> Iterator[tuple[str, _states.StateConfig]]:
+    """Yield each distinct config the run uses with the label a refusal names it by."""
+    yield "", configs.operator
+    yield "", configs.machine
+    for name, resolved in configs.states.items():
+        if resolved is not configs.machine:
+            yield f"[states.{name}.config]: ", resolved
+
+
 def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one per surface, in order
     path: pathlib.Path,
-    frontend: _frontend.MachineFrontend,
+    reporter: app_reporter.Reporter,
     *,
     config_path: pathlib.Path | None = None,
     exit_on_wait: bool = False,
@@ -223,8 +250,8 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
 
     Args:
         path: The `.asm.toml`.
-        frontend: The reporter and the interactive network fix.
-        config_path: An explicit config file, else the effective one.
+        reporter: The two output channels.
+        config_path: An explicit config file, part of the operator's ceiling.
         exit_on_wait: Return at the first wait state instead of blocking through it.
         disable_sandbox: Run unconfined.
         auto_approve: Approve every run_command in the agent states.
@@ -234,7 +261,6 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         The exit code: 0 when the machine ended ok, waits or stopped, 1 on a failure, 2 on a
         refusal.
     """
-    reporter = frontend.reporter
     # The three flags reach each agent subprocess through the env, which the LLM cannot reach.
     if disable_sandbox:
         os.environ["AGENT6_DANGEROUSLY_DISABLE_SANDBOX"] = "1"
@@ -255,25 +281,35 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     if uncommitted is not None:
         reporter.refuse(uncommitted)
         return 2
-    states = list(spec.states.values())
-    has_agent_state = any(getattr(s, "kind", None) == "agent" for s in states)
+    agent_states = {n: s for n, s in spec.states.items() if isinstance(s, AgentState)}
     # mode="run" agent states edit and commit; they need a resolved git identity.
-    has_run_agent = any(isinstance(s, AgentState) and s.mode == "run" for s in states)
-    tool_states = [s for s in states if isinstance(s, ToolState)]
+    has_run_agent = any(s.mode == "run" for s in agent_states.values())
+    has_tool_state = any(isinstance(s, ToolState) for s in spec.states.values())
     agent_runner: Callable[[AgentRequest, pathlib.Path | None], AgentExecResult] | None = None
     env = _setup.detect_env()
-    isolation: kinds.IsolationLevel = env.detected_isolation
     # The machine's own file and scripts are read-only in every jail: no state rewrites them.
-    protect_paths = _preflight.machine_protect_paths(path, cwd)
-    # Every machine loads the overlay: a pure wait/branch machine still reads snapshot_keep.
+    protect_paths = _preflight.machine_protect_paths(path, cwd, config_path)
+    # Every machine resolves its configs: a pure wait/branch machine still reads snapshot_keep.
     try:
-        eff = layer.load_effective_with_overlay(cwd, spec.config, explicit_path=config_path)
-        cfg = eff.config
+        configs = _states.resolve_configs(
+            spec,
+            cwd,
+            env,
+            config_path=config_path,
+            auto_approve=auto_approve,
+            no_commands=no_commands,
+        )
+    except (_states.SandboxWidenedError, detect.IsolationUnavailableError) as exc:
+        reporter.refuse(str(exc))
+        return 2
     except ConfigError as exc:
         reporter.error(str(exc))
         return 2
-    cfg = cfg.with_sandbox_overrides(auto_approve=auto_approve, no_commands=no_commands)
-    if has_run_agent and cfg.sandbox.run_commands == "ask":
+    cfg = configs.machine.config
+    if any(
+        state.mode == "run" and configs.states[name].config.sandbox.run_commands == "ask"
+        for name, state in agent_states.items()
+    ):
         # An unattended machine auto-denies every run_command under 'ask'.
         reporter.note(
             "this machine has mode='run' agent state(s) and"
@@ -286,53 +322,45 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     snapshot_keep = cfg.machine.snapshot_keep
     # One clone base for the agent states' per-state clones and the tool states' per-call trees.
     clone_root = parallel.subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
-    agent_states = [s for s in spec.states.values() if isinstance(s, AgentState)]
-    if has_agent_state or tool_states:
+
+    def agent_config(name: str, state: AgentState) -> Config:
+        """Return an agent state's config with its own knobs applied."""
+        return configs.states[name].config.with_machine_agent_overrides(
+            provider=state.provider,
+            model=None if state.model == "inherit" else state.model,
+            effort=state.effort,
+            temperature=state.temperature,
+            max_usd=state.max_usd,
+            max_tokens_fallback=state.max_tokens_fallback,
+        )
+
+    if agent_states or has_tool_state:
         try:
-            for state in agent_states:
-                state_cfg = cfg.with_machine_agent_overrides(
-                    provider=state.provider,
-                    model=None if state.model == "inherit" else state.model,
-                    effort=state.effort,
-                    temperature=state.temperature,
-                    max_usd=state.max_usd,
-                    max_tokens_fallback=state.max_tokens_fallback,
-                )
-                state_cfg.require_runnable("worker")
+            for name, state in agent_states.items():
+                agent_config(name, state).require_runnable("worker")
         except (ConfigError, pydantic.ValidationError) as exc:
             reporter.error(str(exc))
             return 2
-        try:
-            isolation = _session.resolve_isolation_or_refuse(cfg, env, reporter=reporter)
-        except preflight.SessionRefusedError as refusal:
-            return refusal.rc
-        # Its fix is an allowlist entry, never a network change: ahead of the network-fix flow.
-        if (denied := _preflight.machine_pass_env_refusal(cfg, spec.states)) is not None:
+        # The allowlist is the operator's own: no overlay is merged into it.
+        denied = _preflight.machine_pass_env_refusal(configs.operator.config, spec.states)
+        if denied is not None:
             reporter.refuse(denied)
             return 2
-        refusal = _preflight.machine_network_refusal(cfg, isolation, tool_states)
-        if refusal is None and (hidden := confine.check_hide_paths_support(cfg, isolation, cwd)):
-            refusal = _preflight.NetworkRefusal(hidden)
-        if refusal is not None:
-            outcome = frontend.resolve_network_fix(
-                path, refusal, cfg, isolation, tool_states, cwd, spec.config
+        # The operator's own config refuses here as it would for a plain run; then each state's.
+        for label, resolved in _checked_configs(configs):
+            refusal = confine.check_network_support(
+                resolved.config, resolved.isolation
+            ) or confine.config_refusal(
+                resolved.config, resolved.isolation, cwd, explicit_leaves=resolved.explicit_leaves
             )
-            if isinstance(outcome, int):
-                return outcome
-            cfg, isolation = outcome  # the fix applied and re-validated clear
-        cfg_err = confine.config_refusal(cfg, isolation, cwd, explicit_leaves=eff.explicit_leaves)
-        if cfg_err is not None:
-            reporter.refuse(cfg_err)
-            return 2
-        if has_agent_state:
+            if refusal is not None:
+                reporter.refuse(f"{label}{refusal}")
+                return 2
+        if agent_states:
             # Every agent state's pin is checked now: a dead route found later wastes the run.
             routes = []
-            for state in agent_states:
-                state_cfg = cfg.with_machine_agent_overrides(
-                    provider=state.provider,
-                    model=None if state.model == "inherit" else state.model,
-                )
-                route = state_cfg.models.resolve("worker")
+            for name, state in agent_states.items():
+                route = agent_config(name, state).models.resolve("worker")
                 if route is not None:
                     routes.append((route.provider, route.model))
             pinned_providers = [provider for provider, _model in routes]
@@ -356,14 +384,14 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     return 2
                 commit_identity = git_ops.CommitIdentity(name=name, email=email)
             root = layout.machines_root(paths.state_dir(cwd)) / spec.machine
-            # The complete effective config: the child cannot rediscover the --config layer, and
-            # omitting values equal to defaults loses an explicit reset over a non-default global.
-            agent_overlay = cfg.model_dump(mode="json")
-            agent_overlay.pop("preset", None)  # an overlay cannot select a preset
             agent_runner = machine_agent.build_machine_agent_runner(
-                agent_overlay,
+                {
+                    state_name: machine_agent.state_overlay(
+                        configs.states[state_name].config, configs.states[state_name].isolation
+                    )
+                    for state_name in agent_states
+                },
                 cwd,
-                isolation,
                 root / "agent_transcripts",
                 protect_paths,
                 commit_identity,
@@ -372,7 +400,16 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 clone_root=clone_root if has_run_agent else None,
             )
     try:
-        confine.warn_sandbox_gaps(isolation, env, cfg, root=cwd, reporter=reporter)
+        for label, resolved in _checked_configs(configs):
+            if resolved is configs.operator:
+                continue  # the ceiling runs nothing itself
+            confine.warn_sandbox_gaps(
+                resolved.isolation,
+                env,
+                resolved.config,
+                root=cwd,
+                reporter=_labelled(reporter, label.removesuffix(": ")),
+            )
     except jail.JailUnavailableError as exc:
         # The hardened exposure scan builds the run's policy, which creates the jail's HOME.
         reporter.refuse(str(exc))
@@ -457,7 +494,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 journal=journal,
                 agent_runner=agent_runner,
                 tool_policy=machine_tool_policy_factory(
-                    cfg, cwd, isolation, protect_paths=protect_paths, data_dir=data_dir
+                    configs.states, cwd, protect_paths=protect_paths, data_dir=data_dir
                 ),
                 # A machine that writes runs its tool states in its own tree,
                 # so an edit-then-check loop sees the run states' commits.

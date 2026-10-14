@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from agent6.app.machine import machine_pass_env_refusal, run
+from agent6.app.machine import StateConfig, machine_pass_env_refusal, run
 from agent6.config import Config
 from agent6.machine import MachineError, ToolState, load_machine
 from agent6.ui.cli import machine_check  # pyright: ignore[reportPrivateUsage]
@@ -83,19 +83,17 @@ def test_a_variable_the_operator_has_not_allowed_refuses_the_run(tmp_path: pathl
     assert machine_pass_env_refusal(allowed, spec.states) is None
 
 
-def test_a_pass_env_refusal_never_enters_the_network_fix_flow(
+def test_a_pass_env_refusal_ends_the_run_at_startup(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A pass_env refusal is final: its fix is an allowlist entry, never a network change."""
+    """A state asking for a variable the operator has not allowed refuses before anything runs."""
     from unittest import mock
 
     monkeypatch.chdir(tmp_path)
     mfile = _write(tmp_path, MACHINE)
-    frontend = mock.MagicMock()
-    frontend.reporter = mock.MagicMock()
-    frontend.resolve_network_fix.side_effect = AssertionError("the network-fix flow was entered")
-    assert run.run_machine(mfile, frontend) == 2
-    said = " ".join(str(c.args[0]) for c in frontend.reporter.refuse.call_args_list)
+    reporter = mock.MagicMock()
+    assert run.run_machine(mfile, reporter) == 2
+    said = " ".join(str(c.args[0]) for c in reporter.refuse.call_args_list)
     assert "[states.fetch] asks for X_TOKEN, X_REGION" in said
 
 
@@ -106,16 +104,15 @@ def test_the_jail_gets_only_the_declared_variables_that_are_set(
     monkeypatch.delenv("X_REGION", raising=False)
     monkeypatch.setenv("OTHER_SECRET", "no")
     factory = run.machine_tool_policy_factory(
-        Config(),
+        {"fetch": StateConfig(Config(), frozenset(), "strict")},
         tmp_path,
-        "strict",  # type: ignore[arg-type]
         protect_paths=(),
         data_dir=None,
     )
-    env = dict(factory(("fetch",), 5.0, "none", ("X_TOKEN", "X_REGION")).env)
+    env = dict(factory("fetch", ("fetch",), 5.0, ("X_TOKEN", "X_REGION")).env)
     assert env.get("X_TOKEN") == "t0k3n"
     assert "X_REGION" not in env and "OTHER_SECRET" not in env
-    assert "X_TOKEN" not in dict(factory(("fetch",), 5.0, "none", ()).env)
+    assert "X_TOKEN" not in dict(factory("fetch", ("fetch",), 5.0, ()).env)
 
 
 def test_machine_check_names_every_declared_variable(

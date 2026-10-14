@@ -269,10 +269,10 @@ While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, re
 - `auto` *(default)*: the run's own network where the host can give one, the host's with a warning where it cannot.
 - `session`: the run's own, enforced; refuses where the host cannot give one.
   Its members reach each other and nothing off the box.
-- `only_explicit_states`: the run's own, except a machine `tool` state that sets `network = "host"`; `strict` only.
 - `host`: the machine's network.
 
-A run's commands share one launcher, so there is no per-command `none`; a machine `tool` state and an MCP server take their own values.
+A run's commands share one launcher, so there is no per-command `none`.
+A machine state sets its own value in its `config` table, never wider than this one ([State machines](#11-state-machines)); an MCP server takes its own in its `[sandbox]` block.
 
 The run owns one session network.
 A holder process creates it, the run keeps it alive with an open descriptor on `/proc/<holder>/ns/{user,net}`, and every child that asks joins those.
@@ -281,22 +281,22 @@ It still gets its own mount, PID, IPC, and UTS namespaces, so two members cannot
 
 Under `strict`, the only level with namespaces:
 
-| jailed command | `auto` *(def)* | `session` | `only_explicit_states` | `host` |
-|---|---|---|---|---|
-| `run_command` | the run's session network | same | same | host network |
-| `tool`, `network` `auto`(def)/`none` | own, alone | own, alone | own, alone | own, alone |
-| `tool`, `network = host` | ⛔ refuse | ⛔ refuse | host network | host network |
+| jailed command | `auto` *(def)* | `session` | `host` |
+|---|---|---|---|
+| `run_command` | the run's session network | same | host network |
+| a machine `tool` state | its own, alone | its own, alone | host network |
 
-On `hardened` there is no network namespace: `auto` degrades to the agent process's network with a once-per-run warning, while `session` and `only_explicit_states` refuse.
+The column is the value the command's config resolves to: your `sandbox.network`, narrowed by the machine's `[config]` or set by the state's own `config`.
+
+On `hardened` there is no network namespace: `auto` degrades to the agent process's network with a once-per-run warning, while `session` refuses.
 Under `none` isolation nothing is enforced or refused.
 
 **Refusals** (fail-closed)
 
 | Configuration | When |
 |---|---|
-| a `tool` sets `network = host` under `network` `auto`/`session` | machine start |
-| `network = only_explicit_states`, or explicit `network = session` | run start, `hardened` |
-| a machine under `network = session`, or any `tool` with `network = none` | machine start, `hardened` |
+| a machine overlay sets `network = host` under your `auto` or `session` | `machine check`, machine start |
+| explicit `network = session`, yours or a machine state's | run or machine start, `hardened` |
 
 **MCP servers** take their own value per server (`[mcp.servers.<name>.sandbox].network`, default `auto`):
 
@@ -424,14 +424,21 @@ Under `none` isolation nothing is enforced or refused.
 ### 11. State machines
 
 `machine run` is a supervisor that makes no network calls.
-Each `tool` state is jailed, so a per-tool `network` sets its netns independently ([Network](#5-network)).
+Each `tool` state is jailed with a network of its own, so one state's `network` is set independently ([Network](#5-network)).
 A machine can keep agents on the provider API while one reviewed, fixed-argv `tool` reaches the network.
 
-**Operator-gated policy**
+**An overlay never widens the sandbox**
 
-- `network` is read only from the operator's config
-    - a machine's `[config]` overlay is rejected at load if it declares a protected table or leaf ([the list](state-machines.md#47-machine-config-overlay-config))
-- A `tool` only declares `network`; whether it is granted is the operator's `sandbox.network`, and every conflict is refused at startup naming the state.
+- The machine's `[config]` and each state's `config` may set `sandbox` keys, each bounded by your own layers alone ([the rule per key](state-machines.md#47-machine-config-overlay-config))
+    - the ceiling is read from one load of your layers (defaults, global, repo, preset, `--config FILE`), never from a config the machine file has merged into
+    - a wider value refuses at `machine check` and at machine start, naming the state and the key
+    - the other operator-only tables and leaves are rejected at load ([the list](state-machines.md#47-machine-config-overlay-config))
+- One resolved config per state feeds both enforcement sites: a `tool` state's jail, and an `agent` state's subprocess (its in-process file tools and its jailed commands)
+    - every startup check a plain run makes (masking on `hardened`, network support) runs per state and names the state
+    - a state the supervisor resolved no config for runs nothing
+- A `--config FILE` inside the workspace is read-only in every jail, like the bundle: a state cannot raise its own ceiling
+- A grant bounds what a state touches directly: a granted state can copy what it reads to the blackboard, the data dir, the jail's `HOME` or a commit, where a later state reads it
+- A `tool` only declares `pass_env`; whether a variable is passed is your `[machine].pass_env`
 
 **Bundle confinement**
 

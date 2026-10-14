@@ -319,6 +319,7 @@ class AgentState(pydantic.BaseModel):
         max_usd: The slice's spend cap, or None to inherit the config's.
         max_tokens_fallback: The unmetered token bound (-1 unlimited, 0 refuse), or None to
             inherit.
+        config: The state's own config layer, above the machine's `[config]`.
     """
 
     model_config = _MODEL_CONFIG
@@ -337,6 +338,21 @@ class AgentState(pydantic.BaseModel):
     temperature: float | None = None
     max_usd: _FiniteUsd | None = pydantic.Field(default=None, gt=0.0)
     max_tokens_fallback: int | None = pydantic.Field(default=None, ge=-1)
+    config: dict[str, Any] = pydantic.Field(default_factory=dict)
+
+    @pydantic.model_validator(mode="after")
+    def _one_spelling_per_leaf(self) -> AgentState:
+        """Return the state, refusing a knob that its `config` table also sets.
+
+        Raises:
+            ValueError: A leaf is set both ways.
+        """
+        for knob, table, leaf in _AGENT_KNOB_LEAVES:
+            if getattr(self, knob) not in (None, "inherit") and leaf in _table(self.config, table):
+                raise ValueError(
+                    f"`{knob}` and `config.{'.'.join(table)}.{leaf}` set the same thing; keep one"
+                )
+        return self
 
 
 class ToolState(pydantic.BaseModel):
@@ -350,13 +366,10 @@ class ToolState(pydantic.BaseModel):
         capture: How the stdout is written to the blackboard, or None.
         timeout_secs: The wall-clock cap.
         on: The destination per outcome label.
-        network: What the jail joins. `auto`: a network of its own where the isolation
-            level can give one, else the host's with a warning. `host`: the machine's,
-            granted only by the operator's `sandbox.network`, else the run is refused
-            naming this state. `none`: a network of its own, or the run is refused. No
-            `session`: a state's processes die with the state.
         pass_env: The operator environment variables the command receives, each of which
             `[machine].pass_env` must allow or the run is refused at startup.
+        config: The state's own config layer, above the machine's `[config]`; a tool state
+            reads its `sandbox` table.
     """
 
     model_config = _MODEL_CONFIG
@@ -368,8 +381,8 @@ class ToolState(pydantic.BaseModel):
     capture: Capture | None = None
     timeout_secs: int = pydantic.Field(gt=0)
     on: dict[str, str]
-    network: Literal["auto", "host", "none"] = "auto"
     pass_env: _StrTuple = ()
+    config: dict[str, Any] = pydantic.Field(default_factory=dict)
 
     @pydantic.field_validator("pass_env")
     @classmethod
@@ -434,9 +447,9 @@ StateSpec = Annotated[
 ]
 
 
-# The operator-only policy a machine `[config]` overlay may never carry; the loader and
-# `config set --machine-file` both refuse off this one set, and each leaf says why.
-PROTECTED_OVERLAY_TABLES: tuple[str, ...] = ("providers", "sandbox", "presets", "mcp")
+# The operator-only policy no overlay may carry; the loader and `config set --machine-file`
+# both refuse off this one set, and each leaf says why.
+PROTECTED_OVERLAY_TABLES: tuple[str, ...] = ("mcp", "presets", "providers")
 PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "machine.notify": "the notify hook runs an operator argv on the host outside the jail",
     "notify.on_complete": "the completion hook runs an operator argv on the host outside the jail",
@@ -453,6 +466,25 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
         "the system prompt is read from the host, outside the jail, and sent to the provider"
     ),
 }
+# The supervisor reads these once for the whole machine, so one state cannot change them.
+STATE_OVERLAY_KEYS: tuple[str, ...] = ("git.commit", "machine", "parallel")
+# An agent state's knob and the config leaf that says the same thing.
+_AGENT_KNOB_LEAVES: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    ("model", ("models", "worker"), "model"),
+    ("provider", ("models", "worker"), "provider"),
+    ("effort", ("models", "worker"), "effort"),
+    ("temperature", ("models", "worker"), "temperature"),
+    ("max_usd", ("budget",), "max_usd"),
+    ("max_tokens_fallback", ("budget",), "max_tokens_fallback"),
+)
+
+
+def _table(config: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any]:
+    """Return the nested table at a path of an overlay, or an empty one."""
+    node: Any = config
+    for key in path:
+        node = node.get(key) if isinstance(node, dict) else None
+    return node if isinstance(node, dict) else {}
 
 
 def protected_overlay_key_error(key: str) -> str | None:
@@ -461,8 +493,8 @@ def protected_overlay_key_error(key: str) -> str | None:
         if key == table or key.startswith(f"{table}."):
             return (
                 f"machine [config] overlays must not set {table}.*:"
-                " connections/secrets, sandbox policy, strategy presets, and MCP"
-                " servers are operator-only (global/repo config)"
+                " connections/secrets, strategy presets, and MCP servers are"
+                " operator-only (global/repo config)"
             )
     for dotted, why in PROTECTED_OVERLAY_LEAVES.items():
         if key == dotted or key.startswith(f"{dotted}."):
@@ -470,15 +502,23 @@ def protected_overlay_key_error(key: str) -> str | None:
     return None
 
 
-def protected_overlay_error(config: dict[str, Any]) -> str | None:
-    """Return the refusal for the first operator-only key in a machine overlay, or None."""
+def protected_overlay_error(config: dict[str, Any], *, state: str = "") -> str | None:
+    """Return the refusal for the first key an overlay may not carry, or None.
+
+    Args:
+        config: The machine's `[config]` table, or one state's `config` table.
+        state: The state whose table it is; "" for the machine's.
+    """
     for head, value in config.items():
-        if problem := protected_overlay_key_error(head):
-            return problem
-        if isinstance(value, dict):
-            for leaf in value:
-                if problem := protected_overlay_key_error(f"{head}.{leaf}"):
-                    return problem
+        keys = [head, *(f"{head}.{leaf}" for leaf in value)] if isinstance(value, dict) else [head]
+        for key in keys:
+            if state and key in STATE_OVERLAY_KEYS:
+                return (
+                    f"[states.{state}.config] must not set {key}.*: it is read once for the"
+                    " whole machine; set it in the machine's [config]"
+                )
+            if problem := protected_overlay_key_error(key):
+                return problem
     return None
 
 
@@ -493,8 +533,8 @@ class MachineSpec(pydantic.BaseModel):
         vars: The blackboard's owner tables.
         schemas: The record schemas.
         states: The named states.
-        config: The run's highest-precedence config layer, an ordinary config fragment minus
-            the operator-only policy `PROTECTED_OVERLAY_*` refuses.
+        config: The config layer above the operator's, an ordinary config fragment minus the
+            operator-only policy `PROTECTED_OVERLAY_*` refuses; a state's `config` sits above it.
     """
 
     model_config = _MODEL_CONFIG
@@ -517,6 +557,11 @@ class MachineSpec(pydantic.BaseModel):
         """
         if problem := protected_overlay_error(self.config):
             raise ValueError(problem)
+        for name, state in self.states.items():
+            if isinstance(state, (AgentState, ToolState)) and (
+                problem := protected_overlay_error(state.config, state=name)
+            ):
+                raise ValueError(problem)
         return self
 
 

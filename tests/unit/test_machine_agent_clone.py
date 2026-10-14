@@ -88,15 +88,18 @@ class _FakeChild:
 
 def _runner(origin: pathlib.Path, tmp_path: pathlib.Path):  # type: ignore[no-untyped-def]
     return ma.build_machine_agent_runner(
-        {},
+        _OVERLAYS,
         origin,
-        "none",
         tmp_path / "m1" / "agent_transcripts",
         (),
         None,
         machine_id="m1",
         clone_root=tmp_path / "clones",
     )
+
+
+# The two states `_req` names, each under an empty overlay at isolation none.
+_OVERLAYS = {f"s{seq}": ma.StateOverlay({}, "none") for seq in (0, 1)}
 
 
 def _req(seq: int, mode: str = "run") -> AgentRequest:
@@ -173,7 +176,7 @@ def test_without_a_machine_tree_read_only_states_run_in_place(
     monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
     _FakeChild.workdirs = []
     runner = ma.build_machine_agent_runner(
-        {}, origin, "none", tmp_path / "m1" / "agent_transcripts", (), None
+        _OVERLAYS, origin, tmp_path / "m1" / "agent_transcripts", (), None
     )
     assert runner(_req(0, mode="agent"), None).reason == "finish_session"
     assert _FakeChild.workdirs == [origin]
@@ -243,7 +246,7 @@ def test_invalid_utf8_result_routes_failed_instead_of_escaping(
         return _REAL_POPEN(argv, **kwargs)
 
     monkeypatch.setattr(ma.subprocess, "Popen", bad_result)
-    runner = ma.build_machine_agent_runner({}, origin, "none", tmp_path / "transcripts")
+    runner = ma.build_machine_agent_runner(_OVERLAYS, origin, tmp_path / "transcripts")
 
     assert runner(_req(0, mode="agent"), None).reason == "error"
 

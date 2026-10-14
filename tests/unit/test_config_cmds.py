@@ -184,7 +184,6 @@ def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: path
     m = tmp_path / "m.asm.toml"
     for key in (
         "providers.openai.base_url",
-        "sandbox.run_commands",
         "presets.ultra.sandbox.run_commands",
         "machine.notify.on_event",
         "mcp.servers",
@@ -192,7 +191,9 @@ def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: path
         "git.run_repo_hooks",
     ):
         assert cc._reject_machine_protected(key, m) is not None, key  # pyright: ignore[reportPrivateUsage]
-    # Benign overlay keys stay writable (the forbid is surgical).
+    # Benign overlay keys stay writable (the forbid is surgical); a sandbox key is bounded by
+    # the operator's config when the machine is checked or run, not refused at the write.
+    assert cc._reject_machine_protected("sandbox.run_commands", m) is None  # pyright: ignore[reportPrivateUsage]
     assert cc._reject_machine_protected("git.commit.name", m) is None  # pyright: ignore[reportPrivateUsage]
     assert cc._reject_machine_protected("review.panel_size", m) is None  # pyright: ignore[reportPrivateUsage]
 

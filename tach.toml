@@ -670,7 +670,7 @@ depends_on = ["agent6.machine.schema", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.engine"
-depends_on = ["agent6.kinds", "agent6.machine._semantics", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template"]
+depends_on = ["agent6.machine._semantics", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template"]
 
 [[modules]]
 path = "agent6.machine.live_world"

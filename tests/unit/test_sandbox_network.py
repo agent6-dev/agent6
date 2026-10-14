@@ -15,12 +15,9 @@ import pytest
 
 from agent6 import git_ops, kinds
 from agent6.app import confine, machine_agent, providers
-from agent6.app.machine import (
-    machine_network_refusal,
-)
-from agent6.config import Config, validate_config
+from agent6.config import Config, ConfigError, validate_config
 from agent6.harness import loop as harness_loop
-from agent6.machine import AgentRequest, schema
+from agent6.machine import AgentRequest
 from agent6.tools import dispatch
 
 
@@ -36,66 +33,21 @@ def _cfg(network: str = "session") -> Config:
 
 @pytest.mark.parametrize("isolation", ["strict", "none"])
 def test_check_network_support_allows_off_hardened(isolation: kinds.IsolationLevel) -> None:
-    # local/only_explicit_states only refused on hardened; strict supports them,
-    # none is unsandboxed (warned elsewhere), so neither refuses here.
+    # `session` is only refused on hardened; strict supports it and none is unsandboxed
+    # (warned elsewhere), so neither refuses here.
     assert confine.check_network_support(_cfg("session"), isolation) is None
-    assert confine.check_network_support(_cfg("only_explicit_states"), isolation) is None
 
 
-def test_check_network_support_refuses_only_explicit_states_on_hardened() -> None:
-    msg = confine.check_network_support(_cfg("only_explicit_states"), "hardened")
-    assert msg is not None and "only_explicit_states" in msg
+def test_check_network_support_refuses_an_explicit_session_on_hardened() -> None:
+    msg = confine.check_network_support(_cfg("session"), "hardened")
+    assert msg is not None and "'session'" in msg
+    assert confine.check_network_support(_cfg("auto"), "hardened") is None
 
 
-# --- _machine_network_refusal ----------------------------------------------
-
-_TOOL = schema.ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"})
-_NET_TOOL = schema.ToolState(
-    kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, network="host"
-)
-_BLOCK_TOOL = schema.ToolState(
-    kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, network="none"
-)
-
-
-def test_refusal_networked_tool_under_block() -> None:
-    r = machine_network_refusal(_cfg("session"), "strict", [_NET_TOOL])
-    assert r is not None and r.fix == (("sandbox.network", "only_explicit_states"),)
-
-
-def test_refusal_providers_explicit_states_strict_ok() -> None:
-    # The headline combo: confined agent + audited networked tool, on strict.
-    assert machine_network_refusal(_cfg("only_explicit_states"), "strict", [_NET_TOOL]) is None
-
-
-def test_refusal_block_tools_on_hardened() -> None:
-    r = machine_network_refusal(_cfg("session"), "hardened", [_TOOL])
-    assert r is not None and "strict" in r.message
-
-
-def test_refusal_explicit_none_state_on_hardened() -> None:
-    # sandbox.network = host runs auto/host tools on hardened, but a state that
-    # explicitly demands `none` cannot be honoured there -> refuse.
-    r = machine_network_refusal(_cfg("host"), "hardened", [_BLOCK_TOOL])
-    assert r is not None and "none" in r.message and r.fix == ()
-
-
-def test_refusal_networked_tool_under_the_auto_default() -> None:
-    """A networked tool is refused under the `auto` default.
-
-    `auto` is the default sandbox.network and intends no tool network, so a state demanding
-    `network="host"` is refused on both isolation levels, and the message names the actual value.
-    Every other case here pins block, allow and only_explicit_states, leaving the default path to
-    this one.
-    """
-    for isolation in ("strict", "hardened"):
-        r = machine_network_refusal(_cfg("auto"), isolation, [_NET_TOOL])
-        assert r is not None and "network" in r.message
-        assert "'auto'" in r.message  # not a hardcoded "session"
-
-
-def test_refusal_allow_auto_tools_on_hardened_ok() -> None:
-    assert machine_network_refusal(_cfg("host"), "hardened", [_TOOL]) is None
+def test_only_explicit_states_fails_naming_sandbox_network() -> None:
+    """`only_explicit_states` is refused: a state sets its own network in its config table."""
+    with pytest.raises(ConfigError, match=r"sandbox\.network"):
+        _cfg("only_explicit_states")
 
 
 # --- supervisor subprocess: machine_agent.run_one -------------------------

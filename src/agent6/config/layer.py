@@ -4,7 +4,8 @@
 
 The layers, lowest precedence first: `default` (the model's defaults), `global`
 (`$XDG_CONFIG_HOME/agent6/config.toml`), `repo` (`<state-base>/<repo-id>/config.toml`),
-`flag` (`--config FILE`) and `machine` (a machine's per-state overlay). The raw tables are
+`flag` (`--config FILE`), `machine` (a machine's `[config]` overlay) and `state` (one
+state's `config` table). The raw tables are
 deep-merged in that order and validated once; every leaf remembers the layer that set it.
 A selected preset is spliced in just above the layer that selected it, per `_apply_preset`.
 """
@@ -24,7 +25,7 @@ from agent6 import paths
 from agent6.config import io
 from agent6.config import model as config_model
 
-LayerName = Literal["default", "preset", "global", "repo", "flag", "machine"]
+LayerName = Literal["default", "preset", "global", "repo", "flag", "machine", "state"]
 
 # The `config show` and `config fill` order, from the model so a new section is never omitted.
 SECTION_ORDER = tuple(config_model.Config.model_fields)
@@ -608,7 +609,7 @@ def _insert_preset(cleaned: list[Layer], preset: Layer, source: str) -> list[Lay
     out: list[Layer] = []
     inserted = False
     for layer in cleaned:
-        if source == "flag" and not inserted and layer.name in ("flag", "machine"):
+        if source == "flag" and not inserted and layer.name in ("flag", "machine", "state"):
             out.append(preset)
             inserted = True
         out.append(layer)
@@ -709,26 +710,35 @@ def load_global_only() -> EffectiveConfig:
 
 
 def load_effective_with_overlay(
-    repo_root: pathlib.Path, overlay: dict[str, Any], *, explicit_path: pathlib.Path | None = None
+    repo_root: pathlib.Path,
+    overlay: dict[str, Any],
+    *,
+    explicit_path: pathlib.Path | None = None,
+    state_overlay: dict[str, Any] | None = None,
 ) -> EffectiveConfig:
-    """Load the effective config with a machine's `[config]` table as the highest layer.
+    """Load the effective config with a machine's overlays as the highest layers.
 
     Args:
         repo_root: The repo.
         overlay: The machine's `[config]` table; its leaves are attributed to `machine`.
-        explicit_path: The `--config FILE` layer, which sits under the overlay.
+        explicit_path: The `--config FILE` layer, which sits under the overlays.
+        state_overlay: One state's `config` table, above the machine's; its leaves are
+            attributed to `state`.
 
     Returns:
         The effective config.
 
     Raises:
-        ConfigError: A layer is unreadable, the overlay selects a preset, or the merged
+        ConfigError: A layer is unreadable, an overlay selects a preset, or the merged
             config is invalid.
     """
     layers = discover_layers(repo_root, explicit_path)
     if overlay:
         _forbid_layer_preset("machine overlay", overlay)
         layers = [*layers, Layer("machine", None, overlay)]
+    if state_overlay:
+        _forbid_layer_preset("state overlay", state_overlay)
+        layers = [*layers, Layer("state", None, state_overlay)]
     presets = preset_names(layers)
     layers = _apply_preset(layers, "")
     return _effective_from_layers(

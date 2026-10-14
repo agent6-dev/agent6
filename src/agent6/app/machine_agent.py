@@ -25,7 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import pydantic
@@ -58,7 +58,7 @@ class MachineAgentRequest(pydantic.BaseModel):
         cwd: The operator's checkout; config layers and cross-run memory resolve from it.
         root: Where the harness, the dispatcher and the jail work: the clone for a
             `mode="run"` state, else `cwd`.
-        overlay: The machine's `[config]` overlay, applied over the effective config.
+        overlay: The state's complete config, applied over the effective config.
         isolation: The isolation level the engine validated.
         transcript_dir: Where the subprocess records transcripts.
         events_log: Where the subprocess writes a watchable event log, when set.
@@ -184,7 +184,7 @@ def _result(
 def _apply_operator_env_grants(cfg: Config) -> Config:
     """Apply the supervisor's `--auto-approve` and `--no-commands` choices from the env.
 
-    The env is operator-only; a machine `[config]` overlay cannot set `sandbox.*`.
+    The env is operator-only, and applies after the overlays.
 
     Args:
         cfg: The state's config.
@@ -474,10 +474,30 @@ def run_one(
     return _result(result.reason, payload, budget)
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class StateOverlay:
+    """What one agent state's subprocess runs under.
+
+    Attributes:
+        overlay: The state's complete config: the child cannot rediscover a `--config`
+            layer, and omitting values equal to defaults loses an explicit reset.
+        isolation: The isolation level the engine validated for the state.
+    """
+
+    overlay: dict[str, Any]
+    isolation: kinds.IsolationLevel
+
+
+def state_overlay(cfg: Config, isolation: kinds.IsolationLevel) -> StateOverlay:
+    """Return the overlay a state's resolved config travels as."""
+    overlay = cfg.model_dump(mode="json")
+    overlay.pop("preset", None)  # an overlay cannot select a preset
+    return StateOverlay(overlay, isolation)
+
+
 def build_machine_agent_runner(
-    overlay: dict[str, Any],
+    overlays: Mapping[str, StateOverlay],
     cwd: pathlib.Path,
-    isolation: kinds.IsolationLevel,
     transcript_dir: pathlib.Path,
     protect_paths: tuple[pathlib.Path, ...] = (),
     commit_identity: git_ops.CommitIdentity | None = None,
@@ -494,9 +514,9 @@ def build_machine_agent_runner(
     machine branch; the operator's checkout is never touched.
 
     Args:
-        overlay: The machine's `[config]` overlay.
+        overlays: Each state's config and isolation level, by state name; a request naming
+            no entry ends as an error, never under another state's config.
         cwd: The operator's checkout.
-        isolation: The isolation level the engine validated.
         transcript_dir: Where the subprocess records transcripts.
         protect_paths: The bundle paths a state may not rewrite.
         commit_identity: The host-resolved git identity for run-mode states.
@@ -530,6 +550,9 @@ def build_machine_agent_runner(
                 output_tokens=spend.output_tokens,
             )
 
+        resolved = overlays.get(request.state_name)
+        if resolved is None:
+            return salvaged(f"error: no config was resolved for state {request.state_name!r}")
         clone: pathlib.Path | None = None
         chain = git_ops.machine_chain_ref_for(machine_id) if machine_id is not None else None
         if chain is not None and clone_root is not None:
@@ -543,8 +566,8 @@ def build_machine_agent_runner(
             # `cwd` stays the checkout: config and memory load from it; `root` is the work.
             cwd=cwd,
             root=workdir,
-            overlay=overlay,
-            isolation=isolation,
+            overlay=resolved.overlay,
+            isolation=resolved.isolation,
             transcript_dir=transcript_dir,
             events_log=events_log,
             # The clone's copy of the bundle is protected too, though the origin's executes.

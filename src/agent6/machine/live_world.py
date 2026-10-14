@@ -26,10 +26,8 @@ from agent6.sessions import layout
 __all__ = ["LiveWorld", "ToolPolicyFactory"]
 
 
-# (argv, timeout_s, network, pass_env) -> the jail policy the shared builder produced.
-ToolPolicyFactory = Callable[
-    [tuple[str, ...], float, kinds.NetworkMode, tuple[str, ...]], kinds.JailPolicy
-]
+# (state, argv, timeout_s, pass_env) -> the jail policy the shared builder produced for that state.
+ToolPolicyFactory = Callable[[str, tuple[str, ...], float, tuple[str, ...]], kinds.JailPolicy]
 
 
 def _state_log_seq(p: pathlib.Path) -> int:
@@ -70,9 +68,9 @@ class LiveWorld:
         agent_runner: Runs an agent state given its request and its own logs.jsonl path;
             reaching an agent state without one fails loudly.
         poll_interval_s: How often a blocking wait checks for a poke or a stop.
-        tool_policy: Builds each tool jail's policy from the shared builder with the machine
-            deltas (bundle protect paths, the data dir grant), so a tool is confined like a
-            run command.
+        tool_policy: Builds each tool jail's policy from the shared builder with the state's
+            own config and the machine deltas (bundle protect paths, the data dir grant), so
+            a tool is confined like a run command.
         state_log_root: Where each agent state writes `<seq>-<state>/logs.jsonl`; None
             disables per-state logs.
         state_log_keep: How many per-state log dirs to keep (`[machine].state_log_keep`);
@@ -106,18 +104,17 @@ class LiveWorld:
         argv: tuple[str, ...],
         timeout_s: float,
         *,
-        network: kinds.NetworkMode = "none",
+        state: str = "",
         pass_env: tuple[str, ...] = (),
     ) -> engine.ToolExecResult:
-        """Run one tool command in its jail.
+        """Run one tool command in its state's jail.
 
-        The CLI gated `network` and `pass_env` at startup; the policy builder clamps the
-        network to what the isolation level provides.
+        Startup bounded the state's sandbox by the operator's and gated `pass_env`.
 
         Args:
             argv: The rendered command.
             timeout_s: The wall-clock cap.
-            network: `host` or `none`.
+            state: The state, which selects the config its policy is built from.
             pass_env: The operator environment variables the command receives.
 
         Returns:
@@ -129,7 +126,7 @@ class LiveWorld:
         if self.tool_policy is None:
             raise engine.EngineError("LiveWorld has no tool_policy factory wired")
         try:
-            policy = self.tool_policy(tuple(argv), float(timeout_s), network, pass_env)
+            policy = self.tool_policy(state, tuple(argv), float(timeout_s), pass_env)
             result = (self.jail_runner or jail.run_in_jail)(policy)
         except jail.JailUnavailableError as exc:
             raise engine.EngineError(f"jail unavailable: {exc}") from exc

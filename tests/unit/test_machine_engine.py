@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from agent6 import kinds
+from agent6.app import machine
 from agent6.app.machine import run
 from agent6.config import Config
 from agent6.machine import _semantics, live_world
@@ -190,6 +191,11 @@ reason = "fail"
 """
 
 
+def _one_state(cfg: Config, isolation: kinds.IsolationLevel) -> dict[str, machine.StateConfig]:
+    """The resolved-config map of a world whose tool calls name no state."""
+    return {"": machine.StateConfig(cfg, frozenset(), isolation)}
+
+
 # A terminal's `notify` template that references an absent optional field raises at render.
 NOTIFY_FAIL = """
 machine = "notify_fail"
@@ -362,9 +368,7 @@ class FakeWorld:
     wakes: list[machine_engine.WaitWake] = dataclasses.field(default_factory=list)
     clock: float = 1000.0
     calls: list[tuple[str, ...]] = dataclasses.field(default_factory=list)
-    net_calls: list[tuple[tuple[str, ...], kinds.NetworkMode]] = dataclasses.field(
-        default_factory=list
-    )
+    state_calls: list[tuple[tuple[str, ...], str]] = dataclasses.field(default_factory=list)
     agent_results: list[machine_engine.AgentExecResult] = dataclasses.field(default_factory=list)
     agent_calls: list[machine_engine.AgentRequest] = dataclasses.field(default_factory=list)
     sleep_deadlines: list[float | None] = dataclasses.field(default_factory=list)
@@ -376,11 +380,11 @@ class FakeWorld:
         argv: tuple[str, ...],
         timeout_s: float,
         *,
-        network: kinds.NetworkMode = "none",
+        state: str = "",
         pass_env: tuple[str, ...] = (),
     ) -> machine_engine.ToolExecResult:
         self.calls.append(argv)
-        self.net_calls.append((argv, network))
+        self.state_calls.append((argv, state))
         return self.tool_results[argv[0]]
 
     def run_agent(self, request: machine_engine.AgentRequest) -> machine_engine.AgentExecResult:
@@ -802,7 +806,7 @@ def test_run_tool_uses_the_injected_jail_runner(tmp_path: pathlib.Path) -> None:
     world = live_world.LiveWorld(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
-        tool_policy=lambda argv, timeout_s, network, pass_env: kinds.JailPolicy(
+        tool_policy=lambda state, argv, timeout_s, pass_env: kinds.JailPolicy(
             cwd=tmp_path, argv=argv
         ),
         jail_runner=_runner,
@@ -843,7 +847,7 @@ def test_a_foreground_wait_persists_its_deadline_before_sleeping(tmp_path: pathl
             self.persisted: list[float | None] = []
 
         def run_tool(
-            self, argv: Any, timeout_s: Any, *, network: Any = "none", pass_env: Any = ()
+            self, argv: Any, timeout_s: Any, *, state: Any = "", pass_env: Any = ()
         ) -> Any:
             raise AssertionError("no tool states")
 
@@ -997,7 +1001,7 @@ def test_data_dir_env_matches_jail_mount(
             journal=machine_journal.MachineJournal(tmp_path / "i"),
             data_dir=data_dir,
             tool_policy=run.machine_tool_policy_factory(
-                Config(), tmp_path, isolation, protect_paths=(), data_dir=data_dir
+                _one_state(Config(), isolation), tmp_path, protect_paths=(), data_dir=data_dir
             ),
         )
         world.run_tool(("python3", "x.py"), 5.0)
@@ -1025,7 +1029,7 @@ def test_tool_jails_carry_the_operator_hide_paths(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
         tool_policy=run.machine_tool_policy_factory(
-            cfg, tmp_path, "strict", protect_paths=(), data_dir=None
+            _one_state(cfg, "strict"), tmp_path, protect_paths=(), data_dir=None
         ),
     )
     world.run_tool(("python3", "x.py"), 5.0)
@@ -1048,7 +1052,7 @@ def test_live_world_run_tool_maps_rc124_to_timed_out(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
         tool_policy=run.machine_tool_policy_factory(
-            Config(), tmp_path, "strict", protect_paths=(), data_dir=None
+            _one_state(Config(), "strict"), tmp_path, protect_paths=(), data_dir=None
         ),
     )
     res = world.run_tool(("sleep", "99"), 1.0)
@@ -1691,7 +1695,7 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path),
         tool_policy=run.machine_tool_policy_factory(
-            Config(), tmp_path, "strict", protect_paths=(), data_dir=None
+            _one_state(Config(), "strict"), tmp_path, protect_paths=(), data_dir=None
         ),
     )
     world.run_tool(("sometool", "arg"), timeout_s=5.0)
@@ -1777,11 +1781,11 @@ def test_stop_request_parks_at_the_transition_boundary(tmp_path: pathlib.Path) -
         argv: tuple[str, ...],
         timeout_s: float,
         *,
-        network: kinds.NetworkMode = "none",
+        state: str = "",
         pass_env: Any = (),
     ) -> machine_engine.ToolExecResult:
         machine_journal.write_stop_request(journal.root)
-        return real_run_tool(argv, timeout_s, network=network)
+        return real_run_tool(argv, timeout_s, state=state)
 
     world.run_tool = stop_during_first_tool  # type: ignore[method-assign]
     result = machine_engine.drive(spec, journal, world, live=True)

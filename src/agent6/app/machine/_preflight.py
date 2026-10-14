@@ -2,20 +2,18 @@
 # Copyright 2026 Eric Lesiuta
 """Check a machine on the host before `machine run` or `create` drives it.
 
-Refuses a run whose tool-network need the isolation cannot enforce, resolves the machine's
-read-only protect paths, and builds the operator notify hook. The hook runs through
+Refuses a state's `pass_env` the operator did not allow, resolves the machine's read-only
+protect paths, and builds the operator notify hook. The hook runs through
 `finalize.run_notify_hook`, the one runner both notify hooks share.
 """
 
 from __future__ import annotations
 
-import dataclasses
 import pathlib
 import sys
 from collections.abc import Callable, Mapping
 
-from agent6 import kinds
-from agent6.app import confine, finalize
+from agent6.app import finalize
 from agent6.config import Config
 from agent6.machine import StateSpec, ToolState
 
@@ -40,85 +38,19 @@ def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> st
     )
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
-class NetworkRefusal:
-    """Describe a run this host cannot honor.
-
-    Attributes:
-        message: The refusal the operator reads.
-        fix: The config leaves that clear it, in an order sequential `config set` writes accept;
-            empty when only a different isolation can.
-    """
-
-    message: str
-    fix: tuple[tuple[str, str], ...] = ()
-
-
-def machine_network_refusal(
-    cfg: Config, isolation: kinds.IsolationLevel, tool_states: list[ToolState]
-) -> NetworkRefusal | None:
-    """Return the refusal when the machine's tool-network needs cannot be honored, else None.
-
-    Layers the machine rules over `check_network_support`. `hardened` cannot isolate one
-    tool's network, so a state that requires isolation is refused rather than mis-confined.
-    A networked state under `network` in {"session", "auto"} is a config conflict on any
-    isolation. Each refusal carries the fix its message names.
-
-    Args:
-        cfg: The resolved config.
-        isolation: The isolation level the run resolved.
-        tool_states: The machine's tool states.
-
-    Returns:
-        The refusal, or None when the host can honor the machine.
-    """
-    has_allow = any(s.network == "host" for s in tool_states)
-    has_block = any(s.network == "none" for s in tool_states)
-    # No config leaf gives hardened a per-tool netns; only an asking state justifies 'host'.
-    hardened_fix: tuple[tuple[str, str], ...] = (
-        () if has_block else (("sandbox.network", "host" if has_allow else "auto"),)
-    )
-    net_err = confine.check_network_support(cfg, isolation)
-    if net_err is not None:
-        return NetworkRefusal(net_err, hardened_fix)
-    tn = cfg.sandbox.network
-    no_tool_net = tn in ("session", "auto")  # both keep the tool off the host network
-    if has_allow and no_tool_net:
-        if isolation == "hardened":
-            return NetworkRefusal(
-                'a tool state sets network = "host" but sandbox.network ='
-                f" {tn!r}. The hardened isolation cannot single out one tool's"
-                " network namespace; let tools share the host network with"
-                " sandbox.network = 'host', or run on strict for explicit"
-                " per-tool egress.",
-                hardened_fix,
-            )
-        return NetworkRefusal(
-            'a tool state sets network = "host" but sandbox.network ='
-            f" {tn!r}. Set sandbox.network = 'only_explicit_states' for"
-            " explicit per-tool egress.",
-            (("sandbox.network", "only_explicit_states"),),
-        )
-    if has_block and isolation == "hardened":
-        return NetworkRefusal(
-            'a tool state sets network = "none" (network must be denied),'
-            " but the hardened isolation can't isolate one tool's network. Run on"
-            ' strict, or use network = "auto" to tolerate the host network.'
-        )
-    return None
-
-
 def machine_protect_paths(
-    machine_path: pathlib.Path, cwd: pathlib.Path
+    machine_path: pathlib.Path, cwd: pathlib.Path, config_path: pathlib.Path | None = None
 ) -> tuple[pathlib.Path, ...]:
-    """Return the machine file and its `scripts/` bundle, to mark read-only in run jails.
+    """Return the machine file, its `scripts/` bundle and a `--config` file, read-only in jails.
 
+    The `--config` file is part of the operator's ceiling, so a state must not rewrite it.
     Only paths under the jail-mounted cwd are listed: a path outside it is not in the child's
     view.
     """
     cwd_r = cwd.resolve()
     out: list[pathlib.Path] = []
-    for p in (machine_path, machine_path.parent / "scripts"):
+    extra = (config_path,) if config_path is not None else ()
+    for p in (machine_path, machine_path.parent / "scripts", *extra):
         rp = p.resolve()
         if rp.exists() and rp.is_relative_to(cwd_r):
             out.append(rp)

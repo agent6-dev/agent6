@@ -152,9 +152,8 @@ def _stub_runner(
     seq = iter(drafts)
 
     def fake_build(
-        cfg: object,
+        overlays: object,
         root: pathlib.Path,
-        isolation: object,
         transcript_dir: pathlib.Path,
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
@@ -193,9 +192,8 @@ def test_create_inherits_worker_model(
     captured: list[AgentRequest] = []
 
     def fake_build(
-        cfg: object,
+        overlays: object,
         root: pathlib.Path,
-        isolation: object,
         transcript_dir: pathlib.Path,
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
@@ -232,12 +230,12 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
     seen: list[int] = []
 
     def fake_build(
-        overlay: dict[str, object],
+        overlays: dict[str, machine_agent.StateOverlay],
         root: pathlib.Path,
-        isolation: object,
         transcript_dir: pathlib.Path,
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
+        overlay = overlays[""].overlay
         seen.append(layer.load_effective_with_overlay(root, overlay).config.harness.max_iterations)
 
         def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
@@ -280,9 +278,8 @@ def test_create_writes_watchable_event_log(
     captured_log: list[object] = []
 
     def fake_build(
-        cfg: object,
+        overlays: object,
         root: pathlib.Path,
-        isolation: object,
         transcript_dir: pathlib.Path,
         **kw: object,
     ) -> Callable[[AgentRequest, object], AgentExecResult]:
@@ -629,9 +626,8 @@ def test_create_publishes_the_bytes_the_lint_gate_passed(
     unused_import = "import json\nprint('hi')\n"  # F401: ruff fixes it safely
 
     def fake_build(
-        cfg: object,
+        overlays: object,
         root: pathlib.Path,
-        isolation: object,
         transcript_dir: pathlib.Path,
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
@@ -677,9 +673,8 @@ def test_create_retry_prompt_names_the_script_problem(
     )
 
     def fake_build(
-        cfg: object,
+        overlays: object,
         root: pathlib.Path,
-        isolation: object,
         transcript_dir: pathlib.Path,
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
@@ -741,9 +736,8 @@ def test_create_attempts_share_one_budget_ledger(
     caps: list[float | None] = []
 
     def fake_build(
-        cfg: object,
+        overlays: object,
         root: pathlib.Path,
-        isolation: object,
         transcript_dir: pathlib.Path,
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
@@ -1002,7 +996,9 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
     monkeypatch.setattr(machine_agent.os, "getpgid", _getpgid)
     monkeypatch.setattr(machine_agent.os, "killpg", _killpg)
 
-    runner = machine_agent.build_machine_agent_runner({}, tmp_path, "strict", tmp_path / "tr")
+    runner = machine_agent.build_machine_agent_runner(
+        {"": machine_agent.StateOverlay({}, "strict")}, tmp_path, tmp_path / "tr"
+    )
     res = runner(AgentRequest(prompt="p", timeout_s=1.0, mode="agent"), events_log)
     assert res.reason == "timeout"
     assert res.usd == pytest.approx(0.0588752)
@@ -1111,9 +1107,8 @@ def test_a_structural_failure_still_reports_the_scripts_lint_problems(
     seen_prompts: list[str] = []
 
     def fake_build(
-        cfg: object,
+        overlays: object,
         root: pathlib.Path,
-        isolation: object,
         transcript_dir: pathlib.Path,
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
@@ -1149,14 +1144,13 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     seen: list[bool] = []
 
     def fake_build(
-        cfg: object,
+        overlays: dict[str, machine_agent.StateOverlay],
         root: pathlib.Path,
-        isolation: object,
         transcript_dir: pathlib.Path,
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
-            captured.append((request, root, cfg))
+            captured.append((request, root, overlays[""].overlay))
             # Read while the execution runs: a published create removes the workspace.
             seen.append((root / ".git").exists())
             for rel, content in _draft(VALID_MACHINE).items():
@@ -1260,9 +1254,8 @@ def test_an_operator_stop_ends_create_instead_of_retrying(
     attempts = 0
 
     def fake_build(
-        cfg: object,
+        overlays: object,
         root: pathlib.Path,
-        isolation: object,
         transcript_dir: pathlib.Path,
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:

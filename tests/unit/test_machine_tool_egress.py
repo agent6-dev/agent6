@@ -10,17 +10,18 @@ from typing import Any
 
 import pytest
 
-from agent6 import kinds, paths
-from agent6.app.machine import (
-    NetworkRefusal,
-    machine_network_refusal,
-    machine_protect_paths,
-    run,
-    validate_bundle,
-)
+from agent6 import paths
+from agent6.app.machine import StateConfig, machine_protect_paths, run, validate_bundle
 from agent6.config import Config
-from agent6.machine import MachineJournal, ToolState, drive, engine, live_world, load_machine
-from agent6.ui.cli import machine_cmds
+from agent6.machine import (
+    MachineError,
+    MachineJournal,
+    ToolState,
+    drive,
+    engine,
+    live_world,
+    load_machine,
+)
 
 # A two-tool machine: the first tool opts into the network, the second does not.
 NET_MACHINE = """
@@ -36,8 +37,10 @@ max_transitions = 100
 kind = "tool"
 command = ["scripts/fetch.sh"]
 timeout_secs = 5
-network = "host"
 on = { ok = "store", nonzero = "stop_fail", timeout = "stop_fail" }
+
+[states.fetch.config.sandbox]
+network = "host"
 
 [states.store]
 kind = "tool"
@@ -88,41 +91,40 @@ def _write(tmp_path: pathlib.Path, text: str, name: str = "m.asm.toml") -> pathl
     return f
 
 
-# --- ToolState.network field -----------------------------------------
+# --- a tool state's network is its config table's -----------------------
 
 
-def test_tool_network_defaults_auto(tmp_path: pathlib.Path) -> None:
-    text = NET_MACHINE.replace('network = "host"\n', "")
-    spec = load_machine(_write(tmp_path, text))
-    fetch = spec.states["fetch"]
-    assert isinstance(fetch, ToolState)
-    assert fetch.network == "auto"
-
-
-def test_tool_network_roundtrips(tmp_path: pathlib.Path) -> None:
+def test_a_tool_state_sets_its_network_in_its_config_table(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path, NET_MACHINE))
     fetch = spec.states["fetch"]
     store = spec.states["store"]
-    assert isinstance(fetch, ToolState) and fetch.network == "host"
-    assert isinstance(store, ToolState) and store.network == "auto"
+    assert isinstance(fetch, ToolState) and fetch.config == {"sandbox": {"network": "host"}}
+    assert isinstance(store, ToolState) and store.config == {}
 
 
-# --- engine threads network through to the World ----------------------
+def test_a_network_field_on_a_tool_state_fails_the_load(tmp_path: pathlib.Path) -> None:
+    """One spelling: a state's network is `config.sandbox.network`, for tool and agent states."""
+    text = NET_MACHINE.replace('command = ["store"]\n', 'command = ["store"]\nnetwork = "host"\n')
+    with pytest.raises(MachineError, match="network"):
+        load_machine(_write(tmp_path, text))
+
+
+# --- the engine names each tool call's state to the World ----------------
 
 
 @dataclasses.dataclass
 class _RecordingWorld:
-    net_calls: list[tuple[tuple[str, ...], kinds.NetworkMode]]
+    state_calls: list[tuple[tuple[str, ...], str]]
 
     def run_tool(
         self,
         argv: tuple[str, ...],
         timeout_s: float,
         *,
-        network: kinds.NetworkMode = "none",
+        state: str = "",
         pass_env: tuple[str, ...] = (),
     ) -> engine.ToolExecResult:
-        self.net_calls.append((argv, network))
+        self.state_calls.append((argv, state))
         return engine.ToolExecResult(exit_code=0, stdout="", timed_out=False)
 
     def run_agent(self, request: Any) -> Any:  # pragma: no cover - no agent states here
@@ -142,17 +144,16 @@ class _RecordingWorld:
         pass
 
 
-def test_engine_passes_per_state_network(tmp_path: pathlib.Path) -> None:
+def test_engine_names_the_state_of_each_tool_call(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path, NET_MACHINE))
     journal = MachineJournal(tmp_path / "inst")
-    world = _RecordingWorld(net_calls=[])
+    world = _RecordingWorld(state_calls=[])
     result = drive(spec, journal, world, live=True)
     assert result.status == "ok"
-    # fetch opted in (True); store did not (False).
-    assert world.net_calls == [(("scripts/fetch.sh",), "host"), (("store",), "none")]
+    assert world.state_calls == [(("scripts/fetch.sh",), "fetch"), (("store",), "store")]
 
 
-# LiveWorld passes the per-state network flag straight through; the opt-in is gated at startup.
+# LiveWorld builds each call's policy from its state's config; the bounds are checked at startup.
 
 
 @dataclasses.dataclass
@@ -184,9 +185,8 @@ def _world(
 ) -> live_world.LiveWorld:
     """A LiveWorld wired exactly as run_machine wires it, through the shared policy builder."""
     factory = run.machine_tool_policy_factory(
-        cfg or Config(),
+        {"": StateConfig(cfg or Config(), frozenset(), isolation)},  # type: ignore[arg-type]
         tmp_path,
-        isolation,  # type: ignore[arg-type]
         protect_paths=protect_paths,
         data_dir=data_dir,
     )
@@ -218,7 +218,7 @@ def test_machine_tool_jail_carries_operator_grants_and_protect_git(
         }
     )
     world = _world(tmp_path, "strict", cfg=cfg)
-    world.run_tool(("true",), 5.0, network="none")
+    world.run_tool(("true",), 5.0)
     policy = seen[-1]
     assert pathlib.Path("/srv/ro") in policy.extra_ro_paths
     assert pathlib.Path("/srv/rw") in policy.extra_rw_paths
@@ -231,8 +231,28 @@ def test_liveworld_non_network_tool_is_isolated(
 ) -> None:
     seen = _patch_jail(monkeypatch)
     world = _world(tmp_path, "strict")
-    world.run_tool(("true",), 5.0, network="none")
+    world.run_tool(("true",), 5.0)
     assert seen[-1].network == "none"
+
+
+def test_liveworld_tool_joins_the_host_network_when_its_config_says_host(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = _patch_jail(monkeypatch)
+    world = _world(tmp_path, "strict", cfg=Config.model_validate({"sandbox": {"network": "host"}}))
+    world.run_tool(("true",), 5.0)
+    assert seen[-1].network == "host"
+
+
+def test_liveworld_refuses_a_state_with_no_resolved_config(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tool call never runs under another state's config, or the machine's, by fallback."""
+    seen = _patch_jail(monkeypatch)
+    world = _world(tmp_path, "strict")
+    with pytest.raises(engine.EngineError, match="no config was resolved for state 'ghost'"):
+        world.run_tool(("true",), 5.0, state="ghost")
+    assert seen == []
 
 
 def test_liveworld_grants_data_dir_rw_and_env(
@@ -242,7 +262,7 @@ def test_liveworld_grants_data_dir_rw_and_env(
     seen = _patch_jail(monkeypatch)
     data = tmp_path / "i" / "data"
     world = _world(tmp_path, "hardened", data_dir=data)
-    world.run_tool(("true",), 5.0, network="none")
+    world.run_tool(("true",), 5.0)
     policy = seen[-1]
     assert data in policy.extra_rw_paths
     # Exported as the real host abspath on hardened; strict maps it to /rw<abspath>.
@@ -254,7 +274,7 @@ def test_liveworld_no_data_dir_grants_only_the_home(
 ) -> None:
     seen = _patch_jail(monkeypatch)
     world = _world(tmp_path, "hardened")
-    world.run_tool(("true",), 5.0, network="none")
+    world.run_tool(("true",), 5.0)
     # hardened's persistent HOME is the only extra grant: no data dir, no data grant.
     assert seen[-1].extra_rw_paths == (paths.jail_cache_home(),)
     assert all(k != "AGENT6_MACHINE_DATA_DIR" for k, _ in seen[-1].env)
@@ -265,7 +285,7 @@ def test_liveworld_disables_python_bytecode(
 ) -> None:
     seen = _patch_jail(monkeypatch)
     world = _world(tmp_path, "hardened")
-    world.run_tool(("python3", "-m", "unittest"), 5.0, network="none")
+    world.run_tool(("python3", "-m", "unittest"), 5.0)
     assert ("PYTHONDONTWRITEBYTECODE", "1") in seen[-1].env
 
 
@@ -385,6 +405,10 @@ def test_machine_check_passes_with_valid_bundle(
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "fetch.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
+    # The fetch state asks for the host network, so the operator's own config must grant it.
+    assert main(["machine", "check", str(f)]) == 1
+    paths.global_config_path().parent.mkdir(parents=True, exist_ok=True)
+    paths.global_config_path().write_text('[sandbox]\nnetwork = "host"\n', encoding="utf-8")
     assert main(["machine", "check", str(f)]) == 0
 
 
@@ -422,84 +446,3 @@ def test_machine_run_validates_config_overlay_for_pure_machine(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     assert main(["machine", "run", str(f)]) == 2
-
-
-def test_suggested_network_fix_block_is_unfixable(tmp_path: pathlib.Path) -> None:
-    # network="none" REQUIRES isolation only strict provides -> no config fix.
-    text = NET_MACHINE.replace('network = "host"', 'network = "none"')
-    spec = load_machine(_write(tmp_path, text))
-    fetch = spec.states["fetch"]
-    assert isinstance(fetch, ToolState)
-    r = machine_network_refusal(
-        Config.model_validate({"sandbox": {"network": "host"}}), "hardened", [fetch]
-    )
-    assert r is not None and r.fix == ()
-
-
-def test_resolve_network_refusal_unfixable_points_to_simulate(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    text = NET_MACHINE.replace('network = "host"', 'network = "none"')
-    spec = load_machine(_write(tmp_path, text))
-    fetch = spec.states["fetch"]
-    assert isinstance(fetch, ToolState)
-    code = machine_cmds._resolve_network_refusal(
-        tmp_path / "m.asm.toml",
-        NetworkRefusal("needs strict"),
-        Config.model_validate({}),
-        "hardened",
-        [fetch],
-        tmp_path,
-        {},
-    )
-    assert code == 2
-    assert "machine test" in capsys.readouterr().err
-
-
-# NET_MACHINE with the second tool pinned offline: the mix `only_explicit_states` exists for.
-MIXED_MACHINE = """
-machine = "netmix"
-version = 1
-initial = "fetch"
-
-[budget]
-max_transitions = 10
-
-[states.fetch]
-kind = "tool"
-command = ["true"]
-timeout_secs = 5
-network = "host"
-on = { ok = "store", nonzero = "stop_fail", timeout = "stop_fail" }
-
-[states.store]
-kind = "tool"
-command = ["true"]
-timeout_secs = 5
-network = "none"
-on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
-
-[states.stop_ok]
-kind = "terminal"
-status = "ok"
-reason = "done"
-
-[states.stop_fail]
-kind = "terminal"
-status = "failed"
-reason = "failed"
-"""
-
-
-def _mixed_tools(tmp_path: pathlib.Path) -> list[ToolState]:
-    spec = load_machine(_write(tmp_path, MIXED_MACHINE, name="netmix.asm.toml"))
-    return [s for s in spec.states.values() if isinstance(s, ToolState)]
-
-
-def test_suggested_network_fix_strict_mixes_block_with_allow(tmp_path: pathlib.Path) -> None:
-    """A `network = "none"` tool does not swallow the fix its networked sibling needs."""
-    tools = _mixed_tools(tmp_path)
-    r = machine_network_refusal(Config.model_validate({}), "strict", tools)
-    assert r is not None and r.fix == (("sandbox.network", "only_explicit_states"),)
-    fixed = Config.model_validate({"sandbox": {"network": "only_explicit_states"}})
-    assert machine_network_refusal(fixed, "strict", tools) is None

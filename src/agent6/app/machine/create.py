@@ -16,7 +16,7 @@ import shutil
 from agent6 import event_log, git_ops, kinds, paths, portable
 from agent6.app import _session, _setup, machine_agent, parallel, preflight
 from agent6.app import reporter as app_reporter
-from agent6.app.machine import _bundle, _frontend, _scriptcheck
+from agent6.app.machine import _bundle, _scriptcheck
 from agent6.config import ConfigError, layer
 from agent6.machine import (
     AgentRequest,
@@ -139,7 +139,7 @@ def new_draft_dir(state: pathlib.Path) -> pathlib.Path:
 
 def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop's attempts and refusals, in order
     task: str,
-    frontend: _frontend.MachineFrontend,
+    reporter: app_reporter.Reporter,
     *,
     output: pathlib.Path | None,
     max_attempts: int,
@@ -149,7 +149,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
 
     Args:
         task: The natural-language task the machine should carry out.
-        frontend: The reporter to write through.
+        reporter: The two output channels.
         output: Where to write the `.asm.toml`; None writes `<machine>.asm.toml` in cwd and
             refuses to overwrite anything.
         max_attempts: How many authoring attempts to make.
@@ -158,7 +158,6 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     Returns:
         The exit code: 0 on a written bundle, 1 on a failed draft, 2 on a refusal.
     """
-    reporter = frontend.reporter
     if max_attempts < 1:
         reporter.error("--max-attempts must be >= 1.")
         return 2
@@ -225,9 +224,9 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         events.emit("session.end", reason="no_git_identity", iterations=0, all_passed=False)
         return 2
     runner = machine_agent.build_machine_agent_runner(
-        overlay,
+        # The authoring agent is no state: its requests carry the empty name.
+        {"": machine_agent.StateOverlay(overlay, isolation)},
         workspace,
-        isolation,
         scratch / "agent_transcripts",
         commit_identity=git_ops.CommitIdentity(name=name, email=email),
     )

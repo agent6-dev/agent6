@@ -300,7 +300,7 @@ def test_machine_overlay_rejects_providers(iso: pathlib.Path) -> None:
     "command",
     [
         ["config", "show"],
-        ["config", "get", "sandbox.network"],
+        ["config", "get", "mcp.enabled"],
         ["config", "fix"],
     ],
     ids=["show", "get", "fix"],
@@ -311,11 +311,11 @@ def test_machine_config_readers_refuse_a_hand_edited_protected_overlay(
     command: list[str],
 ) -> None:
     machine = iso / "protected.asm.toml"
-    machine.write_text('[config.sandbox]\nnetwork = "host"\n', encoding="utf-8")
+    machine.write_text("[config.mcp]\nenabled = true\n", encoding="utf-8")
 
     assert _refuse([*command, "--machine-file", str(machine)]) == 2
     err = capsys.readouterr().err
-    assert "machine [config] overlays must not set sandbox.*" in err
+    assert "machine [config] overlays must not set mcp.*" in err
     assert "operator-only" in err
 
 
@@ -471,7 +471,7 @@ def test_set_refuses_a_machine_file_holding_a_protected_table(
 ) -> None:
     """`set` refuses a machine file holding a protected table, as get, show and fix do."""
     machine = iso / "protected.asm.toml"
-    text = '[config.sandbox]\nnetwork = "host"\n'
+    text = "[config.mcp]\nenabled = true\n"
     machine.write_text(text, encoding="utf-8")
 
     argv = ["config", "set", "harness.max_iterations", "3", "--machine-file", str(machine)]

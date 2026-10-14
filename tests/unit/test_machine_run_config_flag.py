@@ -78,9 +78,7 @@ def test_machine_run_reads_the_explicit_config_layer(
         return eff
 
     monkeypatch.setattr(layer, "load_effective_with_overlay", spy)
-    frontend = mock.MagicMock()
-    frontend.reporter = mock.MagicMock()
-    machine_run.run_machine(mfile, frontend, config_path=explicit)
+    machine_run.run_machine(mfile, mock.MagicMock(), config_path=explicit)
     assert seen and seen[0] == 41, "the --config layer never reached machine run"
 
 
@@ -114,8 +112,10 @@ max_iterations = 17
     mfile.write_text(_AGENT_MACHINE, encoding="utf-8")
     child_overlays: list[dict[str, object]] = []
 
-    def fake_build(overlay: dict[str, object], *_args: object, **_kwargs: object):  # type: ignore[no-untyped-def]
-        child_overlays.append(overlay)
+    def fake_build(
+        overlays: dict[str, machine_agent.StateOverlay], *_args: object, **_kwargs: object
+    ):  # type: ignore[no-untyped-def]
+        child_overlays.extend(entry.overlay for entry in overlays.values())
 
         def run(*_args: object, **_kwargs: object) -> AgentExecResult:
             return AgentExecResult(reason="finish_session", payload={"ok": True})
@@ -123,9 +123,8 @@ max_iterations = 17
         return run
 
     monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
-    frontend = mock.MagicMock()
-    frontend.reporter = mock.MagicMock()
+    reporter = mock.MagicMock()
 
-    code = run_mod.run_machine(mfile, frontend, config_path=explicit)
-    assert code == 0, frontend.reporter.mock_calls
+    code = run_mod.run_machine(mfile, reporter, config_path=explicit)
+    assert code == 0, reporter.mock_calls
     assert child_overlays[0]["harness"]["max_iterations"] == 17  # type: ignore[index]

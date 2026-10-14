@@ -250,7 +250,7 @@ def test_config_show_completion_offers_accepted_section_prefixes(
 def test_machine_overlay_key_completion_omits_operator_only_leaves(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`config set --machine-file` completes no sandbox leaf.
+    """`config set --machine-file` completes no MCP leaf, which no overlay may carry.
 
     `config get --machine-file` keeps every key.
     """
@@ -259,19 +259,19 @@ def test_machine_overlay_key_completion_omits_operator_only_leaves(
     monkeypatch.chdir(tmp_path)
     machine = tmp_path / "m.asm.toml"
     offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
-        prefix="sandbox.",
+        prefix="mcp.",
         parsed_args=argparse.Namespace(config=None, machine_file=machine, config_command="set"),
         action=object(),
     )
     assert offered == []
 
     readable = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
-        prefix="sandbox.",
+        prefix="mcp.",
         parsed_args=argparse.Namespace(config=None, machine_file=machine, config_command="get"),
         action=object(),
         settable=False,
     )
-    assert "sandbox.network" in readable
+    assert "mcp.enabled" in readable
 
 
 def test_machine_overlay_value_completion_omits_operator_only_leaves(
@@ -284,7 +284,7 @@ def test_machine_overlay_value_completion_omits_operator_only_leaves(
     offered = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
         prefix="",
         parsed_args=argparse.Namespace(
-            key="sandbox.network", config=None, machine_file=tmp_path / "m.asm.toml"
+            key="machine.pass_env", config=None, machine_file=tmp_path / "m.asm.toml"
         ),
         action=object(),
     )

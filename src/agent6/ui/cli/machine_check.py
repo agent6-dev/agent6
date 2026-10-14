@@ -17,9 +17,15 @@ from typing import Any
 
 from agent6 import errors
 from agent6.app import _setup
-from agent6.app.machine import lint_and_typecheck, run_offline_tests, validate_bundle
-from agent6.config import ConfigError, layer
+from agent6.app.machine import (
+    lint_and_typecheck,
+    resolve_configs,
+    run_offline_tests,
+    validate_bundle,
+)
+from agent6.config import ConfigError
 from agent6.machine import (
+    AgentState,
     DryRunReport,
     MachineError,
     MachineSpec,
@@ -30,7 +36,7 @@ from agent6.machine import (
     render_dot,
     render_mermaid,
 )
-from agent6.sandbox import tool_paths
+from agent6.sandbox import detect, tool_paths
 from agent6.ui.cli import _common
 
 
@@ -55,10 +61,10 @@ def _fail(path: pathlib.Path, problems: list[str], label: str = "") -> int:
 def _load_validated(
     path: pathlib.Path, *, config_path: pathlib.Path | None = None
 ) -> tuple[MachineSpec | None, list[str], str]:
-    """Load a machine file and validate its bundle and config overlay, as `machine run` does.
+    """Load a machine file and validate its bundle and config overlays, as `machine run` does.
 
-    The shared front half of `check` and `test`, so a bad `[config]` key fails here rather
-    than first at run.
+    The shared front half of `check` and `test`, so a bad overlay key, or a sandbox key set
+    wider than the operator's config, fails here rather than first at run.
 
     Args:
         path: The machine file.
@@ -76,10 +82,8 @@ def _load_validated(
     if bundle_problems:
         return None, bundle_problems, "bundle"
     try:
-        layer.load_effective_with_overlay(
-            pathlib.Path.cwd(), spec.config, explicit_path=config_path
-        )
-    except ConfigError as exc:
+        resolve_configs(spec, pathlib.Path.cwd(), _setup.detect_env(), config_path=config_path)
+    except (ConfigError, detect.IsolationUnavailableError) as exc:
         return None, [str(exc)], "config"
     return spec, [], ""
 
@@ -148,6 +152,11 @@ def _tool_reachability_warnings(spec: MachineSpec, path: pathlib.Path) -> list[s
     ]
 
 
+def _leaves(table: dict[str, Any]) -> str:
+    """Return an overlay table's leaves as `key = value` pairs on one line."""
+    return ", ".join(f"{key} = {value!r}" for key, value in table.items())
+
+
 def _cmd_machine_check(path: pathlib.Path, *, config_path: pathlib.Path | None = None) -> int:
     """Validate a machine file offline and print OK or FAIL.
 
@@ -162,7 +171,11 @@ def _cmd_machine_check(path: pathlib.Path, *, config_path: pathlib.Path | None =
         return _fail(path, script_problems, "scripts")
     for warning in _tool_reachability_warnings(spec, path):
         _common.warn(warning)
+    if sandbox := spec.config.get("sandbox"):
+        print(f"[config] sets the sandbox of every state: {_leaves(sandbox)}")
     for name, state in spec.states.items():
+        if isinstance(state, (AgentState, ToolState)) and (sandbox := state.config.get("sandbox")):
+            print(f"[states.{name}] sets its own sandbox: {_leaves(sandbox)}")
         if isinstance(state, ToolState) and state.pass_env:
             print(
                 f"[states.{name}] receives the environment variable(s)"

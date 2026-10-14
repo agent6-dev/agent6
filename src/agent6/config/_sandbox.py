@@ -39,15 +39,15 @@ class SandboxConfig(pydantic.BaseModel):
     # A jailed child never out-reaches the process that launches it.
     # No per-command `none`: isolating commands from each other costs the dev server for no
     # security, and the model can chain them into one script anyway.
-    network: Literal["auto", "session", "only_explicit_states", "host"] = pydantic.Field(
+    network: Literal["auto", "session", "host"] = pydantic.Field(
         default="auto",
         description=(
             "Which network jailed commands join. `session`: the run's private network (commands "
             "reach each other, nothing off the box, nothing outside reaches in), refused where it "
-            "cannot be enforced. `host`: the machine's network. `only_explicit_states`: strict "
-            "only, machine `tool` states opt in. `auto`: `session` under `strict`, degraded to the "
-            "host's network with a warning under `hardened` or `none`. A run's commands share one "
-            "launcher, so there is no per-command `none`."
+            "cannot be enforced. `host`: the machine's network. `auto`: `session` under `strict`, "
+            "degraded to the host's network with a warning under `hardened` or `none`. A run's "
+            "commands share one launcher, so there is no per-command `none`; a machine state sets "
+            "its own value in its `config` table, never wider than this one."
         ),
     )
     run_commands: Literal["yes", "no", "ask"] = pydantic.Field(

@@ -19,7 +19,6 @@ from typing import Any, Literal, Protocol
 
 import pydantic
 
-from agent6 import kinds
 from agent6.machine import _semantics, predicate, schema
 from agent6.machine import journal as machine_journal
 from agent6.machine import template as machine_template
@@ -171,10 +170,10 @@ class World(Protocol):
         argv: tuple[str, ...],
         timeout_s: float,
         *,
-        network: kinds.NetworkMode = "none",
+        state: str = "",
         pass_env: tuple[str, ...] = (),
     ) -> ToolExecResult:
-        """Run one tool command."""
+        """Run one tool command under the named state's sandbox."""
         ...
 
     def run_agent(self, request: AgentRequest) -> AgentExecResult:
@@ -544,13 +543,8 @@ def _execute(
     """
     if isinstance(state, schema.ToolState):
         argv = machine_template.render_command(state.command, blackboard, where="command")
-        # A tool reaches the network only when it set `host`; startup refused what the operator
-        # did not grant. `auto` is a network of its own: a state's processes die with the state.
         result = world.run_tool(
-            tuple(argv),
-            float(state.timeout_secs),
-            network="host" if state.network == "host" else "none",
-            pass_env=state.pass_env,
+            tuple(argv), float(state.timeout_secs), state=state_name, pass_env=state.pass_env
         )
         label = _tool_outcome(result)
         fact: machine_journal.Fact = machine_journal.ToolFact(

@@ -367,7 +367,7 @@ def config_refusal(
     """Return the first refusal for a config this host cannot honor, else None.
 
     The one list every lifecycle runs, so a check cannot land in one and not another. The
-    network checks stay per lifecycle: machines route theirs through `resolve_network_fix`.
+    network check stays per lifecycle: a machine runs it once per state.
 
     Args:
         cfg: The resolved config.
@@ -402,18 +402,12 @@ def config_refusal(
 def check_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str | None:
     """Return the refusal when the network config needs what the isolation cannot give, else None.
 
-    `only_explicit_states` and `session` both need a network namespace, which only strict has;
-    `auto` degrades with a warning instead.
+    `session` needs a network namespace, which only strict has; `auto` degrades with a
+    warning instead.
     """
     if isolation != "hardened":
         return None
     sb = cfg.sandbox
-    if sb.network == "only_explicit_states":
-        return (
-            "sandbox.network = 'only_explicit_states' requires the strict"
-            " isolation (network namespaces), but this run resolved to"
-            " 'hardened'. Use 'auto' or 'host'."
-        )
     if sb.network == "session":
         return (
             "sandbox.network = 'session' requires the strict isolation (a"

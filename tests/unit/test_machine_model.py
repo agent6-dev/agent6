@@ -733,17 +733,20 @@ api_format = "anthropic"
     assert any("providers" in p for p in problems)
 
 
-def test_machine_config_overlay_rejects_sandbox(tmp_path: pathlib.Path) -> None:
-    # Sandbox policy is operator-only; a machine file must not weaken it via its overlay.
+def test_machine_config_overlay_takes_sandbox_keys(tmp_path: pathlib.Path) -> None:
+    """The overlay may set sandbox keys; the bound against the operator's config is checked at run.
+
+    `test_machine_state_config.py` pins the bound.
+    """
     body = (
         VALID_MACHINE
         + """
 [config.sandbox]
-tool_network = "host"
+network = "session"
 """
     )
-    problems = _problems(tmp_path, body)
-    assert any("sandbox" in p for p in problems)
+    spec = _semantics.load_machine(_write(tmp_path, body))
+    assert spec.config == {"sandbox": {"network": "session"}}
 
 
 def test_budget_max_usd_is_optional(tmp_path: pathlib.Path) -> None:

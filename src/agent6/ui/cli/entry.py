@@ -803,6 +803,7 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
 
 def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     """Return the exit code of a `agent6 machine` verb."""  # noqa: DOC501  # the last raise is unreachable
+    from agent6.app import reporter as app_reporter
     from agent6.app.machine import create
     from agent6.app.machine import run as machine_run
     from agent6.ui.cli import (
@@ -823,7 +824,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.machine_command == "run":
         return machine_run.run_machine(
             args.file,
-            machine_cmds._machine_frontend(),
+            app_reporter.STDIO_REPORTER,
             config_path=args.config,
             exit_on_wait=args.exit_on_wait,
             disable_sandbox=args.dangerously_disable_sandbox,
@@ -841,7 +842,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.machine_command == "create":
         return create.create_machine(
             args.task,
-            machine_cmds._machine_frontend(),
+            app_reporter.STDIO_REPORTER,
             output=args.output,
             max_attempts=args.max_attempts,
             config_path=args.config,

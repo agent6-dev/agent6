@@ -178,11 +178,12 @@ data. So:
     operator's exported secrets do NOT reach it.
     Never hard-code a secret in a script or the `.asm.toml`; a state that needs
     one says so in its comment, so the operator arranges it.
-  - A tool that touches the network MUST set `network = "host"` on its
-    state; without it the tool is network-isolated and the call fails. (The
-    operator still has to permit egress via `sandbox.network`; if their
-    config blocks it, `agent6 machine run` explains the one-line fix and offers
-    to apply it.)
+  - A state's sandbox is set in its own table, `[states.<name>.config.sandbox]`;
+    the machine's `[config.sandbox]` sets it for every state. Neither may be
+    wider than the operator's own config, or `agent6 machine run` refuses and
+    names the key. A tool that touches the network sets `network = "host"` in
+    its table; `network = "session"` in `[config.sandbox]` keeps every other
+    state offline.
   - Persist outputs/state to `$AGENT6_MACHINE_DATA_DIR`: under `hardened` a
     tool jail cannot create new top-level entries in the workspace, and the
     machine's own bundle is read-only at every level.
@@ -229,7 +230,7 @@ labels, and your wiring decides whether one bad tick kills the machine:
 ## Worked example: watch a live price feed, record a threshold crossing
 
 A complete, valid, PRODUCTION machine: `fetch_price` makes a real HTTP call
-(hence `network = "host"`); `record_buy` appends to the data dir. Each
+(hence `network = "host"` in its sandbox table); `record_buy` appends to the data dir. Each
 script ships a `*_test.py` that mocks its seam so the whole machine simulates
 offline.
 
@@ -240,6 +241,9 @@ offline.
     [budget]
     max_usd = 1.0
     max_transitions = 1000
+
+    [config.sandbox]
+    network = "session"              # every state offline, except where it says otherwise
 
     [vars.operator]
     interval_secs = { type = "int", value = 60 }
@@ -264,11 +268,13 @@ offline.
     [states.fetch_price]
     kind = "tool"
     command = ["python3", "scripts/fetch_price.py", "{{ feed_url }}"]
-    network = "host"                 # this tool reaches the real API
     output_schema = "price_result"          # types `result` so result.price works
     capture = { set = { price = "{{ result.price }}" } }
     timeout_secs = 15
     on = { ok = "decide", nonzero = "wait_tick", timeout = "wait_tick" }
+
+    [states.fetch_price.config.sandbox]
+    network = "host"                 # this tool reaches the real API
 
     [states.decide]
     kind = "branch"
@@ -295,7 +301,7 @@ Real, typed scripts plus an offline test per seam (the network seam in
 # Fetch the current price from an HTTP JSON feed. Prints {"price": <float>}.
 # The feed URL is argv[1] (an operator var); an optional bearer token comes from
 # the PRICE_FEED_TOKEN env var -- secrets belong in the environment, never in the
-# machine file. The tool state must set network = "host".
+# machine file. The tool state's sandbox table must set network = "host".
 from __future__ import annotations
 
 import json
@@ -439,7 +445,8 @@ if __name__ == "__main__":
 ## Common mistakes (each fails `machine check`/`create` or silently misbehaves)
   - Hardcoding `model = "..."` on an `agent` state — omit it (defaults to
     "inherit" = the worker model) unless pinning one on purpose.
-  - A `tool` that calls the network but forgets `network = "host"` — it
+  - A `tool` that calls the network without `network = "host"` in its own
+    `config.sandbox` table, under a `[config.sandbox]` that says `session` — it
     runs network-isolated and the call fails.
   - Hardcoding a secret/token in a script or the `.asm.toml` — a jailed tool
     sees no operator secret at all; say what the state needs in its comment.

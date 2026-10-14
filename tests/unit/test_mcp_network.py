@@ -3,10 +3,8 @@
 """`[mcp.servers.<n>.sandbox].network`: the per-server switch.
 
 One axis at a different scope, so the shared words mean the same thing and the
-refuse/degrade rules are identical. Each side has exactly one value the other
-lacks, and each has a reason: a server can be `none` (alone) because it is one
-process, and only `tool_network` has `only_explicit_states`, which is about
-machine tool states. The
+refuse/degrade rules are identical. A server has one value `[sandbox].network`
+lacks: it can be `none` (alone) because it is one process. The
 outcome (a confined server cannot reach a live listener) is asserted in
 `tests/security/test_mcp_network_confinement.py`; this file is the config
 contract and the refuse/degrade split.
@@ -43,8 +41,8 @@ def test_network_defaults_to_auto() -> None:
 def test_the_words_mean_the_same_on_both_sides() -> None:
     """One axis, one vocabulary.
 
-    A server takes every word `tool_network` takes except `only_explicit_states` (a machine-tool
-    concept), plus `none`, which a single process can be and a group of commands cannot.
+    A server takes every word `[sandbox].network` takes, plus `none`, which a single process
+    can be and a group of commands cannot.
     """
     from agent6.config import SandboxConfig
 
@@ -52,8 +50,6 @@ def test_the_words_mean_the_same_on_both_sides() -> None:
         cfg = _server({"network": value})
         sandbox = cfg.mcp.servers["s"].sandbox
         assert sandbox is not None and sandbox.network == value
-    with pytest.raises(ValueError, match="network"):
-        _server({"network": "only_explicit_states"})  # a machine-tool concept
     with pytest.raises(ValueError, match="network"):
         SandboxConfig(network="none")  # type: ignore[arg-type]
 

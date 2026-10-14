@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 import re
 
@@ -180,17 +181,15 @@ def test_cli_machine_test_verdict_names_unrun_offline_tests(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The OK verdict says how many offline script tests were not run and why."""
-    import types
-
     from agent6.ui.cli import main
 
     f = _write(tmp_path)
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     (scripts / "thing_test.py").write_text("raise SystemExit(1)\n", encoding="utf-8")
-    monkeypatch.setattr(
-        _setup, "detect_env", lambda: types.SimpleNamespace(detected_isolation="hardened")
-    )
+    # A real environment minus user namespaces: the level under which offline tests are skipped.
+    hardened = dataclasses.replace(_setup.detect_env(), userns_supported=False)
+    monkeypatch.setattr(_setup, "detect_env", lambda: hardened)
     assert main(["machine", "test", str(f)]) == 0
     out = capsys.readouterr().out
     assert "1 offline script test not run" in out
