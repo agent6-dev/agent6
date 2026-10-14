@@ -508,7 +508,8 @@ def memory_flip(
     """Advise once per run, at the first red-to-green verify with no memory write.
 
     That is the moment a hard-won root cause is in hand; `_nudges` holds the
-    measurement behind it.
+    measurement behind it. The red has to be one of the run's own verifies: a gate that
+    was red before the first turn is the baseline, and every fix would flip it.
 
     Args:
         turn: The turn whose tools ran.
@@ -520,6 +521,7 @@ def memory_flip(
     """
     if not (
         turn.verify_flipped_green
+        and state.verify.ever_failed
         and ctx.mode == "run"
         and ctx.memory_advisory
         and not state.memory.written

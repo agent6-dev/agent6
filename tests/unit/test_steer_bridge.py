@@ -346,6 +346,7 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: pathlib.Path) -
                 stagnation_notice_after_s=300.0,
                 verify_command=(),
                 verify_when="never",
+                verify_at_start=True,
                 verify_retries=2,
             ),
         ),

@@ -565,6 +565,12 @@ class Harness:
             system=system,
         )
         self._seed_carryover(state, conversation, resume_from)
+        if resume_from is None:
+            try:
+                for notice in self.gate.start_baseline(state):
+                    conversation.notice(notice.text)
+            except errors.OperatorCommandUnexecutableError as exc:
+                return self._unexecutable_abort(exc, iteration=start_iteration, state=state)
         # The allowance is this execution's: a resumed one re-arms it (-1 is unbounded).
         for iteration in (
             range(start_iteration, start_iteration + self.max_iterations)
@@ -2113,6 +2119,7 @@ class Harness:
         return _verify_gate.VerifyGate(
             configured=tuple(wf.verify_command),
             when=wf.verify_when,
+            at_start=wf.verify_at_start,
             retries=wf.verify_retries,
             timeout_s=wf.verify_timeout_s,
             infer=wf.verify_infer,

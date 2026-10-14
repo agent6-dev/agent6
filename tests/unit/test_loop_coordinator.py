@@ -262,6 +262,7 @@ def _build_wf(
                 stagnation_notice_after_s=300.0,
                 verify_command=verify_command,
                 verify_when=verify_when,
+                verify_at_start=True,
                 verify_retries=2,
             ),
             # A real int, not a Mock: segment_lanes compares the lane count against this cap.

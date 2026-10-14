@@ -187,6 +187,7 @@ def _config() -> Any:
             stagnation_notice_after_s=300.0,
             verify_command=("pytest", "-q"),
             verify_when="never",
+            verify_at_start=True,
             verify_retries=2,
             metric=None,
             verify_timeout_s=60.0,

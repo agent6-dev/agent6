@@ -233,6 +233,17 @@ class HarnessConfig(pydantic.BaseModel):
             "has no gate to run."
         ),
     )
+    verify_at_start: bool = pydantic.Field(
+        default=True,
+        description=(
+            "Run `verify_command` once before a fresh run's first turn, to record whether the "
+            "gate was red before the run's edits. A red one puts its output in the first "
+            "request, and a finish that leaves that same red reads `finished · gate was already "
+            "red`. Costs one gate run per fresh run: set `false` for a gate too slow to run "
+            'twice. No start gate runs under `verify_when = "never"` or '
+            '`sandbox.run_commands = "no"`, and a resume keeps the baseline its run recorded.'
+        ),
+    )
     verify_retries: int = pydantic.Field(
         ge=0,
         default=2,

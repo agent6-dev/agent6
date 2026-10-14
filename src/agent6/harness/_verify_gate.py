@@ -3,8 +3,10 @@
 """Run the verify gate the harness owes a turn, per `[harness].verify_when`.
 
 `finish` certifies the tree a run ends on; `step` also judges every editing turn; `never`
-leaves every gate run to the model. A tree the run already holds a verdict for is never judged
-twice. `VerifyGate` runs the gate and its scoped follow-up and keeps the verdict bookkeeping.
+leaves every gate run to the model. Under `finish` and `step` a fresh run also runs the gate once
+before its first turn, which records the baseline. A tree the run already holds a verdict for is
+never judged twice. `VerifyGate` runs the gate and its scoped follow-up and keeps the verdict
+bookkeeping.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ if TYPE_CHECKING:
     from agent6.harness import _loop_state
 
 VerifyWhen = Literal["finish", "step", "never"]
-HarnessVerifyWhy = Literal["finish", "step"]
+HarnessVerifyWhy = Literal["finish", "step", "start"]
 
 # Characters of gate output the model sees, from the end.
 VERIFY_TAIL_CHARS = 2000
@@ -179,6 +181,7 @@ class VerifyGate:
     Attributes:
         configured: The configured command, () when none.
         when: `[harness].verify_when`.
+        at_start: `[harness].verify_at_start`: a fresh run's gate runs once before its first turn.
         retries: The red finishes allowed.
         timeout_s: The gate's budget.
         infer: Whether a gateless run adopts an inferred command at a commit.
@@ -192,6 +195,7 @@ class VerifyGate:
 
     configured: tuple[str, ...]
     when: Literal["finish", "step", "never"]
+    at_start: bool
     retries: int
     timeout_s: float
     infer: bool
@@ -378,6 +382,62 @@ class VerifyGate:
             The one answer the harness gate, the per-step commit, the nudges and the prompt read.
         """
         return bool(self.command(verdict)) and self.may_run(denied=verdict.denied)
+
+    def start_baseline(self, state: _loop_state.LoopState) -> list[_conversation.Notice]:
+        """Run the gate on the unedited tree before a fresh run's first turn; record the baseline.
+
+        The verdict is the baseline's, not a pass or a failure of the run's own: the settled
+        guard and the memory advisory wait for those. A gate that produced no verdict records
+        nothing. An unexecutable operator command raises `OperatorCommandUnexecutableError` for
+        the loop to end on.
+
+        Args:
+            state: The execution's state.
+
+        Returns:
+            The first turn's notices: a red gate's verdict and the base-red notice, or the
+            withheld notice after a denial; none after a green.
+        """
+        verdict = state.verify
+        runs = self.at_start and self.mode == "run" and self.when != "never"
+        if not (runs and self.present(verdict)):
+            return []
+        self.log("LOOP: harness verify (start)")
+        self.emit("loop.verify_harness", why="start", iteration=0)
+        try:
+            result = self.dispatcher.run_verify()
+        except errors.ToolDeniedError as exc:
+            verdict.denied = True
+            return [_conversation.Notice(gate_withheld_notice("[harness verify] start", exc))]
+        except errors.ToolError:
+            return []
+        ok = result.returncode == 0
+        no_verdict = (
+            result.exec_failed
+            or result.returncode == EXIT_TIMEOUT
+            or _nudges.verify_did_not_run(result.stdout, result.stderr, result.duration_s)
+        )
+        if no_verdict:
+            return []  # nothing to record or tell
+        word = "green" if ok else f"red (exit {result.returncode})"
+        judged = self.judged_the_base_commit(verdict, result)
+        if judged:
+            verdict.note_baseline(ok=ok)
+            self.emit("loop.baseline", ok=ok, iteration=0)
+            self.log(f"LOOP: gate {word} before the run")
+            verdict.last_tail = f"{result.stdout}\n{result.stderr}".strip()[-2000:]
+            if not ok:
+                verdict.red_tree = self.chain.tree_sha()
+        else:
+            # The tree is past the base commit (an included dirty tree, a setup command that
+            # rewrote a tracked file): the verdict is no baseline, and the model still reads it.
+            self.log(f"LOOP: gate {word} before the run, on a tree past the base: no baseline")
+        if ok:
+            return []
+        notices = [_conversation.Notice(harness_verify_notice(result, "start"))]
+        if judged:
+            notices.append(_conversation.Notice(_nudges.BASELINE_RED_NOTICE))
+        return notices
 
     def harness_verify(
         self, state: _loop_state.LoopState, turn: _loop_state.TurnState, *, ending: bool = False

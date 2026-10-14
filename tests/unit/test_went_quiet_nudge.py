@@ -115,6 +115,7 @@ def _build_wf(repo: pathlib.Path, provider: mock.MagicMock, **kwargs: Any) -> lo
                 stagnation_notice_after_s=300.0,
                 verify_command=(),
                 verify_when="never",
+                verify_at_start=True,
                 verify_retries=2,
             ),
         ),

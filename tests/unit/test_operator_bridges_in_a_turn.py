@@ -98,6 +98,7 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
                 stagnation_notice_after_s=300.0,
                 verify_command=(),
                 verify_when="never",
+                verify_at_start=True,
                 verify_retries=2,
             ),
             parallel=types.SimpleNamespace(max_lanes=4),

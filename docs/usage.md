@@ -45,6 +45,7 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 
 The verify command is the success gate.
 Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
+A fresh run runs the gate once before its first turn, so a gate that was red before the run's edits is known as that: the model is told, and a finish that leaves the same red reads `finished · gate was already red` (`harness.verify_at_start = false` for a gate too slow to run twice).
 A red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
 [`[harness]`](config.md#harness) has the inference order and `verify_when`.
 

@@ -14,7 +14,7 @@ from unittest import mock
 
 import pytest
 
-from agent6.harness import _chain, _finish_gates, _loop_state, loop
+from agent6.harness import _chain, _finish_gates, _loop_state, _nudges, loop
 from agent6.tools import results
 from tests.unit.turn_context import turn_context
 
@@ -38,6 +38,7 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
             stagnation_notice_after_s=300.0,
             verify_command=("pytest",),
             verify_when="finish",
+            verify_at_start=True,
             verify_retries=2,
             verify_timeout_s=60.0,
             verify_infer=True,
@@ -91,6 +92,88 @@ def test_the_worker_is_told_when_it_inherited_a_red_gate(monkeypatch: pytest.Mon
     _patch_git(monkeypatch, wf)
     wf.gate.note_result(state, turn, _verify(1))
     assert any("already failing" in str(n) for n in turn.tool_results)
+
+
+def _start_wf(
+    rc: int, *, policy: str = "yes", when: str = "finish"
+) -> tuple[loop.Harness, mock.MagicMock]:
+    wf = _wf()
+    wf.mode = "run"
+    wf.config.harness.verify_when = when  # pyright: ignore[reportAttributeAccessIssue]
+    dispatcher = mock.MagicMock()
+    dispatcher.command_policy.return_value = policy
+    dispatcher.run_verify.return_value = _verify(rc)
+    wf.dispatcher = dispatcher
+    return wf, dispatcher
+
+
+@pytest.mark.parametrize("rc", [0, 1])
+def test_the_gate_runs_before_the_first_turn_and_records_the_baseline(
+    rc: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that edits before it verifies still learns what the gate said at the base."""
+    events: list[tuple[str, dict[str, object]]] = []
+
+    def _record(kind: str, **fields: object) -> None:
+        events.append((kind, fields))
+
+    state, (wf, _) = _state(), _start_wf(rc)
+    object.__setattr__(wf, "_emit", _record)
+    _patch_git(monkeypatch, wf)
+    texts = [n.text for n in wf.gate.start_baseline(state)]
+    assert state.verify.baseline_ok is (rc == 0)
+    assert state.verify.last_ok is (rc == 0)
+    assert ("loop.baseline", {"ok": rc == 0, "iteration": 0}) in events
+    if rc == 0:
+        assert texts == []  # a green base says nothing
+    else:
+        assert "start: verify_command exit 1" in texts[0]
+        assert texts[1] == _nudges.BASELINE_RED_NOTICE
+
+
+@pytest.mark.parametrize(
+    ("policy", "when"), [("yes", "never"), ("no", "finish")], ids=["never", "commands-off"]
+)
+def test_no_gate_runs_at_start_when_the_harness_may_not_run_one(
+    policy: str, when: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`verify_when = "never"` and `run_commands = "no"` keep the harness off the gate."""
+    state, (wf, dispatcher) = _state(), _start_wf(1, policy=policy, when=when)
+    _patch_git(monkeypatch, wf)
+    assert wf.gate.start_baseline(state) == []
+    dispatcher.run_verify.assert_not_called()
+    assert state.verify.baseline_ok is None
+
+
+def test_a_red_start_gate_past_the_base_reaches_the_model_and_records_no_baseline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A start gate on a tree past the base (an included dirty tree) is no baseline, and says so.
+
+    Its verdict was dropped in silence: no log line, no notice, and the finish ran the gate
+    again as if nothing had been observed.
+    """
+    state = _state()
+    wf = _wf(clean=False)
+    wf.mode = "run"
+    wf.config.harness.verify_when = "finish"  # pyright: ignore[reportAttributeAccessIssue]
+    dispatcher = mock.MagicMock()
+    dispatcher.command_policy.return_value = "yes"
+    dispatcher.run_verify.return_value = _verify(1)
+    wf.dispatcher = dispatcher
+    _patch_git(monkeypatch, wf)
+    notices = wf.gate.start_baseline(state)
+    assert state.verify.baseline_ok is None and state.verify.last_ok is None
+    assert [n.text.split(":")[0] for n in notices] == ["[harness verify] start"]
+
+
+def test_a_start_gate_without_a_verdict_records_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A timed-out start gate is no red baseline: it would excuse the run's own failures."""
+    state, (wf, _) = _state(), _start_wf(124)
+    _patch_git(monkeypatch, wf)
+    assert wf.gate.start_baseline(state) == []
+    assert state.verify.baseline_ok is None
+    assert state.verify.last_ok is None
 
 
 def test_a_execution_that_moved_past_the_base_claims_nothing(
@@ -220,6 +303,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
             stagnation_notice_after_s=300.0,
             verify_command=("pytest",),
             verify_when="finish",
+            verify_at_start=True,
             verify_retries=2,
             verify_timeout_s=60.0,
             verify_infer=True,
@@ -286,6 +370,7 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: path
             stagnation_notice_after_s=300.0,
             verify_command=("pytest",),
             verify_when="finish",
+            verify_at_start=True,
             verify_retries=2,
             verify_timeout_s=60.0,
             verify_infer=True,
@@ -300,3 +385,32 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: path
     ctx = turn_context(tree_green=lambda: False, gate_present=lambda: True)
     bounced = _finish_gates.verify_finish(turn, state, ctx) is not None
     assert not bounced, "the finish was bounced over an inherited failure"
+
+
+def test_a_green_start_gate_is_not_the_runs_own_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A green start gate would arm the settled guard and nudge a run before its first edit."""
+    state, (wf, _) = _state(), _start_wf(0)
+    _patch_git(monkeypatch, wf)
+    wf.gate.start_baseline(state)
+    assert state.verify.last_ok is True  # the untouched tree is judged
+    assert state.verify.ever_passed is False  # the guard waits for a pass of the run's own
+
+
+def test_a_red_start_gate_is_not_the_runs_own_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A red start gate would make every fix a red-to-green flip of the run's, advisory included."""
+    state, (wf, _) = _state(), _start_wf(1)
+    _patch_git(monkeypatch, wf)
+    wf.gate.start_baseline(state)
+    assert state.verify.last_ok is False
+    assert state.verify.ever_failed is False
+    assert state.verify.fail_streak == 0  # the baseline starts no failure streak of the run's
+
+
+def test_verify_at_start_off_runs_no_start_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`verify_at_start = false` keeps a slow gate from running before the first turn."""
+    state, (wf, dispatcher) = _state(), _start_wf(1)
+    wf.config.harness.verify_at_start = False  # pyright: ignore[reportAttributeAccessIssue]
+    _patch_git(monkeypatch, wf)
+    assert wf.gate.start_baseline(state) == []
+    dispatcher.run_verify.assert_not_called()
+    assert state.verify.baseline_ok is None

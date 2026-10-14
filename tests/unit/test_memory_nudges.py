@@ -77,6 +77,18 @@ def _flip(
     return None if nudge is None else nudge.text
 
 
+def test_flip_advisory_waits_for_a_red_of_the_runs_own() -> None:
+    """A gate red before the first turn would make every fix a flip that fires the advisory."""
+    wf = _wf()
+    state = _state()
+    state.verify.note_baseline(ok=False)
+    green = _turn(1)
+    _verify(wf, state, green, rc=0)
+    assert green.verify_flipped_green is True  # the test-only-green check still reads the flip
+    assert _flip(wf, state, green) is None
+    assert state.memory.flip_nudged is False
+
+
 def test_flip_advisory_fires_once_at_first_red_green_flip() -> None:
     wf = _wf()
     state = _state()

@@ -72,6 +72,19 @@ class VerifyVerdict:
             self.fail_signature = signature
             self.fail_streak = 1
 
+    def note_baseline(self, *, ok: bool) -> None:
+        """Record the gate's verdict on the tree before the run's first turn.
+
+        It judges the tree as it stands, as any verdict does, and counts as neither a pass
+        nor a failure of the run's own: no streak starts and neither `ever_` flag moves.
+
+        Args:
+            ok: Whether the gate passed.
+        """
+        self.baseline_ok = ok
+        self.last_ok = ok
+        self.edited_since = False
+
     def note_edit(self) -> None:
         """Record that the tree changed since the last verdict."""
         self.edited_since = True
