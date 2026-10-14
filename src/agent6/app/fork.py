@@ -429,6 +429,7 @@ def create_fork(
             # Config outranks the source's pin on the fork's first execution.
             plan.cfg.harness.verify_command or tuple(plan.gate[0]),
             workspace="a fork's new worktree",
+            at=plan.forked_from_sha or None,
         )
     ):
         reporter.refuse(gate_refusal)

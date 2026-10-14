@@ -1274,3 +1274,24 @@ def test_the_no_setup_refusal_says_the_command_runs_in_the_sandbox(
         "it runs in the run's own sandbox: with no route off the machine it has to work"
         " offline (docs/security.md has the recipe)"
     ) in text
+
+
+def test_a_gate_script_staged_but_not_committed_refuses_before_the_worktree_exists(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The worktree is cut from HEAD, which a staged addition is not part of.
+
+    Read off the index, the check accepted the script and the run failed after the worktree
+    and session existed.
+    """
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _untracked_venv(repo)
+    sp.run(["git", "add", "-f", ".venv/bin/python"], cwd=repo, check=True)
+    _pin_gate(repo)
+    prov = _script(monkeypatch)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-GATE02", "task"]) == 2
+
+    assert prov.calls == 0
+    assert _nothing_was_created(repo, "wt-GATE02")
+    assert "REFUSING: the verify gate runs `.venv/bin/python`" in capsys.readouterr().err

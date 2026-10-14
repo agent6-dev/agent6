@@ -109,11 +109,11 @@ def gate_refusal(
         origin: The checkout the workspace is cut from.
         gate: The gate the session will be judged by.
         workspace: The workspace, for the message ("a new worktree").
-        at: The commit the workspace is cut from; None reads the checkout's AGENTS.md.
+        at: The commit the workspace is cut from; None reads HEAD's AGENTS.md and files.
 
     Returns:
-        The refusal when the gate's first word is a path in the checkout that git does not
-        track and no setup command is configured or stated in AGENTS.md; None otherwise,
+        The refusal when the gate's first word is a path the commit does not hold and no
+        setup command is configured or stated in AGENTS.md; None otherwise,
         and when commands are withheld, which leaves the run gateless.
     """
     path = _gate_path(gate)
@@ -122,7 +122,7 @@ def gate_refusal(
     agents_md = verify_infer.read_agents_md(origin, cfg.sandbox.hide_paths, at=at)
     if verify_infer.setup_from_agents_md(agents_md) is not None:
         return None
-    if path in git_ops.tracked_files(origin):
+    if path in git_ops.tree_paths(origin, at or "HEAD"):
         return None
     return _no_setup_text(gate[0], workspace)
 
