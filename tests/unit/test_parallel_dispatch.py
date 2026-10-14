@@ -197,3 +197,41 @@ def test_summary_hands_a_conflicted_lane_to_the_operator() -> None:
     text = pd.summary_text("g", [_join("conflict")])
     assert "for the operator (`git merge " in text and "continue without it" in text
     assert "resolve" not in text
+
+
+def test_the_coordinator_takes_sigterm_as_a_ctrl_c_stop(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SIGTERM reaches the coordinator as a KeyboardInterrupt, which journals the stop.
+
+    `timeout`, CI and the kill `agent6 stop` falls back to send it; the handler is put back after.
+    """
+    import os
+    import signal
+    import time
+
+    from agent6.config import Config
+    from agent6.ui.cli import parallel as cli_parallel
+
+    def _clean(_origin: pathlib.Path) -> list[str]:
+        return []
+
+    def _clear(_cfg: Config) -> None:
+        return None
+
+    monkeypatch.setattr(git_ops, "modified_paths", _clean)
+    monkeypatch.setattr(preflight, "budget_preflight", _clear)
+    monkeypatch.setattr(cli_parallel, "_parallel_approval_refusal", _clear)
+
+    def _killed_run_parallel(*_a: object, **_kw: object) -> int:
+        os.kill(os.getpid(), signal.SIGTERM)
+        time.sleep(2.0)
+        return 0
+
+    monkeypatch.setattr(parallel, "run_parallel", _killed_run_parallel)
+    before = signal.getsignal(signal.SIGTERM)
+    with pytest.raises(KeyboardInterrupt):
+        cli_parallel.dispatch_parallel(
+            Config.model_validate({}), "t", "2", explicit_leaves=frozenset(), cwd=tmp_path
+        )
+    assert signal.getsignal(signal.SIGTERM) is before

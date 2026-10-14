@@ -18,6 +18,7 @@ from agent6.config import Config, ConfigError
 from agent6.models import validate
 from agent6.sessions import id
 from agent6.ui import spawn as ui_spawn
+from agent6.ui import steer
 from agent6.ui.cli import _common, _compare, _interact
 
 
@@ -145,18 +146,23 @@ def dispatch_parallel(
             "no terminal to attach from: a lane's questions get empty answers and its"
             " fetch and MCP approvals are denied"
         )
-    return parallel.run_parallel(
-        task,
-        lanes,
-        cfg=cfg,
-        explicit_leaves=explicit_leaves,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=lane_runtime(),
-        max_usd=max_usd,
-        fanout_id=fanout_id,
-        auto_approve=auto_approve,
-        lane_away=lane_away,
-        pins=pins,
-        spec=spec,
-    )
+    # `timeout`, CI and the kill `agent6 stop` falls back to: the coordinator journals the stop.
+    restore = steer.stop_on_sigterm()
+    try:
+        return parallel.run_parallel(
+            task,
+            lanes,
+            cfg=cfg,
+            explicit_leaves=explicit_leaves,
+            origin=origin,
+            origin_state=origin_state,
+            runtime=lane_runtime(),
+            max_usd=max_usd,
+            fanout_id=fanout_id,
+            auto_approve=auto_approve,
+            lane_away=lane_away,
+            pins=pins,
+            spec=spec,
+        )
+    finally:
+        restore()
