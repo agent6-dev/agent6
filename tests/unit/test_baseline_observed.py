@@ -119,11 +119,15 @@ def test_the_gate_runs_before_the_first_turn_and_records_the_baseline(
 
     state, (wf, _) = _state(), _start_wf(rc)
     object.__setattr__(wf, "_emit", _record)
+    lines: list[str] = []
+    object.__setattr__(wf, "_log", lines.append)
     _patch_git(monkeypatch, wf)
     texts = [n.text for n in wf.gate.start_baseline(state)]
     assert state.verify.baseline_ok is (rc == 0)
     assert state.verify.last_ok is (rc == 0)
     assert ("loop.baseline", {"ok": rc == 0, "iteration": 0}) in events
+    # The operator reads the verdict in the run log; the model reads a red one in its first request.
+    assert lines[-1] == f"LOOP: gate {'green' if rc == 0 else 'red (exit 1)'} before the run"
     if rc == 0:
         assert texts == []  # a green base says nothing
     else:
