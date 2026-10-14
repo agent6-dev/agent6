@@ -160,7 +160,7 @@ def _status_state(
             error = transcript.scrub_terminal_controls(scan.provider_error)
             return word, cell, " ".join(error.split())
         # The raw end reason is the diagnostic, unless the label already carries it.
-        end = "" if scan.end_reason in (word, reason) else scan.end_reason
+        end = "" if scan.end_reason in (word, *reason.split(" · ")) else scan.end_reason
         return word, cell, end
     detail = {
         "waiting": "needs answer; attach to respond",

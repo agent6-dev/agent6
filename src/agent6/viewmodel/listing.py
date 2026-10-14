@@ -458,8 +458,9 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
             scoped=facts.verify_scoped,
             gate_red=facts.gate_red,
         )
-        if not reason and (n := facts.unattended_questions):
-            reason = f"{n} question{'s' if n != 1 else ''} unanswered"
+        if n := facts.unattended_questions:
+            note = f"{n} question{'s' if n != 1 else ''} unanswered"
+            reason = f"{reason} · {note}" if reason else note
         return word, reason
     if facts.operator_blocked and ipc.worker_is_alive(session_dir):
         # Before session.start too: a run asks about uncommitted changes before it starts.

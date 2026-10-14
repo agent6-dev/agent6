@@ -1360,3 +1360,35 @@ def test_summary_names_the_questions_nobody_answered(tmp_path: pathlib.Path) -> 
     assert listing.scan_session_log(rd / "logs.jsonl").unattended_questions == 1
     s = summarize_session_dir(rd)
     assert (s.status, s.reason) == ("passed", "1 question unanswered")
+
+
+def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: pathlib.Path) -> None:
+    """The unanswered count joins a detail the end already has, a failure's reason included.
+
+    Added only to a bare label, it vanished under "gate was already red" and every failed end.
+    """
+    asked: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which?"}]},
+        {
+            "type": "question.answer",
+            "id": "q1",
+            "answers": [""],
+            "source": "headless-default",
+            "unseen": True,
+        },
+    ]
+    ends = {
+        "gate_red_at_base": ("finished", "gate was already red · 1 question unanswered"),
+        "max_iterations": ("failed", "max_iterations · 1 question unanswered"),
+    }
+    for reason, expected in ends.items():
+        rd = _write_run(
+            tmp_path,
+            "runs",
+            reason,
+            [*asked, {"type": "session.end", "reason": reason, "all_passed": False}],
+        )
+        (rd / "worker.pid").unlink()
+        s = summarize_session_dir(rd)
+        assert (s.status, s.reason) == expected

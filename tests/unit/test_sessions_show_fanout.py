@@ -302,3 +302,35 @@ def test_show_names_the_questions_nobody_answered(
     )
     assert main(["sessions", "show", "asked", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["unattended_questions"] == 1
+
+
+def test_show_names_a_failed_end_once_beside_the_unanswered_count(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The state line of a failed run carries the unanswered count, and its reason once.
+
+    The count was dropped beside any other detail; joined on, the raw end reason must not
+    follow the label that already spells it.
+    """
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(repo, "capped", {})
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="capped")
+    events: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which?"}]},
+        {
+            "type": "question.answer",
+            "id": "q1",
+            "answers": [""],
+            "source": "headless-default",
+            "unseen": True,
+        },
+        {"type": "session.end", "all_passed": False, "reason": "max_iterations"},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    assert main(["sessions", "show", "capped"]) == 0
+    line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("state:"))
+    assert line == "state:      failed · max iterations · 1 question unanswered"
