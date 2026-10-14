@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import os
 import pathlib
@@ -260,6 +261,58 @@ def _standing(event: dict[str, object]) -> bool:
     return bool(event.get("standing", True))
 
 
+_RUN_ENDED = "the run ended before this prompt was answered"
+
+
+@dataclasses.dataclass(slots=True)
+class _PromptWatch:
+    """The journal read that says when a prompt attach is asking takes no answer any more.
+
+    Attributes:
+        session_dir: The session directory.
+        answer: The type and id of the event that answers the prompt.
+        read_to: The journal offset read so far. It starts past the prompt: ids restart per
+            execution, so an older execution's answer to the same id lies before it.
+        closed_by: Why the prompt is closed, in the operator's words; "" while it is open.
+    """
+
+    session_dir: pathlib.Path
+    answer: tuple[str, str]
+    read_to: int
+    closed_by: str = ""
+
+    def _heard(self, end: int) -> None:
+        self.read_to = end
+
+    def closed(self) -> bool:
+        """Return whether the prompt is closed: answered, its execution over, or its worker gone.
+
+        The journal is the one durable record of an answer: the worker deletes the answer
+        file as it reads it.
+        """
+        if self.closed_by:
+            return True
+        # Liveness first: a worker that answers and exits between the two reads shows its answer.
+        alive = ipc.worker_is_alive(self.session_dir)
+        for event in tail_events(
+            self.session_dir / sessions_layout.LOGS_NAME,
+            follow=False,
+            start_at=self.read_to,
+            on_position=self._heard,
+        ):
+            etype = str(event.get("type", ""))
+            if (etype, str(event.get("id", ""))) == self.answer:
+                source = event.get("source")
+                self.closed_by = ipc.ANSWERED_ELSEWHERE + (f" (source: {source})" if source else "")
+                return True
+            if etype == "session.end" or etype in events.SESSION_START_EVENTS:
+                self.closed_by = _RUN_ENDED
+                return True
+        if not alive:
+            self.closed_by = _RUN_ENDED
+        return not alive
+
+
 class _CliFrontEnd:
     """The answering front-end an interactive `agent6 attach` becomes.
 
@@ -279,6 +332,12 @@ class _CliFrontEnd:
         self._handled: set[str] = set()
         # How many events the pre-scan decided; the append-only log hands them to `react` first.
         self._replayed: int = 0
+        # The journal offset read so far; what closes the prompt in hand lies past it.
+        self._read_to: int = 0
+
+    def heard(self, end: int) -> None:
+        """Take the journal offset the next event ends at, as `tail_events` reports it."""
+        self._read_to = end
 
     def open_prompts_at_attach(self, events_path: pathlib.Path) -> list[dict[str, object]]:
         """Pre-scan the existing log and return the prompts open right now.
@@ -294,7 +353,7 @@ class _CliFrontEnd:
         """
         open_prompts: dict[str, dict[str, object]] = {}
         scanned = 0
-        for ev in tail_events(events_path, follow=False):
+        for ev in tail_events(events_path, follow=False, on_position=self.heard):
             scanned += 1
             etype = str(ev.get("type", ""))
             pid = str(ev.get("id", ""))
@@ -314,16 +373,25 @@ class _CliFrontEnd:
 
         The spinner is paused for the prompt, and the id is marked handled so the follow-loop
         replay does not re-ask it. An approval's journaled `standing` rides along: False is a
-        gate with no scope to grant (`fetch`), so the prompt offers no session choice.
+        gate with no scope to grant (`fetch`), so the prompt offers no session choice. A prompt
+        that closes while it waits is dropped with one line and no answer written.
         """
         prompt_id = str(event.get("id", ""))
-        if event.get("type") == "approval.prompt":
+        approval = event.get("type") == "approval.prompt"
+        watch = _PromptWatch(
+            self._session_dir,
+            ("approval.answer" if approval else "question.answer", prompt_id),
+            self._read_to,
+        )
+        if approval:
             with self._view.pause():
                 answer = _interact.default_stdin_approver(
-                    str(event.get("prompt", "")), standing=_standing(event)
+                    str(event.get("prompt", "")), standing=_standing(event), until=watch.closed
                 )
-            if not ipc.write_answer(self._session_dir, prompt_id, answer or "no"):
-                self._view.notice(f"[agent6] {ipc.ANSWERED_ELSEWHERE}")
+            if not watch.closed() and not ipc.write_answer(
+                self._session_dir, prompt_id, answer or "no"
+            ):
+                watch.closed_by = ipc.ANSWERED_ELSEWHERE
         else:
             raw_questions = event.get("questions", [])
             questions = tuple(
@@ -334,14 +402,15 @@ class _CliFrontEnd:
                 for q in (raw_questions if isinstance(raw_questions, list) else [])
             )
             with self._view.pause():
-                answers = _interact.default_stdin_questioner(questions)
-            written = ipc.write_question_answers(
+                answers = _interact.default_stdin_questioner(questions, until=watch.closed)
+            if not watch.closed() and not ipc.write_question_answers(
                 self._session_dir,
                 prompt_id,
                 answers if answers is not None else tuple("" for _ in questions),
-            )
-            if not written:
-                self._view.notice(f"[agent6] {ipc.ANSWERED_ELSEWHERE}")
+            ):
+                watch.closed_by = ipc.ANSWERED_ELSEWHERE
+        if watch.closed_by:
+            self._view.notice(f"[agent6] {watch.closed_by}")
         self._handled.add(prompt_id)
 
     def _new_session(self) -> None:
@@ -482,7 +551,11 @@ def _watch_transcript(target: pathlib.Path) -> int:
             for event in front_end.open_prompts_at_attach(events_path):
                 front_end.handle(event)
         for event in tail_events(
-            events_path, follow=True, stop_when_finished=True, should_stop=worker_dead
+            events_path,
+            follow=True,
+            stop_when_finished=True,
+            should_stop=worker_dead,
+            on_position=front_end.heard if front_end is not None else None,
         ):
             view.feed(event)
             if front_end is not None:

@@ -94,6 +94,7 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 Every front-end answers a prompt by writing one file in the session directory, and so can a script.
 
 - `agent6 answer <id>` prints the open question; `agent6 answer <id> TEXT...` answers it, one TEXT per question
+- a prompt `agent6 attach` is showing closes once another front-end answers it: attach prints `already answered from another surface`, writes no answer and keeps following
 - an approval reads `<session dir>/approvals/<id>.answer`: `yes`, `no`, `session` or `session-deny` (anything else denies; the `session` answers only where the prompt's event says `standing: true`)
 - a question reads `<session dir>/questions/<id>.answer`: a JSON list of answers in the prompt's order
 - the prompt's `id` is in `logs.jsonl` (`approval.prompt`, `question.prompt`); write the file atomically (a sibling, then rename), the run consumes it as soon as it exists
