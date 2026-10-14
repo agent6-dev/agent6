@@ -137,16 +137,24 @@ class DroppedGrant:
         path: The configured path.
         real: The path it resolves to.
         region: The writable region it sits inside, where a jailed command can re-point it.
+        via_link: Only a link on the way to it sits in the region; the grant ends outside.
     """
 
     key: str
     path: pathlib.Path
     real: pathlib.Path
     region: pathlib.Path
+    via_link: bool = False
 
     def line(self) -> str:
         """Return the sentence a run prints for the grant at its start."""
         where = "" if self.real == self.path else f" (it resolves to {self.real})"
+        if self.via_link:
+            return (
+                f"sandbox.{self.key} entry {self.path}{where} is not granted: a link on its"
+                f" way sits inside {self.region}, which jailed commands write, so a command"
+                f" could point it anywhere. Grant {self.real} by its own path."
+            )
         return (
             f"sandbox.{self.key} entry {self.path}{where} is not granted on its own: it sits"
             f" inside {self.region}, which jailed commands write, so a command could point it"
@@ -172,12 +180,36 @@ class Grants:
     dropped: tuple[DroppedGrant, ...] = ()
 
 
+def _link_dirs(path: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    """Return the resolved directory of every symlink a resolution of the path passes through."""
+    dirs: list[pathlib.Path] = []
+    current = pathlib.Path(path.anchor)
+    pending = list(path.parts[1:])
+    # The kernel gives up after 40 links too.
+    while pending and len(dirs) <= 40:
+        name = pending.pop(0)
+        step = current.parent if name == ".." else current / name
+        if not step.is_symlink():
+            current = step
+            continue
+        try:
+            target = pathlib.PurePosixPath(step.readlink())
+        except OSError:
+            break
+        dirs.append(current)
+        if target.is_absolute():
+            current = pathlib.Path(target.anchor)
+        pending = [*(target.parts[1:] if target.is_absolute() else target.parts), *pending]
+    return tuple(dirs)
+
+
 def resolve_grants(config: Config, root: pathlib.Path) -> Grants:
     """Resolve `sandbox.extra_read_paths` and `extra_write_paths`, once for a run.
 
     A grant spelled or resolving strictly inside a region the run writes (the workspace root,
-    a write grant) is dropped: a jailed command can swap a component there for a symlink out
-    of every grant. A grant elsewhere resolves as the operator linked it.
+    a write grant), or reached through a link that sits in one, is dropped: a jailed command
+    can swap a component there for a symlink out of every grant. A grant elsewhere resolves
+    as the operator linked it.
 
     Args:
         config: The run's config.
@@ -202,10 +234,22 @@ def resolve_grants(config: Config, root: pathlib.Path) -> Grants:
             region = next(
                 (w for w in regions if any(_path_safety.path_within(p, w) for p in inside)), None
             )
-            if region is None:
-                entries.append((path, real))
+            links = () if region is not None else _link_dirs(path)
+            linked = next(
+                (w for w in regions if any(_path_safety.path_within(d, w) for d in links)), None
+            )
+            if region is not None or linked is not None:
+                dropped.append(
+                    DroppedGrant(
+                        key=key,
+                        path=path,
+                        real=real,
+                        region=region or linked or root,
+                        via_link=region is None,
+                    )
+                )
             else:
-                dropped.append(DroppedGrant(key=key, path=path, real=real, region=region))
+                entries.append((path, real))
     return Grants(
         read=tuple(kept["extra_read_paths"]),
         write=tuple(kept["extra_write_paths"]),

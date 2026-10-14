@@ -201,6 +201,26 @@ def test_boundaries_report_shows_each_grant_as_a_run_binds_it(
     assert f"    ro  {inside}" not in out
 
 
+def test_boundaries_report_says_when_only_a_link_puts_a_grant_in_the_workspace(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
+) -> None:
+    """A grant dropped for a link on its way would read "it sits inside" the workspace, falsely."""
+    _force(monkeypatch, "strict")
+    repo, real, grant = tmp_path / "repo", tmp_path / "real", tmp_path / "grant"
+    repo.mkdir()
+    real.mkdir()
+    monkeypatch.chdir(repo)
+    (repo / "hop").symlink_to(real, target_is_directory=True)
+    grant.symlink_to(repo / "hop", target_is_directory=True)
+    cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(grant),)))
+    check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert (
+        f"    --  {grant}  (sandbox.extra_read_paths: not granted, a link on its way sits inside"
+        f" {repo}, which jailed commands write)"
+    ) in out, out
+
+
 def test_boundaries_report_names_the_opted_in_persistent_home(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

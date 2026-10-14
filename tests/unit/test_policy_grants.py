@@ -70,3 +70,28 @@ def test_a_symlinked_grant_reaches_the_launcher_under_both_names(tmp_path: pathl
     built = policy.jail_policy(tmp_path / "repo", cfg, "strict", ("true",))
     assert link in built.extra_ro_paths and plain in built.extra_rw_paths
     assert built.grant_sources == ((link, real),)
+
+
+def test_a_grant_that_links_through_the_workspace_is_dropped(tmp_path: pathlib.Path) -> None:
+    """A grant resolved through a link inside the workspace was kept when it ended outside.
+
+    A jailed command of one run can re-point that link, and the next run would bind wherever
+    it then leads. The grant is dropped; a chain that never enters a writable region is kept.
+    """
+    repo, tools, real = tmp_path / "repo", tmp_path / "tools", tmp_path / "real"
+    for made in (repo, tools, real):
+        made.mkdir()
+    (repo / "current").symlink_to(real, target_is_directory=True)
+    (tools / "through").symlink_to(repo / "current", target_is_directory=True)
+    (tools / "direct").symlink_to(real, target_is_directory=True)
+    cfg = Config.model_validate(
+        {"sandbox": {"extra_read_paths": [str(tools / "through"), str(tools / "direct")]}}
+    )
+
+    grants = policy.resolve_grants(cfg, repo)
+
+    assert grants.read == ((tools / "direct", real),)
+    (dropped,) = grants.dropped
+    assert (dropped.path, dropped.real, dropped.region) == (tools / "through", real, repo)
+    assert f"it sits inside {repo}" not in dropped.line(), "the grant itself is outside"
+    assert f"a link on its way sits inside {repo}, which jailed commands write" in dropped.line()

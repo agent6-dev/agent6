@@ -109,19 +109,20 @@ def test_a_write_grant_holding_a_read_only_mount_names_the_grant_and_the_mount(
 def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_with(
     scratch: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    """A grant through a link in the workspace is the same tree for every launch of a run.
+    """A symlinked grant is the same tree for every launch of a run, whoever re-points it.
 
     The policy re-read the grant on each launch and the launcher's bind followed the link, so
-    a command that re-pointed the link gave the next command a directory outside every grant.
+    a link re-pointed mid-run gave the next command a directory outside every grant. A grant
+    that links through the workspace or a write grant is dropped, so the link is re-pointed
+    here from outside the jail.
     """
     repo, first, secret = scratch / "repo", scratch / "first", scratch / "secret"
     for made, said in ((first, "first"), (secret, "secret")):
         made.mkdir()
         (made / "name").write_text(f"{said}\n", encoding="utf-8")
     repo.mkdir()
-    (repo / "hop").symlink_to(first)
     grant = scratch / "grant"
-    grant.symlink_to(repo / "hop")
+    grant.symlink_to(first)
     cfg = Config.model_validate(
         {
             "sandbox": {
@@ -133,10 +134,10 @@ def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_w
     )
     run = dispatch.ToolDispatcher(root=repo, config=cfg, isolation=isolation)
     try:
-        swap = ["sh", "-c", f"cat {grant}/name && ln -sfn {secret} hop"]
-        before = run.dispatch("run_command", {"argv": swap}).to_wire()
+        before = run.dispatch("run_command", {"argv": ["cat", f"{grant}/name"]}).to_wire()
         assert before["returncode"] == 0 and before["stdout"] == "first\n", before
-        assert (repo / "hop").readlink() == secret
+        grant.unlink()
+        grant.symlink_to(secret)
         after = run.dispatch("run_command", {"argv": ["cat", f"{grant}/name"]}).to_wire()
         direct = run.dispatch("run_command", {"argv": ["cat", f"{secret}/name"]}).to_wire()
     finally:
