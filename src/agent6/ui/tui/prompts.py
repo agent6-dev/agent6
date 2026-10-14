@@ -52,8 +52,8 @@ class PromptDispatcher:
             if qp.answered:
                 # The journal holds an answer this modal did not write: it takes none now.
                 closed = self._open.pop(key, None)
-                if closed is not None and self._app.screen is closed:
-                    closed.dismiss(None)
+                if closed is not None:
+                    closed.close_answered_elsewhere(on_top=self._app.screen is closed)
             elif self.claim(session_dir, qp.id):
                 modal = modals.QuestionModal(qp.id, qp.questions, from_harness=qp.from_harness)
                 self._open[key] = modal

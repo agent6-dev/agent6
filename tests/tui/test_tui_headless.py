@@ -577,6 +577,40 @@ def test_a_submit_on_a_question_answered_elsewhere_writes_nothing(tmp_path: path
     assert not (tmp_path / "questions" / "question-1.answer").exists()
 
 
+def test_a_covered_modal_whose_question_closed_elsewhere_goes_when_uncovered(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A modal under another screen when its question closes is gone once that screen closes.
+
+    It stayed in the stack and resurfaced, offering an answer nobody would read.
+    """
+
+    class _Host(textual_app.App[None]):
+        pass
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            dispatcher = prompts.PromptDispatcher(app, answerable=lambda: True, lost="lost")
+            question = state.QuestionPrompt(id="question-1", questions=(state.Question("Which?"),))
+            fold = state.initial_state()
+            dispatcher.dispatch(tmp_path, dataclasses.replace(fold, pending_questions=(question,)))
+            await pilot.pause()
+            assert isinstance(app.screen, modals.QuestionModal)
+            app.push_screen(textual_screen.Screen())
+            await pilot.pause()
+            closed = dataclasses.replace(question, answered=True)
+            dispatcher.dispatch(tmp_path, dataclasses.replace(fold, pending_questions=(closed,)))
+            await pilot.pause()
+            assert not isinstance(app.screen, modals.QuestionModal)  # the cover stays on top
+            app.pop_screen()
+            await pilot.pause()
+            await pilot.pause()
+            assert not any(isinstance(s, modals.QuestionModal) for s in app.screen_stack)
+
+    asyncio.run(scenario())
+
+
 def test_back_and_quit_exit_codes(tmp_path: pathlib.Path) -> None:
     """Esc leaves the run view for the hub from both views; Ctrl+Q quits from anywhere.
 

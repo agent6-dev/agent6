@@ -435,6 +435,22 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
         self.question_id = question_id
         self.questions = questions
         self.from_harness = from_harness
+        self._answered_elsewhere = False
+
+    def close_answered_elsewhere(self, *, on_top: bool) -> None:
+        """Dismiss without a result: now when on top, else once the screen covering it closes.
+
+        `dismiss` pops the top of the stack, whichever screen that is.
+        """
+        if on_top:
+            self.dismiss(None)
+        else:
+            self._answered_elsewhere = True
+
+    def on_screen_resume(self) -> None:
+        """Close a covered modal whose question was answered while it waited."""
+        if self._answered_elsewhere:
+            self.dismiss(None)
 
     def compose(self) -> app.ComposeResult:
         """Lay out the prompt.
