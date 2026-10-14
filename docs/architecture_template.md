@@ -359,8 +359,11 @@ The source run and the operator's checkout are never mutated, and one fork edge 
 The jail policy grants the recorded `worktree_git_dir` read-only, and refuses when the worktree's `.git` pointer no longer resolves to it.
 The worktree's checkout lock is removed with the worktree.
 The worktree shares the repository's refs, so `sessions diff|commits|merge <new>` work from the repo like any run's; `sessions prune` removes the worktree once the fork is merged, and `sessions rm <new>` removes it with the record.
+An unstarted fork keeps its branch, chain ref and worktree even when its tip is reachable from the checkout's HEAD.
 The manifest is the only thing that names a worktree as agent6's.
 The clone sweep deletes a group dir of `lane-*` clones once the origin reaches every one of their tips, and leaves every other directory under `[parallel].workdir` alone; a worktree two sessions name (an `/undo` fork and its source) stays while either still needs it.
+A clone with no lane session record stays because a spawn timeout can leave a child alive before its first write, even after the coordinator exits.
+Prune names each kept group with its reason, and for a missing lane record the command that removes it.
 
 The rebuild (`graph/replay.py`) undoes every journal-stamped mutation newer than that version, so a fork's tasks, statuses, cursor, and journal match the turn its conversation came from.
 Node content the journal never records (title, rationale, acceptance, paths) is immutable after creation and comes from the current nodes; `notes` and `updated_at` cannot be unwound and stay current.

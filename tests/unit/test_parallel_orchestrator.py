@@ -17,7 +17,7 @@ import os
 import pathlib
 import threading
 import types
-from collections.abc import Generator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from typing import Any
 
 import pytest
@@ -29,6 +29,7 @@ from agent6.config import Config, ConfigError
 from agent6.harness import subrun
 from agent6.sessions import ipc
 from agent6.sessions import manifest as sessions_manifest
+from agent6.ui.cli import main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.viewmodel import listing
 
@@ -2583,6 +2584,77 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     assert paths.jail_cache_home(unmerged).is_dir()
     assert not paths.jail_cache_home(merged).exists()
     assert (foreign / ".git").exists()  # out of scope: untouched
+
+
+def test_prune_names_a_failed_start_clones_missing_record_and_removal(
+    origin: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime: parallel.LaneRuntime,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Prune names a failed spawn's missing lane record and manual cleanup, not a live lane."""
+    monkeypatch.chdir(origin)
+    cfg = Config()
+    lanes = parallel.build_lane_specs("1", cfg=cfg, origin=origin, fanout_id="failed11")
+
+    def fail_spawn(
+        _argv: list[str],
+        cwd: pathlib.Path,
+        *,
+        before: set[pathlib.Path],
+        list_dirs: Callable[[], list[pathlib.Path]],
+        env: dict[str, str],
+    ) -> tuple[pathlib.Path | None, str]:
+        assert cwd == lanes[0].workdir
+        assert not before and not list_dirs()
+        assert env["AGENT6_PARALLEL_LINEAGE"] == "failed11:failed11:1"
+        assert _workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
+        return None, "lane refused before creating a session"
+
+    failed_runtime = dataclasses.replace(runtime, spawn=fail_spawn)
+
+    def spawn_lane(spec: subrun.LaneSpec, task: str) -> subrun.LaneResult:
+        return parallel.bridge_spawner(
+            spec,
+            task,
+            cfg=cfg,
+            explicit_leaves=frozenset(),
+            origin=origin,
+            max_usd=None,
+            fanout_id="failed11",
+            coordinator="failed11",
+            runtime=failed_runtime,
+        )
+
+    assert (
+        parallel.run_parallel(
+            "t",
+            lanes,
+            cfg=cfg,
+            explicit_leaves=frozenset(),
+            origin=origin,
+            origin_state=paths.state_dir(origin),
+            runtime=failed_runtime,
+            spawner=spawn_lane,
+            fanout_id="failed11",
+        )
+        == 1
+    )
+    assert "FAILED to start" in "".join(capsys.readouterr())
+    lane = lanes[0].workdir
+    assert lane.is_dir()
+    assert not listing.session_dirs(paths.state_dir(lane))
+    assert not ipc.worker_is_alive(paths.state_dir(origin) / "sessions" / "runs" / "failed11")
+    for _ in range(2):
+        assert main(["sessions", "prune"]) == 0
+        out = capsys.readouterr().out
+        assert lane.is_dir()
+        assert "no lane session record" in out
+        assert "a lane may still be starting" in out
+        assert f"rm -r -- {lane.parent}" in out
+        assert "fan-out clones: swept 0, kept 1" in out
+        assert "holding a live lane" not in out
+        assert "merge or archive their lanes" not in out
 
 
 def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(

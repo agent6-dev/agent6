@@ -15,7 +15,7 @@ import sys
 from typing import Literal
 
 from agent6 import commit_message, git_ops, paths
-from agent6.app import _workdirs, fork_worktrees, merge
+from agent6.app import _workdirs, fork_worktrees, merge, resume
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import subrun
 from agent6.sessions import ipc
@@ -23,6 +23,8 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common, sessions_cmds
 from agent6.viewmodel import scan_session_log, tail_events, worker_models
+
+_UNSTARTED_FORK = "unmerged; fork has not started"
 
 # The gate words that mean the gate did not certify the run's final tree.
 _UNVERIFIED_WARNINGS = {
@@ -75,8 +77,8 @@ def _plan_merge(  # noqa: PLR0911
         config_path: The `--config` file, if any.
 
     Returns:
-        The plan, or the exit code of a printed refusal: every guard fails here, before
-        `_cmd_merge` mutates anything.
+        The plan, or the exit code of a printed refusal or an already-pruned merge.
+        Every guard runs before `_cmd_merge` mutates anything.
     """
     res = sessions_cmds._resolve_session_manifest(cwd, session_id)
     if isinstance(res, int):
@@ -92,6 +94,14 @@ def _plan_merge(  # noqa: PLR0911
         )
         return 2
     ref = sessions_cmds._commits_ref(cwd, manifest)
+    if (
+        (stamp := resume.covering_stamp(cwd, manifest)) is not None
+        and not layout.session_dir.is_symlink()
+        and (not ref.head_ref or git_ops.chain_tip(cwd, ref.head_ref) is None)
+    ):
+        already = "already " if stamp.commit else ""
+        print(f"[agent6] {already}{stamp.landed()} (run refs were pruned).")
+        return 0
     # execute_merge refuses a missing base_sha too; here it is a refusal before anything moves.
     unmergeable = (
         merge.NO_BASE_SHA
@@ -105,11 +115,12 @@ def _plan_merge(  # noqa: PLR0911
         return 2
     run_branch = ref.head_ref
     target = into or manifest.base_branch
-    if not target:
-        _common.error("no target branch (manifest has no base_branch); pass --into <branch>.")
-        return 2
-    if target == run_branch:
-        _common.error(f"target {target!r} is the run branch itself; pass --into <other-branch>.")
+    if not target or target == run_branch:
+        _common.error(
+            "no target branch (manifest has no base_branch); pass --into <branch>."
+            if not target
+            else f"target {target!r} is the run branch itself; pass --into <other-branch>."
+        )
         return 2
     try:
         cfg = layer.load_effective(cwd, config_path).config
@@ -276,16 +287,18 @@ def _session_stamp(
     """Return a session's recorded merge and why none could be read.
 
     Returns:
-        `(stamp, reason)`: the reason is "no session record" or "unreadable manifest"
-        (kept, never force-deleted), else ""; the stamp is None when the manifest records no
-        merge.
+        `(stamp, reason)`: the reason names a missing or unreadable record, or an unstarted
+        fork (kept, never deleted), else ""; the stamp is None when the manifest records no merge.
     """
     if layout is None:
         return None, "no session record"
     try:
-        return sessions_manifest.read_manifest(layout.session_dir).merged, ""
+        manifest = sessions_manifest.read_manifest(layout.session_dir)
     except sessions_manifest.ManifestError:
         return None, "unreadable manifest"
+    if manifest.parent_session_id and not scan_session_log(layout.logs_path).saw_start:
+        return manifest.merged, _UNSTARTED_FORK
+    return manifest.merged, ""
 
 
 def _base_gone(into: str) -> str:
@@ -415,7 +428,8 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | Non
     Run branches reachable-merged into HEAD go; squash-merged and unmerged ones are
     reported. Fan-out clone dirs go when every lane branch tip exists in this repo; a clone
     holding any commit this repo lacks is kept whole. The worktree of a merged fork goes;
-    an unmerged fork keeps its worktree. With `--delete-squashed`, branches and chain refs
+    an unmerged fork keeps its worktree, and an unstarted fork keeps its branch too.
+    With `--delete-squashed`, branches and chain refs
     the manifest confirms were squash-merged into an existing base are force-deleted too,
     each deletion printing the exact command to undelete it. Unmerged runs are never
     force-deleted.
@@ -449,11 +463,11 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | Non
             live_kept += 1
             print(f"[agent6] kept {br} (live)")
             continue
-        if git_ops.delete_branch_if_merged(cwd, br):
+        stamp, why = _session_stamp(layout)
+        if why != _UNSTARTED_FORK and git_ops.delete_branch_if_merged(cwd, br):
             deleted += 1
             print(f"[agent6] deleted {br} (merged)")
             continue
-        stamp, why = _session_stamp(layout)
         if why:
             unmerged_kept += 1
             print(f"[agent6] kept {br} ({why}; review, then: git branch -D {br})")
@@ -510,12 +524,11 @@ def _sweep_workdirs(
     except ConfigError as exc:
         print(f"[agent6] workdir sweep skipped (config unreadable: {exc})", file=sys.stderr)
         return "", False
-    clones_swept, clones_kept = _workdirs.sweep_fanout_clones(cwd, cfg)
-    if clones_kept:
-        print(
-            f"[agent6] kept {clones_kept} fan-out clone dir(s) holding a live lane or"
-            " commits this repo lacks (merge or archive their lanes first)"
-        )
+    clones_swept, clones_kept = _workdirs.sweep_fanout_clones(
+        cwd,
+        cfg,
+        note_keep=lambda path, why: print(f"[agent6] kept fan-out clones at {path} ({why})"),
+    )
     worktrees_removed, worktrees_kept = fork_worktrees.sweep_fork_worktrees(cwd, state)
     for fork_id, why in worktrees_removed:
         print(f"[agent6] removed {fork_id}'s worktree ({why})")

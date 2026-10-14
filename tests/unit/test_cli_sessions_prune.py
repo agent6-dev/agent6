@@ -11,6 +11,7 @@ import subprocess
 import pytest
 
 from agent6 import git_ops, paths
+from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
 
@@ -60,6 +61,7 @@ def _manifest(
     data: dict[str, object] = {
         "version": 2,
         "session_id": session_id,
+        "mode": "run",
         "base_sha": base,
         "base_branch": "main",
         "run_branch": f"agent6/{session_id}",
@@ -843,6 +845,64 @@ def _fork_with_worktree(
             data["merged"] = {"into": "main", "sha": base, "tip": base}
         layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
     return worktree
+
+
+@pytest.mark.parametrize("delete_squashed", [False, True])
+def test_prune_preserves_a_created_fork_at_an_already_reachable_commit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    delete_squashed: bool,
+) -> None:
+    """Prune keeps an unstarted fork's branch, chain and worktree when HEAD contains its tip."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _manifest(tmp_path, "origin11", base, merged=False)
+    source = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="origin11"
+    )
+    source.logs_path.write_text(
+        '{"type": "session.start", "mode": "run"}\n'
+        '{"type": "session.end", "reason": "finish_session"}\n',
+        encoding="utf-8",
+    )
+    source.checkpoint_path(4).write_text(
+        _snapshot.SessionSnapshot(
+            system="sys",
+            messages=[{"role": "user", "content": "t"}],
+            tool_calls=0,
+            next_iteration=4,
+            root_task_id=None,
+            original_task="t",
+            verify_command=(),
+            head_sha=base,
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    assert main(["fork", "origin11", "--at-turn", "4", "--no-run", "--session-id", "fresh11"]) == 0
+    capsys.readouterr()
+    child = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="fresh11")
+    worktree = pathlib.Path(json.loads(child.manifest_path.read_text(encoding="utf-8"))["worktree"])
+    assert not child.logs_path.exists()
+
+    assert main(["sessions", "prune", *(["--delete-squashed"] if delete_squashed else [])]) == 0
+
+    out = capsys.readouterr().out
+    assert _branch_exists(tmp_path, "agent6/fresh11"), out
+    assert _chain_ref_exists(tmp_path, "fresh11")
+    assert worktree.is_dir()
+    assert "kept agent6/fresh11 (unmerged" in out
+    assert "kept fresh11's worktree (unmerged)" in out
+    assert "deleted agent6/fresh11" not in out
+    assert main(["sessions", "show", "fresh11"]) == 0
+    shown = capsys.readouterr().out
+    assert "created (no events yet)" in shown
+    assert "is gone" not in shown
 
 
 def test_prune_removes_the_worktree_of_a_merged_fork_and_keeps_an_unmerged_one(

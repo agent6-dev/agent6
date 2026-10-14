@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
+import shlex
 import shutil
+from collections.abc import Callable
 
 from agent6 import git_ops, paths
 from agent6.config import Config, layer
@@ -120,14 +122,14 @@ def recorded_merged(origin: pathlib.Path, clone: pathlib.Path, tip: str) -> bool
     return False
 
 
-def lane_may_run(clone: pathlib.Path) -> bool:
-    """Tell whether a clone still belongs to a lane: a live worker, or no session dir yet.
+def lane_keep_reason(clone: pathlib.Path) -> str:
+    """Return why a live lane or an unconfirmed startup keeps the clone, else "".
 
     Args:
         clone: The lane's clone.
 
     Returns:
-        Whether the lane may still be running.
+        The keep reason; a spawn timeout can leave a live child with no session record.
     """
     state = paths.state_dir(clone)
     dirs = [
@@ -136,19 +138,31 @@ def lane_may_run(clone: pathlib.Path) -> bool:
         for d in sessions_layout.bucket_dir(state, bucket).glob("*")
         if d.is_dir()
     ]
-    return not dirs or any(ipc.worker_is_alive(d) for d in dirs)
+    if not dirs:
+        return (
+            "no lane session record, so a lane may still be starting; once none is, remove it"
+            f" with: rm -r -- {shlex.quote(str(clone.parent))}"
+        )
+    return "live lane; stop it before pruning" if any(ipc.worker_is_alive(d) for d in dirs) else ""
 
 
-def sweep_fanout_clones(origin: pathlib.Path, cfg: Config) -> tuple[int, int]:
+def sweep_fanout_clones(
+    origin: pathlib.Path,
+    cfg: Config,
+    *,
+    note_keep: Callable[[pathlib.Path, str], None] = lambda _path, _why: None,
+) -> tuple[int, int]:
     """Delete fan-out clone dirs whose every tip the origin already reaches.
 
     A clone holding a commit the origin lacks, or a live lane, keeps its whole
-    group dir: it may be the only copy. Only a dir holding `lane-*` clones is a
-    group; a fork's worktree or an operator's dir is left alone.
+    group dir: it may be the only copy. A clone with no lane session record is kept because
+    a spawn timeout can leave a live child before its first write. Only a dir holding
+    `lane-*` clones is a group; a fork's worktree or an operator's dir is left alone.
 
     Args:
         origin: The repository.
         cfg: The run's config.
+        note_keep: Receives each kept group path and its reason.
 
     Returns:
         `(swept, kept)` group counts.
@@ -161,35 +175,36 @@ def sweep_fanout_clones(origin: pathlib.Path, cfg: Config) -> tuple[int, int]:
         clones = [c for c in sorted(fanout.glob("lane-*")) if (c / ".git").is_dir()]
         if not clones:
             continue
-        safe = True
+        why = ""
         for clone in clones:
             try:
                 tips = [git_ops.chain_tip(clone, br) for br in git_ops.list_run_branches(clone)]
                 # A machine-state clone's work rides its chain ref, not a branch.
                 tips += [sha for _ref, sha in git_ops.list_chain_refs(clone)]
-            except git_ops.GitError:
-                safe = False
+                if not tips and (why := lane_keep_reason(clone)):
+                    break
+                # Reachability, not existence: a loose object is one `git gc` from gone.
+                if any(
+                    tip is not None
+                    and not git_ops.commit_is_reachable(origin, tip)
+                    and not recorded_merged(origin, clone, tip)
+                    for tip in tips
+                ):
+                    why = "commits this repo cannot reach; merge or archive the lane first"
+                    break
+            except git_ops.GitError as exc:
+                why = (
+                    f"git could not check its commits: {exc}; review this clone before removing it"
+                )
                 break
-            if not tips and lane_may_run(clone):
-                # A starting lane's work is its working tree alone.
-                safe = False
-                break
-            # Reachability, not existence: a loose object is one `git gc` from gone.
-            if any(
-                tip is not None
-                and not git_ops.commit_is_reachable(origin, tip)
-                and not recorded_merged(origin, clone, tip)
-                for tip in tips
-            ):
-                safe = False
-                break
-        if safe:
+        if not why:
             for clone in clones:
                 shutil.rmtree(paths.jail_cache_home(clone), ignore_errors=True)
             shutil.rmtree(fanout, ignore_errors=True)
             swept += 1
         else:
             kept += 1
+            note_keep(fanout, why)
     return swept, kept
 
 

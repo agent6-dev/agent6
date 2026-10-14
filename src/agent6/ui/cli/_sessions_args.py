@@ -91,7 +91,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "merge",
         help=(
             "Merge a session's committed work into a branch. Default target: the branch where"
-            " the session started."
+            " the session started. A pruned run reports its saved merge."
         ),
     )
     _common._add_session_id(sessions_merge, completers._complete_session_ids)
@@ -224,7 +224,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             "Clean up merged session git data. Delete safe-to-remove agent6/* branches,"
             " internal commit references whose recorded targets contain their work, parallel"
             " clones whose commits are present, and the worktrees of sessions that are merged"
-            " or hold no work. Report anything kept."
+            " or hold no work. Keep unstarted forks. Report kept clones with their paths and"
+            " reasons."
         ),
     )
     sessions_prune.add_argument(

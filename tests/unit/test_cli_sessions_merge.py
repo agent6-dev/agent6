@@ -629,6 +629,48 @@ def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
     assert stamped == real_sha
 
 
+@pytest.mark.parametrize("strategy", ["ff", "merge", "squash"])
+@pytest.mark.parametrize("branch_per_run", [False, True])
+def test_merging_a_pruned_run_reports_its_recorded_merge(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    strategy: str,
+    *,
+    branch_per_run: bool,
+) -> None:
+    """A repeated merge after prune names the landing, not a run that committed nothing."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(
+        tmp_path,
+        "pruned11",
+        commits=[("a.txt", "one\n", "iter 1"), ("b.txt", "two\n", "iter 2")],
+        run_branch="<auto>" if branch_per_run else None,
+    )
+    _git(tmp_path, "update-ref", git_ops.chain_ref_for("pruned11"), "agent6/pruned11")
+    if not branch_per_run:
+        _git(tmp_path, "branch", "-D", "agent6/pruned11")
+    assert main(["sessions", "merge", "pruned11", "--strategy", strategy]) == 0
+    landed = _git(tmp_path, "rev-parse", "main")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="pruned11"
+    )
+    record = layout.manifest_path.read_text(encoding="utf-8")
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert git_ops.chain_tip(tmp_path, "agent6/pruned11") is None
+    assert git_ops.chain_tip(tmp_path, git_ops.chain_ref_for("pruned11")) is None
+    capsys.readouterr()
+
+    assert main(["sessions", "merge", "pruned11"]) == 0
+
+    out = capsys.readouterr().out
+    assert "already merged into main" in out
+    assert landed[:12] in out
+    assert "committed nothing" not in out
+    assert _git(tmp_path, "rev-parse", "main") == landed
+    assert layout.manifest_path.read_text(encoding="utf-8") == record
+
+
 def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

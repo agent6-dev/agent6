@@ -49,6 +49,7 @@ def test_merge_planner_passes_the_explicit_config_path(
         base_branch = "main"
         base_sha = "0" * 40
         run_branch = "agent6/x"
+        merged = None
 
     def _resolved(cwd: pathlib.Path, sid: str) -> Any:
         return (layout, _Manifest())
