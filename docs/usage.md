@@ -108,7 +108,7 @@ agent6 fork <session-id> --at-turn 7 # a new run from turn 7; --steer seeds it, 
 
 State is snapshotted before each model call and checkpointed per turn.
 
-- `fork` continues a copy from a turn as a new run in its own git worktree; the original run and your checkout stay as they are, and `sessions merge`, `prune` and `rm` treat it like any run ([session state](architecture.md#session-state-on-disk))
+- `fork` continues a copy from a turn as a new run in its own git worktree ([isolated workspaces](#isolated-workspaces)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `rm` treat it like any run ([session state](architecture.md#session-state-on-disk))
 - a `--steer` on a fork, or on resuming a run the agent finished, becomes the new run's task and names its row and its merge subject
 - a run that was squash-merged merges again from its landed tip, so nothing lands twice
 
@@ -188,7 +188,7 @@ agent6 ask "how does the task-graph curator work?"
 - `--preset <name>`: a strategy preset (`standard`, `quick`, `ultra`, `paranoid`, or your own), fixed for the execution; `resume --preset` switches ([presets](config.md#presets))
 - `--model [provider/]model`: the model for the mode's role, over every config layer; a bare id keeps the role's provider, and a resume keeps the recorded pick unless it sets its own
 - `--parallel 3` (or `provider/model-a,model-b`): isolated lanes, auto-compared into a ranked report; the fan-out is a session of its own that `attach`, `stop` and `sessions show` address, its lanes folded under it (`--lanes` expands them) ([parallel](config.md#parallel))
-- `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[parallel].workdir`; your checkout and its uncommitted changes stay as they are and are not carried, so you can keep working there or start more runs; `sessions merge` lands the work and `sessions prune` then removes the worktree, as it does for a run that committed nothing and left no edits; `agent6 sessions` marks the run `(worktree)`, and `sessions show` and `ps` print the worktree's path
+- `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[parallel].workdir`; your checkout and its uncommitted changes stay as they are and are not carried, and neither is anything git does not track ([isolated workspaces](#isolated-workspaces)), so you can keep working there or start more runs; `sessions merge` lands the work and `sessions prune` then removes the worktree, as it does for a run that committed nothing and left no edits; `agent6 sessions` marks the run `(worktree)`, and `sessions show` and `ps` print the worktree's path
 - `--standing "<goal>"`: a fallback goal the run returns to whenever its queue drains; only the operator retires it, and ceilings still end the run (`harness.standing_patience`)
 - `--pin "<text>"`: an instruction re-shown after every compaction
 - `--from <id>`: seed from another session's task, outcome, diff and plan; a plan id runs that plan, and `sessions show` prints `seeded from`
@@ -196,6 +196,25 @@ agent6 ask "how does the task-graph curator work?"
 - `--decompose`: a task graph up front; `--skill NAME`: a skill in the prompt (a skill whose text waits on a person stalls an unattended run in `ask_user`; `agent6 skills disable NAME` keeps it out)
 - `--session-id ID`: name the session yourself
 - `agent6 prompt show [--mode run|plan|ask|agent] [--json]`: everything the model receives on the first call
+
+## Isolated workspaces
+
+`run --worktree`, a fork, each `--parallel` lane and a run-mode machine state work in a worktree or a clone of their own.
+
+- It starts with the repository's tracked files at the commit it was cut from: no uncommitted change, and nothing git does not track (`.venv`, `node_modules`, a build directory).
+- `[parallel].setup_command` builds what is missing; it runs once in each new workspace, before the first turn:
+
+    ```sh
+    agent6 config set --repo parallel.setup_command '["uv", "sync"]'
+    ```
+
+- Unset, a `## Setup command` fenced block in AGENTS.md supplies it, read as the `## Verify command` block is; the run prints the command and that AGENTS.md gave it.
+- The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
+- Its output is printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any model call (exit `1`).
+- The files it leaves untracked stay out of the run's commits.
+- It runs once per workspace: `resume` does not run it again, and a fork's new worktree runs it at the fork's first execution.
+- The verify gate is settled in your checkout and carried into the workspace: a gate inferred as `.venv/bin/python -m pytest -q` stays that.
+- A gate whose first word is a path git does not track, with no setup command, refuses `run --worktree`, `fork` and `run --parallel` before anything is created; the refusal names the path, the config line and the AGENTS.md block.
 
 ## Other commands
 

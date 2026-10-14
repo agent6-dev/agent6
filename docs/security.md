@@ -253,6 +253,17 @@ The agent works within the environment it is given and cannot expand it:
 - Host-installed toolchains compile and run; a networked build step needs `network` loosened.
     - a toolchain that keeps its state under your home needs that directory granted and named, because the jail's `HOME` is its own: for rustup's `cargo`, `sandbox.extra_read_paths = ["/home/you/.rustup"]` and a gate of `env RUSTUP_HOME=/home/you/.rustup cargo test`
 - Toolchains, venvs, and deps are installed outside agent6. Access widens through config (`extra_read_paths`, `network`, `[providers.*].base_url`), all visible in `config show`.
+- The setup command of an isolated workspace (`[parallel].setup_command`, or an AGENTS.md `## Setup command` block) is a jailed command like any other
+    - it runs through the run's own jail: the isolation, network and grants every command of that run gets, the approval `run_commands = "ask"` asks, and nothing under `"no"`
+    - it has no network of its own and no read of the checkout the workspace was cut from: a setup step with a wider network would let a dependency it fetches run with it
+    - an AGENTS.md block is repository content, so a repository can state the command; it reaches what a command the model chose would reach
+    - the files it leaves untracked stay out of the run's commits
+    - under a sandbox with no route out (the default network), the command has to work offline
+    - the recipe measured under `strict`, for a uv project:
+        1. `agent6 config set --repo sandbox.home cache`, so jailed commands in this repository share one persistent `HOME` and its tool cache
+        2. warm that cache once with your own networked command, from the checkout: `agent6 --config net.toml exec --new -- uv sync`, where `net.toml` sets `[sandbox] home = "cache"`, `network = "host"` and `extra_read_paths` for the resolver and CA files (`/etc/resolv.conf`, `/etc/hosts`, `/etc/nsswitch.conf`, `/etc/ssl`)
+        3. `agent6 config set --repo parallel.setup_command '["uv", "sync", "--offline"]'`: a new worktree's `.venv` is then built from the cache with no route out (1.2 s for a two-package project), importing the worktree's own source
+    - the warmed cache serves `run --worktree` and forks, whose worktrees share the repository's `HOME`; a lane's clone and a machine state's clone have a `HOME` of their own, where that cache is absent
 - Running agent6 as root needs `--allow-root` / `AGENT6_ALLOW_ROOT=1` (plus a banner) and weakens the boundary
     - `strict`'s single-uid map is then root to root: jailed children run as real root under Landlock, seccomp, and `NO_NEW_PRIVS` only
     - a setuid bit planted through `openat2` (the one create path seccomp cannot filter) then lands on a root-owned file in the workspace.

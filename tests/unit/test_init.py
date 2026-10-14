@@ -8,7 +8,7 @@ import pathlib
 
 import pytest
 
-from agent6 import init, paths
+from agent6 import init, paths, verify_infer
 from agent6.config import layer
 
 
@@ -244,3 +244,28 @@ def test_init_next_steps_name_only_what_is_still_missing(
     out = capsys.readouterr().out
     assert "agent6 connect" not in out and "agent6 model worker" not in out
     assert "verify is inferred" not in out and 'agent6 run "<task>"' in out
+
+
+def test_init_states_the_setup_command_a_lockfile_makes_obvious(tmp_path: pathlib.Path) -> None:
+    """A starter AGENTS.md with no setup block left a `run --worktree` with no environment."""
+    repo = _repo(tmp_path)
+    (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    (repo / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+
+    assert init.init_workspace(repo) == 0
+
+    text = (repo / "AGENTS.md").read_text(encoding="utf-8")
+    assert verify_infer.setup_from_agents_md(text) == ("uv", "sync")
+    assert text.index("## Setup command") < text.index("## Verify command")
+
+
+def test_init_writes_no_setup_block_without_a_lockfile(tmp_path: pathlib.Path) -> None:
+    """A guessed setup command would fail every new worktree's first step."""
+    repo = _repo(tmp_path)
+    (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+
+    assert init.init_workspace(repo) == 0
+
+    text = (repo / "AGENTS.md").read_text(encoding="utf-8")
+    assert "## Setup command" not in text
+    assert verify_infer.setup_from_agents_md(text) is None

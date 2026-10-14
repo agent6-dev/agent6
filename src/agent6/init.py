@@ -5,7 +5,8 @@
 Each step says what it will do, warns before overriding anything set, and can
 be skipped; nothing existing is overwritten. In order: the per-repo config
 file, `harness.verify_command` inferred from the repo, the secret and
-build-artifact `.gitignore` entries, and AGENTS.md or its verify section.
+build-artifact `.gitignore` entries, and AGENTS.md or its verify section (a new
+AGENTS.md also states the setup command a lockfile makes obvious).
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ change a project convention, build command, dependency, or security invariant.
 ## Project conventions
 
 <!-- EDIT: language, framework, style, type-check, formatter, naming rules -->
-
+{setup}
 ## Verify command
 
 The command agent6 runs to decide whether a step "succeeded". agent6 reads this
@@ -61,6 +62,27 @@ also fine.
 
 <!-- EDIT: idiomatic anti-patterns specific to this codebase. -->
 """
+
+# A worktree or a clone holds tracked files only; agent6 reads this block for the command
+# that builds the rest.
+_SETUP_SECTION = """
+## Setup command
+
+The command that builds this repo's environment in a new worktree or clone, which
+holds tracked files only. agent6 runs it once there, in the sandbox, before the
+first turn of `run --worktree`, a fork or a `--parallel` lane; set
+parallel.setup_command to pin another.
+
+```bash
+{setup}
+```
+"""
+
+# The lockfiles whose install command is not a guess.
+_LOCKFILE_SETUP: tuple[tuple[str, str], ...] = (
+    ("uv.lock", "uv sync"),
+    ("package-lock.json", "npm ci"),
+)
 
 _VERIFY_SECTION = """\
 
@@ -206,7 +228,13 @@ def _setup_agents_md(
     verify_hint = " ".join(inferred.argv) or "# EDIT: your verify pipeline"
     if not agents.is_file():
         if ask("Create a starter AGENTS.md (how agents should work in this repo)?", True):
-            agents.write_text(_STARTER_AGENTS_MD.format(verify=verify_hint), encoding="utf-8")
+            setup = next((cmd for lock, cmd in _LOCKFILE_SETUP if (root / lock).is_file()), "")
+            agents.write_text(
+                _STARTER_AGENTS_MD.format(
+                    verify=verify_hint, setup=_SETUP_SECTION.format(setup=setup) if setup else ""
+                ),
+                encoding="utf-8",
+            )
             print("  created AGENTS.md")
         else:
             print("  skipped AGENTS.md")

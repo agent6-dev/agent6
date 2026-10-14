@@ -116,8 +116,10 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             "From the repository's top level, work in a new git worktree of it, at HEAD's"
             " commit, under [parallel].workdir. This checkout is not touched: its uncommitted"
             " changes stay here and are not carried into the run, so you can keep working here"
-            " or start more runs. Land the work with `agent6 sessions merge ID`; `agent6"
-            " sessions prune` then removes the worktree. Cannot be used with --parallel."
+            " or start more runs. The worktree holds tracked files only: [parallel].setup_command,"
+            " or an AGENTS.md `## Setup command` block, builds what git does not track (.venv,"
+            " node_modules) before the first turn. Land the work with `agent6 sessions merge ID`;"
+            " `agent6 sessions prune` then removes the worktree. Cannot be used with --parallel."
         ),
     )
     run_profile = run_p.add_argument(
