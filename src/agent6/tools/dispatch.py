@@ -131,7 +131,11 @@ class ToolDispatcher:
         if mem is not None:
             # The grant's target must exist: the model cannot mkdir outside the jail.
             paths.mkdir_for_real_user(mem)
-        self._ws = tools_policy.workspace_for(config, self._root, memory_dir=mem)
+        # Resolved once: every jail launch and the file tools hold the same directories.
+        self._grants = tools_policy.resolve_grants(config, self._root)
+        self._ws = tools_policy.workspace_for(
+            config, self._root, memory_dir=mem, grants=self._grants
+        )
         self.isolation: kinds.IsolationLevel = isolation
         self._mode: Literal["run", "plan", "ask", "machine"] = mode
         # next() is atomic under the GIL, so seats on a shared dispatcher need no lock.
@@ -926,6 +930,7 @@ class ToolDispatcher:
             extra_rw_paths=extra_rw_paths,
             extra_protect_paths=self.extra_protect_paths,
             worktree_git_dir=self._worktree_git_dir,
+            grants=self._grants,
         )
 
     def _net(self) -> jail.SessionNetwork | None:

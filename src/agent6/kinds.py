@@ -222,8 +222,11 @@ class JailPolicy:
         env: The child's environment.
         network: The network the child joins: the machine's, the run's own shared
             with its siblings, or an empty one of its own.
-        extra_ro_paths: Trees bound read-only at their real paths.
-        extra_rw_paths: Trees bound read-write at their real paths.
+        extra_ro_paths: Trees bound read-only at their own paths.
+        extra_rw_paths: Trees bound read-write at their own paths.
+        grant_sources: For each of those two whose path is a symlink or passes through one,
+            (the path, what it resolved to): the launcher binds the resolved tree at the
+            path and puts the Landlock rule on it, following no link of its own.
         extra_device_paths: Device nodes bound into the jail's `/dev`; each must be a
             char or block device on the host or the launcher refuses.
         extra_protect_paths: Paths inside the workspace made read-only from the child's
@@ -244,6 +247,7 @@ class JailPolicy:
     network: NetworkMode = "none"
     extra_ro_paths: tuple[pathlib.Path, ...] = ()
     extra_rw_paths: tuple[pathlib.Path, ...] = ()
+    grant_sources: tuple[tuple[pathlib.Path, pathlib.Path], ...] = ()
     extra_device_paths: tuple[pathlib.Path, ...] = ()
     extra_protect_paths: tuple[pathlib.Path, ...] = ()
     tool_paths: tuple[pathlib.Path, ...] = ()

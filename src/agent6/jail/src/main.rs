@@ -58,7 +58,7 @@ struct Policy {
     /// holder; joining is why those two arrive together (see join_network).
     #[serde(default = "default_network")]
     network: String,
-    /// Operator-granted extra paths, bind-mounted at their REAL locations in
+    /// Operator-granted extra paths, bind-mounted at their own paths in
     /// strict (like tool_paths and hardened), so a granted
     /// toolchain works via its own absolute paths and shebangs. ro is
     /// read+execute, rw is read+write. A ro grant under a system mount is
@@ -68,6 +68,13 @@ struct Policy {
     extra_ro_paths: Vec<PathBuf>,
     #[serde(default)]
     extra_rw_paths: Vec<PathBuf>,
+    /// For a grant above whose path is a symlink or passes through one,
+    /// (the grant, the path it resolved to when the run started). The resolved
+    /// tree is bound at the grant's path and carries the Landlock rule, so no
+    /// link is followed at launch and every launch of a run binds the same
+    /// tree. A grant not listed here is bound from its own path.
+    #[serde(default)]
+    grant_sources: Vec<(PathBuf, PathBuf)>,
     /// Operator-granted device nodes under /dev ([sandbox].extra_device_paths),
     /// bound into the jail's /dev like the builtin five (plain bind, no nodev
     /// floor -- the floor would make the grant dead). Each must be a character
@@ -1225,35 +1232,35 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     Ok(())
 }
 
-/// Bind the operator's extra grants at their REAL locations: the ones at or
-/// below the workspace when `inside_cwd`, the others when not. The others are
-/// bound before the workspace and these after it, so a grant that contains the
+/// Bind the operator's extra grants at their own paths: the ones at or below
+/// the workspace when `inside_cwd`, the others when not. The others are bound
+/// before the workspace and these after it, so a grant that contains the
 /// workspace sits under it and a grant inside it sits on top.
 ///
 /// A granted toolchain works via its own absolute paths and shebangs. A grant
-/// absent from the host is skipped.
+/// whose source is absent from the host is skipped.
 fn bind_grants(policy: &Policy, new_root: &Path, inside_cwd: bool) -> io::Result<()> {
-    let wanted = |src: &&PathBuf| src.starts_with(&policy.cwd) == inside_cwd;
-    for src in policy.extra_ro_paths.iter().filter(wanted) {
+    let wanted = |grant: &&PathBuf| grant.starts_with(&policy.cwd) == inside_cwd;
+    for grant in policy.extra_ro_paths.iter().filter(wanted) {
         // Under a system bind the grant is already visible read+exec.
-        if !src.exists() || under_system_bind(src) {
+        if !policy.grant_source(grant).exists() || under_system_bind(grant) {
             continue;
         }
-        bind_grant(src, new_root, true)?;
+        bind_grant(grant, policy.grant_source(grant), new_root, true)?;
     }
-    for src in policy.extra_rw_paths.iter().filter(wanted) {
-        if !src.exists() {
+    for grant in policy.extra_rw_paths.iter().filter(wanted) {
+        if !policy.grant_source(grant).exists() {
             continue;
         }
         // The covering system mount is read-only: refuse rather than mount a
         // write grant no write reaches.
-        if under_system_bind(src) {
+        if under_system_bind(grant) {
             return Err(io::Error::other(format!(
                 "write grant {} sits under a read-only system mount",
-                src.display()
+                grant.display()
             )));
         }
-        bind_grant(src, new_root, false)?;
+        bind_grant(grant, policy.grant_source(grant), new_root, false)?;
     }
     Ok(())
 }
@@ -1278,42 +1285,44 @@ fn unbindable_grant(path: &Path) -> Option<&'static str> {
     }
 }
 
-/// Bind one grant at its real location under `new_root`, with the read-only
+/// Bind `source` at the grant's own path under `new_root`, with the read-only
 /// or the writable floor on its top mount and on every mount nested in it.
 ///
 /// The floor matters most on a writable grant: without the remount a setuid
 /// binary or device node placed in it keeps those bits inside the jail.
 /// Every failure names the grant, the step and the OS error: the operator
 /// listed the path, and a bare errno does not say which one.
-fn bind_grant(src: &Path, new_root: &Path, read_only: bool) -> io::Result<()> {
+fn bind_grant(grant: &Path, source: &Path, new_root: &Path, read_only: bool) -> io::Result<()> {
     let kind = if read_only { "read" } else { "write" };
-    if let Some(why) = unbindable_grant(src) {
-        return Err(io::Error::other(format!(
-            "{kind} grant {}: {why}",
-            src.display()
-        )));
-    }
-    let named = |step: &str, e: &dyn std::fmt::Display| {
-        io::Error::other(format!("{kind} grant {}: {step}: {e}", src.display()))
+    let from = if source == grant {
+        String::new()
+    } else {
+        format!(" (bound from {})", source.display())
     };
-    let dst = new_root.join(src.strip_prefix("/").unwrap_or(src));
+    let named = |what: &dyn std::fmt::Display| {
+        io::Error::other(format!("{kind} grant {}{from}: {what}", grant.display()))
+    };
+    if let Some(why) = unbindable_grant(grant) {
+        return Err(named(&why));
+    }
+    let dst = new_root.join(grant.strip_prefix("/").unwrap_or(grant));
     fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))
         .and_then(|()| {
-            if src.is_dir() {
+            if source.is_dir() {
                 fs::create_dir_all(&dst)
             } else {
                 fs::File::create(&dst).map(drop)
             }
         })
-        .map_err(|e| named("mount point", &e))?;
+        .map_err(|e| named(&format_args!("mount point: {e}")))?;
     mount(
-        Some(src),
+        Some(source),
         &dst,
         Some(""),
         MsFlags::MS_BIND | MsFlags::MS_REC,
         Some(""),
     )
-    .map_err(|e| named("bind", &e))?;
+    .map_err(|e| named(&format_args!("bind: {e}")))?;
     let floor = if read_only { RO_FLOOR } else { RW_FLOOR };
     mount(
         Some(""),
@@ -1322,9 +1331,8 @@ fn bind_grant(src: &Path, new_root: &Path, read_only: bool) -> io::Result<()> {
         MsFlags::MS_BIND | MsFlags::MS_REMOUNT | floor | carried_mount_flags(&dst),
         Some(""),
     )
-    .map_err(|e| named("remount", &e))?;
-    floor_submounts(&dst, floor)
-        .map_err(|e| io::Error::other(format!("{kind} grant {}: {e}", src.display())))
+    .map_err(|e| named(&format_args!("remount: {e}")))?;
+    floor_submounts(&dst, floor).map_err(|e| named(&e))
 }
 
 /// Mask the policy's hidden paths out of the assembled root: an empty RO
@@ -1408,10 +1416,10 @@ fn mask_hidden_paths(policy: &Policy, new_root: &Path) -> io::Result<()> {
         {
             continue;
         }
-        if !src.exists() {
+        if !policy.grant_source(src).exists() {
             continue;
         }
-        bind_grant(src, new_root, ro)?;
+        bind_grant(src, policy.grant_source(src), new_root, ro)?;
     }
     for dst in &masked_dirs {
         // Plain (non-bind, non-recursive) remount: the tmpfs itself goes RO
@@ -1750,7 +1758,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     // buy is not there to buy.
     let mut rw_paths: Vec<PathBuf> = vec![PathBuf::from("/tmp")];
     for p in &policy.extra_rw_paths {
-        rw_paths.push(p.clone());
+        rw_paths.push(policy.grant_source(p).to_path_buf());
     }
     // Operator-granted device nodes: hardened has no mount namespace, so the
     // grant IS this Landlock rule -- read+write on the host node (open O_RDWR;
@@ -1808,7 +1816,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         PathBuf::from("/dev"),
     ];
     for p in &policy.extra_ro_paths {
-        ro_paths.push(p.clone());
+        ro_paths.push(policy.grant_source(p).to_path_buf());
     }
     // Operator tool dirs (uv etc.): read+exec at their real host paths (hardened
     // runs in the real filesystem, so no bind mount is needed, only the grant).
@@ -2115,6 +2123,15 @@ struct ChildSpec<'a> {
 }
 
 impl Policy {
+    /// The path a grant is bound from: its resolved path when the policy
+    /// carries one, else the grant itself.
+    fn grant_source<'a>(&'a self, grant: &'a Path) -> &'a Path {
+        self.grant_sources
+            .iter()
+            .find(|(name, _)| name == grant)
+            .map_or(grant, |(_, real)| real)
+    }
+
     fn child_spec(&self) -> ChildSpec<'_> {
         ChildSpec {
             argv: &self.argv,

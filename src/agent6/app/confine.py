@@ -32,10 +32,11 @@ def warn_sandbox_gaps(
 ) -> None:
     """Warn once per run about each way the isolation confines less than it promises.
 
-    Every warning here is a degrade: a default the host cannot honor, or an explicit widening
-    (root, a persistent HOME). An explicit setting the host cannot honor refuses earlier and
-    never reaches here. The warnings are once per run rather than per spawn, since a stderr
-    line in every tool result would prompt the model to fight the sandbox.
+    Every warning here is a degrade: a default the host cannot honor, an explicit widening
+    (root, a persistent HOME), or a configured grant the run leaves out. An explicit setting
+    the host cannot honor refuses earlier and never reaches here. The warnings are once per
+    run rather than per spawn, since a stderr line in every tool result would prompt the model
+    to fight the sandbox.
 
     Args:
         isolation: The resolved isolation level.
@@ -127,6 +128,7 @@ def warn_sandbox_gaps(
             "Landlock ABI 3 (Linux 6.2): upgrade the kernel, or run on 'strict', "
             "whose mount namespace confines truncation on any ABI."
         )
+    _warn_dropped_grants(cfg, root, reporter)
     for hidden, region, source in unmaskable_exposures(cfg, isolation, root, worktree_git_dir):
         reporter.warn(
             f"jailed commands can read {hidden}: it sits inside"
@@ -145,6 +147,12 @@ def warn_sandbox_gaps(
                 " into its own subdirectory."
             )
         # notes.exposes_home_dir is the ordinary state of a dev box; `agent6 check` lists it.
+
+
+def _warn_dropped_grants(cfg: Config, root: pathlib.Path, reporter: app_reporter.Reporter) -> None:
+    """Name each configured grant the run leaves out, with where it resolves and why."""
+    for dropped in tools_policy.resolve_grants(cfg, root).dropped:
+        reporter.warn(dropped.line())
 
 
 def warn_cleartext_credential_endpoints(

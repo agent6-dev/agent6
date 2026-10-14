@@ -323,6 +323,7 @@ def _policy_spec(policy: kinds.JailPolicy) -> dict[str, Any]:
         "network": policy.network,
         "extra_ro_paths": [str(p) for p in policy.extra_ro_paths],
         "extra_rw_paths": [str(p) for p in policy.extra_rw_paths],
+        "grant_sources": [[str(path), str(real)] for path, real in policy.grant_sources],
         "extra_device_paths": [str(p) for p in policy.extra_device_paths],
         "extra_protect_paths": [str(p) for p in policy.extra_protect_paths],
         "tool_paths": [str(p) for p in policy.tool_paths],

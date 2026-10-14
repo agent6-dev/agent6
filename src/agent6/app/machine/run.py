@@ -187,6 +187,8 @@ def machine_tool_policy_factory(
         # extra_rw_paths mount at their real locations on every isolation level.
         env_base["AGENT6_MACHINE_DATA_DIR"] = str(data_dir)
         extra_rw = (data_dir,)
+    # Resolved once per state: every tool jail of the run binds the same directories.
+    grants = {name: tools_policy.resolve_grants(sc.config, cwd) for name, sc in states.items()}
 
     def build(
         state: str, argv: tuple[str, ...], timeout_s: float, pass_env: tuple[str, ...]
@@ -215,6 +217,7 @@ def machine_tool_policy_factory(
             extra_rw_paths=extra_rw,
             extra_protect_paths=protect_paths,
             env_base=env,
+            grants=grants[state],
         )
 
     return build

@@ -16,6 +16,7 @@ from agent6 import paths
 from agent6.app import confine
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox import detect, tool_paths
+from agent6.tools import policy
 
 
 def _env(landlock_abi: int) -> detect.Environment:
@@ -536,3 +537,25 @@ def test_a_run_start_prints_the_home_grant_warning(
     )
     (line,) = (line for line in said if "sandbox.extra_read_paths grants" in line)
     assert line.startswith(f"[agent6] WARNING: sandbox.extra_read_paths grants {str(tmp_path)!r}")
+
+
+def test_a_grant_whose_target_sits_in_the_workspace_is_dropped_and_the_run_says_so(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An operator's link outside the workspace, pointing into it, was bound as it resolved.
+
+    A jailed command writes the workspace, so it can swap the target for a link out of every
+    grant. The grant is dropped from the file tools and the jail, and the run names it once.
+    """
+    monkeypatch.setattr(tool_paths, "tool_mount_notes", tool_paths.ToolMountNotes)
+    repo, link = tmp_path / "repo", tmp_path / "link"
+    (repo / "data").mkdir(parents=True)
+    link.symlink_to(repo / "data", target_is_directory=True)
+    cfg = Config.model_validate({"sandbox": {"extra_read_paths": [str(link)]}})
+    built = policy.jail_policy(repo, cfg, "strict", ("true",))
+    assert link not in built.extra_ro_paths
+    assert policy.workspace_for(cfg, repo).read_roots == ()
+    confine.warn_sandbox_gaps("strict", _env(4), cfg, root=repo)
+    (line,) = capsys.readouterr().err.strip().splitlines()
+    assert f"sandbox.extra_read_paths entry {link} (it resolves to {repo / 'data'})" in line
+    assert f"it sits inside {repo}, which jailed commands write" in line

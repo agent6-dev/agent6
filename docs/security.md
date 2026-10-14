@@ -152,6 +152,8 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 - Mounts (`strict`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths`, a persistent `HOME` under `[sandbox].home = "cache"`, and operator tool dirs at their real paths
     - every mount keeps the path it has outside
     - the workspace is mounted at its resolved path and the launcher starts the command there: under a workspace named through a symlink, `pwd` prints the resolved path
+    - a grant is resolved once, when the run starts, and every jail launch of the run binds that resolved directory at the grant's configured path: `/opt/tool -> /opt/tool-1.2` shows the content of `/opt/tool-1.2` at `/opt/tool`, and a link re-pointed during the run changes nothing.
+      Under `hardened` the Landlock rule goes on the resolved directory
     - a grant that contains the workspace is mounted under it: the workspace stays writable under a read grant
     - a grant the launcher cannot bind fails the launch, and the error names the grant, the step and the OS error (`write grant /srv: remount of submount cache: EPERM`); a read-only mount inside a write grant is such a case
     - a grant on `/` or on `/dev` fails the launch by name: `/` would replace the jail's own root, and `/dev` would cover the jail's device nodes (name a device in `extra_device_paths`)
@@ -225,7 +227,10 @@ Every path they take resolves through `Workspace`:
 
 - The boundary comes from config values
     - a degradation (`auto` falling back to `hardened` or `none`, a host with no jail) leaves it unchanged; under `none` isolation it is the only boundary
-- A grant inside the workspace root or inside a write grant counts only while no component below that region is a symlink (a jailed command can re-point one); otherwise the file tools and the next jail launch both drop the grant
+- A grant is resolved once per run, and the file tools and every jail launch hold that resolved path
+    - a grant spelled inside the workspace root or a write grant, or resolving into one, is dropped: a jailed command can re-point it there.
+      The run names each dropped grant in one line at its start, and the region still covers what the grant held
+    - `agent6 check boundaries` lists each grant by its resolved path, with the configured spelling when the two differ, and each dropped grant with the region it sits in
 - A denied path is refused with the reason
     - `list_dir` drops the entry and reports `hidden: N`
     - the jail masks the path instead (empty dir, empty file; [Sandbox](#2-sandbox))

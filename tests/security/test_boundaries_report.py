@@ -180,6 +180,27 @@ def test_boundaries_report_lists_what_the_host_network_reads(
     assert reason in capsys.readouterr().out, "hardened shares the host network"
 
 
+def test_boundaries_report_shows_each_grant_as_a_run_binds_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
+) -> None:
+    """A symlinked grant was listed by its target alone; a dropped grant reads as not granted."""
+    _force(monkeypatch, "strict")
+    real, link = tmp_path / "tool-1.2", tmp_path / "tool"
+    real.mkdir()
+    link.symlink_to(real, target_is_directory=True)
+    inside = pathlib.Path.cwd() / "vendored"
+    cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(link), str(inside))))
+    check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    bound = f"    ro  {real}  (sandbox.extra_read_paths, configured as {link})"
+    dropped = (
+        f"    --  {inside}  (sandbox.extra_read_paths: not granted, it sits inside"
+        f" {pathlib.Path.cwd()}, which jailed commands write)"
+    )
+    assert out.count(bound) == 2 and out.count(dropped) == 2, out
+    assert f"    ro  {inside}" not in out
+
+
 def test_boundaries_report_names_the_opted_in_persistent_home(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -192,6 +192,7 @@ def test_a_grant_repointed_below_a_write_grant_is_dropped(tmp_path: pathlib.Path
     """A jailed command swapped a read grant inside a write grant for a link out of every grant.
 
     The next Workspace resolved the read root to the link's target, and the read tools read it.
+    A read grant inside a write grant is never a root of its own: the write grant covers it.
     """
     shared, outside = tmp_path / "shared", tmp_path / "outside"
     (shared / "inbox").mkdir(parents=True)
@@ -200,7 +201,7 @@ def test_a_grant_repointed_below_a_write_grant_is_dropped(tmp_path: pathlib.Path
     (shared / "inbox" / "note.txt").write_text("granted\n", encoding="utf-8")
     ws = _granted(tmp_path, shared / "inbox", shared)
     note = ws.resolve_read(str(shared / "inbox" / "note.txt"))
-    assert note.base == shared / "inbox" and _path_safety.read_contained(note) == "granted\n"
+    assert note.base == shared and _path_safety.read_contained(note) == "granted\n"
 
     (shared / "inbox" / "note.txt").unlink()
     (shared / "inbox").rmdir()

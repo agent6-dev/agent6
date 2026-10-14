@@ -54,3 +54,19 @@ def test_a_host_network_file_is_listed_once(monkeypatch: pytest.MonkeyPatch) -> 
     real = pathlib.Path("/etc/hosts")
     monkeypatch.setattr(policy, "_HOST_NETWORK_FILES", (str(real),))
     assert policy.host_network_reads() == ((real,) if real.exists() else ())
+
+
+def test_a_symlinked_grant_reaches_the_launcher_under_both_names(tmp_path: pathlib.Path) -> None:
+    """The launcher bound whatever a symlinked grant pointed to at each launch.
+
+    The policy carries the path the grant resolved to, so the launcher follows no link.
+    """
+    real, link, plain = tmp_path / "tool-1.2", tmp_path / "tool", tmp_path / "data"
+    real.mkdir()
+    plain.mkdir()
+    link.symlink_to(real, target_is_directory=True)
+    grants = {"extra_read_paths": [str(link)], "extra_write_paths": [str(plain)]}
+    cfg = Config.model_validate({"sandbox": grants})
+    built = policy.jail_policy(tmp_path / "repo", cfg, "strict", ("true",))
+    assert link in built.extra_ro_paths and plain in built.extra_rw_paths
+    assert built.grant_sources == ((link, real),)

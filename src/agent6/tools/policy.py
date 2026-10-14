@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import pathlib
 import stat
@@ -127,47 +128,97 @@ def jail_home_refusal(home: pathlib.Path) -> str | None:
     return f"the jail's HOME {str(home)!r} {problem}. {fix}"
 
 
-def _grant_root(grant: str, writable: tuple[pathlib.Path, ...]) -> pathlib.Path | None:
-    """Return a grant's real path, or None when a jailed command may have re-pointed it.
+@dataclasses.dataclass(frozen=True, slots=True)
+class DroppedGrant:
+    """A configured grant a run leaves out.
 
-    Below a region the run writes, a command can swap a component of the grant for a symlink
-    out of every grant, so there every component must be a real entry. A grant outside those
-    regions resolves as the operator linked it.
+    Attributes:
+        key: The `[sandbox]` key that lists it.
+        path: The configured path.
+        real: The path it resolves to.
+        region: The writable region it sits inside, where a jailed command can re-point it.
+    """
+
+    key: str
+    path: pathlib.Path
+    real: pathlib.Path
+    region: pathlib.Path
+
+    def line(self) -> str:
+        """Return the sentence a run prints for the grant at its start."""
+        where = "" if self.real == self.path else f" (it resolves to {self.real})"
+        return (
+            f"sandbox.{self.key} entry {self.path}{where} is not granted on its own: it sits"
+            f" inside {self.region}, which jailed commands write, so a command could point it"
+            f" anywhere. What it holds stays reachable as part of {self.region}."
+        )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Grants:
+    """The config's path grants as one run holds them, resolved once.
+
+    Every jail launch and the file tools bind these same directories for the whole run: a
+    grant resolved per launch follows whatever a link on its way points to at that moment.
+
+    Attributes:
+        read: Each read grant kept, as (configured path, resolved path).
+        write: Each write grant kept, the same way.
+        dropped: The grants left out.
+    """
+
+    read: tuple[tuple[pathlib.Path, pathlib.Path], ...] = ()
+    write: tuple[tuple[pathlib.Path, pathlib.Path], ...] = ()
+    dropped: tuple[DroppedGrant, ...] = ()
+
+
+def resolve_grants(config: Config, root: pathlib.Path) -> Grants:
+    """Resolve `sandbox.extra_read_paths` and `extra_write_paths`, once for a run.
+
+    A grant spelled or resolving strictly inside a region the run writes (the workspace root,
+    a write grant) is dropped: a jailed command can swap a component there for a symlink out
+    of every grant. A grant elsewhere resolves as the operator linked it.
 
     Args:
-        grant: The configured path.
-        writable: The resolved regions the run writes: the workspace root and the write grants.
+        config: The run's config.
+        root: The workspace root.
 
     Returns:
-        The path the grant covers, or None for a grant to drop.
+        The grants kept, each with its resolved path, and the grants dropped.
     """
-    path = pathlib.Path(grant)
-    real: pathlib.Path | None = None  # set from the first ancestor inside a writable region
-    for step in (*reversed(path.parents), path):
-        if real is not None:
-            if step.is_symlink():
-                return None
-            real /= step.name
-        elif step != path:
-            resolved = step.resolve()
-            if any(_path_safety.path_within(resolved, w) for w in writable):
-                real = resolved
-    return path.resolve() if real is None else real
-
-
-def _kept_grants(
-    config: Config, root: pathlib.Path
-) -> tuple[dict[str, pathlib.Path], dict[str, pathlib.Path]]:
-    """Return the read and the write grants `_grant_root` keeps, each as {configured: real}."""
     sb = config.sandbox
     regions = (root.resolve(), *(pathlib.Path(p).resolve() for p in sb.extra_write_paths))
-    readable = {p: r for p in sb.extra_read_paths if (r := _grant_root(p, regions))}
-    writable = {p: r for p in sb.extra_write_paths if (r := _grant_root(p, regions))}
-    return readable, writable
+    kept: dict[str, list[tuple[pathlib.Path, pathlib.Path]]] = {
+        "extra_read_paths": [],
+        "extra_write_paths": [],
+    }
+    dropped: list[DroppedGrant] = []
+    for key, entries in kept.items():
+        for grant in getattr(sb, key):
+            path = pathlib.Path(grant)
+            real = path.resolve()
+            # Inside a region by its spelling (an ancestor resolves into one) or by its target.
+            inside = (real.parent, *(step.resolve() for step in path.parents))
+            region = next(
+                (w for w in regions if any(_path_safety.path_within(p, w) for p in inside)), None
+            )
+            if region is None:
+                entries.append((path, real))
+            else:
+                dropped.append(DroppedGrant(key=key, path=path, real=real, region=region))
+    return Grants(
+        read=tuple(kept["extra_read_paths"]),
+        write=tuple(kept["extra_write_paths"]),
+        dropped=tuple(dropped),
+    )
 
 
 def workspace_for(
-    config: Config, root: pathlib.Path, *, memory_dir: pathlib.Path | None = None
+    config: Config,
+    root: pathlib.Path,
+    *,
+    memory_dir: pathlib.Path | None = None,
+    grants: Grants | None = None,
 ) -> _path_safety.Workspace:
     """Build the in-process file boundary for a run.
 
@@ -175,7 +226,7 @@ def workspace_for(
     them with no approval) and the jail is the fence that stops a command working around it.
     Both read the same hidden set (`agent6.paths.hidden_paths`), so the two cannot disagree.
     Derived from config values, never from the isolation level: a degradation must never widen
-    what the tools may touch. A grant `_grant_root` drops reads as outside the boundary, and
+    what the tools may touch. A grant `resolve_grants` drops reads as outside the boundary, and
     `jail_policy` leaves it out of the mounts.
 
     Args:
@@ -183,12 +234,16 @@ def workspace_for(
         root: The workspace root.
         memory_dir: The per-repo memory dir, model-writable by design through the in-process
             tools only; `jail_policy` never mounts it.
+        grants: The run's resolved grants; resolved here when None.
 
     Returns:
         The workspace.
     """
     denied = paths.hidden_paths(pathlib.Path(p) for p in config.sandbox.hide_paths)
-    readable, writable = (tuple(kept.values()) for kept in _kept_grants(config, root))
+    if grants is None:
+        grants = resolve_grants(config, root)
+    readable = tuple(real for _path, real in grants.read)
+    writable = tuple(real for _path, real in grants.write)
     mem = (memory_dir.resolve(),) if memory_dir is not None else ()
     return _path_safety.Workspace(
         root=root.resolve(),
@@ -239,6 +294,7 @@ def jail_policy(
     network: kinds.NetworkMode | None = None,
     env_base: dict[str, str] | None = None,
     worktree_git_dir: pathlib.Path | None = None,
+    grants: Grants | None = None,
 ) -> kinds.JailPolicy:
     """Build the sandbox policy every LLM-influenced argv runs under.
 
@@ -261,6 +317,8 @@ def jail_policy(
         worktree_git_dir: The repository git dir agent6 recorded when it added the root as a
             fork's linked worktree, granted read-only once the worktree's own `.git` pointer
             still resolves to it. A linked worktree with no record gets no grant.
+        grants: The run's resolved grants, so every launch of the run binds the same
+            directories; resolved here when None, for a policy built once.
 
     Returns:
         The policy.
@@ -317,7 +375,8 @@ def jail_policy(
                 " a rewritten pointer grants nothing. Restore the pointer, or fork again."
             )
         git_dir = worktree_git_dir
-    readable, writable = _kept_grants(config, root)
+    if grants is None:
+        grants = resolve_grants(config, root)
     return kinds.JailPolicy(
         cwd=root,
         argv=argv,
@@ -326,16 +385,19 @@ def jail_policy(
         network=network,
         extra_protect_paths=tuple(protect_paths),
         extra_ro_paths=(
-            *(pathlib.Path(p) for p in readable),
+            *(path for path, _real in grants.read),
             *extra_ro_paths,
             *((git_dir,) if git_dir is not None else ()),
             # The host network needs these to resolve names and verify TLS; no other network does.
             *(host_network_reads() if network == "host" and isolation != "none" else ()),
         ),
         extra_rw_paths=(
-            *(pathlib.Path(p) for p in writable),
+            *(path for path, _real in grants.write),
             *extra_rw_paths,
             *(() if persistent is None else (persistent,)),
+        ),
+        grant_sources=tuple(
+            (path, real) for path, real in (*grants.read, *grants.write) if path != real
         ),
         extra_device_paths=tuple(pathlib.Path(p) for p in config.sandbox.extra_device_paths),
         tool_paths=tool_mounts,

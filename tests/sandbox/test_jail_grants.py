@@ -1,17 +1,37 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""What `strict` does with an operator grant: the failure it names."""
+"""What the jail does with an operator grant: the failure it names, the tree it binds."""
 
 from __future__ import annotations
 
+import os
 import pathlib
+import shutil
+import tempfile
+from collections.abc import Iterator
 
 import pytest
 
 from agent6 import kinds
+from agent6.config import Config
 from agent6.sandbox import jail
+from agent6.tools import dispatch
+from agent6.tools import policy as tools_policy
 
 pytestmark = pytest.mark.needs_namespaces
+
+
+@pytest.fixture
+def scratch() -> Iterator[pathlib.Path]:
+    """A directory no isolation level grants: hardened grants the host's /tmp wholesale."""
+    base = pathlib.Path("/var/tmp")
+    if not (base.is_dir() and os.access(base, os.W_OK)):
+        pytest.skip("/var/tmp is not writable here")
+    made = pathlib.Path(tempfile.mkdtemp(prefix="agent6-jail-grants-", dir=base)).resolve()
+    try:
+        yield made
+    finally:
+        shutil.rmtree(made, ignore_errors=True)
 
 
 def _granted(cwd: pathlib.Path, grant: pathlib.Path, *, write: bool) -> kinds.JailPolicy:
@@ -82,3 +102,72 @@ def test_a_write_grant_holding_a_read_only_mount_names_the_grant_and_the_mount(
     grant, nested = found
     for error in _launch_errors(_granted(tmp_path, grant, write=True)):
         assert f"write grant {grant}: remount of submount {nested.name}: EPERM" in error
+
+
+@pytest.mark.parametrize("isolation", ["strict", "hardened"])
+def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_with(
+    scratch: pathlib.Path, isolation: kinds.IsolationLevel
+) -> None:
+    """A grant through a link in the workspace is the same tree for every launch of a run.
+
+    The policy re-read the grant on each launch and the launcher's bind followed the link, so
+    a command that re-pointed the link gave the next command a directory outside every grant.
+    """
+    repo, first, secret = scratch / "repo", scratch / "first", scratch / "secret"
+    for made, said in ((first, "first"), (secret, "secret")):
+        made.mkdir()
+        (made / "name").write_text(f"{said}\n", encoding="utf-8")
+    repo.mkdir()
+    (repo / "hop").symlink_to(first)
+    grant = scratch / "grant"
+    grant.symlink_to(repo / "hop")
+    cfg = Config.model_validate(
+        {
+            "sandbox": {
+                "isolation": isolation,
+                "run_commands": "yes",
+                "extra_read_paths": [str(grant)],
+            }
+        }
+    )
+    run = dispatch.ToolDispatcher(root=repo, config=cfg, isolation=isolation)
+    try:
+        swap = ["sh", "-c", f"cat {grant}/name && ln -sfn {secret} hop"]
+        before = run.dispatch("run_command", {"argv": swap}).to_wire()
+        assert before["returncode"] == 0 and before["stdout"] == "first\n", before
+        assert (repo / "hop").readlink() == secret
+        after = run.dispatch("run_command", {"argv": ["cat", f"{grant}/name"]}).to_wire()
+        direct = run.dispatch("run_command", {"argv": ["cat", f"{secret}/name"]}).to_wire()
+    finally:
+        run.close()
+    assert "secret" not in str(after["stdout"]), after
+    assert direct["returncode"] != 0 and "secret" not in str(direct["stdout"]), direct
+    if isolation == "strict":
+        # The mount at the grant's name still holds the first tree.
+        assert after["returncode"] == 0 and after["stdout"] == "first\n", after
+    else:
+        # No mount holds the name: it follows the new link, into a tree no rule grants.
+        assert after["returncode"] != 0, after
+
+
+@pytest.mark.parametrize("isolation", ["strict", "hardened"])
+def test_a_symlinked_grant_is_readable_at_its_spelled_name(
+    scratch: pathlib.Path, isolation: kinds.IsolationLevel
+) -> None:
+    """A grant on a symlinked toolchain directory works through the name the config gives.
+
+    Bound from its resolved path, the grant must stay at the spelled one: a toolchain is
+    configured, and finds itself, by that name.
+    """
+    real, link, repo = scratch / "tool-1.2", scratch / "tool", scratch / "repo"
+    real.mkdir()
+    (real / "VERSION").write_text("1.2\n", encoding="utf-8")
+    link.symlink_to(real, target_is_directory=True)
+    repo.mkdir()
+    cfg = Config.model_validate({"sandbox": {"extra_read_paths": [str(link)]}})
+    built = tools_policy.jail_policy(
+        repo, cfg, isolation, ("cat", f"{link}/VERSION"), network="none", timeout_s=10.0
+    )
+    assert built.extra_ro_paths[0] == link and built.grant_sources == ((link, real),)
+    res = jail.run_in_jail(built)
+    assert res.returncode == 0 and res.stdout == "1.2\n", res

@@ -396,11 +396,32 @@ def _check_config_section(
     return out
 
 
-def _grant_lines(ws: _path_safety.Workspace) -> list[str]:
-    """Return the operator's extra path grants, shared verbatim by both actors."""
-    read_only = set(ws.read_roots) - set(ws.write_roots)
-    out = [f"    ro  {p}  (sandbox.extra_read_paths)" for p in sorted(read_only)]
-    out += [f"    rw  {p}  (sandbox.extra_write_paths)" for p in sorted(ws.write_roots)]
+def _grant_lines(grants: tools_policy.Grants) -> list[str]:
+    """Return the operator's extra path grants, shared verbatim by both actors.
+
+    Each line names the resolved path a run binds, with the configured spelling when the two
+    differ, and each grant a run leaves out says why.
+    """
+
+    def line(mode: str, key: str, path: pathlib.Path, real: pathlib.Path) -> str:
+        spelled = "" if path == real else f", configured as {path}"
+        return f"    {mode}  {real}  (sandbox.{key}{spelled})"
+
+    written = {real for _path, real in grants.write}
+    out = [
+        line("ro", "extra_read_paths", path, real)
+        for path, real in sorted(grants.read, key=lambda pair: pair[1])
+        if real not in written
+    ]
+    out += [
+        line("rw", "extra_write_paths", path, real)
+        for path, real in sorted(grants.write, key=lambda pair: pair[1])
+    ]
+    out += [
+        f"    --  {d.path}  (sandbox.{d.key}: not granted, it sits inside {d.region},"
+        " which jailed commands write)"
+        for d in grants.dropped
+    ]
     return out
 
 
@@ -449,6 +470,7 @@ def _fork_git_grant(
 def _boundaries_commands(
     cfg: Config,
     ws: _path_safety.Workspace,
+    grants: tools_policy.Grants,
     selected: kinds.IsolationLevel,
     git_grant: pathlib.Path | None,
 ) -> None:
@@ -496,7 +518,7 @@ def _boundaries_commands(
             f"    ro  operator tools: {len(notes.exposes_home_dir)} resolved bin-dir"
             " targets (`agent6 check sandbox` lists each)"
         )
-    for line in _grant_lines(ws):
+    for line in _grant_lines(grants):
         print(line)
     if net == "host":
         for p in tools_policy.host_network_reads():
@@ -581,7 +603,8 @@ def _check_boundaries_section(
     if cfg.sandbox.isolation == "auto" and reason is not None:
         print(f"  not strict: {reason}")
 
-    ws = tools_policy.workspace_for(cfg, pathlib.Path.cwd())
+    grants = tools_policy.resolve_grants(cfg, pathlib.Path.cwd())
+    ws = tools_policy.workspace_for(cfg, pathlib.Path.cwd(), grants=grants)
     out: list[_DoctorCheck] = []
     refusal = confine.check_network_support(cfg, selected) or confine.config_refusal(
         cfg, selected, ws.root, explicit_leaves=explicit_leaves
@@ -599,14 +622,14 @@ def _check_boundaries_section(
         " find_references, apply_edit, apply_patch; no approval):"
     )
     print(f"    rw  {ws.root}  (the workspace)")
-    for line in _grant_lines(ws):
+    for line in _grant_lines(grants):
         print(line)
     for p in sorted(ws.denied):
         print(f"    --  {p}  (hidden: tools refuse it)")
 
     print()
     try:
-        _boundaries_commands(cfg, ws, selected, _fork_git_grant(cfg, ws, selected))
+        _boundaries_commands(cfg, ws, grants, selected, _fork_git_grant(cfg, ws, selected))
         print()
         _boundaries_mcp(cfg, ws.root, selected)
     except JailUnavailableError as exc:
