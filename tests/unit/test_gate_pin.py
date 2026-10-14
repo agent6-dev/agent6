@@ -192,6 +192,24 @@ def test_a_run_records_the_isolation_it_actually_ran_under(tmp_path: pathlib.Pat
     assert sessions_manifest.read_manifest(layout.session_dir).policy.isolation == "hardened"
 
 
+def test_a_fresh_gateless_manifest_leaves_the_gate_pending(tmp_path: pathlib.Path) -> None:
+    """A gateless config's run or plan infers its gate at the start; an ask never has one."""
+    layout = _layout(tmp_path)
+    assert sessions_manifest.read_manifest(layout.session_dir).harness.verify_origin == "pending"
+    for mode, expected in (("plan", "pending"), ("ask", "")):
+        stamps.write_session_manifest(
+            layout,
+            session_id=layout.session_id,
+            user_task="t",
+            base_sha="0" * 40,
+            base_branch="main",
+            run_branch=None,
+            cfg=Config(),
+            mode=mode,
+        )
+        assert sessions_manifest.read_manifest(layout.session_dir).harness.verify_origin == expected
+
+
 def test_an_empty_gate_never_carries_an_origin(tmp_path: pathlib.Path) -> None:
     """`configured` beside `()` is self-contradictory on disk; the next execution reads it."""
     layout = _layout(tmp_path)

@@ -162,6 +162,7 @@ def bridge_spawner(
     at: str | None = None,
     fanout_id: str,
     coordinator: str,
+    verify_origin: str = "",
     runtime: LaneRuntime,
 ) -> subrun.LaneResult:
     """Clone the origin and spawn a detached `agent6 run` in the clone.
@@ -180,6 +181,7 @@ def bridge_spawner(
         at: A commit to detach the clone at; the coordinator's chain tip.
         fanout_id: The group the lane belongs to.
         coordinator: The session every listing nests the lane under.
+        verify_origin: Where the gate in the lane's config came from, "" when it has none.
         runtime: The front-end's spawn primitive.
 
     Returns:
@@ -230,6 +232,8 @@ def bridge_spawner(
         "AGENT6_SUBRUN": "1",
         # The lane's own manifest records its lineage, so a coordinator death orphans nothing.
         "AGENT6_PARALLEL_LINEAGE": f"{coordinator}:{fanout_id}:{spec.lane}",
+        # Resolved in the origin, where the repo signals are; the lane stamps the same origin.
+        "AGENT6_LANE_VERIFY_ORIGIN": verify_origin,
     }
     session_dir, err = runtime.spawn(
         argv, spec.workdir, before=set(), list_dirs=list_dirs, env={**os.environ, **markers}
@@ -268,6 +272,7 @@ def run_lane_to_completion(
     max_usd: float | None = None,
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
+    verify_origin: str = "",
     spawner: subrun.LaneSpawner | None = None,
     at: str | None = None,
     import_lock: threading.Lock | None = None,
@@ -297,6 +302,7 @@ def run_lane_to_completion(
         max_usd: The lane's spend cap.
         auto_approve: The coordinator's own `--auto-approve`, forwarded.
         lane_away: The lane's away-mode.
+        verify_origin: Where the gate in the config came from, "" when it has none.
         spawner: Clones and spawns the lane; the bridge spawner by default.
         at: A commit to detach the clone at.
         import_lock: Serializes the import across the group, since concurrent fetches
@@ -323,6 +329,7 @@ def run_lane_to_completion(
             explicit_leaves=explicit_leaves,
             fanout_id=group,
             coordinator=coordinator,
+            verify_origin=verify_origin,
             runtime=runtime,
         )
     res = spawner(spec, task)
@@ -457,6 +464,14 @@ def build_lane_spawner(
                 or ipc.stop_request_pending(coord_dir)
             )
 
+        # The coordinator's manifest pins the gate the lanes' config carries.
+        verify_origin = ""
+        if cfg.harness.verify_command:
+            try:
+                verify_origin = sessions_manifest.read_manifest(coord_dir).harness.verify_origin
+            except sessions_manifest.ManifestError:
+                verify_origin = ""
+
         def one(pair: tuple[subrun.LaneSpec, subrun.LaneTask]) -> subrun.LaneResult:
             spec, lane = pair
             return run_lane_to_completion(
@@ -465,6 +480,7 @@ def build_lane_spawner(
                 pins=lane.pins,
                 at=at,
                 cfg=cfg,
+                verify_origin=verify_origin,
                 explicit_leaves=explicit_leaves,
                 origin=origin,
                 origin_state=origin_state,
@@ -1003,6 +1019,7 @@ def run_parallel(
         mode="run",
     )
     events.emit("loop.parallel.dispatched", group=fanout_id, lanes=len(lanes), tasks=[task[:200]])
+    configured_gate = bool(cfg.harness.verify_command)
     if spawner is None:
         # A clone lacks the untracked signals verify inference reads in the origin.
         cfg = preflight.infer_verify_if_unset(
@@ -1014,6 +1031,12 @@ def run_parallel(
             budget=_setup.budget_tracker(cfg),
             reporter=reporter,
         )
+    verify_origin = ""
+    if cfg.harness.verify_command:
+        verify_origin = "configured" if configured_gate else "inferred"
+    # The gate every lane runs, pinned on the coordinator as a run pins its own.
+    stamps.stamp_verify_gate(layout.session_dir, cfg.harness.verify_command, verify_origin)
+    if spawner is None:
         spawner = functools.partial(
             bridge_spawner,
             pins=pins,
@@ -1024,6 +1047,7 @@ def run_parallel(
             lane_away=lane_away,
             fanout_id=fanout_id,
             coordinator=fanout_id,
+            verify_origin=verify_origin,
             explicit_leaves=explicit_leaves,
             runtime=runtime,
         )

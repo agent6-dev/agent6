@@ -1683,7 +1683,9 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
 
     # The stamp is the fan-out's own manifest write; the lane imports keep the real writer.
     stand_in = types.SimpleNamespace(
-        write_manifest=boom, write_session_manifest=stamps.write_session_manifest
+        write_manifest=boom,
+        write_session_manifest=stamps.write_session_manifest,
+        stamp_verify_gate=stamps.stamp_verify_gate,
     )
     monkeypatch.setattr(parallel, "stamps", stand_in)
 
@@ -2827,8 +2829,10 @@ def test_lane_is_self_describing_from_birth(
     parallel.bridge_spawner(
         spec, "do it", explicit_leaves=frozenset(), cfg=Config(), origin=origin, max_usd=None,
         fanout_id="fan", coordinator="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
+        verify_origin="inferred",
     )  # fmt: skip
     assert captured[-1]["AGENT6_PARALLEL_LINEAGE"] == "co:fan:2"
+    assert captured[-1]["AGENT6_LANE_VERIFY_ORIGIN"] == "inferred"
 
     # The writer records it from the env, exactly as the spawned lane would.
     monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:2")

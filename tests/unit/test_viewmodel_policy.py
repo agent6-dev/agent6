@@ -44,6 +44,12 @@ def test_a_gateless_run_says_so(tmp_path: pathlib.Path) -> None:
     assert session_policy(tmp_path).gate() == "no verify gate"
 
 
+def test_a_run_whose_gate_is_not_resolved_yet_claims_none(tmp_path: pathlib.Path) -> None:
+    """A run parked before its execution may still infer a gate; "no verify gate" is a claim."""
+    _manifest(tmp_path, harness={"verify_origin": "pending"})
+    assert session_policy(tmp_path).gate() == "verify gate not settled yet"
+
+
 def test_an_unreadable_dir_reports_nothing_rather_than_guessing(tmp_path: pathlib.Path) -> None:
     assert session_policy(tmp_path).line() == ""
 

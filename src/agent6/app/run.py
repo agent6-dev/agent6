@@ -372,6 +372,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         # Written before the gates below, which park rather than refuse; the rewrite keeps
         # the park, which the execution's start clears.
         parked = stamps.parked_stamp(layout.session_dir)
+        # A lane's config carries the gate its coordinator resolved, origin and all.
+        lane_gate_origin = stamps.lane_verify_origin()
         stamps.write_session_manifest(
             layout,
             session_id=effective_session_id,
@@ -382,6 +384,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             run_branch=run_branch,
             cfg=cfg,
             mode=mode,
+            gate=(cfg.harness.verify_command, lane_gate_origin) if lane_gate_origin else None,
             effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.preset)),
             preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
             driver_from_flag=bool(model),
@@ -487,7 +490,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             # The origin follows the resolved gate, never the configured one.
             gate_origin = ""
             if cfg.harness.verify_command:
-                gate_origin = "configured" if configured_gate else "inferred"
+                gate_origin = lane_gate_origin or ("configured" if configured_gate else "inferred")
             # From here the run is judged by this gate, whatever its source says later.
             stamps.pin_gate(
                 layout.session_dir,

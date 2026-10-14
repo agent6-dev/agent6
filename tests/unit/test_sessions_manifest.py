@@ -394,6 +394,7 @@ def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: pathlib.Path) -> N
         (True, True, "inferred", "configured"),  # config outranks the pin
         (False, True, "adopted", "adopted"),  # an adopted gate stays adopted
         (False, True, "", "inferred"),  # the execution had to re-infer
+        (False, True, "pending", "inferred"),  # a parked run never pinned one
         (False, False, "inferred", ""),  # gateless execution claims nothing
         (True, False, "inferred", ""),  # a dropped gate claims nothing, even over config
     ],

@@ -24,7 +24,8 @@ class SessionPolicy:
         run_commands: The commands mode ("allow", "ask", "deny"), "" when unknown.
         isolation: The sandbox isolation word, "" when unknown.
         verify_command: The verify gate's argv, empty when there is no gate.
-        verify_origin: Where the gate came from: "configured" or "inferred".
+        verify_origin: Where the gate came from ("configured", "inferred", "adopted"), or
+            "pending" for a run whose execution has not resolved its gate yet.
         mode: "run", "plan" or "ask"; an ask has no gate to name.
     """
 
@@ -44,6 +45,8 @@ class SessionPolicy:
         Returns:
             The gate's shell line with its origin in parentheses, or "no verify gate".
         """
+        if self.verify_origin == "pending":
+            return "verify gate not settled yet"
         if not self.verify_command:
             return "no verify gate"
         return f"{shlex.join(self.verify_command)} ({self.verify_origin or 'unknown origin'})"

@@ -114,11 +114,14 @@ def write_session_manifest(
         budget: The caps the run's `--max-*` flags set, so a resume replays them.
     """
     lineage = parallel_lineage()
-    # A fresh run carries the configured gate until `pin_gate` stamps the pair it resolved.
-    verify_command, verify_origin = gate or (
-        cfg.harness.verify_command,
-        "configured" if cfg.harness.verify_command else "",
-    )
+    # A fresh run carries the configured gate until `pin_gate` stamps the pair it resolved; a
+    # gateless config's run or plan infers one at its start, so its gate is pending until then.
+    if gate is None:
+        origin = "configured" if cfg.harness.verify_command else ""
+        if not origin and mode in ("run", "plan"):
+            origin = "pending"
+        gate = (cfg.harness.verify_command, origin)
+    verify_command, verify_origin = gate
     m = manifest.SessionManifest(
         agent6_version=__version__,
         session_id=session_id,
@@ -158,6 +161,18 @@ def write_session_manifest(
         fanout=fanout,
     )
     write_manifest(layout.manifest_path, m)
+
+
+def lane_verify_origin() -> str:
+    """Return the origin of the gate a lane's config carries, or "" outside a lane.
+
+    `AGENT6_LANE_VERIFY_ORIGIN`: the coordinator resolves the gate in the origin, where the
+    repo signals are, and writes it into the lane's config; the lane alone would read it
+    as configured.
+    """
+    if parallel_lineage() is None:
+        return ""
+    return os.environ.get("AGENT6_LANE_VERIFY_ORIGIN", "")
 
 
 def parallel_lineage() -> manifest.ParallelLineage | None:

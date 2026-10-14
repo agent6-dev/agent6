@@ -194,7 +194,7 @@ def execution_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> s
         return ""
     if configured:
         return "configured"
-    return pinned or "inferred"
+    return "inferred" if pinned in ("", "pending") else pinned
 
 
 def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume is refused, in preflight order

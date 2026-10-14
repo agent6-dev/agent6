@@ -590,7 +590,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
     snap = session_snapshot(layout.session_dir)
     assert snap["status_label"] == "parked · checkout busy"
     assert snap["policy"].endswith("python3 -m pytest (configured)")
-    # A gateless config stays gateless until the execution infers or adopts one.
+    # A gateless config's run infers its gate at the start; parked, it has not yet.
     stamps.write_session_manifest(
         layout,
         session_id=layout.session_id,
@@ -600,7 +600,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
         run_branch=None,
         cfg=Config(),
     )
-    assert session_snapshot(layout.session_dir)["policy"].endswith("no verify gate")
+    assert session_snapshot(layout.session_dir)["policy"].endswith("verify gate not settled yet")
 
 
 def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: pathlib.Path) -> None:
