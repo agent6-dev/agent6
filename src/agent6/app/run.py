@@ -537,31 +537,16 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                     # A detach keeps the pid until the background `resume` claims it.
                     ipc.clear_worker_pid(layout.session_dir)
                 if stashed:
-                    if detach_requested:
-                        # A pop now would feed pre-run files into the continuation's commits;
-                        # the hint names the stash by sha, since a positional pop rots.
-                        hint = finalize.stash_recovery_hint(
-                            cwd, session_id=effective_session_id, base_branch=base_branch
-                        )
-                        reporter.note(
-                            "pre-run changes remain stashed while the run continues"
-                            " in the background; after it ends, restore them with:"
-                            f" {hint}"
-                            if hint
-                            else "pre-run changes remain stashed while the run continues"
-                            " in the background, but the stash could not be located; check"
-                            " `git stash list`"
-                        )
-                    else:
-                        finalize.finalize_auto_stash(
-                            cwd,
-                            base_branch=base_branch,
-                            run_branch=run_branch,
-                            auto_pop=stash_pop,
-                            session_id=layout.session_id,
-                            exclude=untracked_at_start,
-                            reporter=reporter,
-                        )
+                    finalize.end_auto_stash(
+                        cwd,
+                        detached=detach_requested,
+                        base_branch=base_branch,
+                        run_branch=run_branch,
+                        auto_pop=stash_pop,
+                        session_id=layout.session_id,
+                        exclude=untracked_at_start,
+                        reporter=reporter,
+                    )
         finally:
             lock.release_single_writer(repo_lock_fd)
             lock.release_single_writer(worker_lock_fd)

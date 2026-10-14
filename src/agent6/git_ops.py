@@ -445,9 +445,16 @@ def status(path: pathlib.Path, *, exclude: Collection[str] = ()) -> GitStatus:
     )
 
 
-def stash_tracked_changes(path: pathlib.Path, message: str) -> None:
-    """Stash the tracked files' uncommitted changes; untracked files stay in place."""
-    _run(path, "stash", "push", "--message", message)
+def stash_tracked_changes(path: pathlib.Path, message: str, paths: Collection[str] = ()) -> None:
+    """Stash the tracked files' uncommitted changes; untracked files stay in place.
+
+    Args:
+        path: The repository.
+        message: The stash message, which the finalizer finds it by.
+        paths: The repo-relative paths to stash; empty stashes every tracked change.
+    """
+    specs = [f":(top,literal){rel}" for rel in sorted(paths)]
+    _run(path, "stash", "push", "--message", message, *(["--", *specs] if specs else []))
 
 
 def auto_stash_message(session_id: str) -> str:

@@ -291,6 +291,9 @@ The working tree at start is the run's next gate, in the same shape.
 Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt. A resume adds the files that appeared between executions and the run cannot show it wrote, and its note names them.
 Uncommitted changes to tracked files are asked about over the `ask_user` channel: stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes".
 `[git].dirty_tree = "stash"` and `"include"` answer without asking, and a run nobody can answer refuses before writing a manifest, discarding the empty dir.
+Every end the loop reaches records the tree the run left (`session.end.tree`), and a resume applies the same policy to the paths that differ from it: those changed outside the run.
+`stash` sets aside exactly those paths, and refuses when the run also changed one of them, since the stash would take the run's work with the edit.
+A resume after a death, a detach or an older session has no recorded tree: its note names the changes no commit has, and the next commit takes them.
 
 ## Session state on disk
 
@@ -412,7 +415,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget` | per-iteration usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
 | `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, decision, disarmed), `skipped`, and the finish gate's rejections |
-| `session.end` | `reason`, `iterations`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it), `verified` (the gate's word for the final tree, on every end the loop writes: `passed`, `failed`, `unverified` or `not_applicable`; `sessions show` prints it and `sessions merge` warns on `failed` and `unverified`); one shape from every exit path |
+| `session.end` | `reason`, `iterations`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it), `verified` (the gate's word for the final tree, on every end the loop writes: `passed`, `failed`, `unverified` or `not_applicable`; `sessions show` prints it and `sessions merge` warns on `failed` and `unverified`), `tree` (a run's end the loop reached: the tree id of the working tree it left, with no commit made for it); one shape from every exit path |
 
 A `run_command` approval publishes as `approval.prompt`.
 

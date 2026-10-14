@@ -111,6 +111,7 @@ State is snapshotted before each model call and checkpointed per turn.
 - `fork` continues a copy from a turn as a new run in its own git worktree ([isolated workspaces](#isolated-workspaces)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `rm` treat it like any run ([session state](architecture.md#session-state-on-disk))
 - a `--steer` on a fork, or on resuming a run the agent finished, becomes the new run's task and names its row and its merge subject
 - a run that was squash-merged merges again from its landed tip, so nothing lands twice
+- files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside, `include` lets the run's next commit take them ([Config](config.md))
 
 Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scripts to branch on:
 

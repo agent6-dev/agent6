@@ -1819,6 +1819,9 @@ class Harness:
         if roots:
             self._pass_pending_root_tasks()
         verified = self.gate.verification(state.verify)
+        # The tree a run leaves: at its next start, what differs from it changed outside the run.
+        tree = self.chain.tree_sha() if end.event and self.mode == "run" else ""
+        left = {"tree": tree} if tree else {}
         if end.event and end.verdict == "failed":
             self._emit(
                 "session.end",
@@ -1826,6 +1829,7 @@ class Harness:
                 iterations=iteration,
                 all_passed=False,
                 verified=verified,
+                **left,
                 **end.fields,
             )
         elif end.event:
@@ -1837,6 +1841,7 @@ class Harness:
                 all_passed=self.gate.tree_green(state.verify) if grounded else True,
                 scoped=state.verify.scoped if grounded else end.scoped,
                 verified=verified,
+                **left,
             )
         self._record_memory_use(state)
         return _snapshot.SessionResult(

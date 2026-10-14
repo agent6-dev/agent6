@@ -15,7 +15,17 @@ import pathlib
 
 from agent6 import budget, directive, event_log, git_ops, kinds
 from agent6 import paths as agent6_paths
-from agent6.app import _execution, _session, _setup, preflight, run, stamps, workspace_setup
+from agent6.app import (
+    _execution,
+    _resume_tree,
+    _session,
+    _setup,
+    finalize,
+    preflight,
+    run,
+    stamps,
+    workspace_setup,
+)
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.config import (
@@ -270,7 +280,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         reporter.err(lock.SINGLE_WRITER_BUSY.format(rid=session_id))
         return 2
     # A finished run has nothing to continue without --steer; every other ending resumes.
-    new_work = listing.finished_needs_new_work(layout.session_dir)
+    scan = listing.scan_session_log(layout.logs_path)
+    new_work = listing.needs_new_work(
+        finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
+    )
     if not steer.strip() and new_work:
         reporter.refuse(listing.needs_new_work_refusal(session_id))
         lock.release_single_writer(worker_lock_fd)
@@ -284,6 +297,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         return 2
 
     detach_requested = False
+    stashed = _resume_tree.Settled()  # the outside edits this execution set aside
+    untracked_at_start: frozenset[str] = frozenset()
     handed_to_run_task = False  # a parked submission: run_task owns its lifecycle
     cfg: Config | None = None  # the finally reads it for a detach
     repo_lock_fd: int | None = None
@@ -526,15 +541,18 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             return undo.undo_fork(config_path, session_id, cwd=repo, reporter=reporter)
 
         untracked_at_start = sessions_layout.read_untracked_at_start(layout.session_dir)
+        outside: list[str] = []
         if mode == "run":
-            # An untracked file the chain does not hold and no tool wrote arrived between
-            # executions, so it is the operator's; a git failure refuses, since this decides
-            # what the run may commit.
+            # An untracked file the run did not leave, the chain does not hold and no tool wrote
+            # arrived between executions, so it is the operator's; a git failure refuses, since
+            # this decides what the run may commit.
+            chain_ref = git_ops.chain_ref_for(session_id)
             try:
                 arrived = (
                     git_ops.untracked_paths(cwd)
                     - untracked_at_start
-                    - git_ops.tree_paths(cwd, git_ops.chain_ref_for(session_id))
+                    - git_ops.tree_paths(cwd, chain_ref)
+                    - (git_ops.tree_paths(cwd, scan.end_tree) if scan.end_tree else frozenset())
                     - _paths_the_run_wrote(layout.logs_path)
                 )
                 if arrived:
@@ -548,9 +566,42 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                         f"left out of this run's commits as yours: {shown} (arrived"
                         " between executions, unwritten by any tool of the run)"
                     )
+                # Tracked content that changed since the last end is the operator's too.
+                outside = _resume_tree.outside_edits(
+                    cwd,
+                    scan.end_tree,
+                    git_ops.chain_tip(cwd, chain_ref) or resume_base_sha or None,
+                    untracked_at_start,
+                )
+                unsettled = _resume_tree.refusal(
+                    cwd,
+                    policy=cfg.git.dirty_tree,
+                    outside=outside,
+                    end_tree=scan.end_tree,
+                    answerable=frontend.capabilities.can_ask
+                    or ipc.away_mode(layout.session_dir) == "wait",
+                )
             except (git_ops.GitError, OSError) as exc:
                 reporter.error(f"cannot tell the run's files from the operator's: {exc}")
                 return 2
+            if unsettled is not None:
+                reporter.refuse(unsettled)
+                return 2
+        # Written once the preflight passed: a refused resume never had a live worker, and the
+        # question below reaches `agent6 answer`.
+        ipc.write_worker_pid(layout.session_dir, os.getpid())
+        settled = _resume_tree.settle(
+            cwd,
+            policy=cfg.git.dirty_tree,
+            outside=outside,
+            end_tree=scan.end_tree,
+            session_id=session_id,
+            ask=lambda question: prompts.ask((question,)).answers[0],
+            reporter=reporter,
+        )
+        if settled is None:
+            return 2
+        stashed = settled
         # Every preflight passed: the operator's new choices are recorded from here.
         if preset:
             stamps.stamp_preset(layout.session_dir, preset)
@@ -567,8 +618,6 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     steer.strip(),
                     source_dir=layout.session_dir.parent / manifest.parent_session_id,
                 )
-        # Written once the preflight passed: a refused resume never had a live worker.
-        ipc.write_worker_pid(layout.session_dir, os.getpid())
         # This execution's models and policy, for `agent6 exec` and the policy surfaces.
         stamps.stamp_execution(layout.session_dir, cfg, mode, isolation)
         if mode == "run":
@@ -632,6 +681,17 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 if not detach_requested and not handed_to_run_task:
                     # run_task's own teardown owns the pid when it ran.
                     ipc.clear_worker_pid(layout.session_dir)
+                if stashed.stashed and cfg is not None:
+                    finalize.end_auto_stash(
+                        cwd,
+                        detached=detach_requested,
+                        base_branch=manifest.base_branch,
+                        run_branch=manifest.run_branch,
+                        auto_pop=cfg.git.auto_stash_pop or stashed.pop,
+                        session_id=session_id,
+                        exclude=untracked_at_start,
+                        reporter=reporter,
+                    )
         finally:
             lock.release_single_writer(repo_lock_fd)
             lock.release_single_writer(worker_lock_fd)

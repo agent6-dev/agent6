@@ -727,6 +727,54 @@ def finalize_auto_stash(
         )
 
 
+def end_auto_stash(
+    cwd: pathlib.Path,
+    *,
+    detached: bool,
+    base_branch: str,
+    run_branch: str | None,
+    auto_pop: bool,
+    session_id: str,
+    exclude: Collection[str] = (),
+    reporter: app_reporter.Reporter,
+) -> None:
+    """Settle the stash an execution pushed at its start, when that execution ends.
+
+    A detach leaves it stashed: a pop would feed the stashed files into the continuation's
+    commits. The hint names the stash by sha, since a positional pop rots.
+
+    Args:
+        cwd: The checkout.
+        detached: Whether the run continues in the background.
+        base_branch: The branch the stash belongs on.
+        run_branch: The run's branch, or None.
+        auto_pop: Whether to restore it; off prints the command instead.
+        session_id: The run whose stash it is.
+        exclude: The operator's untracked files, which do not make the tree unclean.
+        reporter: Receives the notes.
+    """
+    if not detached:
+        finalize_auto_stash(
+            cwd,
+            base_branch=base_branch,
+            run_branch=run_branch,
+            auto_pop=auto_pop,
+            session_id=session_id,
+            exclude=exclude,
+            reporter=reporter,
+        )
+        return
+    hint = stash_recovery_hint(cwd, session_id=session_id, base_branch=base_branch)
+    reporter.note(
+        "pre-run changes remain stashed while the run continues"
+        f" in the background; after it ends, restore them with: {hint}"
+        if hint
+        else "pre-run changes remain stashed while the run continues"
+        " in the background, but the stash could not be located; check"
+        " `git stash list`"
+    )
+
+
 def hook_env(**agent6_vars: str) -> dict[str, str]:
     """Build the environment for an operator notify hook.
 

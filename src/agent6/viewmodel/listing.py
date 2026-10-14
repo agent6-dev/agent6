@@ -571,6 +571,8 @@ class LogScan:
         verified: The gate's word for the final tree, as the last session.end carried it:
             `passed`, `failed`, `unverified` or `not_applicable`; "" while a later execution
             runs, and for an end that carried none.
+        end_tree: The worktree's tree id that end recorded; "" when it recorded none or a
+            later execution began.
         provider_error: The last failed driving call's error, the reason behind a
             `provider_error` end; "" when none failed.
         cost_usd: The spend across every execution; None when no budget.update was seen.
@@ -604,6 +606,7 @@ class LogScan:
     verify_scoped: bool = False
     end_reason: str = ""
     verified: str = ""
+    end_tree: str = ""
     provider_error: str = ""
     cost_usd: float | None = None
     usd_partial: bool = False
@@ -756,6 +759,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     """
     mode, task = "?", ""
     finished, end_reason, verified = False, "", ""
+    end_tree = ""
     provider_error = ""
     all_passed: bool | None = False
     verify_scoped = False
@@ -812,6 +816,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                 if etype == "session.start":
                     saw_start = True
                     finished, verified = False, ""
+                    end_tree = ""
                     mode = str(ev.get("mode", mode))
                     task = str(ev.get("user_task", ""))
                     # A new execution re-asks with restarted ids; a held-over prompt waits forever.
@@ -830,6 +835,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     verify_scoped = bool(ev.get("scoped", False))
                     end_reason = str(ev.get("reason", ""))
                     verified = str(ev.get("verified") or "")
+                    end_tree = str(ev.get("tree", ""))
                 elif etype == "loop.resume.start":
                     if saw_start:
                         # Each execution's budget starts at 0: bank the finished one's total.
@@ -844,6 +850,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     saw_start = True
                     mode = str(ev.get("mode", mode))
                     finished, verified = False, ""
+                    end_tree = ""
                     pending_prompts.clear()
                 elif etype == "verify.end":
                     rc = ev.get("exit_code")
@@ -885,6 +892,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         verify_scoped=verify_scoped,
         end_reason=end_reason,
         verified=verified,
+        end_tree=end_tree,
         provider_error=provider_error,
         cost_usd=(usd_prior_executions + usd_execution) if saw_budget else None,
         usd_partial=usd_partial,

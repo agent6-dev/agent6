@@ -157,6 +157,7 @@ banned-from = [
     "agent6._data.words",
     "agent6.app._execution",
     "agent6.app._lane_watch",
+    "agent6.app._resume_tree",
     "agent6.app._session",
     "agent6.app._setup",
     "agent6.app.btw",

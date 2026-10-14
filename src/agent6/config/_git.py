@@ -133,7 +133,9 @@ class GitConfig(pydantic.BaseModel):
             "per `auto_stash_pop`, else its `git stash apply <sha>` line is printed. `include`: "
             "start without asking, the run's first commit records them. Untracked files never "
             "count and are never committed. `--parallel` fans out under `stash` or `include` and "
-            "refuses under `ask`."
+            "refuses under `ask`. A resume applies the same setting to the files that changed "
+            "since the run's last execution ended; `stash` refuses there when the run also "
+            "changed one of them."
         ),
     )
     # A run that edited leaves its work in the tree: this fires after auto_merge or a no-edit run.
