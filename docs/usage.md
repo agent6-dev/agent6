@@ -38,8 +38,10 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 
 - commands ask for approval by default (`sandbox.run_commands = "ask"`): allow one call or the whole session
 - without a terminal (CI, cron, a hub-spawned run) a prompt parks the run until a front-end answers it, or an away-mode decides it; a run whose commands are unsettled refuses to start and names the choices (`--auto-approve`, `--no-commands`, `AGENT6_DETACHED_AWAY`), see [approvals](security.md#6-approvals)
-- the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`; `--after-step` lets the step finish) or a ceiling (budget, iterations) stops it; every end is resumable
-- at a terminal it then asks for the next input: type to continue, `/exit` to finish; without one the resume line prints
+- the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`; `--after-step` lets the step finish) or a ceiling (budget, iterations) stops it
+- at a terminal it then asks for the next input: type to continue, `/exit` to finish
+- without a terminal a finished run prints its merge and inspect commands, and an unfinished run its resume command
+- a finished run takes more work with `agent6 resume <id> --steer "<what to do next>"`; a bare resume of it is refused
 
 The verify command is the success gate.
 Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
@@ -184,6 +186,9 @@ Every end has one reason (`reason` in `agent6 sessions show --json`), and each r
 | `gate_red_at_base` | `finished · gate was already red` | `4` |
 | `no_lane_result` | `failed · no lane result` | `1` |
 | `no_lane_passed` | `failed · no lane passed` | `4` |
+
+A run whose worker exited without recording an end reads `stale`, for example after SIGKILL or a machine crash.
+`agent6 resume <id>` continues it from its last snapshot, and `agent6 sessions show <id>` prints that command.
 
 - `finish_session` reads `passed` over a green gate and a bare `finished` with no gate
 - `silent_finish` means the model stopped calling tools without calling `finish_session`, and the harness took its last answer as the end

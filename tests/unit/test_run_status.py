@@ -185,6 +185,32 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
     assert "stopped" not in out
 
 
+@pytest.mark.parametrize("pid_file", [False, True])
+def test_show_stale_run_offers_resume(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    pid_file: bool,
+) -> None:
+    """A worker that died without an end must leave its resume command on the show page."""
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "session.start", "mode": "run"},
+            {"ts": _ts(30), "type": "loop.tool.call", "iteration": 1},
+        ],
+    )
+    if pid_file:
+        sessions_ipc.write_worker_pid(d, 999999999)
+
+    assert sessions_show._cmd_status("winsome-dawn") == 0
+
+    out = capsys.readouterr().out
+    assert "state:      stale (worker exited without finishing (crashed or killed))" in out
+    assert f"resume with:  agent6 resume {d.name}\n" in out
+
+
 def test_status_words_lead_with_the_listing_word_in_every_state(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

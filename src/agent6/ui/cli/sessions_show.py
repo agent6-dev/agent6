@@ -173,6 +173,10 @@ def _status_state(
     return word, cell, detail
 
 
+# The status words of a session that stopped short of its end, which `agent6 resume` continues.
+_RESUMABLE = frozenset({"stale", "stopped", "failed"})
+
+
 def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
     """Return the state line's worker suffix: alive, recycled, or not running."""
     if alive:
@@ -197,13 +201,14 @@ _VERIFY_LINES = {
 }
 
 
-def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool) -> None:
-    """Print the questions nobody answered and the gate's word for the final tree.
+def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resumable: bool) -> None:
+    """Print unanswered questions, the gate's word and an unfinished run's resume command.
 
     Args:
         scan: The log scan.
         session_id: The session.
         gated: The session is a run, the one mode a gate judges.
+        resumable: The session stopped short of its end and has a loop to resume.
     """
     if n := scan.unattended_questions:
         # Answered empty by the harness in this execution; a resume starts the count again.
@@ -214,6 +219,8 @@ def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool) -> None:
     # An end with no word (a crash, a log written before the field) prints no line.
     if gated and (verify := _VERIFY_LINES.get(scan.gate_word())):
         print(f"verify:     {verify}")
+    if resumable:
+        print(f"resume with:  agent6 resume {session_id}")
 
 
 def _usage_line(scan: LogScan) -> str:
@@ -367,7 +374,12 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     print(f"elapsed:    {_fmt_dur(elapsed)}{spans}")
     if scan.input_tokens is not None or scan.cost_usd is not None:
         print(f"usage:      {_usage_line(scan)}")
-    _print_end_facts(scan, target.name, gated=mode_display == "run")
+    _print_end_facts(
+        scan,
+        target.name,
+        gated=mode_display == "run",
+        resumable=status in _RESUMABLE and manifest.fanout is None,
+    )
     if changes.line:
         print(f"changes:    {changes.line}")
     if mode_display == "plan":

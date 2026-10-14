@@ -124,6 +124,23 @@ def test_show_on_a_coordinator_lists_each_lanes_route(
     assert all(lane["model_from_flag"] is True for lane in lanes)
 
 
+def test_stale_coordinator_does_not_offer_resume(
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stale fan-out coordinator has no loop for a resume command to continue."""
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(fan_out), session_id="fan")
+    layout.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["sessions", "show", "fan"]) == 0
+
+    out = capsys.readouterr().out
+    assert "state:      stale" in out
+    assert "resume with:" not in out
+
+
 def test_show_on_a_lane_names_its_coordinator(
     fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -374,3 +391,27 @@ def test_show_names_a_failed_end_once_beside_the_unanswered_count(
     assert main(["sessions", "show", "capped"]) == 0
     line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("state:"))
     assert line == "state:      failed · max iterations · 1 question unanswered"
+
+
+def _log(repo: pathlib.Path, session_id: str, events: list[dict[str, object]]) -> None:
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+
+
+@pytest.mark.parametrize("reason", ["steer_abort", "budget_exhausted"])
+def test_show_offers_resume_for_a_run_that_stopped_short(
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str], reason: str
+) -> None:
+    """A stopped or failed run prints the resume command, as a stale one does."""
+    _log(
+        fan_out,
+        "fan-l1",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "all_passed": False, "reason": reason},
+        ],
+    )
+
+    assert main(["sessions", "show", "fan-l1"]) == 0
+
+    assert "resume with:  agent6 resume fan-l1" in capsys.readouterr().out
