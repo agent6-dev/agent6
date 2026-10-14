@@ -694,27 +694,13 @@ def test_argv_rejects_blank_element(tmp_path: pathlib.Path) -> None:
 
 def test_with_machine_agent_overrides(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    out = cfg.with_machine_agent_overrides(
-        model="claude-y",
-        effort="high",
-        temperature=0.5,
-        max_usd=2.0,
-    )
+    out = cfg.with_machine_agent_overrides(effort="high", max_usd=2.0)
     assert out.models.worker is not None
-    assert out.models.worker.model == "claude-y"
     assert out.models.worker.effort == "high"
-    assert out.models.worker.temperature == 0.5
     assert out.budget.max_usd == 2.0
-    # Provider name untouched when not overridden.
-    assert out.models.worker.provider == "anthropic"
-
-
-def test_with_machine_agent_overrides_provider(tmp_path: pathlib.Path) -> None:
-    cfg = load_config(_write(tmp_path, _VALID_TOML))
-    out = cfg.with_machine_agent_overrides(provider="anthropic", model="claude-z")
-    assert out.models.worker is not None
-    assert out.models.worker.provider == "anthropic"
-    assert out.models.worker.model == "claude-z"
+    # The model and its provider are the config's own.
+    assert (out.models.worker.provider, out.models.worker.model) == ("anthropic", "claude-x")
+    assert cfg.with_machine_agent_overrides() == cfg
 
 
 def _with_openai_provider(block: str) -> str:

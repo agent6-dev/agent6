@@ -364,14 +364,7 @@ def run_one(
     try:
         cfg = layer.load_effective_with_overlay(
             req.cwd, req.overlay
-        ).config.with_machine_agent_overrides(
-            provider=r.provider,
-            model=r.model,
-            effort=r.effort,
-            temperature=r.temperature,
-            max_usd=r.max_usd,
-            max_tokens_fallback=r.max_tokens_fallback,
-        )
+        ).config.with_machine_agent_overrides(effort=r.effort, max_usd=r.max_usd)
         cfg = _apply_operator_env_grants(cfg)
     except (ConfigError, pydantic.ValidationError) as exc:
         reporter.refuse(f"machine agent config error: {exc}")

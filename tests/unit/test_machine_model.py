@@ -61,7 +61,6 @@ when = [
 
 [states.classify]
 kind  = "agent"
-model = "claude-sonnet-4-5"
 prompt = "Classify these pending items: {{ pending | json }}"
 output_schema = "classification"
 capture = { finish_json = "verdict" }
@@ -113,15 +112,6 @@ def test_valid_machine_loads(tmp_path: pathlib.Path) -> None:
         "record",
         "halt",
     }
-
-
-def test_agent_state_model_defaults_to_inherit(tmp_path: pathlib.Path) -> None:
-    # Omitting `model` defaults to "inherit", so a machine need not hardcode one.
-    body = VALID_MACHINE.replace('\nmodel = "claude-sonnet-4-5"', "")
-    spec = _semantics.load_machine(_write(tmp_path, body))
-    classify = spec.states["classify"]
-    assert isinstance(classify, schema.AgentState)
-    assert classify.model == "inherit"
 
 
 def test_bad_toml(tmp_path: pathlib.Path) -> None:
@@ -660,49 +650,61 @@ def test_initial_must_exist(tmp_path: pathlib.Path) -> None:
     assert any("initial state 'ghost'" in p for p in problems)
 
 
-# , per-agent-state knobs + machine [config] overlay,,,,,,
-
-
-def test_agent_state_per_state_knobs_parse(tmp_path: pathlib.Path) -> None:
+def test_an_agent_state_takes_its_model_from_its_config_table(tmp_path: pathlib.Path) -> None:
+    """The state's `config` table sets the model knobs; `max_usd` is a field of the state."""
     body = VALID_MACHINE.replace(
-        '''[states.classify]
-kind  = "agent"
-model = "claude-sonnet-4-5"''',
-        """[states.classify]
-kind  = "agent"
-model = "claude-sonnet-4-5"
-provider = "anthropic"
-effort = "high"
-temperature = 0.2
-max_usd = 1.5
-max_tokens_fallback = 100000""",
+        'kind  = "agent"',
+        'kind  = "agent"\nmax_usd = 1.5\n'
+        'config = { models = { worker = { model = "claude-sonnet-4-5", effort = "high" } } }',
     )
-    spec = _semantics.load_machine(_write(tmp_path, body))
-    state = spec.states["classify"]
+    state = _semantics.load_machine(_write(tmp_path, body)).states["classify"]
     assert isinstance(state, schema.AgentState)
-    assert state.provider == "anthropic"
-    assert state.effort == "high"
-    assert state.temperature == 0.2
     assert state.max_usd == 1.5
-    assert state.max_tokens_fallback == 100000
+    assert state.config == {"models": {"worker": {"model": "claude-sonnet-4-5", "effort": "high"}}}
+    assert set(schema.AgentState.model_fields) == {
+        "kind",
+        "notify",
+        "mode",
+        "prompt",
+        "output_schema",
+        "capture",
+        "timeout_secs",
+        "on",
+        "max_usd",
+        "config",
+    }
 
 
-def test_agent_state_knobs_default_none(tmp_path: pathlib.Path) -> None:
-    spec = _semantics.load_machine(_write(tmp_path, VALID_MACHINE))
-    state = spec.states["classify"]
-    assert isinstance(state, schema.AgentState)
-    assert state.provider is None
-    assert state.effort is None
-    assert state.temperature is None
-    assert state.max_usd is None
+@pytest.mark.parametrize(
+    ("line", "leaf"),
+    [
+        ('model = "claude-sonnet-4-5"', "models.worker.model"),
+        ('provider = "anthropic"', "models.worker.provider"),
+        ('effort = "high"', "models.worker.effort"),
+        ("temperature = 0.2", "models.worker.temperature"),
+        ("max_tokens_fallback = 100000", "budget.max_tokens_fallback"),
+    ],
+)
+def test_a_model_knob_set_on_an_agent_state_fails_the_load_naming_its_config_leaf(
+    tmp_path: pathlib.Path, line: str, leaf: str
+) -> None:
+    """An agent state setting a model knob as a field is refused, naming the leaf that takes it."""
+    field = line.split(" = ", maxsplit=1)[0]
+    body = VALID_MACHINE.replace('kind  = "agent"', f'kind  = "agent"\n{line}')
+    problems = _problems(tmp_path, body)
+    assert len(problems) == 1
+    assert "states.classify" in problems[0]
+    assert f"`{field}` is not a field of an agent state" in problems[0]
+    assert f"[states.classify.config.{leaf.rsplit('.', maxsplit=1)[0]}]" in problems[0]
+    assert f"{leaf.rsplit('.', maxsplit=1)[1]} = " in problems[0]
 
 
-def test_agent_state_unknown_effort_rejected(tmp_path: pathlib.Path) -> None:
+def test_max_usd_set_as_a_field_and_in_the_config_table_is_refused(tmp_path: pathlib.Path) -> None:
+    """The cap has one spelling per state: the field and `config.budget.max_usd` together fail."""
     body = VALID_MACHINE.replace(
-        'model = "claude-sonnet-4-5"',
-        'model = "claude-sonnet-4-5"\neffort = "extreme"',
+        'kind  = "agent"', 'kind  = "agent"\nmax_usd = 1.0\nconfig = { budget = { max_usd = 2.0 } }'
     )
-    assert _problems(tmp_path, body)
+    assert any("`max_usd` and `config.budget.max_usd`" in p for p in _problems(tmp_path, body))
 
 
 def test_machine_config_overlay_parses(tmp_path: pathlib.Path) -> None:

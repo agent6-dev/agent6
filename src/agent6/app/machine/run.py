@@ -334,15 +334,8 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     clone_root = parallel.subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
 
     def agent_config(name: str, state: AgentState) -> Config:
-        """Return an agent state's config with its own knobs applied."""
-        return configs.states[name].config.with_machine_agent_overrides(
-            provider=state.provider,
-            model=None if state.model == "inherit" else state.model,
-            effort=state.effort,
-            temperature=state.temperature,
-            max_usd=state.max_usd,
-            max_tokens_fallback=state.max_tokens_fallback,
-        )
+        """Return an agent state's config with its spend cap applied."""
+        return configs.states[name].config.with_machine_agent_overrides(max_usd=state.max_usd)
 
     if agent_states or has_tool_state:
         try:

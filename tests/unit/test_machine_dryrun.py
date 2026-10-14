@@ -56,7 +56,6 @@ when = [
 
 [states.judge]
 kind = "agent"
-model = "claude-x"
 prompt = "review {{ items | json }}"
 output_schema = "review"
 capture = { finish_json = "verdict" }

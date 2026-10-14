@@ -973,7 +973,7 @@ def test_run_says_where_a_machines_work_landed(
 def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A state that pins both provider and model is runnable without a worker default."""
+    """A state whose `config` table pins provider and model runs without a worker default."""
     from agent6.machine import AgentExecResult
 
     monkeypatch.chdir(tmp_path)
@@ -981,9 +981,7 @@ def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
     machine = tmp_path / "pinned.asm.toml"
     machine.write_text(
-        AGENT_MACHINE_HARD.replace(
-            'prompt = "judge"', 'prompt = "judge"\nprovider = "p"\nmodel = "m"'
-        ),
+        AGENT_MACHINE_HARD + '\n[states.judge.config.models.worker]\nprovider = "p"\nmodel = "m"\n',
         encoding="utf-8",
     )
     cfg = tmp_path / "config.toml"

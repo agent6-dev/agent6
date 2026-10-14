@@ -228,13 +228,8 @@ def test_a_state_table_cannot_select_a_preset(
         resolve_configs(spec, tmp_path, _setup.detect_env())
 
 
-def test_a_knob_and_its_config_leaf_are_one_spelling(tmp_path: pathlib.Path) -> None:
-    """Until the knobs fold into the table, a leaf set both ways is refused, never ordered."""
-    both = MACHINE.replace('prompt = "judge"', 'prompt = "judge"\neffort = "high"') + (
-        '\n[states.judge.config.models.worker]\neffort = "low"\n'
-    )
-    with pytest.raises(MachineError, match=r"`effort` and `config\.models\.worker\.effort`"):
-        load_machine(_write(tmp_path, both))
+def test_the_cap_and_its_config_leaf_are_one_spelling(tmp_path: pathlib.Path) -> None:
+    """`max_usd` set as a field and in the state's table is refused, never ordered."""
     budget = MACHINE.replace('prompt = "judge"', 'prompt = "judge"\nmax_usd = 1.0') + (
         "\n[states.judge.config.budget]\nmax_usd = 2.0\n"
     )

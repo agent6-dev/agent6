@@ -15,8 +15,6 @@ mood = { type = "str", enum = ["happy", "neutral", "sad"] }
 
 [states.greet]
 kind = "agent"
-model = "claude-haiku-4-5"
-provider = "anthropic"
 prompt = """
 Reply with a one-sentence friendly greeting. Call finish_session with JSON
 {message: "<your greeting>", mood: "happy"}.
@@ -25,6 +23,10 @@ output_schema = "greeting"
 capture = { finish_json = "out" }
 timeout_secs = 120
 on = { ok = "done", failed = "fail", budget_exhausted = "fail", timeout = "fail" }
+
+[states.greet.config.models.worker]
+provider = "anthropic"
+model = "claude-haiku-4-5"
 
 [states.done]
 kind = "terminal"

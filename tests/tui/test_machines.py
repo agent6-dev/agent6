@@ -1100,7 +1100,6 @@ verdict = { type = "verdict", default = {} }
 
 [states.work]
 kind = "agent"
-model = "m1"
 prompt = "do the thing"
 output_schema = "verdict"
 capture = { finish_json = "verdict" }

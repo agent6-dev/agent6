@@ -183,10 +183,10 @@ def _draft(machine: str, **scripts: str) -> dict[str, str]:
     return {"greeter.asm.toml": machine, **{f"scripts/{n}": s for n, s in scripts.items()}}
 
 
-def test_create_inherits_worker_model(
+def test_create_runs_the_authoring_agent_as_a_run_on_the_worker_model(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The authoring agent inherits the worker model (model=None), never an empty override."""
+    """The authoring request names no model, so the agent runs the operator's worker model."""
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
     captured: list[AgentRequest] = []
@@ -208,7 +208,7 @@ def test_create_inherits_worker_model(
     code = main(["machine", "create", "Greet the user"])
     assert code == 0
     assert captured, "runner was never invoked"
-    assert captured[0].model is None  # inherit, not "" (which would fail to validate)
+    assert "model" not in captured[0].model_dump()
     # The authoring agent is a run: it writes the bundle with the edit tools.
     assert captured[0].mode == "run"
 

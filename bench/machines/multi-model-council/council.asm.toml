@@ -29,9 +29,6 @@ reason     = { type = "str" }
 
 [states.juror_a]
 kind     = "agent"
-provider = "anthropic"
-model    = "claude-haiku-4-5"
-temperature = 0.0
 prompt = """
 You are juror A. Answer this question, reasoning carefully first:
 {{ question }}
@@ -42,11 +39,13 @@ capture = { finish_json = "verdict_a" }
 timeout_secs = 180
 on = { ok = "juror_b", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
 
+[states.juror_a.config.models.worker]
+provider = "anthropic"
+model = "claude-haiku-4-5"
+temperature = 0.0
+
 [states.juror_b]
 kind     = "agent"
-provider = "openrouter"
-model    = "moonshotai/kimi-k2.6"
-temperature = 0.0
 prompt = """
 You are juror B. Answer this question, reasoning carefully first:
 {{ question }}
@@ -57,6 +56,11 @@ capture = { finish_json = "verdict_b" }
 timeout_secs = 180
 on = { ok = "compare", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
 
+[states.juror_b.config.models.worker]
+provider = "openrouter"
+model = "moonshotai/kimi-k2.6"
+temperature = 0.0
+
 [states.compare]
 kind = "branch"
 when = [
@@ -66,9 +70,6 @@ when = [
 
 [states.tiebreak]
 kind     = "agent"
-provider = "anthropic"
-model    = "claude-sonnet-4-6"
-effort = "low"
 prompt = """
 Two jurors disagree on this question:
 {{ question }}
@@ -83,6 +84,11 @@ output_schema = "verdict"
 capture = { finish_json = "verdict_c" }
 timeout_secs = 240
 on = { ok = "decided", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
+
+[states.tiebreak.config.models.worker]
+provider = "anthropic"
+model = "claude-sonnet-4-6"
+effort = "low"
 
 [states.consensus]
 kind   = "terminal"

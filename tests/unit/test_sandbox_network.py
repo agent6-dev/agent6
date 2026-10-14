@@ -96,10 +96,10 @@ def test_run_one_returns_finish_payload(
     req = machine_agent.MachineAgentRequest(
         cwd=iso,
         root=iso,
-        overlay={},
+        overlay={"models": {"worker": {"provider": "anthropic", "model": "claude-x"}}},
         isolation="none",  # no real sandbox: landlock is a no-op
         transcript_dir=tmp_path / "t",
-        request=AgentRequest(model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"),
+        request=AgentRequest(prompt="go", timeout_s=5.0),
     )
     out = machine_agent.run_one(req)
     assert out.reason == "finish_session"
@@ -151,11 +151,11 @@ def test_run_one_drops_out_of_cwd_protect_paths(
     req = machine_agent.MachineAgentRequest(
         cwd=iso,
         root=iso,
-        overlay={},
+        overlay={"models": {"worker": {"provider": "anthropic", "model": "claude-x"}}},
         isolation="none",
         transcript_dir=tmp_path / "t",
         protect_paths=(inside, outside),
-        request=AgentRequest(model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"),
+        request=AgentRequest(prompt="go", timeout_s=5.0),
     )
     machine_agent.run_one(req)
     # Only the in-cwd path survives the subprocess-boundary re-validation.
@@ -176,13 +176,11 @@ def test_run_one_exports_commit_identity(
     req = machine_agent.MachineAgentRequest(
         cwd=iso,
         root=iso,
-        overlay={},
+        overlay={"models": {"worker": {"provider": "anthropic", "model": "claude-x"}}},
         isolation="none",
         transcript_dir=tmp_path / "t",
         commit_identity=git_ops.CommitIdentity(name="Machine Bot", email="bot@example.com"),
-        request=AgentRequest(
-            model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic", mode="run"
-        ),
+        request=AgentRequest(prompt="go", timeout_s=5.0, mode="run"),
     )
     out = machine_agent.run_one(req)
     assert out.reason == "finish_session"

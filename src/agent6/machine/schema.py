@@ -305,53 +305,41 @@ class AgentState(pydantic.BaseModel):
     Attributes:
         kind: The discriminator.
         notify: The message journaled on entry, or None.
-        model: The model, or `inherit` for the operator's worker model (a hardcoded model
-            passes `machine check` and can die at run time).
         mode: `agent`, a read-only structured judge; or `run`, with the coding tools.
         prompt: The prompt template.
         output_schema: The schema the payload must match.
         capture: How the payload is written to the blackboard.
         timeout_secs: The wall-clock cap.
         on: The destination per outcome label.
-        provider: The `[providers.*]` entry by name (never a secret), or None to inherit.
-        effort: The reasoning effort override, or None to inherit.
-        temperature: The sampling override, or None to inherit.
-        max_usd: The slice's spend cap, or None to inherit the config's.
-        max_tokens_fallback: The unmetered token bound (-1 unlimited, 0 refuse), or None to
-            inherit.
-        config: The state's own config layer, above the machine's `[config]`.
+        max_usd: The slice's spend cap, or None to inherit the config's; a field because the
+            engine clamps it to what the machine budget has left.
+        config: The state's own config layer, above the machine's `[config]`: the model
+            (`models.worker`) and every other knob of the state.
     """
 
     model_config = _MODEL_CONFIG
 
     kind: Literal["agent"]
     notify: _NotifySpecT | None = None
-    model: str = pydantic.Field(default="inherit", min_length=1)
     mode: Literal["agent", "run"] = "agent"
     prompt: str = pydantic.Field(min_length=1)
     output_schema: str = pydantic.Field(min_length=1)
     capture: Capture
     timeout_secs: int = pydantic.Field(gt=0)
     on: dict[str, str]
-    provider: str | None = None
-    effort: Literal["off", "low", "medium", "high", "xhigh", "max"] | None = None
-    temperature: float | None = None
     max_usd: _FiniteUsd | None = pydantic.Field(default=None, gt=0.0)
-    max_tokens_fallback: int | None = pydantic.Field(default=None, ge=-1)
     config: dict[str, Any] = pydantic.Field(default_factory=dict)
 
     @pydantic.model_validator(mode="after")
-    def _one_spelling_per_leaf(self) -> AgentState:
-        """Return the state, refusing a knob that its `config` table also sets.
+    def _one_spelling_for_the_cap(self) -> AgentState:
+        """Return the state, refusing a `max_usd` that its `config` table also sets.
 
         Raises:
-            ValueError: A leaf is set both ways.
+            ValueError: The cap is set both ways.
         """
-        for knob, table, leaf in _AGENT_KNOB_LEAVES:
-            if getattr(self, knob) not in (None, "inherit") and leaf in _table(self.config, table):
-                raise ValueError(
-                    f"`{knob}` and `config.{'.'.join(table)}.{leaf}` set the same thing; keep one"
-                )
+        budget = self.config.get("budget")
+        if self.max_usd is not None and isinstance(budget, dict) and "max_usd" in budget:
+            raise ValueError("`max_usd` and `config.budget.max_usd` set the same thing; keep one")
         return self
 
 
@@ -475,23 +463,6 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
 }
 # The supervisor reads these once for the whole machine, so one state cannot change them.
 STATE_OVERLAY_KEYS: tuple[str, ...] = ("git.commit", "machine", "parallel")
-# An agent state's knob and the config leaf that says the same thing.
-_AGENT_KNOB_LEAVES: tuple[tuple[str, tuple[str, ...], str], ...] = (
-    ("model", ("models", "worker"), "model"),
-    ("provider", ("models", "worker"), "provider"),
-    ("effort", ("models", "worker"), "effort"),
-    ("temperature", ("models", "worker"), "temperature"),
-    ("max_usd", ("budget",), "max_usd"),
-    ("max_tokens_fallback", ("budget",), "max_tokens_fallback"),
-)
-
-
-def _table(config: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any]:
-    """Return the nested table at a path of an overlay, or an empty one."""
-    node: Any = config
-    for key in path:
-        node = node.get(key) if isinstance(node, dict) else None
-    return node if isinstance(node, dict) else {}
 
 
 def protected_overlay_key_error(key: str, state: str = "") -> str | None:

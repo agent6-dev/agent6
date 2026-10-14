@@ -56,8 +56,6 @@ when = [
 
 [states.summarize]
 kind  = "agent"
-provider = "anthropic"
-model = "claude-haiku-4-5"
 prompt = """
 Here are the {{ count }} most recent commits in range {{ range }}:
 
@@ -70,6 +68,10 @@ output_schema = "digest"
 capture = { finish_json = "digest" }
 timeout_secs = 180
 on = { ok = "write", failed = "empty", budget_exhausted = "empty", timeout = "empty" }
+
+[states.summarize.config.models.worker]
+provider = "anthropic"
+model = "claude-haiku-4-5"
 
 [states.write]
 kind = "tool"

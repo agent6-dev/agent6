@@ -76,13 +76,9 @@ class AgentRequest(pydantic.BaseModel):
     Attributes:
         prompt: The rendered prompt.
         timeout_s: The wall-clock cap.
-        model: The state's model, or None to inherit the operator's worker model (the
-            `machine create` authoring agent has no state).
-        provider: The `[providers.*]` entry, or None for the effective config's.
-        effort: The reasoning effort override, or None.
-        temperature: The sampling override, or None.
+        effort: The reasoning effort the `machine create` authoring agent runs at, or None; a
+            state sets its own in its `config` table.
         max_usd: The slice's spend cap, or None.
-        max_tokens_fallback: The unmetered token bound, or None.
         mode: The nested loop's mode: `agent` (a read-only structured judge) or `run`.
         state_name: The state, for its own watchable logs.jsonl; "" for the authoring agent.
         step_seq: The transition, likewise; 0 for the authoring agent.
@@ -94,12 +90,8 @@ class AgentRequest(pydantic.BaseModel):
 
     prompt: str
     timeout_s: float
-    model: str | None = None
-    provider: str | None = None
     effort: str | None = None
-    temperature: float | None = None
     max_usd: float | None = None
-    max_tokens_fallback: int | None = None
     mode: str = "agent"
     state_name: str = ""
     step_seq: int = 0
@@ -563,14 +555,9 @@ def _execute(
         )
         result = world.run_agent(
             AgentRequest(
-                model=None if state.model == "inherit" else state.model,
                 prompt=prompt,
                 timeout_s=float(state.timeout_secs),
-                provider=state.provider,
-                effort=state.effort,
-                temperature=state.temperature,
                 max_usd=_agent_usd_cap(state.max_usd, remaining_usd),
-                max_tokens_fallback=state.max_tokens_fallback,
                 mode=state.mode,
                 state_name=state_name,
                 step_seq=seq,

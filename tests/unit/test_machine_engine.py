@@ -287,7 +287,6 @@ verdict = { type = "verdict", default = {} }
 
 [states.review]
 kind = "agent"
-model = "claude-sonnet-4-5"
 prompt = "Review the change."
 output_schema = "verdict"
 capture = { finish_json = "verdict" }
@@ -341,7 +340,6 @@ total = { type = "int", default = 0 }
 
 [states.score]
 kind = "agent"
-model = "m"
 prompt = "Score it."
 output_schema = "score_result"
 capture = { set = { total = "{{ result.points }}" } }
@@ -1245,31 +1243,25 @@ def test_agent_ok_captures_payload_and_routes(tmp_path: pathlib.Path) -> None:
     assert snap is not None
     assert snap.blackboard["verdict"] == payload
     # The rendered prompt was passed through to the runner.
-    assert world.agent_calls[0].model == "claude-sonnet-4-5"
     assert world.agent_calls[0].prompt == "Review the change."
 
 
-def test_agent_per_state_knobs_threaded_to_request(tmp_path: pathlib.Path) -> None:
+def test_an_agent_request_carries_the_cap_and_no_model_knob(tmp_path: pathlib.Path) -> None:
+    """A state's model knobs live in its `config` table: the request carries its cap alone."""
     body = REVIEWER.replace(
-        'prompt = "Review the change."',
-        'prompt = "Review the change."\n'
-        'provider = "anthropic"\n'
-        'effort = "high"\n'
-        "temperature = 0.3\n"
-        "max_usd = 2.5\n"
-        "max_tokens_fallback = 90000",
-    )
+        'prompt = "Review the change."', 'prompt = "Review the change."\nmax_usd = 2.5'
+    ) + ('\n[states.review.config.models.worker]\neffort = "high"\ntemperature = 0.3\n')
     journal, f = _load(tmp_path, body)
     spec = _semantics.load_machine(f)
     world = FakeWorld({}, agent_results=[_agent("finish_session", {"approved": True})])
     machine_engine.drive(spec, journal, world, live=True)
     req = world.agent_calls[0]
-    assert req.provider == "anthropic"
-    assert req.effort == "high"
-    assert req.temperature == 0.3
     # min(2.5 state cap, 1.0 machine budget): a state never gets more than the machine has.
     assert req.max_usd == 1.0
-    assert req.max_tokens_fallback == 90000
+    assert req.effort is None
+    assert not {"model", "provider", "temperature", "max_tokens_fallback"} & set(
+        machine_engine.AgentRequest.model_fields
+    )
 
 
 def test_agent_ok_but_rejected_routes_fail(tmp_path: pathlib.Path) -> None:
@@ -1346,7 +1338,6 @@ out = { type = "r", default = {} }
 
 [states.work]
 kind = "agent"
-model = "m"
 prompt = "do"
 output_schema = "r"
 capture = { finish_json = "out" }
@@ -1593,20 +1584,6 @@ def test_best_effort_usd_limit_no_longer_validates(tmp_path: pathlib.Path) -> No
     f.write_text(body, encoding="utf-8")
     with pytest.raises(MachineError, match="best_effort_usd_limit"):
         _semantics.load_machine(f)
-
-
-def test_agent_state_max_tokens_fallback_flows_to_request(tmp_path: pathlib.Path) -> None:
-    body = _SPENDER.replace('kind = "agent"', 'kind = "agent"\nmax_tokens_fallback = 5000', 1)
-    journal, f = _load(tmp_path, body)
-    spec = _semantics.load_machine(f)
-    world = FakeWorld(
-        {},
-        agent_results=[
-            machine_engine.AgentExecResult(reason="finish_session", payload={"ok": True}, usd=0.10)
-        ],
-    )
-    machine_engine.drive(spec, journal, world, live=True)
-    assert world.agent_calls[0].max_tokens_fallback == 5000
 
 
 NOTIFY_WAIT = """

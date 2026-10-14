@@ -388,46 +388,26 @@ class Config(pydantic.BaseModel):
         return Config.model_validate(data)
 
     def with_machine_agent_overrides(
-        self,
-        *,
-        provider: str | None = None,
-        model: str | None = None,
-        effort: str | None = None,
-        temperature: float | None = None,
-        max_usd: float | None = None,
-        max_tokens_fallback: int | None = None,
+        self, *, effort: str | None = None, max_usd: float | None = None
     ) -> Config:
-        """Return a copy with a machine `agent` state's knobs on the worker role and the budget.
+        """Return a copy with a machine agent's effort and spend cap applied.
 
         Args:
-            provider: The worker's provider, or None to inherit.
-            model: The worker's model, or None.
-            effort: The worker's effort, or None.
-            temperature: The worker's temperature, or None.
-            max_usd: The `budget.max_usd` cap, or None.
-            max_tokens_fallback: The `budget.max_tokens_fallback` cap, or None.
+            effort: The worker's effort, or None to keep the config's.
+            max_usd: The `budget.max_usd` cap, or None to keep the config's.
 
         Returns:
-            The config, revalidated so the provider-name checks run on the merged result.
+            The config, revalidated.
         """
         data = self.model_dump(mode="python")
-        worker = data.setdefault("models", {}).get("worker")
-        if worker is None:
-            worker = {}
-            data["models"]["worker"] = worker
-        if provider is not None:
-            worker["provider"] = provider
-        if model is not None:
-            worker["model"] = model
         if effort is not None:
+            worker = data.setdefault("models", {}).get("worker")
+            if worker is None:
+                worker = {}
+                data["models"]["worker"] = worker
             worker["effort"] = effort
-        if temperature is not None:
-            worker["temperature"] = temperature
-        budget = data.setdefault("budget", {})
         if max_usd is not None:
-            budget["max_usd"] = max_usd
-        if max_tokens_fallback is not None:
-            budget["max_tokens_fallback"] = max_tokens_fallback
+            data.setdefault("budget", {})["max_usd"] = max_usd
         return Config.model_validate(data)
 
     def with_verify_command(self, argv: tuple[str, ...]) -> Config:

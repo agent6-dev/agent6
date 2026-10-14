@@ -155,7 +155,6 @@ Every state has a `kind`.
 ```toml
 [states.classify]
 kind   = "agent"
-model  = "inherit"               # the configured worker model, or pin one
 prompt = """
 Classify the item at path {{ cursor }}.
 Call finish_session with JSON {label, confidence}.
@@ -166,12 +165,16 @@ timeout_secs = 600
 on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt" }
 
 # mode = "agent"                   # "agent" (default, read-only) | "run"
-# Optional per-state overrides (inherit the effective config when unset):
-# provider = "anthropic"           # which [providers.*] entry backs this call
-# effort = "high"                 # off | low | medium | high | xhigh | max
-# temperature = 0.2
 # max_usd = 1.5                    # this agent slice's metered-spend cap
-# max_tokens_fallback = 100000     # ...and its unmetered-token cap (-1/0/>0)
+
+# [states.classify.config.models.worker]   # this state's model; unset: your worker model
+# provider = "anthropic"           # which [providers.*] entry backs this call
+# model = "claude-haiku-4-5"
+# effort = "high"                  # off | low | medium | high | xhigh | max
+# temperature = 0.2
+
+# [states.classify.config.budget]
+# max_tokens_fallback = 100000     # this slice's unmetered-token cap (-1/0/>0)
 
 # [states.classify.config.harness] # any other config key, for this state only
 # max_iterations = 20
@@ -220,11 +223,12 @@ Where a run state's work lands:
 - an overlay cannot grant it: a `sandbox` key is never wider than your own config ([Machine config overlay](#47-machine-config-overlay-config))
 - edits and the auto-commit need no approval; `run_verify_command` and the `verify_when` certification share the same gate: prefer `tool` states over shelling out
 
-The optional per-state knobs tune how that loop runs.
+The state's `config` table tunes how that loop runs.
 
-- `provider` / `effort` / `temperature` select and tune the model; `max_usd` / `max_tokens_fallback` bound this one agent slice
-- each falls back through the effective config when omitted ([Machine config overlay](#47-machine-config-overlay-config))
-- the state's `config` table sets any other key for this state; a knob and the `config` leaf that says the same thing (`effort` and `config.models.worker.effort`) are one spelling, and setting both is a load error
+- `[states.<name>.config.models.worker]` selects and tunes the model (`provider`, `model`, `effort`, `temperature`); `[states.<name>.config.budget]` sets `max_tokens_fallback`; any other config key works the same way
+- a key the table leaves out falls back through the effective config ([Machine config overlay](#47-machine-config-overlay-config))
+- `max_usd` is the one knob that is a field of the state: it bounds this agent slice, and the engine clamps it to what the machine budget has left; setting it and `config.budget.max_usd` together is a load error
+- `model`, `provider`, `effort`, `temperature` and `max_tokens_fallback` are not fields of the state: a machine file that sets one fails to load, with the `config` table that takes it named
 - secrets are never expressed here, only a `provider` name that must exist in the effective config
 
 #### `tool`

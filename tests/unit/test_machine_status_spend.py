@@ -293,7 +293,6 @@ on = { ok = "done", nonzero = "fix", timeout = "fix" }
 [states.fix]
 kind = "agent"
 prompt = "p"
-model = "m"
 timeout_secs = 60
 output_schema = "out"
 capture = { finish_json = "res" }

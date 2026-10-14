@@ -86,9 +86,10 @@ grammar. Terminal states end the machine.
 ### agent: run a nested agent6 loop
     [states.review]
     kind = "agent"
-    # model defaults to "inherit" (the operator's effective worker model).
-    # OMIT it unless you must pin a specific one, a hardcoded model the
-    # operator hasn't configured passes `machine check` but dies at run time.
+    # The state runs the operator's effective worker model; `model` is not a
+    # field. Pin a specific one only when you must, in a
+    # `[states.review.config.models.worker]` table (`provider`, `model`): a model
+    # the operator hasn't configured passes `machine check` but dies at run time.
     prompt = "Review the change and return a verdict."
     output_schema = "verdict"                # finish_session payload validated against this
     capture = { finish_json = "verdict" }    # whole payload -> a [vars.agent] var
@@ -443,8 +444,9 @@ if __name__ == "__main__":
 ```
 
 ## Common mistakes (each fails `machine check`/`create` or silently misbehaves)
-  - Hardcoding `model = "..."` on an `agent` state — omit it (defaults to
-    "inherit" = the worker model) unless pinning one on purpose.
+  - Hardcoding `model = "..."` on an `agent` state — it is not a field and the
+    file fails to load. Omit it (the state runs the worker model) unless pinning
+    one on purpose, in the state's `config.models.worker` table.
   - A `tool` that calls the network without `network = "host"` in its own
     `config.sandbox` table, under a `[config.sandbox]` that says `session` — it
     runs network-isolated and the call fails.

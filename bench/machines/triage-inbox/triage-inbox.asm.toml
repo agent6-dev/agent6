@@ -55,8 +55,6 @@ when = [
 
 [states.classify]
 kind  = "agent"
-provider = "openrouter"
-model = "moonshotai/kimi-k2.6"
 prompt = """
 Classify this inbox item into exactly one label.
 Item ({{ head }}):
@@ -69,6 +67,10 @@ output_schema = "classification"
 capture = { finish_json = "verdict" }
 timeout_secs = 120
 on = { ok = "route", failed = "ack", budget_exhausted = "drained", timeout = "ack" }
+
+[states.classify.config.models.worker]
+provider = "openrouter"
+model = "moonshotai/kimi-k2.6"
 
 [states.route]
 kind = "branch"

@@ -16,7 +16,7 @@ import datetime
 import pathlib
 import tomllib
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import pydantic
 
@@ -60,8 +60,21 @@ def load_machine(path: pathlib.Path) -> schema.MachineSpec:
     return spec
 
 
+# Keys an agent state does not take, each with the `config` table and key that set the same thing.
+_CONFIG_ONLY_AGENT_KEYS: dict[str, tuple[str, str]] = {
+    "model": ("models.worker", "model"),
+    "provider": ("models.worker", "provider"),
+    "effort": ("models.worker", "effort"),
+    "temperature": ("models.worker", "temperature"),
+    "max_tokens_fallback": ("budget", "max_tokens_fallback"),
+}
+
+
 def _precheck(raw: dict[str, Any]) -> list[str]:
-    """Return the problems pydantic would report less readably: a var outside an owner table."""
+    """Return the problems pydantic would report less readably.
+
+    A var outside an owner table, and an agent state key that belongs in its `config` table.
+    """
     problems: list[str] = []
     vars_section = raw.get("vars")
     if isinstance(vars_section, dict):
@@ -71,6 +84,18 @@ def _precheck(raw: dict[str, Any]) -> list[str]:
                     f"`vars.{key}` has no owner subtable; put it in"
                     " `[vars.operator]`, `[vars.code]`, or `[vars.agent]`"
                 )
+    states = raw.get("states")
+    if isinstance(states, dict):
+        for name, state in cast("dict[str, Any]", states).items():
+            if not isinstance(state, dict) or state.get("kind") != "agent":
+                continue
+            for key, (table, leaf) in _CONFIG_ONLY_AGENT_KEYS.items():
+                if key in state:
+                    problems.append(
+                        f"states.{name}: `{key}` is not a field of an agent state; set it in the"
+                        f" state's config table: `[states.{name}.config.{table}]` with"
+                        f" `{leaf} = ...`"
+                    )
     return problems
 
 

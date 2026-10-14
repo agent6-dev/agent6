@@ -194,12 +194,10 @@ def test_machine_agent_wires_the_summariser_seat(
     req = machine_agent.MachineAgentRequest(
         cwd=tmp_path,
         root=tmp_path,
-        overlay={},
+        overlay={"models": {"worker": {"provider": "anthropic", "model": "claude-x"}}},
         isolation="none",
         transcript_dir=tmp_path / "t",
-        request=engine.AgentRequest(
-            model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"
-        ),
+        request=engine.AgentRequest(prompt="go", timeout_s=5.0),
     )
     out = machine_agent.run_one(req)
     assert out.reason == "finish_session"
