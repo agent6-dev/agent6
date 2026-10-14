@@ -303,7 +303,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 
 | File | Holds |
 |---|---|
-| `manifest.json` | the run's record: the task, where it started (`base_sha`, `base_branch`), its run branch, mode, isolation, the model and preset that drove it, and the later stamps (`parked_task`, `compare`, fan-out and lane lineage) |
+| `manifest.json` | the run's record: the task, where it started (`base_sha`, `base_branch`), its run branch, mode, isolation, the model and preset that drove it, the caps its `--max-usd`, `--max-tokens-fallback` and `--max-percent` flags set, and the later stamps (`parked_task`, `compare`, fan-out and lane lineage) |
 | `graph.jsonl` | append-only journal of every task-graph mutation (curator-owned) |
 | `graph/**/*.md` | one markdown file per task node, nested under its parent, rewritten atomically (curator-owned) |
 | `cursor.json` | the curator's current task pointer |

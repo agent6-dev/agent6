@@ -315,3 +315,82 @@ def test_an_ask_out_of_budget_exits_three(
     prov2 = _Scripted([("the sky is blue", ())])
     monkeypatch.setattr(providers, "build_role_provider", _use(prov2))
     assert cli_main(["ask", "query", "why is the sky blue?"]) == 0
+
+
+def _resumed_config(monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> Any:
+    """Resume with the execution stubbed; return the config it was handed."""
+    from agent6.app import _execution
+
+    seen: list[Any] = []
+
+    def _capture(cfg: Any, *_a: object, **_k: object) -> _execution.ExecutionEnd:
+        seen.append(cfg)
+        return _execution.ExecutionEnd(0)
+
+    monkeypatch.setattr(_execution, "run_execution", _capture)
+    assert cli_main(argv) == 0
+    return seen[0]
+
+
+def test_a_bare_resume_replays_the_caps_the_run_was_started_with(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A resume with no budget flag runs under the `--max-*` values the run started with.
+
+    The flags lived only in the first invocation's memory, so a bare resume fell back to the
+    config caps: `--max-percent 2` resumed unbounded.
+    """
+    from agent6.sessions import manifest as sessions_manifest
+
+    repo = _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted([_finish()])))
+    argv = ["run", "--session-id", "cap-KEEP01", "--max-percent", "2", "--max-usd", "1.5", "t"]
+    assert cli_main(argv) == 0
+    sd = paths.state_dir(repo) / "sessions" / "runs" / "cap-KEEP01"
+    recorded = sessions_manifest.read_manifest(sd).budget
+    assert (recorded.max_percent, recorded.max_usd, recorded.max_tokens_fallback) == (
+        2.0,
+        1.5,
+        None,
+    )
+    capsys.readouterr()
+
+    cfg = _resumed_config(monkeypatch, ["resume", "cap-KEEP01", "--steer", "more"])
+
+    assert (cfg.budget.max_percent, cfg.budget.max_usd) == (2.0, 1.5)
+    assert "--max-usd 1.5 --max-percent 2.0" in capsys.readouterr().err
+
+
+def test_a_resume_budget_flag_outranks_the_recorded_cap_and_is_recorded(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `--max-*` on a resume replaces that one recorded cap, for this and later resumes."""
+    _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted([_finish()])))
+    argv = ["run", "--session-id", "cap-OVER01", "--max-percent", "2", "--max-usd", "1.5", "t"]
+    assert cli_main(argv) == 0
+
+    flagged = ["resume", "cap-OVER01", "--steer", "more", "--max-percent", "5"]
+    cfg = _resumed_config(monkeypatch, flagged)
+    assert (cfg.budget.max_percent, cfg.budget.max_usd) == (5.0, 1.5)
+    cfg = _resumed_config(monkeypatch, ["resume", "cap-OVER01", "--steer", "more"])
+    assert (cfg.budget.max_percent, cfg.budget.max_usd) == (5.0, 1.5)
+
+
+def test_a_cap_set_in_config_is_read_from_config_on_resume(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run started with no budget flag records none, so its resume follows the config."""
+    from agent6.sessions import manifest as sessions_manifest
+
+    repo = _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted([_finish()])))
+    assert cli_main(["run", "--session-id", "cap-CONF01", "t"]) == 0
+    sd = paths.state_dir(repo) / "sessions" / "runs" / "cap-CONF01"
+    assert sessions_manifest.read_manifest(sd).budget == sessions_manifest.BudgetStamp()
+    config = tmp_path / "cfg" / "agent6" / "config.toml"
+    config.write_text(config.read_text() + "\n[budget]\nmax_percent = 7\n", encoding="utf-8")
+
+    cfg = _resumed_config(monkeypatch, ["resume", "cap-CONF01", "--steer", "more"])
+
+    assert cfg.budget.max_percent == 7.0

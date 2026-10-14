@@ -383,6 +383,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             isolation=isolation,
             worktree=checkout.worktree if checkout is not None else None,
             worktree_git_dir=worktree_git_dir,
+            budget=budget_overrides.stamp() if budget_overrides is not None else None,
         )
         if parked is not None:
             stamps.stamp_parked(layout.session_dir, task=parked[0], reason=parked[1])

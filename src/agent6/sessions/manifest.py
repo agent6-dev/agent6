@@ -112,6 +112,24 @@ class HarnessStamp(pydantic.BaseModel):
         return self.preset if self.preset_from_flag else ""
 
 
+class BudgetStamp(pydantic.BaseModel):
+    """The caps the `--max-*` flags set, which a resume without that flag runs under again.
+
+    A cap set in config is not recorded: a resume reads it from config.
+
+    Attributes:
+        max_usd: `--max-usd`, None when no flag set it.
+        max_tokens_fallback: `--max-tokens-fallback`, None when no flag set it.
+        max_percent: `--max-percent`, None when no flag set it.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    max_usd: float | None = None
+    max_tokens_fallback: int | None = None
+    max_percent: float | None = None
+
+
 # The `sha` of a merge that added no commit; the target's own tip is not the run's.
 NO_MERGE_COMMIT = "0" * 40
 
@@ -213,7 +231,7 @@ class CompareStamp(pydantic.BaseModel):
 
 
 # Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
-MANIFEST_VERSION = 4
+MANIFEST_VERSION = 5
 MANIFEST_NAME = "manifest.json"
 
 
@@ -239,6 +257,7 @@ class SessionManifest(pydantic.BaseModel):
         models: The models the run resolved.
         harness: The strategy the run started with.
         policy: The policy the run launched under.
+        budget: The caps the run's or a resume's `--max-*` flags set.
         parked_task: The verbatim task of a run submitted but never started; `agent6 resume`
             starts it fresh and its manifest rewrite clears this.
         parked_reason: Why it was parked: the checkout was busy, or the tree was dirty and
@@ -278,6 +297,7 @@ class SessionManifest(pydantic.BaseModel):
     models: ModelsBrief = ModelsBrief()
     harness: HarnessStamp = HarnessStamp()
     policy: PolicyStamp = PolicyStamp()
+    budget: BudgetStamp = BudgetStamp()
     parked_task: str = ""
     parked_reason: str = ""
     source_session_id: str | None = None

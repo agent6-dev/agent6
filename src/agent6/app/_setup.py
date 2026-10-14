@@ -33,6 +33,7 @@ from agent6.config import (
 from agent6.models import cache
 from agent6.providers import claude_code
 from agent6.sandbox import detect, jail, strict_namespaces_work
+from agent6.sessions import manifest
 from agent6.tools import mcp_client, mcp_http, policy
 
 
@@ -90,6 +91,26 @@ class BudgetOverrides:
             max_usd=getattr(args, "max_usd", None),
             max_tokens_fallback=getattr(args, "max_tokens_fallback", None),
             max_percent=getattr(args, "max_percent", None),
+        )
+
+    def over(self, recorded: manifest.BudgetStamp) -> BudgetOverrides:
+        """Return these flags over the caps the run recorded: a flag wins its own field."""
+        return BudgetOverrides(
+            max_usd=recorded.max_usd if self.max_usd is None else self.max_usd,
+            max_tokens_fallback=(
+                recorded.max_tokens_fallback
+                if self.max_tokens_fallback is None
+                else self.max_tokens_fallback
+            ),
+            max_percent=recorded.max_percent if self.max_percent is None else self.max_percent,
+        )
+
+    def stamp(self) -> manifest.BudgetStamp:
+        """Return these caps as the manifest records them."""
+        return manifest.BudgetStamp(
+            max_usd=self.max_usd,
+            max_tokens_fallback=self.max_tokens_fallback,
+            max_percent=self.max_percent,
         )
 
     def apply(self, cfg: Config) -> Config:

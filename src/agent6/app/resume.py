@@ -250,6 +250,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             kinds.ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
         )
         mode = manifest.session_mode()
+        # A `--max-*` set on the run replays the same way, field by field.
+        budget_overrides = (budget_overrides or _setup.BudgetOverrides()).over(manifest.budget)
     except sessions_manifest.ManifestError as exc:
         reporter.error(f"cannot resume {session_id}: {exc}")
         return 2
@@ -607,6 +609,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             stamps.stamp_preset(layout.session_dir, preset)
         if (flagged := _setup.flag_route(cfg, mode, model)) is not None:
             stamps.stamp_model(layout.session_dir, flagged)
+        if budget_overrides.stamp() != manifest.budget:
+            stamps.stamp_budget(layout.session_dir, budget_overrides.stamp())
+        if caps := budget_overrides.argv():
+            reporter.note(f"budget caps in force from this run's flags: {' '.join(caps)}")
         if steer.strip():
             # A steer that is the work names the run, for a finished run or a fork still
             # carrying its source's task.

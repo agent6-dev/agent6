@@ -84,6 +84,7 @@ def write_session_manifest(
     worktree_git_dir: pathlib.Path | None = None,
     workspace_set_up: bool = False,
     fanout: manifest.FanoutStamp | None = None,
+    budget: manifest.BudgetStamp | None = None,
 ) -> None:
     """Write the manifest.json a new run or fork starts with.
 
@@ -110,6 +111,7 @@ def write_session_manifest(
         workspace_set_up: Whether the checkout already ran its setup command (an `/undo`
             fork in its source's worktree).
         fanout: A `run --parallel` coordinator's own record.
+        budget: The caps the run's `--max-*` flags set, so a resume replays them.
     """
     lineage = parallel_lineage()
     # A fresh run carries the configured gate until `pin_gate` stamps the pair it resolved.
@@ -144,6 +146,7 @@ def write_session_manifest(
             verify_origin=verify_origin,
         ),
         policy=_policy_stamp(cfg, isolation),
+        budget=budget or manifest.BudgetStamp(),
         source_session_id=source_session_id,
         parent_session_id=parent_session_id,
         forked_from_turn=forked_from_turn,
@@ -262,6 +265,12 @@ def stamp_model(session_dir: pathlib.Path, route: kinds.ModelRoute) -> None:
         }
     )
     write_manifest(session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"models": models}))
+
+
+def stamp_budget(session_dir: pathlib.Path, budget: manifest.BudgetStamp) -> None:
+    """Record the caps in force after a resume's `--max-*` flags; a later resume replays them."""
+    m = manifest.read_manifest(session_dir)
+    write_manifest(session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"budget": budget}))
 
 
 def stamp_fork_task(session_dir: pathlib.Path, steer: str, *, source_dir: pathlib.Path) -> None:
