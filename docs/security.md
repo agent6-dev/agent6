@@ -21,9 +21,11 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 - No writes outside the workspace
     - `sandbox.extra_write_paths` and the per-repo memory dir widen it, visibly in `config show`; so does the jail's persistent `HOME` (below), visible in `agent6 check boundaries`
 - No reads outside the workspace and a read-only system set for installed toolchains
-    - `strict`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, whose `/etc` holds nothing else, plus a curated `/dev`
+    - `strict`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, whose `/etc` holds nothing else off the host network, plus a curated `/dev`
     - `hardened`: Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc`, `/dev`
     - `sandbox.extra_read_paths` adds more; `agent6 check boundaries` prints the resolved set
+    - a child on the host network (`network = "host"`, or any level but `strict`) also reads what name resolution and TLS verification need, where the host has them: `/etc/resolv.conf` and the file it points to, `/etc/hosts`, `/etc/nsswitch.conf`, and the CA store (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`).
+      File permissions still apply: the root-only private keys beside the certificates stay unreadable to a run that is not root
 - `/tmp` is writable at every level
     - `strict`: a private tmpfs discarded with the run
     - `hardened`: the host's `/tmp`
@@ -298,7 +300,7 @@ While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, re
 - `auto` *(default)*: the run's own network where the host can give one, the host's with a warning where it cannot.
 - `session`: the run's own, enforced; refuses where the host cannot give one.
   Its members reach each other and nothing off the box.
-- `host`: the machine's network.
+- `host`: the machine's network, with the host's resolver settings and CA store readable ([Threat model](#threat-model)).
 
 A run's commands share one launcher, so there is no per-command `none`.
 A machine state sets its own value in its `config` table, never wider than this one ([State machines](#11-state-machines)); an MCP server takes its own in its `[sandbox]` block.

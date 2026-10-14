@@ -73,5 +73,7 @@ def test_a_linked_worktree_agent6_did_not_record_gets_no_grant(tmp_path: pathlib
     repo, worktree = _repo_and_worktree(tmp_path)
     assert tools_policy.jail_policy(worktree, Config(), "strict", ("true",)).extra_ro_paths == ()
     _rewrite_pointer(worktree, "/etc")
-    assert tools_policy.jail_policy(worktree, Config(), "hardened", ("true",)).extra_ro_paths == ()
+    # Hardened shares the host network, whose resolver and CA store reads are the only grants.
+    hardened = tools_policy.jail_policy(worktree, Config(), "hardened", ("true",))
+    assert hardened.extra_ro_paths == tools_policy.host_network_reads()
     assert (repo / ".git").resolve() not in dict(confine._hardened_grant_regions(Config(), repo))

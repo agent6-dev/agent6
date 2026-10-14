@@ -20,6 +20,32 @@ from agent6.tools import _path_safety, _result_format
 # strict's default HOME: the launcher creates it inside the run's private /tmp tmpfs.
 JAIL_TMP_HOME = pathlib.Path("/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
 
+# What a resolver and a TLS client read: the resolver settings and the CA store.
+_HOST_NETWORK_FILES = (
+    "/etc/resolv.conf",
+    "/etc/hosts",
+    "/etc/nsswitch.conf",
+    "/etc/ssl",
+    "/etc/pki",
+    "/etc/ca-certificates",
+)
+
+
+def host_network_reads() -> tuple[pathlib.Path, ...]:
+    """Return the files a child on the host network reads to resolve names and verify TLS.
+
+    Those that exist on this host, each followed by the file it points to when it is a symlink
+    (a resolver file often points into `/run`): strict binds the name the resolver opens, and
+    Landlock needs the real file.
+    """
+    out: dict[pathlib.Path, None] = {}
+    for name in _HOST_NETWORK_FILES:
+        path = pathlib.Path(name)
+        if path.exists():
+            out[path] = None
+            out[path.resolve()] = None
+    return tuple(out)
+
 
 def persistent_jail_home(
     config: Config,
@@ -303,6 +329,8 @@ def jail_policy(
             *(pathlib.Path(p) for p in readable),
             *extra_ro_paths,
             *((git_dir,) if git_dir is not None else ()),
+            # The host network needs these to resolve names and verify TLS; no other network does.
+            *(host_network_reads() if network == "host" and isolation != "none" else ()),
         ),
         extra_rw_paths=(
             *(pathlib.Path(p) for p in writable),

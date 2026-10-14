@@ -465,9 +465,11 @@ def _boundaries_commands(
         print(
             f"    ro  {git_grant}  (the repository's .git, which this linked worktree points into)"
         )
+    net = tools_policy.resolve_network(cfg, selected)
     if selected == "strict":
         print("    rw  /tmp  (a tmpfs the run's commands share, gone at teardown)")
-        print(f"    ro  system: {' '.join(_STRICT_SYSTEM_BINDS)} (the rest of /etc is empty)")
+        rest = "" if net == "host" else " (the rest of /etc is empty)"
+        print(f"    ro  system: {' '.join(_STRICT_SYSTEM_BINDS)}{rest}")
     else:
         print(f"    ro  system (Landlock): {' '.join(_HARDENED_SYSTEM_RO)}")
     print(_home_line(cfg, selected, ws.root, git_grant))
@@ -479,13 +481,15 @@ def _boundaries_commands(
         )
     for line in _grant_lines(ws):
         print(line)
+    if net == "host":
+        for p in tools_policy.host_network_reads():
+            print(f"    ro  {p}  (name resolution and TLS verification on the host network)")
     for line in _device_lines(cfg):
         print(line)
     masked = {*agent6_paths.private_dirs(), *(pathlib.Path(p) for p in cfg.sandbox.hide_paths)}
     verb = "masked out of the jail's view" if selected == "strict" else "denied by Landlock"
     for p in sorted(masked):
         print(f"    --  {p}  ({verb})")
-    net = tools_policy.resolve_network(cfg, selected)
     net_line = {
         "session": "the run's own network, no route off this machine"
         " (reach it: agent6 exec / agent6 forward)",

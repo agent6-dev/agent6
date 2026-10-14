@@ -19,6 +19,7 @@ from agent6 import paths
 from agent6.app import _setup
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox import detect, tool_paths
+from agent6.tools import policy as tools_policy
 from agent6.ui.cli import check_cmds
 
 _MAIN_RS = (
@@ -121,6 +122,31 @@ def test_boundaries_report_is_level_aware(
     assert "re-bound" not in out
     assert "private to the command" not in out
     assert "network  host" in out
+
+
+def test_boundaries_report_lists_what_the_host_network_reads(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The report lists the resolver and CA store grants bound for the host network.
+
+    Off the host network strict's /etc is empty, and the report says so only there.
+    """
+    reason = "(name resolution and TLS verification on the host network)"
+    _force(monkeypatch, "strict")
+    host = Config(sandbox=SandboxConfig(network="host"))
+    check_cmds._check_boundaries_section(host)  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    reads = tools_policy.host_network_reads()
+    assert reads
+    for path in reads:
+        assert f"    ro  {path}  {reason}" in out
+    assert "the rest of /etc is empty" not in out
+    check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert reason not in out and "(the rest of /etc is empty)" in out
+    _force(monkeypatch, "hardened")
+    check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    assert reason in capsys.readouterr().out, "hardened shares the host network"
 
 
 def test_boundaries_report_names_the_opted_in_persistent_home(

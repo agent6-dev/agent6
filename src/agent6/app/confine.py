@@ -253,11 +253,14 @@ def _hardened_grant_regions(
     ]
     for sysdir in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"):
         regions.append((pathlib.Path(sysdir), "a system dir every command is granted"))
+    network_reads = tools_policy.host_network_reads()
     for p in policy.extra_ro_paths:
         if pathlib.Path(p) == worktree_git_dir:
             regions.append(
                 (pathlib.Path(p), "the repository's .git, which this linked worktree points into")
             )
+        elif p in network_reads:
+            regions.append((p, "what name resolution and TLS verification read"))
         else:
             regions.append((pathlib.Path(p), "sandbox.extra_read_paths"))
     home = tools_policy.persistent_jail_home(cfg, "hardened", root, worktree_git_dir)
