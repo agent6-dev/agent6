@@ -32,7 +32,7 @@ import pydantic
 
 from agent6 import budget as agent6_budget
 from agent6 import commit_message, event_log, git_ops, kinds, paths
-from agent6.app import _session, _setup, confine, providers
+from agent6.app import _session, _setup, confine, providers, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import _chain, _compaction, _operator, loop, subrun
@@ -415,6 +415,17 @@ def run_one(
         # The repo's state dir, keyed on the checkout: a clone has no memory of its own.
         state_dir=paths.state_dir(req.cwd),
     )
+    # A state's clone is fresh; a state in the checkout has the operator's environment.
+    setup_left: frozenset[str] = frozenset()
+    if cfg.parallel.setup_command and not read_only and req.root != req.cwd:
+        unready = workspace_setup.run(
+            cfg.parallel.setup_command, dispatcher=dispatcher, reporter=reporter
+        )
+        if unready is not None:
+            reporter.error(unready)
+            return _result("setup_command_failed", None, budget)
+        # What the command left untracked is the environment, never the state's work.
+        setup_left = git_ops.untracked_paths(req.root)
     rm = cfg.models.resolve("worker")
     compact_drop, compact_summarise, keep_recent = providers.resolve_compaction_thresholds(
         cfg, rm, log=reporter.err
@@ -428,6 +439,7 @@ def run_one(
             if not read_only
             else None,
             fallback_parent=_machine_head_sha(req.root) if not read_only else None,
+            untracked_at_start=setup_left,
             identity=_chain.commit_identity(
                 cfg.git.commit,
                 commit_message.render_commit_trailer(

@@ -144,6 +144,7 @@ Every end has one reason (`reason` in `agent6 sessions show --json`), and each r
 | `no_progress` | `failed · no progress` | `1` |
 | `tool_error_stuck` | `failed · tool error stuck` | `1` |
 | `verify_command_unexecutable` | `failed · verify command unexecutable` | `1` |
+| `setup_command_failed` | `failed · setup command failed` | `1` |
 | `loop_guard_killed` | `failed · loop guard killed` | `1` |
 | `interactive_stop` | `stopped` | `130` |
 | `interrupted` | `stopped` | `130` |

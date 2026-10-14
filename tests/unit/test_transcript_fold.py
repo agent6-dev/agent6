@@ -593,6 +593,7 @@ _DONE_LABELS = {
     "gate_red_at_base": "finished · gate was already red",
     "no_lane_result": "failed · no lane result",
     "no_lane_passed": "failed · no lane passed",
+    "setup_command_failed": "failed · setup command failed",
 }
 
 

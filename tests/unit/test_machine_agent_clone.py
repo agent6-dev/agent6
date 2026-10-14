@@ -17,7 +17,9 @@ import pytest
 
 from agent6 import git_ops
 from agent6.app import machine_agent as ma
+from agent6.app import providers
 from agent6.machine import AgentRequest
+from agent6.providers import ProviderResponse
 from agent6.sandbox import jail as sandbox_jail
 
 BRANCH = "agent6/machine-m1"
@@ -286,3 +288,86 @@ def test_import_failure_keeps_the_clone_and_routes_failed(
     assert r.payload is None
     assert git_ops.chain_tip(origin, CHAIN) is None  # nothing landed
     assert list((tmp_path / "clones").glob("state-*"))  # evidence kept
+
+
+class _Finishes:
+    """A provider whose every call finishes the state."""
+
+    calls = 0
+
+    def call(self, **_kw: Any) -> ProviderResponse:
+        self.calls += 1
+        tools = (
+            {"type": "tool_use", "id": "t1", "name": "finish_session", "input": {"summary": "ok"}},
+        )
+        return ProviderResponse(
+            text="",
+            tool_uses=tools,
+            stop_reason="tool_use",
+            input_tokens=1,
+            output_tokens=1,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            raw={"content": list(tools)},
+        )
+
+
+def _state_in_a_clone(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, setup: list[str]
+) -> tuple[ma.AgentExecResult, _Finishes, pathlib.Path, pathlib.Path]:
+    """Run one run-mode state through `run_one` in a fresh clone, with a setup command."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("PROBE_KEY", "sk-probe")
+    origin = _origin(tmp_path)
+    clone = tmp_path / "clones" / "state-0000"
+    ma.clone_at_machine_chain(origin, clone, CHAIN)
+    prov = _Finishes()
+
+    def _factory(*_a: Any, **_k: Any) -> _Finishes:
+        return prov
+
+    monkeypatch.setattr(providers, "build_role_provider", _factory)
+    req = ma.MachineAgentRequest(
+        cwd=origin,
+        root=clone,
+        overlay={
+            "sandbox": {"isolation": "none", "run_commands": "yes"},
+            "models": {"worker": {"provider": "p", "model": "m"}},
+            "providers": {
+                "p": {
+                    "api_format": "openai",
+                    "base_url": "http://127.0.0.1:1",
+                    "api_key_env": "PROBE_KEY",
+                }
+            },
+            "parallel": {"setup_command": setup},
+        },
+        isolation="none",
+        transcript_dir=tmp_path / "m1" / "agent_transcripts",
+        request=AgentRequest(prompt="p", timeout_s=60.0, mode="run", state_name="s0", step_seq=0),
+    )
+    return ma.run_one(req), prov, origin, clone
+
+
+def test_a_state_runs_the_setup_command_in_its_fresh_clone(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state's clone holds tracked files only: with no setup step it had no environment."""
+    result, prov, origin, clone = _state_in_a_clone(
+        tmp_path, monkeypatch, ["sh", "-c", "echo ready > .setup-ran"]
+    )
+
+    assert result.reason == "finish_session" and prov.calls == 1
+    assert (clone / ".setup-ran").read_text(encoding="utf-8") == "ready\n"
+    assert not (origin / ".setup-ran").exists()
+
+
+def test_a_state_whose_setup_command_fails_makes_no_model_call(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state going on after a failed setup would spend its turns in an unbuilt clone."""
+    result, prov, _origin_dir, _clone = _state_in_a_clone(
+        tmp_path, monkeypatch, ["sh", "-c", "exit 3"]
+    )
+
+    assert result.reason == "setup_command_failed" and prov.calls == 0

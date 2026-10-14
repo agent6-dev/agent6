@@ -18,7 +18,7 @@ from collections.abc import Callable, Sequence
 
 from agent6 import budget as agent6_budget
 from agent6 import commit_message, event_log, git_ops, kinds, paths
-from agent6.app import _session, _setup, finalize, providers, stamps
+from agent6.app import _session, _setup, finalize, providers, stamps, workspace_setup
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, RoleName
@@ -300,6 +300,22 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         dispatcher = tools.dispatcher
         cfg = tools.cfg
 
+        # Before the chain exists: what the setup command leaves untracked is the workspace's
+        # environment, so every commit leaves it out as it does the operator's files.
+        unready: str | None = None
+        untracked_at_start = inputs.untracked_at_start
+        if (
+            cfg.parallel.setup_command
+            and inputs.task is not None
+            and workspace_setup.session_is_isolated(layout.session_dir)
+        ):
+            unready = workspace_setup.run(
+                cfg.parallel.setup_command, dispatcher=dispatcher, reporter=reporter
+            )
+            if unready is None and mode == "run":
+                untracked_at_start |= git_ops.untracked_paths(cwd)
+                sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
+
         def _undo_forker() -> tuple[str, str] | None:
             """Return the `/undo` fork's outcome, kept for the end block."""
             got = inputs.undo_forker()
@@ -321,7 +337,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 else None,
                 branch=inputs.chain_branch,
                 fallback_parent=inputs.base_sha or None,
-                untracked_at_start=inputs.untracked_at_start,
+                untracked_at_start=untracked_at_start,
                 identity=_chain.commit_identity(
                     cfg.git.commit,
                     commit_message.render_commit_trailer(
@@ -412,7 +428,24 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         try:
             with frontend.tui_session(layout.session_dir, inputs.tui_enabled):
                 try:
-                    if inputs.task is None:
+                    if unready is not None:
+                        # The model cannot fix the operator's setup command: a loud end before
+                        # any turn, as an unexecutable gate's is.
+                        loop_log(f"[agent6] LOOP: aborting -- {unready.splitlines()[0]}")
+                        events.emit(
+                            "session.end",
+                            reason="setup_command_failed",
+                            iterations=0,
+                            all_passed=False,
+                        )
+                        result = _snapshot.SessionResult(
+                            completed=False,
+                            reason="setup_command_failed",
+                            summary=unready,
+                            iterations=0,
+                            tool_calls=0,
+                        )
+                    elif inputs.task is None:
                         result = wf.resume()
                     elif mode == "ask" and inputs.interactive:
                         result = frontend.run_ask_repl(wf, budget, layout, inputs.task)

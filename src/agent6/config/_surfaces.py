@@ -250,3 +250,15 @@ class ParallelConfig(pydantic.BaseModel):
             "is merged or holds no work."
         ),
     )
+    setup_command: _base.Argv = pydantic.Field(
+        default=(),
+        description=(
+            "The command that builds the environment of a new isolated workspace, as argv (no "
+            'shell; wrap a pipeline as `["sh", "-c", "a && b"]`). A `run --worktree` worktree, a '
+            "fork's worktree, a lane's clone and a machine state's clone hold tracked files "
+            "only, so an untracked environment (`.venv`, `node_modules`) is absent there. The "
+            "command runs once in each, before the first turn, in the run's own sandbox: the "
+            "isolation, network and grants every command of that run gets. A nonzero exit, or "
+            "600 seconds without one, ends the session before any turn. Empty: nothing runs."
+        ),
+    )

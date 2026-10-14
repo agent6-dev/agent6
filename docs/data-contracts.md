@@ -29,7 +29,7 @@ The manifest.json shape and its one reader; `app.manifest` is the writer.
 **SessionManifest** &mdash; The typed manifest.json a session starts with and later stamps.
 
 - **Written by:** app/stamps
-- **Read by:** app/{compare, finalize, fork, fork_worktrees, merge, parallel, preflight, resume, run, stop, undo}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{format, listing, policy, state, wire}
+- **Read by:** app/{compare, finalize, fork, fork_worktrees, merge, parallel, preflight, resume, run, stop, undo, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{format, listing, policy, state, wire}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (17 test files exercise it)
 
 ## SessionSnapshot
@@ -55,7 +55,7 @@ Typed tool-handler results.
 Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`
 
 - **Written by:** tools/{_control_tools, _dag_tools, _edit_diag, _fs_tools, _nav_tools, _skill_tools, dispatch}
-- **Read by:** harness/{_guards, _memory_touch, _metric_sampler, _reviewer, _toolset, _verify_gate, loop}, tools/_result_format
+- **Read by:** app/workspace_setup, harness/{_guards, _memory_touch, _metric_sampler, _reviewer, _toolset, _verify_gate, loop}, tools/_result_format
 - **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (26 test files exercise it)
 
 ## Event union

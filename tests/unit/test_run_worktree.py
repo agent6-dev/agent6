@@ -587,3 +587,112 @@ def test_a_worktree_the_cleanup_cannot_remove_is_named(
     assert f"the worktree {added[0]} stays: it holds work no commit has: junk.txt" in err
     assert f"git worktree remove {added[0]}" in err
     assert _worktrees(repo) == [str(repo), str(added[0])]
+
+
+_COMMANDS = _CONFIG.replace('run_commands = "no"', 'run_commands = "yes"')
+
+
+def _with_setup(repo: pathlib.Path, argv: str) -> None:
+    """Write the repository's own config with a setup command."""
+    path = paths.state_dir(repo) / "config.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"[parallel]\nsetup_command = {argv}\n", encoding="utf-8")
+
+
+def test_the_setup_command_runs_in_the_new_worktree_before_the_first_turn(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A worktree holds tracked files only: with no setup step its environment never existed.
+
+    What the command leaves untracked is the environment, so the run's commits leave it out.
+    """
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _with_setup(repo, '["sh", "-c", "echo ready > .setup-ran && echo synced"]')
+    seen: list[bool] = []
+    prov = _script(monkeypatch, _edit("new.txt", "made by the run\n"))
+    real_call = prov.call
+
+    def _call(**kw: Any) -> ProviderResponse:
+        worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU01")).worktree
+        assert worktree is not None
+        seen.append((worktree / ".setup-ran").exists())
+        return real_call(**kw)
+
+    monkeypatch.setattr(prov, "call", _call)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU01", "task"]) == 0
+    err = capsys.readouterr().err
+
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU01")).worktree
+    assert worktree is not None
+    assert seen and seen[0]
+    assert (worktree / ".setup-ran").read_text(encoding="utf-8") == "ready\n"
+    assert not (repo / ".setup-ran").exists()
+    assert "setup command: sh -c 'echo ready > .setup-ran && echo synced'" in err
+    assert "synced" in err
+    manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU01"))
+    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-SETU01"))
+    assert tip is not None
+    assert git_ops.tree_diff_paths(repo, manifest.base_sha, tip) == ["new.txt"]
+
+
+def test_a_failed_setup_command_ends_the_session_before_any_turn(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run going on after a failed setup would spend turns in a workspace with no environment."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _with_setup(repo, '["sh", "-c", "echo no lockfile >&2; exit 3"]')
+    prov = _script(monkeypatch)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU02", "task"]) == 1
+    out, err = capsys.readouterr()
+
+    assert prov.calls == 0
+    assert "[agent6] LOOP: aborting -- the setup command failed (exit 3)" in out
+    assert (
+        "failed · setup command failed\n"
+        "  the setup command failed (exit 3): sh -c 'echo no lockfile >&2; exit 3'\n"
+        "    no lockfile\n"
+    ) in out
+    assert "no turn ran; start the run again once the setup command works" in out
+    assert "resume with:" not in out
+    assert "setup command: sh -c" in err
+    events = (_run_dir(repo, "wt-SETU02") / "logs.jsonl").read_text(encoding="utf-8")
+    assert '"setup_command_failed"' in events
+
+
+def test_a_run_in_the_checkout_runs_no_setup_command(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The checkout holds the operator's own environment; setup there would rebuild it."""
+    repo = _repo(
+        tmp_path,
+        monkeypatch,
+        config=_COMMANDS.replace("[sandbox]", '[git]\ndirty_tree = "include"\n\n[sandbox]'),
+    )
+    _with_setup(repo, '["sh", "-c", "echo ready > .setup-ran"]')
+    _script(monkeypatch)
+
+    assert cli_main(["run", "--session-id", "wt-SETU03", "task"]) == 0
+    capsys.readouterr()
+
+    assert not (repo / ".setup-ran").exists()
+
+
+def test_a_lane_runs_the_setup_command_in_its_clone(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A lane's clone holds tracked files only, as a worktree does."""
+    repo = _repo(
+        tmp_path,
+        monkeypatch,
+        config=_COMMANDS.replace("[sandbox]", '[git]\ndirty_tree = "include"\n\n[sandbox]'),
+    )
+    _with_setup(repo, '["sh", "-c", "echo ready > .setup-ran"]')
+    monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:1")
+    _script(monkeypatch)
+
+    assert cli_main(["run", "--session-id", "fan-l1", "task"]) == 0
+    capsys.readouterr()
+
+    assert (repo / ".setup-ran").read_text(encoding="utf-8") == "ready\n"

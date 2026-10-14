@@ -32,6 +32,7 @@ SessionEndReason = Literal[
     "no_progress",
     "tool_error_stuck",
     "verify_command_unexecutable",
+    "setup_command_failed",
     "loop_guard_killed",
     "interactive_stop",
     "interrupted",
@@ -77,6 +78,8 @@ class SessionResult:
         no_progress: the same verify failure outlived the no-progress ladder (resumable).
         tool_error_stuck: the same tool error outlived the tool-error ladder (resumable).
         verify_command_unexecutable: the operator's verify or metric command cannot run in the jail.
+        setup_command_failed: an isolated workspace's setup command failed before the first
+            turn (the app layer).
         loop_guard_killed: an identical tool call repeated past the kill threshold.
         interactive_stop: the operator chose stop at the after-commit hook.
         steer_abort: the operator stopped the run, mid-call, at a step boundary or while parked.

@@ -185,6 +185,7 @@ banned-from = [
     "agent6.app.stamps",
     "agent6.app.stop",
     "agent6.app.undo",
+    "agent6.app.workspace_setup",
     "agent6.budget",
     "agent6.child_env",
     "agent6.commit_message",
