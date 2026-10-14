@@ -595,7 +595,13 @@ class ToolDispatcher:
         self._approve_command("setup_command", argv)
         res = self._run_argv_in_jail(argv, label="setup_command")
         self._emit(
-            "workspace.setup", cmd=list(argv), exit_code=res.returncode, duration_s=res.duration_s
+            "workspace.setup",
+            cmd=list(argv),
+            exit_code=res.returncode,
+            duration_s=res.duration_s,
+            exec_failed=res.exec_failed,
+            stdout_tail=res.stdout[-2000:],
+            stderr_tail=res.stderr[-2000:],
         )
         return dataclasses.replace(res, command=argv)
 

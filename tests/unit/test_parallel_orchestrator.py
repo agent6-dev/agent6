@@ -11,7 +11,9 @@ lane) is exercised on real tmp git repos without spawning real runs.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
+import io
 import json
 import os
 import pathlib
@@ -24,12 +26,13 @@ import pytest
 
 from agent6 import directive, git_ops, kinds, memory, paths, portable
 from agent6.app import _lane_watch as lane_watch
-from agent6.app import _workdirs, compare, parallel, reporter, stamps
+from agent6.app import _workdirs, compare, parallel, providers, reporter, stamps
 from agent6.config import Config, ConfigError
 from agent6.harness import subrun
+from agent6.providers import ProviderResponse
 from agent6.sessions import ipc
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import main
+from agent6.ui.cli import cli_main, main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.viewmodel import listing
 
@@ -90,8 +93,9 @@ def _write_fake_run(
         events[1] = {"type": "budget.update", "plan_used_percent": 40.0, "plan_consumed": points}
     if status == "passed":
         events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
-    elif status == "failed":
-        events.append({"type": "session.end", "reason": "provider_error", "all_passed": False})
+    elif status in ("failed", "setup_command_failed", "budget_exhausted"):
+        reason = "provider_error" if status == "failed" else status
+        events.append({"type": "session.end", "reason": reason, "all_passed": False})
     elif status == "stale":
         # Died without a session.end (OOM/SIGKILL): a recorded pid that is gone.
         (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
@@ -126,8 +130,10 @@ class _FakeSpawner:
         pid_lanes: set[int] | None = None,
         fanout_id: str | None = None,
         points_by_lane: dict[int, float] | None = None,
+        no_commit: set[int] | None = None,
     ) -> None:
         self.points_by_lane = points_by_lane or {}
+        self.no_commit = no_commit or set()
         self.origin = origin
         self.origin_state = origin_state
         self.state_root = state_root
@@ -156,9 +162,12 @@ class _FakeSpawner:
                 spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error="boom"
             )
         subrun.clone_workspace(self.origin, spec.workdir)
-        git_ops.create_branch(spec.workdir, branch)
-        (spec.workdir / f"lane{spec.lane}.txt").write_text(f"lane {spec.lane}\n", encoding="utf-8")
-        git_ops.commit_all(spec.workdir, f"lane {spec.lane} work")
+        if spec.lane not in self.no_commit:
+            git_ops.create_branch(spec.workdir, branch)
+            (spec.workdir / f"lane{spec.lane}.txt").write_text(
+                f"lane {spec.lane}\n", encoding="utf-8"
+            )
+            git_ops.commit_all(spec.workdir, f"lane {spec.lane} work")
         session_dir = self.state_root / f"lane{spec.lane}" / "sessions" / "runs" / spec.session_id
         _write_fake_run(
             session_dir,
@@ -891,6 +900,137 @@ def test_run_parallel_refuses_a_gate_on_an_untracked_path_before_any_clone(
     assert "the verify gate runs `.venv/bin/python`" in err and "a lane's clone" in err
 
 
+@pytest.mark.parametrize("exit_code", [0, 3])
+def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: parallel.LaneRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    exit_code: int,
+) -> None:
+    """A detached lane's setup output reaches the fan-out and show after its clone is removed."""
+    command = f"echo ran >> .setup-count; echo setup-out; echo setup-err >&2; exit {exit_code}"
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"api_format": "openai", "base_url": "http://127.0.0.1:1"}},
+            "models": {"worker": {"provider": "p", "model": "m"}},
+            "sandbox": {
+                "isolation": "none",
+                "home": "cache",
+                "network": "host",
+                "run_commands": "yes",
+            },
+            "harness": {"verify_infer": False},
+            "review": {"trigger": "off"},
+            "parallel": {"setup_command": ["sh", "-c", command]},
+        }
+    )
+    calls: list[str] = []
+
+    class FinishedProvider:
+        def call(self, **_kw: Any) -> ProviderResponse:
+            calls.append("called")
+            return ProviderResponse(
+                text="",
+                tool_uses=(
+                    {
+                        "type": "tool_use",
+                        "id": "end",
+                        "name": "finish_session",
+                        "input": {"summary": "done"},
+                    },
+                ),
+                stop_reason="tool_use",
+                input_tokens=10,
+                output_tokens=5,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+                raw={
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "end",
+                            "name": "finish_session",
+                            "input": {"summary": "done"},
+                        }
+                    ]
+                },
+            )
+
+    def provider(*_a: Any, **_kw: Any) -> FinishedProvider:
+        return FinishedProvider()
+
+    monkeypatch.setattr(providers, "build_role_provider", provider)
+
+    def spawn(
+        argv: list[str],
+        cwd: pathlib.Path,
+        *,
+        before: set[pathlib.Path],
+        list_dirs: Any,
+        env: dict[str, str],
+    ) -> tuple[pathlib.Path, str]:
+        del before, list_dirs
+        # A detached child's stdout and stderr are not the fan-out's own streams.
+        lane_output, lane_errors = io.StringIO(), io.StringIO()
+        with (
+            monkeypatch.context() as child,
+            contextlib.redirect_stdout(lane_output),
+            contextlib.redirect_stderr(lane_errors),
+        ):
+            child.chdir(cwd)
+            for key, value in env.items():
+                if key.startswith("AGENT6_"):
+                    child.setenv(key, value)
+            assert cli_main(argv) == (0 if exit_code == 0 else 1), (
+                lane_errors.getvalue() + lane_output.getvalue()
+            )
+            assert (cwd / ".setup-count").read_text(encoding="utf-8").splitlines() == ["ran"]
+            (session_dir,) = (paths.state_dir(cwd) / "sessions" / "runs").iterdir()
+        return session_dir, ""
+
+    lanes = _specs(tmp_path, cfg, "setup-fan", "2")
+    state = paths.state_dir(origin)
+    rc = parallel.run_parallel(
+        "task",
+        lanes,
+        cfg=cfg,
+        explicit_leaves=frozenset(),
+        origin=origin,
+        origin_state=state,
+        runtime=dataclasses.replace(runtime, spawn=spawn),
+        fanout_id="setup-fan",
+    )
+    assert rc == (0 if exit_code == 0 else 1)
+    assert bool(calls) is (exit_code == 0)
+    for lane in lanes:
+        imported = state / "sessions" / "runs" / lane.session_id
+        events = [json.loads(line) for line in (imported / "logs.jsonl").read_text().splitlines()]
+        (setup,) = [event for event in events if event["type"] == "workspace.setup"]
+        assert setup["stdout_tail"] == "setup-out\n" and setup["stderr_tail"] == "setup-err\n"
+        if exit_code:
+            assert "setup-out" in events[-1]["summary"] and command in events[-1]["summary"]
+    out, err = capsys.readouterr()
+    shown = out if exit_code else err
+    if exit_code:
+        shown = shown.split("failed lanes:", 1)[1]
+    assert "sh -c" in shown and command in shown
+    assert shown.count("setup-out\n") == 2 and shown.count("setup-err\n") == 2
+    for lane in lanes:
+        assert not lane.workdir.exists()
+        imported = state / "sessions" / "runs" / lane.session_id
+        events = [json.loads(line) for line in (imported / "logs.jsonl").read_text().splitlines()]
+        assert sum(event["type"] == "workspace.setup" for event in events) == 1
+        with monkeypatch.context() as showing:
+            showing.chdir(origin)
+            assert cli_main(["sessions", "show", lane.session_id]) == 0
+        shown = capsys.readouterr().out
+        assert command in shown
+        # A setup that worked shows as its command line; a failed one keeps its output.
+        assert ("setup-out\n" in shown and "setup-err\n" in shown) is (exit_code != 0)
+
+
 def test_run_parallel_settles_the_gate_and_the_setup_command_in_the_origin(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
@@ -903,6 +1043,8 @@ def test_run_parallel_settles_the_gate_and_the_setup_command_in_the_origin(
     (origin / "AGENTS.md").write_text(
         "## Setup command\n```\nuv sync --offline\n```\n", encoding="utf-8"
     )
+    _git(origin, "add", "AGENTS.md")
+    _git(origin, "commit", "-q", "-m", "setup")
     (origin / ".venv" / "bin").mkdir(parents=True)
     (origin / ".venv" / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
     cfg = Config()
@@ -931,6 +1073,51 @@ def test_run_parallel_settles_the_gate_and_the_setup_command_in_the_origin(
     (lane_cfg,) = carried
     assert lane_cfg.harness.verify_command == (".venv/bin/python", "-m", "pytest", "-q")
     assert lane_cfg.parallel.setup_command == ("uv", "sync", "--offline")
+
+
+@pytest.mark.parametrize("committed", [False, True])
+def test_fanout_setup_is_inferred_from_its_commit_not_the_dirty_agents_md(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: parallel.LaneRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+    committed: bool,
+) -> None:
+    """A fan-out carried the checkout's dirty setup block into lanes cut from HEAD."""
+    agents = "# Agents\n"
+    if committed:
+        agents += "\n## Setup command\n```sh\necho committed\n```\n"
+    (origin / "AGENTS.md").write_text(agents, encoding="utf-8")
+    _git(origin, "add", "AGENTS.md")
+    _git(origin, "commit", "-q", "-m", "agents")
+    (origin / "AGENTS.md").write_text(
+        "## Setup command\n```sh\necho uncommitted; exit 3\n```\n", encoding="utf-8"
+    )
+    carried: list[Config] = []
+
+    def spawn(spec: subrun.LaneSpec, task: str, **kw: Any) -> subrun.LaneResult:
+        carried.append(kw["cfg"])
+        return subrun.LaneResult(spec, spec.workdir, "b", False, task)
+
+    monkeypatch.setattr(parallel, "bridge_spawner", spawn)
+    cfg = Config.model_validate({"harness": {"verify_infer": False}})
+    assert (
+        parallel.run_parallel(
+            "task",
+            _specs(tmp_path, cfg, "committed-setup", "2"),
+            cfg=cfg,
+            explicit_leaves=frozenset(),
+            origin=origin,
+            origin_state=paths.state_dir(origin),
+            runtime=runtime,
+            fanout_id="committed-setup",
+        )
+        == 1
+    )
+    assert len(carried) == 2
+    assert all(
+        c.parallel.setup_command == (("echo", "committed") if committed else ()) for c in carried
+    )
 
 
 def test_run_parallel_imports_branches_and_stamps_lineage(
@@ -1317,6 +1504,120 @@ def test_the_report_spells_a_lanes_cost_and_outcome_as_the_listing_does(
     assert "passed" in rows["fan-l2"] and "2.5pt" in rows["fan-l2"]
     assert "finished · gate red" in rows["fan-l1"] and "1pt" in rows["fan-l1"]
     assert all("$0.0000" not in ln and "failed" not in ln for ln in ranked)
+
+
+@pytest.mark.parametrize("coordinator", [False, True])
+def test_a_lane_with_no_commit_does_not_claim_a_branch_was_imported(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: parallel.LaneRuntime,
+    capsys: pytest.CaptureFixture[str],
+    coordinator: bool,
+) -> None:
+    """A setup-failed lane imports its record but claims no branch that git lacks."""
+    state = paths.state_dir(origin)
+    cfg = Config()
+    (spec,) = _specs(tmp_path, cfg, "no-commit", "1")
+    spawner = _FakeSpawner(
+        origin,
+        state,
+        tmp_path / "lane-state",
+        status_by_lane={1: "setup_command_failed"},
+        no_commit={1},
+    )
+    if coordinator:
+        result = parallel.run_lane_to_completion(
+            spec,
+            "task",
+            cfg=cfg,
+            explicit_leaves=frozenset(),
+            origin=origin,
+            origin_state=state,
+            group="no-commit",
+            coordinator="co",
+            runtime=runtime,
+            spawner=spawner,
+        )
+        assert not result.ok
+        shown = result.error
+    else:
+        assert (
+            parallel.run_parallel(
+                "task",
+                [spec],
+                cfg=cfg,
+                explicit_leaves=frozenset(),
+                origin=origin,
+                origin_state=state,
+                runtime=runtime,
+                spawner=spawner,
+                fanout_id="no-commit",
+            )
+            == 1
+        )
+        shown = capsys.readouterr().out
+    assert not git_ops.branch_exists(origin, f"agent6/{spec.session_id}")
+    assert (state / "sessions" / "runs" / spec.session_id / "logs.jsonl").exists()
+    assert "no result (failed · setup command failed)" in shown
+    assert "branch imported as" not in shown
+    assert "no branch (the run made no commit)" in shown
+
+
+@pytest.mark.parametrize(
+    ("other_status", "spawn_failed", "code", "reason"),
+    [
+        ("budget_exhausted", False, 3, "budget_exhausted"),
+        ("failed", False, 1, "no_lane_result"),
+        ("passed", False, 0, "finish_session"),
+        ("budget_exhausted", True, 1, "no_lane_result"),
+    ],
+)
+def test_budget_only_fanout_exits_three_and_names_how_to_continue_a_lane(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: parallel.LaneRuntime,
+    capsys: pytest.CaptureFixture[str],
+    other_status: str,
+    spawn_failed: bool,
+    code: int,
+    reason: str,
+) -> None:
+    """A fan-out stopped only by lane caps keeps exit 3 and offers fork, not checkout resume."""
+    state = paths.state_dir(origin)
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "capped", "2")
+    spawner = _FakeSpawner(
+        origin,
+        state,
+        tmp_path / "lane-state",
+        status_by_lane={1: "budget_exhausted", 2: other_status},
+        points_by_lane={1: 1.0, 2: 1.0},
+        fail={2} if spawn_failed else set(),
+    )
+    rc = parallel.run_parallel(
+        "task",
+        lanes,
+        cfg=cfg,
+        explicit_leaves=frozenset(),
+        origin=origin,
+        origin_state=state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="capped",
+    )
+    assert rc == code
+    events = [
+        json.loads(line)
+        for line in (state / "sessions" / "runs" / "capped" / "logs.jsonl").read_text().splitlines()
+    ]
+    assert events[-1]["reason"] == reason
+    assert events[-1]["all_passed"] is (other_status == "passed")
+    shown, err = capsys.readouterr()
+    assert "budget exhausted" in shown and "1pt" in err
+    assert "--max-tokens-fallback), then continue with:" in shown
+    assert "agent6 fork capped-l1" in shown and "agent6 resume capped-l1" not in shown
+    if other_status == "budget_exhausted" and not spawn_failed:
+        assert "agent6 fork capped-l2" in shown
 
 
 def test_run_parallel_all_failed_returns_1(

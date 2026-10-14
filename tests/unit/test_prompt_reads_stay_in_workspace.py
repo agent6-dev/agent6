@@ -32,6 +32,29 @@ def _prompt_show(
     return capsys.readouterr().out
 
 
+@pytest.mark.parametrize("kind", ["regular", "hidden", "symlink"])
+def test_committed_agents_md_respects_hidden_paths_and_skips_symlinks(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """Commit-based setup inference reads no hidden blob or committed symlink target."""
+    repo = _repo(tmp_path, monkeypatch)
+    agents = repo / "AGENTS.md"
+    if kind == "symlink":
+        (repo / "docs").mkdir()
+        (repo / "docs" / "AGENTS.md").write_text(_MARKER, encoding="utf-8")
+        agents.symlink_to("docs/AGENTS.md")
+        subprocess.run(["git", "add", "docs/AGENTS.md"], cwd=repo, check=True)
+    else:
+        agents.write_text(_MARKER, encoding="utf-8")
+    subprocess.run(["git", "add", "AGENTS.md"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "agents"], cwd=repo, check=True)
+    agents.unlink()
+    hide = (str(agents),) if kind == "hidden" else ()
+    assert verify_infer.read_agents_md(repo, hide, at="HEAD") == (
+        _MARKER if kind == "regular" else ""
+    )
+
+
 def test_agents_md_linked_out_of_the_repo_stays_out_of_the_prompt(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

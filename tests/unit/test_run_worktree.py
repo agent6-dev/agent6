@@ -8,6 +8,8 @@ worktree, the manifest, the chain and the sessions verbs are the real ones.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import pathlib
 import shlex
@@ -17,17 +19,21 @@ from typing import Any, cast
 
 import pytest
 
+from agent6 import budget as agent6_budget
 from agent6 import git_ops, kinds, paths
-from agent6.app import _session, fork_worktrees, preflight, providers, workspace_setup
+from agent6.app import _session, fork_worktrees, parallel, preflight, providers, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.app import run as run_lifecycle
 from agent6.config import Config, layer
+from agent6.harness import subrun
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc, lock
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, results
 from agent6.ui.cli import cli_main
+from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli import run as cli_run
+from agent6.viewmodel import listing
 
 
 @pytest.fixture(autouse=True)
@@ -441,6 +447,89 @@ def test_rm_typed_in_the_worktree_removes_the_chain_ref_too(
     assert f"this shell's directory is gone; cd {repo}" in err
     assert git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-SELF01")) is None
     assert _nothing_was_created(repo, "wt-SELF01")
+
+
+def test_a_budget_stopped_lane_continues_with_the_reports_fork_command(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The report's fork command continues an imported capped lane after its clone is removed."""
+    repo = _repo(tmp_path, monkeypatch)
+
+    class CappedProvider:
+        def __init__(self, tracker: agent6_budget.BudgetTracker) -> None:
+            self.tracker = tracker
+
+        def call(self, **_kw: Any) -> ProviderResponse:
+            self.tracker.check()
+            self.tracker.record(
+                model="m",
+                input_tokens=10,
+                output_tokens=5,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+            )
+            return _Scripted([_edit("lane.txt", "work\n")]).call()
+
+    def provider(*_a: Any, budget: agent6_budget.BudgetTracker, **_kw: Any) -> CappedProvider:
+        return CappedProvider(budget)
+
+    monkeypatch.setattr(providers, "build_role_provider", provider)
+    cfg = layer.load_effective(repo).config
+    state = paths.state_dir(repo)
+    lanes = parallel.build_lane_specs(
+        "1",
+        cfg=cfg,
+        origin=repo,
+        fanout_id="capped-fan",
+        workdir_root=tmp_path / "lanes",
+    )
+
+    def spawn(spec: subrun.LaneSpec, task: str) -> subrun.LaneResult:
+        subrun.clone_workspace(repo, spec.workdir)
+        output, errors = io.StringIO(), io.StringIO()
+        with (
+            monkeypatch.context() as child,
+            contextlib.redirect_stdout(output),
+            contextlib.redirect_stderr(errors),
+        ):
+            child.chdir(spec.workdir)
+            child.setenv("AGENT6_PARALLEL_LINEAGE", f"capped-fan:capped-fan:{spec.lane}")
+            assert (
+                cli_main(
+                    ["run", "--session-id", spec.session_id, "--max-tokens-fallback", "1", task]
+                )
+                == 3
+            ), output.getvalue() + errors.getvalue()
+        session_dir = paths.state_dir(spec.workdir) / "sessions" / "runs" / spec.session_id
+        return subrun.LaneResult(spec, session_dir, f"agent6/{spec.session_id}", True, "")
+
+    assert (
+        parallel.run_parallel(
+            "task",
+            lanes,
+            cfg=cfg,
+            explicit_leaves=frozenset(),
+            origin=repo,
+            origin_state=state,
+            runtime=parallel_cmd.lane_runtime(),
+            spawner=spawn,
+            fanout_id="capped-fan",
+        )
+        == 3
+    )
+    shown = capsys.readouterr().out
+    hint = next(line for line in shown.splitlines() if "then continue with:" in line)
+    command = hint.split("then continue with:", 1)[1].strip().split()
+    assert command == ["agent6", "fork", "capped-fan-l1"]
+    assert not lanes[0].workdir.exists()
+    _script(monkeypatch, _FINISH)
+    assert (
+        cli_main([*command[1:], "--session-id", "continued", "--max-tokens-fallback", "100"]) == 0
+    )
+    manifest = sessions_manifest.read_manifest(_run_dir(repo, "continued"))
+    assert manifest.parent_session_id == "capped-fan-l1"
+    assert manifest.worktree is not None and manifest.worktree.is_dir()
+    assert listing.summarize_session_dir(_run_dir(repo, "continued")).status == "finished"
 
 
 def test_a_worktree_run_starts_while_another_run_drives_the_checkout(
@@ -933,6 +1022,42 @@ def test_the_setup_command_is_inferred_from_the_agents_md_block(
     ) in err
     (event,) = _setup_events(repo, "wt-SETU08")
     assert event["cmd"] == ["sh", "-c", "echo from-agents-md > .setup-ran"]
+
+
+@pytest.mark.parametrize("committed", [False, True])
+@pytest.mark.parametrize("deleted", [False, True])
+def test_worktree_setup_is_inferred_from_its_commit_not_the_dirty_agents_md(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    committed: bool,
+    deleted: bool,
+) -> None:
+    """An uncommitted setup block ran in a worktree whose AGENTS.md lacked that block."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    agents = "## Verify command\n```sh\nsh -c 'exit 0'\n```\n"
+    if committed:
+        agents += "\n## Setup command\n```sh\necho committed > .setup-ran\n```\n"
+    (repo / "AGENTS.md").write_text(agents, encoding="utf-8")
+    _git(repo, "add", "AGENTS.md")
+    _git(repo, "commit", "-q", "-m", "agents")
+    if deleted:
+        (repo / "AGENTS.md").unlink()
+    else:
+        (repo / "AGENTS.md").write_text(
+            "## Setup command\n```sh\necho uncommitted; exit 3\n```\n", encoding="utf-8"
+        )
+    before = _checkout_facts(repo)
+    _script(monkeypatch)
+    assert cli_main(["run", "--worktree", "--session-id", "committed-setup", "task"]) == 0
+    assert _checkout_facts(repo) == before
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, "committed-setup")).worktree
+    assert worktree is not None
+    assert (worktree / "AGENTS.md").read_text(encoding="utf-8") == agents
+    assert len(_setup_events(repo, "committed-setup")) == int(committed)
+    if committed:
+        assert (worktree / ".setup-ran").read_text(encoding="utf-8") == "committed\n"
+    assert "echo uncommitted" not in "".join(capsys.readouterr())
 
 
 def test_a_configured_setup_command_outranks_the_agents_md_block(

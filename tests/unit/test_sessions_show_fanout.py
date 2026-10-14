@@ -141,6 +141,36 @@ def test_stale_coordinator_does_not_offer_resume(
     assert "resume with:" not in out
 
 
+def test_show_keeps_a_failed_setups_output_and_network_diagnostic(
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A lane's setup failure remains readable when the clone and child streams are gone."""
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(fan_out), session_id="fan-l1")
+    problem = (
+        "the setup command failed (exit 1): uv sync --offline\n"
+        "    no cached package\n"
+        "  the command ran with no route off this machine (sandbox.network), so it has to"
+        " work offline. See docs/security.md."
+    )
+    events = [
+        {"type": "session.start", "mode": "run"},
+        {"type": "workspace.setup", "cmd": ["uv", "sync", "--offline"], "exit_code": 1},
+        {
+            "type": "session.end",
+            "reason": "setup_command_failed",
+            "all_passed": False,
+            "summary": problem,
+        },
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+
+    assert main(["sessions", "show", "fan-l1"]) == 0
+    shown = capsys.readouterr().out
+    assert "failed · setup command failed" in shown and problem in shown
+    assert main(["sessions", "show", "fan-l1", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["setup_output"] == problem
+
+
 def test_show_on_a_lane_names_its_coordinator(
     fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -127,6 +127,7 @@ State is snapshotted before each model call and checkpointed per turn.
 - `fork` continues a copy from a turn as a new run in its own git worktree ([isolated workspaces](#isolated-workspaces)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `rm` treat it like any run ([session state](architecture.md#session-state-on-disk))
   `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
 - a `--parallel` lane continues through `agent6 fork <lane-id>`, in a worktree at the lane's last commit; `resume` refuses a lane from your checkout, whose tree is not the lane's
+- a fan-out stopped only by lane caps reads `failed · budget exhausted` and exits `3`; its report says to raise the budget cap and fork each stopped lane
 - a `--steer` on a fork, or on resuming a run the agent finished, becomes the new run's task and names its row and its merge subject
 - a resume after the run's work landed continues from the checkout's HEAD when HEAD holds the merge: the run's next commits, `sessions diff` and its next merge then hold only the new work, so nothing lands twice
 - a run whose workspace does not hold the merge (a `--worktree` run, a fork) continues on its own chain: after a resume, `sessions diff`, `sessions commits` and its next merge start from the landed tip
@@ -144,7 +145,7 @@ Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scr
 | `0` | finished with a green gate, or nothing to gate on; a review panel's PASS |
 | `1` | ended unfinished: out of turns, stuck, a provider error, a crash; a review panel whose every seat abstained |
 | `2` | operator error (bad flag or config, a refusal before anything ran) |
-| `3` | budget exhausted |
+| `3` | budget exhausted, including a `run --parallel` fan-out whose every lane stopped at its cap |
 | `4` | finished over a red, timed-out or never-run verify gate; a review panel's BLOCK |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_step = false`, stays `0`) |
 | `130` | interrupted, or stopped by the operator: Ctrl-C, `agent6 stop`, abort or exit at the pause menu, stop after a commit (a worker `agent6 stop` had to kill dies on the signal instead) |
@@ -241,10 +242,12 @@ agent6 ask "how does the task-graph curator work?"
     agent6 config set --repo parallel.setup_command '["uv", "sync"]'
     ```
 
-- Unset, a `## Setup command` fenced block in AGENTS.md supplies it, read as the `## Verify command` block is; the run prints the command and that AGENTS.md gave it.
+- Unset, a `## Setup command` fenced block in AGENTS.md supplies it; a `--worktree` run and a `--parallel` fan-out read it from the commit the workspace is cut from, not from an uncommitted edit, and print the command and that AGENTS.md gave it.
+    - an AGENTS.md that is a symlink is not read there: set `parallel.setup_command`
 - The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
-- Its output is printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any model call (exit `1`).
+- Its command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any model call (exit `1`).
   No turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
+- A fan-out prints each lane's setup line when it imports the lane, and a failed lane's output in the failed lanes block; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the workspace is gone.
 - The files it leaves untracked stay out of the run's commits.
 - It runs once per workspace: `resume` does not run it again, and a fork's new worktree runs it at the fork's first execution.
 - The verify gate is settled in your checkout and carried into the workspace: a gate inferred as `.venv/bin/python -m pytest -q` stays that.

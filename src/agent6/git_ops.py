@@ -1682,6 +1682,29 @@ def recent_log(path: pathlib.Path, n: int = 20) -> str:
     return res.stdout if res.ok else ""
 
 
+def read_file_at(path: pathlib.Path, ref: str, name: str) -> str:
+    """Return a regular file's text at a git ref, or "" when the tree has no such file.
+
+    Args:
+        path: The repository.
+        ref: The commit or tree to read.
+        name: The repository-relative file name.
+
+    Returns:
+        The blob's text, with undecodable bytes replaced; symlinks and directories give "".
+
+    Raises:
+        GitError: The ref cannot be read or git fails.
+    """
+    entries = _run(path, "ls-tree", "-z", ref, "--", name).stdout.split("\0")
+    for entry in entries:
+        metadata, _, found = entry.partition("\t")
+        if found == name and metadata.startswith(("100644 blob ", "100755 blob ")):
+            sha = metadata.split()[2]
+            return _run(path, "cat-file", "blob", sha).stdout
+    return ""
+
+
 def tracked_files(path: pathlib.Path) -> tuple[str, ...]:
     """Return the tracked files in git's own order.
 

@@ -210,6 +210,11 @@ def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resumable: 
         gated: The session is a run, the one mode a gate judges.
         resumable: The session stopped short of its end and has a loop to resume.
     """
+    if scan.setup_output:
+        # A setup that worked is one line; a failed one keeps its output, the diagnostic.
+        failed = scan.end_reason == "setup_command_failed"
+        shown = scan.setup_output if failed else scan.setup_output.splitlines()[0]
+        print(f"setup:      {shown.removeprefix('setup command: ')}")
     if n := scan.unattended_questions:
         # Answered empty by the harness in this execution; a resume starts the count again.
         print(
@@ -327,6 +332,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "plan_consumed": scan.plan_consumed,
                     "plan_cap": scan.plan_cap,
                     "unattended_questions": scan.unattended_questions,
+                    "setup_output": scan.setup_output or None,
                     # An under-estimate when some spend was unpriced; the text render marks it too.
                     "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,
                     "source_session_id": manifest.source_session_id,

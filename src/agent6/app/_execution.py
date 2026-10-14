@@ -442,6 +442,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                         events.emit(
                             "session.end",
                             reason="setup_command_failed",
+                            summary=unready,
                             iterations=0,
                             all_passed=False,
                         )

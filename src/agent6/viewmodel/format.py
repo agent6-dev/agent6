@@ -10,10 +10,12 @@ pins the copy.
 
 from __future__ import annotations
 
+import shlex
 import time
+from collections.abc import Mapping
 from typing import Literal
 
-from agent6 import budget
+from agent6 import budget, terminal
 from agent6.sessions import manifest
 
 # Text characters, not graphics, so every terminal font renders them.
@@ -25,6 +27,23 @@ TASK_STATUS_GLYPH = {
     "skipped": "–",  # noqa: RUF001
     "obsolete": "×",  # noqa: RUF001
 }
+
+
+def setup_output(event: Mapping[str, object]) -> str:
+    """Return a setup event's command, exit code and retained output for every surface."""
+    raw = event.get("cmd")
+    argv = [str(a) for a in raw] if isinstance(raw, (list, tuple)) else []
+    how = "could not start" if event.get("exec_failed") else f"exit {event.get('exit_code', '?')}"
+    lines = [
+        line
+        for key in ("stdout_tail", "stderr_tail")
+        for line in str(event.get(key) or "").rstrip().splitlines()
+    ]
+    return terminal.scrub_terminal_controls(
+        "\n".join(
+            [f"setup command: {shlex.join(argv)} ({how})", *(f"    {line}" for line in lines[-20:])]
+        )
+    )
 
 
 def format_model_route(driver: manifest.ModelBrief | None) -> str:

@@ -6,8 +6,9 @@ A `run --worktree` worktree, a fork's worktree, a lane's clone and a machine sta
 hold tracked files only. `[parallel].setup_command` runs once in each, through the session's
 own dispatcher, so it gets the jail every command of that run gets. A session's manifest
 records that its workspace is set up. With no command configured, the `## Setup command`
-block of the origin's AGENTS.md supplies it. A gate whose first word is a path git does not
-track cannot run in such a workspace until a setup command builds it: with none, the start
+block of AGENTS.md supplies it; a fresh worktree or fan-out reads the workspace's commit.
+A gate whose first word is a path git does not track cannot run in such a workspace until
+a setup command builds it: with none, the start
 refuses before anything is created.
 """
 
@@ -37,7 +38,9 @@ def _output_tail(res: results.ExecResult) -> list[str]:
     return lines[-_TAIL_LINES:]
 
 
-def infer_if_unset(cfg: Config, origin: pathlib.Path, *, reporter: app_reporter.Reporter) -> Config:
+def infer_if_unset(
+    cfg: Config, origin: pathlib.Path, *, reporter: app_reporter.Reporter, at: str | None = None
+) -> Config:
     """Return the config with the setup command AGENTS.md states, when none is configured.
 
     Read once, in the origin, and carried in the config, so the workspace and every lane
@@ -47,13 +50,14 @@ def infer_if_unset(cfg: Config, origin: pathlib.Path, *, reporter: app_reporter.
         cfg: The session's config.
         origin: The checkout whose AGENTS.md is read.
         reporter: Receives the line naming what was inferred.
+        at: Read this commit's AGENTS.md instead of the checkout's copy.
 
     Returns:
         The config, its setup command set when the `## Setup command` block gives one.
     """
     if cfg.parallel.setup_command:
         return cfg
-    agents_md = verify_infer.read_agents_md(origin, cfg.sandbox.hide_paths)
+    agents_md = verify_infer.read_agents_md(origin, cfg.sandbox.hide_paths, at=at)
     argv = verify_infer.setup_from_agents_md(agents_md)
     if argv is None:
         return cfg
@@ -80,7 +84,7 @@ def _no_setup_text(path: str, workspace: str) -> str:
         f" {workspace}, which holds tracked files only, and no setup command builds it there.\n"
         "  - set one for this repository:  agent6 config set --repo parallel.setup_command"
         """ '["uv", "sync"]'\n"""
-        "  - or state it in AGENTS.md: a `## Setup command` heading over a fenced block\n"
+        "  - or commit it in AGENTS.md: a `## Setup command` heading over a fenced block\n"
         "  it runs in the run's own sandbox: with no route off the machine it has to work"
         " offline (docs/security.md has the recipe)"
     )
@@ -96,7 +100,7 @@ def origin_gate(cfg: Config, origin: pathlib.Path) -> tuple[str, ...]:
 
 
 def gate_refusal(
-    cfg: Config, origin: pathlib.Path, gate: Sequence[str], *, workspace: str
+    cfg: Config, origin: pathlib.Path, gate: Sequence[str], *, workspace: str, at: str | None = None
 ) -> str | None:
     """Return why a session could never run its gate in a new workspace, or None.
 
@@ -105,6 +109,7 @@ def gate_refusal(
         origin: The checkout the workspace is cut from.
         gate: The gate the session will be judged by.
         workspace: The workspace, for the message ("a new worktree").
+        at: The commit the workspace is cut from; None reads the checkout's AGENTS.md.
 
     Returns:
         The refusal when the gate's first word is a path in the checkout that git does not
@@ -114,7 +119,7 @@ def gate_refusal(
     path = _gate_path(gate)
     if not path or cfg.sandbox.run_commands == "no" or cfg.parallel.setup_command:
         return None
-    agents_md = verify_infer.read_agents_md(origin, cfg.sandbox.hide_paths)
+    agents_md = verify_infer.read_agents_md(origin, cfg.sandbox.hide_paths, at=at)
     if verify_infer.setup_from_agents_md(agents_md) is not None:
         return None
     if path in git_ops.tracked_files(origin):

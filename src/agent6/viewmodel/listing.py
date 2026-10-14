@@ -15,7 +15,7 @@ import pathlib
 import time
 from collections.abc import Container, Iterable, Mapping, Sequence
 
-from agent6 import git_ops, kinds, task_text
+from agent6 import git_ops, kinds, task_text, terminal
 from agent6.sessions import ipc, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import events, format
@@ -608,6 +608,7 @@ class LogScan:
         all_passed: The verify tri-state; None when no verify command gated the end.
         verify_scoped: The judging gate ran scoped.
         end_reason: The session.end reason word.
+        setup_output: The workspace's setup command and retained output, or its failure diagnostic.
         verified: The gate's word for the final tree, as the last session.end carried it:
             `passed`, `failed`, `unverified` or `not_applicable`; "" while a later execution
             runs, and for an end that carried none.
@@ -650,6 +651,7 @@ class LogScan:
     all_passed: bool | None = False
     verify_scoped: bool = False
     end_reason: str = ""
+    setup_output: str = ""
     verified: str = ""
     end_tree: str = ""
     provider_error: str = ""
@@ -819,6 +821,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     mode, task = "?", ""
     finished, end_reason, verified = False, "", ""
     end_tree = ""
+    setup_output = ""
     provider_error = ""
     all_passed: bool | None = False
     verify_scoped = False
@@ -895,6 +898,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     all_passed = None if raw_ap is None else bool(raw_ap)
                     verify_scoped = bool(ev.get("scoped", False))
                     end_reason = str(ev.get("reason", ""))
+                    if end_reason == "setup_command_failed" and ev.get("summary"):
+                        setup_output = terminal.scrub_terminal_controls(str(ev["summary"]))
                     verified = str(ev.get("verified") or "")
                     end_tree = str(ev.get("tree", ""))
                 elif etype == "loop.resume.start":
@@ -917,6 +922,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     end_tree = ""
                     pending_prompts.clear()
                     unattended_questions = 0
+                elif etype == "workspace.setup":
+                    setup_output = format.setup_output(ev)
                 elif etype == "verify.end":
                     rc = ev.get("exit_code")
                     if isinstance(rc, int) and not isinstance(rc, bool):
@@ -962,6 +969,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         verify_scoped=verify_scoped,
         end_reason=end_reason,
         verified=verified,
+        setup_output=setup_output,
         end_tree=end_tree,
         provider_error=provider_error,
         cost_usd=(usd_prior_executions + usd_execution) if saw_budget else None,

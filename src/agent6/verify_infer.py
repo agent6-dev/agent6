@@ -24,9 +24,10 @@ import re
 import shlex
 from collections.abc import Callable
 
-from agent6 import git_ops
+from agent6 import git_ops, paths
 from agent6.sandbox import tool_paths
 from agent6.tools import _path_safety
+from agent6.tools import errors as tools_errors
 
 # A command line with any of these, or a leading assignment, is shell, wrapped in `sh -c`.
 _SHELL_META = re.compile(r"[|&;<>`$*]")
@@ -146,13 +147,38 @@ def _first_fenced_block(lines: list[str], start: int) -> list[str] | None:
     return None
 
 
-def read_agents_md(repo_root: pathlib.Path, hide: tuple[str, ...] = ()) -> str:
-    """Return the directory's AGENTS.md text; "" when absent, unreadable or out of the git root."""
+def read_agents_md(
+    repo_root: pathlib.Path, hide: tuple[str, ...] = (), *, at: str | None = None
+) -> str:
+    """Return AGENTS.md from the directory or a commit, "" when missing or out of bounds.
+
+    Args:
+        repo_root: The directory whose AGENTS.md is read.
+        hide: The hidden paths.
+        at: Read this commit's copy instead of the checkout's; None reads the directory.
+
+    Returns:
+        The text, or "" when missing, hidden or outside the git root.
+
+    Raises:
+        GitError: A requested commit cannot be read or git fails.
+    """
     base, here = git_ops.toplevel(repo_root), repo_root.resolve()
     if base is None or not here.is_relative_to(base.resolve()):
-        return _path_safety.read_workspace_text(repo_root, "AGENTS.md", hide)
-    name = (here.relative_to(base.resolve()) / "AGENTS.md").as_posix()
-    return _path_safety.read_workspace_text(base.resolve(), name, hide)
+        return (
+            "" if at is not None else _path_safety.read_workspace_text(repo_root, "AGENTS.md", hide)
+        )
+    root = base.resolve()
+    name = (here.relative_to(root) / "AGENTS.md").as_posix()
+    if at is None:
+        return _path_safety.read_workspace_text(root, name, hide)
+    denied = (root / ".git", *paths.hidden_paths(pathlib.Path(p) for p in hide))
+    workspace = _path_safety.Workspace(root=root, denied=tuple(p.resolve() for p in denied))
+    try:
+        workspace.resolve_read(name)
+    except (OSError, tools_errors.ToolError):
+        return ""
+    return git_ops.read_file_at(root, at, name)
 
 
 def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:

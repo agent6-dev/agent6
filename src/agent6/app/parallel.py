@@ -245,6 +245,13 @@ def bridge_spawner(
 # ---------------------------------------------------------------------------
 
 
+def _imported_branch_note(origin: pathlib.Path, branch: str) -> str:
+    """Return the branch a successful import landed, or say the lane made no commit."""
+    if git_ops.branch_exists(origin, branch):
+        return f"branch imported as {branch}"
+    return "no branch (the run made no commit)"
+
+
 def run_lane_to_completion(
     spec: subrun.LaneSpec,
     task: str,
@@ -364,7 +371,7 @@ def run_lane_to_completion(
             branch=res.branch,
             ok=False,
             error=f"no result ({format.status_label(summary.status, summary.reason)});"
-            f" branch imported as {res.branch}",
+            f" {_imported_branch_note(origin, res.branch)}",
         )
     return subrun.LaneResult(spec=spec, session_dir=dest, branch=res.branch, ok=True, error="")
 
@@ -707,6 +714,17 @@ def _import_lane(
         raise
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class _ImportedLanes:
+    """The imported candidates, failures, cleanup specs and all-lane budget outcome."""
+
+    candidates: list[judge.CandidateBrief]
+    rows: dict[str, listing.SessionSummary]
+    failed: list[tuple[subrun.LaneResult, str]]
+    imported: list[subrun.LaneSpec]
+    all_budget_exhausted: bool
+
+
 def _import_lanes(
     results: list[subrun.LaneResult],
     *,
@@ -715,12 +733,7 @@ def _import_lanes(
     base_sha: str,
     task: str,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-) -> tuple[
-    list[judge.CandidateBrief],
-    dict[str, listing.SessionSummary],
-    list[tuple[subrun.LaneResult, str]],
-    list[subrun.LaneSpec],
-]:
+) -> _ImportedLanes:
     """Import each finished lane into the origin and build the candidate briefs.
 
     A lane that failed to start, is still running or refused its import is recorded
@@ -736,11 +749,12 @@ def _import_lanes(
         reporter: Receives the notes.
 
     Returns:
-        The candidates, each one's listing row by session id, the failed lanes with
-        their reasons, and the imported specs (the only ones safe to clean up).
+        The candidates, listing rows, failures, cleanup specs and whether every lane
+        ended at its budget and imported successfully.
     """
     candidates: list[judge.CandidateBrief] = []
     rows: dict[str, listing.SessionSummary] = {}
+    budget_stops = 0
     failed: list[tuple[subrun.LaneResult, str]] = []
     imported: list[subrun.LaneSpec] = []
     for res in results:
@@ -762,6 +776,7 @@ def _import_lanes(
         except subrun.SubrunError as exc:
             failed.append((res, str(exc)))
             continue
+        landed = dataclasses.replace(res, session_dir=dest)
         imported.append(res.spec)
         carry_back(
             paths.state_dir(res.spec.workdir),
@@ -771,16 +786,20 @@ def _import_lanes(
             reporter=reporter,
         )
         summary = summarize_session_dir(dest)
+        scan = listing.scan_session_log(dest / sessions_layout.LOGS_NAME)
+        budget_stops += scan.end_reason == "budget_exhausted"
         if not produced_result(summary.status):
             # Only a deliberate end is rankable work.
             failed.append(
                 (
-                    res,
+                    landed,
                     f"no result ({format.status_label(summary.status, summary.reason)});"
-                    f" branch imported as {res.branch}, not ranked",
+                    f" {_imported_branch_note(origin, res.branch)}, not ranked",
                 )
             )
             continue
+        if scan.setup_output:
+            reporter.note(f"lane {res.spec.lane} [{res.spec.session_id}]: {scan.setup_output}")
         rows[res.spec.session_id] = summary
         candidates.append(
             judge.CandidateBrief(
@@ -791,21 +810,30 @@ def _import_lanes(
                 cost_usd=summary.cost_usd,
             )
         )
-    return candidates, rows, failed, imported
+    return _ImportedLanes(
+        candidates,
+        rows,
+        failed,
+        imported,
+        all_budget_exhausted=bool(results) and budget_stops == len(results),
+    )
 
 
-def fanout_exit_code(candidates: list[judge.CandidateBrief]) -> int:
-    """Map the lanes' gate verdicts to the fan-out's exit code.
+def fanout_exit_code(
+    candidates: list[judge.CandidateBrief], *, all_budget_exhausted: bool = False
+) -> int:
+    """Map the lanes' gate verdicts and budget stops to the fan-out's exit code.
 
     Args:
         candidates: The rankable lanes.
+        all_budget_exhausted: Every lane ended at its budget and imported successfully.
 
     Returns:
-        1 nothing rankable, 0 a lane verified green or none had a gate, 4 gates ran
-        and none passed.
+        3 every lane ended at its budget, 1 nothing rankable otherwise, 0 a lane
+        verified green or none had a gate, 4 gates ran and none passed.
     """
     if not candidates:
-        return 1
+        return 3 if all_budget_exhausted else 1
     if any(c.verify_ok is True for c in candidates):
         return 0
     return finalize.EXIT_VERIFY_FAILED if any(c.verify_ok is False for c in candidates) else 0
@@ -838,6 +866,15 @@ def _print_report(
         reporter.out("\nfailed lanes:")
         for res, err in failed:
             reporter.out(f"  - lane {res.spec.lane} [{res.spec.session_id}]: {err}")
+            scan = listing.scan_session_log(res.session_dir / sessions_layout.LOGS_NAME)
+            for line in scan.setup_output.splitlines():
+                reporter.out(f"    {line}")
+            if scan.end_reason == "budget_exhausted":
+                reporter.out(
+                    "    raise the cap on the fork (--max-usd, --max-percent or"
+                    " --max-tokens-fallback), then continue with:"
+                    f" agent6 fork {res.spec.session_id}"
+                )
             kept = [p for p in (res.spec.workdir, res.session_dir) if p.exists()]
             if kept:
                 reporter.out(f"    kept: {', '.join(str(p) for p in kept)}")
@@ -902,19 +939,25 @@ def run_parallel(
         return 2
     if fanout_id is None:
         fanout_id = lanes[0].session_id.rsplit("-l", 1)[0]
-    # Before any clone: a lane's clone holds tracked files only.
-    refusal = workspace_setup.gate_refusal(
-        cfg, origin, workspace_setup.origin_gate(cfg, origin), workspace="a lane's clone"
-    )
-    if refusal is not None:
-        reporter.refuse(refusal)
-        return 2
     try:
         origin_status = git_ops.status(origin)
     except git_ops.GitError as exc:
         reporter.error(str(exc))
         return 2
     base_sha = origin_status.head_sha
+    if spawner is None:
+        cfg = workspace_setup.infer_if_unset(cfg, origin, reporter=reporter, at=base_sha)
+    # Before any clone: a lane's clone holds tracked files only.
+    refusal = workspace_setup.gate_refusal(
+        cfg,
+        origin,
+        workspace_setup.origin_gate(cfg, origin),
+        workspace="a lane's clone",
+        at=base_sha,
+    )
+    if refusal is not None:
+        reporter.refuse(refusal)
+        return 2
 
     layout = sessions_layout.SessionLayout(
         state_dir=origin_state, session_id=fanout_id, subdir=kinds.session_bucket("run")
@@ -941,9 +984,7 @@ def run_parallel(
     )
     events.emit("loop.parallel.dispatched", group=fanout_id, lanes=len(lanes), tasks=[task[:200]])
     if spawner is None:
-        # The setup command and the gate are settled once, here in the origin, and ride in
-        # every lane's config: a clone lacks the untracked signals inference reads.
-        cfg = workspace_setup.infer_if_unset(cfg, origin, reporter=reporter)
+        # A clone lacks the untracked signals verify inference reads in the origin.
         cfg = preflight.infer_verify_if_unset(
             cfg,
             origin,
@@ -1071,7 +1112,7 @@ def _drive_fanout(
 
     # The stop request is consumed with the session.
     ipc.clear_stop_request(coordinator_dir)
-    candidates, rows, failed, imported = _import_lanes(
+    batch = _import_lanes(
         results,
         origin=origin,
         origin_state=origin_state,
@@ -1079,15 +1120,18 @@ def _drive_fanout(
         task=task,
         reporter=reporter,
     )
-    if failed:
+    if batch.failed:
         events.emit(
             "loop.parallel.failed",
             group=fanout_id,
             fanout=True,
-            lanes=[{"session_id": res.spec.session_id, "detail": detail} for res, detail in failed],
+            lanes=[
+                {"session_id": res.spec.session_id, "detail": detail}
+                for res, detail in batch.failed
+            ],
         )
     _workdirs.cleanup(
-        imported,
+        batch.imported,
         workdir_root=lanes[0].workdir.parent,
         base=_workdirs.workdir_base(cfg, origin),
         cfg=cfg,
@@ -1095,7 +1139,7 @@ def _drive_fanout(
 
     outcome = app_compare.rank(
         cfg,
-        candidates,
+        batch.candidates,
         transcript_dir=origin_state / "parallel" / fanout_id,
         build_provider=runtime.build_provider,
         judging_status=runtime.judging_status,
@@ -1103,20 +1147,20 @@ def _drive_fanout(
         reporter=reporter,
     )
     _stamp_compare_outcomes(
-        candidates,
+        batch.candidates,
         outcome,
         origin_state=origin_state,
         reporter=reporter,
     )
     _print_report(
-        candidates,
+        batch.candidates,
         outcome,
-        failed,
-        rows=rows,
+        batch.failed,
+        rows=batch.rows,
         fanout_id=fanout_id,
         reporter=reporter,
     )
-    by_id = {c.session_id: c for c in candidates}
+    by_id = {c.session_id: c for c in batch.candidates}
     events.emit(
         "loop.parallel.compared",
         group=fanout_id,
@@ -1139,8 +1183,12 @@ def _drive_fanout(
             usd_total=outcome.judge_cost_usd,
             usd_partial=outcome.judge_cost_partial,
         )
-    rc = 130 if interrupted else fanout_exit_code(candidates)
-    reason, all_passed = _fanout_end(rc, candidates)
+    rc = (
+        130
+        if interrupted
+        else fanout_exit_code(batch.candidates, all_budget_exhausted=batch.all_budget_exhausted)
+    )
+    reason, all_passed = _fanout_end(rc, batch.candidates)
     events.emit("session.end", reason=reason, iterations=0, all_passed=all_passed)
     return rc
 
@@ -1158,6 +1206,8 @@ def _fanout_end(rc: int, candidates: list[judge.CandidateBrief]) -> tuple[str, b
     """
     if rc == 130:
         return "interrupted", False
+    if rc == 3:
+        return "budget_exhausted", False
     if rc == 0:
         return "finish_session", True if any(c.verify_ok for c in candidates) else None
     return ("no_lane_passed" if rc == finalize.EXIT_VERIFY_FAILED else "no_lane_result"), False
