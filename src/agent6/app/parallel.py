@@ -525,7 +525,7 @@ def run_lane_to_completion(
     # The live symlink lets a hub answer the lane's prompts while it runs.
     _lane_watch.symlink_lane(origin_state, res)
     if not _lane_watch.await_lane(res, poll_interval_s=poll_interval_s, should_stop=should_stop):
-        asked = ipc.request_stop(res.session_dir)
+        asked = ipc.request_stop(res.session_dir, now=True)
         if not _lane_watch.drain_lane(res, poll_interval_s=poll_interval_s, hard_stop=hard_stop):
             # Still running: the clone and symlink hold the only copy of its branch.
             return subrun.LaneResult(

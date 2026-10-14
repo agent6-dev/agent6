@@ -154,6 +154,23 @@ def test_an_unknown_id_names_what_exists(
         shells.read("bg99", tail_lines=5)
 
 
+def test_an_id_from_an_earlier_execution_reads_as_ended(
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
+) -> None:
+    """A resumed execution asked about an earlier execution's id says that id ended with it.
+
+    The roster starts empty on a resume, so the id read "no background command 'bg1' (started
+    this run: none)", though this run did start it.
+    """
+    shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
+    shells.stop_all()
+    resumed = background.BackgroundShells(tmp_path / "shells")
+    with pytest.raises(background.BackgroundError, match="bg1 was started by an earlier execution"):
+        resumed.read("bg1", tail_lines=5)
+    with pytest.raises(background.BackgroundError, match="no background command 'bg7'"):
+        resumed.read("bg7", tail_lines=5)
+
+
 def test_output_survives_the_command(
     shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:

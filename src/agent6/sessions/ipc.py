@@ -1335,15 +1335,17 @@ def clear_steer_request(session_dir: pathlib.Path) -> None:
 STOP_REQUEST_FILE = "stop.request"
 
 
-def request_stop(session_dir: pathlib.Path) -> bool:
+def request_stop(session_dir: pathlib.Path, *, now: bool = False) -> bool:
     """Drop the "stop after this step" marker the session honors at its next boundary.
 
-    The finished step's tool results and auto-commit land first; the immediate stop is the
-    steer `abort`. The session dir is created here: ACP can cancel after assigning the id but
+    The finished step's tool results and auto-commit land first: a command the step is running
+    finishes. The session dir is created here: ACP can cancel after assigning the id but
     before the lifecycle creates the layout.
 
     Args:
         session_dir: The session directory.
+        now: Write the urgency into the marker, so a running command is handed back at once
+            and the step ends there. The model call in flight is cut by the steer `abort`.
 
     Returns:
         Whether the marker landed; a failed write neither raises into a front-end action nor
@@ -1351,7 +1353,7 @@ def request_stop(session_dir: pathlib.Path) -> bool:
     """
     try:
         paths.mkdir_for_real_user(session_dir)
-        (session_dir / STOP_REQUEST_FILE).write_text("", encoding="utf-8")
+        (session_dir / STOP_REQUEST_FILE).write_text("now" if now else "", encoding="utf-8")
     except OSError:
         return False
     return True
@@ -1367,6 +1369,21 @@ def stop_request_pending(session_dir: pathlib.Path) -> bool:
         True when the marker exists.
     """
     return (session_dir / STOP_REQUEST_FILE).exists()
+
+
+def stop_request_is_now(session_dir: pathlib.Path) -> bool:
+    """Return whether a pending stop carries the `now` urgency.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        True when the marker reads `now`.
+    """
+    try:
+        return (session_dir / STOP_REQUEST_FILE).read_text(encoding="utf-8").strip() == "now"
+    except OSError:
+        return False
 
 
 def clear_stop_request(session_dir: pathlib.Path) -> None:

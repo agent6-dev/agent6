@@ -680,8 +680,8 @@ class ToolDispatcher:
                 timeout_s=0.0,  # the check-in replaces the kill
                 checkin_s=checkin,
                 log_dir=str(shells.log_root),
-                # A Stop mid-command asks for the hand-back now.
-                interrupted=self._operator_wants_out,
+                # An immediate stop asks for the hand-back now; a stop after the step waits.
+                interrupted=self._operator_wants_out_now,
             )
         except jail.JailUnavailableError as exc:
             raise tools_errors.ToolError(f"jail unavailable: {exc}") from exc
@@ -706,6 +706,17 @@ class ToolDispatcher:
         if self._session_dir is None:
             return False
         return ipc.stop_request_pending(self._session_dir) or ipc.steer_answer_is_abort(
+            self._session_dir
+        )
+
+    def _operator_wants_out_now(self) -> bool:
+        """Return whether the operator's stop is immediate: the abort, or a stop marked `now`.
+
+        A stop after the step lets the step's command finish.
+        """
+        if self._session_dir is None:
+            return False
+        return ipc.stop_request_is_now(self._session_dir) or ipc.steer_answer_is_abort(
             self._session_dir
         )
 

@@ -1956,7 +1956,7 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
     )
     assert res.ok is False
     assert "interrupted" in res.error
-    assert ipc.stop_request_pending(lane_dir) is True  # the lane was asked to stop
+    assert ipc.stop_request_is_now(lane_dir) is True  # the lane was asked to stop at once
     assert lane_dir.is_dir()  # nothing was moved/imported
 
 
@@ -2624,7 +2624,8 @@ def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
     monkeypatch.setattr(ipc, "worker_is_alive", _alive)
 
     assert lane_watch.await_lanes([res], should_stop=lambda: True) is True
-    assert ipc.stop_request_pending(lane)
+    # Marked `now`: a lane's running command is handed back at once, within the drain's grace.
+    assert ipc.stop_request_is_now(lane)
     assert "interrupted; stopping lanes" in capsys.readouterr().err
 
 

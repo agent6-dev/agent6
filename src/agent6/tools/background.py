@@ -119,6 +119,8 @@ class BackgroundShells:
         self._shells: dict[str, _Shell] = {}
         # A resumed run reuses the session dir, and two commands never share a log.
         self._seq = _highest_shell_seq(root)
+        # The ids an earlier execution issued: its end stopped every one of them.
+        self._earlier = self._seq
         # The run's jail session grants this path when it opens, so it must exist by then.
         self.log_root = root / _LOG_ROOT
         paths.mkdir_for_real_user(self.log_root)
@@ -424,6 +426,10 @@ class BackgroundShells:
     def _get(self, shell_id: str) -> _Shell:
         shell = self._shells.get(shell_id)
         if shell is None:
+            if 0 < _seq_of(shell_id) <= self._earlier:
+                raise BackgroundError(
+                    f"{shell_id} was started by an earlier execution of this run and ended with it"
+                )
             known = ", ".join(self._shells) or "none"
             raise BackgroundError(f"no background command {shell_id!r} (started this run: {known})")
         return shell

@@ -3,11 +3,14 @@
 """Stop a session, for `agent6 stop`, the TUI and web Stop entries, `/stop` and an ACP cancel.
 
 A stop now writes both bridges the loop reads (the abort steer cuts a model call in flight,
-the stop marker breaks a command or approval wait), then waits for the run to end. A worker
+the stop marker, written with its `now` urgency, breaks a command or approval wait), then
+waits for the run to end. A worker
 that has not ended by then is not reading requests: it and the background commands it started
 on the host get SIGTERM, then SIGKILL after a grace, and the jail's children die with it. The
-run then reads stale and resume continues it. A stop after the step writes the marker alone,
-so the finished step's tool results and auto-commit land first.
+run then reads stale and resume continues it. A stop after the step writes the plain marker
+alone, so the step's command finishes and its tool results and auto-commit land first. An
+ACP cancel has no immediate form, so its marker carries the urgency: the step ends on the
+results it has, a running command handed back.
 
 A fan-out's stop ends its live lanes first, then the coordinator, which imports and ranks what
 the lanes landed before it ends; that drain gets a longer wait.
@@ -57,6 +60,7 @@ def stop_session(
     session_dir: pathlib.Path,
     *,
     after_step: bool = False,
+    hand_back: bool = False,
     wait_s: float | None = None,
     grace_s: float | None = None,
 ) -> StopOutcome:
@@ -65,6 +69,7 @@ def stop_session(
     Args:
         session_dir: The session to stop.
         after_step: Let the current step finish first.
+        hand_back: With `after_step`, hand a running command back at once.
         wait_s: How long to wait for the run to end; None takes `STOP_WAIT_S`.
         grace_s: SIGTERM to SIGKILL; None takes `KILL_GRACE_S`.
 
@@ -81,17 +86,21 @@ def stop_session(
     fanout = _is_fanout(session_dir)
     lanes = _live_lanes(session_dir) if fanout else []
     for lane in lanes:
-        stop_session(lane, after_step=after_step, wait_s=wait_s, grace_s=grace_s)
+        stop_session(
+            lane, after_step=after_step, hand_back=hand_back, wait_s=wait_s, grace_s=grace_s
+        )
     with_lanes = f" with its {len(lanes)} live lane{'s' if len(lanes) > 1 else ''}" if lanes else ""
     worker = ipc.read_live_worker_identity(session_dir)
     if after_step:
-        if not ipc.request_stop(session_dir):
+        if not ipc.request_stop(session_dir, now=hand_back):
             return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
         when = "their current steps" if lanes else "its current step"
         return StopOutcome(
             rid, True, "after_step", f"{rid} stops{with_lanes} after {when}", resumable=not fanout
         )
-    if not (ipc.submit_steer(session_dir, "abort", now=True) and ipc.request_stop(session_dir)):
+    if not (
+        ipc.submit_steer(session_dir, "abort", now=True) and ipc.request_stop(session_dir, now=True)
+    ):
         return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
     return _ended(
         session_dir,

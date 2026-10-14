@@ -184,7 +184,10 @@ def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     stop_p.add_argument(
         "--after-step",
         action="store_true",
-        help="Let the current step finish (its tool results and auto-commit land), then stop.",
+        help=(
+            "Let the current step finish, then stop: a running command runs to its end or its"
+            " check-in, and the step's tool results and auto-commit land."
+        ),
     )
     stop_p.add_argument(
         "--all",

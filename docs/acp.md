@@ -58,7 +58,7 @@ A session is one conversation in one directory.
 - `session/new` carries an absolute `cwd`, a git repository, whose own layered config applies
 - the first prompt starts an `agent6 run`; every later prompt resumes it with the text as its steering instruction (a turn that died before its first checkpoint starts a new run, and the editor is told)
 - a busy session refuses a prompt rather than queueing it; one connection runs one prompt at a time across its sessions, and a prompt on another session waits its turn and says for which session
-- `session/cancel` is `agent6 stop --after-step`: the step in flight finishes and commits first (a prompt still waiting its turn answers `cancelled` at once)
+- `session/cancel` stops the run after the step in flight: a running command is handed back at once, and the step's results and commit land first (a prompt still waiting its turn answers `cancelled` at once)
 
 ## Not implemented
 

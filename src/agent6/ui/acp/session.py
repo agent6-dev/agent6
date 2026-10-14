@@ -183,7 +183,8 @@ class Sessions:
     def cancel(self, session: Session) -> None:
         """Ask the run to stop at its next boundary.
 
-        A marker, not a kill: the step's tool results and auto-commit land first.
+        A marker, not a kill: the step's tool results and auto-commit land first. A running
+        command is handed back at once, so the editor's cancel never waits one out.
         """
         if not session.is_running():
             return
@@ -191,10 +192,14 @@ class Sessions:
         if not session.session_id:
             return
         session_dir = session.layout(self.state_dir_for(session.cwd)).session_dir
-        out = stop.stop_session(session_dir, after_step=True)
+        out = stop.stop_session(session_dir, after_step=True, hand_back=True)
         if not out.ok:
             # The turn is live before the lifecycle records its worker; the marker survives startup.
-            if out.how == "not_live" and session.is_running() and ipc.request_stop(session_dir):
+            if (
+                out.how == "not_live"
+                and session.is_running()
+                and ipc.request_stop(session_dir, now=True)
+            ):
                 return
             # A notification has no reply: stderr is the one channel left.
             print(f"[agent6] {out.message}", file=sys.stderr)

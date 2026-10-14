@@ -85,7 +85,9 @@ class _Wire:
         )
 
 
-def _ignore(path: pathlib.Path, *, after_step: bool = False) -> stop.StopOutcome:
+def _ignore(
+    path: pathlib.Path, *, after_step: bool = False, hand_back: bool = False
+) -> stop.StopOutcome:
     """A cancel whose marker landed (nothing here reads the run dir)."""
     return stop.StopOutcome(
         path.name, True, "after_step", f"{path.name} stops after its current step"
@@ -136,10 +138,13 @@ def test_a_cancel_reaches_the_run_it_names(
     the run continued to completion, spending budget and making commits.
     """
     stopped: list[pathlib.Path] = []
+    how: list[tuple[bool, bool]] = []
 
-    def _record(path: pathlib.Path, *, after_step: bool = False) -> stop.StopOutcome:
+    def _record(
+        path: pathlib.Path, *, after_step: bool = False, hand_back: bool = False
+    ) -> stop.StopOutcome:
         stopped.append(path)
-        assert after_step  # a cancel lets the step in flight finish and commit
+        how.append((after_step, hand_back))
         return _ignore(path)
 
     monkeypatch.setattr(stop, "stop_session", _record)
@@ -168,6 +173,8 @@ def test_a_cancel_reaches_the_run_it_names(
         assert stopped, "the stop marker never reached a run directory"
         assert stopped[0].parent.name == "runs", stopped[0]
         assert stopped[0].name, "the run id was empty, so the cancel addressed nothing"
+        # The step in flight finishes and commits; its running command is handed back.
+        assert how == [(True, True)]
     finally:
         release.set()
         wire.close()
@@ -1637,7 +1644,7 @@ def test_a_cancel_before_the_turn_starts_leaves_no_marker_for_the_next(
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-AAAA11")
     session_dir = sessions_layout.SessionLayout(tmp_path / "state", "run-AAAA11").session_dir
-    assert ipc.request_stop(session_dir)  # what Sessions.cancel writes
+    assert ipc.request_stop(session_dir, now=True)  # what Sessions.cancel writes
     session.cancelled = True
 
     assert bridge.run(session, "never starts") == "cancelled"
@@ -1753,7 +1760,8 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
 
     def _cancelled_while_starting(cfg: Config, text: str, **kw: Any) -> int:
         session_dir = session.layout(paths.state_dir(repo)).session_dir
-        assert ipc.request_stop(session_dir)  # what Sessions.cancel writes, the turn begun
+        # What Sessions.cancel writes, the turn begun.
+        assert ipc.request_stop(session_dir, now=True)
         time.sleep(2 * ipc.TIMESTAMP_SLACK_S)  # the lifecycle's entry is not the turn's start
         return real_run_task(cfg, text, **kw)
 

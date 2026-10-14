@@ -78,6 +78,16 @@ def test_after_step_writes_the_marker_alone(tmp_path: pathlib.Path) -> None:
     out = stop.stop_session(d, after_step=True)
     assert (out.ok, out.how) == (True, "after_step") and "after its current step" in out.message
     assert (d / ipc.STOP_REQUEST_FILE).exists() and not (d / ipc.STEER_ANSWER_FILE).exists()
+    assert not ipc.stop_request_is_now(d)  # the step's running command is left to finish
+
+
+def test_after_step_with_hand_back_marks_the_stop_now(tmp_path: pathlib.Path) -> None:
+    """An editor's cancel waited for the step's running command: its marker carries the urgency."""
+    d = _live_run(tmp_path, "hand-run-AAAAAA")
+    ipc.write_worker_pid(d, os.getpid())
+    out = stop.stop_session(d, after_step=True, hand_back=True)
+    assert (out.ok, out.how) == (True, "after_step")
+    assert ipc.stop_request_is_now(d) and not (d / ipc.STEER_ANSWER_FILE).exists()
 
 
 def test_a_run_that_answers_stops_and_is_not_killed(tmp_path: pathlib.Path) -> None:
@@ -89,7 +99,7 @@ def test_a_run_that_answers_stops_and_is_not_killed(tmp_path: pathlib.Path) -> N
         out = stop.stop_session(d, wait_s=5.0, grace_s=0.5)
         assert (out.ok, out.how) == (True, "stopped"), out
         assert (d / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8").strip() == "abort"
-        assert ipc.steer_request_pending(d) and (d / ipc.STOP_REQUEST_FILE).exists()
+        assert ipc.steer_request_pending(d) and ipc.stop_request_is_now(d)
         assert _gone(proc)
     finally:
         proc.kill()

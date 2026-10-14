@@ -255,22 +255,28 @@ def test_a_wait_still_waits_when_nobody_asked_to_stop(tmp_path: pathlib.Path) ->
         d.close()
 
 
-def test_an_operator_stop_hands_a_running_command_back_at_once(tmp_path: pathlib.Path) -> None:
-    """A Stop during a synchronous `run_command` hands the command back as `bg<N>`.
+@pytest.mark.parametrize("stop", ["stop now", "lane stop"])
+def test_an_immediate_stop_hands_a_running_command_back_at_once(
+    tmp_path: pathlib.Path, stop: str
+) -> None:
+    """An immediate stop during a synchronous `run_command` hands the command back as `bg<N>`.
 
-    The sibling of the wait above, and the harder half: the dispatcher blocks reading the
-    launcher's answer pipe, so a Stop would sit unread until the check-in elapsed (measured:
-    18s of a 20s command, and the default check-in is 900). The launcher takes a second reason
-    to hand back, on its own pipe, because the request channel is in lockstep and this side
-    is blocked on the answer to the very request being interrupted. The command is not
-    killed.
+    The dispatcher blocks reading the launcher's answer pipe, so the stop would sit unread until
+    the check-in elapsed (measured: 18s of a 20s command, and the default check-in is 900). The
+    launcher takes a second reason to hand back, on its own pipe, because the request channel is
+    in lockstep and this side is blocked on the answer to the very request being interrupted.
+    The command is not killed. `agent6 stop` writes the abort steer; a fan-out stops its lanes
+    with the marker's `now` urgency.
     """
     from agent6.sessions import ipc
 
     d = _dispatcher(tmp_path, checkin=900.0)
     session_dir = tmp_path / "session"
     try:
-        ipc.request_stop(session_dir)
+        if stop == "stop now":
+            ipc.submit_steer(session_dir, "abort", now=True)
+        else:
+            ipc.request_stop(session_dir, now=True)
         started = time.monotonic()
         out = _run(d, "sleep 30")
         waited = time.monotonic() - started
@@ -278,6 +284,26 @@ def test_an_operator_stop_hands_a_running_command_back_at_once(tmp_path: pathlib
         assert out["returncode"] is None and out["still_running"] is True
         assert out["background_id"] == "bg1"
         d.dispatch("stop_background", {"id": "bg1"})
+    finally:
+        d.close()
+
+
+def test_a_stop_after_the_step_lets_the_command_finish(tmp_path: pathlib.Path) -> None:
+    """The stop marker alone leaves a running command to finish and return its own result.
+
+    `stop --after-step` handed the step's command back as a background job on the first poll, and
+    the end of the execution then killed it: the step the operator asked to let finish was cut.
+    """
+    from agent6.sessions import ipc
+
+    d = _dispatcher(tmp_path, checkin=900.0)
+    session_dir = tmp_path / "session"
+    try:
+        ipc.request_stop(session_dir)
+        out = _run(d, "sleep 1; echo done")
+        assert out["returncode"] == 0
+        assert "done" in out["stdout"]
+        assert "background_id" not in out and "still_running" not in out
     finally:
         d.close()
 

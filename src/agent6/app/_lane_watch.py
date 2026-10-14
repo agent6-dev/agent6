@@ -152,7 +152,7 @@ def await_lanes(
     def stop_and_drain() -> None:
         reporter.err("\n[agent6] interrupted; stopping lanes...")
         for res in pending.values():
-            if not ipc.request_stop(res.session_dir):
+            if not ipc.request_stop(res.session_dir, now=True):
                 reporter.err(f"[agent6] could not write the stop request for {res.spec.session_id}")
         deadline = time.monotonic() + STOP_GRACE_S
         with contextlib.suppress(KeyboardInterrupt):

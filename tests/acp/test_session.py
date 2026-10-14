@@ -239,7 +239,7 @@ def test_a_cancel_while_the_run_starts_reaches_its_first_boundary(tmp_path: path
 
     sessions.cancel(session)
 
-    assert ipc.stop_request_pending(session.layout(tmp_path / ".state").session_dir)
+    assert ipc.stop_request_is_now(session.layout(tmp_path / ".state").session_dir)
 
 
 def test_a_cancel_while_idle_does_not_poison_the_next_turn(
@@ -248,7 +248,9 @@ def test_a_cancel_while_idle_does_not_poison_the_next_turn(
     """An idle cancel leaves no stop marker for the next resume to inherit."""
     stopped: list[pathlib.Path] = []
 
-    def _stop(path: pathlib.Path, *, after_step: bool = False) -> stop.StopOutcome:
+    def _stop(
+        path: pathlib.Path, *, after_step: bool = False, hand_back: bool = False
+    ) -> stop.StopOutcome:
         stopped.append(path)
         return stop.StopOutcome(path.name, True, "after_step", "")
 
