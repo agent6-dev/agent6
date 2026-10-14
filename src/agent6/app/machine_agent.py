@@ -167,10 +167,11 @@ def _result(
     usd = 0.0
     partial = False
     inp = out = 0
+    plan = 0.0
     if budget is not None:
         usd, partial = budget.estimate_usd()
         snap = budget.snapshot()
-        inp, out = snap.input_total, snap.output_total
+        inp, out, plan = snap.input_total, snap.output_total, snap.plan_consumed
     return AgentExecResult(
         reason=reason,
         payload=payload,
@@ -178,6 +179,7 @@ def _result(
         usd_partial=partial,
         input_tokens=inp,
         output_tokens=out,
+        plan_consumed=plan,
     )
 
 
@@ -364,7 +366,9 @@ def run_one(
     try:
         cfg = layer.load_effective_with_overlay(
             req.cwd, req.overlay
-        ).config.with_machine_agent_overrides(effort=r.effort, max_usd=r.max_usd)
+        ).config.with_machine_agent_overrides(
+            effort=r.effort, max_usd=r.max_usd, max_percent=r.max_percent
+        )
         cfg = _apply_operator_env_grants(cfg)
     except (ConfigError, pydantic.ValidationError) as exc:
         reporter.refuse(f"machine agent config error: {exc}")

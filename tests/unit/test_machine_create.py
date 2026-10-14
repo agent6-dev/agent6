@@ -260,7 +260,7 @@ def test_create_takes_the_budget_flags_run_takes(
 
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
-    seen: list[tuple[float, float | None]] = []
+    seen: list[tuple[float, float | None, float | None]] = []
 
     def fake_build(
         overlays: dict[str, machine_agent.StateOverlay],
@@ -271,7 +271,7 @@ def test_create_takes_the_budget_flags_run_takes(
         budget = layer.load_effective_with_overlay(root, overlays[""].overlay).config.budget
 
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
-            seen.append((budget.max_percent, request.max_usd))
+            seen.append((budget.max_percent, request.max_usd, request.max_percent))
             _write_draft(root, _draft(VALID_MACHINE))
             return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
@@ -280,7 +280,31 @@ def test_create_takes_the_budget_flags_run_takes(
     monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     argv = ["machine", "create", "--max-percent", "30", "--max-usd", "2", "Greet the user"]
     assert main(argv) == 0
-    assert seen == [(30.0, 2.0)]
+    assert seen == [(30.0, 2.0, 30.0)]
+
+
+def test_create_keeps_one_plan_point_ledger_across_attempts(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--max-percent` caps the points summed across attempts, each getting what is left."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            ({}, AgentExecResult(payload=None, reason="finish_session", plan_consumed=20.0)),
+            ({}, AgentExecResult(payload=None, reason="finish_session", plan_consumed=20.0)),
+            (
+                _draft(VALID_MACHINE),
+                AgentExecResult(payload=None, reason="finish_session", plan_consumed=1.0),
+            ),
+        ],
+    )
+    argv = ["machine", "create", "--max-percent", "30", "--max-attempts", "3", "Greet the user"]
+    assert main(argv) == 1
+    err = capsys.readouterr().err
+    assert "max_percent (30) exhausted after 2 attempt(s) (40 plan points)" in err
+    assert "40 plan points (in=" in err
 
 
 def test_create_writes_default_path(

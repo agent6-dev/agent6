@@ -388,13 +388,18 @@ class Config(pydantic.BaseModel):
         return Config.model_validate(data)
 
     def with_machine_agent_overrides(
-        self, *, effort: str | None = None, max_usd: float | None = None
+        self,
+        *,
+        effort: str | None = None,
+        max_usd: float | None = None,
+        max_percent: float | None = None,
     ) -> Config:
-        """Return a copy with a machine agent's effort and spend cap applied.
+        """Return a copy with a machine agent's effort and spend caps applied.
 
         Args:
             effort: The worker's effort, or None to keep the config's.
             max_usd: The `budget.max_usd` cap, or None to keep the config's.
+            max_percent: The `budget.max_percent` cap, or None to keep the config's.
 
         Returns:
             The config, revalidated.
@@ -408,6 +413,8 @@ class Config(pydantic.BaseModel):
             worker["effort"] = effort
         if max_usd is not None:
             data.setdefault("budget", {})["max_usd"] = max_usd
+        if max_percent is not None:
+            data.setdefault("budget", {})["max_percent"] = max_percent
         return Config.model_validate(data)
 
     def with_verify_command(self, argv: tuple[str, ...]) -> Config:

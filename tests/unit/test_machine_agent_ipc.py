@@ -49,7 +49,7 @@ _REQUEST_BYTES = (
     '"protect_paths":["/work/repo/m.asm.toml"],'
     '"commit_identity":{"name":"Machine Bot","email":"bot@example.com","trailer":null},'
     '"request":{"prompt":"review the queue","timeout_s":600.0,'
-    '"effort":"low","max_usd":1.5,"mode":"run",'
+    '"effort":"low","max_usd":1.5,"max_percent":null,"mode":"run",'
     '"state_name":"review","step_seq":2,"output_schema":"verdict",'
     '"schemas":{"verdict":{"ok":{"type":"bool","optional":false,"enum":null},'
     '"note":{"type":"str","optional":true,"enum":null}}}}}'
@@ -65,7 +65,8 @@ _RESULT = AgentExecResult(
 
 _RESULT_BYTES = (
     '{"reason":"finish_session","payload":{"ok":true,"notes":"queue drained"},'
-    '"usd":0.0588752,"usd_partial":false,"input_tokens":66084,"output_tokens":838}'
+    '"usd":0.0588752,"usd_partial":false,"input_tokens":66084,"output_tokens":838,'
+    '"plan_consumed":0.0}'
 )
 
 
@@ -113,6 +114,7 @@ def test_defaulted_request_omits_nothing() -> None:
         '{"cwd":"/w","root":"/w","overlay":{},"isolation":"none","transcript_dir":"/t",'
         '"events_log":null,"protect_paths":[],"commit_identity":null,'
         '"request":{"prompt":"p","timeout_s":1.0,'
-        '"effort":null,"max_usd":null,"mode":"agent","state_name":"","step_seq":0,'
+        '"effort":null,"max_usd":null,"max_percent":null,"mode":"agent","state_name":"",'
+        '"step_seq":0,'
         '"output_schema":null,"schemas":{}}}'
     )

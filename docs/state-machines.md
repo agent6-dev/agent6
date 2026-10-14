@@ -713,8 +713,8 @@ Its budget preflight judges the agent states' resolved model routes, including i
 
 A foreground polling run prints each wait's wake time, with the poke command on its first wait line only; `machine status` always includes the poke command for an armed wait.
 
-`machine create` prints dollars and input/output tokens summed across all drafting attempts; `--max-usd` caps that sum, and `--max-percent` and `--max-tokens-fallback` cap each attempt as they cap a run.
-A leading `~` marks dollar totals that omit unpriced usage; the `run`, `status` and `create` summaries do not report subscription-plan usage.
+`machine create` prints dollars, plan points and input/output tokens summed across all drafting attempts; `--max-usd` and `--max-percent` cap those sums, each attempt getting what is left, and `--max-tokens-fallback` caps each attempt as it caps a run.
+A leading `~` marks dollar totals that omit unpriced usage; the `run` and `status` summaries do not report subscription-plan usage.
 
 `machine check` names each problem with its state and rule (``state 'act': branch is not total (no final `else`)``).
 It warns when a `tool` state's binary is not on the jail's PATH.

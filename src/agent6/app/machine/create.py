@@ -245,6 +245,8 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     total_out = 0
     # One ledger across attempts: each subprocess is otherwise a fresh tracker. -1 = unlimited.
     create_cap = None if cfg.budget.max_usd == -1 else cfg.budget.max_usd
+    plan_cap = None if cfg.budget.max_percent == -1 else cfg.budget.max_percent
+    total_plan = 0.0
     attempt = 0
     for next_attempt in range(1, max_attempts + 1):
         # A cap binds spend: a plan model's attempts spend no dollars and keep going.
@@ -255,6 +257,12 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                 f" (spent {budget.format_usd(total_usd, partial=total_partial)}); stopping."
             )
             break
+        if total_plan > 0 and plan_cap is not None and total_plan >= plan_cap:
+            reporter.err(
+                f"machine create: budget max_percent ({plan_cap:g}) exhausted after"
+                f" {attempt} attempt(s) ({total_plan:g} plan points); stopping."
+            )
+            break
         attempt = next_attempt
         prompt = build_authoring_prompt(task, attempt=attempt, diagnostics=diagnostics)
         reporter.err(f"machine create: attempt {attempt}/{max_attempts}...")
@@ -262,6 +270,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         # effort="off": authoring transcribes a described design. Measured on kimi-k2.6: "low"
         # timed out on 3 of 3 attempts in 30-minute thinks; "off" drafted in 2.5 minutes for $0.02.
         remaining = None if create_cap is None else max(create_cap - total_usd, 0.0)
+        remaining_plan = None if plan_cap is None else max(plan_cap - total_plan, 0.0)
         result = runner(
             AgentRequest(
                 prompt=prompt,
@@ -269,10 +278,12 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                 mode="run",
                 effort="off",
                 max_usd=remaining,
+                max_percent=remaining_plan,
             ),
             events_log,
         )
         total_usd += result.usd
+        total_plan += result.plan_consumed
         total_partial |= result.usd_partial
         total_in += result.input_tokens
         total_out += result.output_tokens
@@ -331,8 +342,9 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         if result.reason in _CREATE_STOP_REASONS:
             break
 
+    points = f", {total_plan:g} plan points" if total_plan else ""
     reporter.err(
-        f"machine create: spent {budget.format_usd(total_usd, partial=total_partial)}"
+        f"machine create: spent {budget.format_usd(total_usd, partial=total_partial)}{points}"
         f" (in={total_in} tok, out={total_out} tok)"
     )
     # Each attempt's subprocess logs its own budget.update; the fold's last one must be the total.
