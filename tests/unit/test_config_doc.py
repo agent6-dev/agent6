@@ -14,6 +14,8 @@ import pathlib
 import sys
 import types
 
+from agent6.config import layer
+
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
@@ -58,3 +60,18 @@ def test_every_leaf_reaches_the_page() -> None:
 
     missing = sorted(path for path in gen.leaves() if not documented(path))
     assert not missing, f"config leaves with no row on the page: {missing}"
+
+
+def test_layer_table_names_the_config_file_layer_as_config_show_does(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The layer table names the `--config FILE` layer as `config show` and `config get` print it.
+
+    The page called it `explicit`, a name no surface prints.
+    """
+    explicit = tmp_path / "x.toml"
+    explicit.write_text('[sandbox]\nnetwork = "session"\n', encoding="utf-8")
+    printed = layer.load_effective(tmp_path, explicit).sources["sandbox.network"]
+    page = (_ROOT / "docs" / "config.md").read_text(encoding="utf-8")
+    rows = [line.split("|") for line in page.splitlines() if line.startswith("|")]
+    assert [row[1].strip() for row in rows if row[2].strip() == "`--config FILE`"] == [printed]

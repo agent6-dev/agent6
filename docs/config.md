@@ -13,7 +13,7 @@ The layers, lowest precedence first:
 | built-in defaults | (none) | (secure defaults, always present) |
 | global *(default location)* | `$XDG_CONFIG_HOME/agent6/config.toml` | `agent6 connect`, `agent6 model` |
 | per-repo *(override)* | `<state-dir>/<repo-id>/config.toml` | `agent6 init`, `agent6 config set --repo` |
-| explicit | `--config FILE` | `agent6 run --config FILE` |
+| flag | `--config FILE` | `agent6 run --config FILE` |
 | machine overlay | a machine file's `[config]` table | `agent6 config set --machine-file FILE` |
 
 A selected preset is inserted above the config layer that selected it; [Presets](#presets) gives the precedence rules.
