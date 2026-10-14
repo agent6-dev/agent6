@@ -51,16 +51,20 @@ class CommitRow:
 _ITER_SUBJECT_RE = re.compile(r"^agent6 iter \d+:\s*", re.IGNORECASE)
 
 
-def condense_commit_message(rows: tuple[CommitRow, ...], *, subject: str) -> str:
+def condense_commit_message(
+    rows: tuple[CommitRow, ...], *, subject: str, summary: str = "", fit: bool = True
+) -> str:
     """Fold per-step commits into one message that reads as a single authored commit.
 
     Args:
         rows: The commits, oldest first.
         subject: The run's task, headlined to its first clause.
+        summary: The summary the run finished on, "" when it did not finish.
+        fit: Cut the headline to the subject limit; False leaves the cut to the caller.
 
     Returns:
-        The headline, then the distinct per-step subjects as bullets with the
-        `agent6 iter N:` prefix and checkpoint noise stripped.
+        The headline, then the summary whole, else the distinct per-step subjects as
+        bullets with the `agent6 iter N:` prefix and checkpoint noise stripped.
     """
     bullets: list[str] = []
     seen: set[str] = set()
@@ -70,7 +74,10 @@ def condense_commit_message(rows: tuple[CommitRow, ...], *, subject: str) -> str
             continue
         seen.add(s.lower())
         bullets.append(s)
-    headline = _headline_subject(subject) or (bullets[0] if bullets else "agent6 run")
+    clause = _first_clause(subject)
+    headline = (_fit(clause) if fit else clause) or (bullets[0] if bullets else "agent6 run")
+    if summary.strip():
+        return f"{headline}\n\n{summary.strip()}"
     parts = [headline]
     if bullets:
         parts.append("")
@@ -79,6 +86,16 @@ def condense_commit_message(rows: tuple[CommitRow, ...], *, subject: str) -> str
 
 
 _SUBJECT_LIMIT = 72  # git's soft subject cap
+
+
+def _fit(text: str, limit: int = _SUBJECT_LIMIT) -> str:
+    """Return the text within the limit: whole words then `…`, a lone long word cut."""
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    # A cut that lands on a space already ends on a whole word.
+    whole = head[: limit - 1] if text[limit - 1].isspace() else head[: limit - 1].rpartition(" ")[0]
+    return (whole.rstrip() or head[: limit - 1]) + "…"
 
 
 def first_prose_line(text: str, *, fallback: str) -> str:
@@ -98,8 +115,8 @@ def first_prose_line(text: str, *, fallback: str) -> str:
 
 
 def agent6_subject(text: str, iteration: int, *, fallback: str = "verify passed") -> str:
-    """Return `agent6 iter N: <first line>`, the line cut at the subject limit."""
-    return f"agent6 iter {iteration}: {first_prose_line(text, fallback=fallback)[:_SUBJECT_LIMIT]}"
+    """Return `agent6 iter N: <first line>`, the line fitted to the subject limit."""
+    return f"agent6 iter {iteration}: {_fit(first_prose_line(text, fallback=fallback))}"
 
 
 def _is_testish(p: str) -> bool:
@@ -148,7 +165,7 @@ def conventional_commit_subject(changes: Sequence[tuple[str, str]], *, summary: 
         summary: The change's summary; its head is lowercased and a trailing period dropped.
 
     Returns:
-        The subject, capped at the subject limit.
+        The subject, fitted to the subject limit.
     """
     paths = [p for _, p in changes]
     if not paths:
@@ -165,15 +182,12 @@ def conventional_commit_subject(changes: Sequence[tuple[str, str]], *, summary: 
     head = f"{ctype}({scope}): " if scope else f"{ctype}: "
     subject = " ".join(summary.split()).rstrip(".")
     subject = (subject[:1].lower() + subject[1:]) if subject else "update"
-    return (head + subject)[:_SUBJECT_LIMIT]
+    return _fit(head + subject)
 
 
-def _headline_subject(task: str, *, limit: int = _SUBJECT_LIMIT) -> str:
-    """Return a subject from the task's first clause, capped at the limit with an ellipsis."""
+def _first_clause(task: str) -> str:
+    """Return the task's first clause on one line, uncut."""
     first_line = _ITER_SUBJECT_RE.sub("", task_text.task_headline(task)).strip()
     match = re.search(r"[.!?](?:\s|$)", first_line)
     clause = first_line[: match.start()] if match else first_line
-    clause = " ".join(clause.split())
-    if len(clause) <= limit:
-        return clause
-    return clause[: limit - 1].rstrip() + "…"
+    return " ".join(clause.split())

@@ -5,6 +5,8 @@
 A run whose work landed continues from the checkout's HEAD: the next commit holds only new
 work, and the manifest's base moves there so every reader of `base_sha` (`sessions diff` and
 `commits`, the squash message, the review diff, the next merge, a later fork) sees the same.
+Where the workspace's HEAD does not hold the landing commit (a worktree run, a fork), the chain
+stays as it is and the base moves to the commit the next merge starts from.
 A run branch the operator committed on is off the chain, and the resume refuses.
 """
 
@@ -14,6 +16,8 @@ import dataclasses
 import pathlib
 
 from agent6 import git_ops
+from agent6.app import merge
+from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import wire
 
@@ -102,6 +106,39 @@ def continue_from_head(
         identity=identity,
         also_branch=wire.existing_run_branch(manifest, cwd) or None,
     )
+
+
+def unlanded_base(
+    cwd: pathlib.Path,
+    layout: sessions_layout.SessionLayout,
+    manifest: sessions_manifest.SessionManifest,
+) -> str | None:
+    """Return where the run's unlanded work starts when its base branch holds earlier work.
+
+    For a run whose chain continues as it is: the tip its own merge landed, else the base
+    `merge.landed_base` gives a fork of a squash-merged run.
+
+    Args:
+        cwd: The checkout.
+        layout: The session's directory layout.
+        manifest: The session's manifest.
+
+    Returns:
+        The commit, or None when the base the manifest records already says so.
+    """
+    ref = wire.commits_ref(manifest, cwd)
+    tip = git_ops.chain_tip(cwd, ref) if ref else None
+    if tip is None or not manifest.base_sha or manifest.git_control != "agent6":
+        return None
+    stamp, target = manifest.merged, manifest.base_branch
+    own = stamp is not None and stamp.into == target and stamp.tip
+    if stamp is not None and own and git_ops.is_ancestor(cwd, stamp.tip, tip):
+        base = stamp.tip
+    else:
+        base = merge.landed_base(cwd, layout, manifest, target, tip)
+    if not base or base == manifest.base_sha:
+        return None
+    return base if git_ops.is_ancestor(cwd, manifest.base_sha, base) else None
 
 
 def branch_off_the_chain(

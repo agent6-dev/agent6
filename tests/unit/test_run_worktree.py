@@ -249,6 +249,40 @@ def test_merge_lands_the_work_and_prune_removes_the_worktree(
     assert _worktrees(repo) == [str(repo)]
 
 
+def test_a_worktree_run_resumed_after_its_merge_shows_only_its_unlanded_work(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """A worktree run resumed after its merge diffs, lists and lands the same new work.
+
+    The worktree's HEAD never holds the landing commit, so the run kept the base it started
+    on: `sessions diff` and `sessions commits` showed both executions while the next merge
+    landed only the second.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    _script(monkeypatch, _edit("one.txt", "1\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "wt-LAND01", "add one.txt"]) == 0
+    chain = git_ops.chain_ref_for("wt-LAND01")
+    first_tip = git_ops.chain_tip(repo, chain)
+    assert first_tip is not None
+    assert cli_main(["sessions", "merge", "wt-LAND01"]) == 0
+    landed = _git(repo, "rev-parse", "main").strip()
+
+    _script(monkeypatch, _edit("two.txt", "2\n"))
+    assert cli_main(["resume", "wt-LAND01", "--steer", "add two.txt"]) == 0
+    assert "earlier work landed on main" in capfd.readouterr().err
+
+    manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-LAND01"))
+    assert manifest.base_sha == first_tip and manifest.base_branch == "main"
+    assert cli_main(["sessions", "diff", "wt-LAND01", "--stat"]) == 0
+    shown = capfd.readouterr().out
+    assert "two.txt" in shown and "one.txt" not in shown
+    assert cli_main(["sessions", "commits", "wt-LAND01"]) == 0
+    listed = capfd.readouterr().out
+    assert listed.strip() and first_tip[:12] not in listed
+    assert cli_main(["sessions", "merge", "wt-LAND01"]) == 0
+    assert _git(repo, "diff", "--name-only", landed, "main").split() == ["two.txt"]
+
+
 def test_rm_removes_the_worktree_with_the_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

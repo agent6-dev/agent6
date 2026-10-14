@@ -304,6 +304,33 @@ def test_a_fork_from_a_turn_before_the_source_landed_starts_at_that_turn(
     assert child.base_sha == child.forked_from_sha == start
 
 
+def test_a_resumed_fork_of_a_squash_merged_run_shows_only_its_own_work(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """A fork resumed after its source landed diffs and lands only the fork's own work.
+
+    The fork kept its source's base, so `sessions diff` showed the source's landed file
+    while the fork's merge landed only its own.
+    """
+    repo = _setup(tmp_path, monkeypatch)
+    run = ["run", "--session-id", "land-SRC001", "t"]
+    assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
+    fork = ["fork", "land-SRC001", "--no-run", "--session-id", "land-SRC002"]
+    assert cli_main(fork) == 0
+    assert cli_main(["sessions", "merge", "land-SRC001"]) == 0
+    landed = _git(repo, "rev-parse", "main")
+
+    resume = ["resume", "land-SRC002", "--steer", "more"]
+    assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
+    capfd.readouterr()
+
+    assert cli_main(["sessions", "diff", "land-SRC002", "--stat"]) == 0
+    shown = capfd.readouterr().out
+    assert "y.txt" in shown and "z.txt" not in shown
+    assert cli_main(["sessions", "merge", "land-SRC002"]) == 0
+    assert _changed(repo, landed, "main") == ["y.txt"]
+
+
 def test_a_run_merged_into_another_branch_continues_there_once_it_is_checked_out(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -111,7 +111,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "--message",
         "-m",
         default=None,
-        help="Use this commit message for a squash or merge. Default: condensed session summary.",
+        help=(
+            "Use this commit message for a squash or merge. Default: a squash follows"
+            " git.commit.squash.message; a merge uses `Merge <run branch>`."
+        ),
     )
 
     sessions_review = _common._sub(

@@ -1195,6 +1195,37 @@ def test_condense_subject_truncates_a_clauseless_run_on_with_ellipsis(
     assert len(subject) <= 72 and subject.endswith("…")
 
 
+def test_condense_subject_cuts_a_long_clause_at_a_word_boundary() -> None:
+    """A subject over the limit ends on a whole word of the task, then the ellipsis.
+
+    The cut fell at character 71, mid-word.
+    """
+    task = (
+        "Rename every helper in textkit so the public names read as verbs and the private"
+        " ones keep their leading underscore"
+    )
+    subject = commit_message.condense_commit_message((), subject=task).splitlines()[0]
+    assert len(subject) <= 72 and subject.endswith("…")
+    assert task.startswith(subject[:-1] + " ")
+
+
+def test_condense_body_is_the_finish_summary_when_the_run_has_one() -> None:
+    """The finish summary is the body, whole; the step bullets serve a run without one."""
+    rows = (commit_message.CommitRow(sha="a" * 40, subject="agent6 iter 1: add a", message=""),)
+    summary = "Added a.\n\nVerified with the unit tests."
+    message = commit_message.condense_commit_message(rows, subject="do it", summary=summary)
+    assert message == f"do it\n\n{summary}"
+    assert commit_message.condense_commit_message(rows, subject="do it") == "do it\n\n- add a"
+
+
+def test_conventional_subject_cuts_at_a_word_boundary() -> None:
+    """A long summary behind the prefix is cut once, at a whole word."""
+    summary = "rename every helper in textkit so the public names read as verbs and nouns stay"
+    got = commit_message.conventional_commit_subject([("M", "src/pkg/a.py")], summary=summary)
+    assert len(got) <= 72 and got.endswith("…") and got.count("…") == 1
+    assert f"fix(a): {summary}".startswith(got[:-1] + " ")
+
+
 def test_condense_subject_drops_only_a_markdown_heading_mark() -> None:
     """A TASK.md task's `# Title` marks are dropped from the squash headline; a bare `#` stays."""
     assert (

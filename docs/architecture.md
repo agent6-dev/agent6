@@ -356,6 +356,8 @@ A resume whose merge stamp covers everything the run committed, in a checkout wh
 The chain ref and run branch only move forward: to HEAD after a `merge` or `ff` landing, else to a commit that joins the landed tip to HEAD's tree, so the earlier steps stay reachable for `fork --at-turn`.
 The manifest's `base_sha` and the merge stamp's tip move to that commit, so `sessions diff`, `sessions commits`, the squash message, the review diff and the next merge read only the new work.
 `base_branch` moves to the branch the merge landed on when the checkout has it out.
+Where the workspace's HEAD does not hold the landing commit (a worktree run, a fork of a squash-merged run), the chain stays as it is and a resume moves `base_sha` alone, to the commit the next merge into `base_branch` starts from.
+The squash message reads the commits after the base its own merge starts from, so it names what that merge lands.
 A run branch that is not at the chain tip (a commit made on `agent6/<id>`) refuses the resume, naming the commit; `--force` continues on the chain and leaves the branch.
 
 ## Session state on disk

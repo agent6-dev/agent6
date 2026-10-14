@@ -17,7 +17,7 @@ from collections.abc import Callable
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, event_log, git_ops, secret_store
+from agent6 import commit_message, event_log, git_ops, secret_store, viewmodel
 from agent6.app import _setup, providers, stamps
 from agent6.config import Config, ConfigError
 from agent6.providers import ProviderError, TranscriptSink, call_for_text
@@ -119,6 +119,7 @@ def dispatch_merge(
     events: event_log.EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
     merge_base: str | None = None,
+    summary: str = "",
 ) -> git_ops.MergeResult:
     """Run the strategy on the target through `plumb_merge`.
 
@@ -140,17 +141,21 @@ def dispatch_merge(
         events: The run's event sink, when the merge runs inside one.
         warn: Where a degraded message is reported.
         merge_base: The base to merge from, when git's own does not serve.
+        summary: The summary the run finished on, the body of an `agent6` or
+            `conventional` squash message.
 
     Returns:
         The plumbing's result.
     """
     if strategy == "squash" and message is None:
+        # The message names what this merge lands: the commits after the landed base.
         message = _squash_message(
             cwd,
             cfg,
             manifest,
-            base_sha=base_sha,
+            base_sha=merge_base or base_sha,
             run_branch=run_branch,
+            summary=summary,
             transcript_dir=transcript_dir,
             budget=budget,
             events=events,
@@ -222,6 +227,7 @@ def _squash_message(
     *,
     base_sha: str,
     run_branch: str,
+    summary: str,
     transcript_dir: pathlib.Path | None,
     budget: agent6_budget.BudgetTracker | None,
     events: event_log.EventSink | None,
@@ -238,14 +244,17 @@ def _squash_message(
             for r in rows
         ]
         return "\n".join(parts) if rows else None
-    base_msg = commit_message.condense_commit_message(
-        rows, subject=manifest.user_task or "agent6 run"
-    )
+    task = manifest.user_task or "agent6 run"
     if style == "conventional":
+        # The prefix goes on the uncut clause, so the subject is cut once.
+        whole = commit_message.condense_commit_message(
+            rows, subject=task, summary=summary, fit=False
+        ).splitlines()
         subject = commit_message.conventional_commit_subject(
-            git_ops.range_name_status(cwd, base_sha, run_branch), summary=base_msg.splitlines()[0]
+            git_ops.range_name_status(cwd, base_sha, run_branch), summary=whole[0]
         )
-        return "\n".join([subject, *base_msg.splitlines()[1:]])
+        return "\n".join([subject, *whole[1:]])
+    base_msg = commit_message.condense_commit_message(rows, subject=task, summary=summary)
     if style == "model":
         msg = _model_squash_message(
             cwd,
@@ -253,7 +262,7 @@ def _squash_message(
             rows,
             base_sha=base_sha,
             run_branch=run_branch,
-            task=manifest.user_task or "agent6 run",
+            task=task,
             transcript_dir=transcript_dir,
             budget=budget,
             events=events,
@@ -348,6 +357,12 @@ def _model_squash_message(
     return msg or None
 
 
+def _finish_summary(layout: sessions_layout.SessionLayout) -> str:
+    """Return the summary the run's last execution finished on, "" when it ended otherwise."""
+    state = viewmodel.fold_session(viewmodel.tail_events(layout.logs_path, follow=False))
+    return state.finish_summary if state.end_reason == "finish_session" else ""
+
+
 NO_BASE_SHA = "the manifest records no base_sha; nothing to merge from"
 
 
@@ -436,6 +451,7 @@ def execute_merge(
             events=events,
             warn=warn,
             merge_base=merge_base,
+            summary=_finish_summary(layout),
         )
     except git_ops.GitError as exc:
         return MergeOutcome("error", error=f"merge failed: {exc}")

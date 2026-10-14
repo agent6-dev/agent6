@@ -185,6 +185,12 @@ def test_a_fork_of_a_squash_merged_run_lands_only_its_own_work(
     landed = _git(tmp_path, "show", "main:f.py")
     assert '"""Zero for empty."""' in landed and "return 0" in landed
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "2"
+    # The message names the fork's own step; the parent's landed with the parent.
+    assert _git(tmp_path, "log", "-1", "--format=%B", "main").splitlines() == [
+        "add the docstring",
+        "",
+        "- docstring",
+    ]
 
 
 def test_runs_merge_squash_is_one_commit_and_records_manifest(
@@ -923,6 +929,85 @@ def test_merge_squash_default_style_writes_the_run_message(
     assert "add a" in head and "add b" in head
 
 
+def _write_finish_log(tmp_path: pathlib.Path, session_id: str, *, end_reason: str) -> str:
+    """Write a log holding one `finish_session` call and the given end; return its summary."""
+    summary = "Added a.txt with one line.\n\nThe unit tests pass."
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id=session_id
+    )
+    events = [
+        {"type": "session.start", "mode": "run"},
+        {"type": "tool.call", "name": "finish_session", "args": {"summary": summary}},
+        {"type": "session.end", "reason": end_reason, "all_passed": True},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    return summary
+
+
+def test_merge_squash_body_is_the_finish_summary(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The squash body is the summary the run finished on.
+
+    A run whose steps were all `checkpoint` landed with no body, and one with prose steps
+    landed their first lines in place of the summary.
+    """
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-FIN111", commits=[("a.txt", "a\n", "agent6 iter 6: checkpoint")])
+    summary = _write_finish_log(tmp_path, "run-FIN111", end_reason="finish_session")
+    assert main(["sessions", "merge", "run-FIN111", "--strategy", "squash"]) == 0
+    assert _head_message(tmp_path) == f"implement the thing\n\n{summary}"
+
+
+def test_merge_squash_ignores_a_finish_the_run_did_not_end_on(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A finish call the run did not end on supplies no body: the steps do."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-FIN222", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    summary = _write_finish_log(tmp_path, "run-FIN222", end_reason="steer_abort")
+    assert main(["sessions", "merge", "run-FIN222", "--strategy", "squash"]) == 0
+    head = _head_message(tmp_path)
+    assert "- add a" in head and summary not in head
+
+
+def test_merge_squash_conventional_cuts_the_task_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A long task under the conventional style is cut once, at a whole word.
+
+    The headline was cut at 72, then cut again behind the prefix, mid-word.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
+        '[git.commit.squash]\nmessage = "conventional"\n', encoding="utf-8"
+    )
+    _setup_run(tmp_path, "run-CNV222", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    task = (
+        "rename every helper in textkit so the public names read as verbs and the private"
+        " ones keep their underscore"
+    )
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="run-CNV222"
+    )
+    manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    layout.manifest_path.write_text(json.dumps({**manifest, "user_task": task}), encoding="utf-8")
+    assert main(["sessions", "merge", "run-CNV222", "--strategy", "squash"]) == 0
+    subject = _head_message(tmp_path).splitlines()[0]
+    assert len(subject) <= 72 and subject.count("…") == 1
+    assert f"feat: {task}".startswith(subject[:-1] + " ")
+
+
+def test_merge_help_names_the_default_message(capsys: pytest.CaptureFixture[str]) -> None:
+    """`sessions merge --help` says where the default message comes from."""
+    with pytest.raises(SystemExit):
+        main(["sessions", "merge", "--help"])
+    out = " ".join(capsys.readouterr().out.split())
+    assert "git.commit.squash.message" in out and "condensed session summary" not in out
+
+
 def test_merge_squash_model_style_degrades_on_a_budget_fault(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1195,6 +1280,11 @@ def test_a_resumed_run_merges_again_from_its_own_landed_tip(
     landed = _git(tmp_path, "show", "main:f.py")
     assert '"""Zero for empty."""' in landed and "return 0" in landed
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "2"
+    # The message names what this merge lands; the first step landed with the first merge.
+    assert _git(tmp_path, "log", "-1", "--format=%B", "main").splitlines()[1:] == [
+        "",
+        "- docstring",
+    ]
 
 
 def test_the_branch_verbs_refuse_a_fan_out_coordinator_by_name(

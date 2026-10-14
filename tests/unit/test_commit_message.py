@@ -37,6 +37,20 @@ def test_strips_leading_thinking_block() -> None:
     assert out == "agent6 iter 4: Fix the off-by-one in foo()."
 
 
+def test_a_long_first_line_is_cut_at_a_word_boundary() -> None:
+    """A step subject over the limit keeps whole words and ends with the ellipsis.
+
+    The cut fell at character 72, mid-word and unmarked.
+    """
+    line = (
+        "Implemented the append path for the journal and kept the existing rotation keeping"
+        " the newest three files"
+    )
+    body = commit_message.agent6_subject(line, 3).removeprefix("agent6 iter 3: ")
+    assert len(body) <= 72 and body.endswith("…")
+    assert line.startswith(body[:-1] + " ")
+
+
 def test_truncates_long_subject() -> None:
     long = "x" * 200
     out = commit_message.agent6_subject(long, 5)

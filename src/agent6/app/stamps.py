@@ -292,6 +292,12 @@ def stamp_continued_from(session_dir: pathlib.Path, sha: str, branch: str) -> No
     )
 
 
+def stamp_base(session_dir: pathlib.Path, sha: str) -> None:
+    """Move the run's base to the commit its unlanded work starts at; its chain stays."""
+    m = manifest.read_manifest(session_dir)
+    write_manifest(session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"base_sha": sha}))
+
+
 def stamp_includes(session_dir: pathlib.Path, included: manifest.IncludedRun) -> None:
     """Record the unmerged run whose work this run started on and carries in its commits."""
     m = manifest.read_manifest(session_dir)

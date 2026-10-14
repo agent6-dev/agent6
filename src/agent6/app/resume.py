@@ -638,6 +638,13 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 f"this run's earlier work landed on {landed.into}; continuing from HEAD"
                 f" ({landed.head[:12]})"
             )
+        elif mode == "run" and (moved := _resume_chain.unlanded_base(cwd, layout, manifest)):
+            resume_base_sha = moved
+            stamps.stamp_base(layout.session_dir, moved)
+            reporter.note(
+                f"this run's earlier work landed on {manifest.base_branch}; its diff and"
+                f" next merge start at {moved[:12]}"
+            )
         # Every preflight passed: the operator's new choices are recorded from here.
         if preset:
             stamps.stamp_preset(layout.session_dir, preset)
