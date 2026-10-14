@@ -206,11 +206,11 @@ TASK_FINISH_PATIENCE = 3
 # Nudge at the first threshold, stop at the second; a green verify alone never stops a run.
 # Generous on purpose: a tight window would cut off a worker reading toward its next edit.
 VERIFY_SETTLED_NUDGE_AFTER = 3
-VERIFY_SETTLED_STOP_AFTER = 6
+VERIFY_SETTLED_STOP_AFTER = 12
 
 VERIFY_SETTLED_NUDGE = (
     "[harness settled] Changes are committed and the last three turns changed"
-    " nothing; finish_session ends the run, and at six unchanged turns the"
+    " nothing; finish_session ends the run, and at twelve unchanged turns the"
     " run ends on its own."
 )
 

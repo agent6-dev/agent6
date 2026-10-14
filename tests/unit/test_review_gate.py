@@ -605,7 +605,7 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     assert any("[harness verify] finish" in n for n in notices)
     assert any("the next red finish ends the run" in n for n in notices)
     # The return is spent: the next settled end stands, red and all.
-    state.settled.idle = 6
+    state.settled.idle = 12
     turn = _idle_turn()
     _settle(wf, state, turn)
     assert [stop.soft for stop in turn.stops] == ["verify_settled"]

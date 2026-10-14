@@ -6204,7 +6204,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
                     tool_id="e1",
                 )
             # Then the worker goes idle: read-only calls, no edits, no finish.
-            return _tool_resp("read_file", {"path": "a.py"}, tool_id=f"r{self.calls}")
+            return _tool_resp("read_file", {"path": f"a{self.calls}.py"}, tool_id=f"r{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
@@ -6504,7 +6504,9 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
                     {"path": "pyproject.toml", "edits": [{"kind": "create", "new_string": "x"}]},
                     tool_id="e1",
                 )
-            return _tool_resp("read_file", {"path": "pyproject.toml"}, tool_id=f"r{self.calls}")
+            return _tool_resp(
+                "read_file", {"path": f"f{self.calls}.toml"}, tool_id=f"r{self.calls}"
+            )
 
     class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
@@ -6581,7 +6583,9 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
                     {"path": "pyproject.toml", "edits": [{"kind": "create", "new_string": "x"}]},
                     tool_id="e1",
                 )
-            return _tool_resp("read_file", {"path": "pyproject.toml"}, tool_id=f"r{self.calls}")
+            return _tool_resp(
+                "read_file", {"path": f"f{self.calls}.toml"}, tool_id=f"r{self.calls}"
+            )
 
     class DispatcherStub(_StubDispatcher):
         def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:

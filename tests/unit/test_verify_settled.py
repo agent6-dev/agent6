@@ -43,10 +43,21 @@ def test_idle_turns_draw_one_nudge_then_a_soft_declared_stop() -> None:
     stop = stops[0]
     assert stop.soft == "verify_settled" and stop.declared == "settled"
     assert (
-        stop.log == f"LOOP: verify_settled at iter {_nudges.VERIFY_SETTLED_STOP_AFTER + 1} (idle 6)"
+        stop.log
+        == f"LOOP: verify_settled at iter {_nudges.VERIFY_SETTLED_STOP_AFTER + 1} (idle 12)"
     )
     end = stop.end()
     assert end.reason == "verify_settled" and end.completed and end.verdict == "passed"
+
+
+def test_the_stop_waits_twelve_idle_turns_and_the_nudge_says_so() -> None:
+    state = _green_state()
+    ctx = turn_context(tree_sha=lambda: "tree")
+    answers = [_guards.verify_settled(_turn(i), state, ctx) for i in range(1, 14)]
+    kinds = [type(a) for a in answers]
+    # Turn 1 measures the tree; the nudge lands at idle 3 (turn 4), the stop at idle 12 (turn 13).
+    assert kinds == [type(None)] * 3 + [_advice.Nudge] + [type(None)] * 8 + [_advice.Stop]
+    assert "twelve unchanged turns" in _nudges.VERIFY_SETTLED_NUDGE
 
 
 def test_progress_restarts_the_streak_and_a_verify_run_is_neutral() -> None:
