@@ -300,6 +300,39 @@ def test_liveworld_passes_protect_paths_to_jail(
     assert guarded[1] in seen[-1].extra_protect_paths
 
 
+def test_a_bundle_in_a_subdirectory_runs_its_own_scripts(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`machine check` resolves `scripts/` against the bundle, so the run does too.
+
+    A bundle under `machines/` run from the repository root otherwise passes check and fails
+    every tool step on a script the jail's cwd does not hold.
+    """
+    seen = _patch_jail(monkeypatch)
+    bundle = tmp_path / "machines"
+    (bundle / "scripts").mkdir(parents=True)
+    factory = run.machine_tool_policy_factory(
+        {"": StateConfig(Config(), frozenset(), "strict")},
+        tmp_path,
+        protect_paths=(),
+        data_dir=None,
+        bundle_dir=bundle,
+    )
+    world = live_world.LiveWorld(
+        cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), tool_policy=factory
+    )
+    world.run_tool(
+        ("python3", "scripts/count.py", "./scripts/x.sh", "notes/scripts", "/bin/true"), 5.0
+    )
+    assert seen[-1].argv == (
+        "python3",
+        "machines/scripts/count.py",
+        "machines/scripts/x.sh",
+        "notes/scripts",
+        "/bin/true",
+    )
+
+
 # --- machine-file immutability (_machine_protect_paths) --------------------
 
 

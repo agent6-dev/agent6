@@ -289,7 +289,8 @@ network = "host"                    # except this reviewed tool
 
 **Script bundles.** A machine is a bundle: the `.asm.toml` plus an optional sibling `scripts/` of operator-reviewed helpers (the kind `machine create` may draft).
 
-- a `tool` references one by a relative path starting `scripts/` (`command = ["bash", "scripts/fetch.sh"]`), resolved against the jail's mounted cwd: keep the bundle at or under the directory you run `agent6` from
+- a `tool` references one by a relative path starting `scripts/` (`command = ["bash", "scripts/fetch.sh"]`), which names the bundle's own `scripts/`; every other relative path resolves against the jail's cwd, the directory you run `agent6` from
+    - keep the bundle at or under that directory
 - a bare binary in `command[0]` resolves against the jail PATH (the set `machine check` probes and `run_command` uses), never the host `PATH`; absolute paths for anything elsewhere
 - `machine check` validates the bundle: every `scripts/` entry and static command reference resolves inside it (escaping symlinks rejected)
 - `strict`: the bundle is RO-bound in every jail; a tool or agent cannot rewrite its own machine logic mid-run

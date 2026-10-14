@@ -160,6 +160,7 @@ def machine_tool_policy_factory(
     *,
     protect_paths: tuple[pathlib.Path, ...],
     data_dir: pathlib.Path | None,
+    bundle_dir: pathlib.Path | None = None,
 ) -> ToolPolicyFactory:
     """Return the per-call tool-jail policy builder for a machine.
 
@@ -173,6 +174,8 @@ def machine_tool_policy_factory(
         cwd: The repository.
         protect_paths: The bundle's read-only paths.
         data_dir: The machine's writable scratch, when it has one.
+        bundle_dir: The directory holding the machine file, which a command's `scripts/`
+            path names; None when it is the repository.
 
     Returns:
         The builder.
@@ -196,6 +199,8 @@ def machine_tool_policy_factory(
         if resolved is None:
             raise jail.JailUnavailableError(f"no config was resolved for state {state!r}")
         cfg, isolation = resolved.config, resolved.isolation
+        if bundle_dir is not None:
+            argv = _bundle.anchored_argv(argv, bundle_dir, cwd)
         env = {**env_base, **{k: os.environ[k] for k in pass_env if k in os.environ}}
         # A tool's processes die with its state, so its network is its own, never a shared one.
         network = tools_policy.resolve_network(cfg, isolation)
@@ -494,7 +499,11 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 journal=journal,
                 agent_runner=agent_runner,
                 tool_policy=machine_tool_policy_factory(
-                    configs.states, cwd, protect_paths=protect_paths, data_dir=data_dir
+                    configs.states,
+                    cwd,
+                    protect_paths=protect_paths,
+                    data_dir=data_dir,
+                    bundle_dir=path.parent,
                 ),
                 # A machine that writes runs its tool states in its own tree,
                 # so an edit-then-check loop sees the run states' commits.

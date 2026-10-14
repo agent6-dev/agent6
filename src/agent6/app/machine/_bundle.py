@@ -31,6 +31,32 @@ def _bundle_script_ref(element: str) -> str | None:
     return None
 
 
+def anchored_argv(
+    argv: tuple[str, ...], bundle: pathlib.Path, cwd: pathlib.Path
+) -> tuple[str, ...]:
+    """Return a tool's argv with each bundle script spelled from the jail's cwd.
+
+    `validate_bundle` resolves `scripts/x` against the bundle, so a bundle in a subdirectory
+    of the working directory runs the scripts the check validated.
+
+    Args:
+        argv: The rendered command.
+        bundle: The directory holding the machine file.
+        cwd: The jail's working directory.
+
+    Returns:
+        The argv; unchanged when the bundle is the cwd, or sits outside it.
+    """
+    try:
+        offset = bundle.resolve().relative_to(cwd.resolve())
+    except ValueError:
+        return argv
+    return tuple(
+        str(offset / ref) if (ref := _bundle_script_ref(element)) is not None else element
+        for element in argv
+    )
+
+
 def _check_scripts_dir(scripts_dir: pathlib.Path, bundle: pathlib.Path) -> list[str]:
     """Return a problem per entry under `scripts/` that does not resolve inside the bundle."""
     if not scripts_dir.is_dir():
