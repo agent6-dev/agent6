@@ -92,7 +92,7 @@ struct Policy {
     /// Paths masked from the child even when a broader grant covers them
     /// (agent6's own config + state dirs, plus operator additions):
     /// a dir masks as an empty tmpfs, a file as an empty file, both read-only.
-    /// Masked LAST, after every bind, so no grant exposes them from above; a policy
+    /// Masked last, after every bind, so no grant exposes them from above; a policy
     /// grant BENEATH a hidden root is then re-bound through the mask (the
     /// machine data contract: explicit holes in a default-deny cover).
     #[serde(default)]
@@ -1374,7 +1374,7 @@ fn bind_grant(grant: &Path, source: &Path, new_root: &Path, read_only: bool) -> 
 
 /// Mask the policy's hidden paths out of the assembled root: an empty RO
 /// tmpfs over a dir, a RO bind of one empty file over a file, so a read
-/// returns nothing and a write fails. Runs after EVERY bind so
+/// returns nothing and a write fails. Runs after every bind so
 /// no grant (workspace, extras, tools) exposes a hidden path from above --
 /// mount order means the mask always wins. Policy grants BENEATH a hidden
 /// root are then re-bound through the mask at their REAL path (the contract
@@ -1509,7 +1509,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // and /tmp (a fresh private tmpfs, see setup_rootfs) are writable, and
     // /usr /bin /lib /lib64 /etc /dev are read-only bind mounts.
     // ABI::V3 (not V1/V2): V2 added LANDLOCK_ACCESS_FS_REFER, without which
-    // EVERY cross-directory rename/hardlink fails EXDEV -- that breaks `cargo`
+    // every cross-directory rename/hardlink fails EXDEV -- that breaks `cargo`
     // (hardlinks build artifacts between target/ subdirs), `mv` across dirs, and
     // similar tools even inside fully-writable paths. V3 added
     // LANDLOCK_ACCESS_FS_TRUNCATE, which MUST be handled: Landlock leaves any
