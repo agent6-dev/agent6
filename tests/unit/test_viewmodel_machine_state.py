@@ -351,6 +351,9 @@ def test_machine_verb_refusal_is_one_reading_per_state_and_verb(tmp_path: pathli
     assert "no open wait" in machine_state.machine_verb_refusal(d, "tiny", "poke")
     for verb in ("stop", "steer", "answer"):
         assert "is not running" in machine_state.machine_verb_refusal(d, "tiny", verb), verb
+    assert "resumes with `agent6 machine run tiny`" in machine_state.machine_verb_refusal(
+        d, "tiny", "stop"
+    )
     # Live in an armed wait: stop and poke reach it; answer has no prompt and
     # steer has no agent loop.
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")

@@ -550,7 +550,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         reporter.out(
             f"STOPPED: {spec.machine} parked in {result.state!r}"
             f" after {_transitions(result.transitions)} ({result.reason});"
-            " resume with `agent6 machine run`."
+            f" resume with `agent6 machine run {spec.machine}`."
         )
     else:
         spend, _ = machine_state.machine_spend(journal.read(), root, alive=False)

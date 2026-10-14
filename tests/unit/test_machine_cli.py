@@ -151,8 +151,11 @@ def test_status_of_a_parked_instance_with_no_worker_names_the_resume_command(
     out = capsys.readouterr().out
     assert "wakes it now" not in out
     assert "parked in 'poll' with no worker running (due at " in out
-    assert "resume with `agent6 machine run`" in out
+    assert "resume with `agent6 machine run waiter_delayed`" in out
     assert "a poke wakes it on that run: agent6 machine poke waiter_delayed" in out
+    # The command as printed resumes the instance: `machine run` takes the name.
+    assert main(["machine", "run", "waiter_delayed", "--exit-on-wait"]) == 0
+    assert "WAITING: waiter_delayed paused in 'poll'" in capsys.readouterr().out
 
 
 def test_status_after_an_operator_stop_names_the_resume_command(
@@ -175,14 +178,16 @@ def test_status_after_an_operator_stop_names_the_resume_command(
         assert main(["machine", "run", str(f)]) == 0
     finally:
         stopper.join()
-    assert "STOPPED: waiter_delayed parked in 'poll'" in capsys.readouterr().out
+    stopped = capsys.readouterr().out
+    assert "STOPPED: waiter_delayed parked in 'poll'" in stopped
+    assert "resume with `agent6 machine run waiter_delayed`." in stopped
 
     assert main(["machine", "status", "waiter_delayed"]) == 0
 
     out = capsys.readouterr().out
     assert "wakes it now" not in out
     assert "parked in 'poll' with no worker running (due at " in out
-    assert "resume with `agent6 machine run`" in out
+    assert "resume with `agent6 machine run waiter_delayed`" in out
 
 
 def test_attach_to_a_parked_instance_with_no_worker_names_the_resume_command(
@@ -198,7 +203,10 @@ def test_attach_to_a_parked_instance_with_no_worker_names_the_resume_command(
 
     out = capsys.readouterr().out
     assert "poke to resume" not in out
-    assert "WAITING in 'poll' with no worker running: resume with `agent6 machine run`" in out
+    assert (
+        "WAITING in 'poll' with no worker running: resume with"
+        " `agent6 machine run waiter_delayed`" in out
+    )
 
 
 def test_status_hints_poke_for_a_live_foreground_wait(
@@ -556,6 +564,7 @@ def test_watch_exits_on_a_stopped_machine_without_a_pid_file(
     err = capsys.readouterr().err
     # An operator's `machine stop` leaves the same dir as a crash: the line asserts no cause.
     assert "STOPPED in 'route': no worker is running" in err
+    assert "resume with `agent6 machine run tiny`" in err
     assert "exited" not in err
 
 

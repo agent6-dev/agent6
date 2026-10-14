@@ -665,7 +665,7 @@ def verb_refusals(
         return {
             "stop": (
                 f"machine {name!r} is not running; nothing to stop (a parked instance resumes"
-                " with `agent6 machine run`)"
+                f" with `agent6 machine run {name}`)"
             ),
             "steer": (
                 f"machine {name!r} is not running, so no agent state would read a steer"
@@ -725,7 +725,7 @@ def wait_line(machine_id: str, state: str, wake_at: str, *, alive: bool) -> str:
         due = f"due at {wake_at}" if wake_at else "waiting for a poke"
         return (
             f"parked in {state!r} with no worker running ({due}): resume with"
-            f" `agent6 machine run`; a poke wakes it on that run: {poke}"
+            f" `agent6 machine run {machine_id}`; a poke wakes it on that run: {poke}"
         )
     if wake_at:
         return f"waiting in {state!r}: wakes at {wake_at}; a poke wakes it now: {poke}"

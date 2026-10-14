@@ -408,14 +408,14 @@ def _watch_liveness_exit(root: pathlib.Path, machine_id: str, ms: MachineState) 
     if word == "waiting" and not ipc.worker_is_alive(root):
         print(
             f"\nWAITING in {current!r} with no worker running: resume with"
-            f" `agent6 machine run`; a poke wakes it on that run:"
+            f" `agent6 machine run {machine_id}`; a poke wakes it on that run:"
             f" agent6 machine poke {machine_id} [--message TEXT]"
         )
         return 0
     if word == "stopped":
         print(
             f"\nSTOPPED in {current!r}: no worker is running and the machine has not ended;"
-            " resume with `agent6 machine run`",
+            f" resume with `agent6 machine run {machine_id}`",
             file=sys.stderr,
         )
         return 1
