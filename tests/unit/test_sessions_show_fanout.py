@@ -459,23 +459,47 @@ def _log(repo: pathlib.Path, session_id: str, events: list[dict[str, object]]) -
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
 
-@pytest.mark.parametrize("reason", ["steer_abort", "budget_exhausted"])
-def test_show_offers_resume_for_a_run_that_stopped_short(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str], reason: str
-) -> None:
-    """A stopped or failed run prints the resume command, as a stale one does."""
+def _stopped_short(repo: pathlib.Path, session_id: str, reason: str) -> None:
     _log(
-        fan_out,
-        "fan-l1",
+        repo,
+        session_id,
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "session.end", "all_passed": False, "reason": reason},
         ],
     )
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
+    (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")  # a turn ran
+
+
+@pytest.mark.parametrize("reason", ["steer_abort", "budget_exhausted"])
+def test_show_offers_resume_for_a_run_that_stopped_short(
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str], reason: str
+) -> None:
+    """A stopped or failed run prints the resume command, as a stale one does."""
+    _session(fan_out, "solo-1", {})
+    _stopped_short(fan_out, "solo-1", reason)
+
+    assert main(["sessions", "show", "solo-1"]) == 0
+
+    assert "resume with:  agent6 resume solo-1" in capsys.readouterr().out
+
+
+def test_show_offers_fork_for_a_lane_that_stopped_short(
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stopped lane names `fork`: the resume command it printed was one resume refuses."""
+    _stopped_short(fan_out, "fan-l1", "steer_abort")
 
     assert main(["sessions", "show", "fan-l1"]) == 0
 
-    assert "resume with:  agent6 resume fan-l1" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "resume with:" not in out
+    assert (
+        "resume:     a lane of the fan-out fan, whose work is on its own branch; `agent6 fork"
+        in out
+    )
+    assert 'fan-l1 --steer "..."` continues it in a worktree of its own' in out
 
 
 def test_show_json_and_the_listing_name_the_end_reason_alike(

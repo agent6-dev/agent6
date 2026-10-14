@@ -212,6 +212,7 @@ def test_after_step_writes_the_marker_and_names_the_resume(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     d = _run(tmp_path, "step-run-AAAAAA")
+    (d / "loop_state.json").write_text("{}", encoding="utf-8")  # a turn ran: a resume can start
     ipc.write_worker_pid(d, os.getpid())
     assert main(["stop", "step-run", "--after-step"]) == 0
     out = capsys.readouterr().out

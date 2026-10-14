@@ -234,6 +234,7 @@ def test_show_stale_run_offers_resume(
             {"ts": _ts(30), "type": "loop.tool.call", "iteration": 1},
         ],
     )
+    (d / "loop_state.json").write_text("{}", encoding="utf-8")  # a turn ran: a resume can start
     if pid_file:
         sessions_ipc.write_worker_pid(d, 999999999)
 
@@ -1219,6 +1220,24 @@ def test_show_says_a_timed_out_gate_timed_out(
     assert "verify:     timed out on the final tree" in out
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     assert json.loads(capsys.readouterr().out)["verified"] == "failed"
+
+
+def test_show_says_why_a_stale_run_with_no_snapshot_cannot_be_resumed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run that never reached a turn gets the reason, not a resume command resume refuses."""
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "session.start", "mode": "run"},
+            {"ts": _ts(30), "type": "loop.tool.call", "iteration": 1},
+        ],
+    )
+    assert sessions_show._cmd_status("winsome-dawn") == 0
+    out = capsys.readouterr().out
+    assert "resume with:" not in out
+    assert "resume:     it never reached its first turn" in out
 
 
 def test_show_json_carries_the_points_earlier_executions_banked(

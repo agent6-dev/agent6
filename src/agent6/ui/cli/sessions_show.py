@@ -213,14 +213,16 @@ _VERIFY_LINES = {
 }
 
 
-def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resumable: bool) -> None:
+def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resume: str | None) -> None:
     """Print unanswered questions, the gate's word and an unfinished run's resume command.
 
     Args:
         scan: The log scan.
         session_id: The session.
         gated: The session is a run, the one mode a gate judges.
-        resumable: The session stopped short of its end and has a loop to resume.
+        resume: "" when the session stopped short of its end and a bare resume continues it,
+            why a resume would refuse when it stopped short but cannot, None for an end that
+            needs no resume.
     """
     if scan.finished and scan.end_summary:
         # The run's own end sentence, on one clean line.
@@ -242,8 +244,10 @@ def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resumable: 
         if scan.baseline_ok is not None:
             verify += f" ({'green' if scan.baseline_ok else 'red'} before the run)"
         print(f"verify:     {verify}")
-    if resumable:
+    if resume == "":
         print(f"resume with:  agent6 resume {session_id}")
+    elif resume is not None:
+        print(f"resume:     {resume}")
 
 
 def _usage_line(scan: LogScan) -> str:
@@ -405,7 +409,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         scan,
         target.name,
         gated=mode_display == "run",
-        resumable=status in _RESUMABLE and manifest.fanout is None,
+        resume=listing.resume_blocker(target) if status in _RESUMABLE else None,
     )
     if changes.line:
         print(f"changes:    {changes.line}")

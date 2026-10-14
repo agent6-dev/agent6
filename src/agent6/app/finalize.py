@@ -440,14 +440,13 @@ def _print_run_branch_footer(
             result, layout=layout, cwd=cwd, run_branch=run_branch, reporter=reporter
         )
     elif (
-        result.reason == "setup_command_failed"
+        not result.completed
+        and result.iterations == 0
         and not (layout.session_dir / "loop_state.json").is_file()
     ):
         # A fresh run that never reached a turn has no snapshot for a resume to continue.
-        reporter.out(
-            "\nno turn ran, so there is nothing to resume: start the run again once the setup"
-            " command works"
-        )
+        fix = " once the setup command works" if result.reason == "setup_command_failed" else ""
+        reporter.out(f"\nno turn ran, so there is nothing to resume: start the run again{fix}")
     elif not result.completed:
         reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
     ref = merged_into or (wire.commits_ref(manifest, cwd) if manifest is not None else "")

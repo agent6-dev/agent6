@@ -86,6 +86,7 @@ def stop_session(
             rid, False, "not_live", f"{rid} {_not_live_state(session_dir)}; nothing to stop"
         )
     fanout = _is_fanout(session_dir)
+    resumable = not listing.resume_blocker(session_dir)
     lanes = _live_lanes(session_dir) if fanout else []
     with_lanes = f" with its {len(lanes)} live lane{'s' if len(lanes) > 1 else ''}" if lanes else ""
     worker = ipc.read_live_worker_identity(session_dir)
@@ -106,11 +107,11 @@ def stop_session(
     if after_step:
         when = "their current steps" if lanes else "its current step"
         return StopOutcome(
-            rid, True, "after_step", f"{rid} stops{with_lanes} after {when}", resumable=not fanout
+            rid, True, "after_step", f"{rid} stops{with_lanes} after {when}", resumable=resumable
         )
     if request_only:
         return StopOutcome(
-            rid, True, "requested", f"{rid} stop requested{with_lanes}", resumable=not fanout
+            rid, True, "requested", f"{rid} stop requested{with_lanes}", resumable=resumable
         )
     return _ended(
         session_dir,
@@ -118,6 +119,7 @@ def stop_session(
         wait_s=FANOUT_WAIT_S if fanout else wait_s,
         grace_s=grace_s,
         fanout=fanout,
+        resumable=resumable,
         with_lanes=with_lanes,
     )
 
@@ -129,6 +131,7 @@ def _ended(
     wait_s: float,
     grace_s: float,
     fanout: bool,
+    resumable: bool,
     with_lanes: str,
 ) -> StopOutcome:
     """Return the outcome once both bridges are written: ended in time, or what the kill did."""
@@ -136,11 +139,10 @@ def _ended(
     if _ended_within(session_dir, worker, wait_s):
         landed = "; what they landed is imported and ranked" if with_lanes else ""
         return StopOutcome(
-            rid, True, "stopped", f"{rid} stopped{with_lanes}{landed}", resumable=not fanout
+            rid, True, "stopped", f"{rid} stopped{with_lanes}{landed}", resumable=resumable
         )
     worker_killed, commands = _kill(session_dir, worker, grace_s)
-    continues = "" if fanout else ", and resume continues it"
-    after = continues
+    continues = ", and resume continues it" if resumable else ""
     if not worker_killed and not commands:
         return StopOutcome(
             rid,
@@ -148,7 +150,7 @@ def _ended(
             "stale",
             f"{rid} did not answer within {wait_s:g} s and nothing of it is left to signal;"
             f" it reads stale{continues}",
-            resumable=not fanout,
+            resumable=resumable,
         )
     killed = ["its worker"] if worker_killed else []
     if commands:
@@ -157,8 +159,8 @@ def _ended(
         rid,
         True,
         "killed",
-        f"{rid} did not answer within {wait_s:g} s: {' and '.join(killed)} killed{after}",
-        resumable=not fanout,
+        f"{rid} did not answer within {wait_s:g} s: {' and '.join(killed)} killed{continues}",
+        resumable=resumable,
     )
 
 

@@ -865,6 +865,35 @@ def finished_needs_new_work(session_dir: pathlib.Path) -> bool:
     )
 
 
+def resume_blocker(session_dir: pathlib.Path) -> str:
+    """Return why a bare `agent6 resume` would refuse the session, or "" when it can start.
+
+    The resume command is printed only where it would work: a coordinator has no loop, a
+    lane's tree is no checkout's once its clone is gone, a worktree run whose worktree is
+    gone continues through `fork`, and a run that never reached a turn has no snapshot.
+    """
+    if is_fanout(session_dir):
+        return "a fan-out coordinator is not resumable"
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        m = sessions_manifest.read_manifest(session_dir)
+        if m.parallel is not None:
+            return (
+                f"a lane of the fan-out {m.parallel.coordinator}, whose work is on its own"
+                f' branch; `agent6 fork {session_dir.name} --steer "..."` continues it in a'
+                " worktree of its own"
+            )
+        if m.worktree is not None and not (m.worktree / ".git").exists():
+            return (
+                f"its worktree {m.worktree} is gone; `agent6 fork {session_dir.name}` continues"
+                " it in a new worktree"
+            )
+    if not (session_dir / "loop_state.json").is_file():
+        return (
+            "it never reached its first turn, so there is nothing to resume; start the task again"
+        )
+    return ""
+
+
 def fanout_resume_refusal(session_id: str) -> str:
     """Return the refusal every resume path gives a fan-out coordinator, which has no loop."""
     return (

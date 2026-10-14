@@ -157,6 +157,7 @@ def test_a_worker_that_does_not_answer_is_killed_with_its_host_commands(
 ) -> None:
     """When nothing reads the requests, the worker and its commands get SIGTERM, then SIGKILL."""
     d = _live_run(tmp_path, "deaf-run-AAAAAA")
+    (d / "loop_state.json").write_text("{}", encoding="utf-8")  # a turn ran: resumable
     worker = _spawn("import time; time.sleep(60)")
     ipc.write_worker_pid(d, worker.pid)
     polite = _spawn("import time; time.sleep(60)")
