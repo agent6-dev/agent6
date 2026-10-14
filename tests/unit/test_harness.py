@@ -6040,6 +6040,43 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: pathlib.Path) -
     assert st.verify.broken_warned is False
 
 
+@pytest.mark.parametrize(
+    ("stdout", "broken"),
+    [
+        (
+            "tests/test_fmt.py:1: in <module>\n    import humanize\n"
+            "E   ModuleNotFoundError: No module named 'humanize'",
+            False,
+        ),
+        ("ModuleNotFoundError: No module named 'pytest'", True),
+    ],
+)
+def test_a_test_module_import_error_is_not_a_dead_verify(
+    stdout: str, broken: bool, tmp_path: pathlib.Path
+) -> None:
+    """A test module missing its own import is a red gate; only a missing runner is broken."""
+    wf = _wf(
+        root=tmp_path,
+        config=mock.MagicMock(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
+    )
+    st = _state()
+    turn = _turn(iteration=1)
+    wf.gate.note_result(
+        st,
+        turn,
+        tools_results.ExecResult(
+            returncode=2, stdout=stdout, stderr="", duration_s=1.0, exec_failed=False
+        ),
+    )
+    assert st.verify.broken_warned is broken
+    assert broken is any(
+        isinstance(it, _conversation.Notice) and "verify-broken" in it.text
+        for it in turn.tool_results
+    )
+
+
 def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.Path) -> None:
     """A run_command ToolError spiral climbs the ladder and stops, with no reachability note.
 

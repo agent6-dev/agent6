@@ -98,7 +98,6 @@ _VERIFY_DEAD_SIGNATURES = (
     "no such file or directory",
     "can't open file",
     "is not recognized as an internal or external command",
-    "modulenotfounderror",
     "importerror while loading conftest",
 )
 
@@ -162,7 +161,8 @@ def verify_did_not_run(stdout_tail: str, stderr_tail: str, duration_s: float) ->
     """
     if duration_s > 3.0:
         return False
-    blob = f"{stdout_tail}\n{stderr_tail}".lower()
+    # A traceback quotes the module it names; `python -m` does not.
+    blob = f"{stdout_tail}\n{stderr_tail}".lower().replace("named '", "named ")
     return any(sig in blob for sig in _VERIFY_DEAD_SIGNATURES)
 
 
