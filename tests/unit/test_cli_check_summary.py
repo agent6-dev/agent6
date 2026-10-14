@@ -5,10 +5,14 @@
 from __future__ import annotations
 
 import pathlib
+import shlex
+from unittest import mock
 
 import pytest
 
-from agent6.app import _setup
+from agent6 import budget as agent6_budget
+from agent6 import event_log
+from agent6.app import _setup, preflight
 from agent6.config import Config
 from agent6.sandbox import detect
 from agent6.ui.cli import check_cmds as cli_check_cmds  # pyright: ignore[reportPrivateUsage]
@@ -104,6 +108,36 @@ def test_check_verify_reads_the_agents_md_fence_as_shell(
     monkeypatch.chdir(tmp_path)
     assert main(["check", "verify"]) == 0
     assert f"unset; a run here infers {command} from AGENTS.md\n" in capsys.readouterr().out
+
+
+def test_run_header_prints_the_inferred_gate_as_check_verify_does(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The run header prints an inferred pipeline shell-quoted, the form `check verify` prints.
+
+    Joined on bare spaces, the header's `sh -c` line pastes as a different command.
+    """
+    from agent6.ui.cli import main
+
+    (tmp_path / "AGENTS.md").write_text(
+        "## Verify command\n\n```bash\npytest -q &&\n  mypy --strict pkg\n```\n", encoding="utf-8"
+    )
+    command = "sh -c 'pytest -q && mypy --strict pkg'"
+    monkeypatch.chdir(tmp_path)
+    assert main(["check", "verify"]) == 0
+    assert f"unset; a run here infers {command} from AGENTS.md\n" in capsys.readouterr().out
+
+    cfg = preflight.infer_verify_if_unset(
+        Config(),
+        tmp_path,
+        mode="run",
+        events=event_log.EventSink(tmp_path / "logs.jsonl"),
+        transcript_sink=mock.MagicMock(),
+        budget=agent6_budget.BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=-1.0),
+    )
+    header = capsys.readouterr().err
+    assert f"verify_command not set; inferred from agents_md: {command}\n" in header
+    assert shlex.split(command) == list(cfg.harness.verify_command)
 
 
 def test_boundaries_reports_spawned_mcp_as_unconfined_without_a_jail(

@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import pathlib
+import shlex
 from collections.abc import Callable, Iterable, Sequence
 from typing import Literal
 
@@ -624,7 +625,7 @@ def infer_verify_if_unset(
     events.emit("loop.verify_inferred", command=list(inferred.argv), source=inferred.source)
     reporter.note(
         f"verify_command not set; inferred from {inferred.source}:"
-        f" {' '.join(inferred.argv)}\n         (this run only; pin it with"
+        f" {shlex.join(inferred.argv)}\n         (this run only; pin it with"
         " harness.verify_command in your per-repo config)"
     )
     return cfg.with_verify_command(inferred.argv)
