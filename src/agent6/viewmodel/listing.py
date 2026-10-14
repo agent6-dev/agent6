@@ -166,6 +166,7 @@ class SessionSummary:
         plan_used_percent: The account's reading; 0 unless a plan provider answered.
         model: The manifest's provider/model route for this execution.
         model_from_flag: The route came from a `--model` flag rather than config.
+        worktree: The linked worktree the run works in, "" for a run in the checkout.
     """
 
     session_id: str
@@ -185,6 +186,7 @@ class SessionSummary:
     plan_used_percent: float = 0.0
     model: str = ""
     model_from_flag: bool = False
+    worktree: str = ""
 
     @property
     def cost_cell(self) -> str:
@@ -192,6 +194,11 @@ class SessionSummary:
         metered = self.plan_used_percent > 0 or self.plan_consumed > 0
         points = self.plan_consumed if metered else None
         return format.format_cost_cell(self.cost_usd, partial=self.usd_partial, plan_points=points)
+
+    def id_cell(self, *, winner: bool) -> str:
+        """Return the id cell every listing shows: the id, then the winner and worktree marks."""
+        cell = f"{self.session_id} {format.WINNER_GLYPH}" if winner else self.session_id
+        return f"{cell} {format.WORKTREE_MARK}" if self.worktree else cell
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -320,12 +327,13 @@ def summary_row(
         "cost": s.cost_cell,
         "model": s.model,
         "model_from_flag": s.model_from_flag,
-        "id_cell": format.winner_id(s.session_id, winner=winner),
+        "id_cell": s.id_cell(winner=winner),
         "unmerged": s.unmerged,
         "verify_ok": s.verify_ok,
         "winner": winner,
         "lane": s.lane,
         "coordinator": s.coordinator,
+        "worktree": s.worktree or None,
         "lanes": list(lanes),
     }
 
@@ -951,4 +959,5 @@ def summarize_session_dir(
         plan_used_percent=scan.plan_used_percent,
         model=format.format_model_route(manifest.models.driver) if manifest is not None else "",
         model_from_flag=manifest.models.driver_from_flag if manifest is not None else False,
+        worktree=str(manifest.worktree) if manifest is not None and manifest.worktree else "",
     )

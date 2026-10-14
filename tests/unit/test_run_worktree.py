@@ -205,9 +205,10 @@ def test_resume_from_the_checkout_continues_in_the_worktree(
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-RESU01")).worktree
     assert worktree is not None
 
+    capsys.readouterr()
     _script(monkeypatch, _edit("more.txt", "two\n"))
     assert cli_main(["resume", "wt-RESU01", "--steer", "add more.txt"]) == 0
-    capsys.readouterr()
+    assert f"working in the worktree {worktree}" in capsys.readouterr().err
 
     assert pathlib.Path.cwd() == repo
     assert (worktree / "more.txt").read_text(encoding="utf-8") == "two\n"

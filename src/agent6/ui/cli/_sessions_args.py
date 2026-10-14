@@ -40,8 +40,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         help=(
             "Print a JSON array. Each row has session_id, mode, task, task_line, status, reason,"
             " label, level, mtime, cost_usd, usd_partial, plan_consumed, plan_cap, cost, model,"
-            " model_from_flag, id_cell, unmerged, verify_ok, winner, lane, coordinator, and"
-            " nested lanes."
+            " model_from_flag, id_cell, unmerged, verify_ok, winner, lane, coordinator,"
+            " worktree, and nested lanes."
         ),
     )
     sessions_list.add_argument(

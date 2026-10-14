@@ -32,6 +32,7 @@ class _Row:
         attached: A front end is live on the session.
         coordinator: For a lane, the live coordinator row it nests under.
         lanes: The fan-out's live lanes, nested.
+        worktree: The linked worktree the run works in, None for a run in the checkout.
     """
 
     directory: str | None
@@ -43,6 +44,7 @@ class _Row:
     attached: bool
     coordinator: str = ""
     lanes: tuple[_Row, ...] = ()
+    worktree: str | None = None
 
     def cells(self, id_cell: str) -> tuple[str, ...]:
         """Return the table cells, with the id cell as given."""
@@ -54,6 +56,7 @@ class _Row:
             self.status,
             str(self.pid) if self.pid is not None else "?",
             "attached" if self.attached else "",
+            self.worktree or "",
         )
 
 
@@ -130,6 +133,7 @@ def _live_rows() -> _Live:
                         ipc.read_worker_pid(sdir),
                         ipc.frontend_is_live(sdir),
                         coordinator=summary.coordinator,
+                        worktree=_common.home_contracted(summary.worktree) or None,
                     )
             # A machine instance is a live session too: its worker.pid sits at the instance root.
             machines = repo_dir / "machines"
@@ -157,7 +161,7 @@ def _live_rows() -> _Live:
 
 
 def cmd_ps(*, as_json: bool = False, lanes: bool = False) -> int:
-    """Print one row per live session: directory, id, mode, status, pid, front end.
+    """Print one row per live session: directory, id, mode, status, pid, front end, worktree.
 
     Liveness is the worker-pid rule every listing uses (a foreign-owned or reused pid reads
     dead). A fan-out's live lanes nest under its row: folded into a count, or listed
@@ -177,7 +181,7 @@ def cmd_ps(*, as_json: bool = False, lanes: bool = False) -> int:
     if not rows:
         print("no live agent6 sessions.")
         return 0
-    headers = ("directory", "id", "mode", "status", "pid", "front-end")
+    headers = ("directory", "id", "mode", "status", "pid", "front-end", "worktree")
     cells: list[tuple[str, ...]] = []
 
     def emit(r: _Row, depth: int) -> None:

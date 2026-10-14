@@ -188,11 +188,8 @@ def budget_usd_text(
 
 # The mark on the lane a fan-out's compare ranked first.
 WINNER_GLYPH = "★"
-
-
-def winner_id(session_id: str, *, winner: bool) -> str:
-    """Return a listing row's id cell, the winner glyph suffixed on a compare winner."""
-    return f"{session_id} {WINNER_GLYPH}" if winner else session_id
+# The mark on a run that works in its own git worktree, not in the checkout.
+WORKTREE_MARK = "(worktree)"
 
 
 def format_branch(run_branch: str, base_branch: str, merged_into: str) -> str:

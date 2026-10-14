@@ -214,3 +214,26 @@ def test_ps_nests_a_lane_under_its_coordinator_whatever_the_scan_order(
     (row,) = json.loads(capsys.readouterr().out)
     assert row["id"] == "fan" and [ln["id"] for ln in row["lanes"]] == ["fan-l1", "fan-l2"]
     assert {ln["repo_id"] for ln in row["lanes"]} == {"aaa-origin-000000"}
+
+
+def test_ps_names_the_worktree_a_run_works_in(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every live run of one repository showed the checkout, whichever tree it worked in."""
+    base = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(base))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    runs = base / "agent6" / "some-repo-000000" / "sessions" / "runs"
+    worktree = tmp_path / "cache" / "apart"
+    _live(runs / "apart", {"mode": "run", "worktree": str(worktree)})
+    _live(runs / "inplace", {"mode": "run"})
+
+    assert ps_cmd.cmd_ps() == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].split() == ["directory", "id", "mode", "status", "pid", "front-end", "worktree"]
+    assert next(line for line in lines if " apart " in line).endswith(f"  {worktree}")
+    assert str(worktree) not in next(line for line in lines if " inplace " in line)
+
+    assert ps_cmd.cmd_ps(as_json=True) == 0
+    rows = {row["id"]: row for row in json.loads(capsys.readouterr().out)}
+    assert rows["apart"]["worktree"] == str(worktree) and rows["inplace"]["worktree"] is None

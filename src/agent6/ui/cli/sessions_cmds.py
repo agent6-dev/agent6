@@ -87,7 +87,7 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
     def emit(row: viewmodel_listing.ListingRow, depth: int) -> None:
         """Append the row's cells, then its lanes' when listing them."""
         s = row.summary
-        id_cell = format.winner_id(s.session_id, winner=s.session_id in winners)
+        id_cell = s.id_cell(winner=s.session_id in winners)
         if depth:
             id_cell = format.lane_id_cell(id_cell, depth)
         elif row.lanes and not lanes:

@@ -235,7 +235,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
 
         def emit(row: viewmodel_listing.ListingRow, depth: int) -> None:
             s = row.summary
-            marked = format.winner_id(s.session_id, winner=is_winner(dirs[s.session_id]))
+            marked = s.id_cell(winner=is_winner(dirs[s.session_id]))
             if depth:
                 add(row, format.lane_id_cell(marked, depth))
                 for lane in row.lanes:

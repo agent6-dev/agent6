@@ -119,9 +119,7 @@ def _print_fanout(
         f"{manifest.fanout.spec})"
     )
     idents = {
-        lane.session_id: format.winner_id(
-            lane.session_id, winner=_won(lane_manifests.get(lane.session_id))
-        )
+        lane.session_id: lane.id_cell(winner=_won(lane_manifests.get(lane.session_id)))
         for lane in lanes
     }
     width = max((len(ident) for ident in idents.values()), default=0)

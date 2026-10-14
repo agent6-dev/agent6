@@ -98,7 +98,36 @@ def test_runs_list_json_carries_the_row_facts(
         "lanes",
         "lane",
         "coordinator",
+        "worktree",
     }
+
+
+def test_the_list_marks_a_run_that_works_in_its_own_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `run --worktree` run and the checkout's run read the same in the listing."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    runs = _common._runs_dir(repo)
+    _run(runs, "apart")
+    _run(runs, "inplace")
+    worktree = tmp_path / "cache" / "apart"
+    (runs / "apart" / "manifest.json").write_text(
+        json.dumps({"mode": "run", "worktree": str(worktree)}), encoding="utf-8"
+    )
+
+    assert sessions_cmds._cmd_list() == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[0].split() == ["updated", "status", "cost", "id", "task"]
+    assert "apart (worktree)" in out and "inplace (worktree)" not in out
+
+    assert sessions_cmds._cmd_list(as_json=True) == 0
+    rows = {row["session_id"]: row for row in json.loads(capsys.readouterr().out)}
+    assert rows["apart"]["worktree"] == str(worktree)
+    assert rows["apart"]["id_cell"] == "apart (worktree)"
+    assert rows["inplace"]["worktree"] is None and rows["inplace"]["id_cell"] == "inplace"
 
 
 def test_sessions_dir_names_a_sessions_own_directory(

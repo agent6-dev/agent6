@@ -380,6 +380,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     f"    agent6 stop {holder}"
                 )
                 return 2
+        if manifest.worktree is not None:
+            reporter.note(f"working in the worktree {cwd}")
 
         snapshot_path = layout.session_dir / "loop_state.json"
         if not snapshot_path.is_file():
