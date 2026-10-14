@@ -420,6 +420,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         )
         sha = sessions_manifest.read_manifest(child_layout.session_dir).forked_from_sha or ""
         turn = f"turn {target.turn} ({sha[:12]})"
+        rewound: _Rewound | None = None
         try:
             rewound = _rewind_checkout(
                 checkout,
@@ -433,10 +434,11 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
                 f"the checkout was not put back to {turn}: {exc}."
                 f" Fork {child} continues from the tree as it is."
             )
-            return child, target.undone_text
     finally:
         lock.release_single_writer(lock_fd)
-    _report_rewind(reporter, rewound, turn=turn, kept=kept, where=where)
+    if rewound is not None:
+        _report_rewind(reporter, rewound, turn=turn, kept=kept, where=where)
+    # The fork exists either way, so the source reads undone even when the rewind failed.
     if offline:
         _journal_undone(undone, child, target.undone_text)
     return child, target.undone_text

@@ -688,3 +688,30 @@ def test_an_undo_fork_keeps_the_source_run_untracked_set(
     assert sessions_layout.read_untracked_at_start(child_dir) == frozenset({"notes.md"}), (
         "the child inherits the operator's set, not the run's own output"
     )
+
+
+def test_a_failed_rewind_still_journals_the_undone_end(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The fork exists once the rewind fails, so the source must read undone all the same."""
+    repo, _c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
+    events = [
+        {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "iterations": 2, "all_passed": True},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+
+    def _fails(*_a: object, **_k: object) -> undo._Rewound:  # pyright: ignore[reportPrivateUsage]
+        raise git_ops.GitError("restore refused")
+
+    monkeypatch.setattr(undo, "_rewind_checkout", _fails)
+
+    result = undo.undo_fork(None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(print, print))
+
+    assert result is not None
+    child, _text = result
+    assert "was not put back" in capsys.readouterr().out
+    tail = [json.loads(line) for line in layout.logs_path.read_text(encoding="utf-8").splitlines()]
+    assert [e["type"] for e in tail[-2:]] == ["session.undone", "session.end"]
+    assert tail[-2]["new_session_id"] == child and tail[-1]["reason"] == "undone"
