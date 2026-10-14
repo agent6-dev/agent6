@@ -47,6 +47,19 @@ A capable model loses no score to the 16k regime on these tasks; it pays in re-r
 
 - Unprompted, no model records a memory: 0 writes across 46 sessions on qwen3-coder-30b and kimi-k2.6, with a discovered non-obvious fact in hand (orchard's generated-file trap).
 - Two write-side nudges ship: an advisory at the first red-to-green verify flip, and a once-deferred `finish_session` after such a recovery when nothing was recorded. Writes went from 0.0 to 0.5 to 0.8 per session (qwen, n=4 per cell); the flip advisory converted about half the writers and the finish backstop the rest; decliners finished cleanly on the second call. Of 9 stores written, 8 are the durable trap facts, 1 a confidently wrong rationalisation, 0 task-progress junk.
+- The two nudges cost turns on a short green run (gpt-6-astra, five fix-the-failing-test tasks, n=20 runs per arm).
+  With both nudges: 9.25 ± 2.17 turns and 74.2k tokens in per run.
+  With neither firing after a red the run did not cause (the base-red rule): 6.95 ± 1.05 turns and 47.8k tokens in, lower by 2.30 turns (twice the standard error is 1.08).
+  With no nudge: 7.05 ± 1.28 turns and 51.3k tokens in.
+  Every arm passed 20 of 20.
+  The flip advisory fired in 20 of 20 runs and the deferred finish in 11; the extra turns sit after the first green verify (2.65 ± 0.67 against 1.00).
+- On three tasks green at the base (n=12 runs per arm), 8 runs per arm caused a red of their own.
+  The base-red rule kept the writes (1.42 with both nudges, 1.33 under the rule, no measured difference); no nudge dropped them to 0.
+- On orchard the base-red rule ends the writes (gpt-6-astra, n=4 sequences per arm, 12 sessions).
+  Score 1.000 on every session in both arms.
+  Memory files added per session: 1.00 with both nudges, 0.00 under the rule.
+  9 of the 12 sessions start on a red gate (the session's new requirement) and 3 saw no red verify, so no nudge fired under the rule.
+  The rule is not adopted.
 - Read-side value is real on a weak model. Orchard's third session re-probes the generated-file rule and the half-up rounding rule with fresh discriminators the shipped tests cannot see (qwen, n=6 per cell): baseline 0.922 ± 0.038 vs fresh_state 0.750 ± 0.097, against a same-wave session-1 calibration delta of -0.019; components rounding 0.78 vs 0.33, api 1.00 vs 0.83, regen 0.91 vs 0.78; trap edits 0.0 vs 0.7 per session; iterations flat (30.8 vs 31.2). Memory buys correctness here, not speed.
 - What the memory says predicts what transfers: a store that spelled out "rounding half-up" in words carried to a 1.0; a store that only encoded the catalog formula (half-up implicit in `(x+50)//100`) carried the generated-file fact and truncated the new computation. A memory records the rule, not the instance.
 - Capable models have no headroom: claude-haiku-4-5 and claude-sonnet-5 score 1.0 on all three orchard sessions in both conditions and rediscover the conventions every session.
