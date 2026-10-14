@@ -233,7 +233,9 @@ def _print_unverified(
 ) -> None:
     """Say what is missing after a gated end nothing observed.
 
-    A run that stopped with nothing committed left no tree of its own to verify.
+    A run that stopped with nothing committed left no tree of its own to verify. The verify
+    errand is a finished run's: a steer redirects an unfinished one, whose plain resume runs
+    the gate at its end.
 
     Args:
         result: The session's result.
@@ -250,7 +252,10 @@ def _print_unverified(
         "\nnothing verified the final tree: no verify ran this execution, or edits landed"
         " after the last green."
     )
-    reporter.out(f'  resume and run the gate:  agent6 resume {layout.session_id} --steer "verify"')
+    if result.completed:
+        reporter.out(
+            f'  resume and run the gate:  agent6 resume {layout.session_id} --steer "verify"'
+        )
 
 
 def _print_stale_gate(result: _snapshot.SessionResult, *, reporter: app_reporter.Reporter) -> None:

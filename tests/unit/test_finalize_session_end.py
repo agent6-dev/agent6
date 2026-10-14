@@ -716,7 +716,8 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
     """A provider error before any commit ends on the plain resume line.
 
     The run left no tree of its own, so "resume and run the gate" names nothing to verify. The same
-    stop over committed work keeps the errand.
+    stop over committed work says the tree is unverified and prints the plain resume line alone:
+    the `--steer "verify"` errand is a finished run's, since a steer redirects an unfinished one.
     """
     import subprocess as sp
 
@@ -765,7 +766,10 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
     assert "resume and run the gate" not in out
     assert "failed · provider error\n  provider error at iter 1 (HTTP 401)" in out
     assert "resume with:  agent6 resume r-401" in out
-    assert "resume and run the gate:  agent6 resume r-401-committed" in outs["r-401-committed"]
+    committed = outs["r-401-committed"]
+    assert "nothing verified the final tree" in committed
+    assert "resume and run the gate" not in committed
+    assert committed.count("agent6 resume r-401-committed") == 1
 
 
 def test_end_banner_adds_the_run_total_across_resume_executions(
