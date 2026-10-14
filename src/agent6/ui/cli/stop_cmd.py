@@ -10,15 +10,24 @@ import sys
 from agent6 import paths
 from agent6.app import stop
 from agent6.sessions import id
+from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common
 from agent6.viewmodel import session_dirs, session_is_live
+
+
+def _is_lane(session_dir: pathlib.Path) -> bool:
+    """Return whether the session is a fan-out's lane, which its coordinator's stop ends."""
+    try:
+        return sessions_manifest.read_manifest(session_dir).parallel is not None
+    except sessions_manifest.ManifestError:
+        return False
 
 
 def _cmd_stop(session_id: str, *, all_sessions: bool, after_step: bool) -> int:
     """Stop a session, or every live one.
 
     Args:
-        session_id: The session, or "" for the newest.
+        session_id: The session, or "" for the newest live one.
         all_sessions: Stop every live session instead.
         after_step: Stop at the end of the current step rather than now.
 
@@ -31,14 +40,23 @@ def _cmd_stop(session_id: str, *, all_sessions: bool, after_step: bool) -> int:
         if not targets:
             print("[agent6] no live session to stop.", file=sys.stderr)
             return 0
+    elif not session_id:
+        every = session_dirs(paths.state_dir(cwd))
+        if not every:
+            _common.print_nothing_yet()
+            return 2
+        live = [d for d in every if session_is_live(d) and not _is_lane(d)]
+        if not live:
+            print(
+                "[agent6] no live session to stop (`agent6 sessions` lists them).", file=sys.stderr
+            )
+            return 0
+        targets = live[:1]
     else:
         try:
-            layout = _common.resolve_or_newest_layout(cwd, session_id)
+            layout = _common.resolve_session_layout(cwd, session_id)
         except id.SessionIdError as exc:
             _common.error(f"{exc}")
-            return 2
-        if layout is None:
-            _common.print_nothing_yet()
             return 2
         targets = [layout.session_dir]
     code = 0

@@ -177,7 +177,7 @@ def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             "Stop a live session now: cut its model call and end its running commands."
             " The run ends as stopped. A worker still live after 5 s is killed with its"
             " commands. The session stays resumable (`agent6 resume ID`)."
-            " Default: the newest session."
+            " Default: the newest live session (a fan-out's lanes stop with their coordinator)."
         ),
     )
     _common._add_session_id(stop_p, completers._complete_live_session_ids)

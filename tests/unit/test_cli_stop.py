@@ -491,3 +491,70 @@ def test_a_fan_out_gets_no_resume_hint(
     assert ipc.stop_request_pending(rd)
     out = capsys.readouterr().out
     assert "fan-AAAA11 stops after its current step" in out and "resume" not in out
+
+
+def test_a_bare_stop_targets_the_newest_live_session(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 stop` with no id stops the newest live session, past a newer one that is not live."""
+    monkeypatch.chdir(tmp_path)
+    live = _run(tmp_path, "live-run-AAAAAA")
+    time.sleep(0.05)
+    _run(tmp_path, "created-fork-BBBBBB")
+    worker = subprocess.Popen(
+        [sys.executable, "-c", _ANSWERING_WORKER, str(live)], start_new_session=True
+    )
+    ipc.write_worker_pid(live, worker.pid)
+    try:
+        assert main(["stop"]) == 0
+        out = capsys.readouterr().out
+        assert "live-run-AAAAAA stopped" in out and "created-fork-BBBBBB" not in out
+        worker.wait(timeout=5)
+    finally:
+        worker.kill()
+
+
+def test_a_bare_stop_with_nothing_live_is_a_successful_noop(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _run(tmp_path, "done-run-AAAAAA", finished=True)
+    assert main(["stop"]) == 0
+    captured = capsys.readouterr()
+    assert "no live session to stop (`agent6 sessions` lists them)" in captured.err
+    assert not captured.out
+
+
+def test_a_bare_stop_passes_over_a_fan_outs_lane(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A lane stops with its coordinator; the newest live lane is not what a bare stop means."""
+    monkeypatch.chdir(tmp_path)
+    fan = _run(tmp_path, "fan-run-AAAAAA")
+    time.sleep(0.05)
+    lane = _run(tmp_path, "fan-run-AAAAAA-l1")
+    (lane / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": lane.name,
+                "mode": "run",
+                "user_task": "t",
+                "parallel": {"group": "fan-run-AAAAAA", "lane": 1, "coordinator": fan.name},
+            }
+        ),
+        encoding="utf-8",
+    )
+    workers = [
+        subprocess.Popen([sys.executable, "-c", _ANSWERING_WORKER, str(d)], start_new_session=True)
+        for d in (fan, lane)
+    ]
+    for d, proc in zip((fan, lane), workers, strict=True):
+        ipc.write_worker_pid(d, proc.pid)
+    try:
+        assert main(["stop"]) == 0
+        out = capsys.readouterr().out
+        assert "fan-run-AAAAAA stopped" in out and "-l1 stopped" not in out
+    finally:
+        for proc in workers:
+            proc.kill()

@@ -29,7 +29,7 @@ The manifest.json shape and its one reader; `app.manifest` is the writer.
 **SessionManifest** &mdash; The typed manifest.json a session starts with and later stamps.
 
 - **Written by:** app/stamps
-- **Read by:** app/{_execution, _resume_chain, _setup, _workdirs, compare, finalize, fork, fork_worktrees, merge, parallel, preflight, resume, run, stop, undo, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{format, listing, policy, state, wire}
+- **Read by:** app/{_execution, _resume_chain, _setup, _workdirs, compare, finalize, fork, fork_worktrees, merge, parallel, preflight, resume, run, stop, undo, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, stop_cmd}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{format, listing, policy, state, wire}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (24 test files exercise it)
 
 ## SessionSnapshot
