@@ -167,7 +167,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         args.append("--")
         args.extend(paths)
     print(
-        f"[agent6] git {' '.join(args)}  (base_branch={manifest.base_branch!r})",
+        f"[agent6] git {' '.join(args)}  (base branch {manifest.base_branch})",
         file=sys.stderr,
     )
     # Probe first so a zero-commit run says so; a probe error falls through to git's message.
