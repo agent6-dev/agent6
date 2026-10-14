@@ -1059,6 +1059,10 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     undone_to = str(ev.get("new_session_id", ""))
                 elif etype == "workspace.setup":
                     setup_output = format.setup_output(ev)
+                elif etype == "verify.start":
+                    # The verdict before it described an older tree; the run page drops it too.
+                    last_verify_rc = None
+                    verify_timeout_s = 0.0
                 elif etype == "verify.end":
                     rc = ev.get("exit_code")
                     if isinstance(rc, int) and not isinstance(rc, bool):

@@ -276,6 +276,26 @@ def test_pending_step_stop_labels_agree_in_the_listing_and_typed_fold(
     assert listing.summary_row(row)["label"] == format.status_label(word, reason)
 
 
+def test_a_verify_cut_short_leaves_no_verdict_in_either_producer(tmp_path: pathlib.Path) -> None:
+    """A run killed in a re-verify carries no gate verdict: the red before it was an older tree's.
+
+    The hub read the earlier red while the run page read none.
+    """
+    events: list[dict[str, object]] = [
+        _START,
+        {"type": "verify.start", "cmd": ["true"]},
+        {"type": "verify.end", "cmd": ["true"], "exit_code": 1, "duration_s": 1.0},
+        {"type": "verify.start", "cmd": ["true"]},
+    ]
+    d = _mk(tmp_path, "cut-short", events)
+    scan_facts = listing.scan_session_log(d / "logs.jsonl").status_facts()
+    fold_facts = viewmodel_state.status_facts(viewmodel_state.fold_session(events))
+    assert (scan_facts.gate_red, fold_facts.gate_red) == (False, False)
+    assert listing.status_for_session_dir(d, scan_facts) == listing.status_for_session_dir(
+        d, fold_facts
+    )
+
+
 def test_clearing_a_pending_step_stop_clears_its_label(tmp_path: pathlib.Path) -> None:
     """The stop detail follows the marker, not a cached event or a prior listing."""
     events = [_START, _TOOL]
