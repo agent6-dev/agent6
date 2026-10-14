@@ -151,6 +151,7 @@ agent6 ask "how does the task-graph curator work?"
 - `--standing "<goal>"`: a fallback goal the run returns to whenever its queue drains; only the operator retires it, and ceilings still end the run (`harness.standing_patience`)
 - `--pin "<text>"`: an instruction re-shown after every compaction
 - `--from <id>`: seed from another session's task, outcome, diff and plan; a plan id runs that plan, and `sessions show` prints `seeded from`
+    - a plan whose open questions have blank `**A:**` lines still runs, after one warning that names them; `agent6 plan edit <id>` answers them first
 - `--decompose`: a task graph up front; `--skill NAME`: a skill in the prompt (a skill whose text waits on a person stalls an unattended run in `ask_user`; `agent6 skills disable NAME` keeps it out)
 - `--session-id ID`: name the session yourself
 - `agent6 prompt show [--mode run|plan|ask|agent] [--json]`: everything the model receives on the first call

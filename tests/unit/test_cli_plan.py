@@ -191,6 +191,86 @@ def test_run_from_a_plan_with_no_task_runs_that_plan(
     assert seen["seed_from"] == ""
 
 
+_PLAN_WITH_QUESTIONS = """# Plan: improve the cache
+
+## Tasks
+1. do it
+
+## Open questions
+> **Q:** Should we add a max-size limit or TTL eviction policy?
+> **A:**
+> **Q:** Keep the old API?
+> **A:** yes, keep it
+
+> **Q:** Which backend?
+> **A:**
+> redis, as today
+
+## Verification approach
+pytest
+"""
+
+
+def _run_from_plan(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, plan_md: str
+) -> dict[str, object]:
+    """Run `run --from` over a seeded plan with the run itself stubbed; return what it got."""
+    monkeypatch.chdir(tmp_path)
+    _seed_plan(tmp_path, "happy-tree-abcd", plan_md)
+    seen: dict[str, object] = {}
+
+    def _fake_run(_cfg: object, task: str, **kw: object) -> int:
+        seen.update(kw, task=task)
+        return 0
+
+    def _no_prompt(_args: object, rc: int, _sid: str) -> int:
+        return rc
+
+    monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _fake_run)
+    monkeypatch.setattr(entry, "_prompt_for_the_next_input", _no_prompt)
+    assert main(["run", "--from", "happy-tree-abcd"]) == 0
+    return seen
+
+
+def test_run_from_a_plan_with_unanswered_questions_warns_and_runs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`run --from PLAN` ran a plan whose open questions were unanswered, with no warning.
+
+    One line names each blank question and how to answer first; the plan still runs.
+    """
+    seen = _run_from_plan(tmp_path, monkeypatch, _PLAN_WITH_QUESTIONS)
+    assert "improve the cache" in str(seen["task"])
+    warnings = [ln for ln in capsys.readouterr().err.splitlines() if "WARNING" in ln]
+    assert len(warnings) == 1, warnings
+    assert "plan happy-tree-abcd has 1 unanswered open question:" in warnings[0]
+    assert '"Should we add a max-size limit or TTL eviction policy?"' in warnings[0]
+    assert "Keep the old API?" not in warnings[0] and "Which backend?" not in warnings[0]
+    assert "agent6 plan edit happy-tree-abcd" in warnings[0]
+
+
+def test_run_from_a_plan_with_every_question_answered_prints_no_warning(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A plan whose every open question is answered runs with no warning."""
+    answered = _PLAN_WITH_QUESTIONS.replace(
+        "TTL eviction policy?\n> **A:**", "TTL eviction policy?\n> **A:** TTL"
+    )
+    _run_from_plan(tmp_path, monkeypatch, answered)
+    assert "WARNING" not in capsys.readouterr().err
+
+
+def test_unanswered_questions_are_the_ones_with_no_answer_text() -> None:
+    """A question is unanswered when its `**A:**` line is blank, or missing, with no text below."""
+    assert entry._unanswered_questions(_PLAN_WITH_QUESTIONS) == [  # pyright: ignore[reportPrivateUsage]
+        "Should we add a max-size limit or TTL eviction policy?"
+    ]
+    assert entry._unanswered_questions(  # pyright: ignore[reportPrivateUsage]
+        "## Open questions\n> **Q:** one?\n> **Q:** two?\n> **A:**\n\n## Verification\nrun it\n"
+    ) == ["one?", "two?"]
+    assert entry._unanswered_questions("# Plan: x\n\n1. step\n") == []  # pyright: ignore[reportPrivateUsage]
+
+
 def test_run_from_a_run_with_no_task_names_what_it_needs(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -49,6 +49,49 @@ def _from_plan_task(plan_md: str, session_id: str) -> str:
     return f'Execute the prepared plan: {title}\n\n<plan id="{session_id}">\n{plan_md}\n</plan>'
 
 
+def _unanswered_questions(plan_md: str) -> list[str]:
+    """Return the plan's `**Q:**` lines that no answer text follows, in order.
+
+    An answer is text on the question's `**A:**` line or on the line under a blank one.
+    """
+    unanswered: list[str] = []
+    pending: str | None = None
+    answer_line_open = False
+    for line in plan_md.splitlines():
+        text = line.lstrip().lstrip(">").strip()
+        if text.startswith("**Q:**"):
+            if pending is not None:
+                unanswered.append(pending)
+            pending, answer_line_open = text.removeprefix("**Q:**").strip(), False
+        elif pending is not None and text.startswith("**A:**"):
+            if text.removeprefix("**A:**").strip():
+                pending = None
+            answer_line_open = True
+        elif pending is not None and answer_line_open:
+            if text and not text.startswith("#"):
+                pending = None
+            answer_line_open = False
+    if pending is not None:
+        unanswered.append(pending)
+    return unanswered
+
+
+def _warn_unanswered_questions(plan_md: str, session_id: str) -> None:
+    """Print one warning naming the plan's unanswered open questions, when it has any."""
+    questions = _unanswered_questions(plan_md)
+    if not questions:
+        return
+    named = "; ".join(f'"{q[:120]}"' for q in questions)
+    print(
+        f"[agent6] WARNING: plan {session_id} has"
+        f" {_common.plural(len(questions), 'unanswered open question')}: {named}. The run decides"
+        f" {'it' if len(questions) == 1 else 'them'} itself; to answer first, stop the run,"
+        f" fill the blank **A:** lines with `agent6 plan edit {session_id}`, and run the plan"
+        " again.",
+        file=sys.stderr,
+    )
+
+
 def _plan_text_for_run(plan_path: pathlib.Path, session_id: str) -> str | None:
     """Return a plan's non-empty markdown, or None after naming the unusable plan."""
     if not plan_path.is_file():
@@ -164,6 +207,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         plan_md = _plan_text_for_run(layout.session_dir / "plan.md", layout.session_id)
         if plan_md is None:
             return 2
+        _warn_unanswered_questions(plan_md, layout.session_id)
         task, source_session_id = _from_plan_task(plan_md, layout.session_id), layout.session_id
         seed_from = ""
     elif not args.task:
@@ -188,6 +232,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
             )
             return 2
         print(f"[agent6] No task given. Most recent plan: {last_plan}  ({title})")
+        _warn_unanswered_questions(plan_md, last_plan)
         ans = _common.safe_input("Execute it now? [Y/n]: ")
         if ans is None or ans.lower() in ("n", "no"):
             print(f"Aborted. Run it later: agent6 run --from {last_plan}")
