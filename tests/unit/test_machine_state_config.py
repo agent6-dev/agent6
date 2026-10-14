@@ -119,7 +119,7 @@ def _cfg(**sandbox: Any) -> Config:
 
 
 def _widening(operator: Config, state: Config, isolation: kinds.IsolationLevel = "strict") -> str:
-    return "; ".join(sandbox_widening(operator, isolation, state, isolation))
+    return "; ".join(sandbox_widening(operator, isolation, state, isolation).values())
 
 
 # --- the grammar ------------------------------------------------------------------------------
@@ -383,11 +383,9 @@ def test_a_path_is_compared_by_where_it_really_is(tmp_path: pathlib.Path) -> Non
 
 def test_isolation_is_compared_by_the_level_it_resolves_to() -> None:
     op, st = _cfg(isolation="strict"), _cfg(isolation="auto")
-    assert sandbox_widening(op, "strict", st, "strict") == []
-    assert "sandbox.isolation" in "; ".join(sandbox_widening(op, "strict", st, "hardened"))
-    assert "sandbox.isolation" in "; ".join(
-        sandbox_widening(_cfg(), "strict", _cfg(isolation="none"), "none")
-    )
+    assert sandbox_widening(op, "strict", st, "strict") == {}
+    assert "isolation" in sandbox_widening(op, "strict", st, "hardened")
+    assert "isolation" in sandbox_widening(_cfg(), "strict", _cfg(isolation="none"), "none")
 
 
 def test_network_is_compared_by_what_it_resolves_to() -> None:
@@ -575,6 +573,35 @@ def test_run_and_check_refuse_a_widening_before_anything_runs(
     said = " ".join(str(c.args[0]) for c in reporter.refuse.call_args_list)
     assert '[states.scan.config] sets sandbox.extra_read_paths = ["/srv/inbox"]' in said
     assert ran == []
+
+
+def test_check_and_run_report_every_tables_widening(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One check lists each widening under the table that sets it, one line each."""
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    _operator(OPERATOR.partition("[sandbox]")[0])
+    mfile = _write(
+        tmp_path,
+        MACHINE.replace("[config.sandbox]\n", "[config.sandbox]\nprotect_git = false\n")
+        + "\n[states.store.config.sandbox]\nprotect_git = false\n",
+    )
+    expected = [
+        "the machine's [config] sets sandbox.protect_git = false,",
+        '[states.scan.config] sets sandbox.extra_read_paths = ["/srv/inbox"],',
+        # `store` sets the key itself; `scan` and `judge` only carry the machine's value.
+        "[states.store.config] sets sandbox.protect_git = false,",
+        '[states.judge.config] sets sandbox.extra_write_paths = ["/srv/outbox"],',
+    ]
+    assert main(["machine", "check", str(mfile)]) == 1
+    bullets = [line for line in capsys.readouterr().err.splitlines() if line.startswith("  - ")]
+    assert [b.removeprefix("  - ").partition(" wider")[0] for b in bullets] == expected
+    reporter = mock.MagicMock()
+    assert run.run_machine(mfile, reporter) == 2
+    refused = [str(c.args[0]).partition(" wider")[0] for c in reporter.refuse.call_args_list]
+    assert refused == expected
 
 
 def test_check_prints_each_sandbox_overlay(

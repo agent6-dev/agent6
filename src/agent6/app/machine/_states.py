@@ -147,11 +147,11 @@ def sandbox_widening(
     operator_isolation: kinds.IsolationLevel,
     state: Config,
     state_isolation: kinds.IsolationLevel,
-) -> list[str]:
-    """Return one line per sandbox key a config sets wider than the operator's.
+) -> dict[str, str]:
+    """Return the problem with each sandbox key a config sets wider than the operator's.
 
-    Each line gives both values as TOML and the remedy: the config command that grants the
-    value, or for `hide_paths` the entries the overlay has to keep.
+    Each problem gives both values as TOML and the remedy: the config command that grants
+    the value, or for `hide_paths` the entries the overlay has to keep.
 
     Args:
         operator: The operator's config, the ceiling.
@@ -160,10 +160,11 @@ def sandbox_widening(
         state_isolation: The isolation level it resolves to on this host.
 
     Returns:
-        The problems, in the model's field order; empty when the config is within bounds.
+        The problems by key, in the model's field order; empty when the config is within
+        bounds.
     """
     op, st = _Side(operator, operator_isolation), _Side(state, state_isolation)
-    problems: list[str] = []
+    problems: dict[str, str] = {}
     for leaf in SandboxConfig.model_fields:
         ours, theirs = getattr(op.sandbox, leaf), getattr(st.sandbox, leaf)
         if theirs == ours:
@@ -184,7 +185,7 @@ def sandbox_widening(
             )
         elif (within := _WITHIN.get(leaf)) is not None and within(op, st):
             continue
-        problems.append(
+        problems[leaf] = (
             f"sandbox.{leaf} = {shown}, wider than your config's {io.format_toml_value(ours)}."
             f" {remedy} from the machine file."
         )
@@ -215,14 +216,17 @@ def resolve_configs(
 
     Raises:
         ConfigError: A layer or an overlay is invalid; the message names the overlay.
-        SandboxWidenedError: An overlay sets a sandbox key wider than the operator's.
+        SandboxWidenedError: An overlay sets a sandbox key wider than the operator's; it
+            carries every table's problems.
         IsolationUnavailableError: An explicit isolation level is unavailable on this host.
     """
     operator_eff = layer.load_effective(cwd, config_path)
     operator = operator_eff.config
     operator_isolation = detect.resolve_isolation(operator.sandbox.isolation, env)
 
-    def one(state_overlay: dict[str, object] | None, where: str) -> StateConfig:
+    def one(
+        state_overlay: dict[str, object] | None, where: str
+    ) -> tuple[StateConfig, dict[str, str]]:
         try:
             eff = layer.load_effective_with_overlay(
                 cwd, spec.config, explicit_path=config_path, state_overlay=state_overlay
@@ -230,21 +234,33 @@ def resolve_configs(
         except ConfigError as exc:
             raise ConfigError(f"{where}: {exc}") from exc
         isolation = detect.resolve_isolation(eff.config.sandbox.isolation, env)
-        problems = sandbox_widening(operator, operator_isolation, eff.config, isolation)
-        if problems:
-            raise SandboxWidenedError([f"{where} sets {problem}" for problem in problems])
-        return StateConfig(
+        resolved = StateConfig(
             eff.config.with_sandbox_overrides(auto_approve=auto_approve, no_commands=no_commands),
             eff.explicit_leaves,
             isolation,
         )
+        return resolved, sandbox_widening(operator, operator_isolation, eff.config, isolation)
 
-    machine = one(None, "the machine's [config]")
-    states = {
-        name: one(dict(state.config), f"[states.{name}.config]") if state.config else machine
-        for name, state in spec.states.items()
-        if isinstance(state, (AgentState, ToolState))
-    }
+    machine, machine_wide = one(None, "the machine's [config]")
+    widened = [f"the machine's [config] sets {problem}" for problem in machine_wide.values()]
+    states: dict[str, StateConfig] = {}
+    for name, state in spec.states.items():
+        if not isinstance(state, (AgentState, ToolState)):
+            continue
+        if not state.config:
+            states[name] = machine
+            continue
+        where = f"[states.{name}.config]"
+        states[name], wide = one(dict(state.config), where)
+        own = state.config.get("sandbox", {})
+        # A key the state's table leaves alone carries the machine's value, reported there.
+        widened.extend(
+            f"{where} sets {problem}"
+            for leaf, problem in wide.items()
+            if leaf in own or machine_wide.get(leaf) != problem
+        )
+    if widened:
+        raise SandboxWidenedError(widened)
     return MachineConfigs(
         StateConfig(
             operator.with_sandbox_overrides(auto_approve=auto_approve, no_commands=no_commands),
