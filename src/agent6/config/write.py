@@ -457,9 +457,10 @@ def _whole_table_hint(
             *table, field = (str(part) for part in issue["loc"])
             missing.setdefault(".".join(table), []).append(field)
     for key, _ in written:
-        table, _, leaf = key.rpartition(".")
+        table, _, _leaf = key.rpartition(".")
         if table in missing:
-            fields = ", ".join(f"{name} = ..." for name in (leaf, *missing[table]))
+            wrote = [k.rpartition(".")[2] for k, _ in written if k.rpartition(".")[0] == table]
+            fields = ", ".join(f"{name} = ..." for name in (*wrote, *missing[table]))
             flag = " --repo" if to_repo else ""
             return (
                 "\nset the table's fields in one write: "

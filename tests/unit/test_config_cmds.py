@@ -303,6 +303,20 @@ def test_config_get_calls_a_section_with_no_resolved_leaf_a_section(
     assert "unknown config key" not in err
 
 
+def test_config_set_a_partial_table_hint_keeps_every_field_written(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The whole-table hint lists every field the write carried, then the missing ones."""
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    table = '{ command = ["true"], pattern = "score: ([0-9.]+)" }'
+    assert main(["config", "set", "harness.metric", table]) == 2
+    err = capsys.readouterr().err
+    hint = next(line for line in err.splitlines() if "in one write" in line)
+    assert "harness.metric '{ command = ..., pattern = ..., goal = ... }'" in hint
+
+
 @pytest.mark.parametrize("repo", [False, True])
 @pytest.mark.parametrize(
     ("key", "value"),
