@@ -144,7 +144,22 @@ def jail_cache_home(repo_root: pathlib.Path, user: RealUser | None = None) -> pa
     `app.confine.check_jail_home` creates it and refuses a symlink or another user's
     directory there.
     """
-    return cache_dir(user) / "homes" / repo_id(repo_root)
+    return jail_cache_home_of(repo_id(repo_root), user)
+
+
+def jail_cache_home_of(repo: str, user: RealUser | None = None) -> pathlib.Path:
+    """Return the persistent HOME of the repository with this `repo_id`."""
+    return cache_dir(user) / "homes" / repo
+
+
+def parallel_base(workdir: str) -> pathlib.Path:
+    """Return the directory that holds every repository's subordinate working trees.
+
+    `[parallel].workdir` as an absolute path, or the cache's `parallel` dir. Each repository
+    has one directory in it, named by its `repo_id`, for its worktrees, lane clones and
+    machine clones.
+    """
+    return pathlib.Path(workdir).resolve() if workdir else cache_dir() / "parallel"
 
 
 def data_dir(user: RealUser | None = None) -> pathlib.Path:

@@ -60,7 +60,8 @@ def persistent_jail_home(
     Only `strict` has a private /tmp for a throwaway HOME; every other level gets the
     repository's `agent6.paths.jail_cache_home`, and strict opts into it with
     `[sandbox].home = "cache"`. `jail_policy` creates it and grants it read-write at its real
-    path.
+    path. A working tree agent6 made for a repository (a worktree, a lane's clone, a machine
+    state's clone) gets that repository's HOME, so a warmed tool cache serves all of them.
 
     Args:
         config: The run's config.
@@ -77,6 +78,15 @@ def persistent_jail_home(
         return None
     if worktree_git_dir is not None and worktree_git_dir.name == ".git":
         return paths.jail_cache_home(worktree_git_dir.parent)
+    # Named by where agent6 put the tree, which no jailed command can move: the first
+    # directory below the parallel workdir is the owning repository's id.
+    base = paths.parallel_base(config.parallel.workdir)
+    try:
+        owner = root.resolve().relative_to(base.resolve()).parts[:1]
+    except ValueError:
+        owner = ()
+    if owner:
+        return paths.jail_cache_home_of(owner[0])
     return paths.jail_cache_home(paths.checkout_root(root))
 
 
