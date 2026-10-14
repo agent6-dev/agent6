@@ -436,13 +436,15 @@ class Harness:
 
         The chain tip must be the snapshot's and the worktree clean; an operator commit or edit
         in between fails closed, so the execution starts unobserved rather than wrongly green
-        or red. `baseline_ok` is about the base commit, which resume never moves.
+        or red. `baseline_ok` is about the base commit, so a resume that moved the base (its
+        earlier work landed) carries none.
 
         Args:
             state: The execution's state.
             snap: The snapshot the execution resumes from.
         """
-        state.verify.baseline_ok = snap.baseline_ok
+        if snap.base_sha == self.chain.base_sha:
+            state.verify.baseline_ok = snap.baseline_ok
         state.standing.tools_mark = snap.standing_tools_mark
         state.standing.fruitless = snap.standing_fruitless
         state.ok_tool_calls = snap.ok_tool_calls
@@ -496,6 +498,7 @@ class Harness:
             root_task_id=state.root_task_id,
             original_task=state.original_task,
             operator_task=state.operator_task,
+            base_sha=self.chain.base_sha,
             verify_command=self.gate.command(state.verify),
             review_rejections_total=state.gates.review_total,
             verify_ever_passed=state.verify.ever_passed,

@@ -186,6 +186,8 @@ class SessionSnapshot(pydantic.BaseModel):
             truncated display twin.
         operator_task: The operator's words as given, which a plan's `## Original task` holds;
             `original_task` is the revised text when `revise_prompt` is on.
+        base_sha: The base the run's work starts from, which `baseline_ok` describes; a resume
+            whose work landed moves it.
         verify_command: The gate the run resolved, () when gateless; a resume reuses it rather
             than inferring again.
         review_rejections_total: The before-finish panel's rejection count, which disarms it.
@@ -196,7 +198,7 @@ class SessionSnapshot(pydantic.BaseModel):
         metric_at_ceiling: Whether the metric reached its ceiling.
         last_verify_ok: The last verify's result, carried only onto a clean tree at `head_sha`.
         edited_since_verify: Whether the tree changed after the last verify.
-        baseline_ok: Whether the gate passed on the base commit, which a resume never moves.
+        baseline_ok: Whether the gate passed on the base commit `base_sha`.
         verify_scoped: Whether the full gate overran its timeout; a fact about the suite, so it
             carries unconditionally.
         memory_written: Whether the worker wrote a memory fact; the flip advisory is once per run.
@@ -242,6 +244,7 @@ class SessionSnapshot(pydantic.BaseModel):
     head_sha: str = ""
     graph_version: int = 0
     operator_task: str = ""
+    base_sha: str = ""
 
 
 def _load_state_object(path: pathlib.Path, what: str) -> dict[str, Any]:

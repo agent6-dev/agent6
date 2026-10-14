@@ -8,6 +8,7 @@ checkpoint commits a dirty worktree on a gated run's success exit.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 import subprocess as sp
@@ -1414,6 +1415,43 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pat
 
     assert state.verify.last_ok is True
     assert state.verify.green_and_untouched is True
+
+
+def test_a_baseline_verdict_carries_only_onto_the_base_it_describes(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A resume whose earlier work landed moves the base; the old base's red is no verdict on it.
+
+    `gate_red_at_base` read the old base's verdict and excused the run's own breakage.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    wf = _wf(root=repo, config=Config.model_validate({"harness": {"verify_command": ["true"]}}))
+    wf.chain = dataclasses.replace(wf.chain, base_sha="a" * 40)
+    fields = {
+        "system": "s",
+        "messages": [],
+        "tool_calls": 0,
+        "next_iteration": 2,
+        "root_task_id": None,
+        "original_task": "t",
+        "verify_command": ("true",),
+        "baseline_ok": False,
+    }
+    same = _snapshot.SessionSnapshot.model_validate({**fields, "base_sha": "a" * 40})
+    moved = _snapshot.SessionSnapshot.model_validate({**fields, "base_sha": "b" * 40})
+    older = _snapshot.SessionSnapshot.model_validate(fields)  # written before the base was kept
+
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    wf._carry_verify_verdict(state, same)  # pyright: ignore[reportPrivateUsage]
+    assert state.verify.baseline_ok is False
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    wf._carry_verify_verdict(state, moved)  # pyright: ignore[reportPrivateUsage]
+    assert state.verify.baseline_ok is None
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    wf._carry_verify_verdict(state, older)  # pyright: ignore[reportPrivateUsage]
+    assert state.verify.baseline_ok is None
 
 
 def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
