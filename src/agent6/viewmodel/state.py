@@ -732,6 +732,8 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 end_reason=reason,
                 end_summary=listing.end_text(reason, summary, state.finish_summary),
                 verify_scoped=scoped,
+                # The worker is on no task after the end: each draws its own status.
+                tasks=tuple(dataclasses.replace(t, is_cursor=False, glyph="") for t in state.tasks),
             )
 
         case events.SessionStranded():

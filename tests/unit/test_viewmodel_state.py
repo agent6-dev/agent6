@@ -1113,3 +1113,19 @@ def test_a_step_label_is_one_line_every_surface_shows() -> None:
         == "iter 3 · abcdef1 · fix: parse"
     )
     assert viewmodel_state.CommitStep(3, "abcdef1234", "").label == "iter 3 · abcdef1"
+
+
+def test_the_end_takes_the_cursor_off_the_task_in_progress() -> None:
+    """Once the run ended no task is in progress: each draws its own status."""
+    nodes = {
+        "root": {"title": "root", "parent_id": None, "status": "passed", "children": ["a"]},
+        "a": {"title": "task a", "parent_id": "root", "status": "passed", "children": []},
+    }
+    s = viewmodel_state.apply_event(
+        viewmodel_state.initial_state(), _graph_event(nodes, cursor="a")
+    )
+    assert s.tasks[1].is_cursor and s.tasks[1].glyph == "▸"
+    s = viewmodel_state.apply_event(
+        s, {"type": "session.end", "reason": "finish_session", "all_passed": True}
+    )
+    assert not s.tasks[1].is_cursor and s.tasks[1].glyph == "✓"
