@@ -78,6 +78,26 @@ Three arms of the same 20 instances (bugs and ledger, the ChatGPT plan), differi
 
 Every arm solves every instance; max costs +84% wall and +117% output tokens over low, so effort is a cost axis on this slice.
 
+## The no-route-out statement
+
+gpt-6-astra, n=4 per cell: 16 runs per arm on four tasks where a package the task seems to want is absent from the jail, 12 runs per arm on three control tasks.
+The task set is ad hoc; its scripts and raw rows are outside the tree.
+Arms: no statement; one sentence in the `run_command` description; one run-prompt rule, present only when the run's commands have no route off the machine.
+
+| | no statement | tool description | prompt rule |
+|---|---|---|---|
+| install or download attempts per run | 1.44 ± 1.09 | 1.06 ± 0.77 | 0.31 ± 0.48 |
+| pass, missing-package tasks | 9 of 16 | 11 of 16 | 15 of 16 |
+| turns, missing-package tasks | 10.38 ± 4.59 | 9.81 ± 2.99 | 10.31 ± 2.47 |
+| pass, control tasks | 12 of 12 | 12 of 12 | 12 of 12 |
+| turns, control tasks | 6.92 ± 1.56 | 7.58 ± 1.73 | 7.00 ± 1.54 |
+
+- The prompt rule lowers install attempts by 1.12 per run (twice the standard error is 0.60) and raises the pass rate from 0.56 to 0.94 (twice the standard error is 0.29).
+- The tool-description sentence shows no measured difference on either.
+- Turns show no measured difference in either group, and the control pass rate is unchanged.
+- Every pass on the two tasks that need a third-party import came from copying the package out of the system site-packages, which the jail reads on the measuring host, so the pass counts depend on that host.
+- The prompt rule ships; the tool-description sentence does not.
+
 ## Measured nulls
 
 | lever | measurement | result | state |
