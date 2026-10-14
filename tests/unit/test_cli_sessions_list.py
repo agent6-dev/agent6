@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 
 import pytest
 
@@ -586,3 +587,42 @@ def test_a_folded_fan_out_shows_its_groups_latest_activity(
     from agent6.viewmodel import format
 
     assert lines[1].startswith(format.format_when(new)) and "fan (2 lanes)" in lines[1]
+
+
+def test_show_names_no_commit_for_a_fork_sitting_on_its_base(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fork cut before its source's first commit has a branch on the base and nothing to merge."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    base = git("rev-parse", "HEAD")
+    session_id = "forked-run-AAAAAA"
+    branch = f"agent6/{session_id}"
+    git("branch", branch, base)
+    _run(_common._runs_dir(repo), session_id)
+    (_common._runs_dir(repo) / session_id / "manifest.json").write_text(
+        json.dumps(
+            {"session_id": session_id, "mode": "run", "base_sha": base, "run_branch": branch}
+        ),
+        encoding="utf-8",
+    )
+
+    from agent6.ui.cli import sessions_show  # pyright: ignore[reportPrivateUsage]
+
+    assert sessions_show._cmd_status(session_id) == 0
+    out = capsys.readouterr().out
+    assert "changes:    none (the run made no commit)" in out
+    assert "merge with:" not in out

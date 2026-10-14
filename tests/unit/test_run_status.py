@@ -868,7 +868,8 @@ def test_status_says_where_the_changes_are(
         return capsys.readouterr().out
 
     _stamp_manifest(d, run_branch=branch, base_branch="main")
-    assert f"changes:    {branch} (no commits)" in show()
+    # No commit was made, so the branch does not exist and the row names none.
+    assert "changes:    none (the run made no commit)" in show()
     subprocess.run(["git", "branch", branch], cwd=pathlib.Path.cwd(), check=True)
     assert (
         f"changes:    {branch} → merges into main; merge with: agent6 sessions merge"

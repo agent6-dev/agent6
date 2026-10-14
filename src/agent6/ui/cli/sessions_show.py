@@ -399,8 +399,8 @@ def _changes(
     """Return where the run's work lives, checked against git as the end-of-run footer does.
 
     Merged into the base, on the run branch awaiting `sessions merge`, on the hidden chain
-    ref alone (the branch deleted, the commits kept), a branch no commit reached, or taken
-    back by `/undo`.
+    ref alone (the branch deleted, the commits kept), nowhere (no commit was made), or
+    taken back by `/undo`.
 
     Args:
         session_id: The session.
@@ -419,10 +419,13 @@ def _changes(
             format.format_branch(run_branch, manifest.base_branch, stamp.into), stamp.into
         )
     merge_hint = f"merge with: {merge.merge_command(session_id, manifest.base_branch)}"
-    if not git_ops.branch_exists(cwd, run_branch):
-        chain = git_ops.chain_ref_for(session_id)
-        if git_ops.chain_tip(cwd, chain) is None:
-            return _Changes(f"{run_branch} (no commits)", "")
+    chain = git_ops.chain_ref_for(session_id)
+    branch_kept = git_ops.branch_exists(cwd, run_branch)
+    tip = git_ops.branch_tip_sha(cwd, run_branch) if branch_kept else git_ops.chain_tip(cwd, chain)
+    if tip is None or tip == manifest.base_sha:
+        # A fork cut before its source's first commit sits on the base with no commit of its own.
+        return _Changes("none (the run made no commit)", "")
+    if not branch_kept:
         return _Changes(f"{chain} ({run_branch} is gone; the commits are kept); {merge_hint}", "")
     return _Changes(
         f"{format.format_branch(run_branch, manifest.base_branch, '')}; {merge_hint}", ""
