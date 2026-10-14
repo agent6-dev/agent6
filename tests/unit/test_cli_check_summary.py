@@ -78,6 +78,34 @@ def test_check_verify_says_what_this_repo_infers(
     assert "unset; a run here infers ./verify.sh from verify.sh" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    ("fence", "command"),
+    [
+        ("RUSTUP_HOME=/x cargo test", "sh -c 'RUSTUP_HOME=/x cargo test'"),
+        ("go test ./... # all packages", "go test ./..."),
+        ("node --test\ngo test ./...", "sh -c 'node --test && go test ./...'"),
+        ("$ go test ./...", "go test ./..."),
+        ("pytest 'a #b' &&\n  ruff check", "sh -c 'pytest '\"'\"'a #b'\"'\"' && ruff check'"),
+    ],
+)
+def test_check_verify_reads_the_agents_md_fence_as_shell(
+    fence: str,
+    command: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An assignment, a comment, a second line or a `$ ` prompt in the fence is not an argument."""
+    from agent6.ui.cli import main
+
+    (tmp_path / "AGENTS.md").write_text(
+        f"## Verify command\n\n```bash\n{fence}\n```\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    assert main(["check", "verify"]) == 0
+    assert f"unset; a run here infers {command} from AGENTS.md\n" in capsys.readouterr().out
+
+
 def test_boundaries_reports_spawned_mcp_as_unconfined_without_a_jail(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

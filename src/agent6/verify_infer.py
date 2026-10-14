@@ -21,8 +21,9 @@ import re
 import shlex
 from collections.abc import Callable
 
-# A command line with any of these is a shell construct, wrapped in `sh -c`.
-_SHELL_META = re.compile(r"(\|\||&&|[|&;<>`]|\$\()")
+# A command line with any of these, or a leading assignment, is shell, wrapped in `sh -c`.
+_SHELL_META = re.compile(r"[|&;<>`$*]")
+_ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 _VERIFY_HEADING = re.compile(r"^#{1,6}\s*(verify|test)\b", re.IGNORECASE)
 _INLINE_VERIFY = re.compile(r"^\s*(?:verify|test)\s*:\s*(.+)$", re.IGNORECASE)
 _MAKE_TARGET = re.compile(r"^([A-Za-z0-9_-]+)\s*:", re.MULTILINE)
@@ -41,12 +42,30 @@ class InferredVerify:
     source: str
 
 
+def _strip_comment(line: str) -> str:
+    """Return a shell line minus its `#` comment; a `#` in quotes or inside a word stays."""
+    quote = ""
+    escaped = False
+    for i, ch in enumerate(line):
+        if escaped:
+            escaped = False
+        elif ch == "\\" and quote != "'":
+            escaped = True
+        elif quote:
+            quote = "" if ch == quote else quote
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "#" and (i == 0 or line[i - 1].isspace()):
+            return line[:i].rstrip()
+    return line
+
+
 def line_to_argv(cmd: str) -> tuple[str, ...] | None:
-    """Return one command line as argv, a shell pipeline wrapped in `sh -c`; None when empty."""
-    cmd = cmd.strip()
+    """Return one command line as argv, shell syntax wrapped in `sh -c`; None when empty."""
+    cmd = _strip_comment(cmd.strip())
     if not cmd:
         return None
-    if _SHELL_META.search(cmd):
+    if _SHELL_META.search(cmd) or _ASSIGNMENT.match(cmd):
         return ("sh", "-c", cmd)
     try:
         parts = shlex.split(cmd)
@@ -56,18 +75,24 @@ def line_to_argv(cmd: str) -> tuple[str, ...] | None:
 
 
 def _block_to_argv(block: list[str]) -> tuple[str, ...] | None:
-    """Return a fenced block as one argv: comments dropped, continued lines joined."""
-    logical: list[str] = []
+    """Return a fenced block as one argv.
+
+    A `$ ` prompt and comments are dropped, a continued line joins the one before,
+    and several commands chain with `&&`.
+    """
+    commands: list[str] = []
+    continued = False
     for raw in block:
-        line = raw.rstrip()
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+        line = _strip_comment(raw.strip().removeprefix("$ "))
+        if not line:
             continue
-        logical.append(line)
-    if not logical:
-        return None
-    joined = " ".join(part.rstrip("\\").strip() for part in logical).strip()
-    return line_to_argv(joined)
+        part = line.removesuffix("\\").rstrip()
+        if continued:
+            commands[-1] += " " + part
+        else:
+            commands.append(part)
+        continued = line.endswith(("\\", "&&", "||", "|"))
+    return line_to_argv(" && ".join(commands))
 
 
 def _first_fenced_block(lines: list[str], start: int) -> list[str] | None:

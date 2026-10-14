@@ -219,3 +219,10 @@ def test_gather_repo_manifests_clips_and_includes(tmp_path: pathlib.Path) -> Non
     (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     ctx = verify_infer.gather_repo_manifests(tmp_path, "Verify: pytest", cap=10)
     assert "pyproject.toml" in ctx and "AGENTS.md" in ctx and "top-level" in ctx
+
+
+def test_a_comment_mark_inside_an_escaped_quote_stays() -> None:
+    """A backslash-escaped quote does not end the string, so a later ` #` is not a comment."""
+    assert verify_infer.line_to_argv('pytest -k "a \\" # b"') == ("pytest", "-k", 'a " # b')
+    assert verify_infer.line_to_argv("pytest -q  # the fast suite") == ("pytest", "-q")
+    assert verify_infer.line_to_argv("pytest -k 'a # b'") == ("pytest", "-k", "a # b")
