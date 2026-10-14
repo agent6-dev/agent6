@@ -206,7 +206,7 @@ class ToolDispatcher:
                 self._curator, raw
             ),
             schema.UseSkillInput.TOOL_NAME: lambda raw: _skill_tools.use_skill(
-                self.resolved_skills, raw
+                self._ws, self.resolved_skills, raw
             ),
         }
         self._index: index.SymbolIndex | None = None

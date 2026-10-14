@@ -542,7 +542,8 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
     - `skills install <url>` is an operator-initiated CLI fetch (the `connect` trust class); what it installs enters the system prompt and tool results verbatim
 - Nothing in a skill runs at install or load
     - its scripts run only through the jailed command path, subject to `run_commands`
-- `use_skill` is read-only and path-contained: the skill's own dir through a component-walked descriptor (any symlink hop or `..` refused)
+- `use_skill` is read-only and path-contained: the skill's own dir through a component-walked descriptor (any symlink hop or `..` inside it refused)
+    - a skill directory or `SKILL.md` that is itself a link is followed, and a read that lands under `sandbox.hide_paths` or an agent6 private directory is refused, as the workspace file tools refuse it
     - skill dirs are not mounted into the jail; content reaches the model engine-side
 - Repo-local `.claude/skills/` are not discovered; only the installed dir and `[skills].extra_dirs` are scanned
 

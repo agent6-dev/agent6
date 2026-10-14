@@ -149,6 +149,9 @@ def _skills_env(tmp_path: pathlib.Path, monkeypatch: object) -> pathlib.Path:
     return data / "agent6" / "skills"
 
 
+_SKILL = "---\nname: linked\ndescription: Use when testing.\n---\n\n{}\n"
+
+
 def _install(skills_dir: pathlib.Path, name: str, text: str = "") -> pathlib.Path:
     d = skills_dir / name
     d.mkdir(parents=True)
@@ -205,6 +208,71 @@ class TestUseSkillTool:
 
         with pytest.raises(errors.ToolError, match="escapes"):
             d.dispatch("use_skill", {"name": "tidy", "file": "link.md"})
+
+    def test_a_read_that_lands_under_a_hidden_path_is_refused(
+        self, tmp_path: pathlib.Path, monkeypatch: object
+    ) -> None:
+        """A skill directory or SKILL.md linked under `sandbox.hide_paths` served hidden text."""
+        import pytest
+
+        from agent6.tools import dispatch, errors
+
+        sd = _skills_env(tmp_path, monkeypatch)
+        hidden = tmp_path / "hidden"
+        vault = _install(hidden, "vault")
+        (vault / "notes.md").write_text("HIDDEN NOTES\n", encoding="utf-8")
+        sd.mkdir(parents=True)
+        (sd / "vault").symlink_to(vault)  # the skill directory is a link
+        (sd / "linked").mkdir()
+        (sd / "linked" / "SKILL.md").symlink_to(_install(hidden, "linked") / "SKILL.md")
+        cfg = _config(tmp_path, f'[sandbox]\nhide_paths = ["{hidden}"]\n')
+        (tmp_path / "ws").mkdir()
+        d = dispatch.ToolDispatcher(root=tmp_path / "ws", config=cfg)
+        for call in ({"name": "vault"}, {"name": "vault", "file": "notes.md"}, {"name": "linked"}):
+            with pytest.raises(errors.ToolError, match="hidden from this run"):
+                d.dispatch("use_skill", call)
+
+    def test_a_linked_skill_outside_the_hidden_paths_is_served(
+        self, tmp_path: pathlib.Path, monkeypatch: object
+    ) -> None:
+        """The hidden-path refusal must keep an operator's linked skills (a dotfiles tree)."""
+        from agent6.tools import dispatch
+
+        sd = _skills_env(tmp_path, monkeypatch)
+        store = tmp_path / "dotfiles"
+        tidy = _install(store, "tidy")
+        (tidy / "notes.md").write_text("NOTES\n", encoding="utf-8")
+        sd.mkdir(parents=True)
+        (sd / "tidy").symlink_to(tidy)
+        (sd / "linked").mkdir()
+        (sd / "linked" / "SKILL.md").symlink_to(_install(store, "linked") / "SKILL.md")
+        cfg = _config(tmp_path, f'[sandbox]\nhide_paths = ["{tmp_path / "hidden"}"]\n')
+        d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+        assert "Do tidy." in d.dispatch("use_skill", {"name": "tidy"}).to_wire()["content"]
+        assert "Do linked." in d.dispatch("use_skill", {"name": "linked"}).to_wire()["content"]
+        out = d.dispatch("use_skill", {"name": "tidy", "file": "notes.md"}).to_wire()
+        assert out["content"] == "NOTES\n"
+
+    def test_hidden_text_read_at_discovery_is_not_served_after_the_link_is_replaced(
+        self, tmp_path: pathlib.Path, monkeypatch: object
+    ) -> None:
+        """use_skill served the text discovery read through a link, whatever the path named now."""
+        from agent6.tools import dispatch
+
+        sd = _skills_env(tmp_path, monkeypatch)
+        hidden = tmp_path / "hidden"
+        (sd / "linked").mkdir(parents=True)
+        link = sd / "linked" / "SKILL.md"
+        link.symlink_to(_install(hidden, "linked", text=_SKILL.format("HIDDEN")) / "SKILL.md")
+        cfg = _config(tmp_path, f'[sandbox]\nhide_paths = ["{hidden}"]\n')
+        (tmp_path / "ws").mkdir()
+        d = dispatch.ToolDispatcher(root=tmp_path / "ws", config=cfg)
+        assert d.resolved_skills().enabled[0].text == _SKILL.format("HIDDEN")
+        link.unlink()
+        link.write_text(_SKILL.format("PUBLIC"), encoding="utf-8")
+        assert d.dispatch("use_skill", {"name": "linked"}).to_wire()["content"] == _SKILL.format(
+            "PUBLIC"
+        )
 
     def test_unknown_skill_lists_available(
         self, tmp_path: pathlib.Path, monkeypatch: object

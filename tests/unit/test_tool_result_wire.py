@@ -368,11 +368,16 @@ def test_the_tool_error_log_line_names_the_tool_once() -> None:
     """A tool raises the bare message; the logger prefixes the tool's name."""
     from agent6 import skills
     from agent6.harness import _loop_state, loop
-    from agent6.tools import _skill_tools  # pyright: ignore[reportPrivateUsage]
+    from agent6.tools import (
+        _path_safety,  # pyright: ignore[reportPrivateUsage]
+        _skill_tools,  # pyright: ignore[reportPrivateUsage]
+    )
 
     with pytest.raises(errors.ToolError) as exc:
         _skill_tools.use_skill(
-            lambda: skills.ResolvedSkills(enabled=(), always=(), warnings=()), {"name": "x"}
+            _path_safety.Workspace(root=pathlib.Path("/nonexistent")),
+            lambda: skills.ResolvedSkills(enabled=(), always=(), warnings=()),
+            {"name": "x"},
         )
     assert str(exc.value).startswith("unknown or disabled skill 'x'")
     wf = mock.MagicMock()
