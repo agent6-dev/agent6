@@ -290,6 +290,37 @@ def test_clearing_a_pending_step_stop_clears_its_label(tmp_path: pathlib.Path) -
     assert viewmodel_state.session_state_as_dict(fold, d)["status_label"] == "running"
 
 
+@pytest.mark.parametrize(("all_passed", "word"), [(True, "passed"), (None, "finished")])
+def test_a_finish_whose_edits_got_no_commit_reads_not_committed(
+    tmp_path: pathlib.Path, all_passed: bool | None, word: str
+) -> None:
+    """A run whose commits all failed listed as plain "passed" while it exited 5.
+
+    The end path journals the fact, both readers carry it, and the next execution starts
+    without it.
+    """
+    end: dict[str, object] = {
+        "type": "session.end",
+        "reason": "finish_session",
+        "all_passed": all_passed,
+    }
+    events: list[dict[str, object]] = [_START, end, {"type": "session.stranded"}]
+    d = _mk(tmp_path, "strand-AAAAAA", events)
+    scan = listing.scan_session_log(d / "logs.jsonl")
+    fold = viewmodel_state.fold_session(events)
+    for facts in (scan.status_facts(), viewmodel_state.status_facts(fold)):
+        assert listing.status_for_session_dir(d, facts) == (word, "not committed")
+    row = listing.summarize_session_dir(d)
+    assert format.status_label(row.status, row.reason) == f"{word} · not committed"
+
+    resumed = [*events, _RESUME, end]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in resumed), encoding="utf-8")
+    scan = listing.scan_session_log(d / "logs.jsonl")
+    fold = viewmodel_state.fold_session(resumed)
+    for facts in (scan.status_facts(), viewmodel_state.status_facts(fold)):
+        assert listing.status_for_session_dir(d, facts) == (word, "")
+
+
 def test_resume_clears_orphaned_pending_prompts() -> None:
     """An execution boundary invalidates unanswered prompts.
 

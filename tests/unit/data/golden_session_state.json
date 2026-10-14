@@ -170,6 +170,7 @@
   "all_passed": true,
   "verify_scoped": false,
   "end_reason": "finish_session",
+  "stranded": false,
   "unattended_questions": 0,
   "undone_to": "",
   "undone_text": "",

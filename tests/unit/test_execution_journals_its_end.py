@@ -30,6 +30,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import steer
 from agent6.ui.acp import frontend as acp_frontend
+from agent6.viewmodel import listing
 
 # The preflight accepts this snapshot and Conversation.from_wire rejects it: a result with no call.
 TORN = {
@@ -758,6 +759,102 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
             assert verified in skipped[0]
     else:
         assert not skipped
+
+
+def test_a_finish_with_no_commit_is_journaled_and_reads_not_committed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run whose commits all failed ended "passed" and listed as "passed" while it exited 5."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    (repo / "a.txt").write_text("base\n", encoding="utf-8")
+    git("add", "a.txt")
+    git("commit", "-qm", "base")
+    base = git("rev-parse", "main")
+    # The run's edit sits in the tree; no commit ever reached its chain.
+    (repo / "a.txt").write_text("run work\n", encoding="utf-8")
+    state = paths.state_dir(repo)
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-STRAND")
+    layout.ensure()
+    branch = f"agent6/{layout.session_id}"
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "session_id": layout.session_id,
+                "mode": "run",
+                "user_task": "do the thing",
+                "base_branch": "main",
+                "base_sha": base,
+                "run_branch": branch,
+            }
+        ),
+        encoding="utf-8",
+    )
+    events = event_log.EventSink(layout.logs_path)
+
+    class _Workflow:
+        iterations_reached = 1
+
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(self, _task: str) -> _snapshot.SessionResult:
+            events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+            return _snapshot.SessionResult(
+                completed=True,
+                reason="finish_session",
+                summary="done",
+                iterations=1,
+                tool_calls=0,
+                verified="passed",
+            )
+
+    cfg = Config()
+    frontend = _wired_frontend(monkeypatch, [], harness=_Workflow, cfg=cfg)
+    said: list[str] = []
+    end = _execution.run_execution(
+        cfg,
+        layout,
+        _execution.ExecutionInputs(
+            explicit_leaves=frozenset(),
+            session_id=layout.session_id,
+            mode="run",
+            role="worker",
+            isolation="hardened",
+            tui_enabled=False,
+            interactive=False,
+            task="do the thing",
+            gate=lambda c, _b: c,
+            chain_branch=branch,
+            base_sha=base,
+            untracked_at_start=frozenset(),
+            resume_state_path=layout.session_dir / "loop_state.json",
+            undo_forker=lambda: None,
+            prompts=mock.MagicMock(),
+            ask_transcript_task=None,
+        ),
+        frontend=frontend,
+        reporter=reporter.Reporter(out=said.append, err=said.append),
+        events=events,
+        transcript_sink=mock.MagicMock(),
+        cwd=repo,
+        state_dir=state,
+    )
+
+    assert end.rc == finalize.EXIT_NO_COMMIT_LANDED
+    journal = [json.loads(line) for line in layout.logs_path.read_text().splitlines()]
+    assert [e["type"] for e in journal][-2:] == ["session.end", "session.stranded"]
+    row = listing.summarize_session_dir(layout.session_dir)
+    assert (row.status, row.reason) == ("passed", "not committed")
+    assert any("no commit on" in line for line in said), "\n".join(said)
 
 
 def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_end(

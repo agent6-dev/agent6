@@ -555,6 +555,10 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         reporter.err(budget.format_summary())
         return ExecutionEnd(finalize.session_exit_code(result))
 
+    stranded = finalize.stranded_edits(result, layout, cwd)
+    if stranded:
+        # Journaled before the end block, whose headline and every listing read the journal.
+        events.emit("session.stranded")
     finalize.print_session_end(
         result,
         layout=layout,
@@ -572,6 +576,4 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         verified=result.verified,
         reporter=reporter,
     )
-    return ExecutionEnd(
-        finalize.session_exit_code(result, stranded=finalize.stranded_edits(result, layout, cwd))
-    )
+    return ExecutionEnd(finalize.session_exit_code(result, stranded=stranded))

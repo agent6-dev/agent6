@@ -323,6 +323,7 @@ class SessionState:
         all_passed: The verify tri-state; None when no verify command gated the end.
         verify_scoped: The judging gate ran scoped.
         end_reason: The session.end reason word.
+        stranded: This execution finished with its edits uncommitted and no commit landed.
         unattended_questions: Questions the harness answered empty because nobody was
             attached, in the current execution.
         undone_to: The child session /undo forked, which surfaces follow.
@@ -358,6 +359,7 @@ class SessionState:
     all_passed: bool | None = None
     verify_scoped: bool = False
     end_reason: str = ""
+    stranded: bool = False
     unattended_questions: int = 0
     undone_to: str = ""
     undone_text: str = ""
@@ -442,6 +444,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 started=True,
                 finished=False,
                 end_reason="",
+                stranded=False,
                 last_role=None,
                 finish_summary="",
                 last_verify=None,
@@ -457,6 +460,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 started=True,
                 finished=False,
                 end_reason="",
+                stranded=False,
                 last_role=None,
                 finish_summary="",
                 last_verify=None,
@@ -719,6 +723,9 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 verify_scoped=scoped,
             )
 
+        case events.SessionStranded():
+            return dataclasses.replace(state, stranded=True)
+
         case events.SessionUndone(new_session_id=new_id, undone_text=text):
             return dataclasses.replace(state, undone_to=new_id, undone_text=text)
 
@@ -899,6 +906,7 @@ def status_facts(state: SessionState) -> listing.StatusFacts:
         blocked_kind=oldest[0] if oldest else "",
         blocked_since_ep=oldest[1] if oldest else None,
         unattended_questions=state.unattended_questions,
+        stranded=state.stranded,
     )
 
 
@@ -992,6 +1000,7 @@ def session_state_as_dict(
             scoped=state.verify_scoped,
             gate_red=facts.gate_red,
             gate_timed_out=facts.gate_timed_out,
+            stranded=facts.stranded,
         )
     d["status"] = word
     d["status_label"] = format.status_label(word, reason)

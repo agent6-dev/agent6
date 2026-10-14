@@ -374,6 +374,7 @@ def status_word(
     scoped: bool = False,
     gate_red: bool = False,
     gate_timed_out: bool = False,
+    stranded: bool = False,
 ) -> tuple[str, str]:
     """Map an end state to the status word and its detail.
 
@@ -394,6 +395,7 @@ def status_word(
         gate_red: This execution's last verify ran and failed; False also covers a
             stale green and a gate nothing ran.
         gate_timed_out: That verify ended on its timeout, so it gave no verdict.
+        stranded: The run finished with its edits uncommitted and no commit landed.
 
     Returns:
         The `(word, detail)` pair.
@@ -417,16 +419,22 @@ def status_word(
         "gate_red_at_base": ("finished", "gate was already red"),
     }
     if end_reason in own_word:
-        return own_word[end_reason]
+        word, detail = own_word[end_reason]
+        # A harness end over edits no commit holds exits 5; the label says so too.
+        if stranded and end_reason in ("silent_finish", "metric_plateau", "verify_settled"):
+            detail = f"{detail} · not committed"
+        return word, detail
+    # A clean finish whose work no commit holds says so before anything else.
+    uncommitted = "not committed" if stranded else ""
     if all_passed:
-        return "passed", "scoped gate" if scoped else ""
+        return "passed", uncommitted or ("scoped gate" if scoped else "")
     # Only an observed not-green words "failed"; a deliberate finish over one is "finished".
     if all_passed is False and end_reason:
         clean_end = end_reason == "finish_session"
         # A stale-gate claim is its own detail, as the raw reason so a surface names it once.
         word = "finished" if clean_end or end_reason == "gate_stale" else "failed"
         return word, not_green if clean_end else end_reason
-    return "finished", ""
+    return "finished", uncommitted
 
 
 # The prompt events that mean "alive but blocked on the operator".
@@ -459,6 +467,7 @@ class StatusFacts:
         blocked_since_ep: That prompt's asked-at epoch.
         unattended_questions: Questions this execution's harness answered empty because nobody
             was attached.
+        stranded: This execution finished with its edits uncommitted and no commit landed.
     """
 
     started: bool = False
@@ -472,6 +481,7 @@ class StatusFacts:
     blocked_kind: str = ""
     blocked_since_ep: float | None = None
     unattended_questions: int = 0
+    stranded: bool = False
 
 
 def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tuple[str, str]:
@@ -498,6 +508,7 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
             scoped=facts.verify_scoped,
             gate_red=facts.gate_red,
             gate_timed_out=facts.gate_timed_out,
+            stranded=facts.stranded,
         )
         if n := facts.unattended_questions:
             note = f"{n} question{'s' if n != 1 else ''} unanswered"
@@ -608,6 +619,7 @@ class LogScan:
         all_passed: The verify tri-state; None when no verify command gated the end.
         verify_scoped: The judging gate ran scoped.
         end_reason: The session.end reason word.
+        stranded: The latest execution finished with its edits uncommitted and no commit landed.
         setup_output: The workspace's setup command and retained output, or its failure diagnostic.
         verified: The gate's word for the final tree, as the last session.end carried it:
             `passed`, `failed`, `unverified` or `not_applicable`; "" while a later execution
@@ -651,6 +663,7 @@ class LogScan:
     all_passed: bool | None = False
     verify_scoped: bool = False
     end_reason: str = ""
+    stranded: bool = False
     setup_output: str = ""
     verified: str = ""
     end_tree: str = ""
@@ -733,6 +746,7 @@ class LogScan:
             blocked_kind=self.blocked_kind,
             blocked_since_ep=self.blocked_since_ep,
             unattended_questions=self.unattended_questions,
+            stranded=self.stranded,
         )
 
 
@@ -820,6 +834,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     """
     mode, task = "?", ""
     finished, end_reason, verified = False, "", ""
+    stranded = False
     end_tree = ""
     setup_output = ""
     provider_error = ""
@@ -878,7 +893,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         unattended_questions += 1
                 if etype == "session.start":
                     saw_start = True
-                    finished, verified = False, ""
+                    finished, stranded, verified = False, False, ""
                     end_tree = ""
                     mode = str(ev.get("mode", mode))
                     task = str(ev.get("user_task", ""))
@@ -918,10 +933,12 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         executions += 1
                     saw_start = True
                     mode = str(ev.get("mode", mode))
-                    finished, verified = False, ""
+                    finished, stranded, verified = False, False, ""
                     end_tree = ""
                     pending_prompts.clear()
                     unattended_questions = 0
+                elif etype == "session.stranded":
+                    stranded = True
                 elif etype == "workspace.setup":
                     setup_output = format.setup_output(ev)
                 elif etype == "verify.end":
@@ -968,6 +985,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         all_passed=all_passed,
         verify_scoped=verify_scoped,
         end_reason=end_reason,
+        stranded=stranded,
         verified=verified,
         setup_output=setup_output,
         end_tree=end_tree,

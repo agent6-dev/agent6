@@ -198,7 +198,7 @@ A run whose worker exited without recording an end reads `stale`, for example af
 - `silent_finish` means the model stopped calling tools without calling `finish_session`, and the harness took its last answer as the end
 - `metric_plateau` means the configured metric stopped improving and the harness ended the run
 - over a red, timed-out or unverified gate, these finishes name the gate state in the headline
-- a finished run whose edits sit uncommitted exits `5` in place of `0`
+- a finished run whose edits sit uncommitted exits `5` in place of `0`, and reads `passed · not committed` (`finished · not committed` with no gate) in the end block and every listing
 - `verify_settled` and `settled` are the harness's own stop for a run whose turns stopped changing the tree: the worker called no `finish_session`, and `agent6 resume ID` continues it
 
 ## Plan, review, and ask

@@ -417,6 +417,11 @@ class SteerRequested:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class SessionStranded:
+    """A finished run left its edits uncommitted with no commit landed (`session.stranded`)."""
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionEnd:
     """session.end: the execution ended.
 
@@ -482,6 +487,7 @@ Event = (
     | CompactSummarised
     | SteerRequested
     | SessionEnd
+    | SessionStranded
     | SessionUndone
     | RawEvent
 )
@@ -665,6 +671,8 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 new_session_id=str(raw.get("new_session_id", "") or ""),
                 undone_text=str(raw.get("undone_text", "") or ""),
             )
+        case "session.stranded":
+            return SessionStranded()
         case "session.end":
             # An explicit null is the ungated tri-state; an absent key folds False.
             raw_ap = raw.get("all_passed", False)

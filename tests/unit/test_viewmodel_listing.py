@@ -1528,3 +1528,25 @@ def test_the_scan_reads_the_gates_word_and_tolerates_its_absence(tmp_path: pathl
     resumed = [start, worded, {"type": "loop.resume.start", "mode": "run"}]
     log.write_text("".join(json.dumps(e) + "\n" for e in resumed), encoding="utf-8")
     assert listing.scan_session_log(log).verified == ""
+
+
+@pytest.mark.parametrize(
+    ("end_reason", "detail"),
+    [
+        ("verify_settled", "settled · not committed"),
+        ("silent_finish", "no finish call · not committed"),
+        ("metric_plateau", "metric plateau · not committed"),
+    ],
+)
+def test_a_stranded_harness_end_says_not_committed(end_reason: str, detail: str) -> None:
+    """These ends exit 5 when no commit holds the edits; the label said nothing of it."""
+    assert listing.status_word(
+        finished=True, all_passed=True, end_reason=end_reason, stranded=True
+    ) == (
+        "finished",
+        detail,
+    )
+    assert listing.status_word(finished=True, all_passed=True, end_reason=end_reason) == (
+        "finished",
+        detail.removesuffix(" · not committed"),
+    )
