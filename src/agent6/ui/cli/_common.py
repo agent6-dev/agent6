@@ -80,7 +80,8 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
         metavar="USD",
         help=(
             "Set this command's metered spending limit in US dollars. -1 allows unlimited"
-            " spending; 0 refuses metered calls. Default: [budget].max_usd; on a resume, the"
+            " spending; 0 refuses metered calls. Does not bound included-plan calls; use"
+            " --max-percent for those. Default: [budget].max_usd; on a resume, the"
             " value the run's flags last set."
         ),
     )
@@ -103,7 +104,8 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
         metavar="N",
         help=(
             "Set the combined input and output token limit for calls with no price data."
-            " -1 allows unlimited tokens; 0 refuses calls that cannot be priced. Default:"
+            " -1 allows unlimited tokens; 0 refuses calls that cannot be priced. Does not"
+            " bound plan-metered calls; use --max-percent for those. Default:"
             " [budget].max_tokens_fallback; on a resume, the value the run's flags last set."
         ),
     )

@@ -268,6 +268,7 @@ All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 `--max-usd` / `--max-tokens-fallback` / `--max-percent` override per run.
 A flag's value is recorded with the run: a resume without that flag runs under it again, and a flag on the resume replaces it for later resumes too.
 A worker with no price data is not metered by `max_usd` at all and runs under `max_tokens_fallback`, with a note at startup.
+Included-plan calls are bounded by `max_percent`, not by `max_usd` or `max_tokens_fallback`.
 Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/agent6/models/`), and a direct-Anthropic id is priced via its OpenRouter listing.
 
 ## `[machine]`

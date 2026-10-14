@@ -175,11 +175,12 @@ def test_format_summary_names_no_ceiling_before_any_call() -> None:
 
 
 def test_format_summary_marks_exhausted() -> None:
+    """A standalone cost summary identifies a reached cap even when a call crosses it."""
     t = _t(fallback=5)
     t.record(
         model="m", input_tokens=10, output_tokens=0, cache_read_tokens=0, cache_creation_tokens=0
     )
-    assert "BUDGET EXCEEDED" in t.format_summary()
+    assert "STATUS: fallback token budget exhausted" in t.format_summary()
 
 
 def test_the_caps_have_one_home() -> None:
@@ -241,6 +242,24 @@ def test_percent_meter_sawtooth_and_cap() -> None:
         t.check()
     assert "plan usage (gpt-5.6-sol): 8% of the 7-day window" in t.format_summary()
     assert "(subscription)" in t.format_summary()
+
+
+def test_a_plan_cap_names_the_same_window_as_its_usage_line() -> None:
+    """A plan cap error named the primary window where usage named the 7-day window."""
+    tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=1)
+    tracker.note_route("m", "chatgpt")
+    tracker.record_plan_preflight("m", budget.PlanUsage.single(48, 10080, 2e9))
+    tracker.record(
+        model="m",
+        input_tokens=5,
+        output_tokens=0,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        plan_usage=budget.PlanUsage.single(49, 10080, 2e9),
+    )
+    with pytest.raises(budget.BudgetExceededError, match="account at 49% on its 7-day window"):
+        tracker.check()
+    assert "49% of the 7-day window" in tracker.format_summary()
 
 
 def test_percent_zero_refuses_plan_metered_calls() -> None:
@@ -399,7 +418,7 @@ def test_the_binding_window_meters_the_run_whatever_its_name() -> None:
     _record_plan(t, reading(10.5, 43.0))
     assert t.snapshot().plan_consumed == 3.0  # spark moved 3, primary 0.5
     _record_plan(t, reading(11.0, 46.0))
-    with pytest.raises(budget.BudgetExceededError, match="gpt-5-6-spark window"):
+    with pytest.raises(budget.BudgetExceededError, match=r"5-hour window \(gpt-5-6-spark\)"):
         t.check()
     # A reset on one window restarts that window's count from zero only.
     t2 = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=50.0)
@@ -423,11 +442,11 @@ def test_percent_cap_names_the_window_whose_consumption_bound_it() -> None:
     _record_plan(tracker, reading(90, 10))
     _record_plan(tracker, reading(91, 16))
 
-    with pytest.raises(budget.BudgetExceededError, match="gpt-5-6-spark window"):
+    with pytest.raises(budget.BudgetExceededError, match=r"5-hour window \(gpt-5-6-spark\)"):
         tracker.check()
     # The latest reading need not carry the window that bound; the backend adds and drops windows.
     _record_plan(tracker, budget.PlanUsage(windows=(budget.PlanWindow("primary", 92, 10080, 2e9),)))
-    with pytest.raises(budget.BudgetExceededError, match="gpt-5-6-spark window"):
+    with pytest.raises(budget.BudgetExceededError, match=r"5-hour window \(gpt-5-6-spark\)"):
         tracker.check()
 
 

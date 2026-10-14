@@ -83,6 +83,47 @@ def test_all_green_finish_is_headlined_passed(tmp_path: pathlib.Path, capsys: ob
     assert "passed" in out
 
 
+@pytest.mark.parametrize("console_stream", [False, True])
+def test_a_budget_stop_prints_its_detail_once(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], console_stream: bool
+) -> None:
+    """A budget stop repeated the tracker reason after the end summary."""
+    layout = _layout(
+        tmp_path,
+        "r-budget",
+        [
+            {"type": "session.start", "session_id": "r-budget", "user_task": "t"},
+            {"type": "session.end", "reason": "budget_exhausted", "all_passed": False},
+        ],
+    )
+    tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=5, max_percent=-1)
+    tracker.record(
+        model="unpriced",
+        input_tokens=5,
+        output_tokens=0,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+    )
+    result = _snapshot.SessionResult(
+        completed=False,
+        reason="budget_exhausted",
+        summary=f"{tracker.snapshot().exhausted_reason} (at iter 2)",
+        iterations=2,
+        tool_calls=1,
+    )
+    _finalize.print_session_end(
+        result,
+        layout=layout,
+        cwd=tmp_path,
+        budget=tracker,
+        console_stream=console_stream,
+        reporter=reporter.STDIO_REPORTER,
+    )
+    out = capsys.readouterr().out
+    assert out.count("5 unmetered tokens >= 5") == 1
+    assert _finalize.session_exit_code(result) == 3
+
+
 def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

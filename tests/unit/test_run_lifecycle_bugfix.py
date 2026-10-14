@@ -317,6 +317,81 @@ def test_an_ask_out_of_budget_exits_three(
     assert cli_main(["ask", "query", "why is the sky blue?"]) == 0
 
 
+def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A plan cap stop repeated its reason and named its window two ways."""
+    import time
+
+    from agent6 import budget as agent6_budget
+    from agent6 import secret_store
+    from agent6.models import cache
+
+    _setup(tmp_path, monkeypatch)
+    (tmp_path / "cfg" / "agent6" / "config.toml").write_text(
+        '[sandbox]\nisolation = "none"\nrun_commands = "no"\n'
+        '[models.worker]\nprovider = "chatgpt"\nmodel = "gpt-6-astra"\n'
+        '[providers.chatgpt]\napi_format = "chatgpt"\n'
+        '[review]\ntrigger = "off"\n'
+        "[harness]\nverify_infer = false\n",
+        encoding="utf-8",
+    )
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("test-access", "test-refresh", time.time() + 3600)
+    )
+
+    def no_models(*_a: object, **_k: object) -> list[str]:
+        return []
+
+    monkeypatch.setattr(cache, "list_models", no_models)
+
+    def build(*_a: object, budget: agent6_budget.BudgetTracker, **_k: object) -> _Scripted:
+        budget.note_route("gpt-6-astra", "chatgpt")
+        budget.record_plan_preflight(
+            "gpt-6-astra",
+            agent6_budget.PlanUsage.single(48, 10080, time.time() + 148 * 3600),
+        )
+
+        def before_call(_i: int) -> None:
+            budget.check()
+            budget.record(
+                model="gpt-6-astra",
+                input_tokens=10,
+                output_tokens=5,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+                plan_usage=agent6_budget.PlanUsage.single(49, 10080, time.time() + 148 * 3600),
+            )
+
+        return _Scripted(
+            [
+                (
+                    "",
+                    (
+                        {
+                            "type": "tool_use",
+                            "id": "read1",
+                            "name": "read_file",
+                            "input": {"path": "a.py"},
+                        },
+                    ),
+                )
+            ],
+            before_call=before_call,
+        )
+
+    monkeypatch.setattr(providers, "build_role_provider", build)
+    assert cli_main(["run", "--auto-approve", "--max-percent", "1", "Add sixteen functions"]) == 3
+    out = capsys.readouterr().out
+    assert "failed · budget exhausted" in out
+    assert out.count("this run consumed ~1.0 percentage points") == 1
+    assert "account at 49% on its 7-day window" in out
+    assert "plan usage (chatgpt): 49% of the 7-day window" in out
+    assert out.count("plan budget exhausted") == 1
+    assert "BUDGET EXCEEDED" not in out
+    assert "primary window" not in out
+
+
 def _resumed_config(monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> Any:
     """Resume with the execution stubbed; return the config it was handed."""
     from agent6.app import _execution

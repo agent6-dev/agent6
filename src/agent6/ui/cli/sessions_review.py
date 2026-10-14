@@ -87,7 +87,7 @@ def _cmd_sessions_review(  # noqa: PLR0911
         print(f"REVIEW FAILED: {exc}", file=sys.stderr)
         return 2
     except agent6_budget.BudgetExceededError as exc:
-        print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
+        print(f"budget exhausted: {exc}", file=sys.stderr)
         return 3
     print(text, flush=True)
     saved = review_cmds.save_review(reviews_dir, label=f"run {layout.session_id}", body=text)

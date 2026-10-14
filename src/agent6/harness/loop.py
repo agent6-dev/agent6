@@ -858,10 +858,10 @@ class Harness:
         try:
             return self.caller.call(system, wire, tools, self._worker_max_tokens(state))
         except agent6_budget.BudgetExceededError as exc:
-            self._log(f"LOOP: budget exhausted at iter {iteration} ({exc})")
+            self._log(f"LOOP: budget exhausted at iter {iteration}")
             return self._finish(
                 state,
-                _snapshot.End("budget_exhausted", f"budget exhausted at iter {iteration}: {exc}"),
+                _snapshot.End("budget_exhausted", f"{exc} (at iter {iteration})"),
                 iteration=iteration,
             )
         except ProviderAborted:

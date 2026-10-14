@@ -362,7 +362,7 @@ class BudgetTracker:
     # Provider entry to its latest plan reading, the most recently reported last.
     _plans: dict[str, PlanUsage] = dataclasses.field(default_factory=dict)
     # Per (provider entry, window): the last reading, and this run's consumption sawtooth.
-    _plan_last_percent: dict[tuple[str, str], float] = dataclasses.field(default_factory=dict)
+    _plan_last_window: dict[tuple[str, str], PlanWindow] = dataclasses.field(default_factory=dict)
     _plan_consumed_by_window: dict[tuple[str, str], float] = dataclasses.field(default_factory=dict)
     # Purchased credits seen leaving each account this run, in dollars; folds into the USD meter.
     _credits_last_usd: dict[str, float] = dataclasses.field(default_factory=dict)
@@ -492,13 +492,13 @@ class BudgetTracker:
         """
         for w in plan.windows:
             key = (route, w.name)
-            last = self._plan_last_percent.get(key)
+            last = self._plan_last_window.get(key)
             if last is not None:
-                delta = w.used_percent - last
+                delta = w.used_percent - last.used_percent
                 self._plan_consumed_by_window[key] = self._plan_consumed_by_window.get(key, 0.0) + (
                     delta if delta >= 0 else w.used_percent
                 )
-            self._plan_last_percent[key] = w.used_percent
+            self._plan_last_window[key] = w
         balance = plan.credits_usd
         if balance is not None:
             previous = self._credits_last_usd.get(route)
@@ -537,11 +537,12 @@ class BudgetTracker:
             )
         elif self.max_percent > 0.0 and self._plan_consumed() >= self.max_percent:
             route, window, consumed = self._plan_consumption_binding()
-            used_percent = self._plan_last_percent[(route, window)]
+            reading = self._plan_last_window[(route, window)]
             self._exceeded_reason = (
                 f"plan budget exhausted: this run consumed ~{consumed:.1f}"
                 f" percentage points >= max_percent {self.max_percent:g}"
-                f" ({route}: account at {used_percent:g}% on its {window} window)"
+                f" ({route}: account at {reading.used_percent:g}% on its"
+                f" {format_plan_window(reading)})"
             )
         elif self.max_usd > 0.0 and self._credits_spent_usd >= self.max_usd:
             self._exceeded_reason = (
@@ -700,8 +701,15 @@ class BudgetTracker:
             )
         return lines, priced, metered, any_estimated
 
-    def format_summary(self) -> str:
-        """Return the end-of-run token and cost summary."""
+    def format_summary(self, *, include_stop_reason: bool = True) -> str:
+        """Return the end-of-run token and cost summary.
+
+        Args:
+            include_stop_reason: Print the budget stop unless the caller already printed it.
+
+        Returns:
+            The summary.
+        """
         snap = self.snapshot()
         lines = ["Token + cost summary:"]
         # The total is the figure the ceiling enforces, so it carries purchased credits spent.
@@ -731,9 +739,24 @@ class BudgetTracker:
         lines.append(budget_line)
         for route, spend in snap.plans.items():
             lines.append("  " + format_plan_usage(route, spend, snap.max_percent))
-        if snap.exhausted:
-            lines.append(f"  STATUS: BUDGET EXCEEDED ({snap.exhausted_reason})")
+        if snap.exhausted and include_stop_reason:
+            lines.append(f"  STATUS: {snap.exhausted_reason}")
         return "\n".join(lines)
+
+
+def format_plan_window(window: PlanWindow) -> str:
+    """Return a plan window's duration and backend label for operator output."""
+    minutes = window.window_minutes
+    if minutes >= 1440:
+        duration = f"{minutes / 1440:g}-day "
+    elif minutes >= 60:
+        duration = f"{minutes / 60:g}-hour "
+    elif minutes > 0:
+        duration = f"{minutes}-minute "
+    else:
+        duration = ""
+    which = "" if window.name == "primary" else f" ({window.name})"
+    return f"{duration}window{which}"
 
 
 def format_plan_usage(route: str, spend: PlanSpend, max_percent: float) -> str:
@@ -748,20 +771,10 @@ def format_plan_usage(route: str, spend: PlanSpend, max_percent: float) -> str:
         The line.
     """
     plan = spend.usage
-    minutes = plan.window_minutes
-    if minutes >= 1440:
-        window = f"{minutes / 1440:g}-day "
-    elif minutes >= 60:
-        window = f"{minutes / 60:g}-hour "
-    elif minutes > 0:
-        window = f"{minutes}-minute "
-    else:
-        window = ""
     cap = "" if max_percent == -1 else f" of max_percent {max_percent:g}"
     resets_h = max(0.0, (plan.resets_at - time.time()) / 3600)
-    which = "" if plan.binding.name == "primary" else f" ({plan.binding.name})"
     return (
-        f"plan usage ({route}): {plan.used_percent:g}% of the {window}window{which}"
+        f"plan usage ({route}): {plan.used_percent:g}% of the {format_plan_window(plan.binding)}"
         f" (this run ~{spend.consumed:g} points{cap}; resets in {resets_h:.0f}h)"
         + (
             f"; purchased credits balance {plan.credits_balance or 'present'}"

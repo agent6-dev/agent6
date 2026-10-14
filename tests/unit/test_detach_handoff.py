@@ -211,9 +211,12 @@ def _stub_execution_internals(
                 self._undo_forker()  # what the loop does before an `undone` end
             return result
 
+    def cost_summary(**_kw: object) -> str:
+        return "[agent6] cost $0.01"
+
     session = types.SimpleNamespace(
         budget=types.SimpleNamespace(
-            format_summary=lambda: "[agent6] cost $0.01", estimate_usd=lambda: (0.01, False)
+            format_summary=cost_summary, estimate_usd=lambda: (0.01, False)
         ),
         rm_role=types.SimpleNamespace(model="fake/model"),
         provider=None,

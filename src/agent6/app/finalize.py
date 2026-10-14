@@ -353,7 +353,7 @@ def print_session_end(
     _print_stale_gate(result, reporter=reporter)
     _print_settled(result, layout=layout, reporter=reporter)
     reporter.out("")
-    reporter.cost(budget.format_summary())
+    reporter.cost(budget.format_summary(include_stop_reason=result.reason != "budget_exhausted"))
     _print_run_total_across_executions(layout, reporter=reporter)
     _print_run_branch_footer(result, layout=layout, cwd=cwd, reporter=reporter)
 

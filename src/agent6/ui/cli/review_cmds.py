@@ -244,7 +244,7 @@ def _run_review_panel(
             dispatch=dispatch,
         )
     except agent6_budget.BudgetExceededError as exc:
-        print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
+        print(f"budget exhausted: {exc}", file=sys.stderr)
         return 3
     # One all-abstain owner, shared with the in-loop panel: nothing reviewed is never a pass.
     inconclusive = _panel.panel_is_inconclusive(result)
@@ -454,7 +454,7 @@ def _cmd_review(  # noqa: PLR0911
         print(f"REVIEW FAILED: {exc}", file=sys.stderr)
         return 2
     except agent6_budget.BudgetExceededError as exc:
-        print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
+        print(f"budget exhausted: {exc}", file=sys.stderr)
         return 3
 
     print(text, flush=True)
