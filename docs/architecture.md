@@ -437,11 +437,13 @@ Two shared layers sit under them.
 A run started from a hub, or detached mid-run with `/detach`, keeps going with no terminal on it (`ui/spawn.py`); `agent6 attach <id>` opens it again, tailing the same journal every other surface folds.
 
 **Stopping a run** is one function ([app/stop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/stop.py)) behind `agent6 stop`, the TUI's Run menu, `/stop` in every composer, the web stop route and an ACP cancel.
-It writes an abort steer and the `stop.request` marker with its `now` urgency, then waits for the run to end.
+It writes an abort steer, which cuts a model call in flight, and the `stop.request` marker with its `now` urgency, which hands a running command back at once.
+Unless it is request-only, it waits for the run to end.
 A worker still alive after that wait (5 s for a run, 30 s for a fan-out draining its lanes) gets SIGTERM and, 3 s later, SIGKILL, along with the background commands it started on the host.
 Every target is named by process identity (pid plus start time), so a recycled pid is never signalled.
 `--after-step` writes the plain marker alone, so the step's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
-A fan-out stops its lanes with the `now` marker, which hands a lane's running command back at once; an ACP cancel writes the same marker and no abort steer.
+A fan-out stops its lanes with the `now` marker, which hands a lane's running command back at once.
+An ACP cancel is request-only: it writes both requests without waiting for or signalling the worker, which is the ACP server itself.
 
 The journal is durable by contract.
 An append failure on anything but the streaming deltas stops the run loudly (`EventWriteError`), and in-process listeners see an event only after its write landed.

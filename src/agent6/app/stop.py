@@ -4,13 +4,13 @@
 
 A stop now writes both bridges the loop reads (the abort steer cuts a model call in flight,
 the stop marker, written with its `now` urgency, breaks a command or approval wait), then
-waits for the run to end. A worker
-that has not ended by then is not reading requests: it and the background commands it started
-on the host get SIGTERM, then SIGKILL after a grace, and the jail's children die with it. The
-run then reads stale and resume continues it. A stop after the step writes the plain marker
-alone, so the step's command finishes and its tool results and auto-commit land first. An
-ACP cancel has no immediate form, so its marker carries the urgency: the step ends on the
-results it has, a running command handed back.
+waits for the run to end. A worker that has not ended by then is not reading requests: it and
+the background commands it started on the host get SIGTERM, then SIGKILL after a grace, and
+the jail's children die with it. The run then reads stale and resume continues it.
+A request-only stop writes both bridges without waiting for or signalling the worker.
+ACP cancel uses this form because its server is the worker. A stop after the step writes
+the plain marker alone, so the step's command finishes and its tool results and auto-commit
+land first.
 
 A fan-out's stop ends its live lanes first, then the coordinator, which imports and ranks what
 the lanes landed before it ends; that drain gets a longer wait.
@@ -43,8 +43,9 @@ class StopOutcome:
     Attributes:
         session_id: The stopped session.
         ok: Whether the stop took.
-        how: `after_step`, `stopped`, `killed`, `stale` (no answer and nothing left to signal),
-            `not_live` (nothing to stop) or `failed` (a request could not be written).
+        how: `after_step`, `requested`, `stopped`, `killed`, `stale` (no answer and nothing
+            left to signal), `not_live` (nothing to stop) or `failed` (a request could not
+            be written).
         message: The line every surface shows.
         resumable: `agent6 resume` continues it (a fan-out has no loop to resume).
     """
@@ -60,7 +61,7 @@ def stop_session(
     session_dir: pathlib.Path,
     *,
     after_step: bool = False,
-    hand_back: bool = False,
+    request_only: bool = False,
     wait_s: float | None = None,
     grace_s: float | None = None,
 ) -> StopOutcome:
@@ -69,7 +70,7 @@ def stop_session(
     Args:
         session_dir: The session to stop.
         after_step: Let the current step finish first.
-        hand_back: With `after_step`, hand a running command back at once.
+        request_only: Write the requests without waiting for or signalling the worker.
         wait_s: How long to wait for the run to end; None takes `STOP_WAIT_S`.
         grace_s: SIGTERM to SIGKILL; None takes `KILL_GRACE_S`.
 
@@ -87,12 +88,12 @@ def stop_session(
     lanes = _live_lanes(session_dir) if fanout else []
     for lane in lanes:
         stop_session(
-            lane, after_step=after_step, hand_back=hand_back, wait_s=wait_s, grace_s=grace_s
+            lane, after_step=after_step, request_only=request_only, wait_s=wait_s, grace_s=grace_s
         )
     with_lanes = f" with its {len(lanes)} live lane{'s' if len(lanes) > 1 else ''}" if lanes else ""
     worker = ipc.read_live_worker_identity(session_dir)
     if after_step:
-        if not ipc.request_stop(session_dir, now=hand_back):
+        if not ipc.request_stop(session_dir):
             return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
         when = "their current steps" if lanes else "its current step"
         return StopOutcome(
@@ -102,6 +103,10 @@ def stop_session(
         ipc.submit_steer(session_dir, "abort", now=True) and ipc.request_stop(session_dir, now=True)
     ):
         return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
+    if request_only:
+        return StopOutcome(
+            rid, True, "requested", f"{rid} stop requested{with_lanes}", resumable=not fanout
+        )
     return _ended(
         session_dir,
         worker,

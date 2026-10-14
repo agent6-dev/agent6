@@ -86,12 +86,10 @@ class _Wire:
 
 
 def _ignore(
-    path: pathlib.Path, *, after_step: bool = False, hand_back: bool = False
+    path: pathlib.Path, *, after_step: bool = False, request_only: bool = False
 ) -> stop.StopOutcome:
-    """A cancel whose marker landed (nothing here reads the run dir)."""
-    return stop.StopOutcome(
-        path.name, True, "after_step", f"{path.name} stops after its current step"
-    )
+    """A cancel whose requests landed (nothing here reads the run dir)."""
+    return stop.StopOutcome(path.name, True, "requested", f"{path.name} stop requested")
 
 
 def _repo(path: pathlib.Path) -> pathlib.Path:
@@ -132,19 +130,15 @@ def test_the_reporter_never_writes_to_stdout(capsys: pytest.CaptureFixture[str])
 def test_a_cancel_reaches_the_run_it_names(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The run id is minted BEFORE the run starts, so the session has a handle to address.
-
-    Letting the lifecycle mint its own left `session_id` empty: the cancel reported success while
-    the run continued to completion, spending budget and making commits.
-    """
+    """A cancel addresses its run with an immediate request, without waiting or signalling."""
     stopped: list[pathlib.Path] = []
     how: list[tuple[bool, bool]] = []
 
     def _record(
-        path: pathlib.Path, *, after_step: bool = False, hand_back: bool = False
+        path: pathlib.Path, *, after_step: bool = False, request_only: bool = False
     ) -> stop.StopOutcome:
         stopped.append(path)
-        how.append((after_step, hand_back))
+        how.append((after_step, request_only))
         return _ignore(path)
 
     monkeypatch.setattr(stop, "stop_session", _record)
@@ -173,8 +167,7 @@ def test_a_cancel_reaches_the_run_it_names(
         assert stopped, "the stop marker never reached a run directory"
         assert stopped[0].parent.name == "runs", stopped[0]
         assert stopped[0].name, "the run id was empty, so the cancel addressed nothing"
-        # The step in flight finishes and commits; its running command is handed back.
-        assert how == [(True, True)]
+        assert how == [(False, True)]
     finally:
         release.set()
         wire.close()
@@ -1645,10 +1638,7 @@ def test_an_internal_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch) -> 
 def test_a_cancel_before_the_turn_starts_leaves_no_marker_for_the_next(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A turn cancelled before it starts is stopped by not starting, leaving no marker behind.
-
-    The marker would otherwise stop the session's next turn at its first step.
-    """
+    """A queued cancel leaves neither a stop marker nor an abort steer for the next turn."""
     from agent6.sessions import ipc
 
     monkeypatch.chdir(tmp_path)
@@ -1661,11 +1651,14 @@ def test_a_cancel_before_the_turn_starts_leaves_no_marker_for_the_next(
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-AAAA11")
     session_dir = sessions_layout.SessionLayout(tmp_path / "state", "run-AAAA11").session_dir
-    assert ipc.request_stop(session_dir, now=True)  # what Sessions.cancel writes
+    assert ipc.request_stop(session_dir, now=True)
+    assert ipc.submit_steer(session_dir, "abort", now=True)
     session.cancelled = True
 
     assert bridge.run(session, "never starts") == "cancelled"
     assert not ipc.stop_request_pending(session_dir)
+    assert not ipc.steer_request_pending(session_dir)
+    assert not ipc.steer_answer_written(session_dir)
 
 
 def test_a_second_prompt_after_a_recorded_turn_with_no_snapshot_starts_a_new_run(
@@ -1746,11 +1739,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
 def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A cancel written between the turn's start and the lifecycle's sweep still stops the run.
-
-    The sweep drops bridge files older than the execution's start; keyed on the lifecycle's
-    own clock, it dropped the cancel and the run ran on while the editor read "cancelled".
-    """
+    """Startup preserves a turn's cancel marker and abort steer instead of sweeping them away."""
     from agent6 import paths
     from agent6.app import _execution as app__execution
     from agent6.sessions import ipc
@@ -1771,19 +1760,24 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
         encoding="utf-8",
     )
     monkeypatch.chdir(repo)
-    session = session_mod.Session(acp_id="s", cwd=repo)
-    seen: list[bool] = []
+    session = session_mod.Session(acp_id="s", cwd=repo, turn_live=True)
+    seen: list[tuple[bool, bool, bool]] = []
     real_run_task = run.run_task
 
     def _cancelled_while_starting(cfg: Config, text: str, **kw: Any) -> int:
-        session_dir = session.layout(paths.state_dir(repo)).session_dir
-        # What Sessions.cancel writes, the turn begun.
-        assert ipc.request_stop(session_dir, now=True)
+        bridge.sessions().cancel(session)
         time.sleep(2 * ipc.TIMESTAMP_SLACK_S)  # the lifecycle's entry is not the turn's start
         return real_run_task(cfg, text, **kw)
 
     def _execution(*_a: object, **_k: object) -> app__execution.ExecutionEnd:
-        seen.append(ipc.stop_request_pending(session.layout(paths.state_dir(repo)).session_dir))
+        session_dir = session.layout(paths.state_dir(repo)).session_dir
+        seen.append(
+            (
+                ipc.stop_request_is_now(session_dir),
+                ipc.steer_answer_is_abort(session_dir),
+                ipc.steer_interrupt_pending(session_dir),
+            )
+        )
         return app__execution.ExecutionEnd(rc=0)
 
     monkeypatch.setattr(app__execution, "run_execution", _execution)
@@ -1791,7 +1785,7 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
 
     assert bridge.run(session, "do the thing") == "end_turn"
-    assert seen == [True]
+    assert seen == [(True, True, True)]
 
 
 def test_a_missing_provider_key_refuses_the_turn_before_any_state(

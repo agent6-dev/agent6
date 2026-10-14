@@ -384,12 +384,15 @@ class RunBridge:
         return session.layout(agent6_paths.state_dir(session.cwd)).manifest_path.exists()
 
     def _cancelled_unstarted(self, session: acp_session.Session) -> acp_session.StopReason:
-        """Clear the cancel's marker, which would otherwise stop the next turn at its first step.
+        """Clear a queued cancel's requests so the next turn starts without them.
 
         Returns:
             The stop reason "cancelled".
         """
-        ipc.clear_stop_request(session.layout(agent6_paths.state_dir(session.cwd)).session_dir)
+        session_dir = session.layout(agent6_paths.state_dir(session.cwd)).session_dir
+        ipc.clear_stop_request(session_dir)
+        ipc.clear_steer_answer(session_dir)
+        ipc.clear_steer_request(session_dir)
         return "cancelled"
 
     def had_journal(self, session: acp_session.Session) -> bool:

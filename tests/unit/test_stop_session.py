@@ -7,13 +7,17 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 import threading
 import time
 
+import pytest
+
 from agent6 import kinds
 from agent6.app import stop
+from agent6.sandbox import jail
 from agent6.sessions import ipc
 from agent6.tools import background
 
@@ -81,13 +85,32 @@ def test_after_step_writes_the_marker_alone(tmp_path: pathlib.Path) -> None:
     assert not ipc.stop_request_is_now(d)  # the step's running command is left to finish
 
 
-def test_after_step_with_hand_back_marks_the_stop_now(tmp_path: pathlib.Path) -> None:
-    """An editor's cancel waited for the step's running command: its marker carries the urgency."""
+def test_request_only_writes_both_bridges_without_waiting_or_signalling(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A request-only stop aborts model calls and hands commands back without touching workers."""
     d = _live_run(tmp_path, "hand-run-AAAAAA")
-    ipc.write_worker_pid(d, os.getpid())
-    out = stop.stop_session(d, after_step=True, hand_back=True)
-    assert (out.ok, out.how) == (True, "after_step")
-    assert ipc.stop_request_is_now(d) and not (d / ipc.STEER_ANSWER_FILE).exists()
+    worker = _spawn(_DEAF_WORKER)
+    ipc.write_worker_pid(d, worker.pid)
+
+    def _wait(*_a: object, **_kw: object) -> bool:
+        pytest.fail("a request-only stop must not wait for the worker")
+
+    def _signal(_pid: int, _sig: signal.Signals) -> None:
+        pytest.fail("a request-only stop must not signal a process")
+
+    monkeypatch.setattr(stop, "_ended_within", _wait)
+    monkeypatch.setattr(jail, "signal_group", _signal)
+    try:
+        out = stop.stop_session(d, request_only=True)
+        assert (out.ok, out.how) == (True, "requested")
+        assert "stop requested" in out.message
+        assert ipc.stop_request_is_now(d)
+        assert ipc.steer_answer_is_abort(d) and ipc.steer_interrupt_pending(d)
+        assert worker.poll() is None
+    finally:
+        worker.kill()
+        worker.wait()
 
 
 def test_a_run_that_answers_stops_and_is_not_killed(tmp_path: pathlib.Path) -> None:

@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import pathlib
+import signal
 import threading
 import time
 from typing import Any
@@ -18,6 +20,8 @@ from typing import Any
 import pytest
 
 from agent6.app import stop
+from agent6.sandbox import jail
+from agent6.sessions import ipc
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 
@@ -231,15 +235,47 @@ def test_a_stale_cancel_does_not_kill_the_next_turn() -> None:
 
 
 def test_a_cancel_while_the_run_starts_reaches_its_first_boundary(tmp_path: pathlib.Path) -> None:
-    """A turn is live before its worker pid exists, so a cancel leaves the marker startup keeps."""
-    from agent6.sessions import ipc
-
+    """A cancel before the worker is recorded writes both urgent requests startup keeps."""
     sessions = _sessions(_ends)
     session = acp_session.Session(acp_id="s1", cwd=tmp_path, session_id="run-1", turn_live=True)
 
     sessions.cancel(session)
 
-    assert ipc.stop_request_is_now(session.layout(tmp_path / ".state").session_dir)
+    session_dir = session.layout(tmp_path / ".state").session_dir
+    assert ipc.stop_request_is_now(session_dir)
+    assert ipc.steer_answer_is_abort(session_dir)
+    assert ipc.steer_interrupt_pending(session_dir)
+
+
+def test_a_cancel_aborts_the_model_call_without_waiting_or_signalling(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A live ACP cancel writes the abort steer without waiting for or signalling its server."""
+    sessions = _sessions(_ends)
+    session = acp_session.Session(acp_id="s1", cwd=tmp_path, session_id="run-1", turn_live=True)
+    session_dir = session.layout(tmp_path / ".state").session_dir
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "session_id": "run-1", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    ipc.write_worker_pid(session_dir, os.getpid())
+
+    def _wait(*_a: object, **_kw: object) -> bool:
+        pytest.fail("an ACP cancel must not wait for the worker")
+
+    def _signal(_pid: int, _sig: signal.Signals) -> None:
+        pytest.fail("an ACP cancel must not signal a process")
+
+    monkeypatch.setattr(stop, "_ended_within", _wait)
+    monkeypatch.setattr(jail, "signal_group", _signal)
+
+    sessions.cancel(session)
+
+    assert session.cancelled
+    assert ipc.stop_request_is_now(session_dir)
+    assert ipc.steer_answer_is_abort(session_dir)
+    assert ipc.steer_interrupt_pending(session_dir)
 
 
 def test_a_cancel_while_idle_does_not_poison_the_next_turn(
@@ -249,10 +285,10 @@ def test_a_cancel_while_idle_does_not_poison_the_next_turn(
     stopped: list[pathlib.Path] = []
 
     def _stop(
-        path: pathlib.Path, *, after_step: bool = False, hand_back: bool = False
+        path: pathlib.Path, *, after_step: bool = False, request_only: bool = False
     ) -> stop.StopOutcome:
         stopped.append(path)
-        return stop.StopOutcome(path.name, True, "after_step", "")
+        return stop.StopOutcome(path.name, True, "requested", "")
 
     monkeypatch.setattr("agent6.app.stop.stop_session", _stop)
     sessions = _sessions(_ends)

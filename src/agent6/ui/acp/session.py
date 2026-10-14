@@ -181,10 +181,10 @@ class Sessions:
                 session.thread.join(timeout=max(0.0, deadline - time.monotonic()))
 
     def cancel(self, session: Session) -> None:
-        """Ask the run to stop at its next boundary.
+        """Cut a model call in flight and hand a running command back at once.
 
-        A marker, not a kill: the step's tool results and auto-commit land first. A running
-        command is handed back at once, so the editor's cancel never waits one out.
+        What the run had not committed stays in the tree for the next prompt. The worker is
+        the ACP server, so the cancel never waits for or signals it.
         """
         if not session.is_running():
             return
@@ -192,13 +192,14 @@ class Sessions:
         if not session.session_id:
             return
         session_dir = session.layout(self.state_dir_for(session.cwd)).session_dir
-        out = stop.stop_session(session_dir, after_step=True, hand_back=True)
+        out = stop.stop_session(session_dir, request_only=True)
         if not out.ok:
             # The turn is live before the lifecycle records its worker; the marker survives startup.
             if (
                 out.how == "not_live"
                 and session.is_running()
                 and ipc.request_stop(session_dir, now=True)
+                and ipc.submit_steer(session_dir, "abort", now=True)
             ):
                 return
             # A notification has no reply: stderr is the one channel left.
