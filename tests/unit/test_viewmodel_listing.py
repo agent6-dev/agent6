@@ -1392,3 +1392,20 @@ def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: path
         (rd / "worker.pid").unlink()
         s = summarize_session_dir(rd)
         assert (s.status, s.reason) == expected
+
+
+def test_a_timed_out_gate_reads_gate_timed_out_beside_gate_red_and_unverified() -> None:
+    """A finish over a gate that ran out its timeout read "finished · gate red"."""
+    from agent6.viewmodel import listing
+
+    for reason in ("finish_session", "silent_finish", "settled"):
+        assert listing.status_word(
+            finished=True, all_passed=False, end_reason=reason, gate_red=True, gate_timed_out=True
+        ) == ("finished", "gate timed out")
+        assert listing.status_word(
+            finished=True, all_passed=False, end_reason=reason, gate_red=True
+        ) == ("finished", "gate red")
+        assert listing.status_word(finished=True, all_passed=False, end_reason=reason) == (
+            "finished",
+            "unverified",
+        )

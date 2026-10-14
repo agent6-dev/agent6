@@ -438,7 +438,8 @@ class TranscriptFold:
         self._pending: dict[int | str, tuple[TranscriptItem, str]] = {}
         # The call each open prompt gates, by prompt id: the answer names only the prompt.
         self._gated: dict[str, int] = {}
-        self._verify: tuple[bool, str] | None = None
+        # The last gate run a tool call has not claimed: passed, its badge, ended on its timeout.
+        self._verify: tuple[bool, str, bool] | None = None
         self._finish = ""
         self._tools = 0
         self._commits = 0
@@ -564,7 +565,8 @@ class TranscriptFold:
             code = event.get("exit_code")
             dur = float(event.get("duration_s", 0) or 0)
             badge = "✓ pass" if code == 0 else f"✗ exit {code}"
-            self._verify = (code == 0, f"{badge} · {dur:.1f}s")
+            timed_out = viewmodel_events.verify_limit_hit(code, event.get("timeout_s")) > 0
+            self._verify = (code == 0, f"{badge} · {dur:.1f}s", timed_out)
             return []
         if etype == "tool.result":
             return self._complete_tool(event)
@@ -605,6 +607,7 @@ class TranscriptFold:
                 end_reason=reason,
                 scoped=bool(event.get("scoped", False)),
                 gate_red=self._verify is not None and not self._verify[0],
+                gate_timed_out=self._verify is not None and self._verify[2],
             )
             # On a failure or stop the summary is an earlier finish call's and reads as success.
             body = self._finish if reason in ("", "finish_session", "finish_planning") else ""
@@ -719,7 +722,7 @@ class TranscriptFold:
             return []
         pending, call_preview = self._pending.pop(key)
         if name == "run_verify_command" and self._verify is not None:
-            ok, detail = self._verify
+            ok, detail, _timed_out = self._verify
             self._verify = None
         else:
             ok = viewmodel_events.tool_result_ok(event.get("ok"))

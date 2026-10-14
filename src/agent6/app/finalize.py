@@ -166,14 +166,15 @@ def _print_next_session(
             reporter.out(f'\nnext:  agent6 run --from {session_id} "<what to do with it>"')
 
 
-def _print_unknown_baseline(
+def _print_red_gate(
     result: _snapshot.SessionResult,
     *,
     layout: sessions_layout.SessionLayout,
     reporter: app_reporter.Reporter,
 ) -> None:
-    """Say when a red gate was never observed at the base, and name the check.
+    """Say what a red gate leaves open: a timeout, or a base nothing checked.
 
+    A gate that ran out its limit gave no verdict, so the block names the limit to raise.
     A run whose first verify ran on an unmodified tree ends `gate_red_at_base`
     instead. Saying "unknown" beats a second gate run in the teardown.
 
@@ -183,6 +184,15 @@ def _print_unknown_baseline(
         reporter: Receives the lines.
     """
     if result.verified != "failed" or result.reason == "gate_red_at_base":
+        return
+    if limit := scan_session_log(layout.logs_path).verify_timeout_s:
+        reporter.out(
+            f"\nthe verify gate ran out its {limit:.0f}s limit (harness.verify_timeout_s),"
+            " so it gave no verdict on the final tree."
+        )
+        reporter.out(
+            "  raise the limit:  agent6 config set --repo harness.verify_timeout_s <seconds>"
+        )
         return
     gate = ()
     base = ""
@@ -327,7 +337,7 @@ def print_session_end(
         reporter.out("    - grant their real directories via [sandbox].extra_read_paths")
         reporter.out("    - run with --dangerously-disable-sandbox")
     _print_next_session(layout, completed=result.completed, reporter=reporter)
-    _print_unknown_baseline(result, layout=layout, reporter=reporter)
+    _print_red_gate(result, layout=layout, reporter=reporter)
     _print_unverified(result, layout=layout, cwd=cwd, reporter=reporter)
     _print_stale_gate(result, reporter=reporter)
     _print_settled(result, layout=layout, reporter=reporter)

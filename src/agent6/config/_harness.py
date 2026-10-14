@@ -114,7 +114,8 @@ class HarnessConfig(pydantic.BaseModel):
         default=600.0,
         description=(
             "Seconds one `verify_command` or `metric.command` call may take before it is killed "
-            "and counted as failed. A pytest gate naming no paths that overruns this budget "
+            "and counted as failed; a run that ends over a gate killed here reads `finished · "
+            "gate timed out`. A pytest gate naming no paths that overruns this budget "
             "(the harness's run or the model's own `run_verify_command`) re-runs scoped to the "
             "test files nearest the run's diff, and harness gates run scoped until a full run "
             "of the gate passes; a scoped green ends the run `passed · scoped gate`. A "

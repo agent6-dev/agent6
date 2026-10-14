@@ -121,6 +121,52 @@ def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
     assert _finalize.session_exit_code(result) == 0
 
 
+def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A gate killed at its timeout drew the advice to check the base commit for a red suite."""
+    layout = _layout(
+        tmp_path,
+        "r-slow",
+        [
+            {"type": "session.start", "session_id": "r-slow", "user_task": "t"},
+            {"type": "verify.end", "cmd": ["pytest"], "exit_code": 124, "timeout_s": 300.0},
+            {"type": "session.end", "reason": "finish_session", "all_passed": False},
+        ],
+    )
+    manifest = {
+        "version": 3,
+        "session_id": "r-slow",
+        "mode": "run",
+        "user_task": "t",
+        "base_sha": "a" * 40,
+        "harness": {"verify_command": ["pytest"], "verify_origin": "configured"},
+    }
+    (layout.session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    result = _snapshot.SessionResult(
+        completed=True,
+        reason="finish_session",
+        summary="",
+        iterations=1,
+        tool_calls=1,
+        verified="failed",
+    )
+    _finalize.print_session_end(
+        result,
+        layout=layout,
+        cwd=tmp_path,
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=False,
+        reporter=reporter.STDIO_REPORTER,
+    )
+    out = capsys.readouterr().out
+    assert out.split("\n")[1] == "finished · gate timed out"
+    assert "the verify gate ran out its 300s limit (harness.verify_timeout_s)" in out
+    assert "agent6 config set --repo harness.verify_timeout_s <seconds>" in out
+    assert "check out the base commit" not in out
+    assert _finalize.session_exit_code(result) == 4
+
+
 def _end_output(
     tmp_path: pathlib.Path,
     session_id: str,

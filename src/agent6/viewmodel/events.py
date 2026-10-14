@@ -207,13 +207,50 @@ class VerifyStart:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class VerifyEnd:
-    """verify.end: the verify gate finished, with its exit code and output tails."""
+    """verify.end: the verify gate finished, with its exit code and output tails.
+
+    Attributes:
+        cmd: The gate's argv.
+        exit_code: The exit code.
+        duration_s: How long it ran.
+        stdout_tail: The capped stdout tail.
+        stderr_tail: The capped stderr tail.
+        timeout_s: The gate's wall-clock limit, 0.0 when the event carried none.
+    """
 
     cmd: tuple[str, ...]
     exit_code: int
     duration_s: float
     stdout_tail: str
     stderr_tail: str
+    timeout_s: float = 0.0
+
+
+# A jailed command killed at its wall-clock limit exits 124, per the sandbox's contract.
+EXIT_TIMEOUT = 124
+
+
+def verify_limit_hit(exit_code: object, timeout_s: object) -> float:
+    """Return the limit a verify.end's fields say the gate ran out.
+
+    The one rule the listing scan, the typed fold and the transcript fold share.
+
+    Args:
+        exit_code: The event's exit code.
+        timeout_s: The event's wall-clock limit.
+
+    Returns:
+        The limit for exit 124 under a positive one, else 0.0: a command that exits 124
+        by itself is red.
+    """
+    if (
+        exit_code == EXIT_TIMEOUT
+        and isinstance(timeout_s, (int, float))
+        and not isinstance(timeout_s, bool)
+        and timeout_s > 0
+    ):
+        return float(timeout_s)
+    return 0.0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -551,6 +588,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 duration_s=float(raw.get("duration_s", 0.0)),
                 stdout_tail=str(raw.get("stdout_tail", "")),
                 stderr_tail=str(raw.get("stderr_tail", "")),
+                timeout_s=float(raw.get("timeout_s", 0.0) or 0.0),
             )
         case "budget.update":
             return BudgetUpdate(

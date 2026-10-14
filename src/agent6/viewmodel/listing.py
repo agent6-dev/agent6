@@ -345,6 +345,7 @@ def status_word(
     end_reason: str,
     scoped: bool = False,
     gate_red: bool = False,
+    gate_timed_out: bool = False,
 ) -> tuple[str, str]:
     """Map an end state to the status word and its detail.
 
@@ -364,12 +365,14 @@ def status_word(
             so a pass reads "passed · scoped gate".
         gate_red: This execution's last verify ran and failed; False also covers a
             stale green and a gate nothing ran.
+        gate_timed_out: That verify ended on its timeout, so it gave no verdict.
 
     Returns:
         The `(word, detail)` pair.
     """
     if not finished:
         return "running", ""
+    not_green = "gate timed out" if gate_timed_out else "gate red" if gate_red else "unverified"
     if end_reason in ("steer_abort", "steer_exit", "interrupted", "interactive_stop"):
         return "stopped", ""
     # An end with its own word, never "passed" and never "failed", whatever the gate said.
@@ -379,7 +382,7 @@ def status_word(
         "undone": ("undone", ""),
         # The harness ended the run over a green gate; the worker called no finish_session.
         "verify_settled": ("finished", "settled"),
-        "settled": ("finished", "gate red" if gate_red else "unverified"),
+        "settled": ("finished", not_green),
         # A verify against the unmodified tree proved the gate red before the run touched it.
         "gate_red_at_base": ("finished", "gate was already red"),
     }
@@ -389,9 +392,8 @@ def status_word(
         return "passed", "scoped gate" if scoped else ""
     # Only an observed not-green words "failed"; a deliberate finish over one is "finished".
     if all_passed is False and end_reason:
-        detail = "gate red" if gate_red else "unverified"
         clean_end = end_reason in ("finish_session", "silent_finish", "metric_plateau")
-        return ("finished", detail) if clean_end else ("failed", end_reason)
+        return ("finished", not_green) if clean_end else ("failed", end_reason)
     return "finished", ""
 
 
@@ -418,6 +420,7 @@ class StatusFacts:
         all_passed: The verify tri-state; None when no verify command gated the end.
         verify_scoped: The judging gate ran scoped, which qualifies a pass.
         gate_red: This execution's last verify ran and failed.
+        gate_timed_out: That verify ended on its timeout.
         end_reason: The session.end reason word.
         operator_blocked: An approval or question is still unanswered.
         blocked_kind: The oldest unanswered prompt's kind, "approval" or "question".
@@ -430,6 +433,7 @@ class StatusFacts:
     all_passed: bool | None = False
     verify_scoped: bool = False
     gate_red: bool = False
+    gate_timed_out: bool = False
     end_reason: str = ""
     operator_blocked: bool = False
     blocked_kind: str = ""
@@ -460,6 +464,7 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
             end_reason=facts.end_reason,
             scoped=facts.verify_scoped,
             gate_red=facts.gate_red,
+            gate_timed_out=facts.gate_timed_out,
         )
         if n := facts.unattended_questions:
             note = f"{n} question{'s' if n != 1 else ''} unanswered"
@@ -577,6 +582,7 @@ class LogScan:
         blocked_kind: The oldest unanswered prompt's kind, "approval" or "question".
         blocked_since_ep: That prompt's asked-at epoch.
         last_verify_rc: This execution's last verify.end exit code.
+        verify_timeout_s: The limit that verify ran out, 0.0 when it ended on its own.
         pins: The operator's pinned instructions in force.
         unattended_questions: Questions answered empty because nobody was attached.
     """
@@ -607,6 +613,7 @@ class LogScan:
     blocked_kind: str = ""
     blocked_since_ep: float | None = None
     last_verify_rc: int | None = None
+    verify_timeout_s: float = 0.0
     pins: tuple[str, ...] = ()
     unattended_questions: int = 0
 
@@ -639,6 +646,7 @@ class LogScan:
             all_passed=self.all_passed,
             verify_scoped=self.verify_scoped,
             gate_red=self.last_verify_rc is not None and self.last_verify_rc != 0,
+            gate_timed_out=self.verify_timeout_s > 0,
             end_reason=self.end_reason,
             operator_blocked=self.operator_blocked,
             blocked_kind=self.blocked_kind,
@@ -754,6 +762,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     pending_prompts: dict[str, tuple[str, float | None]] = {}
     unattended_questions = 0
     last_verify_rc: int | None = None
+    verify_timeout_s = 0.0
     pins: list[str] = []
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:
@@ -791,6 +800,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     # A new execution re-asks with restarted ids; a held-over prompt waits forever.
                     pending_prompts.clear()
                     last_verify_rc = None
+                    verify_timeout_s = 0.0
                     if start_ep is None:
                         start_ep = ep
                 elif etype == "session.end":
@@ -811,6 +821,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         cache_read_tokens = cache_creation_tokens = None
                         plan_consumed = plan_cap = plan_used_percent = 0.0
                         last_verify_rc = None
+                        verify_timeout_s = 0.0
                         executions += 1
                     saw_start = True
                     mode = str(ev.get("mode", mode))
@@ -820,6 +831,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     rc = ev.get("exit_code")
                     if isinstance(rc, int) and not isinstance(rc, bool):
                         last_verify_rc = rc
+                        verify_timeout_s = events.verify_limit_hit(rc, ev.get("timeout_s"))
                 elif etype == "role.result":
                     # A side call's failure never ends the run, so it is not the reason.
                     if ev.get("ok") is False and not kinds.is_side_role(str(ev.get("role", ""))):
@@ -884,6 +896,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         ),
         blocked_since_ep=oldest[1] if oldest else None,
         last_verify_rc=last_verify_rc,
+        verify_timeout_s=verify_timeout_s,
         pins=tuple(pins),
     )
 

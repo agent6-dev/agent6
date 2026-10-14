@@ -118,6 +118,7 @@ class VerifyView:
         duration_s: How long it ran.
         stdout_tail: The capped stdout tail.
         stderr_tail: The capped stderr tail.
+        timeout_s: The gate's wall-clock limit, 0.0 when the event carried none.
     """
 
     cmd: tuple[str, ...]
@@ -125,6 +126,7 @@ class VerifyView:
     duration_s: float = 0.0
     stdout_tail: str = ""
     stderr_tail: str = ""
+    timeout_s: float = 0.0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -591,12 +593,22 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             return dataclasses.replace(state, last_verify=VerifyView(cmd=cmd))
 
         case events.VerifyEnd(
-            cmd=cmd, exit_code=code, duration_s=dur, stdout_tail=out, stderr_tail=err
+            cmd=cmd,
+            exit_code=code,
+            duration_s=dur,
+            stdout_tail=out,
+            stderr_tail=err,
+            timeout_s=limit,
         ):
             return dataclasses.replace(
                 state,
                 last_verify=VerifyView(
-                    cmd=cmd, exit_code=code, duration_s=dur, stdout_tail=out, stderr_tail=err
+                    cmd=cmd,
+                    exit_code=code,
+                    duration_s=dur,
+                    stdout_tail=out,
+                    stderr_tail=err,
+                    timeout_s=limit,
                 ),
             )
 
@@ -866,14 +878,15 @@ def status_facts(state: SessionState) -> listing.StatusFacts:
         ("approval", a.asked_ep) for a in state.pending_approvals if not a.answered
     ] + [("question", q.asked_ep) for q in state.pending_questions if not q.answered]
     oldest = min(pending, key=lambda p: p[1] if p[1] is not None else float("inf"), default=None)
+    gate = state.last_verify
     return listing.StatusFacts(
         started=state.started,
         finished=state.finished,
         all_passed=state.all_passed,
         verify_scoped=state.verify_scoped,
-        gate_red=state.last_verify is not None
-        and state.last_verify.exit_code is not None
-        and state.last_verify.exit_code != 0,
+        gate_red=gate is not None and gate.exit_code is not None and gate.exit_code != 0,
+        gate_timed_out=gate is not None
+        and events.verify_limit_hit(gate.exit_code, gate.timeout_s) > 0,
         end_reason=state.end_reason,
         operator_blocked=bool(pending),
         blocked_kind=oldest[0] if oldest else "",
@@ -964,12 +977,14 @@ def session_state_as_dict(
                 d["plan_md"] = (session_dir / "plan.md").read_text(encoding="utf-8")
     else:
         d["live"] = None
+        facts = status_facts(state)
         word, reason = listing.status_word(
             finished=state.finished,
             all_passed=state.all_passed,
             end_reason=state.end_reason,
             scoped=state.verify_scoped,
-            gate_red=status_facts(state).gate_red,
+            gate_red=facts.gate_red,
+            gate_timed_out=facts.gate_timed_out,
         )
     d["status"] = word
     d["status_label"] = format.status_label(word, reason)
