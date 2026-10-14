@@ -592,8 +592,7 @@ def drop_gate_if_unrunnable(
     if cfg.harness.verify_command:
         reporter.note(
             "commands are withheld, and the verify gate is a command"
-            f" ({gate_text(cfg.harness.verify_command)}): running gateless"
-            " (per-step commits, no green gate)."
+            f" ({gate_text(cfg.harness.verify_command)}): running gateless, with no green gate."
         )
     return cfg.with_verify_command(())
 
