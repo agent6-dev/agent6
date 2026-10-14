@@ -11,6 +11,7 @@ import dataclasses
 import os
 import pathlib
 import stat
+from collections.abc import Sequence
 from typing import Any
 
 from agent6 import kinds, memory, paths
@@ -133,7 +134,7 @@ class DroppedGrant:
     """A configured grant a run leaves out.
 
     Attributes:
-        key: The `[sandbox]` key that lists it.
+        key: The dotted config key that lists it.
         path: The configured path.
         real: The path it resolves to.
         region: The writable region it sits inside, where a jailed command can re-point it.
@@ -151,12 +152,12 @@ class DroppedGrant:
         where = "" if self.real == self.path else f" (it resolves to {self.real})"
         if self.via_link:
             return (
-                f"sandbox.{self.key} entry {self.path}{where} is not granted: a link on its"
+                f"{self.key} entry {self.path}{where} is not granted: a link on its"
                 f" way sits inside {self.region}, which jailed commands write, so a command"
                 f" could point it anywhere. Grant {self.real} by its own path."
             )
         return (
-            f"sandbox.{self.key} entry {self.path}{where} is not granted on its own: it sits"
+            f"{self.key} entry {self.path}{where} is not granted on its own: it sits"
             f" inside {self.region}, which jailed commands write, so a command could point it"
             f" anywhere. What it holds stays reachable as part of {self.region}."
         )
@@ -203,7 +204,12 @@ def _link_dirs(path: pathlib.Path) -> tuple[pathlib.Path, ...]:
     return tuple(dirs)
 
 
-def resolve_grants(config: Config, root: pathlib.Path) -> Grants:
+def resolve_grants(
+    config: Config,
+    root: pathlib.Path,
+    *,
+    server: tuple[str, Sequence[str], Sequence[str]] | None = None,
+) -> Grants:
     """Resolve `sandbox.extra_read_paths` and `extra_write_paths`, once for a run.
 
     A grant spelled or resolving strictly inside a region the run writes (the workspace root,
@@ -214,20 +220,39 @@ def resolve_grants(config: Config, root: pathlib.Path) -> Grants:
     Args:
         config: The run's config.
         root: The workspace root.
+        server: An MCP server's own grants, as (name, read paths, write paths), resolved with
+            the config's by the same rule; its write paths are writable regions too.
 
     Returns:
         The grants kept, each with its resolved path, and the grants dropped.
     """
     sb = config.sandbox
-    regions = (root.resolve(), *(pathlib.Path(p).resolve() for p in sb.extra_write_paths))
-    kept: dict[str, list[tuple[pathlib.Path, pathlib.Path]]] = {
-        "extra_read_paths": [],
-        "extra_write_paths": [],
-    }
+    # Each group: the dotted key that lists it, whether it grants writes, its entries.
+    groups: list[tuple[str, bool, Sequence[str]]] = [
+        ("sandbox.extra_read_paths", False, sb.extra_read_paths),
+        ("sandbox.extra_write_paths", True, sb.extra_write_paths),
+    ]
+    if server is not None:
+        name, reads, writes = server
+        groups += [
+            (f"mcp.servers.{name}.sandbox.read_paths", False, reads),
+            (f"mcp.servers.{name}.sandbox.write_paths", True, writes),
+        ]
+    regions = (
+        root.resolve(),
+        *(
+            pathlib.Path(p).expanduser().resolve()
+            for _key, writes, entries in groups
+            if writes
+            for p in entries
+        ),
+    )
+    kept: dict[bool, list[tuple[pathlib.Path, pathlib.Path]]] = {False: [], True: []}
     dropped: list[DroppedGrant] = []
-    for key, entries in kept.items():
-        for grant in getattr(sb, key):
-            path = pathlib.Path(grant)
+    for key, writes, listed in groups:
+        entries = kept[writes]
+        for grant in listed:
+            path = pathlib.Path(grant).expanduser()
             real = path.resolve()
             # Inside a region by its spelling (an ancestor resolves into one) or by its target.
             inside = (real.parent, *(step.resolve() for step in path.parents))
@@ -250,11 +275,7 @@ def resolve_grants(config: Config, root: pathlib.Path) -> Grants:
                 )
             else:
                 entries.append((path, real))
-    return Grants(
-        read=tuple(kept["extra_read_paths"]),
-        write=tuple(kept["extra_write_paths"]),
-        dropped=tuple(dropped),
-    )
+    return Grants(read=tuple(kept[False]), write=tuple(kept[True]), dropped=tuple(dropped))
 
 
 def workspace_for(

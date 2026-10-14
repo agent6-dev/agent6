@@ -381,6 +381,26 @@ def wants_session_network(cfg: Config, isolation: kinds.IsolationLevel) -> bool:
     )
 
 
+def mcp_server_grants(
+    cfg: Config, root: pathlib.Path, srv: MCPServerEntry, name: str = ""
+) -> policy.Grants:
+    """Return the run's path grants plus one server's own, resolved by the one rule.
+
+    Args:
+        cfg: The resolved config.
+        root: The workspace.
+        srv: The server's config block.
+        name: The server's name, for the key a dropped grant is reported under.
+
+    Returns:
+        The grants a spawned server is bound with, and those left out.
+    """
+    sandbox = srv.sandbox
+    reads = sandbox.read_paths if sandbox else ()
+    writes = sandbox.write_paths if sandbox else ()
+    return policy.resolve_grants(cfg, root, server=(name, reads, writes))
+
+
 def mcp_server_policy(
     cfg: Config,
     root: pathlib.Path,
@@ -407,8 +427,6 @@ def mcp_server_policy(
     sandbox = srv.sandbox
     if sandbox is not None and sandbox.unconfined:
         return None
-    read_paths = sandbox.read_paths if sandbox else ()
-    write_paths = sandbox.write_paths if sandbox else ()
     # auto and none both mean a network of its own; preflight owns the warn-or-refuse difference.
     configured = srv.effective_network
     network: kinds.NetworkMode = "none" if configured == "auto" else configured
@@ -417,8 +435,8 @@ def mcp_server_policy(
         cfg,
         isolation,
         srv.command,
-        extra_ro_paths=tuple(pathlib.Path(p).expanduser() for p in read_paths),
-        extra_rw_paths=tuple(pathlib.Path(p).expanduser() for p in write_paths),
+        # The server's paths with the run's, resolved once: the server is spawned once.
+        grants=mcp_server_grants(cfg, root, srv),
         extra_protect_paths=(root,) if readonly else (),
         network=network,
         env_base=child_env.curated_env(passthrough=srv.pass_env, desktop=False),

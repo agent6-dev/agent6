@@ -235,6 +235,7 @@ Every path they take resolves through `Workspace`:
       The run names each dropped grant in one line at its start, and the region still covers what the grant held
     - a grant reached through a link that sits in one of those regions is dropped too, though it ends outside: a command of one run could point the link elsewhere for the next.
       Its line says to grant the target by its own path
+    - an MCP server's own `read_paths` and `write_paths` (`[mcp.servers.<name>.sandbox]`) follow the same rule, resolved once when the server is spawned; a dropped one is named at run start under its own key
     - `agent6 check boundaries` lists each grant by its resolved path, with the configured spelling when the two differ, and each dropped grant with the region it sits in
 - A denied path is refused with the reason
     - `list_dir` drops the entry and reports `hidden: N`

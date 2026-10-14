@@ -353,3 +353,44 @@ def test_a_confined_server_gets_no_desktop_addresses(
     policy = _policy_for({"read_paths": ["/srv/notes"]}, tmp_path)
     assert policy is not None
     assert "DBUS_SESSION_BUS_ADDRESS" not in dict(policy.env)
+
+
+def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A server's `read_paths` reached the launcher as spelled, whatever they resolved to.
+
+    A path linked into the workspace was bound though a jailed command can re-point it, and a
+    symlinked toolchain was bound by following the link at launch. A server's paths resolve
+    once, by the rule `sandbox.extra_read_paths` follow, and a dropped one is named at start.
+    """
+    from agent6.app import _setup, confine
+    from agent6.sandbox import detect, tool_paths
+
+    monkeypatch.setattr(tool_paths, "tool_mount_notes", tool_paths.ToolMountNotes)
+    repo, real, tool = tmp_path / "repo", tmp_path / "tool-1.2", tmp_path / "tool"
+    (repo / "data").mkdir(parents=True)
+    real.mkdir()
+    tool.symlink_to(real, target_is_directory=True)
+    into = tmp_path / "into"
+    into.symlink_to(repo / "data", target_is_directory=True)
+    spec = {"command": ["npx", "server"], "sandbox": {"read_paths": [str(tool), str(into)]}}
+    cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"fs": spec}}})
+
+    built = _setup.mcp_server_policy(cfg, repo, "strict", cfg.mcp.servers["fs"])
+
+    assert built is not None
+    assert tool in built.extra_ro_paths and (tool, real) in built.grant_sources
+    assert into not in built.extra_ro_paths
+    env = detect.Environment(
+        in_container=False,
+        container_signals=(),
+        kernel=detect.KernelInfo(raw="6.14.0", major=6, minor=14),
+        userns_supported=True,
+        landlock_abi=4,
+        seccomp_arch_supported=True,
+        sandbox_available=True,
+    )
+    confine.warn_sandbox_gaps("strict", env, cfg, root=repo)
+    err = capsys.readouterr().err
+    assert f"mcp.servers.fs.sandbox.read_paths entry {into} (it resolves to {repo / 'data'})" in err

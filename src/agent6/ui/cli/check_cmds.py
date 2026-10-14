@@ -418,7 +418,7 @@ def _grant_lines(grants: tools_policy.Grants) -> list[str]:
         for path, real in sorted(grants.write, key=lambda pair: pair[1])
     ]
     out += [
-        f"    --  {d.path}  (sandbox.{d.key}: not granted,"
+        f"    --  {d.path}  ({d.key}: not granted,"
         f" {'a link on its way sits' if d.via_link else 'it sits'} inside {d.region},"
         " which jailed commands write)"
         for d in grants.dropped

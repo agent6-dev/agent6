@@ -153,6 +153,14 @@ def _warn_grants(cfg: Config, root: pathlib.Path, reporter: app_reporter.Reporte
     """Name each grant the run leaves out, and each that is the home directory or above it."""
     for dropped in tools_policy.resolve_grants(cfg, root).dropped:
         reporter.warn(dropped.line())
+    if cfg.mcp.enabled:
+        for name, srv in cfg.mcp.servers.items():
+            unconfined = srv.sandbox is not None and srv.sandbox.unconfined
+            if not srv.enabled or srv.url or unconfined:
+                continue
+            for dropped in _setup.mcp_server_grants(cfg, root, srv, name).dropped:
+                if dropped.key.startswith("mcp."):
+                    reporter.warn(dropped.line())
     for line in home_grant_warnings(cfg):
         reporter.warn(line)
 
