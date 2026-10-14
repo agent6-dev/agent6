@@ -107,7 +107,6 @@ def select_isolation(
         # The hardened exposure scan builds the run's policy, which creates the jail's HOME.
         reporter.refuse(str(exc))
         raise preflight.SessionRefusedError(2) from exc
-    confine.warn_home_grants(cfg, reporter=reporter)
     confine.warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     if not confirm_unconfined(selected, cfg):
         reporter.note("aborted.")

@@ -237,7 +237,6 @@ def exec_new(
         env = _setup.detect_env()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
         confine.warn_sandbox_gaps(isolation, env, cfg, root=cwd)
-        confine.warn_home_grants(cfg)
         refusal = confine.check_network_support(cfg, isolation) or confine.config_refusal(
             cfg, isolation, cwd, explicit_leaves=explicit_leaves
         )

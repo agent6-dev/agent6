@@ -128,7 +128,7 @@ def warn_sandbox_gaps(
             "Landlock ABI 3 (Linux 6.2): upgrade the kernel, or run on 'strict', "
             "whose mount namespace confines truncation on any ABI."
         )
-    _warn_dropped_grants(cfg, root, reporter)
+    _warn_grants(cfg, root, reporter)
     for hidden, region, source in unmaskable_exposures(cfg, isolation, root, worktree_git_dir):
         reporter.warn(
             f"jailed commands can read {hidden}: it sits inside"
@@ -149,10 +149,12 @@ def warn_sandbox_gaps(
         # notes.exposes_home_dir is the ordinary state of a dev box; `agent6 check` lists it.
 
 
-def _warn_dropped_grants(cfg: Config, root: pathlib.Path, reporter: app_reporter.Reporter) -> None:
-    """Name each configured grant the run leaves out, with where it resolves and why."""
+def _warn_grants(cfg: Config, root: pathlib.Path, reporter: app_reporter.Reporter) -> None:
+    """Name each grant the run leaves out, and each that is the home directory or above it."""
     for dropped in tools_policy.resolve_grants(cfg, root).dropped:
         reporter.warn(dropped.line())
+    for line in home_grant_warnings(cfg):
+        reporter.warn(line)
 
 
 def warn_cleartext_credential_endpoints(
@@ -202,14 +204,6 @@ def home_grant_warnings(cfg: Config) -> tuple[str, ...]:
             " sandbox.hide_paths hides the paths you list, under 'strict'."
         )
     return tuple(out)
-
-
-def warn_home_grants(
-    cfg: Config, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
-) -> None:
-    """Warn once per grant `home_grant_warnings` names."""
-    for line in home_grant_warnings(cfg):
-        reporter.warn(line)
 
 
 def check_workspace_outside_private_dirs(root: pathlib.Path) -> str | None:
