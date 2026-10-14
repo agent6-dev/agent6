@@ -157,7 +157,7 @@ def _escape_reason(exc: BaseException) -> _snapshot.SessionEndReason:
 
 
 def _journal_escape(
-    events: event_log.EventSink, exc: BaseException, *, iterations: int
+    events: event_log.EventSink, exc: BaseException, *, iterations: int, tree: str = ""
 ) -> _snapshot.SessionEndReason:
     """Journal the end an escape leaves.
 
@@ -168,14 +168,47 @@ def _journal_escape(
         events: The run's event sink.
         exc: The escaping exception.
         iterations: The turns reached.
+        tree: The tree the run leaves, so the next resume tells its files from the operator's.
 
     Returns:
         The reason journaled.
     """
     reason = _escape_reason(exc)
+    left = {"tree": tree} if tree else {}
     with contextlib.suppress(event_log.EventWriteError):
-        events.emit("session.end", reason=reason, iterations=iterations, all_passed=False)
+        events.emit("session.end", reason=reason, iterations=iterations, all_passed=False, **left)
     return reason
+
+
+def _tree_left_before_the_loop(cwd: pathlib.Path, inputs: ExecutionInputs) -> str:
+    """Return the tree a run leaves when it escapes before its harness exists; "" outside run mode.
+
+    Seeded on the chain tip like a chain commit, as the harness's own read is; the escape's
+    end then tells the next resume the run's files from the operator's.
+    """
+    if inputs.mode != "run":
+        return ""
+    try:
+        chain_tip = git_ops.chain_tip(cwd, git_ops.chain_ref_for(inputs.session_id))
+        return git_ops.worktree_tree(
+            cwd, chain_tip or inputs.base_sha or None, inputs.untracked_at_start
+        )
+    except (git_ops.GitError, OSError, KeyboardInterrupt):
+        return ""
+
+
+def _tree_left(wf: loop.Harness, mode: str) -> str:
+    """Return the tree a run leaves, for the end an escape journals; "" outside run mode.
+
+    The read runs git inside the escape handler, where another Ctrl-C can land: the end is
+    then written without the tree rather than not at all.
+    """
+    if mode != "run":
+        return ""
+    try:
+        return wf.chain.tree_sha()
+    except KeyboardInterrupt:
+        return ""
 
 
 def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and teardown in reading order
@@ -255,7 +288,9 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         if stamps.parked_stamp(layout.session_dir) is not None:
             reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         else:
-            reporter.err(f"\n[agent6] {label} {_journal_escape(events, exc, iterations=0)}")
+            tree = _tree_left_before_the_loop(cwd, inputs)
+            reason = _journal_escape(events, exc, iterations=0, tree=tree)
+            reporter.err(f"\n[agent6] {label} {reason}")
         with contextlib.ExitStack() as cleanup:
             if prompt_reviser_provider is not None:
                 cleanup.callback(providers.close_provider, prompt_reviser_provider)
@@ -465,7 +500,9 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     # Journaled inside the TUI scope: the dashboard leaves only on an end it sees.
                     escape_handled = True
                     if result is None:
-                        _journal_escape(events, exc, iterations=wf.iterations_reached)
+                        _journal_escape(
+                            events, exc, iterations=wf.iterations_reached, tree=_tree_left(wf, mode)
+                        )
                     raise
         except _snapshot.ResumeError as exc:
             reporter.error(str(exc))

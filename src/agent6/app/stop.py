@@ -6,7 +6,9 @@ A stop now writes both bridges the loop reads (the abort steer cuts a model call
 the stop marker, written with its `now` urgency, breaks a command or approval wait), then
 waits for the run to end. A worker that has not ended by then is not reading requests: it and
 the background commands it started on the host get SIGTERM, then SIGKILL after a grace, and
-the jail's children die with it. The run then reads stale and resume continues it.
+the jail's children die with it. A run's worker takes the SIGTERM as a Ctrl-C stop and
+journals its end, and resume continues it; a fan-out's coordinator has no handler and
+reads stale.
 A request-only stop writes both bridges without waiting for or signalling the worker.
 ACP cancel uses this form because its server is the worker. A stop after the step writes
 the plain marker alone, so the step's command finishes and its tool results and auto-commit
@@ -135,6 +137,8 @@ def _ended(
         )
     worker_killed, commands = _kill(session_dir, worker, grace_s)
     continues = "" if fanout else ", and resume continues it"
+    # A run's worker journals its end on SIGTERM; a fan-out's coordinator has no handler.
+    after = "; it reads stale" if fanout else continues
     if not worker_killed and not commands:
         return StopOutcome(
             rid,
@@ -151,8 +155,7 @@ def _ended(
         rid,
         True,
         "killed",
-        f"{rid} did not answer within {wait_s:g} s: {' and '.join(killed)} killed;"
-        f" it reads stale{continues}",
+        f"{rid} did not answer within {wait_s:g} s: {' and '.join(killed)} killed{after}",
         resumable=not fanout,
     )
 

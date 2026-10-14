@@ -196,6 +196,7 @@ def _stub_execution_internals(
 ) -> None:
     class _Workflow:
         iterations_reached = 3
+        chain = types.SimpleNamespace(tree_sha=lambda: "")
 
         def __init__(self, **kw: Any) -> None:
             if built is not None:

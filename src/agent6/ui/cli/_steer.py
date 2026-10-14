@@ -355,6 +355,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
             )
 
     previous = signal.signal(signal.SIGINT, _handler)
+    restore_term = steer.stop_on_sigterm()
     previous_tstp = _install_status_signal(state, session_facts)
 
     def requested() -> bool:
@@ -427,9 +428,10 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
             tty_message("[agent6] could not write the steer request\n")
 
     def restore() -> None:
-        """Put the previous SIGINT and SIGTSTP handlers back."""
+        """Put the previous SIGINT, SIGTERM and SIGTSTP handlers back."""
         with contextlib.suppress(Exception):
             signal.signal(signal.SIGINT, previous)
+        restore_term()
         if previous_tstp is not None:
             with contextlib.suppress(Exception):
                 signal.signal(signal.SIGTSTP, previous_tstp)

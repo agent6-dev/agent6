@@ -399,6 +399,7 @@ It writes an abort steer, which cuts a model call in flight, and the `stop.reque
 Unless it is request-only, it waits for the run to end.
 The loop logs `operator stop during step N` and the `stopped` end block says `operator stopped the run during step N`; both add `running command was cut short` when the stop ended a running command, or `model call was cut short` when it cut the model call.
 A worker still alive after that wait (5 s for a run, 30 s for a fan-out draining its lanes) gets SIGTERM and, 3 s later, SIGKILL, along with the background commands it started on the host.
+A run's worker takes the SIGTERM as a Ctrl-C stop (an `interrupted` end at exit 130); a fan-out's coordinator has no handler, ends with no end record and reads `stale`.
 Every target is named by process identity (pid plus start time), so a recycled pid is never signalled.
 `--after-step` writes the plain marker alone, so the step's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
 While that marker is pending on a live run, every listing's status adds `stopping after this step` (`running · stopping after this step` on `sessions`, `sessions show`, `ps`, the TUI hub and the web list); a starting or waiting run keeps its own detail beside it.

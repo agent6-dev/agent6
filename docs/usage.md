@@ -156,7 +156,7 @@ Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scr
 | `3` | budget exhausted, including a `run --parallel` fan-out whose every lane stopped at its cap |
 | `4` | finished over a red, timed-out or never-run verify gate; a review panel's BLOCK |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_step = false`, stays `0`) |
-| `130` | interrupted, or stopped by the operator: Ctrl-C, `agent6 stop`, abort or exit at the pause menu, stop after a commit (a worker `agent6 stop` had to kill dies on the signal instead) |
+| `130` | interrupted, or stopped by the operator: Ctrl-C, SIGTERM to a run, ask or plan (`timeout`, CI, the kill `agent6 stop` falls back to), `agent6 stop`, abort or exit at the pause menu, stop after a commit |
 | `141` | the output pipe closed (`agent6 ... \| head`) |
 
 `passed` means the model called `finish_session` and the gate was green; it does not certify the task.

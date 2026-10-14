@@ -8,9 +8,13 @@ SIGINT pause menu on the same shape, `app.frontend.SteerHooks`.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import pathlib
+import signal
+import threading
 from collections.abc import Callable
+from typing import Any
 
 from agent6.sessions import ipc
 
@@ -44,6 +48,31 @@ class SteerState:
     prompt_now: Callable[[], None] = dataclasses.field(default=lambda: None)
 
 
+def stop_on_sigterm() -> Callable[[], None]:
+    """Make SIGTERM stop the run as a Ctrl-C does, and return the restore.
+
+    `timeout`, CI and the kill `agent6 stop` falls back to send it; the default action would
+    leave no end in the journal. A handler installs only on the main thread, where Python
+    takes signals.
+
+    Returns:
+        Puts the previous handler back.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        return lambda: None
+
+    def _handler(_signum: int, _frame: Any) -> None:
+        raise KeyboardInterrupt
+
+    previous = signal.signal(signal.SIGTERM, _handler)
+
+    def restore() -> None:
+        with contextlib.suppress(Exception):
+            signal.signal(signal.SIGTERM, previous)
+
+    return restore
+
+
 def file_bridge_steer(session_dir: pathlib.Path) -> SteerState:
     """Return the steer hooks for a run with no controlling terminal.
 
@@ -65,7 +94,7 @@ def file_bridge_steer(session_dir: pathlib.Path) -> SteerState:
         requested=lambda: ipc.steer_request_pending(session_dir),
         clear=clear,
         prompt=prompt,
-        restore=lambda: None,
+        restore=stop_on_sigterm(),
         abort_pending=lambda: ipc.steer_answer_is_abort(session_dir),
         interrupt=lambda: ipc.steer_interrupt_pending(session_dir),
         reset_stage=lambda: None,

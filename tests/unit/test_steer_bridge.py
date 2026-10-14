@@ -543,3 +543,32 @@ def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
         steer.restore()
         presser.join()
         os.close(write_fd)
+
+
+@pytest.mark.parametrize("terminal", [True, False])
+def test_sigterm_stops_the_run_outright(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, terminal: bool
+) -> None:
+    """`timeout`, CI and `agent6 stop`'s kill send SIGTERM: the run stops as a third Ctrl-C does.
+
+    The default action killed the process at exit 143 with no `session.end`, so every listing
+    read the run as stale; a run with no terminal, the unattended case, had no handler at all.
+    """
+    import signal
+
+    from agent6.ui import steer as ui_steer
+
+    monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
+    before = signal.getsignal(signal.SIGTERM)
+    steer = (
+        _steer.install_steer_sigint(events, tmp_path)
+        if terminal
+        else ui_steer.file_bridge_steer(tmp_path)
+    )
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            signal.raise_signal(signal.SIGTERM)
+    finally:
+        steer.restore()
+    assert signal.getsignal(signal.SIGTERM) == before

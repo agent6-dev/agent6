@@ -1040,6 +1040,210 @@ def test_a_closed_output_pipe_ends_the_run_as_a_stop_not_a_crash(tmp_path: pathl
     assert ended["type"] == "session.end" and ended["reason"] == "interrupted"
 
 
+def test_an_interrupted_end_records_the_tree_the_run_left(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Ctrl-C or SIGTERM end carries `tree` as a declared end does.
+
+    Without it the next resume could not tell the run's in-flight files from the operator's
+    edits, and took in whatever the checkout held.
+    """
+    state = tmp_path / "state"
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-TERM11")
+    layout.ensure()
+    events = event_log.EventSink(layout.logs_path)
+    order: list[str] = []
+
+    class _Workflow:
+        iterations_reached = 2
+        chain = types.SimpleNamespace(tree_sha=lambda: "tree-at-the-signal")
+
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(self, _task: str) -> _snapshot.SessionResult:
+            raise KeyboardInterrupt
+
+    frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
+    said: list[str] = []
+    end = _execution.run_execution(
+        Config(),
+        layout,
+        _execution.ExecutionInputs(
+            explicit_leaves=frozenset(),
+            session_id=layout.session_id,
+            mode="run",
+            role="worker",
+            isolation="hardened",
+            tui_enabled=False,
+            interactive=False,
+            task="do the thing",
+            gate=lambda c, _b: c,
+            chain_branch=None,
+            base_sha="",
+            untracked_at_start=frozenset(),
+            resume_state_path=layout.session_dir / "loop_state.json",
+            undo_forker=lambda: None,
+            prompts=mock.MagicMock(),
+            ask_transcript_task=None,
+        ),
+        frontend=frontend,
+        reporter=reporter.Reporter(out=said.append, err=said.append),
+        events=events,
+        transcript_sink=mock.MagicMock(),
+        cwd=tmp_path,
+        state_dir=state,
+    )
+    ends = [
+        json.loads(line)
+        for line in layout.logs_path.read_text(encoding="utf-8").splitlines()
+        if '"session.end"' in line
+    ]
+    assert [(e["reason"], e["iterations"], e.get("tree")) for e in ends] == [
+        ("interrupted", 2, "tree-at-the-signal")
+    ]
+    assert end.rc == finalize.EXIT_OPERATOR_STOP
+    assert "\n[agent6] run interrupted" in said
+
+
+def _interrupted() -> str:
+    raise KeyboardInterrupt
+
+
+def test_a_second_interrupt_during_the_tree_read_still_journals_the_end(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The tree is read with git inside the escape handler; another Ctrl-C can land there.
+
+    Escaping the handler there would skip the end, and the run would read stale.
+    """
+    state = tmp_path / "state"
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-TERM11")
+    layout.ensure()
+    events = event_log.EventSink(layout.logs_path)
+    order: list[str] = []
+
+    class _Workflow:
+        iterations_reached = 2
+        chain = types.SimpleNamespace(tree_sha=_interrupted)
+
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(self, _task: str) -> _snapshot.SessionResult:
+            raise KeyboardInterrupt
+
+    frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
+    said: list[str] = []
+    end = _execution.run_execution(
+        Config(),
+        layout,
+        _execution.ExecutionInputs(
+            explicit_leaves=frozenset(),
+            session_id=layout.session_id,
+            mode="run",
+            role="worker",
+            isolation="hardened",
+            tui_enabled=False,
+            interactive=False,
+            task="do the thing",
+            gate=lambda c, _b: c,
+            chain_branch=None,
+            base_sha="",
+            untracked_at_start=frozenset(),
+            resume_state_path=layout.session_dir / "loop_state.json",
+            undo_forker=lambda: None,
+            prompts=mock.MagicMock(),
+            ask_transcript_task=None,
+        ),
+        frontend=frontend,
+        reporter=reporter.Reporter(out=said.append, err=said.append),
+        events=events,
+        transcript_sink=mock.MagicMock(),
+        cwd=tmp_path,
+        state_dir=state,
+    )
+    ends = [
+        json.loads(line)
+        for line in layout.logs_path.read_text(encoding="utf-8").splitlines()
+        if '"session.end"' in line
+    ]
+    assert [(e["reason"], e["iterations"], e.get("tree")) for e in ends] == [
+        ("interrupted", 2, None)
+    ]
+    assert end.rc == finalize.EXIT_OPERATOR_STOP
+    assert "\n[agent6] run interrupted" in said
+
+
+def test_an_escape_before_the_harness_exists_records_the_tree_too(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crash in provider setup journals the tree the run leaves, as a later escape does.
+
+    Without it the end blanked the earlier end's tree and the next resume could not tell the
+    run's files from the operator's.
+    """
+    import subprocess
+
+    from agent6 import git_ops
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    (repo / "a.txt").write_text("edited\n", encoding="utf-8")
+    state = tmp_path / "state"
+    layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-SETUP2")
+    layout.ensure()
+    events = event_log.EventSink(layout.logs_path)
+
+    def _fail(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("provider setup failed")
+
+    monkeypatch.setattr(_session, "build_session_providers", _fail)
+    frontend = mock.MagicMock()
+    frontend.stream_modes.return_value = (False, False)
+    inputs = _execution.ExecutionInputs(
+        explicit_leaves=frozenset(),
+        session_id=layout.session_id,
+        mode="run",
+        role="worker",
+        isolation="hardened",
+        tui_enabled=False,
+        interactive=False,
+        task="do the thing",
+        gate=lambda c, _b: c,
+        chain_branch=None,
+        base_sha=head,
+        untracked_at_start=frozenset(),
+        resume_state_path=layout.session_dir / "loop_state.json",
+        undo_forker=lambda: None,
+        prompts=mock.MagicMock(),
+        ask_transcript_task=None,
+    )
+    with pytest.raises(RuntimeError, match="provider setup failed"):
+        _execution.run_execution(
+            Config(),
+            layout,
+            inputs,
+            frontend=frontend,
+            reporter=reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
+            events=events,
+            transcript_sink=mock.MagicMock(),
+            cwd=repo,
+            state_dir=state,
+        )
+
+    ended = json.loads(layout.logs_path.read_text(encoding="utf-8").splitlines()[-1])
+    assert ended["reason"] == "crashed"
+    assert ended["tree"] == git_ops.worktree_tree(repo, head, frozenset())
+
+
 def test_a_plan_under_auto_merge_prints_no_skipped_note(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
