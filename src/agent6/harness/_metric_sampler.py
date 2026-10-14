@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Take the metric readings of a run with a `[harness.metric]`.
 
-A `run_metric_command` result, the model's own call or the harness's after a green verify,
+A `run_metric_command` result, the model's own call or the harness's after each committed edit,
 becomes a sample with its event and the feedback block the model reads. The pure rules live
 in `_metric`; the loop decides when to measure.
 """
@@ -102,7 +102,7 @@ class MetricSampler:
     def auto_feedback(
         self, state: _loop_state.LoopState, *, iteration: int, sha: str
     ) -> str | None:
-        """Take the harness's own reading after a green verify.
+        """Take the harness's own reading after a committed edit, verified or a checkpoint.
 
         A failed reading is a sample with its error; a denied one also withholds the automatic
         metric for the rest of the run. An unexecutable operator command raises through, as the
@@ -120,7 +120,7 @@ class MetricSampler:
         if not self.active or goal is None:
             return None
         history = state.metric.history
-        self.log(f"LOOP: auto metric after verify-pass at iter {iteration}")
+        self.log(f"LOOP: auto metric after the committed edit at iter {iteration}")
         self.emit("loop.metric.auto_call", iteration=iteration, sha=sha[:12])
         try:
             result = self.dispatcher.dispatch("run_metric_command", {})

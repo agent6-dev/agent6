@@ -62,7 +62,7 @@ class MetricConfig(pydantic.BaseModel):
         min_length=1,
         description=(
             "The command that prints the score, as argv (no shell). Runs after every "
-            "verify-passing edit, and on the model's `run_metric_command` call."
+            "committed edit, and on the model's `run_metric_command` call."
         ),
     )
     pattern: str = pydantic.Field(
@@ -232,7 +232,7 @@ class HarnessConfig(pydantic.BaseModel):
         default=None,
         description=(
             "An optional score to iterate on beside the pass/fail gate (a benchmark, a size, a "
-            "count): the run calls it after every verify-passing edit and shows the model the "
+            "count): the run calls it after every committed edit and shows the model the "
             "trend. Unset: `run_metric_command` stays on the tool list and refuses, naming this "
             "key."
         ),

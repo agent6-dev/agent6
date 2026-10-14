@@ -69,3 +69,39 @@ def test_a_turn_without_a_tie_is_quiet() -> None:
     )
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     assert _metric.metric_plateau(turn, state, turn_context(metric=True)) is None
+
+
+def test_the_auto_metric_says_it_runs_after_each_committed_edit() -> None:
+    """The log line, the docstring and the config text said "after a green verify".
+
+    The harness samples after every step that commits, verified or a checkpoint: under
+    `verify_when = "finish"` no per-step verify exists to wait for.
+    """
+    from unittest import mock
+
+    from agent6.config import HarnessConfig, MetricConfig
+    from agent6.harness import _metric_sampler
+    from agent6.tools import errors
+
+    lines: list[str] = []
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.side_effect = errors.ToolError("no score")
+    sampler = _metric_sampler.MetricSampler(
+        settings=MetricConfig(command=("true",), pattern="(\\d+)", goal="minimize"),
+        enabled=True,
+        dispatcher=dispatcher,
+        log=lines.append,
+        emit=lambda *_a, **_k: None,
+    )
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    sampler.auto_feedback(state, iteration=3, sha="")
+    assert lines == ["LOOP: auto metric after the committed edit at iter 3"]
+    told = [
+        HarnessConfig.model_fields["metric"].description or "",
+        MetricConfig.model_fields["command"].description or "",
+        _metric_sampler.__doc__ or "",
+        _metric_sampler.MetricSampler.auto_feedback.__doc__ or "",
+    ]
+    for text in told:
+        assert "committed edit" in text, text
+        assert "green verify" not in text and "verify-pass" not in text, text

@@ -351,7 +351,7 @@ A continuous score for measurable goals; `command` runs in the jail like `verify
 
 | Field | Default | Meaning |
 |---|---|---|
-| `command` | *(required)* | The command that prints the score, as argv (no shell). Runs after every verify-passing edit, and on the model's `run_metric_command` call. |
+| `command` | *(required)* | The command that prints the score, as argv (no shell). Runs after every committed edit, and on the model's `run_metric_command` call. |
 | `pattern` | *(required)* | A regular expression over the command's output; its first capture group is the number, e.g. `"score: ([0-9.]+)"`. |
 | `goal` | *(required)* | Which way is better: `minimize` (a smaller number wins) or `maximize`. The run reports the trajectory and can finish once a verified edit only ties the best. |
 

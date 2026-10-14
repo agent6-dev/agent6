@@ -120,10 +120,50 @@ Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scr
 | `1` | ended unfinished: out of turns, stuck, a provider error, a crash; a review panel whose every seat abstained |
 | `2` | operator error (bad flag or config, a refusal before anything ran) |
 | `3` | budget exhausted |
-| `4` | finished over a red or never-run verify gate; a review panel's BLOCK |
+| `4` | finished over a red, timed-out or never-run verify gate; a review panel's BLOCK |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_step = false`, stays `0`) |
 | `130` | interrupted, or stopped by the operator: Ctrl-C, `agent6 stop`, abort or exit at the pause menu, stop after a commit (a worker `agent6 stop` had to kill dies on the signal instead) |
 | `141` | the output pipe closed (`agent6 ... \| head`) |
+
+`passed` and exit `0` certify the finish and the gate, not the task; a gateless run that changed nothing stays `0`.
+
+Every end has one reason (`reason` in `agent6 sessions show --json`), and each reason one row:
+
+| End reason | Headline | Exit code |
+|---|---|---|
+| `finish_session` | `passed`, `finished`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate), `4` (gate red, gate timed out, unverified) |
+| `finish_planning` | `planned` | `0` |
+| `answered` | `answered` | `0` |
+| `silent_finish` | `passed`, `finished`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate), `4` (gate red, gate timed out, unverified) |
+| `went_quiet` | `failed · went quiet` | `1` |
+| `budget_exhausted` | `failed · budget exhausted` | `3` |
+| `provider_error` | `failed · provider error` | `1` |
+| `metric_plateau` | `passed`, `finished`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate), `4` (gate red, gate timed out, unverified) |
+| `verify_settled` | `finished · settled` | `0` |
+| `settled` | `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `4` (gate red, gate timed out, unverified), `0` (no gate) |
+| `no_progress` | `failed · no progress` | `1` |
+| `tool_error_stuck` | `failed · tool error stuck` | `1` |
+| `verify_command_unexecutable` | `failed · verify command unexecutable` | `1` |
+| `loop_guard_killed` | `failed · loop guard killed` | `1` |
+| `interactive_stop` | `stopped` | `130` |
+| `interrupted` | `stopped` | `130` |
+| `crashed` | `failed · crashed` | `1` |
+| `steer_abort` | `stopped` | `130` |
+| `steer_exit` | `stopped` | `130` |
+| `undone` | `undone` | `0` |
+| `detached` | none: no end is recorded | `0` |
+| `prompt_revision_failed` | `failed · prompt revision failed` | `1` |
+| `plan_unreadable` | `failed · plan unreadable` | `1` |
+| `max_iterations` | `failed · max iterations` | `1` |
+| `ask_repl_empty` | none: no end is recorded | `0` |
+| `gate_stale` | `finished · gate stale` | `4` |
+| `gate_red_at_base` | `finished · gate was already red` | `4` |
+| `no_lane_result` | `failed · no lane result` | `1` |
+| `no_lane_passed` | `failed · no lane passed` | `4` |
+
+- where a row lists several, the gate decides: `passed` over a green gate, a bare `finished` with no gate, `finished · <detail>` over a gate that did not certify the tree
+- a finished run whose edits sit uncommitted exits `5` in place of `0`
+- `verify_settled` and `settled` are the harness's own stop for a run whose turns stopped changing the tree: the worker called no `finish_session`, and `agent6 resume ID` continues it
 
 ## Plan, review, and ask
 
