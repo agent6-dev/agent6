@@ -234,7 +234,8 @@ async function renderRun(id, opts, gen) {
     sawEnd = !!s.finished;
   };
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
-  live.onerror = () => { /* EventSource auto-retries a live run; leave last paint up */ };
+  const es = live;
+  es.onerror = () => streamFailed(es, base); // while the browser retries, the last paint stays up
 }
 
 function setPromptBusy(box, busy) {

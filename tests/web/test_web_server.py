@@ -19,7 +19,6 @@ import threading
 import time
 import types
 from collections.abc import Callable, Iterator
-from http import client
 from typing import Any, cast
 
 import pytest
@@ -31,6 +30,7 @@ from agent6.sessions import ipc
 from agent6.ui import spawn
 from agent6.ui.cli import main
 from agent6.ui.web import server as web_server
+from tests.web import signin
 
 TINY = """
 machine = "tiny"
@@ -77,7 +77,7 @@ def _make_run(cwd: pathlib.Path, session_id: str, events: list[dict[str, object]
 @pytest.fixture
 def server(tmp_path: pathlib.Path) -> Iterator[tuple[web_server.WebServer, int]]:
     """A WebServer bound to an ephemeral loopback port, serving from tmp_path."""
-    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "")
+    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=signin.SECRET)
     port = srv.server_address[1]
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -89,7 +89,7 @@ def server(tmp_path: pathlib.Path) -> Iterator[tuple[web_server.WebServer, int]]
 
 
 def _get(port: int, path: str) -> tuple[int, bytes, str]:
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         conn.request("GET", path)
         resp = conn.getresponse()
@@ -99,7 +99,7 @@ def _get(port: int, path: str) -> tuple[int, bytes, str]:
 
 
 def _post(port: int, path: str, body: dict[str, object]) -> tuple[int, dict[str, object]]:
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         payload = json.dumps(body).encode()
         conn.request("POST", path, payload, {"Content-Type": "application/json"})
@@ -113,7 +113,7 @@ def _post_raw(
     port: int, path: str, body: bytes, headers: dict[str, str]
 ) -> tuple[int, dict[str, object]]:
     """POST with caller-controlled headers (for the CSRF checks)."""
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         conn.request("POST", path, body, headers)
         resp = conn.getresponse()
@@ -132,7 +132,7 @@ def test_page_served(server: tuple[web_server.WebServer, int]) -> None:
 
 @pytest.mark.parametrize("host", ["::1", "[::1]"])
 def test_ipv6_loopback_bind_uses_ipv6_socket(tmp_path: pathlib.Path, host: str) -> None:
-    srv = web_server._create_web_server(host, 0, tmp_path, "")  # pyright: ignore[reportPrivateUsage]
+    srv = web_server._create_web_server(host, 0, tmp_path, "", secret=signin.SECRET)  # pyright: ignore[reportPrivateUsage]
     try:
         assert srv.address_family == socket.AF_INET6
     finally:
@@ -145,7 +145,7 @@ def test_explicit_config_reaches_the_server(tmp_path: pathlib.Path) -> None:
     A dropped path ran the whole browser surface on the default layers.
     """
     cfg = tmp_path / "f.toml"
-    srv = web_server._create_web_server("127.0.0.1", 0, tmp_path, "", cfg)  # pyright: ignore[reportPrivateUsage]
+    srv = web_server._create_web_server("127.0.0.1", 0, tmp_path, "", cfg, secret=signin.SECRET)  # pyright: ignore[reportPrivateUsage]
     try:
         assert srv.config_path == cfg
     finally:
@@ -239,7 +239,7 @@ def test_meta_resolves_the_target_kind(tmp_path: pathlib.Path) -> None:
     runs = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-t"
     runs.mkdir(parents=True)
     (runs / "logs.jsonl").write_text('{"type": "session.start"}\n', encoding="utf-8")
-    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "run-t")
+    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "run-t", secret=signin.SECRET)
     port = srv.server_address[1]
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -840,7 +840,7 @@ def test_two_posts_on_one_connection_stay_framed(
     """
     _srv, port = server
     _make_machine_with_state(tmp_path, "stoppable", "0000-review", running=True)
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         for _ in range(2):
             conn.request(
@@ -893,7 +893,7 @@ def test_sse_run_streams_snapshot(
             {"type": "session.end", "all_passed": True},
         ],
     )
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         conn.request("GET", "/api/session/stream-run/events")
         resp = conn.getresponse()
@@ -928,7 +928,7 @@ def test_sse_run_emits_the_last_delta_of_a_burst(
     )
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "delta-run"
     ipc.write_worker_pid(session_dir, os.getpid())
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn = signin.SignedIn(port, timeout=5)
     try:
         conn.request("GET", "/api/session/delta-run/events")
         resp = conn.getresponse()
@@ -979,7 +979,7 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
         ],
     )
     logs = paths.state_dir(tmp_path) / "sessions" / "runs" / "resume-run" / "logs.jsonl"
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         conn.request("GET", "/api/session/resume-run/events")
         resp = conn.getresponse()
@@ -1015,7 +1015,7 @@ def test_sse_run_frame_carries_the_compare_outcome(
         json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}}),
         encoding="utf-8",
     )
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         conn.request("GET", "/api/session/cmp-run/events")
         resp = conn.getresponse()
@@ -1081,7 +1081,7 @@ def test_corrupt_journal_machine_sse_sends_error_frame(
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "sick3", "0000-review")
     _corrupt_journal(inst)
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         conn.request("GET", "/api/machine/sick3/events")
         resp = conn.getresponse()
@@ -1109,7 +1109,7 @@ def test_sse_run_catchup_folds_history_into_few_frames(
         events.append({"type": "tool.result", "name": f"t{i}", "ok": True, "summary": "ok"})
     events.append({"type": "session.end", "all_passed": True})
     _make_run(tmp_path, "big-run", events)
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         conn.request("GET", "/api/session/big-run/events")
         resp = conn.getresponse()
@@ -1142,7 +1142,7 @@ def test_sse_run_closes_even_if_tailer_dies(
     monkeypatch.setattr(sse_mod, "tail_events", _boom)
     _srv, port = server
     _make_run(tmp_path, "dead-tail", [{"type": "session.start", "user_task": "x"}])
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn = signin.SignedIn(port, timeout=5)
     try:
         conn.request("GET", "/api/session/dead-tail/events")
         resp = conn.getresponse()
@@ -1175,7 +1175,7 @@ def test_sse_run_dead_worker_frame_is_terminal(
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "dead-worker"
     (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
     _srv, port = server
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn = signin.SignedIn(port, timeout=5)
     try:
         conn.request("GET", "/api/session/dead-worker/events")
         resp = conn.getresponse()
@@ -1212,7 +1212,7 @@ def test_sse_run_pidless_stale_frame_is_terminal(
     old = 1_000_000_000.0  # silent far past the stale window
     os.utime(session_dir / "logs.jsonl", (old, old))
     _srv, port = server
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=1)
+    conn = signin.SignedIn(port, timeout=1)
     seen = b""
     eof = False
     try:
@@ -1258,7 +1258,7 @@ def test_sse_run_created_frame_is_terminal(
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")  # no events, no pid
     _srv, port = server
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=1)
+    conn = signin.SignedIn(port, timeout=1)
     seen = b""
     eof = False
     try:
@@ -1305,7 +1305,7 @@ def test_sse_run_parked_keeps_streaming(
         encoding="utf-8",
     )
     _srv, port = server
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=1)
+    conn = signin.SignedIn(port, timeout=1)
     eof = False
     try:
         conn.request("GET", "/api/session/parked-run/events")
@@ -1356,7 +1356,7 @@ def test_sse_machine_frame_carries_the_idle_age(
         encoding="utf-8",
     )
     _srv, port = server
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn = signin.SignedIn(port, timeout=5)
     try:
         conn.request("GET", "/api/machine/tiny/events")
         resp = conn.getresponse()
@@ -1403,7 +1403,7 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
     else:
         assert not (inst / "worker.pid").exists()
     _srv, port = server
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn = signin.SignedIn(port, timeout=5)
     try:
         conn.request("GET", "/api/machine/tiny/events")
         resp = conn.getresponse()
@@ -1431,7 +1431,7 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
 def test_oversize_post_body_is_413(server: tuple[web_server.WebServer, int]) -> None:
     # Headers only: the refusal is on Content-Length alone, and streaming 1 MiB races the close.
     _srv, port = server
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         conn.putrequest("POST", "/api/new")
         conn.putheader("Content-Type", "application/json")
@@ -1452,13 +1452,15 @@ def test_prune_body_is_drained_so_keepalive_is_not_poisoned(
     sock = socket.create_connection(("127.0.0.1", port), timeout=10)
     try:
         body = b"{}"
+        cookie = b"Cookie: " + signin.cookie(port).encode() + b"\r\n"
         prune = (
             b"POST /api/sessions/prune HTTP/1.1\r\n"
-            b"Host: 127.0.0.1\r\n"
-            b"Content-Type: application/json\r\n"
+            b"Host: 127.0.0.1\r\n" + cookie + b"Content-Type: application/json\r\n"
             b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
         )
-        follow = b"GET /api/hub HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+        follow = (
+            b"GET /api/hub HTTP/1.1\r\nHost: 127.0.0.1\r\n" + cookie + b"Connection: close\r\n\r\n"
+        )
         sock.sendall(prune + follow)
         chunks = []
         while True:
@@ -1563,7 +1565,7 @@ def test_unknown_post_verb_does_not_poison_keepalive(
     # A 404 closes the connection, or the undrained body would parse as the next request line.
     _srv, port = server
     _make_run(tmp_path, "ka-run", [{"type": "session.start", "user_task": "x"}])
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         payload = json.dumps({"text": "hello"}).encode()
         conn.request(
@@ -1753,7 +1755,7 @@ def test_a_failed_frontend_claim_does_not_consume_the_first_viewer(
             raise OSError("disk was briefly read-only")
 
     monkeypatch.setattr(ipc, "register_frontend", register)
-    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "")
+    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=signin.SECRET)
     try:
         with pytest.raises(OSError, match="read-only"):
             srv.claim_session(session_dir)
@@ -1771,7 +1773,7 @@ def test_client_disconnects_are_quiet(
 
     A browser sends RST on navigate-away or reload; real handler errors keep their report.
     """
-    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "")
+    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=signin.SECRET)
     try:
         for quiet_exc in (ConnectionResetError(104, "reset by peer"), BrokenPipeError()):
             try:
@@ -2177,7 +2179,7 @@ def test_an_error_after_the_sse_headers_is_a_frame_not_a_second_status_line(
     monkeypatch.setattr(_sse, "manifest_header", boom)
     _srv, port = server
     _make_run(tmp_path, "sse-err", [{"type": "session.start", "user_task": "t"}])
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         conn.request("GET", "/api/session/sse-err/events")
         resp = conn.getresponse()

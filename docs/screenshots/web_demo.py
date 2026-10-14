@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -322,6 +323,11 @@ def main() -> None:
             record_video_size=vp,
             device_scale_factor=2,
         )
+        # Sign in off camera: the cookie the server sets is the context's for the whole tour.
+        secret = os.environ["AGENT6_WEB_SECRET"]
+        login = context.request.post(args.url + "/api/login", data={"secret": secret})
+        if not login.ok:
+            sys.exit(f"web_demo.py: sign-in refused ({login.status}): {login.text()}")
         page = context.new_page()
         page.add_init_script(OVERLAY_INIT_SCRIPT)
         t0 = time.monotonic()

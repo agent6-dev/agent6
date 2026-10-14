@@ -206,4 +206,4 @@ function editConfig(key, s) {
   };
   field.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
 }
-route();
+boot();

@@ -65,9 +65,11 @@ function osNotify(title, body) {
 // --- helpers -----------------------------------------------------------------
 const el = (t, cls, txt) => { const e = document.createElement(t); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 const esc = s => (s == null ? '' : String(s));
-async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error((await r.json().catch(()=>({error:r.statusText}))).error || r.statusText); return r.json(); }
+// A 401 is the server asking for its secret: every API call brings up the sign-in form.
+function signedOut(r) { if (r.status === 401) showLogin(); return r; }
+async function getJSON(url) { const r = signedOut(await fetch(url)); if (!r.ok) throw new Error((await r.json().catch(()=>({error:r.statusText}))).error || r.statusText); return r.json(); }
 async function postJSON(url, body) {
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const r = signedOut(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }));
   const data = await r.json().catch(() => ({}));
   if (!r.ok || data.ok === false) throw new Error(data.error || r.statusText);
   return data;
@@ -84,6 +86,61 @@ function toast(msg, bad) {
   host.appendChild(t);
 }
 function setCrumb(t) { crumb.textContent = t || ''; }
+
+// --- sign-in -----------------------------------------------------------------
+// The form takes over the view; a sign-in reloads the page, so every view and
+// stream starts again with the cookie. A repeat call (a poll still in flight)
+// keeps the form and what is typed in it.
+function showLogin(error) {
+  routeGen++; // a render in flight must not paint over the form
+  closeLive();
+  closeOverlay();
+  let form = document.getElementById('login');
+  if (!form) {
+    setCrumb('sign in');
+    view.innerHTML = '';
+    form = el('form', 'card login');
+    form.id = 'login';
+    form.appendChild(el('h2', null, 'Sign in'));
+    form.appendChild(el('div', 'muted', 'Type the secret `agent6 web` printed in its terminal.'));
+    const row = el('div', 'form-row');
+    const input = el('input', 'field');
+    input.type = 'text';
+    // A phone keyboard must not capitalize, correct or remember the words.
+    const attrs = { 'aria-label': 'secret', autocapitalize: 'none', autocorrect: 'off', spellcheck: 'false', autocomplete: 'off' };
+    for (const name in attrs) input.setAttribute(name, attrs[name]);
+    row.appendChild(input);
+    row.appendChild(el('button', 'primary', 'Sign in'));
+    form.appendChild(row);
+    form.appendChild(el('div', 'err'));
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      try { await postJSON('/api/login', { secret: input.value }); location.reload(); }
+      catch (err) { showLogin(err.message); }
+    };
+    view.appendChild(form);
+    input.focus();
+  }
+  if (error) form.querySelector('.err').textContent = error;
+}
+// `agent6 web` prints its URL with `#secret=<value>`: sign in with it on load and
+// drop it from the address bar.
+async function boot() {
+  const m = /^#secret=(.+)$/.exec(location.hash);
+  if (m) {
+    let refused = '';
+    try { await postJSON('/api/login', { secret: decodeURIComponent(m[1]) }); }
+    catch (e) { refused = e.message; }
+    history.replaceState(null, '', location.pathname + location.search);
+    if (refused) { showLogin(refused); return; }
+  }
+  route();
+}
+// EventSource hides why a stream was refused. Once the browser has given up on
+// one, ask the view's state route: a 401 there brings up the sign-in form.
+function streamFailed(es, base) {
+  if (es.readyState === EventSource.CLOSED) getJSON(base).catch(() => {});
+}
 function closeLive() {
   if (live) { live.close(); live = null; }
   if (hubTimer) { clearInterval(hubTimer); hubTimer = null; }

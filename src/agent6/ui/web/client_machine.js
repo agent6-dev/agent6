@@ -89,6 +89,8 @@ async function renderMachine(name, gen) {
     // A stopped machine is resumable and its stream stays open; a journaled end closes it.
     if (data.machine && data.machine.ended) closeLive();
   };
+  const es = live;
+  es.onerror = () => streamFailed(es, base);
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
 }
 

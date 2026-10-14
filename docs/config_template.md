@@ -287,7 +287,8 @@ Runs after `run`/`resume` with the same minimal env plus `AGENT6_SESSION_ID/DIR/
 ## `[web]`
 
 Bind for `agent6 web` ([the web UI](web.md)).
-Loopback only by default, no app auth: remote access is expected behind `tailscale serve`.
+Loopback only by default; remote access is expected behind `tailscale serve`.
+Every browser [signs in](web.md#sign-in) with the server's secret.
 
 <!-- config-table: web -->
 
@@ -368,6 +369,7 @@ None of them is reachable by the model.
 | `AGENT6_JAIL_BIN` | Path to a specific `agent6-jail` binary (else bundled). |
 | `AGENT6_DANGEROUSLY_DISABLE_SANDBOX` | `1` forces `sandbox.isolation = "none"` for one invocation (same as `--dangerously-disable-sandbox`). |
 | `AGENT6_ALLOW_ROOT` | `1` permits running as root (same as `--allow-root`). |
+| `AGENT6_WEB_SECRET` | The secret a browser signs in to `agent6 web` with, at least 12 characters (same as `--secret`, which wins). Unset: each launch mints one and prints it. |
 
 A provider's `api_key_env` names the env var supplying its key; omit it to read `secrets.toml`.
 The bench and development switches are listed in [architecture.md](architecture.md#bench-and-development-switches).

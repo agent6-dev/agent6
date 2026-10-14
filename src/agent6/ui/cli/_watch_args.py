@@ -121,6 +121,17 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " [web].allow_non_loopback must be true."
         ),
     )
+    web_p.add_argument(
+        "--secret",
+        default=None,
+        metavar="VALUE",
+        help=(
+            "The secret a browser signs in with, at least 12 characters; case, spaces and"
+            " hyphens between its words do not matter. Default: AGENT6_WEB_SECRET, else a"
+            " six-word secret minted per launch and printed. A flag value shows in the"
+            " process list; the variable keeps it out."
+        ),
+    )
 
 
 def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

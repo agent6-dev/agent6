@@ -53,7 +53,9 @@ def test_port_flag_is_held_to_the_same_bounds_as_the_config_leaf(
     monkeypatch.chdir(tmp_path)
     for bad in (99999, 0, -1):
         assert (
-            web_cmds._cmd_web("", config_path=None, host=None, port=bad, allow_non_loopback=False)
+            web_cmds._cmd_web(
+                "", config_path=None, host=None, port=bad, allow_non_loopback=False, secret=None
+            )
             == 2
         )
         err = capsys.readouterr().err
@@ -69,7 +71,14 @@ def test_non_loopback_flag_refusal_uses_the_shared_diagnostic(
     monkeypatch.chdir(tmp_path)
 
     assert (
-        web_cmds._cmd_web("", config_path=None, host="0.0.0.0", port=None, allow_non_loopback=False)
+        web_cmds._cmd_web(
+            "",
+            config_path=None,
+            host="0.0.0.0",
+            port=None,
+            allow_non_loopback=False,
+            secret=None,
+        )
         == 2
     )
     assert capsys.readouterr().err.startswith("REFUSING:")

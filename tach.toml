@@ -275,6 +275,10 @@ depends_on = [
 path = "agent6.ui.web"
 depends_on = [
   "agent6",
+  # The sign-in secret is minted from the session-id wordlist.
+  "agent6._data",
+  # The variable naming the operator's own secret, kept out of every child.
+  "agent6.child_env",
   "agent6.config.io",
   # /undo forks in-process (app.fork), the same direction ui.acp already uses.
   "agent6.app",

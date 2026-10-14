@@ -15,12 +15,12 @@ import pathlib
 import re
 import threading
 from collections.abc import Iterator
-from http import client
 
 import pytest
 
 from agent6 import paths
 from agent6.ui.web import model, page, server
+from tests.web import signin
 
 # `<id>` stands in for whatever the page interpolates; the fixture creates it.
 _ID = "brave-oak-AAAAAA"
@@ -34,7 +34,7 @@ def served(tmp_path: pathlib.Path) -> Iterator[int]:
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    srv = server.WebServer(("127.0.0.1", 0), tmp_path, "")
+    srv = server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=signin.SECRET)
     port = int(srv.server_address[1])
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
@@ -62,7 +62,7 @@ def _unrouted(port: int, path: str, method: str) -> bool:
     miss is the only one that says `not found: <path>`, and it is the one a
     renamed route produces.
     """
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn = signin.SignedIn(port, timeout=10)
     try:
         body = b"{}" if method == "POST" else None
         headers = {"Content-Type": "application/json"} if body else {}

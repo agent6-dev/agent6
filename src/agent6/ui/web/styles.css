@@ -246,6 +246,10 @@ textarea.field, select.field, input.field {
 }
 textarea.field { min-height: 72px; resize: vertical; }
 .form-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+/* The sign-in form: one field beside its button, the server's refusal under them. */
+.login { max-width: 480px; }
+.login input.field { flex: 1 1 200px; width: auto; }
+.login .err { margin-top: 8px; }
 button.primary { background: var(--accent); color: #05121f; border-color: var(--accent); font-weight: 600; }
 :root.light button.primary { color: #fff; }
 button.danger:hover { border-color: var(--err); color: var(--err); }

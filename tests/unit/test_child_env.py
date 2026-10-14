@@ -46,3 +46,16 @@ def test_the_callers_facts_win_over_the_inherited_ones(monkeypatch: pytest.Monke
     assert (
         child_env.curated_env(extra={"AGENT6_SESSION_ID": "fresh"})["AGENT6_SESSION_ID"] == "fresh"
     )
+
+
+def test_an_unconfined_child_never_inherits_the_web_secret() -> None:
+    """`AGENT6_WEB_SECRET` signs a browser in to `agent6 web`; a command the model runs gets none.
+
+    Under `isolation = "none"` a command inherits the environment minus the provider keys;
+    unless dropped with them, the secret would ride along.
+    """
+    from agent6 import child_env
+
+    kept = child_env.without_provider_keys({"AGENT6_WEB_SECRET": "six-words-here", "PATH": "/bin"})
+
+    assert kept == {"PATH": "/bin"}

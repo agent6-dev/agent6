@@ -37,6 +37,9 @@ _DESKTOP = (
 # The `api_key_env` names this run resolves keys from; no child needs one. Mutated, never rebound.
 _provider_key_env: set[str] = set()
 
+# The variable holding the operator's own `agent6 web` secret; no child needs it either.
+WEB_SECRET_ENV = "AGENT6_WEB_SECRET"  # noqa: S105  # the variable's name
+
 
 def set_provider_key_env(names: Iterable[str]) -> None:
     """Register the provider-key variable names agent6 keeps out of every child."""
@@ -45,8 +48,8 @@ def set_provider_key_env(names: Iterable[str]) -> None:
 
 
 def without_provider_keys(env: dict[str, str]) -> dict[str, str]:
-    """Return the environment minus the registered provider-key names."""
-    return {k: v for k, v in env.items() if k not in _provider_key_env}
+    """Return the environment minus the registered provider-key names and the web secret."""
+    return {k: v for k, v in env.items() if k not in _provider_key_env and k != WEB_SECRET_ENV}
 
 
 def curated_env(

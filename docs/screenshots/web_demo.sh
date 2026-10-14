@@ -40,12 +40,14 @@ echo "web_demo: seeding fixtures into $TMP"
 python3 docs/screenshots/seed.py >/dev/null
 
 echo "web_demo: starting agent6 web on :$PORT"
+# The server requires a secret; web_demo.py signs in with this one.
+export AGENT6_WEB_SECRET="docs-screenshot-tour"
 ( cd "$AGENT6_DEMO_REPO" && exec agent6 web --host 127.0.0.1 --port "$PORT" ) >/dev/null 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true; rm -rf "$TMP"' EXIT
 
 for _ in $(seq 1 40); do
-  curl -sf "http://127.0.0.1:$PORT/api/meta" >/dev/null 2>&1 && break
+  curl -sf "http://127.0.0.1:$PORT/" >/dev/null 2>&1 && break
   sleep 0.25
 done
 

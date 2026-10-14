@@ -583,6 +583,7 @@ def _dispatch_web(args: argparse.Namespace) -> int:
         host=args.host,
         port=args.port,
         allow_non_loopback=args.allow_non_loopback,
+        secret=args.secret,
     )
 
 

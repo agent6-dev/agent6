@@ -144,8 +144,8 @@ def is_loopback_host(host: str) -> bool:
 class WebConfig(pydantic.BaseModel):
     """The `[web]` table: the server bind, loopback by default.
 
-    Remote access goes behind `tailscale serve` in front of the loopback bind; the tailnet
-    identity is the access control, so there is no app-level auth.
+    Remote access goes behind `tailscale serve` in front of the loopback bind. The sign-in
+    secret is per launch (`ui.web.auth`), never a config key.
     """
 
     model_config = _base.MODEL_CONFIG

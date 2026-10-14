@@ -6,6 +6,7 @@ The GET endpoints return the wire form `agent6 attach --json` prints; the SSE st
 push a fresh snapshot on each change. The server binds loopback by default (a
 non-loopback bind is opt-in under `[web]`), renders folded read state, drives the
 `agent6.sessions.ipc` contracts, serves no secret and executes no arbitrary input.
+Every route but the page shell and the sign-in requires the session cookie (`auth`).
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from agent6.config import is_loopback_host, write
 from agent6.machine import MachineError
 from agent6.sessions import ipc
 from agent6.ui import spawn
-from agent6.ui.web import _sse, actions, model, page
+from agent6.ui.web import _sse, actions, auth, model, page
 from agent6.viewmodel import (
     UnknownStepError,
     machine_snapshot,
@@ -37,6 +38,10 @@ from agent6.viewmodel import (
 
 # The typed bodies are a few strings; an uncapped Content-Length would buffer arbitrary bytes.
 _MAX_BODY_BYTES = 1 << 20
+# Every other path needs the session cookie. These hold no state: the page, the assets a
+# browser fetches to show it (the manifest without credentials), and the sign-in itself.
+PUBLIC_GET = frozenset({"/", "/favicon.svg", "/icon.svg", "/manifest.webmanifest", "/sw.js"})
+PUBLIC_POST = frozenset({"/api/login"})
 
 
 class _Body(pydantic.BaseModel):
@@ -145,6 +150,12 @@ class ProviderBody(_Body):
     repo: bool = False
 
 
+class LoginBody(_Body):
+    """A sign-in body: the secret as typed, normalized before it is compared."""
+
+    secret: str
+
+
 class ConfigSetBody(_Body):
     """A config write; `unset` removes the key from the target layer instead."""
 
@@ -180,11 +191,14 @@ class WebServer(http_server.ThreadingHTTPServer):
         cwd: pathlib.Path,
         target: str,
         config_path: pathlib.Path | None = None,
+        *,
+        secret: str,
     ) -> None:
         super().__init__(addr, _Handler)
         self.cwd = cwd
         self.target = target
         self.config_path = config_path
+        self.session_token = auth.session_token(secret)
         self._pid_lock = threading.Lock()
         self._watch_counts: dict[str, int] = {}
 
@@ -255,12 +269,18 @@ def _display_host(host: str) -> str:
 
 
 def _create_web_server(
-    host: str, port: int, cwd: pathlib.Path, target: str, config_path: pathlib.Path | None = None
+    host: str,
+    port: int,
+    cwd: pathlib.Path,
+    target: str,
+    config_path: pathlib.Path | None = None,
+    *,
+    secret: str,
 ) -> WebServer:
     """Return a server bound to the host and port, IPv6 when the host is an IPv6 literal."""
     bind_host = _bind_host(host)
     server_cls: type[WebServer] = _IPv6WebServer if _is_ipv6_literal(bind_host) else WebServer
-    return server_cls((bind_host, port), cwd, target, config_path)
+    return server_cls((bind_host, port), cwd, target, config_path, secret=secret)
 
 
 class _Handler(http_server.BaseHTTPRequestHandler):
@@ -314,6 +334,9 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             self.close_connection = True
             self._send_json({"error": "a GET carries no body"}, status=400)
             return
+        if path not in PUBLIC_GET and not self._signed_in():
+            self._send_sign_in_required()
+            return
         try:
             self._route(path)
         except (BrokenPipeError, ConnectionResetError):
@@ -347,6 +370,10 @@ class _Handler(http_server.BaseHTTPRequestHandler):
                 self.close_connection = True
                 self._send_json({"error": f"body larger than {_MAX_BODY_BYTES} bytes"}, status=413)
                 return
+            if path not in PUBLIC_POST and not self._signed_in():
+                self.close_connection = True
+                self._send_sign_in_required()
+                return
             self._route_post(path)
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -361,16 +388,27 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             self.close_connection = True
             self._send_json({"error": str(exc)}, status=500)
 
+    def _signed_in(self) -> bool:
+        """Return whether the request carries the cookie a sign-in with the secret set."""
+        cookies = self.headers.get_all("Cookie", [])
+        return auth.has_session(cookies, self.server.server_port, self.server.session_token)
+
+    def _send_sign_in_required(self) -> None:
+        """Send 401; `login` tells the page to show its sign-in form."""
+        error = "not signed in: this server needs the secret `agent6 web` printed (POST /api/login)"
+        self._send_json({"error": error, "login": True}, status=401)
+
     def _csrf_refusal(self) -> str | None:
         """Return the reason to refuse this POST as cross-site, or None.
 
-        The UI has no app-level auth: the machine (loopback) or the tailnet is the
-        trust boundary, and neither stops a page on another origin from POSTing
-        here. Two checks close it: a body must be `application/json` (a cross-site
-        fetch with that type needs a preflight this server never answers), and a
-        present `Origin` must match `Host` (a missing one is not browser-driven).
-        DNS rebinding is left to the network layer: a Host allow-list would break
-        `tailscale serve`.
+        A browser signed in here sends its cookie on a same-site request, and
+        loopback ports share one site, so a page another local server serves can
+        POST here. Two checks close it: a body must be `application/json` (a
+        cross-site fetch with that type needs a preflight this server never
+        answers), and a present `Origin` must match `Host` (a missing one is not
+        browser-driven, and meets the cookie check).
+        A DNS-rebound page passes both and holds no cookie for its own host name;
+        a Host allow-list would break `tailscale serve`.
         """
         if self._body_length > 0:
             ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
@@ -404,6 +442,9 @@ class _Handler(http_server.BaseHTTPRequestHandler):
     def _route_post(self, path: str) -> None:  # noqa: PLR0911
         """Dispatch a POST by path."""
         parts = path.strip("/").split("/")
+        if path == "/api/login":
+            self._login()
+            return
         if path == "/api/new":
             body = NewWorkBody.model_validate(self._read_body())
             session_dir, err = spawn.spawn_new_work(
@@ -471,6 +512,16 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             self._route_machine_post(parts[2], parts[3])
             return
         self._post_not_found(f"not found: {path}")
+
+    def _login(self) -> None:
+        """Answer a sign-in: the session cookie for the server's secret, 403 for any other."""
+        body = LoginBody.model_validate(self._read_body())
+        token = self.server.session_token
+        if not auth.token_matches(auth.session_token(body.secret), token):
+            refusal = "that is not the secret this `agent6 web` was started with"
+            self._send_json({"ok": False, "error": refusal}, status=403)
+            return
+        self._send_json({"ok": True}, set_cookie=auth.set_cookie(self.server.server_port, token))
 
     def _post_not_found(self, message: str) -> None:
         """Send 404 for a POST whose body was never read, closing the connection."""
@@ -752,18 +803,25 @@ class _Handler(http_server.BaseHTTPRequestHandler):
 
     # -- plain responses ------------------------------------------------------
 
-    def _send_json(self, payload: Any, *, status: int = 200) -> None:
+    def _send_json(self, payload: Any, *, status: int = 200, set_cookie: str = "") -> None:
         """Send a JSON response."""
         self._send_bytes(
-            json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8", status=status
+            json.dumps(payload).encode("utf-8"),
+            "application/json; charset=utf-8",
+            status=status,
+            set_cookie=set_cookie,
         )
 
-    def _send_bytes(self, body: bytes, ctype: str, *, status: int = 200) -> None:
+    def _send_bytes(
+        self, body: bytes, ctype: str, *, status: int = 200, set_cookie: str = ""
+    ) -> None:
         """Send one uncached response."""
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if set_cookie:
+            self.send_header("Set-Cookie", set_cookie)
         if self.close_connection:
             # Without the header a keep-alive client reuses the socket about to shut.
             self.send_header("Connection", "close")
@@ -836,11 +894,36 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         return _sse.SseChannel(send=self._sse_send, ping=self._sse_ping)
 
 
+def _launch_lines(url: str, secret: auth.Secret) -> list[str]:
+    """Return what a launch prints: the URL, then how to sign in.
+
+    A minted secret is shown, and rides the URL's fragment so the first browser signs in
+    on load; an operator's own secret is named by where it was set, never shown.
+    """
+    if secret.origin == "minted":
+        return [
+            f"serving on {url}/#secret={secret.value}  (Ctrl-C to stop)",
+            f"secret: {secret.value} (type it once per browser;"
+            f" --secret or {auth.SECRET_ENV} sets your own)",
+        ]
+    lines = [f"serving on {url}  (Ctrl-C to stop)"]
+    if secret.origin == "env":
+        lines.append(f"secret: the one {auth.SECRET_ENV} holds (type it once per browser)")
+    else:
+        lines.append("secret: the one --secret set (type it once per browser)")
+        lines.append(
+            "note: a --secret value shows in the process list;"
+            f" {auth.SECRET_ENV} keeps it out of there"
+        )
+    return lines
+
+
 def run_web(
     target: str,
     *,
     host: str,
     port: int,
+    secret: auth.Secret,
     cwd: pathlib.Path | None = None,
     config_path: pathlib.Path | None = None,
 ) -> int:
@@ -850,6 +933,7 @@ def run_web(
         target: A run id, machine name or draft the page opens on; "" opens the hub.
         host: The bind host.
         port: The bind port.
+        secret: The secret a browser signs in with.
         cwd: The repository; None is the process cwd.
         config_path: An explicit config file, or None.
 
@@ -859,17 +943,20 @@ def run_web(
     workdir = cwd or pathlib.Path.cwd()
     bind_host = _bind_host(host)
     try:
-        server = _create_web_server(bind_host, port, workdir, target, config_path)
+        server = _create_web_server(
+            bind_host, port, workdir, target, config_path, secret=secret.value
+        )
     except OSError as exc:
         print(f"agent6 web: cannot bind {bind_host}:{port}: {exc}", file=sys.stderr)
         return 2
-    shown = _display_host(bind_host)
-    print(f"agent6 web: serving on http://{shown}:{port}  (Ctrl-C to stop)", file=sys.stderr)
+    for line in _launch_lines(f"http://{_display_host(bind_host)}:{port}", secret):
+        print(f"agent6 web: {line}", file=sys.stderr)
     if not is_loopback_host(bind_host):
         print(
-            "agent6 web: WARNING bound to a non-loopback address; anyone who can reach"
-            f" {bind_host}:{port} can drive this agent. Prefer `tailscale serve` in front of a"
-            " loopback bind.",
+            "agent6 web: WARNING bound to a non-loopback address; the secret and the sign-in"
+            f" cookie cross the network to {bind_host}:{port} in plain HTTP, and anyone who"
+            " reads them can drive this agent. Prefer `tailscale serve` in front of a loopback"
+            " bind.",
             file=sys.stderr,
         )
     try:

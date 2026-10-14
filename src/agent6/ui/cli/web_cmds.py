@@ -2,19 +2,21 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 web`: serve the browser front-end over the `[web]` bind, loopback by default.
 
-Resolves host and port from config, lets `--host` and `--port` override, and hands off to
-`web.run_web`.
+Resolves host and port from config, lets `--host` and `--port` override, resolves the
+sign-in secret (`--secret`, else `AGENT6_WEB_SECRET`, else a minted one), and hands off
+to `web.run_web`.
 """
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pydantic
 
 from agent6.config import WebConfig, is_loopback_host, layer
 from agent6.ui.cli import _common
-from agent6.ui.web import run_web
+from agent6.ui.web import auth, run_web
 
 
 def _cmd_web(
@@ -24,6 +26,7 @@ def _cmd_web(
     host: str | None,
     port: int | None,
     allow_non_loopback: bool,
+    secret: str | None,
 ) -> int:
     """Serve the web UI.
 
@@ -37,9 +40,10 @@ def _cmd_web(
         host: The `--host` override.
         port: The `--port` override.
         allow_non_loopback: The `--allow-non-loopback` opt-in.
+        secret: The `--secret` value; None reads `AGENT6_WEB_SECRET`, else mints one.
 
     Returns:
-        The exit code; 2 for a bad port or an unapproved non-loopback host.
+        The exit code; 2 for a bad port, an unapproved non-loopback host or a short secret.
     """
     eff = layer.load_effective(pathlib.Path.cwd(), config_path)
     web = eff.config.web
@@ -58,4 +62,9 @@ def _cmd_web(
             " `tailscale serve` in front of a 127.0.0.1 bind."
         )
         return 2
-    return run_web(target, host=eff_host, port=eff_port, config_path=config_path)
+    try:
+        web_secret = auth.resolve(secret, os.environ.get(auth.SECRET_ENV))
+    except auth.WebSecretError as exc:
+        _common.refuse(str(exc))
+        return 2
+    return run_web(target, host=eff_host, port=eff_port, secret=web_secret, config_path=config_path)
