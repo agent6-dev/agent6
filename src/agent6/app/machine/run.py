@@ -365,22 +365,22 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 return 2
         if agent_states:
             # A state can inherit roles besides its worker; the ceiling itself makes no calls.
-            routes: set[tuple[str, str]] = set()
             for name, state in agent_states.items():
                 state_cfg = agent_config(name, state)
                 missing = _setup.check_provider_keys(state_cfg)
                 if missing is not None:
                     reporter.err(missing)
                     return 2
-                routes.update(
+                routes = {
                     (route.provider, route.model)
                     for route in state_cfg.models.configured().values()
-                )
-            # After check_provider_keys, which refreshed the price cache.
-            budget_err = preflight.budget_preflight(cfg, routes=routes, reporter=reporter)
-            if budget_err is not None:
-                reporter.refuse(budget_err)
-                return 2
+                }
+                # The state's own budget: its config may set a cap the machine's does not. After
+                # check_provider_keys, which refreshed the price cache.
+                budget_err = preflight.budget_preflight(state_cfg, routes=routes, reporter=reporter)
+                if budget_err is not None:
+                    reporter.refuse(f"{name}: {budget_err}")
+                    return 2
             # Resolved on the host: a confined agent cannot read ~/.gitconfig.
             commit_identity: git_ops.CommitIdentity | None = None
             if has_run_agent:
