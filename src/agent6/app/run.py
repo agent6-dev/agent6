@@ -334,7 +334,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         ):
             reporter.error("could not write the initial steer request")
             return 2
-        app_frontend.settle_away_mode(layout.session_dir, cfg)
+        app_frontend.settle_away_mode(
+            layout.session_dir, cfg, can_ask=frontend.capabilities.can_ask
+        )
         # The branch is advanced by the first chain commit; nothing is cut or checked out.
         if cfg.git.branch_per_run and mode == "run" and cfg.git.control != "model":
             run_branch = git_ops.run_branch_for(effective_session_id)

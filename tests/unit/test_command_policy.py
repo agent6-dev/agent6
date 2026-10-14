@@ -8,6 +8,8 @@ import pathlib
 
 import pytest
 
+from agent6 import portable
+from agent6.app import frontend as app_frontend
 from agent6.config import Config
 from agent6.sessions import ipc
 from agent6.tools import dispatch, operator_prompts
@@ -43,6 +45,35 @@ def test_an_away_mode_of_deny_withdraws_the_tools(tmp_path: pathlib.Path) -> Non
     """Deny while away, deny for the session and `run_commands = "no"` all withdraw the tools."""
     ipc.set_away_mode(tmp_path, "deny")
     assert ipc.effective_run_commands("ask", tmp_path) == "no"
+
+
+def test_a_front_end_that_can_ask_is_not_away(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A launcher's AGENT6_DETACHED_AWAY=deny withheld every command from an ACP client.
+
+    The marker is the policy of a run nobody can answer for; a front-end that can ask
+    answers every prompt itself, and a stale marker on the run dir goes with it.
+    """
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
+    ipc.set_away_mode(tmp_path, "deny")
+    app_frontend.settle_away_mode(tmp_path, Config(), can_ask=True)
+    assert ipc.effective_run_commands("ask", tmp_path) == "ask"
+    app_frontend.settle_away_mode(tmp_path, Config(), can_ask=False)
+    assert ipc.effective_run_commands("ask", tmp_path) == "no"
+
+
+def test_an_editor_s_allow_all_outlives_its_next_turn(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An ACP "allow all" covers the session's later prompts; a terminal start answers afresh."""
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
+    ipc.record_answer(tmp_path, "session", ipc.COMMAND_SCOPE)
+    app_frontend.settle_away_mode(tmp_path, Config(), can_ask=True)
+    assert ipc.effective_run_commands("ask", tmp_path) == "yes"
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
+    app_frontend.settle_away_mode(tmp_path, Config(), can_ask=True)
+    assert ipc.effective_run_commands("ask", tmp_path) == "ask"
 
 
 def test_waiting_is_still_a_question(tmp_path: pathlib.Path) -> None:

@@ -471,7 +471,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             cfg = workspace_setup.infer_if_unset(cfg, repo, reporter=reporter)
 
         # Needs the config: the away grant is per scope, one per configured MCP server.
-        app_frontend.settle_away_mode(layout.session_dir, cfg)
+        app_frontend.settle_away_mode(
+            layout.session_dir, cfg, can_ask=frontend.capabilities.can_ask
+        )
 
         if not preflight.route_preflight(
             cfg, role, reporter=reporter, model_flag=_setup.route_text(route)

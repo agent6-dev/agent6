@@ -13,7 +13,7 @@ import pathlib
 import sys
 import time
 
-from agent6 import errors, event_log, kinds, paths
+from agent6 import errors, event_log, kinds, paths, portable
 from agent6 import skills as agent6_skills
 from agent6.app import _setup, frontend, parallel, preflight, reporter, run
 from agent6.config import (
@@ -108,7 +108,10 @@ def session_frontend(config_path: pathlib.Path | None = None) -> frontend.Sessio
 
     return frontend.SessionFrontend(
         # The CLI asks on the terminal, so a piped stdin means it cannot ask.
-        capabilities=frontend.FrontendCapabilities(can_ask=sys.stdin.isatty()),
+        # The terminal prompts read /dev/tty, so a redirected stdin under a terminal still asks.
+        capabilities=frontend.FrontendCapabilities(
+            can_ask=sys.stdin.isatty() or portable.has_controlling_tty()
+        ),
         should_spawn_tui=lambda tui, interactive, mode: _live.should_spawn_tui(
             tui=tui, interactive=interactive, mode=mode
         ),

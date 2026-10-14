@@ -72,15 +72,18 @@ def approval_scopes(cfg: Config) -> tuple[str, ...]:
     return (ipc.COMMAND_SCOPE, *servers)
 
 
-def settle_away_mode(session_dir: pathlib.Path, cfg: Config) -> None:
+def settle_away_mode(session_dir: pathlib.Path, cfg: Config, *, can_ask: bool) -> None:
     """Settle the away mode at an execution's start.
 
-    A foreground start drops a stale detach answer and every approve-all grant, since the
-    operator is back to answer; a spawned start honours the away marker the launcher set.
+    A front-end that can ask (a terminal, an ACP client) drops a stale detach answer, since
+    someone is there to answer; a start nobody can answer for honours the away marker the
+    launcher set. A terminal start also drops every approve-all grant: the operator is back to
+    answer afresh. An editor's grant covers its session's later prompts, so an ACP turn keeps it.
     """
-    if portable.has_controlling_tty():
+    if can_ask:
         ipc.clear_away_mode(session_dir)
-        ipc.clear_session_grants(session_dir)
+        if portable.has_controlling_tty():
+            ipc.clear_session_grants(session_dir)
     else:
         apply_spawned_away_default(session_dir, approval_scopes(cfg))
 
