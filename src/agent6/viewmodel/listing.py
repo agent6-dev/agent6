@@ -15,7 +15,7 @@ import pathlib
 import time
 from collections.abc import Container, Iterable, Mapping, Sequence
 
-from agent6 import git_ops, kinds, task_text, terminal
+from agent6 import budget, git_ops, kinds, task_text, terminal
 from agent6.sessions import ipc, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import events, format
@@ -151,8 +151,8 @@ def cost_cell(
         plan_used_percent: The account's last plan reading.
 
     Returns:
-        The points once a subscription plan answered a call, else the dollars; "" for a
-        clean $0.
+        The points once a subscription plan answered a call, the dollars when any were
+        spent, both for a run that spent both; "" for a clean $0.
     """
     metered = plan_used_percent > 0 or plan_consumed > 0
     return format.format_cost_cell(
@@ -417,6 +417,8 @@ def status_word(
         "settled": ("finished", not_green),
         # A verify against the unmodified tree proved the gate red before the run touched it.
         "gate_red_at_base": ("finished", "gate was already red"),
+        # A fan-out's own end: its lanes carry the gate verdicts, and no model finished it.
+        "lanes_ranked": ("finished", "lanes ranked"),
     }
     if end_reason in own_word:
         word, detail = own_word[end_reason]
@@ -640,6 +642,7 @@ class LogScan:
         plan_prior_executions: The points banked by completed executions.
         plan_cap: `[budget].max_percent` for this execution, 0.0 until a plan call runs.
         plan_used_percent: The account's last reading, 0.0 until a plan call runs.
+        plan_usage: That reading's windows, None until a plan call reports them.
         iteration: The last event's iteration.
         start_ep: session.start's epoch, else the first event's (a fork's log has none).
         last_ep: The last event's epoch.
@@ -679,6 +682,7 @@ class LogScan:
     plan_prior_executions: float = 0.0
     plan_cap: float = 0.0
     plan_used_percent: float = 0.0
+    plan_usage: budget.PlanUsage | None = None
     iteration: int | None = None
     start_ep: float | None = None
     last_ep: float | None = None
@@ -750,6 +754,27 @@ class LogScan:
         )
 
 
+def _plan_usage(ev: Mapping[str, object]) -> budget.PlanUsage | None:
+    """Return the plan windows a budget.update carries, or None when it carries none."""
+    raw = ev.get("plan_windows")
+    windows: list[budget.PlanWindow] = []
+    for w in raw if isinstance(raw, list) else ():
+        if not isinstance(w, dict):
+            continue
+        try:
+            windows.append(
+                budget.PlanWindow(
+                    str(w["name"]),
+                    float(w["used_percent"]),
+                    int(w["window_minutes"]),
+                    float(w["resets_at"]),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return budget.PlanUsage(windows=tuple(windows)) if windows else None
+
+
 def _figure(ev: Mapping[str, object], key: str, last_good: float) -> float:
     """Read a budget.update figure as the typed fold does.
 
@@ -811,6 +836,25 @@ def finished_needs_new_work(session_dir: pathlib.Path) -> bool:
     )
 
 
+def fanout_resume_refusal(session_id: str) -> str:
+    """Return the refusal every resume path gives a fan-out coordinator, which has no loop."""
+    return (
+        f"cannot resume {session_id}: a fan-out coordinator is not resumable;"
+        f" `agent6 sessions show {session_id}` lists its lanes."
+    )
+
+
+def is_fanout(session_dir: pathlib.Path) -> bool:
+    """Return whether the session is a fan-out coordinator; False when its manifest is unreadable.
+
+    A hub asks before it spawns a resume that could only refuse.
+    """
+    try:
+        return sessions_manifest.read_manifest(session_dir).fanout is not None
+    except sessions_manifest.ManifestError:
+        return False
+
+
 def needs_new_work_refusal(session_id: str) -> str:
     """Return the refusal `agent6 resume` and the web composer share for a finished run."""
     return (
@@ -851,6 +895,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
     plan_consumed = plan_prior_executions = plan_cap = plan_used_percent = 0.0
+    plan_usage: budget.PlanUsage | None = None
     iteration: int | None = None
     start_ep: float | None = None
     first_ep: float | None = None
@@ -975,6 +1020,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     plan_consumed = _figure(ev, "plan_consumed", plan_consumed)
                     plan_cap = _figure(ev, "plan_cap", plan_cap)
                     plan_used_percent = _figure(ev, "plan_used_percent", plan_used_percent)
+                    plan_usage = _plan_usage(ev) or plan_usage
     except OSError:
         pass
     return LogScan(
@@ -1001,6 +1047,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         plan_prior_executions=plan_prior_executions,
         plan_cap=plan_cap,
         plan_used_percent=plan_used_percent,
+        plan_usage=plan_usage,
         unattended_questions=unattended_questions,
         iteration=iteration,
         start_ep=start_ep if start_ep is not None else first_ep,

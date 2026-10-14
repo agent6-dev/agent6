@@ -712,6 +712,10 @@ def test_cost_cell_marks_partial_and_keeps_zero_clean() -> None:
     assert format.format_cost_cell(0.0, partial=True) == "~$0.0000"
     assert format.format_cost_cell(0.0, partial=False) == ""
     assert format.format_cost_cell(0.0123, partial=False) == "$0.01"
+    # A run that spent plan points and dollars shows both: the dollars were hidden.
+    assert format.format_cost_cell(0.0, plan_points=1) == "1pt"
+    assert format.format_cost_cell(0.03, plan_points=1) == "1pt + $0.03"
+    assert format.format_cost_cell(0.03, partial=True, plan_points=1) == "1pt + ~$0.03"
 
 
 def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(

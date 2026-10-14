@@ -234,6 +234,10 @@ def _parallel_compared_body(event: dict[str, Any]) -> str:
     for rank, r in enumerate(rows, start=1):
         cost = r.get("cost_usd")
         cost_s = budget.format_usd(float(cost)) if isinstance(cost, (int, float)) else "?"
+        # The listings' cell, when the event carries it (plan points, or both).
+        cell = r.get("cost")
+        if isinstance(cell, str) and cell:
+            cost_s = cell
         lines.append(f"{rank}. {r.get('session_id', '?')}  {r.get('verify', '?')}  {cost_s}")
     return "\n".join(lines)
 

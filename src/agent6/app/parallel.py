@@ -24,6 +24,7 @@ from collections.abc import Callable, Mapping, Sequence
 from concurrent import futures as concurrent_futures
 from typing import Protocol
 
+from agent6 import budget as agent6_budget
 from agent6 import directive, event_log, git_ops, kinds, memory, paths
 from agent6.app import _lane_watch, _setup, _workdirs, finalize, preflight, stamps, workspace_setup
 from agent6.app import compare as app_compare
@@ -723,6 +724,7 @@ class _ImportedLanes:
     failed: list[tuple[subrun.LaneResult, str]]
     imported: list[subrun.LaneSpec]
     all_budget_exhausted: bool
+    plan_lines: list[str]
 
 
 def _import_lanes(
@@ -757,6 +759,8 @@ def _import_lanes(
     budget_stops = 0
     failed: list[tuple[subrun.LaneResult, str]] = []
     imported: list[subrun.LaneSpec] = []
+    # A reading is account-wide, so each provider's newest one among the lanes is the fan-out's.
+    readings: dict[str, tuple[float, agent6_budget.PlanUsage]] = {}
     for res in results:
         if not res.ok:
             failed.append((res, f"failed to start: {res.error}"))
@@ -788,6 +792,9 @@ def _import_lanes(
         summary = summarize_session_dir(dest)
         scan = listing.scan_session_log(dest / sessions_layout.LOGS_NAME)
         budget_stops += scan.end_reason == "budget_exhausted"
+        if scan.plan_usage is not None and (provider := _lane_provider(dest)):
+            seen = (listing.session_mtime(dest), scan.plan_usage)
+            readings[provider] = max(readings.get(provider, seen), seen, key=lambda r: r[0])
         if not produced_result(summary.status):
             # Only a deliberate end is rankable work.
             failed.append(
@@ -816,7 +823,20 @@ def _import_lanes(
         failed,
         imported,
         all_budget_exhausted=bool(results) and budget_stops == len(results),
+        plan_lines=[
+            agent6_budget.format_plan_reading(provider, usage)
+            for provider, (_at, usage) in sorted(readings.items())
+        ],
     )
+
+
+def _lane_provider(session_dir: pathlib.Path) -> str:
+    """Return the provider entry that drove a lane, "" when its manifest names none."""
+    try:
+        driver = sessions_manifest.read_manifest(session_dir).models.driver
+    except sessions_manifest.ManifestError:
+        return ""
+    return driver.provider if driver is not None else ""
 
 
 def fanout_exit_code(
@@ -1160,6 +1180,8 @@ def _drive_fanout(
         fanout_id=fanout_id,
         reporter=reporter,
     )
+    for line in batch.plan_lines:
+        reporter.out(line)
     by_id = {c.session_id: c for c in batch.candidates}
     events.emit(
         "loop.parallel.compared",
@@ -1170,6 +1192,8 @@ def _drive_fanout(
                 "session_id": rid,
                 "verify": app_compare.verify_word(by_id[rid].verify_ok),
                 "cost_usd": by_id[rid].cost_usd,
+                # The listings' cell: plan points for a lane on a subscription plan.
+                "cost": batch.rows[rid].cost_cell if rid in batch.rows else "",
             }
             for rid in outcome.ranking
         ],
@@ -1209,5 +1233,5 @@ def _fanout_end(rc: int, candidates: list[judge.CandidateBrief]) -> tuple[str, b
     if rc == 3:
         return "budget_exhausted", False
     if rc == 0:
-        return "finish_session", True if any(c.verify_ok for c in candidates) else None
+        return "lanes_ranked", True if any(c.verify_ok for c in candidates) else None
     return ("no_lane_passed" if rc == finalize.EXIT_VERIFY_FAILED else "no_lane_result"), False

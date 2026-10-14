@@ -295,6 +295,56 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
     asyncio.run(scenario())
 
 
+def test_resume_of_a_fan_out_refuses_here(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
+    """Run > Resume on a fan-out spawned a detached resume whose refusal nobody read."""
+    spawned: list[str] = []
+
+    def _fake_resume(_cwd: pathlib.Path, rid: str, **_kw: object) -> str:
+        spawned.append(rid)
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
+    run = tmp_path / "fan-run-AAAAAA"
+    run.mkdir()
+    (run / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": run.name,
+                "mode": "run",
+                "user_task": "t",
+                "fanout": {"lanes": 2, "spec": "2"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    evs = [
+        {"type": "session.start", "session_id": run.name, "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "lanes_ranked", "all_passed": True},
+    ]
+    (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    notes: list[str] = []
+
+    async def scenario() -> None:
+        app = app_mod.Agent6TUI(run)
+        original = app.notify
+
+        def spy(message: Any, *a: Any, **k: Any) -> None:
+            notes.append(str(message))
+            original(message, *a, **k)
+
+        monkeypatch.setattr(app, "notify", spy)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            app.action_resume()
+            await pilot.pause()
+            assert spawned == []
+            assert any("fan-out coordinator is not resumable" in n for n in notes)
+
+    asyncio.run(scenario())
+
+
 def test_run_this_plan_spawns_the_run_detached(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
     """Run > Run this plan on a finished plan spawns `agent6 run --from <id>` detached.
 
@@ -411,3 +461,52 @@ def test_a_refused_btw_toasts_as_a_warning(
             return [(str(n.message), n.severity) for n in notes]
 
     assert ("no live run to ask beside", "warning") in asyncio.run(scenario())
+
+
+def test_a_typed_instruction_on_a_coordinator_is_refused_before_any_spawn(
+    tmp_path: pathlib.Path, monkeypatch: Any
+) -> None:
+    """A fan-out coordinator has no loop to resume, so the composer refuses as the action does."""
+    spawned: list[str] = []
+
+    def _fake_resume(_cwd: pathlib.Path, rid: str, **_kw: object) -> str:
+        spawned.append(rid)
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
+    run = tmp_path / "fanout-run-AAAAAA"
+    run.mkdir(parents=True)
+    (run / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": run.name,
+                "mode": "run",
+                "user_task": "t",
+                "fanout": {"lanes": 2, "spec": "2"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    evs = [
+        {"type": "session.start", "session_id": run.name, "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "lanes_ranked", "all_passed": True},
+    ]
+    (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    notices: list[str] = []
+
+    async def scenario() -> None:
+        app = app_mod.Agent6TUI(run)
+
+        def _note(message: object, **_kw: object) -> None:
+            notices.append(str(message))
+
+        monkeypatch.setattr(app, "notify", _note)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.submit_instruction("do more")
+            await app.workers.wait_for_complete()
+
+    asyncio.run(scenario())
+    assert spawned == []
+    assert any("not resumable" in n for n in notices)

@@ -83,7 +83,8 @@ The end block adds `running command was cut short` when the stop ended a running
 `--after-step` leaves `running · stopping after this step` in listings until the step ends, then prints `operator stopped the run after step N`.
 A starting or waiting run keeps that status and adds `stopping after this step` beside its other details.
 
-A session's cost covers every execution, in dollars or in plan points; `sessions list`, `sessions show`, the end-of-run total and the fan-out report print the same figure.
+A session's cost covers every execution, in dollars or in plan points, and in both for a run that spent both (`1pt + $0.03`); `sessions list`, `sessions show`, the end-of-run total and the fan-out report print the same figure.
+A fan-out's report ends with the plan's latest reading among its lanes (`plan usage (<entry>): N% of the 7-day window`); the fan-out itself reads `finished · lanes ranked`, and each lane carries its own gate verdict.
 The tokens and the points against `max_percent` on `sessions show` are the latest execution's.
 `elapsed` on a resumed run is the wall time from its first start to its last event, the time between executions included.
 `N questions unanswered` beside a status counts the questions of the current execution that nobody was attached to see; a resume starts the count again.
@@ -188,6 +189,7 @@ Every end has one reason (`reason` in `agent6 sessions show --json`), and each r
 | `ask_repl_empty` | none: no end is recorded | `0` |
 | `gate_stale` | `finished · gate stale` | `4` |
 | `gate_red_at_base` | `finished · gate was already red` | `4` |
+| `lanes_ranked` | `finished · lanes ranked` | `0` |
 | `no_lane_result` | `failed · no lane result` | `1` |
 | `no_lane_passed` | `failed · no lane passed` | `4` |
 

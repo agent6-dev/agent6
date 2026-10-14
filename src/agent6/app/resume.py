@@ -264,10 +264,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         reporter.error(f"cannot resume {session_id}: {exc}")
         return 2
     if manifest.fanout is not None:
-        reporter.error(
-            f"cannot resume {session_id}: a fan-out coordinator is not resumable;"
-            f" `agent6 sessions show {session_id}` lists its lanes."
-        )
+        reporter.error(listing.fanout_resume_refusal(session_id))
         return 2
     cwd = manifest.worktree or repo
     if manifest.worktree is not None and manifest.worktree_git_dir is None:

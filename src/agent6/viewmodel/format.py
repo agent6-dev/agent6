@@ -169,13 +169,14 @@ def format_cost_cell(usd: float, *, partial: bool = False, plan_points: float | 
         plan_points: The plan points consumed on a subscription-metered execution.
 
     Returns:
-        The points as `Npt` when given, "" for a clean $0, else `format_usd`.
+        The points as `Npt` when given, the dollars through `format_usd` when any were
+        spent, both joined by ` + ` for a run that spent both; "" for a clean $0.
     """
-    if plan_points is not None:
-        return f"{plan_points:g}pt"
-    if usd <= 0 and not partial:
-        return ""
-    return budget.format_usd(usd, partial=partial)
+    dollars = "" if usd <= 0 and not partial else budget.format_usd(usd, partial=partial)
+    if plan_points is None:
+        return dollars
+    points = f"{plan_points:g}pt"
+    return f"{points} + {dollars}" if dollars else points
 
 
 def budget_usd_text(

@@ -472,6 +472,9 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             text: The instruction the new session injects at its first boundary.
         """
         target = self.continue_as or self.session_dir.name
+        if not self.continue_as and listing.is_fanout(self.session_dir):
+            self.notify(listing.fanout_resume_refusal(target), severity="warning")
+            return
         self._spawn_resume(
             target,
             steer=text,
@@ -627,6 +630,9 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             self.notify("nothing to resume: the session is still going", severity="warning")
             return
         target = self.continue_as or self.session_dir.name
+        if not self.continue_as and listing.is_fanout(self.session_dir):
+            self.notify(listing.fanout_resume_refusal(target), severity="warning")
+            return
         if not self.continue_as and listing.finished_needs_new_work(self.session_dir):
             self.notify(
                 "this run finished; type what to do next below (Enter resumes it with the"

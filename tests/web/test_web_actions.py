@@ -546,6 +546,45 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     assert spawned == ["do more"]
 
 
+@pytest.mark.parametrize("steer", ["", "do more"])
+def test_the_composer_refuses_to_resume_a_fan_out(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, steer: str
+) -> None:
+    """A fan-out has no loop to continue, and the detached resume's own refusal reaches nobody."""
+    import json
+
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "fan-WEB222"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "fan-WEB222",
+                "mode": "run",
+                "user_task": "t",
+                "fanout": {"lanes": 2, "spec": "2"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.end", "reason": "lanes_ranked", "all_passed": True}) + "\n",
+        encoding="utf-8",
+    )
+    spawned: list[str] = []
+
+    def _spawn(_cwd: pathlib.Path, _session_id: str, **_kw: object) -> str:
+        spawned.append("spawned")
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _spawn)
+
+    ok, msg = actions.resume_run(tmp_path, "fan-WEB222", steer)
+    assert ok is False
+    assert "fan-out coordinator is not resumable" in msg and "sessions show fan-WEB222" in msg
+    assert spawned == []
+
+
 def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: pathlib.Path) -> None:
     """The stop verb plants a marker only for a live worker.
 

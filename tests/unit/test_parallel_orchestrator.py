@@ -18,6 +18,7 @@ import json
 import os
 import pathlib
 import threading
+import time
 import types
 from collections.abc import Callable, Generator, Mapping
 from typing import Any
@@ -90,7 +91,22 @@ def _write_fake_run(
     ]
     if points is not None:
         # A lane on a subscription plan: no dollars, the account's reading and its points.
-        events[1] = {"type": "budget.update", "plan_used_percent": 40.0, "plan_consumed": points}
+        used = 40.0 + points
+        events[1] = {
+            "type": "budget.update",
+            "plan_used_percent": used,
+            "plan_consumed": points,
+            "plan_windows": [
+                {
+                    "name": "primary",
+                    "used_percent": used,
+                    "window_minutes": 10080,
+                    "resets_at": time.time() + 100 * 3600,
+                }
+            ],
+        }
+        manifest["models"] = {"driver": {"provider": "chatgpt", "model": "m"}}
+        (session_dir / "manifest.json").write_text(json.dumps(manifest) + "\n", encoding="utf-8")
     if status == "passed":
         events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
     elif status in ("failed", "setup_command_failed", "budget_exhausted"):
@@ -538,8 +554,6 @@ def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
     order leaves the raise unobserved, and hard_stop unset, until every earlier lane finishes on its
     own.
     """
-    import time
-
     origin_state = tmp_path / "ostate"
     origin_state.mkdir()
     seen: dict[str, bool] = {}
@@ -1499,11 +1513,16 @@ def test_the_report_spells_a_lanes_cost_and_outcome_as_the_listing_does(
         fanout_id="fan",
     )
 
-    ranked = [ln for ln in capsys.readouterr().out.splitlines() if "merge with:" in ln]
+    out = capsys.readouterr().out
+    ranked = [ln for ln in out.splitlines() if "merge with:" in ln]
     rows = {ln.split()[1]: ln for ln in ranked}
     assert "passed" in rows["fan-l2"] and "2.5pt" in rows["fan-l2"]
     assert "finished · gate red" in rows["fan-l1"] and "1pt" in rows["fan-l1"]
     assert all("$0.0000" not in ln and "failed" not in ln for ln in ranked)
+    # The report ends on the account's newest reading among the lanes, as a run's end does.
+    assert out.rstrip().splitlines()[-1] == (
+        "plan usage (chatgpt): 42.5% of the 7-day window (resets in 100h)"
+    )
 
 
 @pytest.mark.parametrize("coordinator", [False, True])
@@ -1568,7 +1587,7 @@ def test_a_lane_with_no_commit_does_not_claim_a_branch_was_imported(
     [
         ("budget_exhausted", False, 3, "budget_exhausted"),
         ("failed", False, 1, "no_lane_result"),
-        ("passed", False, 0, "finish_session"),
+        ("passed", False, 0, "lanes_ranked"),
         ("budget_exhausted", True, 1, "no_lane_result"),
     ],
 )
@@ -3110,7 +3129,8 @@ def test_run_parallel_is_a_session_of_its_own(
     assert manifest.run_branch is None and manifest.mode == "run"
     assert manifest.user_task == "do the task" and manifest.parallel is None
     scan = listing.scan_session_log(coordinator / "logs.jsonl")
-    assert scan.saw_start and scan.finished and scan.end_reason == "finish_session"
+    # No model finished a fan-out: its lanes ran and were ranked.
+    assert scan.saw_start and scan.finished and scan.end_reason == "lanes_ranked"
     types = [
         json.loads(line)["type"]
         for line in (coordinator / "logs.jsonl").read_text(encoding="utf-8").splitlines()
@@ -3118,7 +3138,9 @@ def test_run_parallel_is_a_session_of_its_own(
     assert types[:2] == ["session.start", "loop.parallel.dispatched"]
     assert "loop.parallel.compared" in types and types[-1] == "session.end"
     assert not (coordinator / "worker.pid").exists()
-    assert listing.summarize_session_dir(coordinator).status == "passed"  # a lane's gate went green
+    # The lanes carry the gate verdicts; the fan-out's own end is that they were ranked.
+    row = listing.summarize_session_dir(coordinator)
+    assert (row.status, row.reason) == ("finished", "lanes ranked")
 
 
 def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(

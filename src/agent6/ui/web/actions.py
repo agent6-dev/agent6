@@ -241,8 +241,10 @@ def resume_run(
         return False, f"no session {session_id!r}"
     if session_is_live(session_dir):
         return False, "the session is still live; steer it instead"
+    # Refused here, in the CLI's words, before spawning a resume that could only refuse.
+    if listing.is_fanout(session_dir):
+        return False, listing.fanout_resume_refusal(session_dir.name)
     if not text.strip() and listing.finished_needs_new_work(session_dir):
-        # The CLI's own refusal would land on a detached process nobody reads.
         return False, (
             f"run {session_id!r} already finished (the agent called finish_session);"
             " type what to do next (Enter resumes it with the instruction)"

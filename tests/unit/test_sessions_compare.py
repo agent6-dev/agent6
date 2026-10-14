@@ -56,6 +56,7 @@ def _setup_run(
     task: str = "implement the thing",
     status: str = "passed",
     cost: float = 0.05,
+    plan_points: float = 0.0,
     manifest_extra: dict[str, Any] | None = None,
 ) -> None:
     """Cut agent6/<session_id> off base_sha with commits and write the run's state fixture.
@@ -92,7 +93,12 @@ def _setup_run(
     )
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": task},
-        {"type": "budget.update", "usd_total": cost},
+        {
+            "type": "budget.update",
+            "usd_total": cost,
+            "plan_consumed": plan_points,
+            "plan_used_percent": plan_points,
+        },
     ]
     if status == "passed":
         events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
@@ -490,6 +496,51 @@ def test_compare_total_line_accounts_the_judge_calls_own_spend(
     assert rc == 0
     out = capsys.readouterr().out
     assert "total: candidates $0.12 + judge $0.01 = $0.13" in out
+
+
+def test_plan_points_and_a_judge_s_dollars_are_not_added(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Points and dollars stay apart; summed, `2pt + judge $0.01` would count the dollars only.
+
+    The sum is for an all-dollar line; without a judge figure the candidates' points stay too.
+    """
+    base = _init_repo(repo)
+    for sid, name in (("run-AAAA11", "a"), ("run-BBBB22", "b")):
+        _setup_run(
+            repo,
+            sid,
+            base_sha=base,
+            commits=[(f"{name}.txt", f"{name}\n", f"add {name}")],
+            cost=0.0,
+            plan_points=1.0,
+        )
+    _write_reviewer_config(repo)
+    verdict = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b is cleaner"}'
+    monkeypatch.setattr(
+        providers, "build_role_provider", _costing_stub_builder(_CostingFakeProvider([verdict]))
+    )
+    assert main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
+    out = capsys.readouterr().out
+    assert "total: candidates 2pt + judge $0.01\n" in out
+
+
+def test_without_a_judge_the_candidates_keep_their_points(
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Two plan-metered candidates and no reviewer: the total line is their points."""
+    base = _init_repo(repo)
+    for sid, name in (("run-AAAA11", "a"), ("run-BBBB22", "b")):
+        _setup_run(
+            repo,
+            sid,
+            base_sha=base,
+            commits=[(f"{name}.txt", f"{name}\n", f"add {name}")],
+            cost=0.0,
+            plan_points=1.0,
+        )
+    assert main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
+    assert "total: candidates 2pt\n" in capsys.readouterr().out
 
 
 def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:

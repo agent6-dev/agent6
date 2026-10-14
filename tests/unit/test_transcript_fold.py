@@ -589,6 +589,7 @@ _DONE_LABELS = {
     "ask_repl_empty": "failed · ask repl empty",
     "gate_stale": "finished · gate stale",
     "gate_red_at_base": "finished · gate was already red",
+    "lanes_ranked": "finished · lanes ranked",
     "no_lane_result": "failed · no lane result",
     "no_lane_passed": "failed · no lane passed",
     "setup_command_failed": "failed · setup command failed",
@@ -862,14 +863,17 @@ def test_parallel_compared_renders_the_ranking() -> None:
                 "ranking": [
                     {"session_id": "fan-l2", "verify": "passed", "cost_usd": 0.05},
                     {"session_id": "fan-l1", "verify": "failed", "cost_usd": 0.07},
+                    # A lane on a subscription plan: the listings' cell rides the event.
+                    {"session_id": "fan-l3", "verify": "passed", "cost_usd": 0.0, "cost": "1pt"},
                 ],
             }
         ]
     )
     assert item.kind == "marker"
-    assert "compared group fan: 2 candidate(s), ranked by judge" in item.body
+    assert "compared group fan: 3 candidate(s), ranked by judge" in item.body
     assert "1. fan-l2  passed  $0.05" in item.body
     assert "2. fan-l1  failed  $0.07" in item.body
+    assert "3. fan-l3  passed  1pt" in item.body
 
 
 def test_parallel_dispatched_counts_lanes_when_the_event_carries_them() -> None:

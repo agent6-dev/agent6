@@ -151,15 +151,20 @@ def print_ranked_candidates(
         reporter.out(f"  {rnk}. {rid}  {labels[rid]:<{width}}  {cost}   {landing}")
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)
+        plan_total = sum(
+            rows[c.session_id].plan_consumed for c in candidates if c.session_id in rows
+        )
+        candidates_cell = listing.cost_cell(
+            cand_total, partial=False, plan_consumed=plan_total, plan_used_percent=0.0
+        ) or agent6_budget.format_usd(0.0)
         judge = outcome.judge_cost_usd
         partial = outcome.judge_cost_partial
+        line = f"total: candidates {candidates_cell}"
         if judge > 0 or partial:
-            reporter.out(
-                f"total: candidates {agent6_budget.format_usd(cand_total)}"
-                f" + judge {agent6_budget.format_usd(judge, partial=partial)}"
-                f" = {agent6_budget.format_usd(cand_total + judge, partial=partial)}"
-            )
-        else:
-            reporter.out(f"total: candidates {agent6_budget.format_usd(cand_total)}")
+            line += f" + judge {agent6_budget.format_usd(judge, partial=partial)}"
+            if plan_total <= 0:
+                # Points and dollars do not add; the sum is for an all-dollar line.
+                line += f" = {agent6_budget.format_usd(cand_total + judge, partial=partial)}"
+        reporter.out(line)
     if outcome.rationale:
         reporter.out(f"\njudge: {outcome.rationale}")

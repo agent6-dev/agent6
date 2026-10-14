@@ -759,6 +759,23 @@ def format_plan_window(window: PlanWindow) -> str:
     return f"{duration}window{which}"
 
 
+def format_plan_reading(route: str, usage: PlanUsage) -> str:
+    """Return a plan's reading with no run's consumption, as a fan-out prints its lanes' newest.
+
+    Args:
+        route: The provider entry's name.
+        usage: The reading.
+
+    Returns:
+        The line.
+    """
+    resets_h = max(0.0, (usage.resets_at - time.time()) / 3600)
+    return (
+        f"plan usage ({route}): {usage.used_percent:g}% of the"
+        f" {format_plan_window(usage.binding)} (resets in {resets_h:.0f}h)"
+    )
+
+
 def format_plan_usage(route: str, spend: PlanSpend, max_percent: float) -> str:
     """Return the plan-usage line every surface prints for one provider entry.
 
