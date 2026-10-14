@@ -219,7 +219,10 @@ def test_boundaries_report_shows_each_grant_as_a_run_binds_it(
     real.mkdir()
     link.symlink_to(real, target_is_directory=True)
     inside = pathlib.Path.cwd() / "vendored"
-    cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(link), str(inside))))
+    # Pinned strict: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    cfg = Config(
+        sandbox=SandboxConfig(isolation="strict", extra_read_paths=(str(link), str(inside)))
+    )
     check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     bound = f"    ro  {real}  (sandbox.extra_read_paths, configured as {link})"

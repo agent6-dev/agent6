@@ -16,11 +16,13 @@ from typing import Any
 
 from agent6 import kinds, memory, paths
 from agent6.config import Config
-from agent6.sandbox import jail, tool_paths
+from agent6.sandbox import detect, jail, tool_paths
 from agent6.tools import _path_safety, _result_format
 
 # strict's default HOME: the launcher creates it inside the run's private /tmp tmpfs.
 JAIL_TMP_HOME = pathlib.Path("/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
+# The host's /tmp, which a hardened run's commands write: a link there is re-pointable.
+_TMP = pathlib.Path("/tmp").resolve()  # noqa: S108
 
 # What a resolver and a TLS client read: the resolver settings and the CA store.
 _HOST_NETWORK_FILES = (
@@ -160,16 +162,30 @@ class DroppedGrant:
     def line(self) -> str:
         """Return the sentence a run prints for the grant at its start."""
         where = "" if self.real == self.path else f" (it resolves to {self.real})"
+        who = "a hardened run's commands" if self.region == _TMP else "jailed commands"
+        pin = " Pin sandbox.isolation = strict to keep it." if self.region == _TMP else ""
         if self.via_link:
             return (
                 f"{self.key} entry {self.path}{where} is not granted: a link on its"
-                f" way sits inside {self.region}, which jailed commands write, so a command"
-                f" could point it anywhere. Grant {self.real} by its own path."
+                f" way sits inside {self.region}, which {who} write, so a command"
+                f" could point it anywhere. Grant {self.real} by its own path.{pin}"
             )
+        if self.real == self.region:
+            return (
+                f"{self.key} entry {self.path}{where} is not granted on its own: it is"
+                f" {self.region} itself, which the run already holds, and a second bind of it"
+                " would lack the protections the first carries."
+            )
+        # A link inside the region that leads out: what it held is not part of the region.
+        still = (
+            f" What it holds stays reachable as part of {self.region}."
+            if _path_safety.path_within(self.real, self.region)
+            else f" Grant {self.real} by its own path."
+        )
         return (
             f"{self.key} entry {self.path}{where} is not granted on its own: it sits"
-            f" inside {self.region}, which jailed commands write, so a command could point it"
-            f" anywhere. What it holds stays reachable as part of {self.region}."
+            f" inside {self.region}, which {who} write, so a command could point it"
+            f" anywhere.{still}{pin}"
         )
 
 
@@ -214,6 +230,14 @@ def _link_dirs(path: pathlib.Path) -> tuple[pathlib.Path, ...]:
     return tuple(dirs)
 
 
+def _resolved_isolation(requested: str) -> str:
+    """Return the level the run would get on this host; an unhonourable one as requested."""
+    try:
+        return detect.resolve_isolation(requested, detect.environment())
+    except detect.IsolationUnavailableError:
+        return requested
+
+
 def resolve_grants(
     config: Config,
     root: pathlib.Path,
@@ -222,10 +246,13 @@ def resolve_grants(
 ) -> Grants:
     """Resolve `sandbox.extra_read_paths` and `extra_write_paths`, once for a run.
 
-    A grant spelled or resolving strictly inside a region the run writes (the workspace root,
-    a write grant), or reached through a link that sits in one, is dropped: a jailed command
-    can swap a component there for a symlink out of every grant. A grant elsewhere resolves
-    as the operator linked it.
+    A grant spelled or resolving inside a region the run writes (the workspace root, a write
+    grant), or that is one of them under another name, or reached through a link that sits in
+    one, is dropped: a jailed command can swap a component there for a symlink out of every
+    grant, and an alias of the workspace would be bound without its read-only `.git`. `/tmp`
+    is such a region when the run would not be `strict` on this host, whose private `/tmp` no
+    command can re-point: a `hardened` run's commands write the host's, and what a grant there
+    held stays reachable as part of it. A grant elsewhere resolves as the operator linked it.
 
     Args:
         config: The run's config.
@@ -248,15 +275,15 @@ def resolve_grants(
             (f"mcp.servers.{name}.sandbox.read_paths", False, reads),
             (f"mcp.servers.{name}.sandbox.write_paths", True, writes),
         ]
-    regions = (
-        root.resolve(),
-        *(
-            pathlib.Path(p).expanduser().resolve()
-            for _key, writes, entries in groups
-            if writes
-            for p in entries
-        ),
+    write_regions = tuple(
+        pathlib.Path(p).expanduser().resolve()
+        for _key, writes, entries in groups
+        if writes
+        for p in entries
     )
+    regions = (root.resolve(), *write_regions)
+    if _resolved_isolation(sb.isolation) != "strict":
+        regions += (_TMP,)
     kept: dict[bool, list[tuple[pathlib.Path, pathlib.Path]]] = {False: [], True: []}
     dropped: list[DroppedGrant] = []
     for key, writes, listed in groups:
@@ -264,10 +291,12 @@ def resolve_grants(
         for grant in listed:
             path = pathlib.Path(grant).expanduser()
             real = path.resolve()
-            # Inside a region by its spelling (an ancestor resolves into one) or by its target.
-            inside = (real.parent, *(step.resolve() for step in path.parents))
+            # Inside a region by its spelling (an ancestor resolves into one) or by its target,
+            # or the region itself under another name; a write grant is not inside itself.
+            inside = (real, *(step.resolve() for step in path.parents))
+            others = tuple(w for w in regions if not (writes and w == real and w != regions[0]))
             region = next(
-                (w for w in regions if any(_path_safety.path_within(p, w) for p in inside)), None
+                (w for w in others if any(_path_safety.path_within(p, w) for p in inside)), None
             )
             links = () if region is not None else _link_dirs(path)
             linked = next(

@@ -375,7 +375,10 @@ def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
     into = tmp_path / "into"
     into.symlink_to(repo / "data", target_is_directory=True)
     spec = {"command": ["npx", "server"], "sandbox": {"read_paths": [str(tool), str(into)]}}
-    cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"fs": spec}}})
+    # Pinned strict: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    cfg = Config.model_validate(
+        {"sandbox": {"isolation": "strict"}, "mcp": {"enabled": True, "servers": {"fs": spec}}}
+    )
 
     built = _setup.mcp_server_policy(cfg, repo, "strict", cfg.mcp.servers["fs"])
 

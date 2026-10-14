@@ -182,7 +182,12 @@ def _granted(
     from agent6.config import Config
     from agent6.tools import policy
 
-    grants = {"extra_read_paths": [str(read)], "extra_write_paths": [str(write)]}
+    # Pinned strict: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    grants = {
+        "isolation": "strict",
+        "extra_read_paths": [str(read)],
+        "extra_write_paths": [str(write)],
+    }
     repo = tmp_path / "repo"
     repo.mkdir(exist_ok=True)
     return policy.workspace_for(Config.model_validate({"sandbox": grants}), repo)

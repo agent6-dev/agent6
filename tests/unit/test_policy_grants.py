@@ -65,7 +65,12 @@ def test_a_symlinked_grant_reaches_the_launcher_under_both_names(tmp_path: pathl
     real.mkdir()
     plain.mkdir()
     link.symlink_to(real, target_is_directory=True)
-    grants = {"extra_read_paths": [str(link)], "extra_write_paths": [str(plain)]}
+    # Pinned strict: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    grants = {
+        "isolation": "strict",
+        "extra_read_paths": [str(link)],
+        "extra_write_paths": [str(plain)],
+    }
     cfg = Config.model_validate({"sandbox": grants})
     built = policy.jail_policy(tmp_path / "repo", cfg, "strict", ("true",))
     assert link in built.extra_ro_paths and plain in built.extra_rw_paths
@@ -84,8 +89,14 @@ def test_a_grant_that_links_through_the_workspace_is_dropped(tmp_path: pathlib.P
     (repo / "current").symlink_to(real, target_is_directory=True)
     (tools / "through").symlink_to(repo / "current", target_is_directory=True)
     (tools / "direct").symlink_to(real, target_is_directory=True)
+    # Pinned strict: pytest's tmp_path sits in /tmp, where a link counts under auto.
     cfg = Config.model_validate(
-        {"sandbox": {"extra_read_paths": [str(tools / "through"), str(tools / "direct")]}}
+        {
+            "sandbox": {
+                "isolation": "strict",
+                "extra_read_paths": [str(tools / "through"), str(tools / "direct")],
+            }
+        }
     )
 
     grants = policy.resolve_grants(cfg, repo)
@@ -95,3 +106,84 @@ def test_a_grant_that_links_through_the_workspace_is_dropped(tmp_path: pathlib.P
     assert (dropped.path, dropped.real, dropped.region) == (tools / "through", real, repo)
     assert f"it sits inside {repo}" not in dropped.line(), "the grant itself is outside"
     assert f"a link on its way sits inside {repo}, which jailed commands write" in dropped.line()
+
+
+def test_a_grant_that_links_through_tmp_is_dropped(tmp_path: pathlib.Path) -> None:
+    """A hardened run's commands write the host's `/tmp`, so a grant there is re-pointable.
+
+    Spelled inside it or reached through a link there, the grant is dropped; what it held stays
+    reachable as part of `/tmp`. Under `strict`, whose `/tmp` is private, both are kept.
+    """
+    import os
+
+    repo, real = tmp_path / "repo", tmp_path / "real"
+    repo.mkdir()
+    real.mkdir()
+    link = pathlib.Path("/tmp") / f"agent6-grant-link-{os.getpid()}"
+    link.symlink_to(real, target_is_directory=True)
+    spelled = pathlib.Path("/tmp") / f"agent6-grant-dir-{os.getpid()}"
+    spelled.mkdir()
+    try:
+        paths = [str(link / "data"), str(spelled)]
+        hardened = Config.model_validate(
+            {"sandbox": {"isolation": "hardened", "extra_read_paths": paths}}
+        )
+        (real / "data").mkdir()
+        grants = policy.resolve_grants(hardened, repo)
+        strict = Config.model_validate(
+            {"sandbox": {"isolation": "strict", "extra_read_paths": paths}}
+        )
+        kept = policy.resolve_grants(strict, repo)
+    finally:
+        link.unlink()
+        spelled.rmdir()
+    assert grants.read == ()
+    linked, inside = grants.dropped
+    tmp = pathlib.Path("/tmp").resolve()
+    assert (linked.path, linked.region) == (link / "data", tmp)
+    assert (inside.path, inside.region, inside.via_link) == (spelled, tmp, False)
+    assert (
+        "a hardened run's commands write" in inside.line() and "strict to keep it" in inside.line()
+    )
+    assert kept.read == ((link / "data", real / "data"), (spelled, spelled.resolve()))
+    assert not kept.dropped
+
+
+def test_a_grant_that_is_the_workspace_under_another_name_is_dropped(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A write grant whose link resolves to the workspace root was bound as a second copy.
+
+    The launcher re-binds `.git` read-only under the workspace path alone, so a jailed command
+    wrote `.git` through the alias.
+    """
+    repo, alias = tmp_path / "repo", tmp_path / "alias"
+    repo.mkdir()
+    alias.symlink_to(repo, target_is_directory=True)
+    cfg = Config.model_validate(
+        {"sandbox": {"isolation": "strict", "extra_write_paths": [str(alias)]}}
+    )
+
+    grants = policy.resolve_grants(cfg, repo)
+
+    assert grants.write == ()
+    (dropped,) = grants.dropped
+    assert (dropped.real, dropped.region, dropped.via_link) == (repo, repo, False)
+    assert f"it is {repo} itself" in dropped.line()
+
+
+def test_a_dropped_link_that_leads_out_of_its_region_names_the_targets_own_path(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The region does not hold what the grant held, so the line says to grant the target."""
+    repo, outside = tmp_path / "repo", tmp_path / "outside"
+    repo.mkdir()
+    outside.mkdir()
+    (repo / "out").symlink_to(outside, target_is_directory=True)
+    cfg = Config.model_validate(
+        {"sandbox": {"isolation": "strict", "extra_read_paths": [str(repo / "out")]}}
+    )
+    (dropped,) = policy.resolve_grants(cfg, repo).dropped
+    assert dropped.real == outside and dropped.region == repo
+    assert "stays reachable" not in dropped.line()
+    assert f"Grant {outside} by its own path" in dropped.line()
