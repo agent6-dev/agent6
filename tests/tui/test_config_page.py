@@ -20,7 +20,7 @@ from agent6 import paths
 from agent6.config import OpenAIProviderEntry, layer
 from agent6.models import cache
 from agent6.models import choices as models_choices
-from agent6.ui.tui import config_page, menubar
+from agent6.ui.tui import _config_forms, config_page, menubar
 from agent6.viewmodel import config_view
 
 _GLOBAL = """\
@@ -187,7 +187,7 @@ def test_config_page_edit_persists(repo: pathlib.Path) -> None:
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             # run_commands is an enum -> a [x]/[ ] chooser, focused, current "yes".
             field = modal.query_one("#edit-value", forms.ChoiceField)
             assert field.value == "yes"
@@ -232,7 +232,7 @@ def test_edit_defaults_to_the_setting_source_layer(repo: pathlib.Path) -> None:
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             assert modal.query_one("#edit-target", forms.ChoiceField).value == "repo config"
             modal.query_one("#edit-value", forms.ChoiceField).select_value("ask")
             modal.action_save()
@@ -265,7 +265,7 @@ def test_edit_unset_reverts_to_default(repo: pathlib.Path) -> None:
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             modal.action_unset()
             await pilot.pause()
             # Override removed -> back to the default, sourced as default.
@@ -298,7 +298,7 @@ def test_edit_custom_value_inline(repo: pathlib.Path) -> None:
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             field = modal.query_one("#edit-value", forms.ChoiceField)
             # Highlight down to the custom row, then type in place: typing selects it.
             for _ in range(3):
@@ -331,7 +331,7 @@ def test_edit_action_arrows_navigate(repo: pathlib.Path) -> None:
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             items = list(modal.query(forms.ActionItem))
             assert len(items) == 3  # Save, Unset, Cancel
             items[0].focus()
@@ -372,7 +372,7 @@ def test_provider_field_is_a_picker_of_configured_providers(repo: pathlib.Path) 
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             # A ChoiceField, not a plain Input: the configured providers were injected as choices.
             field = modal.query_one("#edit-value", forms.ChoiceField)
             assert field.value == "anthropic"
@@ -412,7 +412,7 @@ def test_model_field_is_a_typeahead_picker(
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             field = modal.query_one("#edit-value", forms.TypeaheadField)
             assert field.value == "claude-sonnet-4-5"  # the current model
             # First keystroke replaces + narrows; arrow highlights a match.
@@ -441,7 +441,7 @@ def test_empty_preset_prefill_saves_back_unchanged(repo: pathlib.Path) -> None:
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             assert modal.query_one("#edit-value", forms.ChoiceField).value == ""
             modal.action_save()
             await pilot.pause()
@@ -488,7 +488,7 @@ def test_list_setting_prefill_saves_back_unchanged(
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             field = modal.query_one("#edit-value", widgets.Input)
             assert field.value == '["uv", "run", "pytest"]'  # round-trippable TOML
             modal.action_save()  # untouched Save must succeed, not error
@@ -527,7 +527,7 @@ def test_string_setting_saves_toml_like_text_as_a_string(repo: pathlib.Path) -> 
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             modal.query_one("#edit-value", widgets.Input).value = "true"
             modal.action_save()
             await pilot.pause()
@@ -576,7 +576,7 @@ def test_editing_a_model_survives_a_broken_secrets_file(
             # Let the thread worker run; the app must survive it.
             for _ in range(6):
                 await pilot.pause(0.05)
-            assert isinstance(app.screen, config_page.EditModal)  # still open, app alive
+            assert isinstance(app.screen, _config_forms.EditModal)  # still open, app alive
 
     asyncio.run(scenario())
 
@@ -602,7 +602,7 @@ def test_edit_modal_up_at_top_is_a_hard_stop(repo: pathlib.Path) -> None:
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             field = modal.query_one("#edit-value", forms.ChoiceField)
             assert modal.focused is field and field._cursor == 0  # pyright: ignore[reportPrivateUsage]
             await pilot.press("up")  # at the top edge
@@ -872,7 +872,7 @@ def test_enter_on_setting_row_opens_editor(repo: pathlib.Path) -> None:
             tbl.move_cursor(row=0)
             await pilot.press("enter")
             await pilot.pause()
-            assert isinstance(app.screen, config_page.EditModal)
+            assert isinstance(app.screen, _config_forms.EditModal)
 
     asyncio.run(scenario())
 
@@ -1043,7 +1043,7 @@ def test_add_provider_via_form_persists(repo: pathlib.Path) -> None:
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.ProviderModal)
+            assert isinstance(modal, _config_forms.ProviderModal)
             modal.query_one("#prov-name", widgets.Input).value = "openrouter"
             fmt = modal.query_one("#prov-format", forms.ChoiceField)
             # A chooser round trip (up, down, Space), so the check holds however the union grows.
@@ -1090,7 +1090,7 @@ def test_add_provider_preserves_existing_provider_fields(repo: pathlib.Path) -> 
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.ProviderModal)
+            assert isinstance(modal, _config_forms.ProviderModal)
             modal.query_one("#prov-name", widgets.Input).value = "anthropic"
             await pilot.pause()
             modal.action_add()
@@ -1120,7 +1120,7 @@ def test_add_provider_prefills_known_preset_base_url(repo: pathlib.Path) -> None
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.ProviderModal)
+            assert isinstance(modal, _config_forms.ProviderModal)
             # Type only the name; leave api_format + base_url untouched.
             modal.query_one("#prov-name", widgets.Input).value = "openrouter"
             await pilot.pause()
@@ -1156,7 +1156,7 @@ def test_add_provider_prefill_keeps_user_typed_base_url(repo: pathlib.Path) -> N
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.ProviderModal)
+            assert isinstance(modal, _config_forms.ProviderModal)
             modal.query_one("#prov-baseurl", widgets.Input).value = "https://my.proxy/v1"
             await pilot.pause()
             modal.query_one("#prov-name", widgets.Input).value = "openrouter"
@@ -1179,7 +1179,7 @@ def test_add_provider_clears_a_stale_preset_base_url(repo: pathlib.Path) -> None
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.ProviderModal)
+            assert isinstance(modal, _config_forms.ProviderModal)
             name = modal.query_one("#prov-name", widgets.Input)
             base_url = modal.query_one("#prov-baseurl", widgets.Input)
             name.value = "openrouter"
@@ -1224,7 +1224,7 @@ def test_edit_base_url_prefills_preset_for_known_provider(repo: pathlib.Path) ->
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             # Prefilled with the preset host, not the generic api.openai.com default.
             assert (
                 modal.query_one("#edit-value", widgets.Input).value
@@ -1408,7 +1408,7 @@ def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: path
             screen.action_edit()
             for _ in range(4):
                 await pilot.pause(0.05)
-            assert isinstance(app.screen, config_page.EditModal)
+            assert isinstance(app.screen, _config_forms.EditModal)
 
     asyncio.run(scenario())
 
@@ -1435,7 +1435,7 @@ def test_setting_description_lives_in_the_edit_modal_only(repo: pathlib.Path) ->
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_page.EditModal)
+            assert isinstance(modal, _config_forms.EditModal)
             shown = str(modal.query_one("#edit-description", widgets.Static).render())
             assert "run_command" in shown and "**" not in shown
 

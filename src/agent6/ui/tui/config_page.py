@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 try:
     import textual
     from rich import markup, text
-    from textual import app, binding, containers, events, geometry
+    from textual import app, containers, events, geometry
     from textual import screen as textual_screen
     from textual import widgets as textual_widgets
     from textual.widget import Widget
@@ -26,10 +26,10 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6 import errors
 from agent6.app import confine
-from agent6.config import ConfigError, io, layer, write
+from agent6.config import ConfigError, layer, write
 from agent6.models import cache
 from agent6.models import choices as models_choices
-from agent6.ui.tui import forms, menubar, screen_chrome
+from agent6.ui.tui import _config_forms, menubar, screen_chrome
 from agent6.viewmodel import config_view
 
 
@@ -108,358 +108,6 @@ class _NavTable(textual_widgets.DataTable[str]):
         section = self.id[4:] if self.id else ""
         if isinstance(screen, ConfigScreen):
             screen.nav_from_table(section, direction)
-
-
-def _provider_preset_base_url(key: str) -> str:
-    """Return the preset base_url for a known provider's `base_url` setting, else ""."""
-    parts = key.split(".")
-    if len(parts) == 3 and parts[0] == "providers" and parts[2] == "base_url":
-        return write.PROVIDER_DEFAULTS.get(parts[1], {}).get("base_url", "")
-    return ""
-
-
-class _FormModal[ResultT](textual_screen.ModalScreen[ResultT]):
-    """The form modals' shared keys: one vertical arrow chain, and left and right over the actions.
-
-    An activated ActionItem dispatches to `action_<id>`.
-    """
-
-    def on_key(self, event: events.Key) -> None:
-        """Move between fields and actions with the arrow keys."""
-        focused = self.focused
-        if event.key in ("left", "right") and isinstance(focused, forms.ActionItem):
-            actions = list(self.query(forms.ActionItem))
-            step = 1 if event.key == "right" else -1
-            actions[(actions.index(focused) + step) % len(actions)].focus()
-            event.stop()
-        elif event.key == "up" and isinstance(focused, (textual_widgets.Input, forms.ActionItem)):
-            forms.focus_neighbor(focused, -1)
-            event.stop()
-        elif event.key == "down" and isinstance(focused, textual_widgets.Input):
-            forms.focus_neighbor(focused, 1)
-            event.stop()
-
-    @textual.on(forms.ActionItem.Activated)
-    def _action_activated(self, event: forms.ActionItem.Activated) -> None:
-        """Dispatch an activated action item to its handler."""
-        getattr(self, f"action_{event.action}")()
-
-
-class EditModal(_FormModal[tuple[str, str, bool] | None]):
-    """Edit one setting: a chooser for choices and bools, a text box otherwise.
-
-    The result is `(action, value, to_repo)` with the action "save" or "unset", or
-    None on cancel.
-    """
-
-    # No Enter to save: Enter on a chooser selects the highlighted option.
-    BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
-    CSS = (
-        forms.FORM_CSS
-        + """
-    EditModal { align: center middle; }
-    #edit-box {
-        width: 70; height: auto;
-        border: round $accent; padding: 1 2; background: $surface;
-    }
-    #edit-title { text-style: bold; }
-    #edit-description { padding-top: 1; color: $text-muted; }
-    #edit-actions { padding-top: 1; height: auto; }
-    """
-    )
-
-    def __init__(
-        self,
-        setting: config_view.ConfigSetting,
-        *,
-        typeahead: list[str] | None = None,
-        fetch: Callable[[], list[str]] | None = None,
-    ) -> None:
-        super().__init__()
-        self._setting = setting
-        self._done = False
-        # For a big open list (model ids): the cached suggestions now, a blocking fetch after.
-        self._typeahead = typeahead
-        self._fetch = fetch
-
-    def on_mount(self) -> None:
-        """Focus the value field and start the suggestion fetch."""
-        self.query_one("#edit-value").focus()
-        if self._fetch is not None:
-            self.run_worker(self._fetch_worker, thread=True)
-
-    def _fetch_worker(self) -> None:
-        """Fetch the live suggestions off the UI thread."""
-        models = self._fetch() if self._fetch else []
-        if models:
-            self.app.call_from_thread(self._apply_suggestions, models)
-
-    def _apply_suggestions(self, models: list[str]) -> None:
-        """Replace the typeahead's suggestions."""
-        field = self.query("#edit-value").first()
-        if isinstance(field, forms.TypeaheadField):
-            field.set_suggestions(models)
-
-    def compose(self) -> app.ComposeResult:
-        """Yield the title, the description, the value field, the target and the actions."""
-        s = self._setting
-        with containers.VerticalScroll(id="edit-box"):
-            yield textual_widgets.Static(f"Edit {s.key}", id="edit-title")
-            yield textual_widgets.Static(
-                text.Text(
-                    f"type={s.py_type}  ·  default={config_view.format_value(s.default)}  "
-                    f"·  source={s.source}",
-                    style="dim",
-                )
-            )
-            if s.description:
-                # Text, never markup: a description names `[git]`.
-                yield textual_widgets.Static(
-                    text.Text(config_view.plain_description(s.description)), id="edit-description"
-                )
-            # The table's display form of a list is not valid TOML, so the box is prefilled with
-            # the exact inverse of parse_cli_value; scalars stay bare.
-            raw = s.value if s.value is not None else s.default
-            current = (
-                raw
-                if isinstance(raw, str)
-                else (
-                    io.format_toml_value(raw)
-                    if isinstance(raw, (list, tuple, dict))
-                    else config_view.format_value(raw)
-                )
-            )
-            if self._typeahead is not None:
-                yield forms.TypeaheadField(
-                    "" if s.value is None else current,
-                    self._typeahead,
-                    id="edit-value",
-                    classes="edit-gap",
-                )
-            elif s.choices is not None:
-                yield forms.ChoiceField(
-                    tuple(s.choices),
-                    current,
-                    allow_custom=True,
-                    id="edit-value",
-                    classes="edit-gap",
-                )
-            elif s.py_type == "bool":
-                yield forms.ChoiceField(
-                    ("true", "false"),
-                    current if current in ("true", "false") else "false",
-                    id="edit-value",
-                    classes="edit-gap",
-                )
-            else:
-                initial = "" if s.value is None else current
-                # A known provider still on the generic default gets its preset host offered.
-                if not s.modified and (preset_url := _provider_preset_base_url(s.key)):
-                    initial = preset_url
-                yield textual_widgets.Input(
-                    value=initial,
-                    placeholder=str(config_view.format_value(s.default)),
-                    id="edit-value",
-                    classes="edit-input edit-gap",
-                )
-            yield textual_widgets.Static("save to", classes="edit-label")
-            target = "repo config" if s.source == "repo" else "global config"
-            yield forms.ChoiceField(("global config", "repo config"), target, id="edit-target")
-            with containers.Horizontal(id="edit-actions"):
-                yield forms.ActionItem("Save", "save")
-                yield forms.ActionItem("Unset override", "unset")
-                yield forms.ActionItem("Cancel", "cancel")
-            yield textual_widgets.Static(
-                text.Text("↑↓ highlight · Space select · Tab field · Esc cancel", style="dim"),
-                classes="edit-label",
-            )
-
-    def _new_value(self) -> str:
-        """Return the field's value as the TOML text the writer takes."""
-        field = self.query_one("#edit-value")
-        value = (
-            field.value
-            if isinstance(field, (forms.ChoiceField, forms.TypeaheadField, textual_widgets.Input))
-            else ""
-        )
-        return io.format_toml_value(value) if self._setting.py_type == "str" else value
-
-    @textual.on(textual_widgets.Input.Submitted)
-    def _input_submitted(self, event: textual_widgets.Input.Submitted) -> None:
-        """Advance from a text field on Enter, like Tab."""
-        forms.focus_neighbor(event.input, 1)
-
-    def action_save(self) -> None:
-        """Return the save, once; Enter may reach both an action item and Submitted."""
-        if self._done:
-            return
-        self._done = True
-        to_repo = self.query_one("#edit-target", forms.ChoiceField).index == 1
-        self.dismiss(("save", self._new_value(), to_repo))
-
-    def action_unset(self) -> None:
-        """Return the unset."""
-        if not self._done:
-            self._done = True
-            self.dismiss(("unset", "", False))
-
-    def action_cancel(self) -> None:
-        """Return None for a cancel."""
-        self.dismiss(None)
-
-    def on_click(self, event: events.Click) -> None:
-        """Cancel on a click outside the dialog."""
-        if event.widget is self:
-            self.action_cancel()
-
-
-class ProviderModal(_FormModal[None]):
-    """Add a `[providers.<name>]` entry through a form.
-
-    Choosers for the fixed-choice fields, inputs for the free ones; base_url and
-    auth default from the format and deployment when blank. Add writes and
-    validates, and an error stays in the form to fix.
-    """
-
-    # No Enter to add: Enter on a chooser selects the highlighted option.
-    BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
-    CSS = (
-        forms.FORM_CSS
-        + """
-    ProviderModal { align: center middle; }
-    #prov-box {
-        width: 80; height: auto;
-        border: round $accent; padding: 1 2; background: $surface;
-    }
-    #prov-title { text-style: bold; }
-    #prov-actions { padding: 1 0 0 0; height: auto; }
-    """
-    )
-
-    def __init__(self, repo_root: pathlib.Path) -> None:
-        super().__init__()
-        self._repo = repo_root
-        self._autofilled_baseurl = ""  # the last prefilled base_url; a typed one is never replaced
-
-    def on_mount(self) -> None:
-        """Focus the name field."""
-        self.query_one("#prov-name", textual_widgets.Input).focus()
-
-    def compose(self) -> app.ComposeResult:
-        """Yield the title, the fields, the target and the actions."""
-        choices = write.provider_choices()
-        with containers.VerticalScroll(id="prov-box"):
-            yield textual_widgets.Static("Add provider", id="prov-title")
-            # Split at the sentence: one line is wider than the box.
-            yield textual_widgets.Static(
-                text.Text(
-                    "A [providers.<name>] block.\n"
-                    "base_url/auth default from the format + deployment when left blank.",
-                    style="dim",
-                )
-            )
-            yield textual_widgets.Input(
-                placeholder="name  (e.g. openrouter, my-azure)",
-                id="prov-name",
-                classes="edit-input edit-gap",
-            )
-            yield textual_widgets.Static("api_format", classes="edit-label")
-            yield forms.ChoiceField(
-                tuple(choices["api_format"]), choices["api_format"][0], id="prov-format"
-            )
-            yield textual_widgets.Static("deployment", classes="edit-label")
-            yield forms.ChoiceField(
-                tuple(choices["deployment"]), choices["deployment"][0], id="prov-deployment"
-            )
-            yield textual_widgets.Static("base_url", classes="edit-label")
-            yield textual_widgets.Input(
-                placeholder="blank = default for the format/deployment",
-                id="prov-baseurl",
-                classes="edit-input",
-            )
-            yield textual_widgets.Static("api_key_env", classes="edit-label")
-            yield textual_widgets.Input(
-                placeholder="blank = secrets.toml by provider name",
-                id="prov-keyenv",
-                classes="edit-input",
-            )
-            yield textual_widgets.Static("save to", classes="edit-label")
-            yield forms.ChoiceField(
-                ("global config", "repo config"), "global config", id="prov-target"
-            )
-            with containers.Horizontal(id="prov-actions"):
-                yield forms.ActionItem("Add", "add")
-                yield forms.ActionItem("Cancel", "cancel")
-            yield textual_widgets.Static(
-                text.Text("↑↓ highlight · Space select · Tab field · Esc cancel", style="dim"),
-                classes="edit-label",
-            )
-
-    def _selected(self, widget_id: str, fallback: str) -> str:
-        """Return a chooser's value, or the fallback when it has none."""
-        field = self.query_one(widget_id, forms.ChoiceField)
-        return field.value or fallback
-
-    @textual.on(textual_widgets.Input.Submitted)
-    def _input_submitted(self, event: textual_widgets.Input.Submitted) -> None:
-        """Advance from a text field on Enter, like Tab."""
-        forms.focus_neighbor(event.input, 1)
-
-    @textual.on(textual_widgets.Input.Changed, "#prov-name")
-    def _prefill_from_preset(self, event: textual_widgets.Input.Changed) -> None:
-        """Prefill a known provider's api_format and base_url, as `agent6 connect` does.
-
-        Only a blank or autofilled base_url is overwritten, never a typed one.
-        """
-        preset = write.PROVIDER_DEFAULTS.get(event.value.strip())
-        baseurl = self.query_one("#prov-baseurl", textual_widgets.Input)
-        if preset is None:
-            if self._autofilled_baseurl and baseurl.value == self._autofilled_baseurl:
-                baseurl.value = ""
-            self._autofilled_baseurl = ""
-            return
-        self.query_one("#prov-format", forms.ChoiceField).select_value(preset["api_format"])
-        if baseurl.value in ("", self._autofilled_baseurl):
-            self._autofilled_baseurl = preset.get("base_url", "")
-            baseurl.value = self._autofilled_baseurl
-
-    def action_add(self) -> None:
-        """Write and validate the entry; an error stays in the form."""
-        name = self.query_one("#prov-name", textual_widgets.Input).value.strip()
-        if not name:
-            self.notify("Enter a provider name.", severity="warning")
-            return
-        fields: dict[str, io.ConfigLeafValue] = {
-            "api_format": self._selected("#prov-format", "anthropic")
-        }
-        dep = self._selected("#prov-deployment", "direct")
-        if dep != "direct":
-            fields["deployment"] = dep
-        base = self.query_one("#prov-baseurl", textual_widgets.Input).value.strip()
-        if base:
-            fields["base_url"] = base
-        keyenv = self.query_one("#prov-keyenv", textual_widgets.Input).value.strip()
-        if keyenv:
-            fields["api_key_env"] = keyenv
-        to_repo = self.query_one("#prov-target", forms.ChoiceField).index == 1
-        try:
-            err = write.set_config_leaves(self._repo, f"providers.{name}", fields, to_repo=to_repo)
-        except errors.OperatorError as exc:
-            err = str(exc)  # an unwritable config file is a form error, not a crash
-        if err:
-            self.notify(f"Invalid: {err}", severity="error", timeout=8.0)
-            return
-        self.notify(f"Set provider '{name}'.")
-        self.dismiss(None)
-
-    def action_cancel(self) -> None:
-        """Close the form."""
-        self.dismiss(None)
-
-    def on_click(self, event: events.Click) -> None:
-        """Cancel on a click outside the dialog."""
-        if event.widget is self:
-            self.action_cancel()
 
 
 class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
@@ -875,7 +523,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         def reload_config(_: None) -> None:
             self._reload()
 
-        self.app.push_screen(ProviderModal(self.repo_root), reload_config)
+        self.app.push_screen(_config_forms.ProviderModal(self.repo_root), reload_config)
 
     def on_data_table_row_selected(self, _event: textual_widgets.DataTable.RowSelected) -> None:
         """Edit the row on Enter or a double click."""
@@ -911,13 +559,13 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         eff = self._eff
         provider = models_choices.model_role_provider(eff, setting.key) if eff is not None else None
         if provider is not None and eff is not None:
-            modal = EditModal(
+            modal = _config_forms.EditModal(
                 setting,
                 typeahead=cache.cached_models(provider),
                 fetch=lambda: models_choices.config_value_choices(eff, setting.key),
             )
         else:
-            modal = EditModal(setting)
+            modal = _config_forms.EditModal(setting)
         self.app.push_screen(modal, _done)
 
     def action_reset(self) -> None:
