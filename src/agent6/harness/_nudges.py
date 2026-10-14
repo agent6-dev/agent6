@@ -135,7 +135,7 @@ VERIFY_UNADOPTED_NOTICE = (
 
 BASELINE_RED_NOTICE = (
     "[harness] That verify ran on an unmodified tree: the gate was already"
-    " failing before your changes; those failures predate the task."
+    " failing before your changes."
 )
 
 VERIFY_BROKEN_NUDGE = (
