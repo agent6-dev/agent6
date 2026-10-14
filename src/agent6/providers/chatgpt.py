@@ -417,12 +417,15 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> agent6_budget.PlanUsa
 def _stream_error(evt: dict[str, Any]) -> types.ProviderError:
     """Return the error a `response.failed` or `error` frame carries, classified."""
     response = evt.get("response")
-    err = response.get("error") if isinstance(response, dict) else evt.get("error")
+    err = response.get("error") if isinstance(response, dict) else evt.get("error", evt)
     if not isinstance(err, dict):
         err = {"message": str(err or evt.get("message") or "unknown stream error")}
     code = str(err.get("code") or "")
     status = 429 if code in _USAGE_LIMIT_CODES else None
     detail = str(err.get("message") or code or "unknown error")
+    if code == "unsupported_value" and err.get("param") == "reasoning.effort":
+        status = 400
+        detail += ' (param: "reasoning.effort")'
     if code in _USAGE_LIMIT_CODES:
         plan = str(err.get("plan_type") or "")
         detail += f" (ChatGPT {plan} plan usage limit)" if plan else " (ChatGPT usage limit)"

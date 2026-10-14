@@ -1220,3 +1220,64 @@ def test_an_effort_the_served_model_refuses_is_resent_at_its_lowest_accepted_lev
 
     assert first.text == "hello" and second.text == "hello"
     assert sent == ["none", "low", "low"], "refused once, then the floor without another 400"
+
+
+@pytest.mark.parametrize("frame", ["error", "flat_error", "response.failed", "response.completed"])
+def test_a_stream_frame_effort_refusal_adapts_without_surfacing_and_keeps_the_floor(
+    signed_in: chatgpt_oauth.ChatGPTCredential,
+    capsys: pytest.CaptureFixture[str],
+    frame: str,
+) -> None:
+    """An in-stream effort refusal silently resends at low and later calls keep that floor."""
+    provider = _provider(signed_in, reasoning_effort="off")
+    error = {
+        "message": "Unsupported value: 'none'. Supported values are: 'low', 'medium', and 'high'.",
+        "code": "unsupported_value",
+        "param": "reasoning.effort",
+    }
+    if frame == "flat_error":
+        event = {"type": "error", **error}
+    elif frame == "error":
+        event = {"type": frame, "error": error}
+    else:
+        event = {"type": frame, "response": {"status": "failed", "error": error}}
+    sent: list[str] = []
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        del method, url
+        body = json.loads(kwargs["content"])
+        sent.append(body["reasoning"]["effort"])
+        lines = _evt(event) if len(sent) == 1 else _happy_stream()
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    with mock.patch("httpx2.stream", side_effect=fake_stream):
+        first = provider.call(system="SYS", messages=[{"role": "user", "content": "t"}])
+        second = provider.call(system="SYS", messages=[{"role": "user", "content": "t"}])
+
+    assert first.text == "hello" and second.text == "hello"
+    assert sent == ["none", "low", "low"]
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("param", [None, "temperature"])
+def test_a_stream_refusal_without_the_effort_param_is_not_adapted(
+    signed_in: chatgpt_oauth.ChatGPTCredential, param: str | None
+) -> None:
+    """An unsupported value without an effort param stays an error, not an effort retry."""
+    lines = _evt(
+        {
+            "type": "error",
+            "error": {
+                "message": "Unsupported \"reasoning.effort\". Supported values are: 'low', 'high'.",
+                "code": "unsupported_value",
+                "param": param,
+            },
+        }
+    )
+    with (
+        mock.patch("httpx2.stream", side_effect=_serve(lines)),
+        pytest.raises(ProviderError, match="unsupported_value"),
+    ):
+        _provider(signed_in, reasoning_effort="off").call(
+            system="SYS", messages=[{"role": "user", "content": "t"}]
+        )
