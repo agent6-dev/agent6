@@ -134,6 +134,29 @@ def test_stdin_questioner_returns_none_without_a_terminal() -> None:
     assert proc.returncode == 0, proc.stderr.decode()[-500:]
 
 
+def test_an_unseen_question_is_named_where_the_run_reports(tmp_path: pathlib.Path) -> None:
+    """With nobody to ask, the notice carries the question and its options, not only the fact."""
+    code = (
+        "import pathlib, sys\n"
+        "from agent6.tools import operator_prompts, schema\n"
+        "from agent6.ui.cli import _interact\n"
+        "q = (schema.UserQuestion(question='tabs or spaces?', options=('tabs', 'spaces')),)\n"
+        "request = operator_prompts.QuestionRequest(id='q1', questions=q, call_id=None)\n"
+        "_interact.build_questioner(pathlib.Path(sys.argv[1]))(request)\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code, str(tmp_path)],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        start_new_session=True,
+        check=False,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr[-500:]
+    assert "returning empty answers" in proc.stderr
+    assert "tabs or spaces? (options: tabs, spaces)" in proc.stderr
+
+
 def test_questioner_marks_headless_defaults(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

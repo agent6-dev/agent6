@@ -227,4 +227,6 @@ def test_answer_asks_the_affordance_question_the_other_verbs_ask(
 
     assert cli_answer_cmd._cmd_answer("gone-run", ("yes",)) == 2
 
-    assert "is not running" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "is not running" in err
+    assert 'agent6 resume gone-run-AAAA11 --steer "<answer>"' in err

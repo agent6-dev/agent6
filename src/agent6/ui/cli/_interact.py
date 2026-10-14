@@ -231,10 +231,14 @@ def build_questioner(
             if filed is not None:
                 _steer.tty_message("[agent6] answered elsewhere.\n")
                 return operator_prompts.QuestionAnswer(filed, "frontend")
-            # Nobody saw the question: answer empty so the run never hangs, and say so.
+            # Nobody saw the question: answer empty so the run never hangs, and say what it was.
+            asked = "".join(
+                f"  {q.question}" + (f" (options: {', '.join(q.options)})\n" if q.options else "\n")
+                for q in questions
+            )
             _steer.tty_message(
                 "[agent6] no front-end attached and no terminal to answer the"
-                " question; returning empty answers\n"
+                f" question; returning empty answers:\n{asked}"
             )
             return operator_prompts.QuestionAnswer(
                 tuple("" for _ in questions), "headless-default", unseen=True

@@ -45,6 +45,7 @@ def _cmd_answer(target: str, answers: tuple[str, ...]) -> int:
     if not session_is_live(layout.session_dir):
         _common.refuse(
             f"session {layout.session_id} is not running; only a live run holds a question open."
+            f' Continue it with the answer: agent6 resume {layout.session_id} --steer "<answer>"'
         )
         return 2
     prompt = open_question(layout.session_dir)
