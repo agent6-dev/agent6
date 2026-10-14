@@ -158,6 +158,28 @@ The gate is `python3 -m unittest` over 21 tests, 0.5 s.
 - Two defects in the measured arm: a green start gate armed the settled count from the first turn, and a red one made every fix a red-to-green flip, so the memory advisory fired in 8 of 8 fix runs against 2 of 8.
 - Not adopted: the arm is on no release branch.
 
+## A notice for an edit the run's commits leave out
+
+gpt-6-astra, n=4 per task and arm (40 runs): two tasks where the natural solution writes a file `.gitignore` covers and the tests need it, one where the task edits a file that was untracked before the run, two controls with no such path.
+Arms: no notice; the edit's result says the path is ignored by git, or was untracked when the run started, and that the run's commits leave it out, and the end summary lists such paths.
+The hidden check: a fresh clone of the run's branch passes the gate and the task's hidden test.
+
+| | no notice | notice |
+|---|---|---|
+| hidden check, the three tasks with a left-out path | 0 of 12 | 8 of 12 |
+| hidden check, the two ignored-path tasks | 0 of 8 | 8 of 8 |
+| hidden check, the untracked-file task | 0 of 4 | 0 of 4 |
+| hidden check, controls | 8 of 8 | 8 of 8 |
+| turns, left-out tasks | 8.0 ± 2.5 | 8.4 ± 1.2 |
+| turns, controls | 8.0 ± 1.4 | 7.9 ± 1.4 |
+
+- The hidden check rises by 0.67 (twice the standard error is 0.27); turns and tokens out show no measured difference, and the controls are unchanged.
+- Two of the eight passes changed `.gitignore` in the same patch as the file, before any notice; counting only passes that followed a notice gives 6 of 12 against 0 of 12 (twice the standard error is 0.29).
+- After the notice the worker added a negation to `.gitignore` in 6 of 6 ignored-path runs; none moved the file or force-added it.
+- On the untracked-file task nothing open to the worker puts the file in the commits; the end summary named it in 4 of 4 runs.
+- Without the notice every one of the 12 runs ended `passed` over a branch whose own tests fail in a fresh clone.
+- Not measured: a file a command writes into an ignored path, which gets no notice.
+
 ## Measured nulls
 
 | lever | measurement | result | state |
