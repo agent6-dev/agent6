@@ -423,6 +423,37 @@ def test_show_names_a_failed_end_once_beside_the_unanswered_count(
     assert line == "state:      failed · max iterations · 1 question unanswered"
 
 
+def test_show_offers_plan_show_only_once_the_plan_is_written(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A plan stopped before it wrote plan.md gets no `plan show` line it cannot honour."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id="plan-AAAA11", subdir="plans"
+    )
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps({"version": 3, "session_id": "plan-AAAA11", "mode": "plan"}), encoding="utf-8"
+    )
+    layout.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "plan", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "session.end", "all_passed": False, "reason": "steer_abort"})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["sessions", "show", "plan-AAAA11"]) == 0
+    assert "plan show" not in capsys.readouterr().out
+
+    (layout.session_dir / "plan.md").write_text("# Plan\n", encoding="utf-8")
+    assert main(["sessions", "show", "plan-AAAA11"]) == 0
+    assert "plan:       agent6 plan show plan-AAAA11" in capsys.readouterr().out
+
+
 def _log(repo: pathlib.Path, session_id: str, events: list[dict[str, object]]) -> None:
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")

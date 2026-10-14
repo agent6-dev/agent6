@@ -60,7 +60,7 @@ def test_the_end_of_run_task_tree_renders_for_a_plan(
     sessions_show._print_task_tree(session)
     # The subject is that the plan's graph is read at all; the layout pointed at runs/ before.
     out = capsys.readouterr().out
-    assert "plan:" in out and "root task" in out
+    assert "tasks:" in out and "root task" in out
 
 
 def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:

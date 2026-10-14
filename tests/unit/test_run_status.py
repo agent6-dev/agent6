@@ -1155,6 +1155,7 @@ def test_status_prints_the_task_and_names_a_plans_page(
     assert json.loads(capsys.readouterr().out)["task"] == "# add a flag\nmore"
 
     (d / "manifest.json").write_text(json.dumps({"mode": "plan"}))
+    (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     assert "plan:       agent6 plan show winsome-dawn-YWH5ZS" in capsys.readouterr().out
 

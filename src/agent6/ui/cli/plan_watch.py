@@ -32,6 +32,13 @@ from agent6.viewmodel import (
 )
 
 
+def _plan_next(session_id: str) -> str:
+    """Return what to do with a plan that has not written its page: follow it, or resume it."""
+    if session_is_live(_common._plans_dir(pathlib.Path.cwd()) / session_id):
+        return f"it is still running (`agent6 attach {session_id}` follows it)"
+    return f"`agent6 resume {session_id}` continues it"
+
+
 def _resolve_plan_session_id(session_id: str) -> str | None:
     """Resolve a plan id or prefix under the per-repo state dir.
 
@@ -64,7 +71,7 @@ def _resolve_plan_session_id(session_id: str) -> str | None:
         return None
     plan = plans_dir / resolved / "plan.md"
     if not plan.is_file():
-        _common.error(f"{resolved} has no plan.md (was it created with `agent6 plan`?)")
+        _common.error(f"{resolved} has not written its plan.md yet; {_plan_next(resolved)}")
         return None
     return resolved
 

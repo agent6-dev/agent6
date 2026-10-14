@@ -405,7 +405,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     )
     if changes.line:
         print(f"changes:    {changes.line}")
-    if mode_display == "plan":
+    if mode_display == "plan" and (target / "plan.md").is_file():
         print(f"plan:       agent6 plan show {target.name}")
     for i, pin in enumerate(scan.pins):
         print(f"{'pins:' if i == 0 else '':<12}{pin}")
@@ -491,6 +491,6 @@ def _print_task_tree(session_dir: pathlib.Path) -> None:
         return
     lines = _task_tree.task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)})
     if lines:
-        print("\nplan:")
+        print("\ntasks:")
         for line in lines:
             print(f"  {line}")

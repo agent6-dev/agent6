@@ -92,7 +92,12 @@ def _warn_unanswered_questions(plan_md: str, session_id: str) -> None:
 def _plan_text_for_run(plan_path: pathlib.Path, session_id: str) -> str | None:
     """Return a plan's non-empty markdown, or None after naming the unusable plan."""
     if not plan_path.is_file():
-        _common.error(f"plan {session_id!r} has no plan.md")
+        from agent6.ui.cli import plan_watch  # the dispatcher's lazy import
+
+        _common.error(
+            f"plan {session_id!r} has not written its plan.md yet;"
+            f" {plan_watch._plan_next(session_id)}"
+        )
         return None
     plan_md = errors.read_operator_file(plan_path)
     if not plan_md.strip():
