@@ -402,10 +402,11 @@ def test_a_path_is_compared_by_where_it_really_is(tmp_path: pathlib.Path) -> Non
         op = _cfg(**{leaf: [str(granted)]})
         assert f"sandbox.{leaf}" in _widening(op, _cfg(**{leaf: [str(granted / "escape")]}))
         assert _widening(op, _cfg(**{leaf: [str(tmp_path / "alias" / "sub")]})) == ""
-    # The operator hides the real directory; a state hiding only a link beside it hides less.
+    # A hidden path is masked where it is spelled, so only that path or one above it hides it.
     op = _cfg(hide_paths=[str(outside)])
-    assert _widening(op, _cfg(hide_paths=[str(granted / "escape")])) == ""
+    assert "sandbox.hide_paths" in _widening(op, _cfg(hide_paths=[str(granted / "escape")]))
     assert "sandbox.hide_paths" in _widening(op, _cfg(hide_paths=[str(granted)]))
+    assert _widening(op, _cfg(hide_paths=[str(tmp_path)])) == ""
 
 
 def test_isolation_is_compared_by_the_level_it_resolves_to() -> None:

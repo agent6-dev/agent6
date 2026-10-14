@@ -94,6 +94,15 @@ def _covered(path: str, trees: Iterable[str]) -> bool:
     return any(real.is_relative_to(os.path.realpath(tree)) for tree in trees)
 
 
+def _spelled_under(path: str, trees: Iterable[str]) -> bool:
+    """Return whether a path is, as spelled, one of the trees or below one.
+
+    A hidden path is masked where it is spelled, so a link to it elsewhere hides nothing.
+    """
+    spelled = pathlib.PurePath(os.path.normpath(path))
+    return any(spelled.is_relative_to(os.path.normpath(tree)) for tree in trees)
+
+
 _ISOLATION_RANK = {"none": 0, "hardened": 1, "strict": 2}
 _RUN_COMMANDS_RANK = {"no": 0, "ask": 1, "yes": 2}
 
@@ -127,7 +136,7 @@ _COVERS: dict[str, Callable[[SandboxConfig, str], bool]] = {
     "extra_device_paths": lambda sandbox, path: (
         os.path.normpath(path) in {os.path.normpath(p) for p in sandbox.extra_device_paths}
     ),
-    "hide_paths": lambda sandbox, path: _covered(path, sandbox.hide_paths),
+    "hide_paths": lambda sandbox, path: _spelled_under(path, sandbox.hide_paths),
 }
 
 
