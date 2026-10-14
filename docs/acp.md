@@ -60,7 +60,8 @@ A session is one conversation in one directory.
 - the first prompt starts an `agent6 run`; every later prompt resumes it with the text as its steering instruction (a turn that died before its first checkpoint starts a new run, and the editor is told)
 - a busy session refuses a prompt rather than queueing it; one connection runs one prompt at a time across its sessions, and a prompt on another session waits its turn and says for which session
 - `session/cancel` cuts a model call in flight and ends a running foreground command at once, without waiting for or signalling the worker (the ACP server itself).
-  The run ends as `cancelled`, and what it had not yet committed stays in the tree for the next prompt, which resumes it; a prompt still waiting its turn answers `cancelled` at once.
+  The prompt answers `cancelled` (ACP's word) and the run's record reads `stopped`, as every operator stop does; what it had not yet committed stays in the tree for the next prompt, which resumes it.
+  A prompt still waiting its turn answers `cancelled` at once.
 
 ## Not implemented
 
