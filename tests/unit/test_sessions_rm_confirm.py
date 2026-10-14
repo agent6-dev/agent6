@@ -289,3 +289,23 @@ def test_rm_asks_without_a_terminal_refuses_without_yes(
     assert asks.is_dir()
     assert main(["sessions", "rm", "--asks", "--yes"]) == 0
     assert not asks.exists()
+
+
+def test_rm_refuses_a_session_that_went_live_while_the_question_stood(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A resume from another terminal during the `[y/N]` question makes the session live again."""
+    monkeypatch.chdir(tmp_path)
+    layout = _ended_unmerged_run(tmp_path)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
+
+    def _resumed_meanwhile(_what: str, _question: str) -> bool:
+        from agent6.sessions import ipc
+
+        ipc.write_worker_pid(layout.session_dir, os.getpid())
+        return True
+
+    monkeypatch.setattr(_steer, "delete_confirmed", _resumed_meanwhile)
+    assert main(["sessions", "rm", _ID]) == 2
+    assert "still live" in capsys.readouterr().err
+    assert layout.session_dir.exists()

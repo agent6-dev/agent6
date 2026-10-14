@@ -575,11 +575,15 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
     )
     landed = git_ops.chain_tip(cwd, git_ops.chain_ref_for(layout.session_id)) or ""
     tips = (landed,) if landed else ()
-    if reason := _rm_refusal(layout, worktree if not sharing else None, tips):
+    reason = _rm_refusal(layout, worktree if not sharing else None, tips)
+    if not reason and not yes:
+        if not _steer.delete_confirmed(_rm_preview(cwd, layout), "Delete it?"):
+            return 0
+        # A resume from another terminal while the question stood makes the session live again.
+        reason = _rm_refusal(layout, worktree if not sharing else None, tips)
+    if reason:
         _common.refuse(f"{reason}")
         return 2
-    if not yes and not _steer.delete_confirmed(_rm_preview(cwd, layout), "Delete it?"):
-        return 0
     return _rm_session(cwd, layout, worktree, sharing, tips)
 
 
