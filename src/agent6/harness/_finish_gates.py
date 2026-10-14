@@ -84,6 +84,41 @@ class FinishCall:
         return None
 
 
+# The plan skeleton's sections after the task, as the planning prompt lays them out.
+PLAN_HEADINGS = frozenset(
+    {"## Context discovered", "## Tasks", "## Open questions", "## Verification approach"}
+)
+
+
+def with_original_task(plan_md: str, task: str) -> str:
+    """Return the plan with its `## Original task` section holding the operator's text.
+
+    The model quotes its first message there, harness lines included; the section is the
+    harness's to fill, up to the skeleton's next heading (a `## ` line inside the quote is the
+    operator's own). A plan without the section is returned as it came.
+
+    Args:
+        plan_md: The plan markdown.
+        task: The operator's task text.
+
+    Returns:
+        The plan markdown.
+    """
+    lines = plan_md.splitlines()
+    heading = next((i for i, ln in enumerate(lines) if ln.strip() == "## Original task"), None)
+    if heading is None:
+        return plan_md
+    after = range(heading + 1, len(lines))
+    end = next(
+        (i for i in after if lines[i].strip() in PLAN_HEADINGS),
+        next((i for i in after if lines[i].startswith("## ")), len(lines)),
+    )
+    body = [*task.strip().splitlines(), ""] if end < len(lines) else task.strip().splitlines()
+    return "\n".join([*lines[: heading + 1], *body, *lines[end:]]) + (
+        "\n" if plan_md.endswith("\n") else ""
+    )
+
+
 def _plan_is_title_only(plan_md: str) -> bool:
     """Return whether the plan has no body: only heading lines and blanks.
 

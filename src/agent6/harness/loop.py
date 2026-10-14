@@ -1256,16 +1256,17 @@ class Harness:
             self._log("  plan salvaged: folded summary into a title-only plan_markdown")
         if self.plan_output_path is None or not finish.plan_markdown:
             return
+        plan_md = _finish_gates.with_original_task(
+            finish.plan_markdown, task_text.operator_task_text(state.original_task)
+        )
         try:
             paths.mkdir_for_real_user(self.plan_output_path.parent)
-            self.plan_output_path.write_text(finish.plan_markdown, encoding="utf-8")
-            self._log(
-                f"  plan written: {self.plan_output_path} ({len(finish.plan_markdown)} chars)"
-            )
+            self.plan_output_path.write_text(plan_md, encoding="utf-8")
+            self._log(f"  plan written: {self.plan_output_path} ({len(plan_md)} chars)")
             self._emit(
                 "loop.plan_written",
                 path=str(self.plan_output_path),
-                bytes=len(finish.plan_markdown.encode("utf-8")),
+                bytes=len(plan_md.encode("utf-8")),
             )
         except OSError as exc:
             self._log(f"  plan write failed: {exc}")

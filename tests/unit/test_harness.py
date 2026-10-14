@@ -360,6 +360,35 @@ def test_finish_planning_salvages_a_title_only_plan(tmp_path: pathlib.Path) -> N
     assert "Add the --count flag" in text  # the summary was folded in as the body
 
 
+def test_the_plans_original_task_is_the_operators_text(tmp_path: pathlib.Path) -> None:
+    """The model quoted its whole first message, harness lines included, under Original task.
+
+    `run --from` then fed `finish_planning ends the pass` to the worker beside the run's own
+    end instruction. The section holds the operator's task, whatever the model wrote there.
+    """
+    plan_path = tmp_path / "plan.md"
+    wf = _wf(mode="plan", plan_output_path=plan_path)
+    state = _state()
+    state.original_task = "Add a --count flag.\nKeep the help short."
+    quoted = (
+        "# Plan: X\n\n## Original task\n> TASK:\n> Add a --count flag.\n>\n"
+        "> The task is above; `finish_planning` ends the pass with the plan markdown.\n\n"
+        "## Tasks\n1. real step\n"
+    )
+    wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
+        state, _turn(), "finish_planning", {"summary": "s", "plan_markdown": quoted}
+    )
+    text = plan_path.read_text(encoding="utf-8")
+    section = "## Original task\nAdd a --count flag.\nKeep the help short.\n\n## Tasks\n1. real"
+    assert section in text
+    assert "finish_planning" not in text and "TASK:" not in text
+    # A plan without the section is written as it came.
+    wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
+        state, _turn(), "finish_planning", {"summary": "s", "plan_markdown": "# Plan: Y\n\n1. a"}
+    )
+    assert plan_path.read_text(encoding="utf-8") == "# Plan: Y\n\n1. a"
+
+
 def test_finish_planning_keeps_a_real_plan_markdown(tmp_path: pathlib.Path) -> None:
     # A proper plan_markdown is written verbatim; the summary is NOT appended.
     plan_path = tmp_path / "plan.md"
@@ -8860,3 +8889,26 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
     assert dispatcher.adopted == []
     assert wf.config.harness.verify_command == ("configured-gate",)
     assert "loop.verify_inferred" not in events_path.read_text(encoding="utf-8")
+
+
+def test_the_original_task_section_ends_at_the_skeletons_next_heading(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A `## ` line inside the model's quote of the task does not end the section early."""
+    plan_path = tmp_path / "plan.md"
+    wf = _wf(mode="plan", plan_output_path=plan_path)
+    state = _state()
+    state.original_task = "Add a --count flag.\n\n## Background\nThe CLI counts words."
+    quoted = (
+        "# Plan: X\n\n## Original task\n> Add a --count flag.\n>\n> ## Background\n"
+        "> The CLI counts words.\n\n## Tasks\n1. real step\n"
+    )
+    wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
+        state, _turn(), "finish_planning", {"summary": "s", "plan_markdown": quoted}
+    )
+    text = plan_path.read_text(encoding="utf-8")
+    section = (
+        "## Original task\nAdd a --count flag.\n\n## Background\nThe CLI counts words.\n\n"
+        "## Tasks\n1. real step\n"
+    )
+    assert section in text and "> ## Background" not in text
