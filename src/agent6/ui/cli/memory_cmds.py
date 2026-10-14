@@ -11,6 +11,7 @@ from __future__ import annotations
 import pathlib
 
 from agent6 import memory, paths
+from agent6.ui.cli import _steer
 
 
 def _cmd_memory_add(name: str, body: str) -> int:
@@ -107,12 +108,28 @@ def _cmd_memory_decisions() -> int:
     return 0
 
 
-def _cmd_memory_rm(name: str) -> int:
-    """Delete a memory and its index line.
+def _cmd_memory_rm(name: str, *, yes: bool = False) -> int:
+    """Delete a memory and its index line, asking first on a terminal.
+
+    Args:
+        name: The memory.
+        yes: Delete without asking.
 
     Returns:
-        The exit code, 0.
+        The exit code, 0; a declined question deletes nothing.
     """
-    memory.remove(paths.state_dir(pathlib.Path.cwd()), name)
+    state = paths.state_dir(pathlib.Path.cwd())
+    if not yes:
+        try:
+            first = memory.show(state, name).strip().splitlines()[:1]
+        except memory.MemoryStoreError:
+            # No file under the name: `remove` drops a stray index line, or refuses.
+            first = None
+        if first is not None and not _steer.delete_confirmed(
+            f"memory rm will delete {name}\n  {first[0][:100] if first else '(an empty file)'}",
+            "Delete it?",
+        ):
+            return 0
+    memory.remove(state, name)
     print(f"removed {name}")
     return 0

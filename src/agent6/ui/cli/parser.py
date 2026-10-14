@@ -442,8 +442,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     _common._sub(mem_sub, "list", help="Print the MEMORY.md index.")
     mem_show = _common._sub(mem_sub, "show", help="Print one memory file.")
     mem_show.add_argument("name", help="Memory name.")
-    mem_rm = _common._sub(mem_sub, "rm", help="Delete a memory file and its index line.")
+    mem_rm = _common._sub(
+        mem_sub,
+        "rm",
+        help=(
+            "Delete a memory file and its index line. On a terminal it shows the memory and"
+            " asks [y/N] first; with no terminal it deletes without asking."
+        ),
+    )
     mem_rm.add_argument("name", help="Memory name.")
+    mem_rm.add_argument("-y", "--yes", action="store_true", help="Delete without asking.")
     _common._sub(
         mem_sub,
         "decisions",

@@ -19,7 +19,7 @@ from typing import Any
 from agent6 import budget, event_log
 from agent6.app import frontend
 from agent6.sessions import ipc
-from agent6.ui import steer
+from agent6.ui import keymap, steer
 from agent6.ui.cli import _common, _console_view, _menu_input, _steer_menu
 from agent6.viewmodel import transcript
 
@@ -165,6 +165,25 @@ def tty_message(text: str) -> None:
     except OSError:
         with contextlib.suppress(Exception):
             print(text, file=sys.stderr, flush=True)
+
+
+def delete_confirmed(what: str, question: str) -> bool:
+    """Return whether a delete goes ahead, asking first when stdin and stdout are a terminal.
+
+    With either off a terminal nothing is asked, so a script keeps working. Every verb that
+    deletes a record asks here.
+
+    Args:
+        what: The lines naming what will go.
+        question: The question, without its `[y/N]` suffix.
+    """
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return True
+    typed = tty_prompt(f"{what}\n{question} {keymap.approval_prompt_suffix(standing=False)}")
+    if keymap.answer_for(typed or "", standing=False) == "yes":
+        return True
+    print("nothing was deleted")
+    return False
 
 
 def tty_prompt(

@@ -798,7 +798,7 @@ def _dispatch_memory(args: argparse.Namespace) -> int:
     if args.memory_command == "show":
         return memory_cmds._cmd_memory_show(args.name)
     if args.memory_command == "rm":
-        return memory_cmds._cmd_memory_rm(args.name)
+        return memory_cmds._cmd_memory_rm(args.name, yes=args.yes)
     if args.memory_command == "decisions":
         return memory_cmds._cmd_memory_decisions()
     raise AssertionError("unreachable")  # pragma: no cover -- memory subparser is required

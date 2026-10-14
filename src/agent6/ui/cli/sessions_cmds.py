@@ -21,7 +21,6 @@ from agent6.app import fork_worktrees, resume
 from agent6.sessions import id, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui import keymap
 from agent6.ui.cli import _common, _steer
 from agent6.viewmodel import (
     format,
@@ -436,24 +435,6 @@ def _cmd_sessions_dir(session_id: str = "") -> int:
     return 0
 
 
-def _delete_confirmed(what: str, question: str) -> bool:
-    """Return whether a delete goes ahead, asking first when stdin and stdout are a terminal.
-
-    With either off a terminal nothing is asked, so a script keeps working.
-
-    Args:
-        what: The lines naming what will go.
-        question: The question, without its `[y/N]` suffix.
-    """
-    if not (sys.stdin.isatty() and sys.stdout.isatty()):
-        return True
-    typed = _steer.tty_prompt(f"{what}\n{question} {keymap.approval_prompt_suffix(standing=False)}")
-    if keymap.answer_for(typed or "", standing=False) == "yes":
-        return True
-    print("nothing was deleted")
-    return False
-
-
 def _rm_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     """Clear this directory's asks bucket.
 
@@ -469,7 +450,7 @@ def _rm_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     if (
         gone
         and not yes
-        and not _delete_confirmed(
+        and not _steer.delete_confirmed(
             f"sessions rm --asks will delete {count} saved from {cwd}", "Delete them?"
         )
     ):
@@ -584,7 +565,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
     if reason := _rm_refusal(layout, worktree if not sharing else None, tips):
         _common.refuse(f"{reason}")
         return 2
-    if not yes and not _delete_confirmed(_rm_preview(cwd, layout), "Delete it?"):
+    if not yes and not _steer.delete_confirmed(_rm_preview(cwd, layout), "Delete it?"):
         return 0
     return _rm_session(cwd, layout, worktree, sharing, tips)
 

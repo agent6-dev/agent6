@@ -64,8 +64,8 @@ def _ended_unmerged_run(repo: pathlib.Path) -> sessions_layout.SessionLayout:
     return layout
 
 
-def _rm_under_pty(argv: list[str]) -> tuple[int, int]:
-    """Fork a child under a fresh pty that runs `agent6 sessions rm` on that terminal."""
+def cli_under_pty(argv: list[str]) -> tuple[int, int]:
+    """Fork a child under a fresh pty that runs `agent6 <argv>` on that terminal."""
     pid, master = pty.fork()
     if pid == 0:  # pragma: no cover - child process
         code = 1
@@ -74,14 +74,14 @@ def _rm_under_pty(argv: list[str]) -> tuple[int, int]:
             sys.stdin = open(0, closefd=False)  # noqa: SIM115  # held until the child exits
             sys.stdout = open(1, "w", closefd=False)  # noqa: SIM115  # held until the child exits
             sys.stderr = open(2, "w", closefd=False)  # noqa: SIM115  # held until the child exits
-            code = main(["sessions", "rm", *argv])
+            code = main(argv)
             sys.stdout.flush()
         finally:
             os._exit(code)
     return pid, master
 
 
-def _read_pty(master: int, until: bytes, seconds: float = 15.0) -> str:
+def read_pty(master: int, until: bytes, seconds: float = 15.0) -> str:
     """Return the pty's output up to `until`, or what arrived before the deadline or EOF."""
     buf = b""
     deadline = time.monotonic() + seconds
@@ -97,7 +97,7 @@ def _read_pty(master: int, until: bytes, seconds: float = 15.0) -> str:
     return buf.decode(errors="replace")
 
 
-def _reap(pid: int) -> int:
+def reap(pid: int) -> int:
     """Return the child's exit code, killing it when it is still at its prompt after 5 s."""
     deadline = time.monotonic() + 5.0
     done, status = os.waitpid(pid, os.WNOHANG)
@@ -121,15 +121,15 @@ def test_a_bare_rm_on_a_terminal_names_the_session_and_asks(
     """
     monkeypatch.chdir(tmp_path)
     layout = _ended_unmerged_run(tmp_path)
-    pid, master = _rm_under_pty([])
+    pid, master = cli_under_pty(["sessions", "rm"])
     try:
-        asked = _read_pty(master, b"[y/N]: ")
+        asked = read_pty(master, b"[y/N]: ")
         assert asked.endswith("[y/N]: "), asked
         for shown in (_ID, "Fix the parser bug", "passed", "not merged"):
             assert shown in asked, asked
         os.write(master, typed)
-        after = _read_pty(master, b"\x00", seconds=10.0)  # drain to the child's exit
-        assert _reap(pid) == 0
+        after = read_pty(master, b"\x00", seconds=10.0)  # drain to the child's exit
+        assert reap(pid) == 0
     finally:
         os.close(master)
     assert layout.session_dir.exists() is not deleted
@@ -145,10 +145,10 @@ def test_rm_yes_deletes_on_a_terminal_without_asking(
     """`--yes` and `-y` skip the question."""
     monkeypatch.chdir(tmp_path)
     layout = _ended_unmerged_run(tmp_path)
-    pid, master = _rm_under_pty([flag, _ID])
+    pid, master = cli_under_pty(["sessions", "rm", flag, _ID])
     try:
-        out = _read_pty(master, b"\x00", seconds=10.0)
-        assert _reap(pid) == 0
+        out = read_pty(master, b"\x00", seconds=10.0)
+        assert reap(pid) == 0
     finally:
         os.close(master)
     assert "[y/N]" not in out
@@ -164,13 +164,13 @@ def test_rm_asks_on_a_terminal_before_clearing_the_asks(
     asks = paths.state_dir(tmp_path) / "sessions" / "asks"
     for name in ("ask-one", "ask-two"):
         (asks / name).mkdir(parents=True)
-    pid, master = _rm_under_pty(["--asks"])
+    pid, master = cli_under_pty(["sessions", "rm", "--asks"])
     try:
-        asked = _read_pty(master, b"[y/N]: ")
+        asked = read_pty(master, b"[y/N]: ")
         assert "2 asks" in asked and str(tmp_path) in asked, asked
         os.write(master, b"n\n")
-        _read_pty(master, b"\x00", seconds=10.0)
-        assert _reap(pid) == 0
+        read_pty(master, b"\x00", seconds=10.0)
+        assert reap(pid) == 0
     finally:
         os.close(master)
     assert asks.is_dir()
