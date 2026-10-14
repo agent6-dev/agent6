@@ -166,6 +166,10 @@ def test_live_only_verbs_offer_only_live_sessions(
         )
         completer = getattr(target, "completer", None)
         assert completer is completers._complete_live_session_ids, verb  # pyright: ignore[reportPrivateUsage]
+    # `exec` takes a session first, and none after `--new`.
+    exec_rest = completers._complete_exec_rest  # pyright: ignore[reportPrivateUsage]
+    assert exec_rest("", parsed_args=argparse.Namespace(new=False)) == ["runny-one-AAAAAA"]
+    assert exec_rest("", parsed_args=argparse.Namespace(new=True)) == []
 
 
 def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(

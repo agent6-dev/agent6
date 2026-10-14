@@ -68,11 +68,18 @@ agent6 sessions compare <ids> # >=2 runs ranked by the reviewer model (minutes),
 agent6 sessions prune         # delete merged agent6/* branches and worktrees, report the rest; squash merges (the default) need --delete-squashed
 agent6 sessions rm            # delete one run's history; --asks clears saved asks
 agent6 sessions dir [<id>]    # the repo's run history, or that session's directory
-agent6 exec ID -- <command>   # a command inside the run's jail and network
+agent6 exec ID -- <command>   # a command inside the run's jail and network, on your terminal or pipe
+agent6 exec --new [<command>] # a command, or your shell, in a fresh sandbox built from the config; no run needed
 agent6 forward ID 8000        # reach a port inside the run's network; --local-port N
 agent6 history search <text>  # grep every session's persisted data; --regex
 agent6 ps                     # live sessions of every repository on the machine; --lanes, --json
 ```
+
+`agent6 exec` runs your own command on your own stdio.
+
+- with stdin and stdout on a terminal the command gets a terminal of its own, with job control (it needs util-linux `setsid` on the sandbox's PATH, and shares your terminal without it); otherwise stdin, stdout and stderr pass through, so pipes and redirects work
+- inside strict there is no `/dev/pts` or `/dev/tty`: `tty` prints "not a tty", and a program that opens `/dev/tty` fails
+- a command a signal ended reports 137 under strict and hardened, whatever the signal; on a terminal it reports the signal's number instead, on every level, and `setsid` prints "did not exit normally"
 
 The steer directives work from every composer, the pause menu, and `agent6 steer ID "/task ..."` from a script.
 

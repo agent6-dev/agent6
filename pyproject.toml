@@ -358,6 +358,7 @@ banned-from = [
     "agent6.ui.cli.config_cmds",
     "agent6.ui.cli.connect",
     "agent6.ui.cli.entry",
+    "agent6.ui.cli.exec_cmds",
     "agent6.ui.cli.fork",
     "agent6.ui.cli.history_cmds",
     "agent6.ui.cli.init_cmds",

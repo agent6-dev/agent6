@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 exec` and `agent6 forward`: reach into a live run's session network.
+"""`agent6 exec` in a session and `agent6 forward`: reach into a live run's session network.
 
 A run's commands share one network with no route off the box, so nothing outside the
 run can reach a server the agent started, the operator included. These commands are the
 way in, and they are the operator's, never the model's: `exec` runs a command the way
 the agent would, `forward` bridges one of the run's ports to a port on this machine.
+`agent6 exec --new`, which has no run, and the stdio of every exec form live in `exec_cmds`.
 
 A join goes through the holder pid the run publishes (`netns.pid`). `forward` always
 joins; `exec` joins only when the run's own commands took the session network, so a
@@ -30,8 +31,7 @@ from agent6.config import Config
 from agent6.sandbox import detect, jail
 from agent6.sessions import ipc, manifest
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import policy as tools_policy
-from agent6.ui.cli import _common
+from agent6.ui.cli import _common, exec_cmds
 from agent6.viewmodel import session_is_live, summarize_session_dir
 
 # The namespaces to enter; the `os` flags are looked up at join time so the module imports anywhere.
@@ -233,10 +233,10 @@ def exec_in_session(
     """Run a command the way the run's own commands run: same jail, same network.
 
     The operator's command, not the model's, so it is neither approved nor logged as a tool
-    call; confined identically, so what you see is what the agent sees. The output prints
-    when the command ends, and a Ctrl-C ends it with none. Unbounded (`timeout_s=0.0`), so
-    the policy's default timeout cannot cut a slow probe. A server is the agent's to start
-    and the operator's to reach with `agent6 forward`.
+    call; confined identically, so what you see is what the agent sees. Its stdio is the
+    operator's (`exec_cmds.run_attached`), and no timeout cuts a slow probe
+    (`exec_cmds.exec_policy`). A server is the agent's to start and the operator's to reach
+    with `agent6 forward`.
 
     Args:
         layout: The run.
@@ -268,7 +268,7 @@ def exec_in_session(
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, _setup.detect_env())
         network = "session" if pid else None
     try:
-        policy = tools_policy.jail_policy(cwd, cfg, isolation, argv, network=network, timeout_s=0.0)
+        policy = exec_cmds.exec_policy(cwd, cfg, isolation, argv, network)
     except jail.JailUnavailableError as exc:
         _common.error(f"{exc}")
         return 2
@@ -294,13 +294,10 @@ def exec_in_session(
     else:
         borrowed = None
     try:
-        result = jail.run_in_jail(policy, session_net=borrowed)
+        return exec_cmds.run_attached(policy, borrowed)
     except jail.JailUnavailableError as exc:
         _common.error(f"{exc}")
         return 2
     finally:
         if borrowed is not None:
             borrowed.close()
-    sys.stdout.write(result.stdout)
-    sys.stderr.write(result.stderr)
-    return result.returncode

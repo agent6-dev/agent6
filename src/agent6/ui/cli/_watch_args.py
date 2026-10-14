@@ -206,7 +206,8 @@ def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
 def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add `exec` and `forward`, which reach into a live run's session network.
 
-    Top-level verbs, like `attach`, because they act on a running session.
+    Top-level verbs, like `attach`, because they act on a running session; `exec --new`
+    alone needs none.
     """
     exec_p = _common._sub(
         sub,
@@ -215,11 +216,25 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             "Run a command inside a live session's sandbox: the run's recorded"
             " isolation and network (mounts derive from your current config), so"
             " you see what the agent sees. The command is yours, not"
-            " the model's, so it is never approved or recorded as a tool call;"
-            " its output prints when it ends (reach a server the agent runs"
-            " with `agent6 forward`). `agent6 exec CMD...` runs in the newest session;"
-            " `agent6 exec SESSION -- CMD...` names one. Only the first `--`"
-            " separates; later ones belong to the command."
+            " the model's, so it is never approved or recorded as a tool call."
+            " With stdin and stdout on a terminal it gets a terminal of its own, with"
+            " job control (through util-linux `setsid` in the sandbox); otherwise stdin,"
+            " stdout and stderr pass through, so pipes and redirects work (reach a server"
+            " the agent runs with `agent6 forward`)."
+            " `agent6 exec CMD...` runs in the newest"
+            " session; `agent6 exec SESSION -- CMD...` names one. Only the first `--`"
+            " separates; later ones belong to the command. `agent6 exec --new [CMD...]`"
+            " needs no session: it runs the command, or your shell, in a fresh sandbox"
+            " built from the current config, gone when the command exits."
+        ),
+    )
+    exec_p.add_argument(
+        "--new",
+        action="store_true",
+        help=(
+            "Run in a fresh sandbox built from the current config instead of a session's:"
+            " the mounts, hidden paths, network and isolation a run's commands get."
+            " Without CMD, opens $SHELL (/bin/sh when the sandbox's PATH lacks it)."
         ),
     )
     exec_rest = exec_p.add_argument(
@@ -227,7 +242,7 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         nargs=argparse.REMAINDER,
         help="[SESSION --] CMD... The command rides verbatim.",
     )
-    exec_rest.completer = completers._complete_live_session_ids  # type: ignore[attr-defined]
+    exec_rest.completer = completers._complete_exec_rest  # type: ignore[attr-defined]
 
     fwd_p = _common._sub(
         sub,

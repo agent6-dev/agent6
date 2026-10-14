@@ -321,6 +321,12 @@ def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
 
 
 @_never_raises
+def _complete_exec_rest(prefix: str, parsed_args: argparse.Namespace, **_kw: object) -> list[str]:
+    """Return the live sessions `exec` runs in; none after `--new`, which takes no session."""
+    return [] if parsed_args.new else _complete_live_session_ids(prefix)
+
+
+@_never_raises
 def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
     """Return the plan ids, for `plan show` and `plan edit`."""
     plans = _common._plans_dir(pathlib.Path.cwd())

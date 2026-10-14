@@ -66,6 +66,7 @@ depends_on = [
   "agent6",
   "agent6.app",
   "agent6.budget",
+  "agent6.child_env",  # `exec` unsandboxed gets the environment an unsandboxed run command gets
   "agent6.commit_message",
   "agent6.config",
   "agent6.config.io",

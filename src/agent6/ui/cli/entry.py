@@ -401,14 +401,41 @@ def _dispatch_answer(args: argparse.Namespace) -> int:
     return answer_cmd._cmd_answer(args.target, tuple(args.answers))
 
 
+def _dispatch_exec_new(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 exec --new [CMD...]`, run in a fresh sandbox."""
+    from agent6.config import (
+        ConfigError,
+        layer,
+    )
+    from agent6.ui.cli import exec_cmds
+
+    rest: list[str] = list(args.rest)
+    if len(rest) > 1 and rest[0] != "--" and rest[1] == "--":
+        _common.error(
+            f"`--new` takes no session, and {rest[0]!r} before `--` reads as one: run the"
+            " command as `agent6 exec --new -- CMD...`, or in a session as"
+            " `agent6 exec SESSION -- CMD...`."
+        )
+        return 2
+    try:
+        eff = layer.load_effective(pathlib.Path.cwd(), args.config)
+    except ConfigError as exc:
+        _common.error(f"{exc}")
+        return 2
+    argv = tuple(rest[1:] if rest[:1] == ["--"] else rest)
+    return exec_cmds.exec_new(eff.config, eff.explicit_leaves, pathlib.Path.cwd(), argv)
+
+
 def _dispatch_exec(args: argparse.Namespace) -> int:
-    """Return the exit code of `agent6 exec [SESSION --] CMD...`, run in the session's network."""
+    """Return the exit code of `agent6 exec [SESSION --] CMD...`, run in the session's sandbox."""
     from agent6.config import (
         ConfigError,
         layer,
     )
     from agent6.ui.cli import net_cmds
 
+    if args.new:
+        return _dispatch_exec_new(args)
     # Only the first `--` separates the optional session; a later one belongs to the command.
     rest: list[str] = list(args.rest)
     target = ""

@@ -17,7 +17,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import _setup
-from agent6.sandbox import detect, jail
+from agent6.sandbox import detect
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import policy
@@ -301,11 +301,11 @@ def test_exec_refuses_a_run_that_is_over(
     (layout.session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
     ran: list[tuple[str, ...]] = []
 
-    def fake_run(policy: kinds.JailPolicy, **_kw: object) -> int:
+    def fake_run(policy: kinds.JailPolicy, _session_net: object = None) -> int:
         ran.append(tuple(policy.argv))
         return os.EX_OK
 
-    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run)
+    monkeypatch.setattr("agent6.ui.cli.exec_cmds.run_attached", fake_run)
 
     rc = cli_net_cmds.exec_in_session(layout, Config(), repo, ("pwd",))
 
@@ -326,7 +326,7 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
 
     from agent6 import kinds
     from agent6.config import Config
-    from agent6.ui.cli import net_cmds
+    from agent6.ui.cli import exec_cmds, net_cmds
 
     layout = sessions_layout.SessionLayout(
         state_dir=tmp_path / "state", session_id="live-run-AAAA11"
@@ -352,17 +352,17 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
     )
     seen: dict[str, Any] = {}
 
-    def fake_run(policy: kinds.JailPolicy, *, session_net: Any = None) -> Any:
+    def fake_run(policy: kinds.JailPolicy, session_net: Any = None) -> int:
         seen["network"] = policy.network
         seen["borrowed"] = session_net is not None
-        return types.SimpleNamespace(stdout="", stderr="", returncode=0)
+        return 0
 
     def _strict(_req: str, _env: Any) -> str:
         return "strict"
 
     monkeypatch.setattr(_setup, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True))
     monkeypatch.setattr(detect, "resolve_isolation", _strict)
-    monkeypatch.setattr(jail, "run_in_jail", fake_run)
+    monkeypatch.setattr(exec_cmds, "run_attached", fake_run)
 
     cfg = Config.model_validate(
         {
