@@ -162,6 +162,27 @@ def test_a_state_table_carries_no_operator_only_key(
         load_machine(_write(tmp_path, MACHINE + "\n" + table))
 
 
+@pytest.mark.parametrize(
+    ("table", "needle"),
+    [
+        ('[config.skills]\nextra_dirs = ["/tmp/skills"]\n', r"skills\.extra_dirs"),
+        ('[config.parallel]\nworkdir = "/tmp/elsewhere"\n', r"parallel\.workdir"),
+        ("[config.budget]\nallow_paid_credits = true\n", r"budget\.allow_paid_credits"),
+        ('[states.judge.config.skills]\nextra_dirs = ["/tmp/skills"]\n', r"skills\.extra_dirs"),
+        (
+            "[states.judge.config.budget]\nallow_paid_credits = true\n",
+            r"budget\.allow_paid_credits",
+        ),
+    ],
+)
+def test_an_overlay_reaches_neither_the_host_nor_the_operators_money(
+    tmp_path: pathlib.Path, table: str, needle: str
+) -> None:
+    """A skill dir is read on the host, clones are made under the workdir, credits cost money."""
+    with pytest.raises(MachineError, match=needle):
+        load_machine(_write(tmp_path, MACHINE + "\n" + table))
+
+
 def test_a_state_table_cannot_select_a_preset(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

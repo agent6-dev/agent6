@@ -465,6 +465,13 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "prompt.system_prompt_file": (
         "the system prompt is read from the host, outside the jail, and sent to the provider"
     ),
+    "skills.extra_dirs": (
+        "a skill directory is read on the host, outside the jail, and sent to the provider"
+    ),
+    "parallel.workdir": (
+        "the supervisor creates and removes every state's working tree under it, on the host"
+    ),
+    "budget.allow_paid_credits": "it lets a plan's paid credits be spent",
 }
 # The supervisor reads these once for the whole machine, so one state cannot change them.
 STATE_OVERLAY_KEYS: tuple[str, ...] = ("git.commit", "machine", "parallel")

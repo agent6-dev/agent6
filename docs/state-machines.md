@@ -527,8 +527,8 @@ Unset keys read straight through to the lower layers, so a machine only states w
 
 **Operator-only keys.** Refused in both tables, each a load-time error:
 
-- `providers.*`, `presets.*`, `mcp.*`, a top-level `preset`, `git.run_repo_hooks`, `git.run_repo_filters`, `machine.notify`, `machine.pass_env`, `notify.on_complete`, `prompt.system_prompt_file`
-    - endpoints, key-env names, and secrets live in the global config / secrets store; presets, MCP servers, and host-argv hooks are operator decisions in the global/repo config
+- `providers.*`, `presets.*`, `mcp.*`, a top-level `preset`, `budget.allow_paid_credits`, `git.run_repo_hooks`, `git.run_repo_filters`, `machine.notify`, `machine.pass_env`, `notify.on_complete`, `parallel.workdir`, `prompt.system_prompt_file`, `skills.extra_dirs`
+    - endpoints, key-env names, and secrets live in the global config / secrets store; presets, MCP servers, host-argv hooks, host-side read and work dirs, and paid credits are operator decisions in the global/repo config
     - a machine file may be LLM-drafted or shared: it must not route keys elsewhere or run host code through an overlay
 - a state's table also refuses `machine.*`, `parallel.*` and `git.commit.*`, which are read once for the whole machine: set them in `[config]`
 
