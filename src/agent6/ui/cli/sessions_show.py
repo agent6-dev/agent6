@@ -239,6 +239,8 @@ def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resumable: 
         )
     # An end with no word (a crash, a log written before the field) prints no line.
     if gated and (verify := _VERIFY_LINES.get(scan.gate_word())):
+        if scan.baseline_ok is not None:
+            verify += f" ({'green' if scan.baseline_ok else 'red'} before the run)"
         print(f"verify:     {verify}")
     if resumable:
         print(f"resume with:  agent6 resume {session_id}")
@@ -340,6 +342,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "last_event_age_s": round(last_age, 1) if last_age is not None else None,
                     "elapsed_s": round(elapsed, 1) if elapsed is not None else None,
                     "end_reason": scan.end_reason if scan.finished else None,
+                    "baseline_ok": scan.baseline_ok,
                     "verified": scan.verified or None,
                     "input_tokens": scan.input_tokens,
                     "output_tokens": scan.output_tokens,

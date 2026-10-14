@@ -489,3 +489,29 @@ def test_show_json_and_the_listing_name_the_end_reason_alike(
     assert main(["sessions", "list", "--json"]) == 0
     lanes = {r["session_id"]: r for r in json.loads(capsys.readouterr().out)[0]["lanes"]}
     assert (lanes["fan-l1"]["end_reason"], lanes["fan-l1"]["reason"]) == ("finish_session", "")
+
+
+def test_show_names_the_start_gates_verdict_beside_the_final_one(
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The verify line says what the gate made of the tree before the run's first turn."""
+    _log(
+        fan_out,
+        "fan-l1",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "loop.baseline", "ok": False, "iteration": 0},
+            {
+                "type": "session.end",
+                "all_passed": True,
+                "reason": "finish_session",
+                "verified": "passed",
+            },
+        ],
+    )
+
+    assert main(["sessions", "show", "fan-l1"]) == 0
+    assert "verify:     green on the final tree (red before the run)" in capsys.readouterr().out
+
+    assert main(["sessions", "show", "fan-l1", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["baseline_ok"] is False
