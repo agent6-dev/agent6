@@ -278,7 +278,12 @@ def _section_leaves(doc: dict[str, Any], key: str) -> dict[str, Any]:
 
 
 def written_value_error(
-    key: str, value: object, *, repo_root: pathlib.Path, section: dict[str, Any] | None = None
+    key: str,
+    value: object,
+    *,
+    repo_root: pathlib.Path,
+    section: dict[str, Any] | None = None,
+    to_repo: bool = False,
 ) -> str | None:
     """Validate a written `key = value` on its own, independent of the layer merge.
 
@@ -290,6 +295,7 @@ def written_value_error(
         value: The value written.
         repo_root: The repo, for the did-you-mean pool.
         section: The section's sibling leaves, so a rule spanning two keys sees them.
+        to_repo: The write targets the repo layer, so a command in the error keeps `--repo`.
 
     Returns:
         An error at the key, under it, or at a parent of it; None when the value is
@@ -301,7 +307,7 @@ def written_value_error(
         # The schema forbids the table itself; a preset's leaf validates as the Config leaf.
         if len(parts) > 2:
             return written_value_error(
-                ".".join(parts[2:]), value, repo_root=repo_root, section=section
+                ".".join(parts[2:]), value, repo_root=repo_root, section=section, to_repo=to_repo
             )
         return None
     if parts[0] == "providers" and len(parts) == 3:
@@ -317,7 +323,7 @@ def written_value_error(
         config_model.Config.model_validate(nested)
     except pydantic.ValidationError as exc:
         for err in exc.errors():
-            message = _error_about(err, key, value, repo_root)
+            message = _error_about(err, key, value, repo_root, to_repo=to_repo)
             if message is not None:
                 return message
     except config_model.ConfigError as exc:
@@ -326,7 +332,12 @@ def written_value_error(
 
 
 def _error_about(
-    err: pydantic_core.ErrorDetails, key: str, value: object, repo_root: pathlib.Path
+    err: pydantic_core.ErrorDetails,
+    key: str,
+    value: object,
+    repo_root: pathlib.Path,
+    *,
+    to_repo: bool,
 ) -> str | None:
     """Render one validation error as a message about the key.
 
@@ -335,6 +346,7 @@ def _error_about(
         key: The dotted key written.
         value: The value written.
         repo_root: The repo, for the did-you-mean pool.
+        to_repo: The write targets the repo layer, so a command in the message keeps `--repo`.
 
     Returns:
         The message, or None.
@@ -355,7 +367,8 @@ def _error_about(
     if err["type"] in ("bool_parsing", "bool_type"):
         detail = f"expected true or false, got {value!r}"
     elif err["type"] in ("tuple_type", "list_type"):
-        detail = f'expected a list: config set {key} \'["a", "b"]\', or config add {key} a'
+        target = f"--repo {key}" if to_repo else key
+        detail = f'expected a list: config set {target} \'["a", "b"]\', or config add {target} a'
     else:
         detail = err["msg"]
     return f"{key}: {detail}"
@@ -369,6 +382,7 @@ def revalidate_write(
     was_valid: bool,
     held: bool = True,
     written: Sequence[tuple[str, object]] = (),
+    to_repo: bool = False,
 ) -> str | None:
     """Reload the merged config after an edit and roll the file back when this edit broke it.
 
@@ -385,6 +399,7 @@ def revalidate_write(
         written: The `(key, value)` pairs this edit wrote, each validated against the
             section as the file now holds it, so a value a higher layer masks in the merge
             is caught here.
+        to_repo: The target is the repo layer, so a command in the error keeps `--repo`.
 
     Returns:
         The error when this edit broke the config, else None.
@@ -396,7 +411,9 @@ def revalidate_write(
         return keep_or_rollback(target, prior, str(exc), held=held)
     for wkey, wvalue in written:
         section = _section_leaves(doc, wkey)
-        value_err = written_value_error(wkey, wvalue, repo_root=repo_root, section=section)
+        value_err = written_value_error(
+            wkey, wvalue, repo_root=repo_root, section=section, to_repo=to_repo
+        )
         if value_err is None:
             continue
         # A section rule can fire over a sibling that was already wrong; the value alone
@@ -527,7 +544,13 @@ def set_config_value(
             io.upsert_toml_leaf(target, dotted_key, parsed)
             written = [(dotted_key, parsed)]
         return revalidate_write(
-            repo_root, target, prior, was_valid=was_valid, held=held, written=written
+            repo_root,
+            target,
+            prior,
+            was_valid=was_valid,
+            held=held,
+            written=written,
+            to_repo=to_repo,
         )
 
 

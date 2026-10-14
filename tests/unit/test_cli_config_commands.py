@@ -49,6 +49,18 @@ def test_set_bool_is_typed_not_string(iso: pathlib.Path) -> None:
     assert sandbox["protect_git"] is False  # parsed as bool, not the string "false"
 
 
+@pytest.mark.parametrize("flag", [["--repo"], []])
+def test_the_list_hint_keeps_the_target_flag(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str], flag: list[str]
+) -> None:
+    """A hint typed as printed writes the layer the operator named, never another one."""
+    assert _run(["config", "set", *flag, "sandbox.extra_read_paths", "/etc/ssl"]) == 2
+    err = capsys.readouterr().err
+    target = "".join(f"{f} " for f in flag)
+    assert f'config set {target}sandbox.extra_read_paths \'["a", "b"]\'' in err
+    assert f"config add {target}sandbox.extra_read_paths a" in err
+
+
 def test_get_default_source_for_unset(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
