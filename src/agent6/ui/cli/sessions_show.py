@@ -350,6 +350,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "cache_creation_tokens": scan.cache_creation_tokens,
                     "cost_usd": scan.cost_usd,
                     "plan_consumed": scan.plan_consumed,
+                    "plan_prior_executions": scan.plan_prior_executions,
                     "plan_cap": scan.plan_cap,
                     "unattended_questions": scan.unattended_questions,
                     "setup_output": scan.setup_output or None,

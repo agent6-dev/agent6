@@ -1219,3 +1219,40 @@ def test_show_says_a_timed_out_gate_timed_out(
     assert "verify:     timed out on the final tree" in out
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     assert json.loads(capsys.readouterr().out)["verified"] == "failed"
+
+
+def test_show_json_carries_the_points_earlier_executions_banked(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`plan_consumed` sums every execution and `plan_cap` is the latest one's.
+
+    The banked points ride beside them, so a script can tell this execution's spend.
+    """
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "session.start", "mode": "run"},
+            {
+                "ts": _ts(35),
+                "type": "budget.update",
+                "usd_total": 0.0,
+                "plan_consumed": 3.0,
+                "plan_cap": 10.0,
+                "plan_used_percent": 5.0,
+            },
+            {"ts": _ts(30), "type": "session.end", "reason": "steer_abort", "all_passed": False},
+            {"ts": _ts(20), "type": "loop.resume.start", "mode": "run"},
+            {
+                "ts": _ts(10),
+                "type": "budget.update",
+                "usd_total": 0.0,
+                "plan_consumed": 2.0,
+                "plan_cap": 10.0,
+                "plan_used_percent": 7.0,
+            },
+        ],
+    )
+    assert sessions_show._cmd_status("winsome-dawn", as_json=True) == 0
+    obj = json.loads(capsys.readouterr().out)
+    assert (obj["plan_consumed"], obj["plan_prior_executions"], obj["plan_cap"]) == (5.0, 3.0, 10.0)
