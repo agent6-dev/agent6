@@ -252,11 +252,75 @@ def test_package_json_is_passed_over_when_the_sandbox_has_no_npm(
     Taken unchecked, `npm test` aborted the run as unexecutable, and the resume after it.
     """
     (jail_bin / "npm").unlink()
-    (tmp_path / "package.json").write_text('{"scripts": {"test": "node --test"}}', encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
     got = verify_infer.infer_verify_command(tmp_path, "")
     assert (got.argv, got.source) == ((), "none")
     why = "package.json names `npm test --silent`, and the sandbox has no `npm`"
     assert verify_infer.passed_over_text(got) == why
+
+
+def test_the_test_script_itself_is_the_gate_when_npm_is_absent_and_its_runner_is_not(
+    tmp_path: pathlib.Path, jail_bin: pathlib.Path
+) -> None:
+    """A `node --test` script runs without npm; a script needing the shell is no argv.
+
+    A glob or a `~` that the shell expands would reach the runner as literal text, a gate that
+    can never pass where the runner does not expand it itself; a second line would reach it as
+    arguments; a runner given as a path would count as found, and where it is missing the start
+    gate could not execute it and the run would end before its first turn.
+    """
+    (jail_bin / "npm").unlink()
+    (tmp_path / "package.json").write_text('{"scripts": {"test": "node --test"}}', encoding="utf-8")
+    got = verify_infer.infer_verify_command(tmp_path, "")
+    assert (got.argv, got.source, got.passed_over) == (("node", "--test"), "package.json", ())
+    # With npm present the script runs under it, hooks and env included.
+    (jail_bin / "npm").write_text("#!/bin/sh\n", encoding="utf-8")
+    (jail_bin / "npm").chmod(0o755)
+    got = verify_infer.infer_verify_command(tmp_path, "")
+    assert (got.argv, got.source) == (("npm", "test", "--silent"), "package.json")
+    (jail_bin / "npm").unlink()
+    # A pretest or posttest hook runs under npm alone, so the script is not the whole gate.
+    (tmp_path / "package.json").write_text(
+        json.dumps({"scripts": {"pretest": "node lint.js", "test": "node --test"}}),
+        encoding="utf-8",
+    )
+    got = verify_infer.infer_verify_command(tmp_path, "")
+    assert got.argv == () and "no `npm`" in got.passed_over[0][1]
+    for script in (
+        "node --test && echo ok",
+        "CI=1 node --test",
+        "node --test | tee log",
+        "node --test test/*.test.js",
+        "node --test ~/t.js",
+        "node --test (a)",
+        "node --test\nnode check.js",
+        "./node_modules/.bin/mocha",
+    ):
+        (tmp_path / "package.json").write_text(
+            json.dumps({"scripts": {"test": script}}), encoding="utf-8"
+        )
+        got = verify_infer.infer_verify_command(tmp_path, "")
+        assert got.argv == (), script
+        assert "names `npm test --silent`, and the sandbox has no `npm`" in got.passed_over[0][1]
+
+
+def test_a_path_runner_stays_npm_test_even_when_the_repository_holds_it(
+    tmp_path: pathlib.Path, jail_bin: pathlib.Path
+) -> None:
+    """A path runner stays `npm test`.
+
+    Checked on the host, the path can be untracked, outside the jail, or a link out.
+    """
+    (jail_bin / "npm").unlink()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "test.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tmp_path / "scripts" / "test.sh").chmod(0o755)
+    (tmp_path / "package.json").write_text(
+        '{"scripts": {"test": "./scripts/test.sh --fast"}}', encoding="utf-8"
+    )
+    got = verify_infer.infer_verify_command(tmp_path, "")
+    assert got.argv == ()
+    assert "names `npm test --silent`, and the sandbox has no `npm`" in got.passed_over[0][1]
 
 
 def test_an_unresolvable_runner_falls_through_to_the_next_candidate(

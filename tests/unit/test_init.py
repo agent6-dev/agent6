@@ -112,7 +112,7 @@ def test_init_saves_no_gate_the_sandbox_cannot_run(
     """
     (jail_bin / "npm").unlink()
     repo = _repo(tmp_path)
-    (repo / "package.json").write_text('{"scripts": {"test": "node --test"}}', encoding="utf-8")
+    (repo / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
     init.init_workspace(repo)
     assert layer.load_effective(repo).config.harness.verify_command == ()
     out = capsys.readouterr().out

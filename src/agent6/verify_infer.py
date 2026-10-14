@@ -241,6 +241,8 @@ def _python(repo_root: pathlib.Path) -> str:
 Signal = tuple[tuple[str, ...], str]
 # The sources that each name one ecosystem's own test runner.
 _ECOSYSTEM_SOURCES = frozenset({"Cargo.toml", "go.mod", "package.json", "pyproject"})
+# What sh would expand or parse in a word: operators, substitutions, globs, `~`, a comment.
+_SHELL_SYNTAX = frozenset("&|;<>()$`\\*?[]~#{}")
 
 
 def _verify_sh(repo_root: pathlib.Path) -> Signal | None:
@@ -253,16 +255,40 @@ def _verify_sh(repo_root: pathlib.Path) -> Signal | None:
 
 
 def _package_json(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
-    """Return `npm test` when package.json has a test script other than npm's placeholder."""
+    """Return `npm test` when package.json has a test script other than npm's placeholder.
+
+    In a jail without npm the script itself is the gate when it is a plain command whose
+    runner the jail has on its PATH; one with shell syntax (`&&`, a pipe, a glob, an env
+    assignment, a second line) needs npm's shell and stays `npm test`, as does a runner given
+    as a path, which can be untracked or outside the jail, and a script with a `pretest` or
+    `posttest` hook, which only npm runs.
+    """
     try:
         data = json.loads(_path_safety.read_workspace_text(repo_root, "package.json", hide))
     except ValueError:
         data = {}
     scripts = data.get("scripts") if isinstance(data, dict) else None
     script = scripts.get("test") if isinstance(scripts, dict) else None
-    if isinstance(script, str) and not _NPM_PLACEHOLDER.fullmatch(script.strip()):
-        return (("npm", "test", "--silent"), "package.json")
-    return None
+    if not isinstance(script, str) or _NPM_PLACEHOLDER.fullmatch(script.strip()):
+        return None
+    hooked = isinstance(scripts, dict) and any(k in scripts for k in ("pretest", "posttest"))
+    if not hooked and not tool_paths.jail_resolves("npm") and (argv := _plain_argv(script)):
+        return (argv, "package.json")
+    return (("npm", "test", "--silent"), "package.json")
+
+
+def _plain_argv(script: str) -> tuple[str, ...]:
+    """Return a shell script as an argv the jail can run, or () when it needs a shell."""
+    if "\n" in script.strip():
+        return ()  # sh runs each line as a command of its own
+    try:
+        words = shlex.split(script)
+    except ValueError:
+        return ()
+    if not words or "=" in words[0] or any(set(w) & _SHELL_SYNTAX for w in words):
+        return ()
+    # A path runner counts as found, and one missing where the gate runs ends the run unstarted.
+    return tuple(words) if "/" not in words[0] and tool_paths.jail_resolves(words[0]) else ()
 
 
 def _makefile(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:

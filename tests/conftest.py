@@ -78,7 +78,7 @@ def jail_bin(
     inferred gate pins the PATH here; unlinking a runner makes it missing.
     """
     bindir = tmp_path_factory.mktemp("jail-bin")
-    for name in ("cargo", "go", "make", "npm", "pytest", "python3", "sh"):
+    for name in ("cargo", "go", "make", "node", "npm", "pytest", "python3", "sh"):
         runner = bindir / name
         runner.write_text("#!/bin/sh\n", encoding="utf-8")
         runner.chmod(0o755)

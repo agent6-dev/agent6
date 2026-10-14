@@ -154,7 +154,7 @@ def test_check_verify_and_the_run_header_say_why_a_manifest_was_passed_over(
     from agent6.ui.cli import main
 
     (jail_bin / "npm").unlink()
-    (tmp_path / "package.json").write_text('{"scripts": {"test": "node --test"}}', encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
     why = "passed over: package.json names `npm test --silent`, and the sandbox has no `npm`"
     monkeypatch.chdir(tmp_path)
     assert main(["check", "verify"]) == 0
