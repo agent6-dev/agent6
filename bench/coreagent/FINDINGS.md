@@ -49,6 +49,21 @@ kimi-k2.7-code on the SWE-bench Verified random-12 subset ($1 per instance, offi
 The two gained instances are the two that had spiralled to an empty patch; the resolve move is inside single-run noise, the empty count is the signal.
 On the same subset claude-sonnet-5 resolved 7/12 and claude-haiku-4-5 6/12 at about a seventh of sonnet's cost.
 
+The settled stop on steered runs (gpt-6-astra, n=4 per cell): 16 runs per arm on four tasks where a steer after the first edit asks for seven read-only steps before the work continues, 12 runs per arm on three tasks with no steer.
+The task set is ad hoc; its scripts and raw rows are outside the tree.
+
+| | stop at 6 idle turns | stop at 6, a steer restarts the count | armed only by a green verify | stop at 12 |
+|---|---|---|---|---|
+| steered: ended "passed" with the task unbuilt | 16 of 16 | 16 of 16 | 0 of 16 | 0 of 16 |
+| steered: task done | 0 of 16 | 0 of 16 | 16 of 16 | 16 of 16 |
+| steered: longest idle streak | 6 | 6 to 7 | 8 to 12 | 7 to 10 |
+| no steer: task done | 12 of 12 | 12 of 12 | 12 of 12 | 12 of 12 |
+
+- At 6 idle turns the stop ends every steered run in the middle of the operator's seven steps, on a green gate.
+- Restarting the count at the steer moves each event one turn later and changes no outcome.
+- With no steer no run reached 6 idle turns in any arm (longest 4), so the control shows no side effect of any arm.
+- The stop at 12 ships: it keeps the net for a worker that re-runs read-only commands after its work is done, which arming on a green verify alone would remove under `verify_when = "finish"`.
+
 ## Compaction
 
 - agent6 compacts in two tiers: tier 1 elides the oldest tool results and keeps the context bounded; tier 2 summarises and restarts.
