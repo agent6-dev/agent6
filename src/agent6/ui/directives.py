@@ -29,25 +29,30 @@ class _Directive:
     Attributes:
         parse: Recognizes it, returning its argument or None.
         empty: What to say when it arrives bare; "" when it is complete on its own.
-        act: Does it, reporting whether it did and what to say.
+        act: Does it, given the front-end's `--config` path, reporting whether it did and
+            what to say.
     """
 
     parse: Callable[[str], str | None]
     empty: str
-    act: Callable[[pathlib.Path, str], tuple[bool, str]]
+    act: Callable[[pathlib.Path, str, pathlib.Path | None], tuple[bool, str]]
 
 
-def _btw(session_dir: pathlib.Path, question: str) -> tuple[bool, str]:
-    """Open a side question beside the run.
+def _btw(
+    session_dir: pathlib.Path, question: str, config_path: pathlib.Path | None
+) -> tuple[bool, str]:
+    """Open a side question beside the run, on the front-end's config.
 
     Returns:
         Whether it opened, and what to say.
     """
-    opened, line = btw.open_btw(session_dir, question)
+    opened, line = btw.open_btw(session_dir, question, config_path=config_path)
     return opened, line.removeprefix("[agent6] ")
 
 
-def _task(session_dir: pathlib.Path, text: str) -> tuple[bool, str]:
+def _task(
+    session_dir: pathlib.Path, text: str, _config_path: pathlib.Path | None
+) -> tuple[bool, str]:
     """Queue work into the task graph.
 
     Returns:
@@ -57,7 +62,9 @@ def _task(session_dir: pathlib.Path, text: str) -> tuple[bool, str]:
     return True, "task queued; it runs once the open tasks drain"
 
 
-def _standing(session_dir: pathlib.Path, goal: str) -> tuple[bool, str]:
+def _standing(
+    session_dir: pathlib.Path, goal: str, _config_path: pathlib.Path | None
+) -> tuple[bool, str]:
     """Set the run's standing goal.
 
     Returns:
@@ -67,7 +74,9 @@ def _standing(session_dir: pathlib.Path, goal: str) -> tuple[bool, str]:
     return True, "standing goal set; it replaces any the run had, at the next step"
 
 
-def _retire(session_dir: pathlib.Path, named: str) -> tuple[bool, str]:
+def _retire(
+    session_dir: pathlib.Path, named: str, _config_path: pathlib.Path | None
+) -> tuple[bool, str]:
     """Retire a task, by the id the task tree prints.
 
     Returns:
@@ -89,7 +98,9 @@ def _retire(session_dir: pathlib.Path, named: str) -> tuple[bool, str]:
     return True, f"retiring {nodes[task_id].title[:60]!r} at the next step"
 
 
-def _compact(session_dir: pathlib.Path, focus: str) -> tuple[bool, str]:
+def _compact(
+    session_dir: pathlib.Path, focus: str, _config_path: pathlib.Path | None
+) -> tuple[bool, str]:
     """Ask for a compaction before the next model call.
 
     Returns:
@@ -118,7 +129,11 @@ _DIRECTIVES: tuple[_Directive, ...] = (
 
 
 def submit_composer_line(
-    session_dir: pathlib.Path, text: str, *, now: bool = False
+    session_dir: pathlib.Path,
+    text: str,
+    *,
+    now: bool = False,
+    config_path: pathlib.Path | None = None,
 ) -> tuple[bool, str]:
     """Act on a composer line: a directive when it is one, else the steer it is.
 
@@ -126,11 +141,12 @@ def submit_composer_line(
         session_dir: The live session.
         text: The line.
         now: Force the urgency `/now` spells, for `agent6 steer --now`.
+        config_path: The front-end's `--config`, which a `/btw` asks on.
 
     Returns:
         Whether it acted, and what to say.
     """
-    handled = act_on_directive(session_dir, text)
+    handled = act_on_directive(session_dir, text, config_path=config_path)
     if handled is not None:
         return handled
     urgent = agent6_directive.parse_now(text)
@@ -151,12 +167,15 @@ def submit_composer_line(
     return True, said
 
 
-def act_on_directive(session_dir: pathlib.Path, text: str) -> tuple[bool, str] | None:
+def act_on_directive(
+    session_dir: pathlib.Path, text: str, *, config_path: pathlib.Path | None = None
+) -> tuple[bool, str] | None:
     """Act on the line when it is a directive that works beside the run.
 
     Args:
         session_dir: The live session.
         text: The line.
+        config_path: The front-end's `--config`, which a `/btw` asks on.
 
     Returns:
         Whether it acted and what to say, as bare prose; None for an ordinary steer.
@@ -167,5 +186,5 @@ def act_on_directive(session_dir: pathlib.Path, text: str) -> tuple[bool, str] |
             continue
         if not arg and directive.empty:
             return False, directive.empty
-        return directive.act(session_dir, arg)
+        return directive.act(session_dir, arg, config_path)
     return None

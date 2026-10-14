@@ -458,7 +458,7 @@ def _dispatch_steer(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 steer`."""
     from agent6.ui.cli import steer_cmd
 
-    return steer_cmd._cmd_steer(args.target, args.text, now=args.now)
+    return steer_cmd._cmd_steer(args.target, args.text, now=args.now, config_path=args.config)
 
 
 def _dispatch_stop(args: argparse.Namespace) -> int:

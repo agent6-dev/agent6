@@ -156,13 +156,16 @@ def answer_question(
     return True, "answered"
 
 
-def steer(cwd: pathlib.Path, session_id: str, text: str) -> tuple[bool, str]:
+def steer(
+    cwd: pathlib.Path, session_id: str, text: str, *, config_path: pathlib.Path | None = None
+) -> tuple[bool, str]:
     """Steer a live run at its next safe boundary.
 
     Args:
         cwd: The repository.
         session_id: The run.
         text: A free instruction; "" continues, "abort" stops the run.
+        config_path: The server's `--config`, which a `/btw` asks on.
 
     Returns:
         Whether the request landed, and the note or the refusal.
@@ -170,7 +173,7 @@ def steer(cwd: pathlib.Path, session_id: str, text: str) -> tuple[bool, str]:
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
-    return directives.submit_composer_line(session_dir, text)
+    return directives.submit_composer_line(session_dir, text, config_path=config_path)
 
 
 def fork_run(

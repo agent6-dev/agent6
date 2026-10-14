@@ -412,7 +412,9 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             action()
             return
         if self.session_controllable():
-            did, said = directives.submit_composer_line(self.session_dir, text)
+            did, said = directives.submit_composer_line(
+                self.session_dir, text, config_path=self.config_path
+            )
             self.notify(said, severity="information" if did else "warning")
         else:
             self.resume_with_instruction(text)

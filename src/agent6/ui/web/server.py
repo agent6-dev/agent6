@@ -541,7 +541,7 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             return
         if verb == "steer":
             body = SteerBody.model_validate(self._read_body())
-            ok, msg = actions.steer(self.cwd, session_id, body.text)
+            ok, msg = actions.steer(self.cwd, session_id, body.text, config_path=self.config_path)
         elif verb == "approve":
             ab = ApproveBody.model_validate(self._read_body())
             ok, msg = actions.approve(self.cwd, session_id, ab.id, ab.answer)

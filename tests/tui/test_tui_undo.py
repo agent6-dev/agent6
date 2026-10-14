@@ -450,7 +450,9 @@ def test_a_refused_btw_toasts_as_a_warning(
 ) -> None:
     """A refused side question toasts at the error severity, like every other refusal."""
 
-    def refused(_session_dir: pathlib.Path, _question: str) -> tuple[bool, str]:
+    def refused(
+        _session_dir: pathlib.Path, _question: str, *, config_path: pathlib.Path | None = None
+    ) -> tuple[bool, str]:
         return False, "no live run to ask beside"
 
     def controllable(_app: app_mod.Agent6TUI) -> bool:

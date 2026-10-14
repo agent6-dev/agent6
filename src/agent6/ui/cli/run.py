@@ -141,6 +141,7 @@ def session_frontend(config_path: pathlib.Path | None = None) -> frontend.Sessio
                         else []
                     ),
                     events=events,
+                    config_path=config_path,
                 ),
                 config_path=config_path,
             ),

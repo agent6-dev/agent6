@@ -67,6 +67,30 @@ def test_it_returns_as_soon_as_the_session_exists(tmp_path: pathlib.Path) -> Non
     assert launched == [["ask", "--no-commands", "--from", "parent-BBBBBB", "--", "why h265"]]
 
 
+def test_a_btw_carries_the_run_s_config(tmp_path: pathlib.Path) -> None:
+    """A run under `--config` opened its btw on the global config's model instead."""
+    launched: list[list[str]] = []
+
+    asks = tmp_path / "sessions" / "asks"
+    asks.mkdir(parents=True)
+
+    def launch(cwd: pathlib.Path, argv: list[str], env: dict[str, str]) -> str:
+        launched.append(argv)
+        _ask_dir(asks, "quiet-fox-CCCCCC", events=[{"type": "session.start"}])
+        return ""
+
+    session, err = btw.start_btw(
+        "why",
+        "parent-BBBBBB",
+        cwd=tmp_path,
+        launch=launch,
+        list_asks=lambda: [d for d in asks.iterdir() if d.is_dir()],
+        config_path=tmp_path / "worker.toml",
+    )
+    assert session is not None and err == ""
+    assert launched[0][:3] == ["--config", str(tmp_path / "worker.toml"), "ask"]
+
+
 def test_a_bare_btw_asks_for_a_question_instead_of_opening_a_session(
     tmp_path: pathlib.Path,
 ) -> None:

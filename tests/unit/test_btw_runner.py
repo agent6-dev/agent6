@@ -12,7 +12,7 @@ import time
 import pytest
 
 from agent6 import event_log
-from agent6.ui import btw
+from agent6.ui import btw, directives
 from agent6.ui.cli import _console_view, _steer_menu
 
 
@@ -66,6 +66,30 @@ def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: pathlib
     assert "--- btw: why h265" in text
     assert "use ffmpeg -c:v libx265" in text
     assert "agent6 resume quiet-fox-AAAAAA" in text
+
+
+def test_a_composer_s_btw_asks_on_the_front_end_s_config(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `/btw` typed in the TUI, the web or `agent6 steer` opened its ask on the global config."""
+    state = tmp_path / "state"
+    session_dir = state / "sessions" / "runs" / "parent-BBBBBB"
+    session_dir.mkdir(parents=True)
+    asks = state / "sessions" / "asks"
+    asks.mkdir(parents=True)
+    launched: list[list[str]] = []
+
+    def launch(cwd: pathlib.Path, argv: list[str], env: dict[str, str]) -> str:
+        launched.append(argv)
+        _answered_ask(asks, "quiet-fox-AAAAAA", "an answer")
+        return ""
+
+    monkeypatch.setattr(btw, "direct_launch", launch)
+    did, _said = directives.submit_composer_line(
+        session_dir, "/btw why h265", config_path=tmp_path / "worker.toml"
+    )
+    assert did
+    assert launched[0][:3] == ["--config", str(tmp_path / "worker.toml"), "ask"]
 
 
 def test_an_answer_survives_a_surface_that_cannot_print_it(tmp_path: pathlib.Path) -> None:

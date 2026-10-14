@@ -56,6 +56,7 @@ def make_btw_runner(
     launch: btw.BtwLaunch,
     list_asks: Callable[[], list[pathlib.Path]],
     events: event_log.EventSink,
+    config_path: pathlib.Path | None = None,
 ) -> Callable[[str, pathlib.Path], tuple[bool, str]]:
     """Build the `/btw <question>` handler the pause menu and the composers call.
 
@@ -64,6 +65,7 @@ def make_btw_runner(
         launch: Spawns the side session.
         list_asks: Lists the ask sessions, to find the new one.
         events: The run's journal, where the answer lands as `btw.answered`.
+        config_path: The run's `--config` file, handed to the ask.
 
     Returns:
         The handler; it returns at once with whether the question opened and the line
@@ -72,7 +74,12 @@ def make_btw_runner(
 
     def run_btw(question: str, _session_dir: pathlib.Path) -> tuple[bool, str]:
         session, err = btw.start_btw(
-            question, parent_id, cwd=pathlib.Path.cwd(), launch=launch, list_asks=list_asks
+            question,
+            parent_id,
+            cwd=pathlib.Path.cwd(),
+            launch=launch,
+            list_asks=list_asks,
+            config_path=config_path,
         )
         if session is None:
             return False, f"[agent6] {err}"
@@ -108,12 +115,15 @@ def asks_dir(session_dir: pathlib.Path) -> pathlib.Path:
     return layout.bucket_dir(layout.layout_of(session_dir).state_dir, "asks")
 
 
-def open_btw(session_dir: pathlib.Path, question: str) -> tuple[bool, str]:
+def open_btw(
+    session_dir: pathlib.Path, question: str, *, config_path: pathlib.Path | None = None
+) -> tuple[bool, str]:
     """Open a side question beside a live run, from any composer.
 
     Args:
         session_dir: The live session.
         question: The question; an empty one is refused.
+        config_path: The front-end's `--config`, which the ask reads too.
 
     Returns:
         Whether it opened, and the line to show; the answer lands later on the journal.
@@ -129,5 +139,6 @@ def open_btw(session_dir: pathlib.Path, question: str) -> tuple[bool, str]:
             else []
         ),
         events=event_log.EventSink(session_dir / layout.LOGS_NAME),
+        config_path=config_path,
     )
     return runner(question, session_dir)
