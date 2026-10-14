@@ -248,10 +248,11 @@ class SessionManifest(pydantic.BaseModel):
         parent_session_id: The fork parent, or None.
         forked_from_turn: The turn the fork rolled back to, or None.
         forked_from_sha: The commit the fork started on, or None.
-        worktree: The absolute path of the linked worktree `agent6 fork` added; None for a
-            session in the operator's checkout. An `/undo` fork names its source's.
-        worktree_git_dir: The repository git dir that worktree points into: the one path a
-            fork execution's jail grants beyond the workspace. Never read back from the
+        worktree: The absolute path of the linked worktree `agent6 fork` or `run --worktree`
+            added; None for a session in the operator's checkout. An `/undo` fork names its
+            source's.
+        worktree_git_dir: The repository git dir that worktree points into: the one path its
+            execution's jail grants beyond the workspace. Never read back from the
             worktree's own `.git` pointer, which a jailed command can rewrite under hardened.
         merged: The merge record, None until the run branch is merged.
         parallel: A fan-out lane's lineage, or None.

@@ -109,6 +109,17 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         ),
     )
     run_parallel_flag.completer = completers._complete_parallel_models  # type: ignore[attr-defined]
+    run_p.add_argument(
+        "--worktree",
+        action="store_true",
+        help=(
+            "From the repository's top level, work in a new git worktree of it, at HEAD's"
+            " commit, under [parallel].workdir. This checkout is not touched: its uncommitted"
+            " changes stay here and are not carried into the run, so you can keep working here"
+            " or start more runs. Land the work with `agent6 sessions merge ID`; `agent6"
+            " sessions prune` then removes the worktree. Cannot be used with --parallel."
+        ),
+    )
     run_profile = run_p.add_argument(
         "--preset",
         default="",

@@ -420,7 +420,7 @@ A live run dispatches lanes the same way via the `/parallel` steer directive (de
 | Field | Default | Meaning |
 |---|---|---|
 | `max_lanes` | `4` | The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for more is refused before anything is cloned. |
-| `workdir` | `""` | Base directory for the working trees lanes, machine run states, and forks work in, in a per-repo subdirectory. Empty: `<cache_dir>/parallel`. A lane's clone is removed after its work is imported; a fork's worktree by `sessions prune` once the fork is merged. |
+| `workdir` | `""` | Base directory for the working trees lanes, machine run states, forks and `run --worktree` runs work in, in a per-repo subdirectory. Empty: `<cache_dir>/parallel`. A lane's clone is removed after its work is imported; a fork's or a `run --worktree` run's worktree by `sessions prune` once the session is merged or holds no work. |
 
 ## `[mcp]` and `[mcp.servers.<name>]` (optional)
 

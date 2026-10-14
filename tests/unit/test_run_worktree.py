@@ -1,0 +1,538 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""`agent6 run --worktree`: the run works in its own linked worktree, the checkout untouched.
+
+Driven through `cli_main` with a scripted provider over a real git repository, so the
+worktree, the manifest, the chain and the sessions verbs are the real ones.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import subprocess as sp
+import time
+from typing import Any
+
+import pytest
+
+from agent6 import git_ops, paths
+from agent6.app import _session, preflight, providers
+from agent6.app import run as run_lifecycle
+from agent6.config import layer
+from agent6.providers import ProviderResponse
+from agent6.sessions import ipc, lock
+from agent6.sessions import manifest as sessions_manifest
+from agent6.ui.cli import cli_main
+from agent6.ui.cli import run as cli_run
+
+_CONFIG = """
+[sandbox]
+isolation = "none"
+run_commands = "no"
+
+[models.worker]
+provider = "p"
+model = "m"
+
+[providers.p]
+api_format = "openai"
+base_url = "http://127.0.0.1:1"
+api_key_env = "PROBE_KEY"
+
+[review]
+trigger = "off"
+"""
+
+
+class _Scripted:
+    """One canned ProviderResponse per call; the last repeats."""
+
+    def __init__(self, script: list[tuple[dict[str, Any], ...]]) -> None:
+        self.script = script
+        self.calls = 0
+
+    def call(self, **_kw: Any) -> ProviderResponse:
+        tools = self.script[min(self.calls, len(self.script) - 1)]
+        self.calls += 1
+        return ProviderResponse(
+            text="",
+            tool_uses=tools,
+            stop_reason="tool_use",
+            input_tokens=10,
+            output_tokens=5,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            raw={"content": list(tools)},
+        )
+
+
+def _edit(path: str, content: str) -> tuple[dict[str, Any], ...]:
+    return (
+        {
+            "type": "tool_use",
+            "id": "e1",
+            "name": "apply_edit",
+            "input": {"path": path, "old_string": "", "new_string": content, "kind": "overwrite"},
+        },
+    )
+
+
+_FINISH: tuple[dict[str, Any], ...] = (
+    {"type": "tool_use", "id": "t1", "name": "finish_session", "input": {"summary": "done"}},
+)
+
+
+def _script(monkeypatch: pytest.MonkeyPatch, *turns: tuple[dict[str, Any], ...]) -> _Scripted:
+    prov = _Scripted([*turns, _FINISH])
+
+    def _factory(*_a: Any, **_k: Any) -> _Scripted:
+        return prov
+
+    monkeypatch.setattr(providers, "build_role_provider", _factory)
+    return prov
+
+
+def _git(repo: pathlib.Path, *args: str) -> str:
+    return sp.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout
+
+
+def _repo(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, config: str = _CONFIG
+) -> pathlib.Path:
+    """A committed repo, the process cwd, holding the operator's uncommitted work."""
+    cfg_home = tmp_path / "cfg"
+    (cfg_home / "agent6").mkdir(parents=True)
+    (cfg_home / "agent6" / "config.toml").write_text(config, encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
+    monkeypatch.setenv("PROBE_KEY", "sk-probe")
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
+    _git(repo, "add", "a.py")
+    _git(repo, "commit", "-q", "-m", "seed")
+    (repo / "a.py").write_text("x = 2  # the operator's edit\n", encoding="utf-8")
+    (repo / "notes.md").write_text("mine\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    return repo
+
+
+def _checkout_facts(repo: pathlib.Path) -> tuple[str, str, str, str]:
+    """HEAD, the branch, the status and the stash list: what a run must not move."""
+    return (
+        _git(repo, "rev-parse", "HEAD"),
+        _git(repo, "branch", "--show-current"),
+        _git(repo, "status", "--porcelain"),
+        _git(repo, "stash", "list"),
+    )
+
+
+def _worktrees(repo: pathlib.Path) -> list[str]:
+    listed = _git(repo, "worktree", "list", "--porcelain").splitlines()
+    return [line.removeprefix("worktree ") for line in listed if line.startswith("worktree ")]
+
+
+def _run_dir(repo: pathlib.Path, session_id: str) -> pathlib.Path:
+    return paths.state_dir(repo) / "sessions" / "runs" / session_id
+
+
+def _nothing_was_created(repo: pathlib.Path, session_id: str) -> bool:
+    return _worktrees(repo) == [str(repo)] and not _run_dir(repo, session_id).exists()
+
+
+def test_the_run_works_in_its_own_worktree_and_the_checkout_stays_as_it_was(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`run --worktree` edits and commits in a linked worktree at HEAD, never in the checkout.
+
+    The checkout's uncommitted edit raises no dirty-tree question, is not stashed and is not
+    carried; the isolation preflight and the tool set get the worktree and its recorded git dir,
+    as a resumed fork's do.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    before = _checkout_facts(repo)
+    seen: dict[str, Any] = {}
+    real_isolation, real_tools = _session.select_isolation, _session.build_session_tools
+
+    def _isolation(cfg: Any, **kw: Any) -> Any:
+        seen["isolation"] = (kw["cwd"], kw["worktree_git_dir"])
+        return real_isolation(cfg, **kw)
+
+    def _tools(cfg: Any, **kw: Any) -> Any:
+        seen["tools"] = (kw["cwd"], kw["worktree_git_dir"])
+        return real_tools(cfg, **kw)
+
+    monkeypatch.setattr(_session, "select_isolation", _isolation)
+    monkeypatch.setattr(_session, "build_session_tools", _tools)
+    _script(monkeypatch, _edit("new.txt", "made by the run\n"))
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-AAAA01", "add new.txt"]) == 0
+    out, err = capsys.readouterr()
+
+    manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-AAAA01"))
+    worktree = manifest.worktree
+    assert worktree is not None and worktree.name == "wt-AAAA01"
+    assert worktree.is_relative_to(paths.cache_dir() / "parallel")
+    assert manifest.worktree_git_dir == (repo / ".git").resolve()
+    assert manifest.base_branch == "main" and manifest.base_sha == before[0].strip()
+    assert seen["isolation"] == (worktree, manifest.worktree_git_dir)
+    assert seen["tools"] == (worktree, manifest.worktree_git_dir)
+
+    assert (worktree / "new.txt").read_text(encoding="utf-8") == "made by the run\n"
+    assert (worktree / "a.py").read_text(encoding="utf-8") == "x = 1\n"
+    assert not (worktree / "notes.md").exists()
+    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-AAAA01"))
+    assert tip is not None
+    assert git_ops.tree_diff_paths(repo, manifest.base_sha, tip) == ["new.txt"]
+
+    assert _checkout_facts(repo) == before
+    assert not (repo / "new.txt").exists()
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2  # the operator's edit\n"
+
+    assert f"working in the worktree {worktree}" in err
+    assert "agent6 sessions merge wt-AAAA01" in out
+
+
+def test_resume_from_the_checkout_continues_in_the_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 resume <id>` typed in the checkout drives the run's worktree, not the checkout."""
+    repo = _repo(tmp_path, monkeypatch)
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "wt-RESU01", "add new.txt"]) == 0
+    before = _checkout_facts(repo)
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-RESU01")).worktree
+    assert worktree is not None
+
+    _script(monkeypatch, _edit("more.txt", "two\n"))
+    assert cli_main(["resume", "wt-RESU01", "--steer", "add more.txt"]) == 0
+    capsys.readouterr()
+
+    assert pathlib.Path.cwd() == repo
+    assert (worktree / "more.txt").read_text(encoding="utf-8") == "two\n"
+    assert not (repo / "more.txt").exists()
+    assert _checkout_facts(repo) == before
+    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-RESU01"))
+    assert tip is not None
+    assert git_ops.tree_diff_paths(repo, before[0].strip(), tip) == ["more.txt", "new.txt"]
+
+
+def test_merge_lands_the_work_and_prune_removes_the_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions merge <id>` lands a worktree run on the checkout's branch; prune then sweeps it.
+
+    Before the merge prune keeps the worktree and says why.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    _script(monkeypatch, _edit("new.txt", "made by the run\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "wt-MERG01", "add new.txt"]) == 0
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-MERG01")).worktree
+    assert worktree is not None
+    capsys.readouterr()
+
+    assert cli_main(["sessions", "prune"]) == 0
+    assert "kept wt-MERG01's worktree (unmerged)" in capsys.readouterr().out
+    assert worktree.is_dir()
+
+    assert cli_main(["sessions", "merge", "wt-MERG01"]) == 0
+    capsys.readouterr()
+    assert _git(repo, "show", "main:new.txt") == "made by the run\n"
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2  # the operator's edit\n"
+
+    assert cli_main(["sessions", "prune"]) == 0
+    assert "removed wt-MERG01's worktree (merged)" in capsys.readouterr().out
+    assert not worktree.exists()
+    assert _worktrees(repo) == [str(repo)]
+
+
+def test_rm_removes_the_worktree_with_the_record(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions rm <id>` takes an unmerged worktree run's worktree with its history."""
+    repo = _repo(tmp_path, monkeypatch)
+    _script(monkeypatch, _edit("new.txt", "made by the run\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "wt-GONE01", "add new.txt"]) == 0
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-GONE01")).worktree
+    assert worktree is not None
+    capsys.readouterr()
+
+    assert cli_main(["sessions", "rm", "wt-GONE01"]) == 0
+    assert "its worktree" in capsys.readouterr().out
+    assert not worktree.exists()
+    assert _nothing_was_created(repo, "wt-GONE01")
+
+
+def test_a_worktree_run_starts_while_another_run_drives_the_checkout(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The checkout's one-writer lock is another checkout's: a worktree run never parks on it."""
+    repo = _repo(tmp_path, monkeypatch)
+    held = lock.acquire_repo_writer(paths.state_dir(repo), repo, "other-run")
+    assert held is not None
+    try:
+        _script(monkeypatch, _edit("new.txt", "made by the run\n"))
+        assert cli_main(["run", "--worktree", "--session-id", "wt-BUSY01", "add new.txt"]) == 0
+    finally:
+        lock.release_single_writer(held)
+    assert "PARKED" not in capsys.readouterr().err
+    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-BUSY01")) is not None
+
+
+def test_a_repository_with_no_commit_refuses(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """There is no commit to add a worktree at, and the refusal names the fix."""
+    _repo(tmp_path, monkeypatch)
+    unborn = tmp_path / "unborn"
+    unborn.mkdir()
+    _git(unborn, "init", "-q", "-b", "main")
+    monkeypatch.chdir(unborn)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-UNBN01", "task"]) == 2
+    err = capsys.readouterr().err
+    assert "REFUSING: --worktree starts from HEAD's commit" in err and "git commit" in err
+    assert _nothing_was_created(unborn, "wt-UNBN01")
+
+
+def test_outside_a_git_repository_refuses(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The git wall every run hits comes first and names `git init`."""
+    _repo(tmp_path, monkeypatch)
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    monkeypatch.chdir(plain)
+
+    assert cli_main(["run", "--worktree", "task"]) == 2
+    err = capsys.readouterr().err
+    assert "is not a git repository" in err and "git init" in err
+
+
+def test_parallel_and_worktree_together_refuse(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fan-out's lanes already own a clone each; the pair is refused before anything runs."""
+    repo = _repo(tmp_path, monkeypatch)
+
+    assert cli_main(["run", "--worktree", "--parallel", "2", "task"]) == 2
+    assert "--parallel cannot combine with --worktree" in capsys.readouterr().err
+    assert _worktrees(repo) == [str(repo)]
+
+
+def test_model_controlled_git_refuses(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A linked worktree's `.git` is read-only in the jail, so the model could not commit there."""
+    model_git = _CONFIG.replace('run_commands = "no"', 'run_commands = "no"\nprotect_git = false')
+    repo = _repo(tmp_path, monkeypatch, config=model_git + '\n[git]\ncontrol = "model"\n')
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-MODL01", "task"]) == 2
+    err = capsys.readouterr().err
+    assert '[git].control = "model"' in err and "without --worktree" in err
+    assert _nothing_was_created(repo, "wt-MODL01")
+
+
+def test_a_failed_worktree_add_leaves_nothing_behind(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A worktree git refuses to add ends the start: no session dir, no worktree record."""
+    repo = _repo(tmp_path, monkeypatch)
+
+    def _fail(_repo: pathlib.Path, _dest: pathlib.Path, _sha: str) -> None:
+        raise git_ops.GitError("fatal: could not create the worktree")
+
+    monkeypatch.setattr(git_ops, "add_worktree", _fail)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-FAIL01", "task"]) == 1
+    err = capsys.readouterr().err
+    assert "could not add the run's worktree" in err and "could not create the worktree" in err
+    assert _nothing_was_created(repo, "wt-FAIL01")
+
+
+def test_a_refusal_after_the_worktree_was_added_removes_it(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The isolation preflight runs on the added worktree; its refusal takes the worktree back."""
+    repo = _repo(tmp_path, monkeypatch)
+    added: list[pathlib.Path] = []
+
+    def _refuse(_cfg: Any, **kw: Any) -> Any:
+        added.append(kw["cwd"])
+        assert (kw["cwd"] / ".git").is_file(), "the preflight sees the real worktree"
+        raise preflight.SessionRefusedError(2)
+
+    monkeypatch.setattr(_session, "select_isolation", _refuse)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-REFU01", "task"]) == 2
+    assert "working in the worktree" not in capsys.readouterr().err
+    assert added and not added[0].exists()
+    assert _nothing_was_created(repo, "wt-REFU01")
+
+
+def test_an_interrupt_at_the_isolation_question_removes_the_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No manifest names the worktree yet, so a Ctrl-C there would strand it past every sweep."""
+    repo = _repo(tmp_path, monkeypatch)
+
+    def _interrupt(_cfg: Any, **_kw: Any) -> Any:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(_session, "select_isolation", _interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        run_lifecycle.run_task(
+            layer.load_effective(repo, None).config,
+            "task",
+            frontend=cli_run.session_frontend(),
+            started_at=time.time(),
+            session_id="wt-INTR01",
+            worktree=True,
+        )
+    capsys.readouterr()
+    assert _nothing_was_created(repo, "wt-INTR01")
+
+
+def test_a_missing_provider_key_refuses_before_any_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A route that cannot run refuses with no worktree and no session dir."""
+    keyed = _CONFIG.replace('api_format = "openai"', 'api_format = "anthropic"')
+    repo = _repo(tmp_path, monkeypatch, config=keyed)
+    monkeypatch.delenv("PROBE_KEY")
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-NKEY01", "task"]) == 2
+    assert "no API key for [providers.p]" in capsys.readouterr().err
+    assert _nothing_was_created(repo, "wt-NKEY01")
+
+
+def test_from_a_subdirectory_refuses(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A worktree is a whole tree: from a subdirectory the run would widen to all of it."""
+    repo = _repo(tmp_path, monkeypatch)
+    (repo / "sub").mkdir()
+    monkeypatch.chdir(repo / "sub")
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-SUBD01", "task"]) == 2
+    err = capsys.readouterr().err
+    assert "REFUSING: --worktree starts at the repository's top level" in err and str(repo) in err
+    assert _nothing_was_created(repo, "wt-SUBD01")
+
+
+def test_a_workdir_inside_the_checkout_refuses(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A worktree under the checkout would show up in its `git status`."""
+    repo = _repo(tmp_path, monkeypatch, config=_CONFIG + '\n[parallel]\nworkdir = "wt"\n')
+    before = _checkout_facts(repo)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-RELW01", "task"]) == 2
+    assert "[parallel].workdir" in capsys.readouterr().err
+    assert _checkout_facts(repo) == before
+    assert _nothing_was_created(repo, "wt-RELW01")
+
+
+def test_prune_removes_the_worktree_of_a_run_that_committed_nothing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no commit there is no merge to stamp, so prune would keep the empty worktree forever."""
+    repo = _repo(tmp_path, monkeypatch)
+    _script(monkeypatch)
+    assert cli_main(["run", "--worktree", "--session-id", "wt-NOOP01", "look around"]) == 0
+    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-NOOP01")) is None
+    assert len(_worktrees(repo)) == 2
+    capsys.readouterr()
+
+    assert cli_main(["sessions", "prune"]) == 0
+    assert "removed wt-NOOP01's worktree (committed nothing)" in capsys.readouterr().out
+    assert _worktrees(repo) == [str(repo)]
+
+
+def test_uncommitted_edits_are_named_in_the_worktree_and_survive_prune(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With `commit_per_step = false`, "the working tree" in the footer would name the checkout."""
+    repo = _repo(tmp_path, monkeypatch, config=_CONFIG + "\n[git]\ncommit_per_step = false\n")
+    _script(monkeypatch, _edit("new.txt", "made by the run\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "wt-NOCM01", "add new.txt"]) == 0
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-NOCM01")).worktree
+    assert worktree is not None
+    assert f"the run's edits are in the worktree {worktree}" in capsys.readouterr().out
+
+    assert cli_main(["sessions", "prune"]) == 0
+    out = capsys.readouterr().out
+    assert "kept wt-NOCM01's worktree (holds work no commit has: new.txt)" in out
+    assert (worktree / "new.txt").is_file()
+
+
+def test_an_error_before_the_session_lock_removes_the_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A crash between the isolation preflight and the run's start would strand the worktree."""
+    repo = _repo(tmp_path, monkeypatch)
+
+    def _full(_session_dir: pathlib.Path) -> int | None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(lock, "acquire_single_writer", _full)
+
+    with pytest.raises(OSError, match="No space left"):
+        run_lifecycle.run_task(
+            layer.load_effective(repo, None).config,
+            "task",
+            frontend=cli_run.session_frontend(),
+            started_at=time.time(),
+            session_id="wt-FULL01",
+            worktree=True,
+        )
+    capsys.readouterr()
+    assert _worktrees(repo) == [str(repo)]
+
+
+def test_a_refusal_before_the_manifest_removes_the_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A start refused after the worktree is added, before a manifest names it, removes it."""
+    repo = _repo(tmp_path, monkeypatch)
+
+    def _unwritable(_session_dir: pathlib.Path, _text: str) -> bool:
+        return False
+
+    monkeypatch.setattr(ipc, "submit_steer", _unwritable)
+
+    rc = run_lifecycle.run_task(
+        layer.load_effective(repo, None).config,
+        "task",
+        frontend=cli_run.session_frontend(),
+        started_at=time.time(),
+        session_id="wt-STEE01",
+        initial_steer="and then this",
+        worktree=True,
+    )
+    assert rc == 2
+    assert "could not write the initial steer request" in capsys.readouterr().err
+    assert _worktrees(repo) == [str(repo)]
+
+
+def test_a_worktree_the_cleanup_cannot_remove_is_named(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No manifest names it, so a silent failure would leave a worktree no sweep reports."""
+    repo = _repo(tmp_path, monkeypatch)
+    added: list[pathlib.Path] = []
+
+    def _refuse(_cfg: Any, **kw: Any) -> Any:
+        added.append(kw["cwd"])
+        (kw["cwd"] / "junk.txt").write_text("left by a probe\n", encoding="utf-8")
+        raise preflight.SessionRefusedError(2)
+
+    monkeypatch.setattr(_session, "select_isolation", _refuse)
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-KEPT01", "task"]) == 2
+    err = capsys.readouterr().err
+    assert f"the worktree {added[0]} stays: it holds work no commit has: junk.txt" in err
+    assert f"git worktree remove {added[0]}" in err
+    assert _worktrees(repo) == [str(repo), str(added[0])]

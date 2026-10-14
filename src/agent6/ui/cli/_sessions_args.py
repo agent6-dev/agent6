@@ -192,7 +192,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         sessions_sub,
         "rm",
         help=(
-            "Delete a session's saved history, internal commit reference, and fork worktree."
+            "Delete a session's saved history, internal commit reference, and worktree."
             " Its git branch, if present, remains."
         ),
     )
@@ -212,7 +212,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         help=(
             "Clean up merged session git data. Delete safe-to-remove agent6/* branches,"
             " internal commit references whose recorded targets contain their work, parallel"
-            " clones whose commits are present, and merged fork worktrees. Report anything kept."
+            " clones whose commits are present, and the worktrees of sessions that are merged"
+            " or hold no work. Report anything kept."
         ),
     )
     sessions_prune.add_argument(

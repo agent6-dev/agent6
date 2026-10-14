@@ -67,8 +67,8 @@ class ExecutionInputs:
         standing_goal: The standing goal.
         pins: The pinned notes.
         resuming: Whether this is a resumed execution.
-        worktree_git_dir: A fork's repository git dir, the one grant its jail makes beyond the
-            workspace.
+        worktree_git_dir: The repository git dir of a session in its own worktree, the one
+            grant its jail makes beyond the workspace.
     """
 
     session_id: str

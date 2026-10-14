@@ -815,6 +815,7 @@ def _fork_with_worktree(
     worktree = parallel.subordinate_workdir_root(Config(), repo, session_id)
     git_ops.add_worktree(repo, worktree, base)
     _git(repo, "branch", f"agent6/{session_id}", base)
+    git_ops.set_ref(repo, git_ops.chain_ref_for(session_id), base)
     if record:
         layout = sessions_layout.SessionLayout(
             state_dir=paths.state_dir(repo), session_id=session_id
@@ -918,6 +919,7 @@ def _record(
 ) -> pathlib.Path:
     """A session manifest naming *worktree* (an `/undo` fork's shares its source's)."""
     base = _git(repo, "rev-parse", "HEAD")
+    git_ops.set_ref(repo, git_ops.chain_ref_for(session_id), base)
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.ensure()
     data: dict[str, object] = {

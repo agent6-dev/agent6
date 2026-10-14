@@ -132,6 +132,12 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
             "--parallel cannot combine with --standing (the lanes take no standing goal)."
         )
         return 2
+    if parallel and getattr(args, "worktree", False):
+        _common.error(
+            "--parallel cannot combine with --worktree (each lane already works in its own"
+            " clone); drop one of the two."
+        )
+        return 2
     seed_from, source_session_id = getattr(args, "seed_from", ""), ""
     if not args.task and seed_from:
         # A plan id alone runs that plan; seeding the same text again would double it.
@@ -196,6 +202,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         sandbox_overrides=_setup.SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
         parallel_spec=getattr(args, "parallel", ""),
+        worktree=getattr(args, "worktree", False),
         standing_goal=getattr(args, "standing", ""),
         pins=tuple(args.pins),
         model=getattr(args, "model", ""),

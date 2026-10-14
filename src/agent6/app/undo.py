@@ -17,7 +17,7 @@ from typing import Any
 
 from agent6 import git_ops, task_text
 from agent6 import paths as agent6_paths
-from agent6.app import fork, resume
+from agent6.app import fork, fork_worktrees, resume
 from agent6.app import reporter as app_reporter
 from agent6.config import ConfigError, layer
 from agent6.graph import storage
@@ -357,7 +357,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
             cwd=cwd,
             worktree=False,
             checkout=(
-                fork.Checkout(manifest.worktree, manifest.worktree_git_dir)
+                fork_worktrees.Checkout(manifest.worktree, manifest.worktree_git_dir)
                 if manifest.worktree is not None and manifest.worktree_git_dir is not None
                 else None
             ),

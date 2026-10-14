@@ -251,6 +251,7 @@ def _cmd_run(
     sandbox_overrides: _setup.SandboxOverrides | None = None,
     preset: str = "",
     parallel_spec: str = "",
+    worktree: bool = False,
     standing_goal: str = "",
     pins: tuple[str, ...] = (),
     model: str = "",
@@ -276,6 +277,7 @@ def _cmd_run(
         sandbox_overrides: The sandbox flags.
         preset: The `--preset` name.
         parallel_spec: The `--parallel` lane spec, or "".
+        worktree: Give the run its own git worktree.
         standing_goal: The `--standing` goal, or "".
         pins: The pinned session ids.
         model: The `--model` override.
@@ -350,4 +352,5 @@ def _cmd_run(
         standing_goal=standing_goal,
         model=model,
         explicit_leaves=explicit_leaves,
+        worktree=worktree,
     )

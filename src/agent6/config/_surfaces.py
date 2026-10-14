@@ -238,13 +238,15 @@ class ParallelConfig(pydantic.BaseModel):
             "more is refused before anything is cloned."
         ),
     )
-    # A lane: `<workdir>/<repo-id>/<fanout-id>/lane-<i>`; a fork: `<workdir>/<repo-id>/<fork-id>`.
+    # A lane: `<workdir>/<repo-id>/<fanout-id>/lane-<i>`; a fork or a `run --worktree` run:
+    # `<workdir>/<repo-id>/<session-id>`.
     workdir: str = pydantic.Field(
         default="",
         description=(
-            "Base directory for the working trees lanes, machine run states, and forks work "
-            "in, in a per-repo subdirectory. Empty: `<cache_dir>/parallel`. A lane's clone is "
-            "removed after its work is imported; a fork's worktree by `sessions prune` once "
-            "the fork is merged."
+            "Base directory for the working trees lanes, machine run states, forks and "
+            "`run --worktree` runs work in, in a per-repo subdirectory. Empty: "
+            "`<cache_dir>/parallel`. A lane's clone is removed after its work is imported; a "
+            "fork's or a `run --worktree` run's worktree by `sessions prune` once the session "
+            "is merged or holds no work."
         ),
     )

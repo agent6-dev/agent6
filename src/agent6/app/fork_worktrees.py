@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Manage a fork's linked git worktree after the fork.
+"""Manage a session's linked git worktree: a fork's or a `run --worktree` run's.
 
-The dirt check before one is removed, the sessions that still own one, and the sweep
-`sessions prune` runs over the worktrees of forks whose tips landed.
+Adding one, the dirt check before one is removed, the sessions that still own one, and the
+sweep `sessions prune` runs over the worktrees of sessions with no work left to land.
 """
 
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import pathlib
 from collections.abc import Sequence
 
@@ -16,6 +17,38 @@ from agent6 import git_ops, paths
 from agent6.sessions import ipc, lock
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import session_dirs
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Checkout:
+    """A session's own checkout, recorded so its jail never reads the worktree's `.git` pointer.
+
+    Attributes:
+        worktree: The linked worktree.
+        git_dir: The repository git dir the worktree points into.
+    """
+
+    worktree: pathlib.Path
+    git_dir: pathlib.Path
+
+
+def add_session_worktree(repo: pathlib.Path, path: pathlib.Path, sha: str) -> Checkout:
+    """Add a session's linked worktree, detached at the sha, and return it with its git dir.
+
+    Args:
+        repo: The repository the worktree is linked to.
+        path: Where the worktree goes.
+        sha: The commit it starts at.
+
+    Returns:
+        The worktree and the git dir the session's jail grants from.
+
+    Raises:
+        GitError: Git refused the worktree.
+    """
+    checkout = Checkout(path, git_ops.git_common_dir(repo))
+    git_ops.add_worktree(repo, path, sha)
+    return checkout
 
 
 def remove_fork_worktree(
@@ -101,9 +134,14 @@ def _still_needs_worktree(
     """Return why the session still needs its worktree ("live", "unmerged"), or "".
 
     The merge stamp is the test of "merged": the branch still points where the merge left it.
+    A session with no chain committed nothing and has no merge to wait for; a fork's chain is
+    cut at its fork point, so a fork always has one.
     """
     if ipc.worker_is_alive(session_dir):
         return "live"
+    chain = git_ops.chain_ref_for(session_dir.name)
+    if manifest.merged is None and git_ops.chain_tip(repo, chain) is None:
+        return ""
     merged = manifest.merged is not None and git_ops.merge_stamp_holds(
         repo, session_dir.name, manifest.run_branch or "", manifest.merged.tip
     )
@@ -126,17 +164,17 @@ def _landed_tips(
 
 def sweep_fork_worktrees(
     repo: pathlib.Path, state: pathlib.Path
-) -> tuple[list[str], list[tuple[str, str]]]:
-    """Remove every fork worktree whose sessions all landed their work; keep the rest.
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Remove every session worktree whose sessions have no work left to land; keep the rest.
 
     Args:
         repo: The repository the worktrees are linked to.
         state: The repo's state directory.
 
     Returns:
-        The removed session ids, and (kept id, why) per kept session.
+        (removed id, why) per removed session, and (kept id, why) per kept session.
     """
-    removed: list[str] = []
+    removed: list[tuple[str, str]] = []
     kept: list[tuple[str, str]] = []
     for worktree, sessions in worktree_owners(state).items():
         if not worktree.exists():
@@ -148,7 +186,9 @@ def sweep_fork_worktrees(
             continue
         gone, note = remove_fork_worktree(repo, worktree, _landed_tips(repo, sessions))
         if gone:
-            removed.extend(d.name for d, _ in sessions)
+            removed.extend(
+                (d.name, "merged" if m.merged else "committed nothing") for d, m in sessions
+            )
         elif note:
             # Merged, but the tree holds work no commit has or would not delete: keep it, say why.
             kept.extend((d.name, note) for d, _ in sessions)

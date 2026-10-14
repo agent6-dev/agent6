@@ -357,9 +357,10 @@ def _print_run_branch_footer(
         if run_branch and current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
     elif result.completed and manifest is not None and not manifest.policy.commit_per_step:
+        where = f"the worktree {manifest.worktree}" if manifest.worktree else "the working tree"
         reporter.out(
             "\nnothing was committed ([git].commit_per_step = false): the run's edits are in"
-            " the working tree"
+            f" {where}"
         )
     elif result.completed and (manifest is None or manifest.mode not in ("plan", "ask")):
         # A plan or an ask never commits: its deliverable is printed above.

@@ -17,7 +17,16 @@ from collections.abc import Sequence
 
 from agent6 import budget as agent6_budget
 from agent6 import directive, event_log, git_ops, kinds, paths
-from agent6.app import _execution, _session, _setup, finalize, preflight, stamps
+from agent6.app import (
+    _execution,
+    _session,
+    _setup,
+    finalize,
+    fork_worktrees,
+    parallel,
+    preflight,
+    stamps,
+)
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
@@ -58,6 +67,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     preset_stamp: tuple[str, bool] | None = None,
     model: str | kinds.ModelRoute | None = None,
     explicit_leaves: frozenset[str] = frozenset(),
+    worktree: bool = False,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> int:
     """Run one session from preflight to finalize; the sole `agent6 run` path.
@@ -90,13 +100,17 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         model: The `--model` value that set the driving role.
         explicit_leaves: The config leaves the operator wrote, as dotted paths; a
             default this host cannot honour degrades, a written value refuses.
+        worktree: Whether the run works in its own linked worktree, added at HEAD's
+            commit under `[parallel].workdir`; the checkout is then never touched.
         reporter: Receives every refusal and note.
 
     Returns:
         The process exit code.
     """
     role = kinds.session_kind(mode).role
-    cwd = pathlib.Path.cwd()
+    repo = pathlib.Path.cwd()
+    # The run's checkout: the repository, or the worktree `worktree` adds below.
+    cwd = repo
     # A first prompt is a task, not a composer line.
     if (problem := directive.steer_problem(task)) is not None:
         reporter.error(problem)
@@ -110,6 +124,19 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
 
     # The clamp comes before anything reads a knob; the invocation's grant lands after it.
     cfg = _setup.session_config(cfg, mode, sandbox_overrides)
+    if worktree and cfg.git.control == "model":
+        reporter.refuse(
+            "--worktree runs in a linked worktree whose .git is read-only in the jail; under"
+            ' [git].control = "model" the model could not commit there. Set control ='
+            ' "agent6" for this run, or run without --worktree.'
+        )
+        return 2
+    if worktree and (top := paths.checkout_root(repo)) != repo.resolve():
+        reporter.refuse(
+            f"--worktree starts at the repository's top level, and this is a subdirectory of"
+            f" {top}. Run it from there, or run without --worktree."
+        )
+        return 2
     # Refuse an unanswerable run before anything is created, so its id stays free.
     tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
     refusal = preflight.headless_approval_refusal(
@@ -136,20 +163,23 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         cfg, role, reporter=reporter, model_flag=_setup.route_text(model)
     ):
         return 2
-    try:
-        isolation = _session.select_isolation(
-            cfg,
-            cwd=cwd,
-            confirm_unconfined=frontend.confirm_unconfined_autorun,
-            reporter=reporter,
-            explicit_leaves=explicit_leaves,
-        )
-    except preflight.SessionRefusedError as refusal:
-        return refusal.rc
+    # A worktree run selects below, once the worktree its commands run in exists.
+    isolation: kinds.IsolationLevel | None = None
+    if not worktree:
+        try:
+            isolation = _session.select_isolation(
+                cfg,
+                cwd=cwd,
+                confirm_unconfined=frontend.confirm_unconfined_autorun,
+                reporter=reporter,
+                explicit_leaves=explicit_leaves,
+            )
+        except preflight.SessionRefusedError as refusal:
+            return refusal.rc
 
     try:
         git = preflight.git_preflight(
-            cwd,
+            repo,
             cfg,
             mode,
             confirm_run_on_run_branch=frontend.confirm_run_on_run_branch,
@@ -158,8 +188,14 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     except preflight.SessionRefusedError as refusal:
         return refusal.rc
     base_sha, base_branch = git.base_sha, git.base_branch
+    if worktree and not base_sha:
+        reporter.refuse(
+            "--worktree starts from HEAD's commit, and this repository has none. Commit first"
+            ' (`git add -A && git commit -m "initial commit"`), or run without --worktree.'
+        )
+        return 2
 
-    state = paths.state_dir(cwd)
+    state = paths.state_dir(repo)
     bucket = kinds.session_bucket(mode)
     # Same-bucket reuse is the resume or park flow below; another bucket's id is a collision.
     if session_id and (held := id.session_id_bucket(state, session_id)) not in (None, bucket):
@@ -196,12 +232,68 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             )
             reporter.error(f"run {session_id!r} already exists.{next_step}")
             return 2
-    layout.ensure()
-    # One writer per session dir, taken before any shared state is touched.
-    worker_lock_fd = lock.acquire_single_writer(layout.session_dir)
-    if worker_lock_fd is None:
-        reporter.err(lock.SINGLE_WRITER_BUSY.format(rid=effective_session_id))
-        return 2
+
+    checkout: fork_worktrees.Checkout | None = None
+
+    def _drop_unrecorded_worktree() -> None:
+        # The manifest names a worktree as agent6's, so a start refused before it leaves none.
+        if checkout is None:
+            return
+        with contextlib.suppress(sessions_manifest.ManifestError):
+            if sessions_manifest.read_manifest(layout.session_dir).worktree == checkout.worktree:
+                return
+        gone, why = fork_worktrees.remove_fork_worktree(repo, checkout.worktree, (base_sha,))
+        if not gone:
+            reporter.note(
+                f"the worktree {checkout.worktree} stays: it {why}. No session names it; remove"
+                f" it with `git worktree remove {checkout.worktree}`"
+            )
+
+    if worktree:
+        path = parallel.subordinate_workdir_root(cfg, repo, effective_session_id)
+        if path.is_relative_to(repo.resolve()):
+            reporter.refuse(
+                f"[parallel].workdir puts the worktree inside this checkout ({path}), where it"
+                " would show as an untracked change. Set [parallel].workdir to a directory"
+                " outside the repository, or run without --worktree."
+            )
+            return 2
+        try:
+            checkout = fork_worktrees.add_session_worktree(repo, path, base_sha)
+        except git_ops.GitError as exc:
+            reporter.error(f"could not add the run's worktree at {path}: {exc}")
+            return 1
+        cwd = checkout.worktree
+    worktree_git_dir = checkout.git_dir if checkout is not None else None
+    worker_lock_fd: int | None = None
+    try:
+        if checkout is not None:
+            isolation = _session.select_isolation(
+                cfg,
+                cwd=cwd,
+                confirm_unconfined=frontend.confirm_unconfined_autorun,
+                reporter=reporter,
+                explicit_leaves=explicit_leaves,
+                worktree_git_dir=worktree_git_dir,
+            )
+        assert isolation is not None  # selected before the git preflight, or on the worktree
+        layout.ensure()
+        # One writer per session dir, taken before any shared state is touched.
+        worker_lock_fd = lock.acquire_single_writer(layout.session_dir)
+        if worker_lock_fd is None:
+            reporter.err(lock.SINGLE_WRITER_BUSY.format(rid=effective_session_id))
+            return 2
+    except preflight.SessionRefusedError as refusal:
+        return refusal.rc
+    finally:
+        # Refused, interrupted or failed before the run's own cleanup below takes over.
+        if worker_lock_fd is None:
+            _drop_unrecorded_worktree()
+    if checkout is not None:
+        reporter.note(
+            f"working in the worktree {cwd} (at {base_sha[:12]}); this checkout and its"
+            " uncommitted changes stay as they are"
+        )
     repo_lock_fd: int | None = None
     stashed = False
     # Whether the stash is applied back at run end: config, or "stash" chosen at the start.
@@ -214,7 +306,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         # Lazy: app.fork imports app.resume, which imports this module.
         from agent6.app import undo  # noqa: PLC0415  # noqa: PLC0415
 
-        return undo.undo_fork(None, effective_session_id, cwd=cwd, reporter=reporter)
+        return undo.undo_fork(None, effective_session_id, cwd=repo, reporter=reporter)
 
     try:
         # A reused dir carries the previous execution's bridge state.
@@ -276,6 +368,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
             driver_from_flag=bool(model),
             isolation=isolation,
+            worktree=checkout.worktree if checkout is not None else None,
+            worktree_git_dir=worktree_git_dir,
         )
         if parked is not None:
             stamps.stamp_parked(layout.session_dir, task=parked[0], reason=parked[1])
@@ -404,6 +498,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 sandbox_overrides=sandbox_overrides,
                 standing_goal=standing_goal,
                 pins=tuple(pins),
+                worktree_git_dir=worktree_git_dir,
             ),
             frontend=frontend,
             reporter=reporter,
@@ -453,13 +548,14 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         finally:
             lock.release_single_writer(repo_lock_fd)
             lock.release_single_writer(worker_lock_fd)
+            _drop_unrecorded_worktree()
         if detach_requested:
             # The worker lock is released, so the detached `resume` can acquire it.
             _execution.detach_to_background(
                 frontend=frontend,
                 cfg=cfg,
                 layout=layout,
-                cwd=cwd,
+                cwd=repo,
                 flags=_setup.override_flags(
                     budget_overrides, sandbox_overrides, _setup.flag_route(cfg, mode, model)
                 ),

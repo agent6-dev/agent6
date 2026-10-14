@@ -104,7 +104,7 @@ def write_session_manifest(
         parent_session_id: A fork's source run.
         forked_from_turn: The turn a fork was cut at.
         forked_from_sha: The workspace sha at that turn.
-        worktree: A fork's own checkout.
+        worktree: The session's own checkout, a fork's or a `run --worktree`'s.
         worktree_git_dir: The repository git dir the worktree points into.
         fanout: A `run --parallel` coordinator's own record.
     """

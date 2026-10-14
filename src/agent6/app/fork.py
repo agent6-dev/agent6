@@ -168,19 +168,6 @@ def _select_checkpoint_path(
     return None
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
-class Checkout:
-    """A fork's own checkout, recorded so its jail never reads the worktree's `.git` pointer.
-
-    Attributes:
-        worktree: The linked worktree.
-        git_dir: The repository git dir the worktree points into.
-    """
-
-    worktree: pathlib.Path
-    git_dir: pathlib.Path
-
-
 class _ForkRefusedError(Exception):
     """The fork was refused before anything was created; the reason is reported.
 
@@ -369,7 +356,7 @@ def create_fork(
     sandbox_overrides: _setup.SandboxOverrides | None = None,
     refuse_continuation: Callable[[Config, str], str | None] | None = None,
     worktree: bool = True,
-    checkout: Checkout | None = None,
+    checkout: fork_worktrees.Checkout | None = None,
     checkout_untracked: frozenset[str] | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> tuple[str, int]:
@@ -422,9 +409,7 @@ def create_fork(
     if added:
         path = parallel.subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
         try:
-            # The git dir a fork execution's jail grants from.
-            checkout = Checkout(path, git_ops.git_common_dir(cwd))
-            git_ops.add_worktree(cwd, path, plan.forked_from_sha)
+            checkout = fork_worktrees.add_session_worktree(cwd, path, plan.forked_from_sha)
         except git_ops.GitError as exc:
             reporter.error(f"could not add the fork's worktree at {path}: {exc}")
             return "", 1
@@ -447,7 +432,7 @@ def _materialize_fork(
     plan: _ForkPlan,
     *,
     cwd: pathlib.Path,
-    checkout: Checkout | None,
+    checkout: fork_worktrees.Checkout | None,
     fresh_checkout: bool,
     checkout_untracked: frozenset[str] | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,

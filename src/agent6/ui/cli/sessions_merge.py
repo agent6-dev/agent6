@@ -502,8 +502,8 @@ def _sweep_workdirs(
             " commits this repo lacks (merge or archive their lanes first)"
         )
     worktrees_removed, worktrees_kept = fork_worktrees.sweep_fork_worktrees(cwd, state)
-    for fork_id in worktrees_removed:
-        print(f"[agent6] removed {fork_id}'s worktree (merged)")
+    for fork_id, why in worktrees_removed:
+        print(f"[agent6] removed {fork_id}'s worktree ({why})")
     for fork_id, why in worktrees_kept:
         print(f"[agent6] kept {fork_id}'s worktree ({why})")
     note = (
