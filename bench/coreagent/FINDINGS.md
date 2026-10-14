@@ -113,6 +113,26 @@ Arms: no statement; one sentence in the `run_command` description; one run-promp
 - Every pass on the two tasks that need a third-party import came from copying the package out of the system site-packages, which the jail reads on the measuring host, so the pass counts depend on that host.
 - The prompt rule ships; the tool-description sentence does not.
 
+## A memory write and the settled count
+
+gpt-6-astra, four fix-the-failing-test tasks, n=4 per task and arm in each of two batches (64 runs); every task text asks for one memory fact once the harness suggests it, since without that sentence 0 of 2 smoke runs wrote one.
+Arms: a memory-store write counts as an idle turn; a memory-store write restarts the idle count.
+
+| | counts as idle | restarts the count |
+|---|---|---|
+| runs with the settled nudge at or after the first memory write, first batch | 4 of 16 | 0 of 15 |
+| the same, second batch | 5 of 16 | 0 of 16 |
+| turns, both batches | 9.6 ± 1.2 | 9.6 ± 1.2 |
+| a memory fact written | 32 of 32 | 32 of 32 |
+| ended by `finish_session`, exit 0 | 32 of 32 | 32 of 32 |
+
+- The nudge counts cover the runs the advisory reached; it missed one, in the restart arm's first batch.
+- The nudge after the harness's own advisory goes from 0.28 of runs to 0.00 (twice the standard error is 0.16).
+- Turns, tokens out, memory writes and the end show no measured difference.
+- The hidden check failed in 2 and 4 of 32 runs, all on one task where the worker rewrote the red test before the arms diverge; with a strengthened test allowed it passes 32 of 32 in both arms.
+- Not exercised: a run that keeps writing memory restarts the count each time, so the twelve-turn stop never reaches it.
+- The restart is adopted.
+
 ## Measured nulls
 
 | lever | measurement | result | state |
