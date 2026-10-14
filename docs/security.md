@@ -150,6 +150,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 
 - Mounts (`strict`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths`, a persistent `HOME` under `[sandbox].home = "cache"`, and operator tool dirs at their real paths
     - every mount keeps the path it has outside
+    - the workspace is mounted at its resolved path and the launcher starts the command there: under a workspace named through a symlink, `pwd` prints the resolved path
     - a grant that contains the workspace is mounted under it: the workspace stays writable under a read grant
     - the paths kept read-only inside the workspace (`.git` under `protect_git`, a machine bundle) are bound after every grant: a grant that contains the workspace does not make them writable
     - a tool dir is mounted only when its identity clears a default-deny.
@@ -163,6 +164,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
       A linked worktree agent6 did not record gets no grant
     - the record reaches every policy consumer, the hardened exposure scan included: a `hide_paths` entry inside it refuses like any other unmaskable exposure
 - Masked last, after every bind (`strict`): the config dir, the state base, `[sandbox].hide_paths`
+    - each is masked under its given name and under the path it resolves to, so an entry spelled through a symlink covers the real directory
     - a hidden directory reads as an empty directory and a hidden file as an empty file; a write to either fails with `Read-only file system`
     - a grant at or inside a private dir is refused at config load
     - `hardened` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses

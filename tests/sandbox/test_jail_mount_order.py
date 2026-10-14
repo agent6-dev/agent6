@@ -127,3 +127,71 @@ def test_a_read_grant_inside_the_workspace_holds_under_a_containing_write_grant(
     assert "refused" in res.stdout and "VENDOR-WRITABLE" not in res.stdout, out
     assert vendored.read_text(encoding="utf-8") == "original\n"
     assert "ws-written" in res.stdout, out
+
+
+def test_a_workspace_named_through_a_symlink_is_mounted_at_its_real_path(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A workspace given through a symlink keeps `.git` read-only at its real path.
+
+    Mounted under the symlink's name, the workspace and its read-only `.git` bind sat beside
+    a write grant on the real parent, which showed the same `.git/config` writable.
+    """
+    outer = tmp_path / "outer"
+    ws = outer / "ws"
+    config = ws / ".git" / "config"
+    config.parent.mkdir(parents=True)
+    config.write_text("original\n", encoding="utf-8")
+    link = tmp_path / "link"
+    link.symlink_to(ws)
+
+    probe = (
+        f"{{ echo tamper >> {config}; }} 2>/dev/null && echo REAL-WRITABLE || echo real-refused; "
+        "{ echo tamper >> .git/config; } 2>/dev/null && echo CWD-WRITABLE || echo cwd-refused; "
+        "echo w > note.txt && echo ws-written; "
+        "pwd"
+    )
+    res = jail.run_in_jail(
+        kinds.JailPolicy(
+            cwd=link,
+            argv=("sh", "-c", probe),
+            isolation="strict",
+            extra_rw_paths=(outer,),
+            extra_protect_paths=(link / ".git",),
+            timeout_s=20.0,
+        )
+    )
+    out = res.stdout + res.stderr
+    assert "real-refused" in res.stdout and "REAL-WRITABLE" not in res.stdout, out
+    assert "cwd-refused" in res.stdout and "CWD-WRITABLE" not in res.stdout, out
+    assert config.read_text(encoding="utf-8") == "original\n"
+    assert "ws-written" in res.stdout, out
+    assert (ws / "note.txt").read_text(encoding="utf-8") == "w\n"
+    assert res.stdout.splitlines()[-1] == str(ws.resolve()), out
+
+
+def test_a_hidden_path_named_through_a_symlink_is_masked_at_its_real_path(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A hidden path spelled through a symlink is masked where the workspace is mounted.
+
+    The mask went on the spelled name only, which the jail does not hold: the workspace is
+    mounted at its real path, and the hidden directory stayed readable there.
+    """
+    ws = tmp_path / "ws"
+    (ws / "secret").mkdir(parents=True)
+    (ws / "secret" / "key").write_text("key\n", encoding="utf-8")
+    link = tmp_path / "link"
+    link.symlink_to(ws)
+
+    for cwd in (ws, link):
+        res = jail.run_in_jail(
+            kinds.JailPolicy(
+                cwd=cwd,
+                argv=("sh", "-c", "ls -A secret | wc -l"),
+                isolation="strict",
+                hide_paths=(link / "secret",),
+                timeout_s=20.0,
+            )
+        )
+        assert res.stdout.strip() == "0", (cwd, res.stdout + res.stderr)

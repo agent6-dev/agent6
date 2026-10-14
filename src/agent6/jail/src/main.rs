@@ -271,10 +271,29 @@ fn main() {
     if !read_ok || input.trim().is_empty() {
         die("failed to read policy");
     }
-    let policy: Policy = match serde_json::from_str(&input) {
+    let mut policy: Policy = match serde_json::from_str(&input) {
         Ok(p) => p,
         Err(e) => die(format!("invalid policy JSON: {e}")),
     };
+    // The workspace is mounted, granted and entered at its real path: under a
+    // symlinked name, a grant on its real parent shows the same tree without
+    // the read-only protect binds.
+    policy.cwd = match policy.cwd.canonicalize() {
+        Ok(real) => real,
+        Err(e) => die(format!(
+            "workspace {} cannot be resolved: {e}",
+            policy.cwd.display()
+        )),
+    };
+    // A hidden path is masked under its real name as well as the given one:
+    // every mount sits at a real path, where a name through a symlink is absent.
+    let real_hidden: Vec<PathBuf> = policy
+        .hide_paths
+        .iter()
+        .filter_map(|hp| hp.canonicalize().ok())
+        .filter(|real| !policy.hide_paths.contains(real))
+        .collect();
+    policy.hide_paths.extend(real_hidden);
 
     if !matches!(policy.network.as_str(), "host" | "session" | "none") {
         die(format!("unknown network: {}", policy.network));
@@ -1084,20 +1103,16 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
             Ok(p) => p,
             Err(_) => continue,
         };
-        let canon_cwd = policy
-            .cwd
-            .canonicalize()
-            .unwrap_or_else(|_| policy.cwd.clone());
         // Reject paths outside cwd defensively (Python side filters them too,
         // but the launcher is its own trust boundary).
-        let rel = match canon_src.strip_prefix(&canon_cwd) {
+        let rel = match canon_src.strip_prefix(&policy.cwd) {
             Ok(r) => r,
             Err(_) => {
                 eprintln!(
                     "agent6-jail: skipping protect_path {} (canonical {} not under cwd {})",
                     src.display(),
                     canon_src.display(),
-                    canon_cwd.display(),
+                    policy.cwd.display(),
                 );
                 continue;
             }
@@ -1717,11 +1732,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
                 })?;
         }
         // RW only on non-protected top-level entries.
-        let canon_cwd = policy
-            .cwd
-            .canonicalize()
-            .unwrap_or_else(|_| policy.cwd.clone());
-        ruleset = grant_rw_carved(ruleset, &policy.cwd, &protect_set, &canon_cwd, sets.all)?;
+        ruleset = grant_rw_carved(ruleset, &policy.cwd, &protect_set, &policy.cwd, sets.all)?;
     } else {
         // No protect set: original behavior, RW on cwd as a whole.
         if let Ok(fd) = PathFd::new(&policy.cwd) {
