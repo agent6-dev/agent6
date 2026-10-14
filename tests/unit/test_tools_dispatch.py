@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import pathlib
 from unittest import mock
 
@@ -1054,6 +1056,16 @@ def test_list_dir(tmp_path: pathlib.Path) -> None:
     assert "x/" in out["entries"]
     assert "y.txt" in out["entries"]
     assert ".hidden" in out["entries"]  # hidden entries are included (per the description)
+
+
+def test_list_dir_escapes_a_name_that_is_not_utf8(tmp_path: pathlib.Path) -> None:
+    """A latin-1 name reads escaped; raw, the snapshot's JSON refused the tool result."""
+    cfg = _config(tmp_path)
+    (tmp_path / os.fsdecode(b"caf\xe9.txt")).write_text("c", encoding="utf-8")
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch("list_dir", {"path": "."}).to_wire()
+    assert '"caf\\udce9.txt"' in out["entries"]
+    json.dumps(out, ensure_ascii=False).encode("utf-8")
 
 
 def test_parse_metric_score_optional_group_is_no_score() -> None:

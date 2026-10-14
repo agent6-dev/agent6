@@ -252,27 +252,19 @@ def git_hardening_flags(cwd: pathlib.Path) -> tuple[str, ...]:
     return (*_GIT_HARDENING, *hooks, *_repo_driver_overrides(cwd))
 
 
-def _run(
+def _spawn(
     cwd: pathlib.Path,
-    *args: str,
-    check: bool = True,
-    env_extra: dict[str, str] | None = None,
-    stdin_text: str | None = None,
-) -> kinds.CommandResult:
-    """Run one hardened git command in the repository.
-
-    Args:
-        cwd: The repository.
-        *args: The git subcommand and its arguments.
-        check: Raise on a non-zero exit.
-        env_extra: Environment entries added for this call.
-        stdin_text: Text fed to git's stdin.
+    args: tuple[str, ...],
+    env_extra: dict[str, str] | None,
+    stdin_text: str | None,
+) -> tuple[tuple[str, ...], int, bytes, bytes]:
+    """Run one hardened git command.
 
     Returns:
-        The command's result, its output decoded lossily.
+        The full argv, the exit code, stdout and stderr as bytes.
 
     Raises:
-        GitError: The command failed with check set, or timed out.
+        GitError: The command timed out.
     """
     # GIT_TERMINAL_PROMPT=0 fails a credential prompt fast; LC_ALL=C keeps the stash
     # rescue's parse of git's prose valid.
@@ -299,7 +291,8 @@ def _run(
         env=env,
     )
     try:
-        stdin_bytes = stdin_text.encode() if stdin_text is not None else None
+        # fsencode: a name decoded with surrogateescape goes back to git byte for byte.
+        stdin_bytes = os.fsencode(stdin_text) if stdin_text is not None else None
         out, err = proc.communicate(input=stdin_bytes, timeout=_GIT_TIMEOUT_S)
     except subprocess.TimeoutExpired as exc:
         # git's TERM handler unlinks its own lockfiles, so a lock left afterwards is another git's.
@@ -317,23 +310,87 @@ def _run(
             f"git {' '.join(args)} timed out after {_GIT_TIMEOUT_S:.0f}s"
             " (a stuck filesystem or a held .git/index.lock?)"
         ) from exc
+    return full_argv, proc.returncode, out, err
+
+
+def _failure(args: tuple[str, ...], returncode: int, stdout: str, stderr: str) -> str:
+    """Return the message for a failed git command, with its own explanation."""
+    # `git commit` explains most failures on stdout, not stderr.
+    stderr_msg = stderr.strip()
+    stdout_msg = stdout.strip()
+    if stderr_msg and stdout_msg:
+        detail = f"{stderr_msg} | stdout: {stdout_msg}"
+    else:
+        detail = stderr_msg or stdout_msg or f"exit {returncode}"
+    return f"git {' '.join(args)} failed: {detail}"
+
+
+def _run(
+    cwd: pathlib.Path,
+    *args: str,
+    check: bool = True,
+    env_extra: dict[str, str] | None = None,
+    stdin_text: str | None = None,
+) -> kinds.CommandResult:
+    """Run one hardened git command in the repository.
+
+    Args:
+        cwd: The repository.
+        *args: The git subcommand and its arguments.
+        check: Raise on a non-zero exit.
+        env_extra: Environment entries added for this call.
+        stdin_text: Text fed to git's stdin.
+
+    Returns:
+        The command's result, its output decoded lossily.
+
+    Raises:
+        GitError: The command failed with check set, or timed out.
+    """
+    full_argv, returncode, out, err = _spawn(cwd, args, env_extra, stdin_text)
     result = kinds.CommandResult(
         argv=full_argv,
-        returncode=proc.returncode,
+        returncode=returncode,
         stdout=out.decode(errors="replace"),
         stderr=err.decode(errors="replace"),
         duration_s=0.0,
     )
     if check and not result.ok:
-        # `git commit` explains most failures on stdout, not stderr.
-        stderr_msg = result.stderr.strip()
-        stdout_msg = result.stdout.strip()
-        if stderr_msg and stdout_msg:
-            detail = f"{stderr_msg} | stdout: {stdout_msg}"
-        else:
-            detail = stderr_msg or stdout_msg or f"exit {result.returncode}"
-        raise GitError(f"git {' '.join(args)} failed: {detail}")
+        raise GitError(_failure(args, returncode, result.stdout, result.stderr))
     return result
+
+
+def _nul_fields(
+    cwd: pathlib.Path,
+    *args: str,
+    check: bool = True,
+    env_extra: dict[str, str] | None = None,
+    stdin_text: str | None = None,
+) -> list[str]:
+    """Run one `-z` listing and return its NUL-separated fields.
+
+    A name that is not valid UTF-8 decodes with surrogateescape, so it reaches a later
+    argv or stdin byte for byte; `terminal.printable_name` escapes it for display.
+
+    Args:
+        cwd: The repository.
+        *args: The git subcommand and its arguments, `-z` among them.
+        check: Raise on a non-zero exit.
+        env_extra: Environment entries added for this call.
+        stdin_text: Text fed to git's stdin.
+
+    Returns:
+        The fields, the empty one after a trailing NUL included.
+
+    Raises:
+        GitError: The command failed with check set, or timed out.
+    """
+    _, returncode, out, err = _spawn(cwd, args, env_extra, stdin_text)
+    if check and returncode != 0:
+        raise GitError(
+            _failure(args, returncode, out.decode(errors="replace"), err.decode(errors="replace"))
+        )
+    return os.fsdecode(out).split("\0")
 
 
 def is_git_repo(path: pathlib.Path) -> bool:
@@ -378,8 +435,9 @@ def _porcelain_entries(path: pathlib.Path) -> list[tuple[str, str]]:
     Returns:
         The (code, path) pairs.
     """
-    res = _run(path, "status", "--porcelain=v1", "-z", "--untracked-files=all", check=False)
-    fields = res.stdout.split("\0")
+    fields = _nul_fields(
+        path, "status", "--porcelain=v1", "-z", "--untracked-files=all", check=False
+    )
     out: list[tuple[str, str]] = []
     i = 0
     while i < len(fields):
@@ -900,8 +958,11 @@ def unignored(path: pathlib.Path, candidates: tuple[str, ...]) -> tuple[str, ...
         return ()
     # check-ignore prints the ignored inputs and exits 1 when none match; only stdout is read.
     # The names go in on stdin, so one a model wrote never reaches the argv.
-    res = _run(path, "check-ignore", "-z", "--stdin", stdin_text="\0".join(candidates), check=False)
-    ignored = set(res.stdout.split("\0"))
+    ignored = set(
+        _nul_fields(
+            path, "check-ignore", "-z", "--stdin", stdin_text="\0".join(candidates), check=False
+        )
+    )
     return tuple(c for c in candidates if c not in ignored)
 
 
@@ -1130,8 +1191,7 @@ def tree_paths(path: pathlib.Path, ref: str) -> frozenset[str]:
     """
     if _run(path, "rev-parse", "--verify", "--quiet", ref, check=False).returncode != 0:
         return frozenset()
-    out = _run(path, "ls-tree", "-r", "--name-only", "-z", ref).stdout
-    return frozenset(name for name in out.split("\0") if name)
+    return frozenset(filter(None, _nul_fields(path, "ls-tree", "-r", "--name-only", "-z", ref)))
 
 
 def tree_diff_paths(path: pathlib.Path, old_tree: str, new_tree: str) -> list[str]:
@@ -1139,8 +1199,9 @@ def tree_diff_paths(path: pathlib.Path, old_tree: str, new_tree: str) -> list[st
 
     Print one through `terminal.printable_name`: a name can hold a newline.
     """
-    out = _run(path, "diff-tree", "-r", "-z", "--name-only", old_tree, new_tree).stdout
-    return [name for name in out.split("\0") if name]
+    return list(
+        filter(None, _nul_fields(path, "diff-tree", "-r", "-z", "--name-only", old_tree, new_tree))
+    )
 
 
 def chain_commit(
@@ -1564,15 +1625,14 @@ def _bring_index_forward(
     if checkout is None or not checkout.is_dir():
         return ()
     path = checkout
-    changed = _run(path, "diff-tree", "-r", "--no-renames", "-z", old_tip, new_tip).stdout
+    records = _nul_fields(path, "diff-tree", "-r", "--no-renames", "-z", old_tip, new_tip)
     staged = {
         entry.split("\t", 1)[1]: entry.split("\t", 1)[0].split()
-        for entry in _run(path, "ls-files", "--stage", "-z").stdout.split("\x00")
+        for entry in _nul_fields(path, "ls-files", "--stage", "-z")
         if "\t" in entry
     }  # path -> [mode, sha, stage]
     updates: list[str] = []
     left: list[str] = []
-    records = changed.split("\x00")
     i = 0
     while i + 1 < len(records):
         meta, rel = records[i], records[i + 1]
@@ -1729,7 +1789,7 @@ def read_file_at(path: pathlib.Path, ref: str, name: str) -> str:
     Raises:
         GitError: The ref cannot be read or git fails.
     """
-    entries = _run(path, "ls-tree", "-z", ref, "--", name, env_extra=_LITERAL).stdout.split("\0")
+    entries = _nul_fields(path, "ls-tree", "-z", ref, "--", name, env_extra=_LITERAL)
     for entry in entries:
         metadata, _, found = entry.partition("\t")
         if found == name and metadata.startswith(("100644 blob ", "100755 blob ")):
@@ -1745,10 +1805,8 @@ def tracked_files(path: pathlib.Path) -> tuple[str, ...]:
         The paths with POSIX separators; empty outside a repo, which callers read as no
         map available rather than an empty repo.
     """
-    res = _run(path, "ls-files", "-z", check=False)
-    if not res.ok:
-        return ()
-    return tuple(p for p in res.stdout.split("\x00") if p)
+    # Outside a repo git exits nonzero and lists nothing; a timeout still raises.
+    return tuple(filter(None, _nul_fields(path, "ls-files", "-z", check=False)))
 
 
 def diff_since(path: pathlib.Path, base_sha: str, *, exclude: Collection[str] = ()) -> str:

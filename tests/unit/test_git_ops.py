@@ -1974,3 +1974,22 @@ def test_a_name_handed_to_git_is_the_file_and_never_a_glob(tmp_path: pathlib.Pat
     ).stdout.split()
     assert "a*.txt" in tracked and "ab.txt" not in tracked
     assert not git_ops.paths_dirty(tmp_path, ("a*.txt",))
+
+
+def test_a_name_that_is_not_utf8_round_trips_through_every_listing(tmp_path: pathlib.Path) -> None:
+    """A latin-1 file name reaches git again byte for byte, so a stash or an undo finds the file."""
+    _init_repo(tmp_path)
+    name = os.fsdecode(b"caf\xe9.txt")
+    (tmp_path / name).write_bytes(b"one\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "--", name], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "latin-1 name"], check=True)
+    assert name in git_ops.tracked_files(tmp_path)
+    assert name in git_ops.tree_paths(tmp_path, "HEAD")
+    assert git_ops.tree_diff_paths(tmp_path, "HEAD~1", "HEAD") == [name]
+    assert git_ops.read_file_at(tmp_path, "HEAD", name) == "one\n"
+    assert git_ops.unignored(tmp_path, (name,)) == (name,)
+    (tmp_path / name).write_bytes(b"two\n")
+    assert git_ops.modified_paths(tmp_path) == [name]
+    git_ops.stash_tracked_changes(tmp_path, "m", [name])
+    assert git_ops.modified_paths(tmp_path) == []
+    assert (tmp_path / name).read_bytes() == b"one\n"

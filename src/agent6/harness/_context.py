@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6 import git_ops, kinds
+from agent6 import git_ops, kinds, terminal
 from agent6.tools import _path_safety
 
 _REPO_MAP_MAX_LINES = 60
@@ -131,7 +131,8 @@ def _build_repo_map(tracked: tuple[str, ...]) -> str:
         return ""
     by_dir: dict[str, list[str]] = {}
     for rel in tracked:
-        parent, _, name = rel.rpartition("/")
+        # Escaped: a name that is not UTF-8 would fail the snapshot's and the wire's JSON.
+        parent, _, name = terminal.printable_name(rel).rpartition("/")
         key = parent or "."
         by_dir.setdefault(key, []).append(name)
     keys = sorted(by_dir.keys(), key=lambda k: (k != ".", k))
@@ -172,7 +173,7 @@ def load_repo_summary(root: pathlib.Path, hide: tuple[str, ...] = ()) -> kinds.R
     st = git_ops.status(root) if in_git else None
     top = tuple(
         sorted(
-            p.name + ("/" if p.is_dir() else "")
+            terminal.printable_name(p.name) + ("/" if p.is_dir() else "")
             for p in root.iterdir()
             if not p.name.startswith(".")
         )

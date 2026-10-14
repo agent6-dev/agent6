@@ -12,6 +12,7 @@ from __future__ import annotations
 import pathlib
 from typing import Any
 
+from agent6 import terminal
 from agent6.config import Config
 from agent6.tools import (
     _agent6_docs,
@@ -130,8 +131,10 @@ def list_dir(ws: _path_safety.Workspace, raw: dict[str, Any]) -> results.ListDir
     listing = sorted(_path_safety.list_contained(sp), key=lambda e: e.name)
     # A hidden entry is dropped from the names but counted, so the listing stays true.
     visible = [e for e in listing if not ws.is_denied(sp.abs_path / e.name)]
+    # Escaped: a name that is not UTF-8 would fail the snapshot's and the wire's JSON.
+    names = ((terminal.printable_name(e.name), e.is_dir) for e in visible[: schema.LIST_DIR_CAP])
     return results.ListDirResult(
-        entries=tuple(e.name + "/" if e.is_dir else e.name for e in visible[: schema.LIST_DIR_CAP]),
+        entries=tuple(name + "/" if is_dir else name for name, is_dir in names),
         hidden=len(listing) - len(visible),
         truncated=len(visible) > schema.LIST_DIR_CAP,
     )

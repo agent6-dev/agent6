@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 
@@ -79,3 +80,14 @@ def test_repo_prior_labels_the_filtered_top_level_listing(tmp_path: pathlib.Path
 
     assert summary.top_level == ("visible.txt",)
     assert "Top-level (dot-prefixed entries omitted):" in prompt
+
+
+def test_repo_map_escapes_a_name_that_is_not_utf8(tmp_path: pathlib.Path) -> None:
+    """A latin-1 file name reads escaped in the map; raw, the snapshot's JSON refused the prompt."""
+    _init_repo(tmp_path, {"a.py": "", os.fsdecode(b"caf\xe9.txt"): ""})
+    repo_map = _repo_map(tmp_path)
+    repo_map.encode("utf-8")
+    assert '"caf\\udce9.txt"' in repo_map
+    prompt = _prompt_blocks.repo_priors_block(_context.load_repo_summary(tmp_path))
+    prompt.encode("utf-8")
+    assert prompt.count('"caf\\udce9.txt"') == 2  # the top-level listing and the map

@@ -586,7 +586,7 @@ class VerifyGate:
         except (git_ops.GitError, OSError):
             return ()
         if paths and all(_nudges.is_test_path(p) for p in paths):
-            return tuple(sorted(paths))
+            return tuple(sorted(terminal.printable_name(p) for p in paths))
         return ()
 
     def tree_green(self, verdict: _verify_verdict.VerifyVerdict) -> bool | None:

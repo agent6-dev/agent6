@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import pathlib
 import shlex
 import subprocess as sp
@@ -1295,3 +1296,16 @@ def test_a_gate_script_staged_but_not_committed_refuses_before_the_worktree_exis
     assert prov.calls == 0
     assert _nothing_was_created(repo, "wt-GATE02")
     assert "REFUSING: the verify gate runs `.venv/bin/python`" in capsys.readouterr().err
+
+
+def test_a_run_in_a_repo_with_a_name_that_is_not_utf8_completes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A latin-1 tracked name reaches the prompt escaped; raw, the snapshot JSON crashed the run."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    (repo / os.fsdecode(b"caf\xe9.txt")).write_text("c\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "a latin-1 name")
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+
+    assert cli_main(["run", "--session-id", "latin-1", "add new.txt"]) == 0
