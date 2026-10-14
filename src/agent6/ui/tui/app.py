@@ -454,7 +454,8 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         child, text = result
         self._continue_child = child
         self._fill_composers(text)
-        self.notify(f"undone: continue as {child}; your message is back to edit")
+        # The journaled undone event announces the fork; the rewind notice is this view's to show.
+        self.notify("\n".join(line.removeprefix("[agent6] ") for line in said), timeout=12)
 
     def plan_md(self) -> str:
         """Return a plan session's plan.md, or "" for a run or an unwritten plan."""

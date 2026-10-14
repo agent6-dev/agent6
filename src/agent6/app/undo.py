@@ -10,12 +10,13 @@ left alone.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import os
 import pathlib
 from typing import Any
 
-from agent6 import git_ops, task_text
+from agent6 import event_log, git_ops, task_text
 from agent6 import paths as agent6_paths
 from agent6.app import fork, fork_worktrees, resume
 from agent6.app import reporter as app_reporter
@@ -25,6 +26,7 @@ from agent6.harness import _snapshot
 from agent6.sessions import ipc, lock
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.viewmodel import listing
 
 _STEER_NOTICE = "OPERATOR STEERING"
 
@@ -331,6 +333,8 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     if refusal:
         reporter.refuse(refusal)
         return None
+    # A live source's own loop journals its undone end; a finished one gets it here.
+    offline = ipc.read_worker_pid(undone.session_dir) != os.getpid()
     ref = git_ops.chain_ref_for(undone.session_id)
     where = manifest.run_branch or ref
     exclude = sessions_layout.read_untracked_at_start(undone.session_dir)
@@ -386,7 +390,28 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     finally:
         lock.release_single_writer(lock_fd)
     _report_rewind(reporter, paths, turn=turn, kept=kept, where=where)
+    if offline:
+        _journal_undone(undone, child, target.undone_text)
     return child, target.undone_text
+
+
+def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_text: str) -> None:
+    """Append the undone end to a finished source's journal, so every surface reads it.
+
+    Without it the source kept reading passed with a merge line, and `sessions merge` landed
+    the taken-back work.
+    """
+    iterations = listing.scan_session_log(undone.logs_path).iteration or 0
+    events = event_log.EventSink(undone.logs_path)
+    with contextlib.suppress(event_log.EventWriteError):
+        events.emit("session.undone", new_session_id=child, undone_text=undone_text)
+        events.emit(
+            "session.end",
+            reason="undone",
+            summary=f"operator undid the last message; forked to {child}",
+            iterations=iterations,
+            all_passed=False,
+        )
 
 
 def _report_rewind(

@@ -1059,7 +1059,7 @@ function makeComposer(id) {
       }
       postJSON('/api/session/' + encodeURIComponent(id) + '/undo', {})
         .then(d => {
-          toast('undone: forked to ' + d.new_session_id);
+          toast('undone: forked to ' + d.new_session_id + (d.notice ? '\n' + d.notice : ''));
           pendingComposerFill = d.undone_text || '';
           location.hash = '#session/' + encodeURIComponent(d.new_session_id);
         })

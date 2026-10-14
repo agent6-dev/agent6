@@ -958,6 +958,35 @@ def test_resume_config_refusal_leaves_checkout_untouched(
     assert missing.returncode != 0  # the run branch was never created either
 
 
+def test_resume_of_an_undone_run_points_at_its_fork(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A bare resume re-applied the taken-back edit in the checkout the fork shares."""
+    gdir = paths.global_config_dir()
+    gdir.mkdir(parents=True, exist_ok=True)
+    (gdir / "config.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-base"\n',
+        encoding="utf-8",
+    )
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state = paths.state_dir(repo)
+    src = _seed_source_run(state, "undone-AAAA11", head_sha=head, turns=(1,))
+    events = [
+        {"type": "session.start", "session_id": "undone-AAAA11", "mode": "run", "user_task": "t"},
+        {"type": "session.undone", "new_session_id": "fork-BBBB22", "undone_text": "again"},
+        {"type": "session.end", "reason": "undone", "iterations": 1, "all_passed": False},
+    ]
+    src.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    for steer in ("", "once more"):
+        assert resume._cmd_resume(None, "undone-AAAA11", force=False, steer=steer) == 2
+        err = capsys.readouterr().err
+        assert "taken back by /undo" in err and "agent6 resume fork-BBBB22" in err
+    assert _current_branch(repo) == "main"
+
+
 def test_resume_diverged_branch_refuses_without_checkout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

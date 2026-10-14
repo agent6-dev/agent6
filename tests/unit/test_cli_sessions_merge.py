@@ -1431,3 +1431,25 @@ def test_merge_says_a_timed_out_gate_timed_out(
     assert (
         "[agent6] warning: the verify gate timed out on this run's final tree; merging it." in err
     )
+
+
+def test_runs_merge_refuses_a_run_undo_took_back(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The taken-back work landed on main under a generic warning, and main's tests failed."""
+    monkeypatch.chdir(tmp_path)
+    base = _setup_run(tmp_path, "run-UNDO11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="run-UNDO11"
+    )
+    events = [
+        {"type": "session.start", "session_id": "run-UNDO11", "mode": "run", "user_task": "t"},
+        {"type": "session.undone", "new_session_id": "fork-UNDO22", "undone_text": "again"},
+        {"type": "session.end", "reason": "undone", "iterations": 2, "all_passed": False},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+
+    assert main(["sessions", "merge", "run-UNDO11"]) == 2
+    err = capsys.readouterr().err
+    assert "taken back by /undo" in err and "agent6 resume fork-UNDO22" in err
+    assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "0"

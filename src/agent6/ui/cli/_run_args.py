@@ -143,7 +143,8 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help=(
             "Pause for input after each automatic commit. The prompt accepts /continue"
             " (default), /diff, /cost, /undo, /watch, /mcp, /init, /help, /quit, and /exit."
-            " /undo restores the files from before the last message and continues in a fork."
+            " /undo puts the files back to before the last message and ends the run undone; the"
+            " fork it prints continues with `agent6 resume <fork> --steer`."
             " /quit and /exit stop without another prompt. Requires a foreground terminal."
         ),
     )

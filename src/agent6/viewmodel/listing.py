@@ -648,6 +648,7 @@ class LogScan:
             runs, and for an end that carried none.
         end_tree: The worktree's tree id that end recorded; "" when it recorded none or a
             later execution began.
+        undone_to: The fork `/undo` continues the session as; "" when it was never undone.
         provider_error: The last failed driving call's error, the reason behind a
             `provider_error` end; "" when none failed.
         cost_usd: The spend across every execution; None when no budget.update was seen.
@@ -691,6 +692,7 @@ class LogScan:
     end_summary: str = ""
     verified: str = ""
     end_tree: str = ""
+    undone_to: str = ""
     provider_error: str = ""
     cost_usd: float | None = None
     usd_partial: bool = False
@@ -876,6 +878,14 @@ def is_fanout(session_dir: pathlib.Path) -> bool:
         return False
 
 
+def undone_refusal(session_id: str, child: str) -> str:
+    """Return the refusal resume and merge share for a run `/undo` took back."""
+    return (
+        f"run {session_id!r} was taken back by /undo; its continuation is {child}:\n"
+        f'    agent6 resume {child} --steer "<the message, edited>"'
+    )
+
+
 def needs_new_work_refusal(session_id: str) -> str:
     """Return the refusal `agent6 resume` and the web composer share for a finished run."""
     return (
@@ -901,6 +911,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     finished, end_reason, end_summary, verified = False, "", "", ""
     stranded = False
     end_tree = ""
+    undone_to = ""
     setup_output = ""
     provider_error = ""
     all_passed: bool | None = False
@@ -1008,6 +1019,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     unattended_questions = 0
                 elif etype == "session.stranded":
                     stranded = True
+                elif etype == "session.undone":
+                    undone_to = str(ev.get("new_session_id", ""))
                 elif etype == "workspace.setup":
                     setup_output = format.setup_output(ev)
                 elif etype == "verify.end":
@@ -1060,6 +1073,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         verified=verified,
         setup_output=setup_output,
         end_tree=end_tree,
+        undone_to=undone_to,
         provider_error=provider_error,
         cost_usd=(usd_prior_executions + usd_execution) if saw_budget else None,
         usd_partial=usd_partial,

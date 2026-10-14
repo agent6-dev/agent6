@@ -200,7 +200,8 @@ def undo_session(
     A live run is refused: its `/undo` rides the steer channel.
 
     Returns:
-        The new session id and the undone text in a dict and "", or None and the reason.
+        The new session id, the undone text and the rewind notice in a dict and "", or None
+        and the reason.
     """
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
@@ -213,7 +214,8 @@ def undo_session(
     if result is None:
         return None, (spawn.capture_message(said[-1]) if said else "undo failed")
     child, text = result
-    return {"new_session_id": child, "undone_text": text}, ""
+    notice = "\n".join(line.removeprefix("[agent6] ") for line in said)
+    return {"new_session_id": child, "undone_text": text, "notice": notice}, ""
 
 
 def resume_run(

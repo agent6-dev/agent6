@@ -251,5 +251,9 @@ def test_steer_refuses_a_view_only_word(
     ipc.write_worker_pid(d, os.getpid())
 
     assert main(["steer", "tiny-run", "/shells"]) == 2
-    assert "acts on a view of the run" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "acts on a view of the run" in err
+    # The surfaces that own a composer or menu, not the transcript reader `agent6 attach`.
+    assert "pause menu" in err
+    assert "agent6 attach" not in err
     assert not ipc.steer_request_pending(d)

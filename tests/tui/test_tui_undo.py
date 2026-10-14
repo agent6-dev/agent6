@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 from textual import widgets
 
-from agent6.app import fork, undo
+from agent6.app import fork, reporter, undo
 from agent6.ui import spawn
 from agent6.ui.tui import app as app_mod
 from agent6.ui.tui import composer
@@ -113,6 +113,9 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
 
     def _fake_undo_fork(config_path: object, *_a: object, **_k: object) -> tuple[str, str]:
         forked_under.append(config_path)
+        rep = _k["reporter"]
+        assert isinstance(rep, reporter.Reporter)
+        rep.note("put 2 path(s) back to turn 1 (abc123): a.txt (HEAD and the index are untouched)")
         return ("fork-child-BBBBBB", "the message taken back")
 
     monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
@@ -136,6 +139,9 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
             assert bar.text == "the message taken back"
             assert app.continue_as == "fork-child-BBBBBB"
             assert forked_under == [tmp_path / "custom.toml"]
+            # The rewind notice reaches the screen, as it reaches a `run -i` terminal.
+            shown = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert any("put 2 path(s) back to turn 1" in m for m in shown), shown
             app.submit_instruction("the message, edited")
             await app.workers.wait_for_complete()
             assert spawned == [("fork-child-BBBBBB", "the message, edited")]

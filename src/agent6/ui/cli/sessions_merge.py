@@ -22,7 +22,7 @@ from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common, sessions_cmds
-from agent6.viewmodel import scan_session_log, tail_events, worker_models
+from agent6.viewmodel import listing, scan_session_log, tail_events, worker_models
 
 _UNSTARTED_FORK = "unmerged; fork has not started"
 
@@ -59,6 +59,24 @@ class _MergePlan:
     cfg: Config
 
 
+def _not_mergeable_now(layout: sessions_layout.SessionLayout, session_id: str) -> str:
+    """Return why the run's work is not for merging: a live worker, or an `/undo` took it back.
+
+    The raw pid, not session_is_live: after session.end the finalizer may still be at work.
+    """
+    if ipc.worker_is_alive(layout.session_dir):
+        return (
+            f"run {session_id!r} is still live; a merge now lands only the"
+            " commits so far (its later ones need another merge) and moves your"
+            " index while the worker still edits. Stop it first:\n"
+            f"    agent6 stop {session_id}"
+        )
+    scan = scan_session_log(layout.logs_path)
+    if scan.finished and scan.end_reason == "undone":
+        return listing.undone_refusal(session_id, scan.undone_to)
+    return ""
+
+
 def _plan_merge(  # noqa: PLR0911
     cwd: pathlib.Path,
     session_id: str,
@@ -84,14 +102,8 @@ def _plan_merge(  # noqa: PLR0911
     if isinstance(res, int):
         return res
     layout, manifest = res
-    # The raw pid, not session_is_live: after session.end the finalizer may still be at work.
-    if ipc.worker_is_alive(layout.session_dir):
-        _common.refuse(
-            f"run {session_id!r} is still live; a merge now lands only the"
-            " commits so far (its later ones need another merge) and moves your"
-            " index while the worker still edits. Stop it first:\n"
-            f"    agent6 stop {session_id}"
-        )
+    if refusal := _not_mergeable_now(layout, session_id):
+        _common.refuse(refusal)
         return 2
     ref = sessions_cmds._commits_ref(cwd, manifest)
     if (

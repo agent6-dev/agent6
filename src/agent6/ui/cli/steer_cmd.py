@@ -43,7 +43,7 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
     if text.strip().lower() in directive.VIEW_COMMANDS:
         _common.refuse(
             f"{text.strip()} acts on a view of the run, which a steer has none of:"
-            f" type it in `agent6 attach {layout.session_id}`, the TUI or the web"
+            " type it in the TUI, the web, or a live run's pause menu (Ctrl-C)"
         )
         return 2
     if not session_is_live(layout.session_dir):

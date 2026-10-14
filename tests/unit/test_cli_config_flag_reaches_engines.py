@@ -36,6 +36,7 @@ def test_merge_planner_passes_the_explicit_config_path(
     # A resolvable path flows through unchanged when the planner reaches the load.
     class _Layout:
         session_dir = tmp_path / "sess"
+        logs_path = tmp_path / "sess" / "logs.jsonl"
 
     layout = _Layout()
 

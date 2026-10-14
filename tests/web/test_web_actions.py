@@ -734,3 +734,32 @@ def test_a_now_steer_writes_the_urgent_marker(
     assert (d / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8") == "stop and report"
     ok, msg = actions.steer(tmp_path, "live-one-AAAAAA", "/now")
     assert not ok and "needs the instruction" in msg
+
+
+def test_undo_hands_the_page_the_rewind_notice(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The paths put back and the commit that keeps the earlier tree reach the page's toast."""
+    from agent6.app import reporter, undo
+
+    run = layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="done-AAAA11")
+    run.ensure()
+    run.logs_path.write_text(
+        '{"type": "session.start", "session_id": "done-AAAA11", "mode": "run", "user_task": "t"}\n'
+        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        encoding="utf-8",
+    )
+
+    def _fake_undo_fork(
+        _config: object, _sid: str, *, cwd: pathlib.Path, reporter: reporter.Reporter
+    ) -> tuple[str, str]:
+        reporter.note(
+            "put 1 path(s) back to turn 1 (abc123): a.txt (HEAD and the index are untouched)"
+        )
+        return "fork-BBBB22", "again"
+
+    monkeypatch.setattr(undo, "undo_fork", _fake_undo_fork)
+    payload, err = actions.undo_session(tmp_path, "done-AAAA11", tmp_path / "custom.toml")
+    assert err == "" and payload is not None
+    assert payload["new_session_id"] == "fork-BBBB22" and payload["undone_text"] == "again"
+    assert payload["notice"].startswith("put 1 path(s) back to turn 1")

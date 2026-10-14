@@ -1530,6 +1530,23 @@ def test_the_scan_reads_the_gates_word_and_tolerates_its_absence(tmp_path: pathl
     assert listing.scan_session_log(log).verified == ""
 
 
+def test_the_scan_names_the_fork_an_undo_continues_as(tmp_path: pathlib.Path) -> None:
+    """`session.undone` names the child; a verb refusing an undone run points there."""
+    log = tmp_path / "logs.jsonl"
+    events = [
+        {"type": "session.start", "session_id": "src-AAAA11", "mode": "run", "user_task": "t"},
+        {"type": "session.undone", "new_session_id": "child-BBBB22", "undone_text": "again"},
+        {"type": "session.end", "reason": "undone", "iterations": 3, "all_passed": False},
+    ]
+    log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    scan = listing.scan_session_log(log)
+    assert (scan.end_reason, scan.undone_to) == ("undone", "child-BBBB22")
+    assert listing.undone_refusal("src-AAAA11", scan.undone_to) == (
+        "run 'src-AAAA11' was taken back by /undo; its continuation is child-BBBB22:\n"
+        '    agent6 resume child-BBBB22 --steer "<the message, edited>"'
+    )
+
+
 @pytest.mark.parametrize(
     ("end_reason", "detail"),
     [

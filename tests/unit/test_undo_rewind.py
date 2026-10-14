@@ -18,6 +18,7 @@ from agent6.app import reporter, undo
 from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock
+from agent6.viewmodel import listing
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -201,6 +202,38 @@ def test_undo_puts_the_checkout_back_and_keeps_the_tree_as_it_stood(
     assert "a.txt" in text and "gen.txt" in text and "more.txt" in text
     assert f"commit {tip[:12]} on agent6/run-AAAA11" in text
     assert "HEAD and the index are untouched" in text
+
+
+def test_undo_of_a_finished_run_journals_its_undone_end(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The source reads `undone` on every surface, as it does after a live run's own `/undo`.
+
+    A finished run undone from the TUI or the web kept reading `passed · unmerged` with a
+    merge line, and `sessions merge` landed the work the operator took back.
+    """
+    repo, _c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
+    events = [
+        {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "iterations": 2, "all_passed": True},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+
+    result = undo.undo_fork(None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(print, print))
+
+    assert result is not None
+    child, _text = result
+    tail = [json.loads(line) for line in layout.logs_path.read_text(encoding="utf-8").splitlines()]
+    assert [e["type"] for e in tail[-2:]] == ["session.undone", "session.end"]
+    assert tail[-2]["new_session_id"] == child and tail[-2]["undone_text"] == "steer 1"
+    assert tail[-1]["reason"] == "undone" and tail[-1]["iterations"] == 2
+    scan = listing.scan_session_log(layout.logs_path)
+    assert scan.undone_to == child
+    word, _detail = listing.status_word(
+        finished=scan.finished, all_passed=scan.all_passed, end_reason=scan.end_reason
+    )
+    assert word == "undone"
 
 
 def test_undo_leaves_a_staged_copy_in_the_index_and_says_so(

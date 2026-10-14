@@ -291,6 +291,11 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     new_work = listing.needs_new_work(
         finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
     )
+    if scan.finished and scan.end_reason == "undone":
+        # The fork is the continuation; resuming here would redo the taken-back edit.
+        reporter.refuse(listing.undone_refusal(session_id, scan.undone_to))
+        lock.release_single_writer(worker_lock_fd)
+        return 2
     if not steer.strip() and new_work:
         reporter.refuse(listing.needs_new_work_refusal(session_id))
         lock.release_single_writer(worker_lock_fd)
