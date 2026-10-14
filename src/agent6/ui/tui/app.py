@@ -443,7 +443,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             return
         said: list[str] = []
         result = undo.undo_fork(
-            None,
+            self.config_path,
             self.session_dir.name,
             cwd=pathlib.Path.cwd(),
             reporter=reporter.Reporter(out=said.append, err=said.append),

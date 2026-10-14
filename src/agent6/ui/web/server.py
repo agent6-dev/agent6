@@ -550,7 +550,7 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         elif verb in ("undo", "fork"):
             self._read_body()
             payload, err = (
-                actions.undo_session(self.cwd, session_id)
+                actions.undo_session(self.cwd, session_id, self.config_path)
                 if verb == "undo"
                 else actions.fork_run(self.cwd, session_id, self.config_path)
             )

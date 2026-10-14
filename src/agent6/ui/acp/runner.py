@@ -521,6 +521,7 @@ class RunBridge:
                     frontend=self._frontend(session, announced),
                     started_at=started_at,
                     session_id=session.session_id,
+                    config_path=self.config_path,
                     explicit_leaves=effective.explicit_leaves,
                     reporter=reporter,
                 )

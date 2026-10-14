@@ -81,7 +81,7 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
         help=(
             "Set this command's metered spending limit in US dollars. -1 allows unlimited"
             " spending; 0 refuses metered calls. Does not bound included-plan calls; use"
-            " --max-percent for those. Default: [budget].max_usd; on a resume, the"
+            " --max-percent for those. Default: [budget].max_usd; on a resume or a fork, the"
             " value the run's flags last set."
         ),
     )
@@ -94,7 +94,8 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
             "The plan percentage points this run may use on a subscription provider. The"
             " account reports whole percents and a tick counts as a full point, so the cap"
             " ends the run early, never late. -1: unlimited; 0: refuse plan-metered calls."
-            " Default: [budget].max_percent; on a resume, the value the run's flags last set."
+            " Default: [budget].max_percent; on a resume or a fork, the value the run's flags"
+            " last set."
         ),
     )
     group.add_argument(
@@ -106,7 +107,8 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
             "Set the combined input and output token limit for calls with no price data."
             " -1 allows unlimited tokens; 0 refuses calls that cannot be priced. Does not"
             " bound plan-metered calls; use --max-percent for those. Default:"
-            " [budget].max_tokens_fallback; on a resume, the value the run's flags last set."
+            " [budget].max_tokens_fallback; on a resume or a fork, the value the run's flags"
+            " last set."
         ),
     )
 

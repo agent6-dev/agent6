@@ -203,6 +203,7 @@ class _ForkPlan:
         cfg: The child's config.
         gate: The source's pinned verify command and its origin, inherited since an
             inferred or adopted gate has no config to derive from.
+        budget: The caps the source's `--max-*` flags set, inherited as a resume replays them.
     """
 
     src: layout.SessionLayout
@@ -221,6 +222,7 @@ class _ForkPlan:
     driver_from_flag: bool
     cfg: Config
     gate: tuple[Sequence[str], str]
+    budget: sessions_manifest.BudgetStamp
 
 
 def _plan_fork(
@@ -356,6 +358,7 @@ def _plan_fork(
         driver_from_flag=sm.models.driver_from_flag,
         cfg=cfg,
         gate=(sm.harness.verify_command, sm.harness.verify_origin),
+        budget=sm.budget,
     )
 
 
@@ -517,6 +520,7 @@ def _materialize_fork(
         forked_from_turn=plan.forked_from_turn,
         forked_from_sha=plan.forked_from_sha,
         gate=plan.gate,
+        budget=plan.budget,
         isolation=detect.resolve_isolation(plan.cfg.sandbox.isolation, _setup.detect_env()),
         worktree=checkout.worktree if checkout is not None else None,
         worktree_git_dir=checkout.git_dir if checkout is not None else None,

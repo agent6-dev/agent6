@@ -340,6 +340,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 frontend=frontend,
                 started_at=started_at,
                 session_id=session_id,
+                config_path=config_path,
                 mode=mode,
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,

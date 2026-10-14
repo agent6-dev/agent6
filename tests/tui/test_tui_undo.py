@@ -92,8 +92,12 @@ def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
 def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
     tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
-    """The non-live path forks in-process, and the view still hands the follow-up to the child."""
+    """The non-live path forks in-process, and the view still hands the follow-up to the child.
+
+    The fork is stamped under the view's `--config`, so it records the models the view runs on.
+    """
     spawned: list[tuple[str, str]] = []
+    forked_under: list[object] = []
 
     def _fake_resume(
         _cwd: pathlib.Path,
@@ -107,7 +111,8 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
         spawned.append((rid, steer))
         return ""
 
-    def _fake_undo_fork(*_a: object, **_k: object) -> tuple[str, str]:
+    def _fake_undo_fork(config_path: object, *_a: object, **_k: object) -> tuple[str, str]:
+        forked_under.append(config_path)
         return ("fork-child-BBBBBB", "the message taken back")
 
     monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
@@ -121,7 +126,7 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
     (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
     async def scenario() -> None:
-        app = app_mod.Agent6TUI(run)
+        app = app_mod.Agent6TUI(run, config_path=tmp_path / "custom.toml")
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
@@ -130,6 +135,7 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
             bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert bar.text == "the message taken back"
             assert app.continue_as == "fork-child-BBBBBB"
+            assert forked_under == [tmp_path / "custom.toml"]
             app.submit_instruction("the message, edited")
             await app.workers.wait_for_complete()
             assert spawned == [("fork-child-BBBBBB", "the message, edited")]

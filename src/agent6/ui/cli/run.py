@@ -358,4 +358,5 @@ def _cmd_run(
         model=model,
         explicit_leaves=explicit_leaves,
         worktree=worktree,
+        config_path=config_path,
     )

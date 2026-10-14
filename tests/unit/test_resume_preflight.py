@@ -1268,3 +1268,33 @@ def test_resume_model_flag_is_recorded_and_replayed(
         ("claude-y", "claude-y"),
         ("anthropic/claude-y", "claude-y"),
     ]
+
+
+def test_a_parked_resume_hands_run_task_the_config_path(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The parked branch starts the run under the surface's `--config`, as an /undo fork needs."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _park_manifest(
+        paths.state_dir(repo) / "sessions" / "runs" / "parked-AAAA11", preset="", from_flag=False
+    )
+    seen: list[object] = []
+
+    def _capture_run_task(*_a: object, **kw: object) -> int:
+        seen.append(kw.get("config_path"))
+        return 0
+
+    monkeypatch.setattr(run, "run_task", _capture_run_task)
+    config_path = tmp_path / "custom.toml"
+    config_path.write_text(
+        '[providers.local]\napi_format = "openai"\nbase_url = "https://example.test/v1"\n'
+        '[models.worker]\nprovider = "local"\nmodel = "m"\n',
+        encoding="utf-8",
+    )
+
+    assert cli_resume._cmd_resume(config_path, "parked-AAAA11", force=False) == 0
+
+    assert seen == [config_path]

@@ -192,7 +192,9 @@ def fork_run(
     return {"new_session_id": child}, ""
 
 
-def undo_session(cwd: pathlib.Path, session_id: str) -> tuple[dict[str, str] | None, str]:
+def undo_session(
+    cwd: pathlib.Path, session_id: str, config_path: pathlib.Path | None = None
+) -> tuple[dict[str, str] | None, str]:
     """Fork a finished run at the state before its last operator message, unstarted.
 
     A live run is refused: its `/undo` rides the steer channel.
@@ -207,7 +209,7 @@ def undo_session(cwd: pathlib.Path, session_id: str) -> tuple[dict[str, str] | N
         return None, "the session is live; /undo rides the steer channel from the composer"
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
-    result = undo.undo_fork(None, session_dir.name, cwd=cwd, reporter=reporter)
+    result = undo.undo_fork(config_path, session_dir.name, cwd=cwd, reporter=reporter)
     if result is None:
         return None, (spawn.capture_message(said[-1]) if said else "undo failed")
     child, text = result

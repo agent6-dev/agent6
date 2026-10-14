@@ -69,6 +69,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     model: str | kinds.ModelRoute | None = None,
     explicit_leaves: frozenset[str] = frozenset(),
     worktree: bool = False,
+    config_path: pathlib.Path | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> int:
     """Run one session from preflight to finalize; the sole `agent6 run` path.
@@ -103,6 +104,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             default this host cannot honour degrades, a written value refuses.
         worktree: Whether the run works in its own linked worktree, added at HEAD's
             commit under `[parallel].workdir`; the checkout is then never touched.
+        config_path: The `--config` file, which an `/undo` fork is stamped under.
         reporter: Receives every refusal and note.
 
     Returns:
@@ -322,7 +324,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         # Lazy: app.fork imports app.resume, which imports this module.
         from agent6.app import undo  # noqa: PLC0415  # noqa: PLC0415
 
-        return undo.undo_fork(None, effective_session_id, cwd=repo, reporter=reporter)
+        return undo.undo_fork(config_path, effective_session_id, cwd=repo, reporter=reporter)
 
     try:
         # A reused dir carries the previous execution's bridge state.

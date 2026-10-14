@@ -472,6 +472,28 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     assert manifest["models"]["driver"]["model"] == "claude-fast"  # not claude-base
 
 
+def test_fork_inherits_the_caps_its_source_ran_under(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The source's `--max-*` stamp carries to the fork, as a resume of the source replays it.
+
+    An `/undo` fork recorded no caps, so the resume command it printed ran uncapped.
+    """
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state = paths.state_dir(repo)
+    src = _seed_source_run(state, "src-CAPS11", head_sha=head, turns=(1,))
+    manifest = json.loads(src.manifest_path.read_text(encoding="utf-8"))
+    manifest["budget"] = {"max_usd": 2.0, "max_tokens_fallback": None, "max_percent": 30.0}
+    src.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert fork._cmd_fork(None, "src-CAPS11", new_session_id="child-CAPS22", no_run=True) == 0
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-CAPS22")
+    child = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
+    assert child["budget"] == manifest["budget"]
+
+
 def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
