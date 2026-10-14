@@ -12,6 +12,7 @@ import tempfile
 import pytest
 import tree_sitter_language_pack
 
+from agent6.sandbox import tool_paths
 from tests.jail_env import require_userns_jail
 
 # Resolved once, with the operator's own environment: the grammars already downloaded.
@@ -65,6 +66,24 @@ def _hermetic_git(  # pyright: ignore[reportUnusedFunction]
     cfg.write_text("[user]\n\tname = t\n\temail = t@t\n", encoding="utf-8")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(cfg))
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+
+
+@pytest.fixture
+def jail_bin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> pathlib.Path:
+    """Pin the jail PATH to one directory holding every runner verify inference names.
+
+    Inference passes over a command whose runner the jail PATH lacks, so a test asserting an
+    inferred gate pins the PATH here; unlinking a runner makes it missing.
+    """
+    bindir = tmp_path_factory.mktemp("jail-bin")
+    for name in ("cargo", "go", "make", "npm", "pytest", "python3", "sh"):
+        runner = bindir / name
+        runner.write_text("#!/bin/sh\n", encoding="utf-8")
+        runner.chmod(0o755)
+    monkeypatch.setattr(tool_paths, "jail_search_path", lambda: str(bindir))
+    return bindir
 
 
 @pytest.fixture(autouse=True)

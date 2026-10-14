@@ -113,6 +113,7 @@ def test_prompt_show_prints_the_tools_and_the_first_message(
     assert all("input_schema" in t and "description" in t for t in exchange["tools"])
 
 
+@pytest.mark.usefixtures("jail_bin")
 def test_prompt_show_infers_the_gate_a_run_would_infer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

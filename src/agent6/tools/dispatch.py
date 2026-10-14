@@ -15,7 +15,6 @@ import json
 import os
 import pathlib
 import shlex
-import shutil
 import threading
 import time
 from collections.abc import Callable
@@ -463,8 +462,7 @@ class ToolDispatcher:
         """
         if self.command_policy() == "no":
             return False
-        exe = argv[0]
-        if "/" not in exe and shutil.which(exe, path=tool_paths.jail_search_path()) is None:
+        if not tool_paths.jail_resolves(argv[0]):
             return False
         self._config = self._config.with_verify_command(argv)
         return True

@@ -7,7 +7,11 @@ from __future__ import annotations
 import json
 import pathlib
 
+import pytest
+
 from agent6 import verify_infer
+
+pytestmark = pytest.mark.usefixtures("jail_bin")
 
 _AGENTS_PIPELINE = """\
 # AGENTS.md
@@ -70,7 +74,7 @@ def test_agents_md_none_when_absent() -> None:
 
 def test_repo_signal_package_json(tmp_path: pathlib.Path) -> None:
     (tmp_path / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (
+    assert verify_infer.repo_signals(tmp_path)[0] == (
         ("npm", "test", "--silent"),
         "package.json",
     )
@@ -88,13 +92,13 @@ def test_repo_signal_package_json_ignores_the_npm_placeholder(tmp_path: pathlib.
         "echo Error: no test specified && exit 1",
     ):
         pkg.write_text(json.dumps({"scripts": {"test": script}}), encoding="utf-8")
-        assert verify_infer.verify_from_repo_signals(tmp_path) is None, script
+        assert verify_infer.repo_signals(tmp_path) == [], script
     (tmp_path / "Makefile").write_text("test:\n\t./run\n", encoding="utf-8")
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (("make", "test"), "Makefile:test")
+    assert verify_infer.repo_signals(tmp_path)[0] == (("make", "test"), "Makefile:test")
     # Nothing wider: a script that only starts like the placeholder is a real one.
     script = 'echo "Error: no test specified" && exit 1 || jest'
     pkg.write_text(json.dumps({"scripts": {"test": script}}), encoding="utf-8")
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (
+    assert verify_infer.repo_signals(tmp_path)[0] == (
         ("npm", "test", "--silent"),
         "package.json",
     )
@@ -102,14 +106,14 @@ def test_repo_signal_package_json_ignores_the_npm_placeholder(tmp_path: pathlib.
 
 def test_repo_signal_makefile_target(tmp_path: pathlib.Path) -> None:
     (tmp_path / "Makefile").write_text("build:\n\tcc x.c\ntest:\n\t./run\n", encoding="utf-8")
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (("make", "test"), "Makefile:test")
+    assert verify_infer.repo_signals(tmp_path)[0] == (("make", "test"), "Makefile:test")
 
 
 def test_repo_signal_pyproject(tmp_path: pathlib.Path) -> None:
     # No .venv present (e.g. a container or system-python checkout) -> fall back
     # to python3 on PATH, NOT the missing .venv/bin/python that would break verify.
     (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (
+    assert verify_infer.repo_signals(tmp_path)[0] == (
         ("python3", "-m", "pytest", "-q"),
         "pyproject",
     )
@@ -121,7 +125,7 @@ def test_repo_signal_pyproject_prefers_existing_venv(tmp_path: pathlib.Path) -> 
     venv_py = tmp_path / ".venv" / "bin" / "python"
     venv_py.parent.mkdir(parents=True)
     venv_py.write_text("", encoding="utf-8")
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (
+    assert verify_infer.repo_signals(tmp_path)[0] == (
         (".venv/bin/python", "-m", "pytest", "-q"),
         "pyproject",
     )
@@ -129,13 +133,13 @@ def test_repo_signal_pyproject_prefers_existing_venv(tmp_path: pathlib.Path) -> 
 
 def test_repo_signal_cargo_and_go(tmp_path: pathlib.Path) -> None:
     (tmp_path / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (
+    assert verify_infer.repo_signals(tmp_path)[0] == (
         ("cargo", "test", "--quiet"),
         "Cargo.toml",
     )
     (tmp_path / "Cargo.toml").unlink()
     (tmp_path / "go.mod").write_text("module x\n", encoding="utf-8")
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (("go", "test", "./..."), "go.mod")
+    assert verify_infer.repo_signals(tmp_path)[0] == (("go", "test", "./..."), "go.mod")
 
 
 def test_repo_signal_verify_sh_wins(tmp_path: pathlib.Path) -> None:
@@ -143,24 +147,24 @@ def test_repo_signal_verify_sh_wins(tmp_path: pathlib.Path) -> None:
     (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     script = tmp_path / "verify.sh"
     script.write_text("#!/bin/sh\npython3 -m pytest -q\n", encoding="utf-8")
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (("sh", "verify.sh"), "verify.sh")
+    assert verify_infer.repo_signals(tmp_path)[0] == (("sh", "verify.sh"), "verify.sh")
     script.chmod(0o755)
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (("./verify.sh",), "verify.sh")
+    assert verify_infer.repo_signals(tmp_path)[0] == (("./verify.sh",), "verify.sh")
 
 
 def test_repo_signal_loose_python_tests_come_last(tmp_path: pathlib.Path) -> None:
     """test_*.py means pytest only when no manifest says otherwise; a Go tests/ stays `go test`."""
     (tmp_path / "test_calc.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (
+    assert verify_infer.repo_signals(tmp_path)[0] == (
         ("python3", "-m", "pytest", "-q"),
         "test_*.py",
     )
     (tmp_path / "go.mod").write_text("module x\n", encoding="utf-8")
-    assert verify_infer.verify_from_repo_signals(tmp_path) == (("go", "test", "./..."), "go.mod")
+    assert verify_infer.repo_signals(tmp_path)[0] == (("go", "test", "./..."), "go.mod")
 
 
 def test_repo_signal_none(tmp_path: pathlib.Path) -> None:
-    assert verify_infer.verify_from_repo_signals(tmp_path) is None
+    assert verify_infer.repo_signals(tmp_path) == []
 
 
 def test_parse_llm_verify() -> None:
@@ -178,7 +182,7 @@ def test_parse_llm_verify() -> None:
 def test_infer_layering_prefers_agents_md(tmp_path: pathlib.Path) -> None:
     (tmp_path / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
     got = verify_infer.infer_verify_command(tmp_path, "Verify: pytest -q")
-    assert got is not None and got.source == "agents_md" and got.argv == ("pytest", "-q")
+    assert got.source == "agents_md" and got.argv == ("pytest", "-q")
 
 
 def test_infer_falls_back_to_signals_then_llm(tmp_path: pathlib.Path) -> None:
@@ -192,14 +196,14 @@ def test_infer_falls_back_to_signals_then_llm(tmp_path: pathlib.Path) -> None:
     # what the LLM tier exists to read.
     (tmp_path / "package.json").write_text('{"scripts": {"check": "x"}}', encoding="utf-8")
     got = verify_infer.infer_verify_command(tmp_path, "", llm_call=fake_llm)
-    assert got is not None and got.source == "llm" and got.argv == ("make", "verify")
+    assert got.source == "llm" and got.argv == ("make", "verify")
     assert calls and "package.json" in calls[0]
 
     # A repo signal short-circuits before the LLM.
     (tmp_path / "go.mod").write_text("module x\n", encoding="utf-8")
     calls.clear()
     got2 = verify_infer.infer_verify_command(tmp_path, "", llm_call=fake_llm)
-    assert got2 is not None and got2.source == "go.mod"
+    assert got2.source == "go.mod"
     assert not calls, "repo signal should short-circuit the LLM"
 
 
@@ -216,7 +220,7 @@ def test_infer_skips_the_llm_when_there_is_nothing_to_read(tmp_path: pathlib.Pat
         return '["make","verify"]'
 
     (tmp_path / "notes.txt").write_text("just a file\n", encoding="utf-8")
-    assert verify_infer.infer_verify_command(tmp_path, "", llm_call=fake_llm) is None
+    assert verify_infer.infer_verify_command(tmp_path, "", llm_call=fake_llm).argv == ()
     assert not calls, "the LLM tier fired with nothing to read"
 
     # AGENTS.md prose alone (no fenced command) still qualifies: the LLM
@@ -224,7 +228,7 @@ def test_infer_skips_the_llm_when_there_is_nothing_to_read(tmp_path: pathlib.Pat
     got = verify_infer.infer_verify_command(
         tmp_path, "Run make verify before committing.", llm_call=fake_llm
     )
-    assert calls and got is not None and got.source == "llm"
+    assert calls and got.source == "llm"
 
 
 def test_infer_llm_failure_is_safe(tmp_path: pathlib.Path) -> None:
@@ -236,8 +240,64 @@ def test_infer_llm_failure_is_safe(tmp_path: pathlib.Path) -> None:
         reached.append(ctx)
         raise RuntimeError("provider down")
 
-    assert verify_infer.infer_verify_command(tmp_path, "", llm_call=boom) is None
+    assert verify_infer.infer_verify_command(tmp_path, "", llm_call=boom).argv == ()
     assert reached, "the failure path was never exercised"
+
+
+def test_package_json_is_passed_over_when_the_sandbox_has_no_npm(
+    tmp_path: pathlib.Path, jail_bin: pathlib.Path
+) -> None:
+    """A gate whose runner the jail PATH lacks is not inferred, and the reason is kept.
+
+    Taken unchecked, `npm test` aborted the run as unexecutable, and the resume after it.
+    """
+    (jail_bin / "npm").unlink()
+    (tmp_path / "package.json").write_text('{"scripts": {"test": "node --test"}}', encoding="utf-8")
+    got = verify_infer.infer_verify_command(tmp_path, "")
+    assert (got.argv, got.source) == ((), "none")
+    why = "package.json names `npm test --silent`, and the sandbox has no `npm`"
+    assert verify_infer.passed_over_text(got) == why
+
+
+def test_an_unresolvable_runner_falls_through_to_the_next_candidate(
+    tmp_path: pathlib.Path, jail_bin: pathlib.Path
+) -> None:
+    """Every tier is judged: an AGENTS.md gate and a manifest both give way to a runnable one."""
+    (jail_bin / "npm").unlink()
+    (jail_bin / "pytest").unlink()
+    (tmp_path / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
+    (tmp_path / "Makefile").write_text("test:\n\t./run\n", encoding="utf-8")
+    got = verify_infer.infer_verify_command(tmp_path, "Verify: pytest -q")
+    assert (got.argv, got.source) == (("make", "test"), "Makefile:test")
+    assert got.passed_over == (
+        ("AGENTS.md", "names `pytest -q`, and the sandbox has no `pytest`"),
+        ("package.json", "names `npm test --silent`, and the sandbox has no `npm`"),
+    )
+
+
+def test_a_model_answer_with_an_unresolvable_runner_is_not_a_gate(
+    tmp_path: pathlib.Path, jail_bin: pathlib.Path
+) -> None:
+    """The model tier's answer is judged like a manifest's."""
+    (jail_bin / "npm").unlink()
+    (tmp_path / "package.json").write_text('{"scripts": {"check": "x"}}', encoding="utf-8")
+    got = verify_infer.infer_verify_command(tmp_path, "", llm_call=lambda _ctx: '["npm", "test"]')
+    assert (got.argv, got.source) == ((), "none")
+    assert [source for source, _ in got.passed_over] == ["the reviewer model"]
+
+
+def test_a_runner_given_as_a_path_is_not_judged_by_the_jail_path(
+    tmp_path: pathlib.Path, jail_bin: pathlib.Path
+) -> None:
+    """A first word with a slash resolves against the workspace, so the PATH rule leaves it."""
+    (jail_bin / "python3").unlink()
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    venv_py = tmp_path / ".venv" / "bin" / "python"
+    venv_py.parent.mkdir(parents=True)
+    venv_py.write_text("", encoding="utf-8")
+    got = verify_infer.infer_verify_command(tmp_path, "")
+    assert got.argv == (".venv/bin/python", "-m", "pytest", "-q")
+    assert got.passed_over == ()
 
 
 def test_gather_repo_manifests_clips_and_includes(tmp_path: pathlib.Path) -> None:
@@ -251,3 +311,62 @@ def test_a_comment_mark_inside_an_escaped_quote_stays() -> None:
     assert verify_infer.line_to_argv('pytest -k "a \\" # b"') == ("pytest", "-k", 'a " # b')
     assert verify_infer.line_to_argv("pytest -q  # the fast suite") == ("pytest", "-q")
     assert verify_infer.line_to_argv("pytest -k 'a # b'") == ("pytest", "-k", "a # b")
+
+
+_AGENTS_SETUP = """\
+# Agents
+
+## Setup command
+
+Builds the environment a fresh worktree lacks:
+
+```bash
+$ uv sync --offline  # the cache is warm
+```
+
+## Verify command
+
+```bash
+uv run ruff check && \\
+  uv run pytest
+```
+"""
+
+
+def test_agents_md_setup_block_is_read_as_the_verify_block_is() -> None:
+    """A `## Setup command` fence nothing read left a new worktree with no environment."""
+    assert verify_infer.setup_from_agents_md(_AGENTS_SETUP) == ("uv", "sync", "--offline")
+    assert verify_infer.verify_from_agents_md(_AGENTS_SETUP) == (
+        "sh",
+        "-c",
+        "uv run ruff check && uv run pytest",
+    )
+
+
+def test_agents_md_setup_block_wraps_a_pipeline_and_ignores_other_headings() -> None:
+    """The setup fence takes the verify fence's shell handling; a verify fence is no setup."""
+    chained = "## setup command\n```sh\npython3 -m venv .venv\n.venv/bin/pip install -e .\n```\n"
+    assert verify_infer.setup_from_agents_md(chained) == (
+        "sh",
+        "-c",
+        "python3 -m venv .venv && .venv/bin/pip install -e .",
+    )
+    assert verify_infer.setup_from_agents_md("## Verify command\n```\npytest -q\n```\n") is None
+    assert verify_infer.setup_from_agents_md("## Setup\n```\nmake deps\n```\n") is None
+    assert verify_infer.setup_from_agents_md("") is None
+
+
+def test_a_shell_line_is_judged_by_its_first_program(
+    tmp_path: pathlib.Path, jail_bin: pathlib.Path
+) -> None:
+    """A wrapped line's `sh` always resolves; the program it runs first must too.
+
+    `nosuchtool check && nosuchtool test` was adopted as a gate the sandbox could never run.
+    """
+    assert verify_infer.command_head(("sh", "-c", "FOO=1 nosuchtool test")) == "nosuchtool"
+    assert verify_infer.command_head(("sh", "-c", "pytest -q && ruff check")) == "pytest"
+    assert verify_infer.command_head(("pytest", "-q")) == "pytest"
+    assert verify_infer.command_head(("sh", "-c")) == "sh"
+    for md in ("Verify: nosuchtool check && nosuchtool test", "Verify: FOO=1 nosuchtool test"):
+        got = verify_infer.infer_verify_command(tmp_path, md)
+        assert got.argv == () and "no `nosuchtool`" in got.passed_over[0][1], md

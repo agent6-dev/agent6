@@ -100,8 +100,7 @@ def test_manifest_linked_out_of_the_repo_stays_out_of_the_inference_context(
     context = verify_infer.gather_repo_manifests(repo, "")
     assert _MARKER not in context and "module inside" in context
     # The `test:` target is the outside file's, so the Makefile signal does not match.
-    found = verify_infer.verify_from_repo_signals(repo)
-    assert found is not None and found[1] == "pyproject"
+    assert verify_infer.repo_signals(repo)[0][1] == "pyproject"
 
 
 def test_init_infers_no_verify_command_from_a_hidden_agents_md(

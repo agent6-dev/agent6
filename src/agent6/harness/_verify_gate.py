@@ -300,11 +300,14 @@ class VerifyGate:
             llm_call=None,
             hide=self.hide,
         )
-        if inferred is None or inferred.argv in state.verify.unadoptable:
+        if not inferred.argv:
+            # A runner the jail cannot execute stays unadopted: the run settles, no abort.
+            if passed := verify_infer.passed_over_text(inferred):
+                self.log(f"LOOP: verify inference declined; {passed}")
+            return
+        if inferred.argv in state.verify.unadoptable:
             return
         if not self.dispatcher.adopt_verify_command(inferred.argv):
-            # A runner the jail cannot execute stays unadopted: the run settles, no abort.
-            self.log(f"LOOP: verify inference declined; {inferred.argv[0]} not on the jail PATH")
             return
         state.verify.adopted = inferred.argv
         cmd = " ".join(inferred.argv)

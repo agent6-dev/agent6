@@ -5,10 +5,11 @@
 Cheapest source first: the `## Verify command` or `## Test` section of
 AGENTS.md or an inline `Verify:` line, then the repo's own files (a root
 `verify.sh`, package.json, a Makefile target, a Python manifest, Cargo, go.mod,
-loose tests), then an injected LLM call over the manifests and AGENTS.md. The
-result lives in memory for one run and is never written to config. A shell
-pipeline is wrapped as `sh -c`; `sh` and operator tools such as `uv` resolve on
-the jail PATH.
+loose tests), then an injected LLM call over the manifests and AGENTS.md. A
+command whose first word is a bare name the jail PATH lacks is passed over for
+the next source, and the reason is kept. The result lives in memory for one run
+and is never written to config. A shell pipeline is wrapped as `sh -c`; `sh` and
+operator tools such as `uv` resolve on the jail PATH.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import shlex
 from collections.abc import Callable
 
 from agent6 import git_ops
+from agent6.sandbox import tool_paths
 from agent6.tools import _path_safety
 
 # A command line with any of these, or a leading assignment, is shell, wrapped in `sh -c`.
@@ -40,12 +42,20 @@ class InferredVerify:
     """A verify command inferred for one run, never persisted.
 
     Attributes:
-        argv: The command.
-        source: Where it came from: "agents_md", "package.json", "Makefile:test", "llm", ...
+        argv: The command; empty when nothing was inferred.
+        source: Where it came from: "agents_md", "package.json", "Makefile:test", "llm", ...;
+            "none" when nothing was inferred.
+        passed_over: Each source inference did not use, with the reason, as (source, why).
     """
 
     argv: tuple[str, ...]
     source: str
+    passed_over: tuple[tuple[str, str], ...] = ()
+
+
+def passed_over_text(inferred: InferredVerify) -> str:
+    """Return what inference passed over and why, as one clause; "" when it used everything."""
+    return "; ".join(f"{source} {why}" for source, why in inferred.passed_over)
 
 
 def _strip_comment(line: str) -> str:
@@ -64,6 +74,24 @@ def _strip_comment(line: str) -> str:
         elif ch == "#" and (i == 0 or line[i - 1].isspace()):
             return line[:i].rstrip()
     return line
+
+
+def command_head(argv: tuple[str, ...]) -> str:
+    """Return the program a command runs first: past a `sh -c` wrap and `NAME=value` words.
+
+    A pipeline or an `&&` chain is judged by its first program, the one that must exist for
+    any of it to run; a line whose first word is a shell builtin reads as that builtin.
+    """
+    words = argv
+    if argv[:2] == ("sh", "-c"):
+        try:
+            words = tuple(shlex.split(argv[2])) if len(argv) > 2 else ()
+        except ValueError:
+            words = ()
+    for word in words:
+        if not _ASSIGNMENT.match(word):
+            return word
+    return argv[0] if argv else ""
 
 
 def line_to_argv(cmd: str) -> tuple[str, ...] | None:
@@ -228,8 +256,8 @@ def _loose_python_tests(repo_root: pathlib.Path) -> Signal | None:
     return None
 
 
-def verify_from_repo_signals(repo_root: pathlib.Path, hide: tuple[str, ...] = ()) -> Signal | None:
-    """Return the first repo signal that matches, or None."""
+def repo_signals(repo_root: pathlib.Path, hide: tuple[str, ...] = ()) -> list[Signal]:
+    """Return every repo signal that matches, the preferred one first."""
     # Loose Python tests last, so a Rust or Go repo's `tests/` dir never reads as pytest.
     probes = (
         _verify_sh,
@@ -240,7 +268,7 @@ def verify_from_repo_signals(repo_root: pathlib.Path, hide: tuple[str, ...] = ()
         _go,
         _loose_python_tests,
     )
-    return next((found for probe in probes if (found := probe(repo_root))), None)
+    return [found for probe in probes if (found := probe(repo_root))]
 
 
 # The files fed to the LLM.
@@ -315,8 +343,10 @@ def infer_verify_command(
     *,
     llm_call: Callable[[str], str] | None = None,
     hide: tuple[str, ...] = (),
-) -> InferredVerify | None:
+) -> InferredVerify:
     """Infer a verify command: AGENTS.md, then the repo's files, then the LLM.
+
+    A candidate whose first word does not resolve in the jail is passed over for the next.
 
     Args:
         repo_root: The repository.
@@ -326,14 +356,24 @@ def infer_verify_command(
         hide: `[sandbox].hide_paths`, which no manifest is read from.
 
     Returns:
-        The command and its source, or None when unknown.
+        The command, its source and what was passed over; an empty command when unknown.
     """
+    passed: list[tuple[str, str]] = []
+
+    def runnable(argv: tuple[str, ...], named_by: str) -> bool:
+        head = command_head(argv)
+        if tool_paths.jail_resolves(head):
+            return True
+        why = f"names `{shlex.join(argv)}`, and the sandbox has no `{head}`"
+        passed.append((named_by, why))
+        return False
+
     argv = verify_from_agents_md(agents_md)
-    if argv is not None:
-        return InferredVerify(argv=argv, source="agents_md")
-    sig = verify_from_repo_signals(repo_root, hide)
-    if sig is not None:
-        return InferredVerify(argv=sig[0], source=sig[1])
+    if argv is not None and runnable(argv, "AGENTS.md"):
+        return InferredVerify(argv, "agents_md", tuple(passed))
+    for argv, source in repo_signals(repo_root, hide):
+        if runnable(argv, source):
+            return InferredVerify(argv, source, tuple(passed))
     readable = bool(agents_md.strip()) or any(
         (repo_root / name).is_file() for name in _MANIFEST_FILES
     )
@@ -344,6 +384,6 @@ def infer_verify_command(
         except Exception:  # never fails the run
             raw = ""
         argv = parse_llm_verify(raw)
-        if argv is not None:
-            return InferredVerify(argv=argv, source="llm")
-    return None
+        if argv is not None and runnable(argv, "the reviewer model"):
+            return InferredVerify(argv, "llm", tuple(passed))
+    return InferredVerify((), "none", tuple(passed))

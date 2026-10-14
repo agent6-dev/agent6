@@ -95,11 +95,31 @@ def test_init_infers_verify_for_python_repo(tmp_path: pathlib.Path) -> None:
     assert cfg.harness.verify_command == ("python3", "-m", "pytest", "-q")
 
 
+@pytest.mark.usefixtures("jail_bin")
 def test_init_verify_from_agents_md(tmp_path: pathlib.Path) -> None:
     repo = _repo(tmp_path)
     (repo / "AGENTS.md").write_text("## Verify\n\n```bash\nmake test\n```\n", encoding="utf-8")
     init.init_workspace(repo)
     assert layer.load_effective(repo).config.harness.verify_command == ("make", "test")
+
+
+def test_init_saves_no_gate_the_sandbox_cannot_run(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], jail_bin: pathlib.Path
+) -> None:
+    """A manifest whose runner the sandbox lacks is named with the reason, and nothing is saved.
+
+    Saved unchecked, `npm test` aborted every later run at its first gate.
+    """
+    (jail_bin / "npm").unlink()
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text('{"scripts": {"test": "node --test"}}', encoding="utf-8")
+    init.init_workspace(repo)
+    assert layer.load_effective(repo).config.harness.verify_command == ()
+    out = capsys.readouterr().out
+    assert (
+        "passed over: package.json names `npm test --silent`, and the sandbox has no `npm`" in out
+    )
+    assert "no verify command could be inferred" in out
 
 
 def test_init_detects_ecosystem_for_gitignore(tmp_path: pathlib.Path) -> None:

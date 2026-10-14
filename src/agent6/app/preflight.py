@@ -612,20 +612,21 @@ def infer_verify_if_unset(
         return resp.text or ""
 
     inferred = verify_infer.infer_verify_command(cwd, agents_md, llm_call=_llm_call, hide=hide)
-    if inferred is None:
-        events.emit("loop.verify_inferred", command=[], source="none")
+    events.emit("loop.verify_inferred", command=list(inferred.argv), source=inferred.source)
+    passed = verify_infer.passed_over_text(inferred)
+    passed_line = f"\n         passed over: {passed}" if passed else ""
+    if not inferred.argv:
         if mode == "run":
             reporter.note(
                 "no verify_command set and none could be inferred; running"
                 " gateless\n         (per-step commits, no green gate). If the run"
                 " creates a recognizable project, a verify\n         command is"
-                " adopted mid-run; pin one with harness.verify_command."
+                f" adopted mid-run; pin one with harness.verify_command.{passed_line}"
             )
         return cfg
-    events.emit("loop.verify_inferred", command=list(inferred.argv), source=inferred.source)
     reporter.note(
         f"verify_command not set; inferred from {inferred.source}:"
         f" {shlex.join(inferred.argv)}\n         (this run only; pin it with"
-        " harness.verify_command in your per-repo config)"
+        f" harness.verify_command in your per-repo config){passed_line}"
     )
     return cfg.with_verify_command(inferred.argv)

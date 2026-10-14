@@ -729,13 +729,17 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
         inferred = verify_infer.infer_verify_command(
             cwd, verify_infer.read_agents_md(cwd, hide), llm_call=None, hide=hide
         )
-        origin = "AGENTS.md" if inferred and inferred.source == "agents_md" else ""
+        origin = "AGENTS.md" if inferred.source == "agents_md" else inferred.source
+        passed = verify_infer.passed_over_text(inferred)
+        nothing = "nothing here a run can use" if passed else "nothing here to infer from"
         detail = (
-            f"unset; a run here infers {shlex.join(inferred.argv)} from {origin or inferred.source}"
-            if inferred is not None
-            else "unset; nothing here to infer from (a run asks the reviewer model over the"
+            f"unset; a run here infers {shlex.join(inferred.argv)} from {origin}"
+            if inferred.argv
+            else f"unset; {nothing} (a run asks the reviewer model over the"
             " manifests, else goes gateless)"
         )
+        if passed:
+            detail += f"; passed over: {passed}"
         print(f"  {detail}")
         return [_DoctorCheck(name="verify.argv", status="INFO", detail=detail)]
     head = argv[0]

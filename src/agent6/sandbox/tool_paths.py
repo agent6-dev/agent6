@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import pathlib
+import shutil
 
 from agent6 import paths
 
@@ -160,3 +161,11 @@ def jail_search_path() -> str:
     Advisory only; the jail recomputes its own per call.
     """
     return operator_tool_paths()[0]
+
+
+def jail_resolves(exe: str) -> bool:
+    """Return whether a command's first word resolves in the jail, by the same advisory probe.
+
+    A word with a slash is a path, resolved against the mounted workspace, and counts as found.
+    """
+    return "/" in exe or shutil.which(exe, path=jail_search_path()) is not None

@@ -168,7 +168,9 @@ def _setup_verify_command(
     inferred = verify_infer.infer_verify_command(
         root, verify_infer.read_agents_md(root, hide), hide=hide
     )
-    if inferred is None:
+    if passed := verify_infer.passed_over_text(inferred):
+        print(f"  passed over: {passed}")
+    if not inferred.argv:
         print(
             "  no verify command could be inferred from this repo. `agent6 run`"
             " will infer one (LLM) at run time or run gateless; set"
@@ -201,7 +203,7 @@ def _setup_agents_md(
     inferred = verify_infer.infer_verify_command(
         root, verify_infer.read_agents_md(root, hide), hide=hide
     )
-    verify_hint = " ".join(inferred.argv) if inferred else "# EDIT: your verify pipeline"
+    verify_hint = " ".join(inferred.argv) or "# EDIT: your verify pipeline"
     if not agents.is_file():
         if ask("Create a starter AGENTS.md (how agents should work in this repo)?", True):
             agents.write_text(_STARTER_AGENTS_MD.format(verify=verify_hint), encoding="utf-8")

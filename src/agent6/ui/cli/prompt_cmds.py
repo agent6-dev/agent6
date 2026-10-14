@@ -42,7 +42,7 @@ def _cmd_prompt_show(
         inferred = verify_infer.infer_verify_command(
             cwd, verify_infer.read_agents_md(cwd, hide), llm_call=None, hide=hide
         )
-        if inferred is not None:
+        if inferred.argv:
             cfg = cfg.with_verify_command(inferred.argv)
     exchange = model_exchange_for(cfg, cwd, mode, state_dir=paths.state_dir(cwd))
     print(_as_json(exchange) if as_json else _as_text(exchange))

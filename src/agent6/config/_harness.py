@@ -93,8 +93,9 @@ class HarnessConfig(pydantic.BaseModel):
             'as `["sh", "-c", "a && b"]`). Set it to pin the gate. Unset: each run infers one and '
             "prints it (an AGENTS.md `## Verify command` block first, then a root `verify.sh`, "
             "the repo's manifest files, and loose `test_*.py` files, then a model call over "
-            "those manifests); a run that can infer none starts gateless and adopts the first "
-            "gate a recognizable project created mid-run yields."
+            "those manifests; a command whose first word the sandbox PATH lacks is passed over, "
+            "and the run names it); a run that can infer none starts gateless and adopts the "
+            "first gate a recognizable project created mid-run yields."
         ),
     )
     verify_infer: bool = pydantic.Field(
