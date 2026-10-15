@@ -66,6 +66,12 @@ def warn_sandbox_gaps(
             "surrounding environment, a container for instance, bounds what a command "
             "can reach. Use 'auto', 'strict', or 'hardened' for kernel-enforced "
             "isolation."
+            + (
+                " git control is not enforced without the sandbox; "
+                "a commit the model runs lands on the checkout's branch."
+                if cfg.git.control == "agent6"
+                else ""
+            )
         )
     elif isolation == "strict" and env.landlock_abi < 1:
         reporter.warn(
@@ -459,6 +465,11 @@ def config_refusal(
     Returns:
         The refusal, or None when every check passes.
     """
+    if isolation == "none" and cfg.git.control == "agent6" and "git.control" in explicit_leaves:
+        return (
+            'git.control = "agent6" cannot be enforced without the sandbox; '
+            'keep the sandbox or set git.control = "model".'
+        )
     checks: tuple[Callable[[], str | None], ...] = (
         # The HOME check first: `check_hide_paths_support` builds the policy, which creates HOME.
         lambda: check_jail_home(

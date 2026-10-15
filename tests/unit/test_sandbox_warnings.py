@@ -14,7 +14,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import confine
-from agent6.config import Config, SandboxConfig
+from agent6.config import Config, GitConfig, SandboxConfig
 from agent6.sandbox import detect, tool_paths
 from agent6.tools import policy
 
@@ -35,6 +35,77 @@ def _cfg(tool_network: str = "auto", isolation: str = "auto") -> Config:
     return Config(
         sandbox=SandboxConfig(network=tool_network, isolation=isolation)  # type: ignore[arg-type]
     )
+
+
+@pytest.mark.parametrize("control", ["agent6", "model"])
+def test_git_control_without_sandbox(
+    control: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Unconfined git control warns by default, refuses when explicit, and permits model control."""
+    cfg = Config(
+        git=GitConfig(control=control),  # type: ignore[arg-type]
+        sandbox=SandboxConfig(protect_git=control != "model"),
+    )
+    assert confine.config_refusal(cfg, "none", tmp_path) is None
+    refusal = confine.config_refusal(
+        cfg, "none", tmp_path, explicit_leaves=frozenset({"git.control"})
+    )
+    if control == "agent6":
+        assert refusal is not None
+        assert 'git.control = "agent6"' in refusal
+        assert 'keep the sandbox or set git.control = "model"' in refusal
+    else:
+        assert refusal is None
+    confine.warn_sandbox_gaps("none", _env(4), cfg, root=tmp_path)
+    err = capsys.readouterr().err
+    warning = (
+        "git control is not enforced without the sandbox; "
+        "a commit the model runs lands on the checkout's branch."
+    )
+    assert err.count(warning) == (1 if control == "agent6" else 0)
+
+
+def test_the_run_entry_refuses_explicit_git_control_before_it_warns(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under `none`, explicit git control exits 2 with no warning first; the default warns and runs.
+
+    `select_isolation` is the preflight run, resume, fork and `machine run` share.
+    """
+    from agent6.app import _session, _setup, preflight
+    from agent6.app import reporter as app_reporter
+
+    def _detected() -> detect.Environment:
+        return _env(4)
+
+    def _confirmed(_level: str, _cfg: Config) -> bool:
+        return True
+
+    monkeypatch.setattr(_setup, "detect_env", _detected)
+    cfg = _cfg(isolation="none")
+    said: list[str] = []
+    reporter = app_reporter.Reporter(out=said.append, err=said.append)
+    with pytest.raises(preflight.SessionRefusedError) as info:
+        _session.select_isolation(
+            cfg,
+            cwd=tmp_path,
+            confirm_unconfined=_confirmed,
+            reporter=reporter,
+            explicit_leaves=frozenset({"git.control"}),
+        )
+    assert info.value.rc == 2
+    assert said == [
+        'REFUSING: git.control = "agent6" cannot be enforced without the sandbox; '
+        'keep the sandbox or set git.control = "model".'
+    ]
+    said.clear()
+    selected = _session.select_isolation(
+        cfg, cwd=tmp_path, confirm_unconfined=_confirmed, reporter=reporter
+    )
+    assert selected == "none"
+    (line,) = (line for line in said if "git control is not enforced without the sandbox" in line)
+    assert line.startswith("[agent6] WARNING: running UNSANDBOXED")
+    assert not any(line.startswith("REFUSING") for line in said)
 
 
 def test_none_warns_unsandboxed(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

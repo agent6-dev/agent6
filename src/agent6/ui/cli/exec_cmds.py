@@ -236,13 +236,13 @@ def exec_new(
     try:
         env = _setup.detect_env()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
-        confine.warn_sandbox_gaps(isolation, env, cfg, root=cwd)
         refusal = confine.check_network_support(cfg, isolation) or confine.config_refusal(
             cfg, isolation, cwd, explicit_leaves=explicit_leaves
         )
         if refusal is not None:
             _common.refuse(refusal)
             return 2
+        confine.warn_sandbox_gaps(isolation, env, cfg, root=cwd)
         if not argv:
             argv = (resolve_shell(),)
             _common.note(f"{argv[0]} in a fresh sandbox, isolation {isolation}.")

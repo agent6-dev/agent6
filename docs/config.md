@@ -235,6 +235,8 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 | `run_repo_hooks` | `false` | Run the repo's own `.git/hooks/*` during agent6's git operations. `false` skips them: a repo hook is repo-controlled code that would run on the host. `core.fsmonitor` and `diff.external` are always neutralized. |
 | `run_repo_filters` | `false` | Honor the repo's content drivers (`filter.<name>.clean/smudge/process`, `merge.<name>.driver`) during agent6's git operations. `false` neutralizes each by name: a driver defined in `.git/config` is repo-controlled code that would run on the host at every commit. `true` is what Git LFS needs (its clean/smudge filters are these drivers). |
 
+`git.control = "agent6"` is enforced by the sandbox; without it, an explicit setting refuses to run and the default warns that a commit the model runs lands on the checkout's branch.
+
 ### `[git.commit]`
 
 | Field | Default | Meaning |
