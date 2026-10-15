@@ -206,7 +206,7 @@ def resolve_configs(
     cwd: pathlib.Path,
     env: detect.Environment,
     *,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
     disable_sandbox: bool = False,
     auto_approve: bool = False,
     no_commands: bool = False,
@@ -220,7 +220,7 @@ def resolve_configs(
         spec: The machine.
         cwd: The repository whose config layers apply.
         env: The detected host environment.
-        config_path: The `--config FILE` layer, part of the operator's ceiling.
+        config_paths: The `--config FILE` layers, part of the operator's ceiling.
         disable_sandbox: The invocation's `--dangerously-disable-sandbox`.
         auto_approve: The invocation's `--auto-approve`.
         no_commands: The invocation's `--no-commands`.
@@ -240,7 +240,7 @@ def resolve_configs(
             disable_sandbox=disable_sandbox, auto_approve=auto_approve, no_commands=no_commands
         )
 
-    operator_eff = layer.load_effective(cwd, config_path)
+    operator_eff = layer.load_effective(cwd, config_paths)
     operator = operator_eff.config
     operator_isolation = detect.resolve_isolation(with_flags(operator).sandbox.isolation, env)
 
@@ -249,7 +249,7 @@ def resolve_configs(
     ) -> tuple[StateConfig, dict[str, str]]:
         try:
             eff = layer.load_effective_with_overlay(
-                cwd, spec.config, explicit_path=config_path, state_overlay=state_overlay
+                cwd, spec.config, explicit_paths=config_paths, state_overlay=state_overlay
             )
         except ConfigError as exc:
             raise ConfigError(f"{where}: {exc}") from exc

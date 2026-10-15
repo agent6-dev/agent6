@@ -677,12 +677,12 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self,
         agent6_dir: pathlib.Path,
         repo_cwd: pathlib.Path,
-        config_path: pathlib.Path | None = None,
+        config_paths: tuple[pathlib.Path, ...] = (),
     ) -> None:
         super().__init__()
         self.agent6_dir = agent6_dir  # the per-repo state dir; drafts live under it
         self.repo_cwd = repo_cwd
-        self.config_path = config_path
+        self.config_paths = config_paths
         self._machines: list[listing.MachineRow] = []
 
     def compose(self) -> textual_app.ComposeResult:
@@ -818,7 +818,7 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             instance: The instance dir the child claims.
         """
         err = spawn.spawn_and_confirm(
-            [*spawn.agent6_argv(self.config_path), "machine", "run", str(path)],
+            [*spawn.agent6_argv(self.config_paths), "machine", "run", str(path)],
             self.repo_cwd,
             started=lambda pid: process.read_worker_pid(instance) == pid,
         )
@@ -873,7 +873,7 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             task: What the machine should do.
         """
         draft_dir, error = spawn.spawn_and_locate(
-            [*spawn.agent6_argv(self.config_path), "machine", "create", "--", task],
+            [*spawn.agent6_argv(self.config_paths), "machine", "create", "--", task],
             self.repo_cwd,
             before=set(_list_drafts(self.agent6_dir)),
             list_dirs=lambda: _list_drafts(self.agent6_dir),

@@ -26,9 +26,9 @@ def _repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pa
 
 
 def _prompt_show(
-    capsys: pytest.CaptureFixture[str], config_path: pathlib.Path | None = None
+    capsys: pytest.CaptureFixture[str], config_paths: tuple[pathlib.Path, ...] = ()
 ) -> str:
-    assert prompt_cmds._cmd_prompt_show(config_path, mode="run") == 0
+    assert prompt_cmds._cmd_prompt_show(config_paths, mode="run") == 0
     return capsys.readouterr().out
 
 
@@ -92,7 +92,7 @@ def test_agents_md_linked_into_a_hidden_path_stays_out_of_the_prompt(
     (repo / "AGENTS.md").symlink_to(target)
     cfg = tmp_path / "c.toml"
     cfg.write_text(f'[sandbox]\nhide_paths = ["{repo / "private"}"]\n', encoding="utf-8")
-    assert _MARKER not in _prompt_show(capsys, cfg)
+    assert _MARKER not in _prompt_show(capsys, (cfg,))
     hide = (str(repo / "private"),)
     assert verify_infer.read_agents_md(repo, hide) == ""
 
@@ -142,7 +142,7 @@ def test_init_infers_no_verify_command_from_a_hidden_agents_md(
         asked.append(question)
         return False
 
-    init._setup_verify_command(repo, ecosystem="", ask=ask, config_path=cfg)
+    init._setup_verify_command(repo, ecosystem="", ask=ask, config_paths=(cfg,))
     assert _MARKER not in "".join(asked) + capsys.readouterr().out
 
 

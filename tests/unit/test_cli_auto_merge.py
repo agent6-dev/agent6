@@ -86,7 +86,7 @@ def test_auto_merge_squashes_and_lands_on_base(
         ],
         run_branch="agent6/run-AM1111",
     )
-    cfg = layer.load_effective(tmp_path, None).config
+    cfg = layer.load_effective(tmp_path, ()).config
     finmod.finalize_auto_merge(
         tmp_path,
         layout=sessions_layout.SessionLayout(paths.state_dir(tmp_path), "run-AM1111"),
@@ -124,7 +124,7 @@ def test_auto_merge_refuses_a_manifest_with_no_base_sha(
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest["base_sha"] = ""
     layout.manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
-    cfg = layer.load_effective(tmp_path, None).config
+    cfg = layer.load_effective(tmp_path, ()).config
     finmod.finalize_auto_merge(tmp_path, layout=layout, cfg=cfg, reporter=reporter.STDIO_REPORTER)
     assert _git(tmp_path, "rev-parse", "main") == base
     captured = capsys.readouterr()
@@ -147,7 +147,7 @@ def test_auto_merge_lands_the_hidden_chain_ref(
     _git(tmp_path, "checkout", "-q", "--detach")
     _git(tmp_path, "branch", "-D", "agent6/run-AMREF1")  # only the chain ref remains
     _git(tmp_path, "checkout", "-q", "main")
-    cfg = layer.load_effective(tmp_path, None).config
+    cfg = layer.load_effective(tmp_path, ()).config
     git2 = cfg.git.model_copy(update={"auto_merge": True})
     finmod.finalize_auto_merge(
         tmp_path,
@@ -174,7 +174,7 @@ def test_auto_merge_noop_without_run_branch(
         commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
         run_branch=None,  # branch_per_run was off
     )
-    cfg = layer.load_effective(tmp_path, None).config
+    cfg = layer.load_effective(tmp_path, ()).config
     # On main (no run branch); the helper must no-op without crashing.
     _git(tmp_path, "checkout", "-q", "main")
     finmod.finalize_auto_merge(
@@ -201,7 +201,7 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "base edits the same file")
     diverged = _git(tmp_path, "rev-parse", "HEAD")
-    cfg = layer.load_effective(tmp_path, None).config
+    cfg = layer.load_effective(tmp_path, ()).config
     finmod.finalize_auto_merge(
         tmp_path,
         layout=sessions_layout.SessionLayout(paths.state_dir(tmp_path), "run-AM3333"),
@@ -230,7 +230,7 @@ def test_auto_merge_skips_when_base_branch_is_gone(
     # operator deleted the base branch mid-run (detach first; -D refuses on HEAD)
     _git(tmp_path, "checkout", "-q", "--detach")
     _git(tmp_path, "branch", "-D", "main")
-    cfg = layer.load_effective(tmp_path, None).config
+    cfg = layer.load_effective(tmp_path, ()).config
     finmod.finalize_auto_merge(
         tmp_path,
         layout=sessions_layout.SessionLayout(paths.state_dir(tmp_path), "run-GONE11"),
@@ -257,7 +257,7 @@ def test_auto_prune_deletes_reachable_merge_branch(
         commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
         run_branch="agent6/run-AP1111",
     )
-    cfg = layer.load_effective(tmp_path, None).config
+    cfg = layer.load_effective(tmp_path, ()).config
     git2 = cfg.git.model_copy(
         update={"auto_merge": True, "auto_prune": True, "merge_strategy": "merge"}
     )
@@ -283,7 +283,7 @@ def test_auto_prune_follows_a_recorded_noop_merge(
         run_branch="agent6/run-AP3333",
     )
     _git(tmp_path, "update-ref", "refs/heads/main", "agent6/run-AP3333")  # main has it already
-    cfg = layer.load_effective(tmp_path, None).config
+    cfg = layer.load_effective(tmp_path, ()).config
     git2 = cfg.git.model_copy(
         update={"auto_merge": True, "auto_prune": True, "merge_strategy": "squash"}
     )
@@ -308,7 +308,7 @@ def test_auto_prune_keeps_squash_branch(
         commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
         run_branch="agent6/run-AP2222",
     )
-    cfg = layer.load_effective(tmp_path, None).config
+    cfg = layer.load_effective(tmp_path, ()).config
     git2 = cfg.git.model_copy(
         update={"auto_merge": True, "auto_prune": True, "merge_strategy": "squash"}
     )

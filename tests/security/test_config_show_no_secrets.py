@@ -48,7 +48,7 @@ def test_config_show_prints_no_secret_values(
     config_home: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     for as_json in (False, True):
-        assert config_cmds._cmd_config_show(None, as_json=as_json) == 0
+        assert config_cmds._cmd_config_show((), as_json=as_json) == 0
         out = capsys.readouterr().out
         assert _SECRET not in out
         assert _ENV_SECRET not in out

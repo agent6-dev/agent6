@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`--config FILE` parses in both positions for run, plan, resume and check.
 
-A subparser `default=None` would clobber the top-level form back to None.
+The top-level flag and a verb's flag land in separate dests; `config_files` merges them once.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import pathlib
 
 import pytest
 
+from agent6.ui.cli import _common
 from agent6.ui.cli import parser as cli_parser
 
 
@@ -31,12 +32,12 @@ from agent6.ui.cli import parser as cli_parser
 )
 def test_config_flag_parses_in_both_positions(argv: list[str]) -> None:
     args = cli_parser.build_parser().parse_args(cli_parser._inject_default_verb(argv))
-    assert args.config == pathlib.Path("c.toml")
+    assert cli_parser.config_files(args) == (pathlib.Path("c.toml"),)
 
 
-def test_config_defaults_to_none_when_absent() -> None:
+def test_config_defaults_to_no_files_when_absent() -> None:
     args = cli_parser.build_parser().parse_args(["run", "task"])
-    assert args.config is None
+    assert cli_parser.config_files(args) == ()
 
 
 def test_run_decompose_flag_defaults_off_and_parses() -> None:
@@ -210,3 +211,72 @@ def test_a_bare_group_runs_its_listing(argv: list[str], dest: str, verb: str) ->
     """A bare group runs its listing; a key after `config` is a `show` of that key."""
     args = cli_parser.build_parser().parse_args(cli_parser._inject_default_verb(argv))
     assert getattr(args, dest) == verb
+
+
+def test_a_repeated_config_keeps_every_file_in_order() -> None:
+    """Two `--config` values parse to both paths in command-line order, not the last one."""
+    args = cli_parser.build_parser().parse_args(
+        ["--config", "a.toml", "--config", "b.toml", "config", "show"]
+    )
+    assert cli_parser.config_files(args) == (pathlib.Path("a.toml"), pathlib.Path("b.toml"))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["run", "task"],
+        ["plan", "task"],
+        # Nested groups: the leaf verb sits two levels down.
+        ["plan", "run", "task"],
+        ["ask", "query", "why?"],
+        ["mcp", "serve"],
+    ],
+)
+def test_config_files_on_both_sides_keep_order(command: list[str]) -> None:
+    """A `--config` after the leaf verb follows the root's files; a nested group is no different."""
+    argv = ["--config", "a.toml", *command, "--config", "b.toml"]
+    args = cli_parser.build_parser().parse_args(cli_parser._inject_default_verb(argv))
+    assert cli_parser.config_files(args) == (pathlib.Path("a.toml"), pathlib.Path("b.toml"))
+
+
+def test_config_files_after_the_verb_keep_their_order() -> None:
+    """`run task --config a --config b` keeps a before b: later files win, so order is the fact."""
+    args = cli_parser.build_parser().parse_args(
+        ["run", "task", "--config", "a.toml", "--config", "b.toml"]
+    )
+    assert cli_parser.config_files(args) == (pathlib.Path("a.toml"), pathlib.Path("b.toml"))
+
+
+def test_a_path_given_twice_is_kept_twice() -> None:
+    """A repeated path is not deduplicated: the parser reports what was typed."""
+    args = cli_parser.build_parser().parse_args(
+        ["--config", "a.toml", "run", "task", "--config", "a.toml"]
+    )
+    assert cli_parser.config_files(args) == (pathlib.Path("a.toml"), pathlib.Path("a.toml"))
+
+
+def test_a_leaf_without_the_flag_keeps_what_a_group_collected() -> None:
+    """A group verb's `--config` survives its leaf: the leaf dest is SUPPRESS, not None.
+
+    argparse copies a nested verb's whole namespace upward, so a `default=None` leaf would
+    write None over the group's list. No agent6 group parser carries the flag today, so the
+    shape is built here through the real `_add_config_flag`.
+    """
+    root = argparse.ArgumentParser(prog="x")
+    root.add_argument("--config", action="append", type=pathlib.Path, default=None)
+    group = root.add_subparsers(dest="command", required=True).add_parser("group")
+    _common._add_config_flag(group)
+    leaf = group.add_subparsers(dest="verb", required=True).add_parser("leaf")
+    _common._add_config_flag(leaf)
+    args = root.parse_args(["--config", "a.toml", "group", "--config", "b.toml", "leaf"])
+    assert cli_parser.config_files(args) == (pathlib.Path("a.toml"), pathlib.Path("b.toml"))
+
+
+def test_command_index_skips_every_config_value() -> None:
+    """Repeated `--config FILE` and `--config=FILE` are all skipped on the way to the verb."""
+    assert (
+        cli_parser._command_index(
+            ["--config", "a.toml", "--config=b.toml", "--config", "c.toml", "plan"]
+        )
+        == 5
+    )

@@ -252,7 +252,7 @@ def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = 
 
 def load_session_config(
     cwd: pathlib.Path,
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     *,
     mode: str,
     preset: str = "",
@@ -264,7 +264,7 @@ def load_session_config(
 
     Args:
         cwd: The workspace.
-        config_path: An explicit config file, else the effective one.
+        config_paths: The `--config` files the effective config is read under.
         mode: The session mode.
         preset: The preset to apply.
         budget_overrides: The `--max-*` flags.
@@ -277,7 +277,7 @@ def load_session_config(
     Raises:
         ConfigError: The layers do not load, a flag fails validation, or the role cannot run.
     """
-    effective = layer.load_effective(cwd, config_path, preset=preset)
+    effective = layer.load_effective(cwd, config_paths, preset=preset)
     cfg = effective.config
     apply_git_ops_policy(cfg)
     if budget_overrides is not None:

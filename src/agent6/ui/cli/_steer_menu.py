@@ -76,17 +76,17 @@ def _without_btw() -> dict[str, str]:
     return {cmd: help_ for cmd, help_ in MENU_COMMANDS.items() if cmd != "/btw"}
 
 
-def skill_menu_table(config_path: pathlib.Path | None = None) -> dict[str, tuple[str, str]]:
+def skill_menu_table(config_paths: tuple[pathlib.Path, ...] = ()) -> dict[str, tuple[str, str]]:
     """Return `/name` to (description, SKILL.md text) for the enabled skills.
 
     A built-in command wins a name collision. A broken config or store degrades to
     no skill commands, loudly.
 
     Args:
-        config_path: The invocation's `--config`.
+        config_paths: The invocation's `--config`.
     """
     try:
-        cfg = layer.load_effective(pathlib.Path.cwd(), config_path).config
+        cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
         resolved = agent6_skills.operator_skills(
             cfg.skills.enabled,
             cfg.skills.extra_dirs,
@@ -278,7 +278,7 @@ def pause_menu(
     *,
     input_fn: Callable[[str], str] | None = None,
     btw_runner: BtwRunner | None = None,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> str | None:
     """Run the pause menu until a line ends it.
 
@@ -288,13 +288,13 @@ def pause_menu(
         session_dir: The run's dir.
         input_fn: Reads one line for a prompt; the terminal's reader when None.
         btw_runner: Starts a btw; None withholds `/btw`.
-        config_path: The invocation's `--config`.
+        config_paths: The invocation's `--config`.
 
     Returns:
         The steer action: "" or None continues, "abort" stops, "exit" stops and leaves,
         "detach" backgrounds, anything else is the instruction sent verbatim.
     """
-    skills = skill_menu_table(config_path)
+    skills = skill_menu_table(config_paths)
     # A surface that cannot spawn a sibling session never offers `/btw`.
     offered = MENU_COMMANDS if btw_runner is not None else _without_btw()
     if input_fn is None:
@@ -381,7 +381,7 @@ def pause_line(
     session_dir: pathlib.Path,
     *,
     btw_runner: BtwRunner | None = None,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> str | None:
     """Return the plain prompt's answer for one line; a line that printed continues the run.
 
@@ -389,12 +389,12 @@ def pause_line(
         line: The typed line; None on EOF continues.
         session_dir: The run's dir.
         btw_runner: Starts a btw; None withholds `/btw`.
-        config_path: The invocation's `--config`.
+        config_paths: The invocation's `--config`.
 
     Returns:
         The steer action, as `pause_menu` returns it.
     """
     if line is None:
         return None
-    answer = _answer_line(line, session_dir, btw_runner, skill_menu_table(config_path))
+    answer = _answer_line(line, session_dir, btw_runner, skill_menu_table(config_paths))
     return "" if isinstance(answer, _Again) else answer

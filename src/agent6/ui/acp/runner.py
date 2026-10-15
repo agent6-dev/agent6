@@ -243,11 +243,11 @@ class RunBridge:
 
     Attributes:
         server: The connection.
-        config_path: The `--config FILE` overlay every session load threads.
+        config_paths: The `--config FILE` layers every session load threads.
     """
 
     server: acp_server.ACPServer
-    config_path: pathlib.Path | None = None
+    config_paths: tuple[pathlib.Path, ...] = ()
     # One run at a time: the chdir in `_run` is process-global.
     _runs: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _running: acp_session.Session | None = None  # the turn holding `_runs`, named to a queued one
@@ -255,8 +255,7 @@ class RunBridge:
     _asked: int = 0
 
     def __post_init__(self) -> None:
-        if self.config_path is not None:
-            self.config_path = self.config_path.resolve()
+        self.config_paths = tuple(path.resolve() for path in self.config_paths)
 
     def sessions(self) -> acp_session.Sessions:
         """Return the session table wired to this bridge."""
@@ -366,7 +365,7 @@ class RunBridge:
             capabilities=self.server.client_capabilities or frontend.FrontendCapabilities(),
             agent6_exe=spawn.agent6_exe,
             spawn_detached_resume=lambda cwd, sid, flags: spawn.spawn_detached_resume(
-                cwd, sid, config_path=self.config_path, flags=flags
+                cwd, sid, config_paths=self.config_paths, flags=flags
             ),
         )
 
@@ -503,7 +502,7 @@ class RunBridge:
             if resuming:
                 # The prompt is the resumed run's first steering instruction.
                 code = resume.resume_task(
-                    self.config_path,
+                    self.config_paths,
                     session.session_id,
                     frontend=self._frontend(session, announced),
                     force=False,
@@ -513,7 +512,7 @@ class RunBridge:
                 )
             else:
                 effective = _setup.load_session_config(
-                    session.cwd, self.config_path, mode=acp_session.ACP_MODE
+                    session.cwd, self.config_paths, mode=acp_session.ACP_MODE
                 )
                 code = app_run.run_task(
                     effective.config,
@@ -521,7 +520,7 @@ class RunBridge:
                     frontend=self._frontend(session, announced),
                     started_at=started_at,
                     session_id=session.session_id,
-                    config_path=self.config_path,
+                    config_paths=self.config_paths,
                     explicit_leaves=effective.explicit_leaves,
                     reporter=reporter,
                 )
@@ -644,14 +643,14 @@ def serve_acp(
     stdin: BinaryIO | None = None,
     stdout: BinaryIO | None = None,
     *,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Speak ACP on the process's stdio until the editor closes it.
 
     Args:
         stdin: The client's requests; None is the process's stdin.
         stdout: The replies; None is the process's stdout.
-        config_path: The `--config FILE` overlay, or None.
+        config_paths: The `--config FILE` layers in command-line order.
 
     Returns:
         The exit code, 0.
@@ -660,6 +659,6 @@ def serve_acp(
         stdin=stdin if stdin is not None else sys.stdin.buffer,
         stdout=stdout if stdout is not None else sys.stdout.buffer,
     )
-    server.sessions = RunBridge(server=server, config_path=config_path).sessions()
+    server.sessions = RunBridge(server=server, config_paths=config_paths).sessions()
     server.serve()
     return 0

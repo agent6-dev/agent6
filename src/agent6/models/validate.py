@@ -285,7 +285,7 @@ def refusal_message(v: ModelValidation, *, directive: bool) -> str:
 def directive_model_refusal(
     cwd: pathlib.Path,
     segments: Sequence[agent6_directive.Segment],
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
     *,
     preset: str = "",
     model: str = "",
@@ -295,7 +295,7 @@ def directive_model_refusal(
     Args:
         cwd: The repo.
         segments: The directive's segments.
-        config_path: An explicit config file, or None.
+        config_paths: The `--config` files in command-line order.
         preset: The new run's preset override, so validation uses the child's worker route.
         model: The new run's model override, likewise.
 
@@ -304,7 +304,7 @@ def directive_model_refusal(
         or there is no cache to check against (the lane's own preflight warns).
     """
     try:
-        cfg = layer.load_effective(cwd, config_path, preset=preset).config
+        cfg = layer.load_effective(cwd, config_paths, preset=preset).config
         if model:
             cfg = cfg.with_model_route("worker", cfg.model_route("worker", model))
     except ConfigError:

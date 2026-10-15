@@ -257,7 +257,7 @@ def test_failed_init_hands_new_scaffold_back_to_the_sudo_user(
         ecosystem: str,
         repo_config_target: pathlib.Path,
         interactive: bool,
-        config_path: pathlib.Path | None,
+        config_paths: tuple[pathlib.Path, ...],
     ) -> int:
         target.parent.mkdir()
         target.write_text("", encoding="utf-8")

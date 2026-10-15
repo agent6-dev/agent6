@@ -132,7 +132,7 @@ def _no_missing_keys(*_a: object, **_k: object) -> None:
 def _load_cfg() -> Config:
     from agent6.config import layer
 
-    return layer.load_effective(pathlib.Path.cwd(), None).config
+    return layer.load_effective(pathlib.Path.cwd(), ()).config
 
 
 def test_second_run_parks_with_the_verbatim_task(repo: pathlib.Path) -> None:
@@ -237,7 +237,7 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
     monkeypatch.setattr(app_run, "run_task", fake_run_task)
     monkeypatch.setattr(_setup, "check_provider_keys", _no_missing_keys)
     rc = resume_mod.resume_task(
-        None, "run-PARKED2", started_at=time.time(), frontend=mock.MagicMock(), force=False
+        (), "run-PARKED2", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
     assert rc == 0
     assert called == {"task": "do the saved thing", "session_id": "run-PARKED2", "mode": "run"}
@@ -279,7 +279,7 @@ def test_resume_refuses_while_another_run_drives_the_checkout(
     holder_fd = lock.acquire_repo_writer(state, repo, "run-A")
     try:
         rc = resume_mod.resume_task(
-            None, "run-B", started_at=time.time(), frontend=mock.MagicMock(), force=False
+            (), "run-B", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
     finally:
         lock.release_single_writer(holder_fd)
@@ -333,7 +333,7 @@ def test_hub_new_work_fans_out_while_checkout_busy(
         preset: str,
         model: str,
         spec: str,
-        config_path: object = None,
+        config_paths: object = (),
     ) -> tuple[pathlib.Path | None, str]:
         spawned.append(f"{spec}:{task}")
         return repo / "run-P", ""
@@ -343,7 +343,7 @@ def test_hub_new_work_fans_out_while_checkout_busy(
     def no_refusal(
         cwd: pathlib.Path,
         segments: object,
-        config_path: object = None,
+        config_paths: object = (),
         *,
         preset: str = "",
         model: str = "",
@@ -423,7 +423,7 @@ def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: pa
     )
     assert m.harness.preset == _load_cfg().preset  # the CONFIG preset ("")
     # The exact call resume makes with it must not blow up on a sandbox word.
-    layer.load_effective(repo, None, preset=m.harness.preset)
+    layer.load_effective(repo, (), preset=m.harness.preset)
 
 
 def test_parked_resume_passes_the_steer_through_to_run_task(
@@ -460,7 +460,7 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
     monkeypatch.setattr(app_run, "run_task", fake_run_task)
     monkeypatch.setattr(_setup, "check_provider_keys", _no_missing_keys)
     rc = resume_mod.resume_task(
-        None,
+        (),
         "run-PSTEER",
         started_at=time.time(),
         frontend=mock.MagicMock(),
@@ -597,7 +597,7 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     frontend.close_console_view.side_effect = OSError("resume teardown raise")
     with pytest.raises(OSError, match="resume teardown raise"):
         resume_mod.resume_task(
-            None, "run-RTD", started_at=time.time(), frontend=frontend, force=False
+            (), "run-RTD", started_at=time.time(), frontend=frontend, force=False
         )
 
     repo_fd = lock.acquire_repo_writer(state, repo, "run-NEXT")
@@ -654,7 +654,7 @@ def test_resume_drops_a_stop_written_between_executions(
     holder_fd = lock.acquire_repo_writer(state, repo, "run-A")
     try:
         rc = resume_mod.resume_task(
-            None, "run-C", started_at=time.time(), frontend=mock.MagicMock(), force=False
+            (), "run-C", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
     finally:
         lock.release_single_writer(holder_fd)
@@ -787,7 +787,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     monkeypatch.setattr(app__execution, "run_execution", _execution)
     monkeypatch.setattr(execution_mod, "run_execution", _execution)
     rc = resume_mod.resume_task(
-        None, "run-U", started_at=time.time(), frontend=mock.MagicMock(), force=False
+        (), "run-U", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
     assert rc == 0
     assert seen == [frozenset({"note.md"})]
@@ -807,7 +807,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     monkeypatch.setattr(git_ops, "untracked_paths", _broken)
     seen.clear()
     rc = resume_mod.resume_task(
-        None, "run-U", started_at=time.time(), frontend=mock.MagicMock(), force=False
+        (), "run-U", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
     assert rc == 2 and seen == []
 
@@ -884,7 +884,7 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
     monkeypatch.setattr(execution_mod, "run_execution", _execution)
 
     rc = resume_mod.resume_task(
-        None, "run-K", started_at=time.time(), frontend=mock.MagicMock(), force=False
+        (), "run-K", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
 
     assert rc == 0
@@ -958,7 +958,7 @@ def test_resume_of_a_fan_out_lane_from_the_origin_checkout_refuses(
     monkeypatch.setattr(execution_mod, "run_execution", _execution)
 
     rc = resume_mod.resume_task(
-        None, "fan-AAAA11-l1", started_at=time.time(), frontend=mock.MagicMock(), force=False
+        (), "fan-AAAA11-l1", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
 
     assert rc == 2 and ran == []

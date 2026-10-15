@@ -58,15 +58,22 @@ def _add_session_id(
 def _add_config_flag(parser: argparse.ArgumentParser) -> None:
     """Add a subcommand's `--config FILE`.
 
-    Its default is SUPPRESS, so the flag works before or after the subcommand and the
-    top-level flag supplies the default.
+    It lands in `config_after`, so a file typed after the verb never replaces the top-level
+    list; `parser.config_files` appends it at dispatch. The default is SUPPRESS because
+    argparse copies a nested verb's whole namespace upward: a leaf that saw no `--config`
+    would otherwise write None over what a parent collected.
     """
     parser.add_argument(
         "--config",
+        dest="config_after",
+        action="append",
         type=pathlib.Path,
         default=argparse.SUPPRESS,
         metavar="FILE",
-        help="Load FILE after the global and per-repository config files.",
+        help=(
+            "Load FILE after the global and per-repository config files."
+            " Repeatable; later files win."
+        ),
     )
 
 

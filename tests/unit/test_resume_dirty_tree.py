@@ -159,8 +159,8 @@ def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[sc
     asked: list[schema.UserQuestion] = []
     real = run.session_frontend
 
-    def _frontend(config_path: pathlib.Path | None = None) -> object:
-        fe = real(config_path)
+    def _frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> object:
+        fe = real(config_paths)
 
         def _questioner(_sd: pathlib.Path) -> object:
             def _ask(

@@ -528,7 +528,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
         steer: str = "",
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> str:
         spawned.append(steer)
         return ""
@@ -758,7 +758,7 @@ def test_undo_hands_the_page_the_rewind_notice(
         return "fork-BBBB22", "again"
 
     monkeypatch.setattr(undo, "undo_fork", _fake_undo_fork)
-    payload, err = actions.undo_session(tmp_path, "done-AAAA11", tmp_path / "custom.toml")
+    payload, err = actions.undo_session(tmp_path, "done-AAAA11", (tmp_path / "custom.toml",))
     assert err == "" and payload is not None
     assert payload["new_session_id"] == "fork-BBBB22" and payload["undone_text"] == "again"
     assert payload["notice"].startswith("put 1 path(s) back to turn 1")

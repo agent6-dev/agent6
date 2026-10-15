@@ -242,7 +242,7 @@ class _DoctorCheck:
     detail: str
 
 
-def _cmd_check(config_path: pathlib.Path | None, *, section: str) -> int:
+def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
     """Run the selected pre-flight sections and print a summary.
 
     Nothing writes to the repo: MCP servers start as a run starts them, with the
@@ -250,7 +250,7 @@ def _cmd_check(config_path: pathlib.Path | None, *, section: str) -> int:
     is the provider's model listing, refreshed for pricing and never fatal.
 
     Args:
-        config_path: The invocation's `--config`.
+        config_paths: The invocation's `--config`.
         section: The section to run, or "all".
 
     Returns:
@@ -265,7 +265,7 @@ def _cmd_check(config_path: pathlib.Path | None, *, section: str) -> int:
     explicit_leaves: frozenset[str] = frozenset()
     load_error: str | None = None
     try:
-        effective = layer.load_effective(pathlib.Path.cwd(), config_path)
+        effective = layer.load_effective(pathlib.Path.cwd(), config_paths)
         cfg, explicit_leaves = effective.config, effective.explicit_leaves
     except (ConfigError, OSError) as exc:
         load_error = str(exc)

@@ -46,7 +46,7 @@ def test_config_path_stamps_the_argv_head(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "ask", "why?", config_path=tmp_path / "c.toml")
+    spawn.spawn_new_work(tmp_path, "ask", "why?", config_paths=(tmp_path / "c.toml",))
     assert captured[-1][1:] == ["--config", str(tmp_path / "c.toml"), "ask", "--", "why?"]
 
 
@@ -284,7 +284,7 @@ def test_parallel_partial_spawn_failure_surfaces(
         preset: str,
         model: str,
         spec: str,
-        config_path: object = None,
+        config_paths: object = (),
     ) -> tuple[pathlib.Path | None, str]:
         if "task B" in task:
             return None, "boom"
@@ -295,12 +295,12 @@ def test_parallel_partial_spawn_failure_surfaces(
     def no_refusal(
         cwd: pathlib.Path,
         segments: object,
-        config_path: object = None,
+        config_paths: object = (),
         *,
         preset: str = "",
         model: str = "",
     ) -> None:
-        del cwd, segments, config_path, preset, model
+        del cwd, segments, config_paths, preset, model
 
     monkeypatch.setattr(validate, "directive_model_refusal", no_refusal)
     session_dir, err = spawn.spawn_new_work(

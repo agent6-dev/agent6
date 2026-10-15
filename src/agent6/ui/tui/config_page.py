@@ -196,10 +196,12 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
     HELP_TITLE: ClassVar = "agent6 config — keys & actions"
     HELP_HINTS: ClassVar = ("Enter edits the selected setting",)
 
-    def __init__(self, repo_root: pathlib.Path, config_path: pathlib.Path | None = None) -> None:
+    def __init__(
+        self, repo_root: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
+    ) -> None:
         super().__init__()
         self.repo_root = repo_root
-        self.config_path = config_path
+        self.config_paths = config_paths
         self._eff: layer.EffectiveConfig | None = None
         self._view: config_view.ConfigView | None = None
         self._table_rows: dict[
@@ -244,7 +246,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
 
     def _rebuild_view(self) -> None:
         """Load the effective config and build the view over it."""
-        eff = layer.load_effective(self.repo_root, self.config_path)
+        eff = layer.load_effective(self.repo_root, self.config_paths)
         self._eff = eff
         self._view = config_view.build_config_view(
             eff, resolved=confine.resolved_config_values(eff.config)

@@ -247,7 +247,7 @@ def test_a_composer_command_cannot_be_a_fresh_runs_task(
     from agent6.config import layer
 
     rc = run.run_task(
-        layer.load_effective(pathlib.Path.cwd(), None).config,
+        layer.load_effective(pathlib.Path.cwd(), ()).config,
         "/task fix the parser",
         started_at=time.time(),
         frontend=mock.MagicMock(),

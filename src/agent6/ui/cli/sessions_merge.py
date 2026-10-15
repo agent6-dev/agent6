@@ -84,7 +84,7 @@ def _plan_merge(  # noqa: PLR0911
     into: str | None,
     strategy: str | None,
     *,
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
 ) -> _MergePlan | int:
     """Resolve and validate everything a merge needs, without touching the repo.
 
@@ -93,7 +93,7 @@ def _plan_merge(  # noqa: PLR0911
         session_id: The run, or "" for the newest.
         into: The target branch; None takes the branch the run was cut from.
         strategy: The merge strategy; None takes `git.merge_strategy`.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The plan, or the exit code of a printed refusal or an already-pruned merge.
@@ -136,7 +136,7 @@ def _plan_merge(  # noqa: PLR0911
         )
         return 2
     try:
-        cfg = layer.load_effective(cwd, config_path).config
+        cfg = layer.load_effective(cwd, config_paths).config
     except ConfigError as exc:
         _common.error(f"{exc}")
         return 2
@@ -223,7 +223,7 @@ def _cmd_merge(
     strategy: str | None,
     into: str | None,
     message: str | None,
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
 ) -> int:
     """Land a run's work on a target branch with the chosen strategy.
 
@@ -235,13 +235,13 @@ def _cmd_merge(
         strategy: The merge strategy; None takes `git.merge_strategy`.
         into: The target branch; None takes the branch the run was cut from.
         message: The merge commit message; None takes the default.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code: 0 landed or nothing to land, 1 a conflict, 2 a refusal.
     """
     cwd = pathlib.Path.cwd()
-    plan = _plan_merge(cwd, session_id, into, strategy, config_path=config_path)
+    plan = _plan_merge(cwd, session_id, into, strategy, config_paths=config_paths)
     if isinstance(plan, int):
         return plan
     if not git_ops.list_run_commits(cwd, plan.base_sha, plan.run_branch):
@@ -435,7 +435,9 @@ def _prune_branch(
     return False
 
 
-def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | None = None) -> int:
+def _cmd_prune(
+    *, delete_squashed: bool = False, config_paths: tuple[pathlib.Path, ...] = ()
+) -> int:
     """Delete what `git branch -d` can safely remove, and sweep the merged clones and worktrees.
 
     Run branches reachable-merged into HEAD go; squash-merged and unmerged ones are
@@ -449,7 +451,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | Non
 
     Args:
         delete_squashed: Force-delete proven squash merges.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code; 2 when git refuses.
@@ -494,7 +496,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | Non
             merged_kept += 1
     # Chain refs are pruned whether or not a run branch survives: `branch_per_run` off has none.
     refs_deleted, refs_kept = _prune_chain_refs(cwd, repo_state, delete_squashed=delete_squashed)
-    clones_note, swept_any = _sweep_workdirs(cwd, repo_state, config_path)
+    clones_note, swept_any = _sweep_workdirs(cwd, repo_state, config_paths)
     if not branches and not (refs_deleted or refs_kept or swept_any):
         print("[agent6] nothing to prune: no agent6/* run branches, no chain refs.")
         return 0
@@ -521,7 +523,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | Non
 
 
 def _sweep_workdirs(
-    cwd: pathlib.Path, state: pathlib.Path, config_path: pathlib.Path | None
+    cwd: pathlib.Path, state: pathlib.Path, config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[str, bool]:
     """Sweep the fan-out clones and fork worktrees under `[parallel].workdir`.
 
@@ -530,13 +532,13 @@ def _sweep_workdirs(
     Args:
         cwd: The repo.
         state: The repo's state dir.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The summary-line note, and whether anything was swept or kept.
     """
     try:
-        cfg = layer.load_effective(cwd, config_path).config
+        cfg = layer.load_effective(cwd, config_paths).config
     except ConfigError as exc:
         print(f"[agent6] workdir sweep skipped (config unreadable: {exc})", file=sys.stderr)
         return "", False

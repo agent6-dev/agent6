@@ -364,7 +364,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     monkeypatch.setattr(app__execution, "run_execution", _execution)
     assert (
         resume.resume_task(
-            None, "crashed-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
+            (), "crashed-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
         == 0
     )
@@ -450,7 +450,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     frontend = dataclasses.replace(cli_run.session_frontend(), confirm_unconfined_autorun=_yes)
     with pytest.raises(_Stop):
         resume.resume_task(
-            None,
+            (),
             "withheld-AAAA11",
             started_at=time.time(),
             frontend=frontend,
@@ -898,7 +898,7 @@ def test_a_resumes_key_check_precedes_isolation(
     monkeypatch.setattr(app__session, "select_isolation", _isolation)
     with pytest.raises(_Stop):
         resume.resume_task(
-            None, "order-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
+            (), "order-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
     assert seen == ["route_preflight", "select_isolation"]
 
@@ -978,7 +978,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
 
     monkeypatch.setattr(app__execution, "run_execution", _execution)
     rc = resume.resume_task(
-        None, "withheld-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
+        (), "withheld-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
     assert rc == 0
 

@@ -431,8 +431,8 @@ def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: path
         '[models.worker]\nprovider = "o"\nmodel = "claude-haiku-4-5"\n',
         encoding="utf-8",
     )
-    payload = model.config_payload(tmp_path, cfg)
-    eff = layer.load_effective(tmp_path, cfg)
+    payload = model.config_payload(tmp_path, (cfg,))
+    eff = layer.load_effective(tmp_path, (cfg,))
     resolved = registry.resolved_adaptive_values(eff.config)
     shown = json.loads(config_view.render_show(eff, as_json=True, resolved=resolved))
     for key in ("prompt.decompose", "context.drop_at_chars", "context.summarise_at_chars"):
@@ -450,7 +450,7 @@ def test_config_payload_carries_round_trippable_editor_values(tmp_path: pathlib.
         encoding="utf-8",
     )
 
-    payload = model.config_payload(tmp_path, cfg)
+    payload = model.config_payload(tmp_path, (cfg,))
 
     assert payload["harness.verify_command"]["input"] == '["uv", "run", "pytest"]'
     assert payload["skills.state"]["input"] == '{ alpha = "always" }'

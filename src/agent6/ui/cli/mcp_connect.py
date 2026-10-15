@@ -166,7 +166,7 @@ def cmd_mcp_connect(
     token_env: str,
     pass_env: list[str],
     to_repo: bool,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Prove the server answers, then write it into config.
 
@@ -177,12 +177,12 @@ def cmd_mcp_connect(
         token_env: The variable holding the bearer token.
         pass_env: The variables the server receives by name.
         to_repo: Write to the repo config instead of the global one.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code; 2 on a refusal or a server that gave no proof.
     """
-    effective = config_layer.load_effective(pathlib.Path.cwd(), config_path)
+    effective = config_layer.load_effective(pathlib.Path.cwd(), config_paths)
     cfg = effective.config
     refusal = _refuse_bad_flags(
         name=name, command=command, url=url, token_env=token_env, pass_env=pass_env, cfg=cfg
@@ -325,7 +325,7 @@ def _enable_command(to_repo: bool) -> str:
 
 
 def cmd_mcp_remove(
-    name: str, *, to_repo: bool = False, config_path: pathlib.Path | None = None
+    name: str, *, to_repo: bool = False, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> int:
     """Drop `[mcp.servers.<name>]` from the global (or `--repo`) config.
 
@@ -336,12 +336,12 @@ def cmd_mcp_remove(
     Args:
         name: The server name.
         to_repo: Edit the repo config instead of the global one.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code; 2 when the layer does not hold the entry.
     """
-    effective = config_layer.load_effective(pathlib.Path.cwd(), config_path)
+    effective = config_layer.load_effective(pathlib.Path.cwd(), config_paths)
     holders = _layers_holding(effective, name)
     target, other = ("repo", "global") if to_repo else ("global", "repo")
     if target not in holders:
@@ -371,7 +371,7 @@ def cmd_mcp_remove(
     return 0
 
 
-def cmd_mcp_list(config_path: pathlib.Path | None = None) -> int:
+def cmd_mcp_list(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     """Print the configured servers and how each is reached.
 
     Reads config only: it never starts anything, so it says nothing about whether a server
@@ -380,7 +380,7 @@ def cmd_mcp_list(config_path: pathlib.Path | None = None) -> int:
     Returns:
         The exit code, 0.
     """
-    effective = config_layer.load_effective(pathlib.Path.cwd(), config_path)
+    effective = config_layer.load_effective(pathlib.Path.cwd(), config_paths)
     cfg = effective.config
     if not cfg.mcp.servers:
         print("no MCP servers configured. Add one with `agent6 mcp connect <name> ...`.")

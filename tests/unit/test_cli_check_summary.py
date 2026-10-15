@@ -259,7 +259,7 @@ def test_boundaries_fails_when_a_run_would_refuse_the_config(
     monkeypatch.setattr(detect, "degrade_reason", _no_degradation)
 
     rc = check_cmds._cmd_check(  # pyright: ignore[reportPrivateUsage]
-        config_path, section="boundaries"
+        (config_path,), section="boundaries"
     )
 
     out = capsys.readouterr().out

@@ -22,7 +22,7 @@ from agent6.ui.web import auth, run_web
 def _cmd_web(
     target: str,
     *,
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     host: str | None,
     port: int | None,
     allow_non_loopback: bool,
@@ -36,7 +36,7 @@ def _cmd_web(
 
     Args:
         target: The session or machine to open first.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         host: The `--host` override.
         port: The `--port` override.
         allow_non_loopback: The `--allow-non-loopback` opt-in.
@@ -45,7 +45,7 @@ def _cmd_web(
     Returns:
         The exit code; 2 for a bad port, an unapproved non-loopback host or a short secret.
     """
-    eff = layer.load_effective(pathlib.Path.cwd(), config_path)
+    eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
     web = eff.config.web
     eff_host = host if host is not None else web.host
     eff_port = port if port is not None else web.port
@@ -67,4 +67,6 @@ def _cmd_web(
     except auth.WebSecretError as exc:
         _common.refuse(str(exc))
         return 2
-    return run_web(target, host=eff_host, port=eff_port, secret=web_secret, config_path=config_path)
+    return run_web(
+        target, host=eff_host, port=eff_port, secret=web_secret, config_paths=config_paths
+    )

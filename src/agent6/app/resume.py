@@ -198,7 +198,7 @@ def execution_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> s
 
 
 def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume is refused, in preflight order
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     session_id: str,
     *,
     frontend: app_frontend.SessionFrontend,
@@ -219,7 +219,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     repository; a fork's execution drives the fork's own worktree.
 
     Args:
-        config_path: An explicit config file, or None for discovery.
+        config_paths: The `--config` files in command-line order; none means discovery alone.
         session_id: The session's id or prefix.
         frontend: The surface's seam: console, confirms, approvals, questions.
         force: Whether to resume onto a chain tip that diverged from the snapshot.
@@ -324,7 +324,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 # replay_preset: a config-selected preset re-resolves rather than ranking as a flag.
                 effective = _setup.load_session_config(
                     repo,
-                    config_path,
+                    config_paths,
                     mode=mode,
                     preset=preset or manifest.harness.replay_preset,
                     budget_overrides=budget_overrides,
@@ -345,7 +345,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 frontend=frontend,
                 started_at=started_at,
                 session_id=session_id,
-                config_path=config_path,
+                config_paths=config_paths,
                 mode=mode,
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
@@ -444,7 +444,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         try:
             effective = _setup.load_session_config(
                 repo,
-                config_path,
+                config_paths,
                 mode=mode,
                 preset=preset or manifest_preset,
                 budget_overrides=budget_overrides,
@@ -589,7 +589,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             # Lazy: app.fork imports this module.
             from agent6.app import undo  # noqa: PLC0415  # noqa: PLC0415
 
-            return undo.undo_fork(config_path, session_id, cwd=repo, reporter=reporter)
+            return undo.undo_fork(config_paths, session_id, cwd=repo, reporter=reporter)
 
         untracked_at_start = sessions_layout.read_untracked_at_start(layout.session_dir)
         outside: list[str] = []

@@ -459,9 +459,23 @@ def test_set_config_table_rejects_a_masked_invalid_leaf(repo: pathlib.Path) -> N
 def test_flag_layer_wins(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     flag = tmp_path / "flag.toml"
     flag.write_text('[sandbox]\nrun_commands = "no"\n', encoding="utf-8")
-    eff = layer.load_effective(repo, flag)
+    eff = layer.load_effective(repo, (flag,))
     assert eff.config.sandbox.run_commands == "no"
-    assert eff.sources["sandbox.run_commands"] == "flag"
+    assert eff.sources["sandbox.run_commands"] == f"flag ({flag})"
+
+
+def test_repeated_flag_layers_land_in_order(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """Both `--config` files land, the later wins a shared key, and each value names its file."""
+    first = tmp_path / "first.toml"
+    second = tmp_path / "second.toml"
+    first.write_text("[review]\nperiod = 7\n[budget]\nmax_usd = 2\n", encoding="utf-8")
+    second.write_text("[budget]\nmax_usd = 3\n", encoding="utf-8")
+    eff = layer.load_effective(repo, (first, second))
+    assert [lyr.path for lyr in eff.layers if lyr.name == "flag"] == [first, second]
+    assert eff.config.review.period == 7
+    assert eff.config.budget.max_usd == 3
+    assert eff.sources["review.period"] == f"flag ({first})"
+    assert eff.sources["budget.max_usd"] == f"flag ({second})"
 
 
 def test_overlay_is_highest_layer(repo: pathlib.Path) -> None:
@@ -639,7 +653,7 @@ def test_materialize_roundtrips_nested_objects_in_arrays(
 
 def test_missing_flag_file_errors(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
-        layer.load_effective(repo, tmp_path / "does-not-exist.toml")
+        layer.load_effective(repo, (tmp_path / "does-not-exist.toml",))
 
 
 def test_provenance_survives_a_format_changing_provider_replace(repo: pathlib.Path) -> None:
@@ -682,7 +696,7 @@ def test_profile_key_is_rejected_in_flag_and_machine_layers(
     explicit = tmp_path / "ci.toml"
     explicit.write_text('preset = "ultra"\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="preset"):
-        layer.load_effective(repo, explicit)
+        layer.load_effective(repo, (explicit,))
     with pytest.raises(ConfigError, match="preset"):
         layer.load_effective_with_overlay(repo, {"preset": "ultra"})
 
@@ -737,7 +751,7 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     calls = {"n": 0}
 
     def gated_load(
-        root: pathlib.Path, flag: pathlib.Path | None = None, *, preset: str = ""
+        root: pathlib.Path, flag: tuple[pathlib.Path, ...] = (), *, preset: str = ""
     ) -> object:
         calls["n"] += 1
         if calls["n"] == 1:  # A's revalidate: hold the transaction open

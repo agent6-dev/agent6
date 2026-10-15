@@ -138,7 +138,7 @@ def _cmd_watch(
     tui: bool = False,
     since: int = 0,
     raw: bool = False,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Follow a run directory read-only.
 
@@ -150,7 +150,7 @@ def _cmd_watch(
         tui: Open the dashboard.
         since: Replay this many event lines first; `--raw` only.
         raw: Tail the log lines.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code; 2 when the session cannot be resolved, 3 when the TUI cannot load.
@@ -182,11 +182,11 @@ def _cmd_watch(
             file=sys.stderr,
         )
         return 3
-    app.run_tui(target, config_path=config_path)
+    app.run_tui(target, config_paths=config_paths)
     return 0
 
 
-def _cmd_tui(config_path: pathlib.Path | None = None) -> int:
+def _cmd_tui(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     """Run the TUI hub (`agent6 tui`): browse runs and start new work.
 
     Loops between the home screen and the run view; opening a run watches it, then returns
@@ -210,10 +210,10 @@ def _cmd_tui(config_path: pathlib.Path | None = None) -> int:
     session_dir: pathlib.Path | None = None
     while True:
         # Esc in a run view reopens home, Run this plan hands the new run back, Ctrl+Q quits.
-        session_dir = session_dir or home.run_home(agent6_dir, cwd, config_path)
+        session_dir = session_dir or home.run_home(agent6_dir, cwd, config_paths)
         if session_dir is None:
             return 0
-        result = app.run_tui(session_dir, from_hub=True, config_path=config_path)
+        result = app.run_tui(session_dir, from_hub=True, config_paths=config_paths)
         if result.quit_hub:
             return 0
         session_dir = result.open_next

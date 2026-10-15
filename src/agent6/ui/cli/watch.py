@@ -91,7 +91,7 @@ def _cmd_watch_target(  # noqa: PLR0911
     json_out: bool,
     since: int | None,
     raw: bool,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Resolve a target to a run or a machine and follow or snapshot it.
 
@@ -101,7 +101,7 @@ def _cmd_watch_target(  # noqa: PLR0911
         json_out: Print one snapshot and exit.
         since: Replay from this event line; `--raw` only.
         raw: Tail the log lines instead of rendering the conversation.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code; 2 when the flags conflict or nothing matches.
@@ -126,7 +126,7 @@ def _cmd_watch_target(  # noqa: PLR0911
     if is_run:
         if not json_out:
             return plan_watch._cmd_watch(
-                target, tui=tui, since=since, raw=raw, config_path=config_path
+                target, tui=tui, since=since, raw=raw, config_paths=config_paths
             )
         layout = _common.resolve_target(target)
         if layout is None:

@@ -161,7 +161,7 @@ def test_undo_of_a_model_controlled_run_refuses_before_committing(
     (repo / "a.txt").write_text("two\n", encoding="utf-8")  # the model's own uncommitted edit
     said: list[str] = []
     got = undo.undo_fork(
-        None, "model-AAAA11", cwd=repo, reporter=reporter.Reporter(out=said.append, err=said.append)
+        (), "model-AAAA11", cwd=repo, reporter=reporter.Reporter(out=said.append, err=said.append)
     )
     assert got is None
     assert any("managed git itself" in s for s in said), said
@@ -180,7 +180,7 @@ def test_undo_puts_the_checkout_back_and_keeps_the_tree_as_it_stood(
     said: list[str] = []
 
     result = undo.undo_fork(
-        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+        (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
     )
 
     assert result is not None
@@ -221,7 +221,7 @@ def test_undo_of_a_finished_run_journals_its_undone_end(
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
-    result = undo.undo_fork(None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(print, print))
+    result = undo.undo_fork((), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(print, print))
 
     assert result is not None
     child, _text = result
@@ -259,7 +259,7 @@ def test_undo_puts_back_only_the_paths_the_run_changed(
     said: list[str] = []
 
     assert undo.undo_fork(
-        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+        (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
     )
     # The run's paths go back; an operator's edit since the end stays, on the run's paths too.
     assert (repo / "a.txt").read_text(encoding="utf-8") == "three\noperator note\n"
@@ -290,7 +290,7 @@ def test_an_undo_that_leaves_every_path_says_it_put_nothing_back(
     said: list[str] = []
 
     assert undo.undo_fork(
-        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+        (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
     )
     text = "\n".join(said)
     assert "nothing put back to turn 1" in text and "already matches" not in text
@@ -318,7 +318,7 @@ def test_undo_puts_back_a_path_git_quotes_or_reads_as_a_glob_and_only_it(
     said: list[str] = []
 
     assert undo.undo_fork(
-        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+        (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
     )
     assert not (repo / "café.txt").exists() and not (repo / "page[1].txt").exists()
     assert (repo / "page1.txt").read_text(encoding="utf-8") == "mine\n"
@@ -343,7 +343,7 @@ def test_undo_puts_back_a_name_git_quotes_and_prints_it_on_one_line(
     said: list[str] = []
 
     assert undo.undo_fork(
-        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+        (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
     )
     assert not (repo / quoted).exists() and not (repo / forged).exists()
     lines = "\n".join(said).splitlines()
@@ -366,7 +366,7 @@ def test_undo_of_a_run_whose_work_landed_refuses_and_names_the_merge(
     before = sorted(p.name for p in (layout.state_dir / "sessions" / "runs").iterdir())
 
     result = undo.undo_fork(
-        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+        (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
     )
 
     assert result is None
@@ -385,7 +385,7 @@ def test_undo_leaves_a_staged_copy_in_the_index_and_says_so(
     said: list[str] = []
 
     assert undo.undo_fork(
-        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+        (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
     )
     assert (repo / "a.txt").read_text(encoding="utf-8") == "one\n"
     assert _git(repo, "diff", "--cached", "--name-only") == "a.txt"
@@ -407,7 +407,7 @@ def test_undo_refuses_while_another_live_run_drives_the_checkout(
         fd = lock.acquire_repo_writer(state, repo, holder)
         try:
             result = undo.undo_fork(
-                None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+                (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
             )
         finally:
             lock.release_single_writer(fd)
@@ -459,7 +459,7 @@ def test_undo_of_a_live_plan_session_refuses(
         said: list[str] = []
 
         result = undo.undo_fork(
-            None, "plan-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+            (), "plan-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
         )
 
         assert result is None
@@ -485,7 +485,7 @@ def test_undo_from_the_live_session_itself_is_allowed(
     fd = lock.acquire_repo_writer(state, repo, "run-AAAA11")
     try:
         result = undo.undo_fork(
-            None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(print, print)
+            (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(print, print)
         )
     finally:
         lock.release_single_writer(fd)
@@ -509,7 +509,7 @@ def test_undo_of_a_fork_whose_worktree_is_gone_refuses_before_creating_anything(
     before = sorted(p.name for p in (state / "sessions" / "runs").iterdir())
 
     result = undo.undo_fork(
-        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+        (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
     )
 
     assert result is None
@@ -526,7 +526,7 @@ def test_undo_of_a_fork_whose_worktree_is_gone_refuses_before_creating_anything(
     said.clear()
     assert (
         undo.undo_fork(
-            None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+            (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
         )
         is None
     )
@@ -572,7 +572,7 @@ def test_undo_names_the_turn_every_other_surface_names(
     said: list[str] = []
 
     result = undo.undo_fork(
-        None, "fork-BBBB22", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+        (), "fork-BBBB22", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
     )
 
     assert result is not None
@@ -647,7 +647,7 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
     )
     _checkpoint(fork, 0, head_sha=c2, ops=2)  # the seed: the parent's turn-2 conversation
 
-    result = undo.undo_fork(None, "fork-BBBB22", cwd=repo, reporter=reporter.Reporter(print, print))
+    result = undo.undo_fork((), "fork-BBBB22", cwd=repo, reporter=reporter.Reporter(print, print))
 
     assert result is not None
     child, undone_text = result
@@ -673,7 +673,7 @@ def test_an_undo_fork_keeps_the_source_run_untracked_set(
     said: list[str] = []
 
     result = undo.undo_fork(
-        None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
+        (), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(said.append, said.append)
     )
 
     assert result is not None
@@ -703,7 +703,7 @@ def test_a_failed_rewind_still_journals_the_undone_end(
 
     monkeypatch.setattr(undo, "_rewind_checkout", _fails)
 
-    result = undo.undo_fork(None, "run-AAAA11", cwd=repo, reporter=reporter.Reporter(print, print))
+    result = undo.undo_fork((), "run-AAAA11", cwd=repo, reporter=reporter.Reporter(print, print))
 
     assert result is not None
     child, _text = result

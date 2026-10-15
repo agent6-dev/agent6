@@ -143,7 +143,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     *,
     output: pathlib.Path | None,
     max_attempts: int,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
     budget_overrides: _setup.BudgetOverrides | None = None,
 ) -> int:
     """Draft, validate and write a machine.
@@ -154,7 +154,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         output: Where to write the `.asm.toml`; None writes `<machine>.asm.toml` in cwd and
             refuses to overwrite anything.
         max_attempts: How many authoring attempts to make.
-        config_path: An explicit config file, else the effective one.
+        config_paths: The `--config` files the effective config is read under.
         budget_overrides: The `--max-*` flags, capping the attempts as they cap a run.
 
     Returns:
@@ -165,7 +165,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         return 2
     cwd = pathlib.Path.cwd()
     try:
-        eff = layer.load_effective(cwd, config_path)
+        eff = layer.load_effective(cwd, config_paths)
         cfg = eff.config
         if budget_overrides is not None:
             cfg = budget_overrides.apply(cfg)

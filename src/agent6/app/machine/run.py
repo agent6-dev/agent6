@@ -263,7 +263,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     path: pathlib.Path,
     reporter: app_reporter.Reporter,
     *,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
     exit_on_wait: bool = False,
     disable_sandbox: bool = False,
     auto_approve: bool = False,
@@ -274,7 +274,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     Args:
         path: The `.asm.toml`.
         reporter: The two output channels.
-        config_path: An explicit config file, part of the operator's ceiling.
+        config_paths: The `--config` files, part of the operator's ceiling.
         exit_on_wait: Return at the first wait state instead of blocking through it.
         disable_sandbox: Run unconfined.
         auto_approve: Approve every run_command in the agent states.
@@ -304,7 +304,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     agent_runner: Callable[[AgentRequest, pathlib.Path | None], AgentExecResult] | None = None
     env = _setup.detect_env()
     # The machine's own file and scripts are read-only in every jail: no state rewrites them.
-    protect_paths = _preflight.machine_protect_paths(path, cwd, config_path)
+    protect_paths = _preflight.machine_protect_paths(path, cwd, config_paths)
     # Every machine resolves its configs: a pure wait/branch machine still reads snapshot_keep.
     # The three flags travel in them, to each agent state as its overlay and resolved isolation.
     try:
@@ -312,7 +312,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             spec,
             cwd,
             env,
-            config_path=config_path,
+            config_paths=config_paths,
             disable_sandbox=disable_sandbox,
             auto_approve=auto_approve,
             no_commands=no_commands,
@@ -334,8 +334,8 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     ):
         # An unattended machine auto-denies every run_command under 'ask'.
         always = (
-            f'set sandbox.run_commands = "yes" in {config_path}'
-            if config_path is not None
+            f'set sandbox.run_commands = "yes" in {config_paths[-1]}'
+            if config_paths
             else "set `agent6 config set --repo sandbox.run_commands yes`"
         )
         reporter.note(

@@ -39,18 +39,17 @@ def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> st
 
 
 def machine_protect_paths(
-    machine_path: pathlib.Path, cwd: pathlib.Path, config_path: pathlib.Path | None = None
+    machine_path: pathlib.Path, cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[pathlib.Path, ...]:
-    """Return the machine file, its `scripts/` bundle and a `--config` file, read-only in jails.
+    """Return the machine file, its `scripts/` bundle and the `--config` files, read-only in jails.
 
-    The `--config` file is part of the operator's ceiling, so a state must not rewrite it.
+    The `--config` files are part of the operator's ceiling, so a state must not rewrite them.
     Only paths under the jail-mounted cwd are listed: a path outside it is not in the child's
     view.
     """
     cwd_r = cwd.resolve()
     out: list[pathlib.Path] = []
-    extra = (config_path,) if config_path is not None else ()
-    for p in (machine_path, machine_path.parent / "scripts", *extra):
+    for p in (machine_path, machine_path.parent / "scripts", *config_paths):
         rp = p.resolve()
         if rp.exists() and rp.is_relative_to(cwd_r):
             out.append(rp)

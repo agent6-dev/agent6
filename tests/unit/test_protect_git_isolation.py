@@ -112,7 +112,7 @@ def test_the_default_reaches_the_check_as_a_default(tmp_path: pathlib.Path) -> N
     """
     from agent6.config import layer
 
-    effective = layer.load_effective(tmp_path, None)
+    effective = layer.load_effective(tmp_path, ())
     assert effective.config.sandbox.protect_git is True
     assert effective.sources["sandbox.protect_git"] == "default"
     assert "sandbox.protect_git" not in effective.explicit_leaves

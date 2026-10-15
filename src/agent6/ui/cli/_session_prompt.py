@@ -52,7 +52,7 @@ def end_of_session_prompt(
     session_id: str,
     session_dir: pathlib.Path | None = None,
     ask: Callable[[str], str],
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
     budget_overrides: _setup.BudgetOverrides | None = None,
     sandbox_overrides: _setup.SandboxOverrides | None = None,
     model: str = "",
@@ -68,7 +68,7 @@ def end_of_session_prompt(
         session_id: The session.
         session_dir: The session dir; when given, `follow_up_on_offer` decides whether to ask.
         ask: Reads one answer for a prompt.
-        config_path: The invocation's `--config`.
+        config_paths: The invocation's `--config`.
         budget_overrides: The invocation's budget flags.
         sandbox_overrides: The invocation's sandbox flags.
         model: The invocation's `--model`.
@@ -99,7 +99,7 @@ def end_of_session_prompt(
             )
             continue
         rc = resume._cmd_resume(
-            config_path,
+            config_paths,
             session_id,
             force=False,
             steer=answer,

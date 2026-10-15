@@ -37,13 +37,15 @@ run_commands = "yes"
 
 
 class _Host(textual_app.App[None]):
-    def __init__(self, repo_root: pathlib.Path, config_path: pathlib.Path | None = None) -> None:
+    def __init__(
+        self, repo_root: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
+    ) -> None:
         super().__init__()
         self._repo = repo_root
-        self._config_path = config_path
+        self._config_paths = config_paths
 
     def on_mount(self) -> None:
-        self.push_screen(config_page.ConfigScreen(self._repo, self._config_path))
+        self.push_screen(config_page.ConfigScreen(self._repo, self._config_paths))
 
 
 @pytest.fixture
@@ -496,7 +498,7 @@ def test_list_setting_prefill_saves_back_unchanged(
             assert isinstance(app.screen, config_page.ConfigScreen)
 
     asyncio.run(scenario())
-    saved = layer.load_effective(repo_root, None).config.harness.verify_command
+    saved = layer.load_effective(repo_root, ()).config.harness.verify_command
     assert saved == ("uv", "run", "pytest")  # unchanged, not corrupted to a str
 
 
@@ -1292,7 +1294,7 @@ def test_unset_names_the_layer_instead_of_claiming_the_default(repo: pathlib.Pat
             assert isinstance(screen, config_page.ConfigScreen)
             setting = next(
                 s
-                for s in config_view.build_config_view(layer.load_effective(repo, None)).settings
+                for s in config_view.build_config_view(layer.load_effective(repo, ())).settings
                 if s.key == "sandbox.run_commands"
             )
             assert setting.source == "repo"
@@ -1325,7 +1327,7 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: pathlib.Path) 
             assert isinstance(screen, config_page.ConfigScreen)
             setting = next(
                 s
-                for s in config_view.build_config_view(layer.load_effective(repo, None)).settings
+                for s in config_view.build_config_view(layer.load_effective(repo, ())).settings
                 if s.key == "review.trigger"
             )
             assert setting.source == "preset" and setting.modified
@@ -1348,17 +1350,19 @@ def test_reset_on_a_flag_sourced_setting_names_the_flag_layer(
     overlay.write_text('[review]\ntrigger = "off"\n', encoding="utf-8")
 
     async def scenario() -> None:
-        app = _Host(repo, overlay)
+        app = _Host(repo, (overlay,))
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, config_page.ConfigScreen)
             setting = next(
                 s
-                for s in config_view.build_config_view(layer.load_effective(repo, overlay)).settings
+                for s in config_view.build_config_view(
+                    layer.load_effective(repo, (overlay,))
+                ).settings
                 if s.key == "review.trigger"
             )
-            assert setting.source == "flag" and setting.modified
+            assert setting.source == f"flag ({overlay})" and setting.modified
             screen._current_setting = lambda: setting  # type: ignore[method-assign]
             screen.action_reset()
             await pilot.pause()

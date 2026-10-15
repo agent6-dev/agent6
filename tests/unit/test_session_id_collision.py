@@ -60,7 +60,7 @@ def _no_keys(_cfg: Config) -> None:
 def _load_cfg() -> Config:
     from agent6.config import layer
 
-    return layer.load_effective(pathlib.Path.cwd(), None).config
+    return layer.load_effective(pathlib.Path.cwd(), ()).config
 
 
 def _strict(*_args: object, **_kwargs: object) -> str:

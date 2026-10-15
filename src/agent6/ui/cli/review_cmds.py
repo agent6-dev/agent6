@@ -354,24 +354,24 @@ def _reviewed_diff(
     return git, root, diff, label
 
 
-def _reviewer_config(config_path: pathlib.Path | None, model: str) -> Config:
+def _reviewer_config(config_paths: tuple[pathlib.Path, ...], model: str) -> Config:
     """Return the effective config with `--model` applied to the reviewer route.
 
     Args:
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         model: The `[provider/]model` value; "" leaves the route as configured.
 
     Raises:
         ConfigError: The value names no configured provider or no model.
     """
-    cfg = layer.load_effective(pathlib.Path.cwd(), config_path).config
+    cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
     if not model:
         return cfg
     return cfg.with_model_route("reviewer", cfg.model_route("reviewer", model))
 
 
 def _cmd_review(  # noqa: PLR0911
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     *,
     base: str,
     head: str,
@@ -386,7 +386,7 @@ def _cmd_review(  # noqa: PLR0911
     instead of the single freeform review.
 
     Args:
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         base: The base rev, or "" for the working tree.
         head: The head rev.
         paths: The pathspecs.
@@ -411,7 +411,7 @@ def _cmd_review(  # noqa: PLR0911
             file=sys.stderr,
         )
     try:
-        cfg = _reviewer_config(config_path, model)
+        cfg = _reviewer_config(config_paths, model)
     except ConfigError as exc:
         _common.error(str(exc))
         return 2

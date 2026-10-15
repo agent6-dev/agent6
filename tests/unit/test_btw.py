@@ -85,7 +85,7 @@ def test_a_btw_carries_the_run_s_config(tmp_path: pathlib.Path) -> None:
         cwd=tmp_path,
         launch=launch,
         list_asks=lambda: [d for d in asks.iterdir() if d.is_dir()],
-        config_path=tmp_path / "worker.toml",
+        config_paths=(tmp_path / "worker.toml",),
     )
     assert session is not None and err == ""
     assert launched[0][:3] == ["--config", str(tmp_path / "worker.toml"), "ask"]

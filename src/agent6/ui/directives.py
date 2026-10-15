@@ -35,23 +35,23 @@ class _Directive:
 
     parse: Callable[[str], str | None]
     empty: str
-    act: Callable[[pathlib.Path, str, pathlib.Path | None], tuple[bool, str]]
+    act: Callable[[pathlib.Path, str, tuple[pathlib.Path, ...]], tuple[bool, str]]
 
 
 def _btw(
-    session_dir: pathlib.Path, question: str, config_path: pathlib.Path | None
+    session_dir: pathlib.Path, question: str, config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[bool, str]:
     """Open a side question beside the run, on the front-end's config.
 
     Returns:
         Whether it opened, and what to say.
     """
-    opened, line = btw.open_btw(session_dir, question, config_path=config_path)
+    opened, line = btw.open_btw(session_dir, question, config_paths=config_paths)
     return opened, line.removeprefix("[agent6] ")
 
 
 def _task(
-    session_dir: pathlib.Path, text: str, _config_path: pathlib.Path | None
+    session_dir: pathlib.Path, text: str, _config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[bool, str]:
     """Queue work into the task graph.
 
@@ -63,7 +63,7 @@ def _task(
 
 
 def _standing(
-    session_dir: pathlib.Path, goal: str, _config_path: pathlib.Path | None
+    session_dir: pathlib.Path, goal: str, _config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[bool, str]:
     """Set the run's standing goal.
 
@@ -75,7 +75,7 @@ def _standing(
 
 
 def _retire(
-    session_dir: pathlib.Path, named: str, _config_path: pathlib.Path | None
+    session_dir: pathlib.Path, named: str, _config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[bool, str]:
     """Retire a task, by the id the task tree prints.
 
@@ -99,7 +99,7 @@ def _retire(
 
 
 def _compact(
-    session_dir: pathlib.Path, focus: str, _config_path: pathlib.Path | None
+    session_dir: pathlib.Path, focus: str, _config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[bool, str]:
     """Ask for a compaction before the next model call.
 
@@ -133,7 +133,7 @@ def submit_composer_line(
     text: str,
     *,
     now: bool = False,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Act on a composer line: a directive when it is one, else the steer it is.
 
@@ -141,12 +141,12 @@ def submit_composer_line(
         session_dir: The live session.
         text: The line.
         now: Force the urgency `/now` spells, for `agent6 steer --now`.
-        config_path: The front-end's `--config`, which a `/btw` asks on.
+        config_paths: The front-end's `--config`, which a `/btw` asks on.
 
     Returns:
         Whether it acted, and what to say.
     """
-    handled = act_on_directive(session_dir, text, config_path=config_path)
+    handled = act_on_directive(session_dir, text, config_paths=config_paths)
     if handled is not None:
         return handled
     urgent = agent6_directive.parse_now(text)
@@ -168,14 +168,14 @@ def submit_composer_line(
 
 
 def act_on_directive(
-    session_dir: pathlib.Path, text: str, *, config_path: pathlib.Path | None = None
+    session_dir: pathlib.Path, text: str, *, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str] | None:
     """Act on the line when it is a directive that works beside the run.
 
     Args:
         session_dir: The live session.
         text: The line.
-        config_path: The front-end's `--config`, which a `/btw` asks on.
+        config_paths: The front-end's `--config`, which a `/btw` asks on.
 
     Returns:
         Whether it acted and what to say, as bare prose; None for an ordinary steer.
@@ -186,5 +186,5 @@ def act_on_directive(
             continue
         if not arg and directive.empty:
             return False, directive.empty
-        return directive.act(session_dir, arg, config_path)
+        return directive.act(session_dir, arg, config_paths)
     return None

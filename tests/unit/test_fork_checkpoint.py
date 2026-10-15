@@ -362,7 +362,7 @@ def test_fork_preserves_source_run_mode(
     state = paths.state_dir(repo)
     _seed_source_run(state, "plan-src-AAAA11", head_sha=head, turns=(1, 2), mode="plan")
 
-    rc = fork._cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True)
+    rc = fork._cmd_fork((), "plan-src", new_session_id="plan-fork-BBBB22", no_run=True)
     assert rc == 0
 
     # The fork inherits mode="plan", so its dir belongs in plans/, not runs/.
@@ -383,7 +383,7 @@ def test_a_plan_fork_creates_no_git_refs(
     state = paths.state_dir(repo)
     _seed_source_run(state, "plan-src-AAAA11", head_sha=head, turns=(1,), mode="plan")
 
-    assert fork._cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "plan-src", new_session_id="plan-fork-BBBB22", no_run=True) == 0
 
     dst = sessions_layout.SessionLayout(
         state_dir=state, session_id="plan-fork-BBBB22", subdir=kinds.session_bucket("plan")
@@ -417,7 +417,7 @@ def test_fork_refuses_an_explicit_id_held_by_any_bucket(
     _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
     (state / "sessions" / "asks" / "taken-CCCC33").mkdir(parents=True)
 
-    rc = fork._cmd_fork(None, "src", new_session_id="taken-CCCC33", no_run=True)
+    rc = fork._cmd_fork((), "src", new_session_id="taken-CCCC33", no_run=True)
 
     assert rc == 2
     err = capsys.readouterr().err
@@ -435,7 +435,7 @@ def test_fork_preserves_source_run_profile(
     state = paths.state_dir(repo)
     _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1, 2), workflow_profile="paranoid")
 
-    rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
+    rc = fork._cmd_fork((), "src", new_session_id="child-BBBB22", no_run=True)
     assert rc == 0
 
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
@@ -466,7 +466,7 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     state = paths.state_dir(repo)
     _seed_source_run(state, "src-PROF11", head_sha=head, turns=(1,), workflow_profile="fast")
 
-    rc = fork._cmd_fork(None, "src-PROF11", new_session_id="child-PROF22", no_run=True)
+    rc = fork._cmd_fork((), "src-PROF11", new_session_id="child-PROF22", no_run=True)
     assert rc == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-PROF22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
@@ -490,7 +490,7 @@ def test_fork_inherits_the_caps_its_source_ran_under(
     manifest["budget"] = {"max_usd": 2.0, "max_tokens_fallback": None, "max_percent": 30.0}
     src.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    assert fork._cmd_fork(None, "src-CAPS11", new_session_id="child-CAPS22", no_run=True) == 0
+    assert fork._cmd_fork((), "src-CAPS11", new_session_id="child-CAPS22", no_run=True) == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-CAPS22")
     child = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert child["budget"] == manifest["budget"]
@@ -516,7 +516,7 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
         preset_from_flag=False,
     )
 
-    assert fork._cmd_fork(None, "src-CFG11", new_session_id="child-CFG22", no_run=True) == 0
+    assert fork._cmd_fork((), "src-CFG11", new_session_id="child-CFG22", no_run=True) == 0
     manifest = json.loads(
         sessions_layout.SessionLayout(
             state_dir=state, session_id="child-CFG22"
@@ -550,7 +550,7 @@ def test_fork_snapshots_the_dag_under_the_source_curator_lock(
             yield
 
     monkeypatch.setattr(storage, "flock", recording_flock)
-    rc = fork._cmd_fork(None, "src-LOCK11", new_session_id="child-LOCK22", no_run=True)
+    rc = fork._cmd_fork((), "src-LOCK11", new_session_id="child-LOCK22", no_run=True)
     assert rc == 0
     assert locked == [src.lock_path]  # the copy held the source curator lock
 
@@ -570,7 +570,7 @@ def test_fork_fails_loud_on_a_bad_source_manifest(
             src.manifest_path.unlink()
         else:
             src.manifest_path.write_text(bad, encoding="utf-8")
-        rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
+        rc = fork._cmd_fork((), "src", new_session_id="child-BBBB22", no_run=True)
         assert rc == 2, f"manifest shape {bad!r} must refuse the fork"
         assert not sessions_layout.SessionLayout(
             state_dir=state, session_id="child-BBBB22"
@@ -603,7 +603,7 @@ def test_fork_cleans_up_run_dir_when_branch_cut_fails(
     ).stdout.strip()
     sp.run(["git", "branch", "agent6/child-BBBB22", other], cwd=repo, check=True)
 
-    rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
+    rc = fork._cmd_fork((), "src", new_session_id="child-BBBB22", no_run=True)
     assert rc == 1
     assert not sessions_layout.SessionLayout(
         state_dir=state, session_id="child-BBBB22"
@@ -627,7 +627,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
         encoding="utf-8",
     )
 
-    rc = fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True)
+    rc = fork._cmd_fork((), "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True)
     assert rc == 0
 
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
@@ -711,7 +711,7 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
         json.dumps(latest_payload), encoding="utf-8"
     )
 
-    rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
+    rc = fork._cmd_fork((), "src", new_session_id="child-BBBB22", no_run=True)
 
     assert rc == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
@@ -736,7 +736,7 @@ def test_latest_fork_does_not_run_ahead_of_loop_state(
         src.checkpoint_path(2).read_text(encoding="utf-8"), encoding="utf-8"
     )
 
-    rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
+    rc = fork._cmd_fork((), "src", new_session_id="child-BBBB22", no_run=True)
 
     assert rc == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
@@ -755,7 +755,7 @@ def test_fork_at_turn_selects_that_checkpoint(
     state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
-    rc = fork._cmd_fork(None, "sunny-otter", at_turn=2, new_session_id="kid-CCCC33", no_run=True)
+    rc = fork._cmd_fork((), "sunny-otter", at_turn=2, new_session_id="kid-CCCC33", no_run=True)
     assert rc == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-CCCC33")
     assert (
@@ -772,7 +772,7 @@ def test_fork_unknown_turn_errors(tmp_path: pathlib.Path, monkeypatch: pytest.Mo
     state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
-    rc = fork._cmd_fork(None, "sunny-otter", at_turn=99, new_session_id="kid-DDDD44", no_run=True)
+    rc = fork._cmd_fork((), "sunny-otter", at_turn=99, new_session_id="kid-DDDD44", no_run=True)
     assert rc == 2
     assert not (state / "sessions" / "runs" / "kid-DDDD44").exists()
 
@@ -818,11 +818,11 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
         encoding="utf-8",
     )
 
-    rc = fork._cmd_fork(None, "bare-run", at_turn=4, new_session_id="kid-EEEE55", no_run=True)
+    rc = fork._cmd_fork((), "bare-run", at_turn=4, new_session_id="kid-EEEE55", no_run=True)
     assert rc == 2
     assert not (state / "sessions" / "runs" / "kid-EEEE55").exists()
 
-    rc = fork._cmd_fork(None, "bare-run", new_session_id="fresh-FFFF66", no_run=True)
+    rc = fork._cmd_fork((), "bare-run", new_session_id="fresh-FFFF66", no_run=True)
     assert rc == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="fresh-FFFF66")
     seed = _snapshot.load_session_snapshot(dst.checkpoint_path(0))
@@ -851,7 +851,7 @@ def test_fork_without_id_forks_most_recent_run(
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
     _seed_source_run(state, "only-run-AAAA11", head_sha=head, turns=(1,))
-    rc = fork._cmd_fork(None, "", new_session_id="child-BBBB22", no_run=True)
+    rc = fork._cmd_fork((), "", new_session_id="child-BBBB22", no_run=True)
     assert rc == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
@@ -869,14 +869,14 @@ def test_fork_continue_resumes_without_force(
     _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
     captured: dict[str, Any] = {}
 
-    def _fake_resume(config_path: object, session_id: str, *, force: bool, **_kw: object) -> int:
+    def _fake_resume(config_paths: object, session_id: str, *, force: bool, **_kw: object) -> int:
         captured["force"] = force
         captured["session_id"] = session_id
         return 0
 
     monkeypatch.setattr("agent6.app.resume.resume_task", _fake_resume)
     rc = fork._cmd_fork(  # default: continue; approvable headless, so the continuation is reached
-        None,
+        (),
         "src",
         new_session_id="child-BBBB22",
         sandbox_overrides=_setup.SandboxOverrides(auto_approve=True),
@@ -903,7 +903,7 @@ def test_fork_refuses_an_unanswerable_continuation_before_creating_it(
     _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
     child = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22", subdir="runs")
 
-    rc = fork._cmd_fork(None, "src", new_session_id="child-BBBB22")
+    rc = fork._cmd_fork((), "src", new_session_id="child-BBBB22")
     assert rc == 2
     assert "needs someone to answer" in capsys.readouterr().err
     assert not child.session_dir.exists()
@@ -917,7 +917,7 @@ def test_fork_refuses_an_unanswerable_continuation_before_creating_it(
     ).stdout
     assert "child-BBBB22" not in refs
 
-    assert fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "src", new_session_id="child-BBBB22", no_run=True) == 0
     assert child.session_dir.is_dir()
 
 
@@ -927,7 +927,7 @@ def test_fork_without_id_and_no_runs_errors_cleanly(
     repo = tmp_path / "repo"
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    rc = fork._cmd_fork(None, "")  # no id, no runs -> clean error, not a crash
+    rc = fork._cmd_fork((), "")  # no id, no runs -> clean error, not a crash
     assert rc == 2
     assert "nothing to fork" in capsys.readouterr().err
 
@@ -953,7 +953,7 @@ def test_resume_config_refusal_leaves_checkout_untouched(
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
     _seed_source_run(state, "cfgfail-AAAA11", head_sha=head, turns=(1,))
-    rc = resume._cmd_resume(None, "cfgfail-AAAA11", force=False)
+    rc = resume._cmd_resume((), "cfgfail-AAAA11", force=False)
     assert rc == 2
     assert "No providers configured" in capsys.readouterr().err
     assert _current_branch(repo) == "main"
@@ -989,7 +989,7 @@ def test_resume_of_an_undone_run_points_at_its_fork(
     ]
     src.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     for steer in ("", "once more"):
-        assert resume._cmd_resume(None, "undone-AAAA11", force=False, steer=steer) == 2
+        assert resume._cmd_resume((), "undone-AAAA11", force=False, steer=steer) == 2
         err = capsys.readouterr().err
         assert "taken back by /undo" in err and "agent6 resume fork-BBBB22" in err
     assert _current_branch(repo) == "main"
@@ -1010,7 +1010,7 @@ def test_resume_diverged_branch_refuses_without_checkout(
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
     _seed_source_run(state, "divg-AAAA11", head_sha=new_head, turns=(1,))
-    rc = resume._cmd_resume(None, "divg-AAAA11", force=False)
+    rc = resume._cmd_resume((), "divg-AAAA11", force=False)
     assert rc == 2  # a refusal
     assert "diverged" in capsys.readouterr().err
     assert _current_branch(repo) == "main"
@@ -1032,7 +1032,7 @@ def test_fork_steer_passes_through_to_the_continuation(monkeypatch: pytest.Monke
     monkeypatch.setattr(app_fork, "create_fork", _fake_fork)
     monkeypatch.setattr(app_resume, "resume_task", _capture_resume)
     rc = fork_cli._cmd_fork(  # pyright: ignore[reportPrivateUsage]
-        None, "src-run", steer="try the lock-free design instead"
+        (), "src-run", steer="try the lock-free design instead"
     )
     assert rc == 0
     assert captured["steer"] == "try the lock-free design instead"
@@ -1065,7 +1065,7 @@ def test_forking_a_finished_run_with_no_new_work_is_refused(
 
     monkeypatch.setattr(app_fork, "create_fork", _must_not_fork)
 
-    assert fork_cli._cmd_fork(None, "done-run") == 2  # pyright: ignore[reportPrivateUsage]
+    assert fork_cli._cmd_fork((), "done-run") == 2  # pyright: ignore[reportPrivateUsage]
 
     err = capsys.readouterr().err
     assert "--steer" in err and "--at-turn" in err
@@ -1082,7 +1082,7 @@ def test_fork_steer_with_no_run_is_refused(
 
     monkeypatch.setattr(app_fork, "create_fork", _must_not_fork)
     rc = fork_cli._cmd_fork(  # pyright: ignore[reportPrivateUsage]
-        None, "src-run", no_run=True, steer="x"
+        (), "src-run", no_run=True, steer="x"
     )
     assert rc == 2
     assert "--steer" in capsys.readouterr().err
@@ -1106,8 +1106,7 @@ def test_a_past_turn_fork_starts_on_the_task_that_turn_was_on(
     assert json.loads(src.cursor_path.read_text(encoding="utf-8"))["node_id"] == late.id
 
     assert (
-        fork._cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-DDDD44", no_run=True)
-        == 0
+        fork._cmd_fork((), "sunny-otter", at_turn=1, new_session_id="kid-DDDD44", no_run=True) == 0
     )
 
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-DDDD44")
@@ -1131,8 +1130,7 @@ def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
     assert {n.title for n in storage.load_graph(src).values()} == {"root task", "late subtask"}
 
     assert (
-        fork._cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True)
-        == 0
+        fork._cmd_fork((), "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True) == 0
     )
 
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-CCCC33")
@@ -1165,8 +1163,7 @@ def test_a_past_turn_fork_reopens_without_a_lost_tail_warning(
     state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
     assert (
-        fork._cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True)
-        == 0
+        fork._cmd_fork((), "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True) == 0
     )
 
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-CCCC33")
@@ -1193,7 +1190,7 @@ def test_fork_copies_the_dag_when_the_checkpoint_has_no_graph_version(
     payload["graph_version"] = 0
     src.checkpoint_path(1).write_text(json.dumps(payload), encoding="utf-8")
 
-    assert fork._cmd_fork(None, "old-run", at_turn=1, new_session_id="kid-DDDD44", no_run=True) == 0
+    assert fork._cmd_fork((), "old-run", at_turn=1, new_session_id="kid-DDDD44", no_run=True) == 0
 
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-DDDD44")
     assert {n.title for n in storage.load_graph(dst).values()} == {"root task", "late subtask"}
@@ -1216,7 +1213,7 @@ def test_an_auto_minted_fork_id_skips_a_taken_directory(
     minted = iter(["taken-one-AAAAAA", "freed-two-BBBBBB"])
     monkeypatch.setattr(id_mod, "friendly_token", lambda: next(minted))
 
-    assert fork._cmd_fork(None, "forky-src", no_run=True) == 0
+    assert fork._cmd_fork((), "forky-src", no_run=True) == 0
 
     assert (taken / "marker.txt").read_text(encoding="utf-8") == "do not clobber\n"
     assert (state / "sessions" / "runs" / "freed-two-BBBBBB" / "manifest.json").is_file()
@@ -1236,7 +1233,7 @@ def test_fork_manifest_stamps_the_resolved_isolation(
         return "hardened"
 
     monkeypatch.setattr("agent6.sandbox.detect.resolve_isolation", _hardened)
-    assert fork._cmd_fork(None, "iso-src", new_session_id="iso-fork-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "iso-src", new_session_id="iso-fork-BBBB22", no_run=True) == 0
     dst = sessions_layout.SessionLayout(
         state_dir=state, session_id="iso-fork-BBBB22", subdir="runs"
     )
@@ -1284,7 +1281,7 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
     repo, turn1, head = _fork_fixture(tmp_path, monkeypatch)
     state = paths.state_dir(repo)
 
-    assert fork._cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
 
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
@@ -1330,7 +1327,7 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
     )
     repo, _turn1, _head = _fork_fixture(tmp_path, monkeypatch)
     state = paths.state_dir(repo)
-    assert fork._cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
     manifest = json.loads(
         sessions_layout.SessionLayout(
             state_dir=state, session_id="child-BBBB22"
@@ -1357,7 +1354,7 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
     monkeypatch.setattr(_setup, "check_provider_keys", _no_missing)
     monkeypatch.setattr(_session, "select_isolation", _strict)
     rc = resume_mod.resume_task(
-        None, "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
+        (), "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
     assert rc == 0
     assert seen["cwd"] == worktree and seen["process_cwd"] == repo
@@ -1375,7 +1372,7 @@ def test_resume_of_a_fork_whose_worktree_is_gone_refuses(
 
     repo, _turn1, _head = _fork_fixture(tmp_path, monkeypatch)
     state = paths.state_dir(repo)
-    assert fork._cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
     manifest = json.loads(
         sessions_layout.SessionLayout(
             state_dir=state, session_id="child-BBBB22"
@@ -1384,7 +1381,7 @@ def test_resume_of_a_fork_whose_worktree_is_gone_refuses(
     shutil.rmtree(manifest["worktree"])
 
     rc = resume_mod.resume_task(
-        None, "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
+        (), "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
     assert rc == 2
     err = capsys.readouterr().err
@@ -1402,7 +1399,7 @@ def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
 
     repo, _turn1, head = _fork_fixture(tmp_path, monkeypatch)
     state = paths.state_dir(repo)
-    assert fork._cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest["merged"] = {"into": "main", "sha": head, "tip": manifest["forked_from_sha"]}
@@ -1413,7 +1410,7 @@ def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
 
     assert (
         resume_mod.resume_task(
-            None, "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
+            (), "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
         == 2
     )
@@ -1435,7 +1432,7 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
 
     repo, turn1, head = _fork_fixture(tmp_path, monkeypatch)
     state = paths.state_dir(repo)
-    assert fork._cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest["merged"] = {"into": "main", "sha": head, "tip": turn1}
@@ -1456,7 +1453,7 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
 
     assert (
         resume_mod.resume_task(
-            None, "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
+            (), "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
         == 2
     )
@@ -1504,14 +1501,13 @@ def test_a_steered_fork_takes_the_steer_as_its_own_task(
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
-    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
 
     _resumable_worker(monkeypatch)
     assert (
-        resume._cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only")
-        == 0
+        resume._cmd_resume((), "brave-yak-BBBB22", force=False, steer="create README.md only") == 0
     )
 
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
@@ -1550,13 +1546,12 @@ def test_a_refused_resume_leaves_the_forks_task_alone(
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
-    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
 
     # No providers configured: refused before any execution.
     assert (
-        resume._cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only")
-        == 2
+        resume._cmd_resume((), "brave-yak-BBBB22", force=False, steer="create README.md only") == 2
     )
 
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
@@ -1574,15 +1569,14 @@ def test_only_the_first_steer_names_a_fork(
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
-    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
 
     _resumable_worker(monkeypatch)
     assert (
-        resume._cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only")
-        == 0
+        resume._cmd_resume((), "brave-yak-BBBB22", force=False, steer="create README.md only") == 0
     )
-    assert resume._cmd_resume(None, "brave-yak-BBBB22", force=False, steer="also fix the typo") == 0
+    assert resume._cmd_resume((), "brave-yak-BBBB22", force=False, steer="also fix the typo") == 0
 
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["user_task"] == "create README.md only"
@@ -1598,7 +1592,7 @@ def test_a_steered_ordinary_run_keeps_its_task(
     state = paths.state_dir(repo)
     src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
 
-    assert resume._cmd_resume(None, "sunny-otter-AAAA11", force=False, steer="and add tests") == 2
+    assert resume._cmd_resume((), "sunny-otter-AAAA11", force=False, steer="and add tests") == 2
 
     assert json.loads(src.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
 
@@ -1619,7 +1613,7 @@ def test_a_fork_records_the_untracked_files_of_its_own_checkout(
     (repo / "notes.txt").write_text("the operator's own file\n", encoding="utf-8")
     (src.session_dir / "untracked-at-start").write_bytes(b"notes.txt")
 
-    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
 
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
     worktree = pathlib.Path(json.loads(dst.manifest_path.read_text(encoding="utf-8"))["worktree"])
@@ -1642,7 +1636,7 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
     sp.run(["git", "commit", "-q", "-m", "other"], cwd=repo, check=True)
     sp.run(["git", "branch", "agent6/brave-yak-BBBB22", "HEAD"], cwd=repo, check=True)
 
-    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
+    assert fork._cmd_fork((), "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
 
     assert "could not cut fork refs" in capsys.readouterr().err
     assert git_ops.chain_tip(repo, git_ops.chain_ref_for("brave-yak-BBBB22")) is None
@@ -1656,7 +1650,7 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
     ).stdout.strip()
     git_ops.set_ref(repo, git_ops.chain_ref_for("brave-yak-BBBB22"), anchor)
 
-    assert fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
+    assert fork._cmd_fork((), "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
 
     assert git_ops.chain_tip(repo, git_ops.chain_ref_for("brave-yak-BBBB22")) == anchor
 
@@ -1675,7 +1669,7 @@ def test_fork_refuses_a_run_the_model_controls_git_in(
     state = paths.state_dir(repo)
     _seed_source_run(state, "src-MOD11", head_sha=head, turns=(1,))
 
-    rc = fork._cmd_fork(None, "src-MOD11", new_session_id="child-MOD22", no_run=True)
+    rc = fork._cmd_fork((), "src-MOD11", new_session_id="child-MOD22", no_run=True)
 
     assert rc == 2
     assert 'control = "model"' in capsys.readouterr().err
@@ -1743,7 +1737,7 @@ def test_a_no_run_fork_of_a_finished_run_hints_at_the_steer(
         encoding="utf-8",
     )
 
-    assert fork._cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True) == 0
+    assert fork._cmd_fork((), "src", new_session_id="child-BBBB22", no_run=True) == 0
 
     err = capsys.readouterr().err
     assert 'resume it with: agent6 resume child-BBBB22 --steer "<what to do next>"' in err

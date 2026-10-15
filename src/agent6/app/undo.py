@@ -332,7 +332,7 @@ def _manifest_refusal(
 
 
 def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     session_id: str,
     *,
     cwd: pathlib.Path,
@@ -345,7 +345,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     process is the session's live worker; any other live run driving the checkout refuses.
 
     Args:
-        config_path: An explicit config file, else the effective one.
+        config_paths: The `--config` files the effective config is read under.
         session_id: The session to undo.
         cwd: The repository.
         reporter: Where refusals and the notice go.
@@ -368,7 +368,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         reporter.error(refusal)
         return None
     try:
-        cfg = layer.load_effective(cwd, config_path).config
+        cfg = layer.load_effective(cwd, config_paths).config
     except ConfigError as exc:
         reporter.error(str(exc))
         return None
@@ -398,7 +398,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
             reporter.error(f"the tree as it stands could not be committed onto {where}: {exc}")
             return None
         child, rc = fork.create_fork(
-            config_path,
+            config_paths,
             target.source_session_id,
             at_turn=target.at_turn,
             cwd=cwd,

@@ -45,6 +45,11 @@ class Layer:
     path: pathlib.Path | None
     data: dict[str, Any]
 
+    @property
+    def source(self) -> str:
+        """Identify the layer, including the path for command-line files."""
+        return f"flag ({self.path})" if self.name == "flag" else self.name
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class EffectiveConfig:
@@ -112,19 +117,21 @@ def _forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
         )
 
 
-def discover_layers(repo_root: pathlib.Path, explicit_path: pathlib.Path | None) -> list[Layer]:
+def discover_layers(
+    repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...]
+) -> list[Layer]:
     """Read the config files that exist, in precedence order.
 
     Args:
         repo_root: The repo whose state-dir config is the `repo` layer.
-        explicit_path: The `--config FILE` layer, or None.
+        explicit_paths: The `--config FILE` layers in command-line order.
 
     Returns:
         The layers, lowest precedence first.
 
     Raises:
-        ConfigError: A file is unreadable or invalid, `explicit_path` is missing, or it
-            carries a top-level `preset`.
+        ConfigError: A file is unreadable or invalid, a file in `explicit_paths` is
+            missing, or one carries a top-level `preset`.
     """
     layers: list[Layer] = []
     gpath = paths.global_config_path()
@@ -133,7 +140,7 @@ def discover_layers(repo_root: pathlib.Path, explicit_path: pathlib.Path | None)
     rpath = paths.repo_config_path(repo_root)
     if rpath.is_file():
         layers.append(Layer("repo", rpath, _read_toml(rpath)))
-    if explicit_path is not None:
+    for explicit_path in explicit_paths:
         if not explicit_path.is_file():
             raise config_model.ConfigError(f"--config file not found: {explicit_path}")
         data = _read_toml(explicit_path)
@@ -230,7 +237,7 @@ def preset_names(layers: Iterable[Layer]) -> list[str]:
 
 
 def available_preset_names(
-    repo_root: pathlib.Path, explicit_path: pathlib.Path | None = None
+    repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...] = ()
 ) -> list[str]:
     """Return the preset names over the repo's discovered layers.
 
@@ -239,14 +246,14 @@ def available_preset_names(
 
     Args:
         repo_root: The repo.
-        explicit_path: The `--config FILE` layer, or None.
+        explicit_paths: The `--config FILE` layers in command-line order.
 
     Returns:
         The names, sorted.
     """
     layers: list[Layer] = []
     with contextlib.suppress(Exception):
-        layers = discover_layers(repo_root, explicit_path)
+        layers = discover_layers(repo_root, explicit_paths)
     return preset_names(layers)
 
 
@@ -283,7 +290,7 @@ class PresetCatalog:
 
 
 def preset_catalog(
-    repo_root: pathlib.Path, explicit_path: pathlib.Path | None = None
+    repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...] = ()
 ) -> PresetCatalog:
     """Build the `config presets` listing.
 
@@ -292,7 +299,7 @@ def preset_catalog(
 
     Args:
         repo_root: The repo.
-        explicit_path: The `--config FILE` layer, or None.
+        explicit_paths: The `--config FILE` layers in command-line order.
 
     Returns:
         The catalog.
@@ -300,7 +307,7 @@ def preset_catalog(
     Raises:
         ConfigError: A layer is unreadable, or a `[presets.<name>]` is not a table.
     """
-    layers = discover_layers(repo_root, explicit_path)
+    layers = discover_layers(repo_root, explicit_paths)
     user: dict[str, dict[str, Any]] = {}
     origins: dict[str, str] = {}
     for layer in layers:
@@ -412,7 +419,7 @@ def _merge_layers(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, str]]:
         return out
 
     for layer in layers:
-        merged = walk(merged, layer.data, layer.name, "")
+        merged = walk(merged, layer.data, layer.source, "")
     return merged, sources
 
 
@@ -486,7 +493,7 @@ def _leaf_fix_hint(
         set it, with the file and the fix command when the layer has one (an unknown key
         points at `agent6 config fix`); None for a built-in default.
     """
-    by_name = {layer.name: layer for layer in layers}
+    by_name = {layer.source: layer for layer in layers}
 
     def locate(leaf: str, error_type: str) -> str | None:
         layer = by_name.get(source_of_leaf.get(leaf, ""))
@@ -529,7 +536,7 @@ def _effective_from_layers(
         merged, source=source, locate=_leaf_fix_hint(layers, source_of_leaf)
     )
     effective_leaves = config_leaves(config)
-    layer_order = [layer.name for layer in layers]
+    layer_order = [layer.source for layer in layers]
 
     def source_for(leaf: str) -> str:
         contributors = {
@@ -669,13 +676,13 @@ def _apply_preset(layers: list[Layer], preset_override: str) -> list[Layer]:
 
 
 def load_effective(
-    repo_root: pathlib.Path, explicit_path: pathlib.Path | None = None, *, preset: str = ""
+    repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...] = (), *, preset: str = ""
 ) -> EffectiveConfig:
     """Load the effective config of a repo.
 
     Args:
         repo_root: The repo.
-        explicit_path: The `--config FILE` layer, or None.
+        explicit_paths: The `--config FILE` layers in command-line order.
         preset: The `--preset` flag, or "".
 
     Returns:
@@ -684,7 +691,7 @@ def load_effective(
     Raises:
         ConfigError: A layer is unreadable or the merged config is invalid.
     """
-    layers = discover_layers(repo_root, explicit_path)
+    layers = discover_layers(repo_root, explicit_paths)
     presets = preset_names(layers)
     layers = _apply_preset(layers, preset)
     return _effective_from_layers(layers, source="(merged config layers)", presets=presets)
@@ -713,7 +720,7 @@ def load_effective_with_overlay(
     repo_root: pathlib.Path,
     overlay: dict[str, Any],
     *,
-    explicit_path: pathlib.Path | None = None,
+    explicit_paths: tuple[pathlib.Path, ...] = (),
     state_overlay: dict[str, Any] | None = None,
 ) -> EffectiveConfig:
     """Load the effective config with a machine's overlays as the highest layers.
@@ -721,7 +728,7 @@ def load_effective_with_overlay(
     Args:
         repo_root: The repo.
         overlay: The machine's `[config]` table; its leaves are attributed to `machine`.
-        explicit_path: The `--config FILE` layer, which sits under the overlays.
+        explicit_paths: The `--config FILE` layers, which sit under the overlays.
         state_overlay: One state's `config` table, above the machine's; its leaves are
             attributed to `state`.
 
@@ -732,7 +739,7 @@ def load_effective_with_overlay(
         ConfigError: A layer is unreadable, an overlay selects a preset, or the merged
             config is invalid.
     """
-    layers = discover_layers(repo_root, explicit_path)
+    layers = discover_layers(repo_root, explicit_paths)
     if overlay:
         _forbid_layer_preset("machine overlay", overlay)
         layers = [*layers, Layer("machine", None, overlay)]
@@ -796,7 +803,7 @@ def _fix_scope_layers(repo_root: pathlib.Path, machine: pathlib.Path | None) -> 
     Raises:
         ConfigError: A layer is unreadable, or the overlay selects a preset.
     """
-    layers = discover_layers(repo_root, None)
+    layers = discover_layers(repo_root, ())
     if machine is not None:
         overlay = io.read_toml_file(machine).get("config", {})
         if isinstance(overlay, dict) and overlay:
@@ -815,7 +822,7 @@ def _merge_with_origin(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, L
         The merged table, and the layer of each leaf.
     """
     merged, sources = _merge_layers(layers)
-    by_name = {layer.name: layer for layer in layers}
+    by_name = {layer.source: layer for layer in layers}
     return merged, {leaf: by_name[name] for leaf, name in sources.items() if name in by_name}
 
 
@@ -928,7 +935,7 @@ def _diagnose_presets(repo_root: pathlib.Path) -> ConfigDiagnosis:
         ConfigError: A layer is unreadable.
     """
     by_name: dict[str, list[Layer]] = {}
-    for layer in discover_layers(repo_root, None):
+    for layer in discover_layers(repo_root, ()):
         presets = layer.data.get("presets")
         if not isinstance(presets, dict):
             continue
@@ -1002,7 +1009,7 @@ def find_invalid_entries(
         if machine is None and (preset_diagnosis := _diagnose_presets(repo_root)).removable:
             return preset_diagnosis
         if machine is None:
-            cleaned, _ = _strip_presets(discover_layers(repo_root, None))
+            cleaned, _ = _strip_presets(discover_layers(repo_root, ()))
             for end in range(1, len(cleaned) + 1):
                 diagnosis = _diagnose_layers(cleaned[:end], only_layer=None)
                 leaves = tuple(entry for entry in diagnosis.removable if not entry.is_table)

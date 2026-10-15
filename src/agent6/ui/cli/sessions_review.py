@@ -23,14 +23,14 @@ from agent6.viewmodel import scan_session_log, session_is_live
 
 
 def _cmd_sessions_review(  # noqa: PLR0911
-    config_path: pathlib.Path | None, *, session_id: str, model: str
+    config_paths: tuple[pathlib.Path, ...], *, session_id: str, model: str
 ) -> int:
     """Print a review of a session's record and save it under the state dir's reviews/.
 
     Read-only; no jail.
 
     Args:
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         session_id: The session, or "" for the newest.
         model: The `--model` override, `[provider/]model`, applied to the reviewer route.
 
@@ -59,7 +59,7 @@ def _cmd_sessions_review(  # noqa: PLR0911
         _common.error(f"{layout.session_id} never started; there is no record to review.")
         return 2
     try:
-        cfg = review_cmds._reviewer_config(config_path, model)
+        cfg = review_cmds._reviewer_config(config_paths, model)
     except ConfigError as exc:
         _common.error(str(exc))
         return 2

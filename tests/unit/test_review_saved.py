@@ -71,7 +71,7 @@ def test_the_freeform_review_is_saved_and_its_path_named(
         code_review, "review_diff", mock.MagicMock(return_value="LGTM with nits\n- [nit] x")
     )
 
-    rc = review_cmds._cmd_review(None, base="", head="HEAD", paths=())  # pyright: ignore[reportPrivateUsage]
+    rc = review_cmds._cmd_review((), base="", head="HEAD", paths=())  # pyright: ignore[reportPrivateUsage]
 
     out = capsys.readouterr()
     assert rc == 0
@@ -102,7 +102,7 @@ def test_a_review_over_budget_prints_the_ledger_reason_once(
         ),
     )
 
-    rc = review_cmds._cmd_review(None, base="", head="HEAD", paths=())  # pyright: ignore[reportPrivateUsage]
+    rc = review_cmds._cmd_review((), base="", head="HEAD", paths=())  # pyright: ignore[reportPrivateUsage]
 
     err = capsys.readouterr().err
     assert rc == 3
@@ -137,7 +137,7 @@ def test_the_panel_verdict_is_saved_too(
     )
     monkeypatch.setattr(providers, "build_review_seats", mock.MagicMock(return_value=[seat]))
 
-    rc = review_cmds._cmd_review(None, base="", head="HEAD", paths=(), reviewers=1)  # pyright: ignore[reportPrivateUsage]
+    rc = review_cmds._cmd_review((), base="", head="HEAD", paths=(), reviewers=1)  # pyright: ignore[reportPrivateUsage]
 
     out = capsys.readouterr()
     assert rc == 0

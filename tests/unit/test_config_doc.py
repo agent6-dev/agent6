@@ -71,7 +71,10 @@ def test_layer_table_names_the_config_file_layer_as_config_show_does(
     """
     explicit = tmp_path / "x.toml"
     explicit.write_text('[sandbox]\nnetwork = "session"\n', encoding="utf-8")
-    printed = layer.load_effective(tmp_path, explicit).sources["sandbox.network"]
+    printed = layer.load_effective(tmp_path, (explicit,)).sources["sandbox.network"]
+    assert str(explicit) in printed, "the source column must name the file"
     page = (_ROOT / "docs" / "config.md").read_text(encoding="utf-8")
     rows = [line.split("|") for line in page.splitlines() if line.startswith("|")]
-    assert [row[1].strip() for row in rows if row[2].strip() == "`--config FILE`"] == [printed]
+    assert [row[1].strip() for row in rows if row[2].strip() == "`--config FILE`"] == [
+        printed.replace(str(explicit), "FILE")
+    ]

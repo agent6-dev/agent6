@@ -328,7 +328,7 @@ def _prompt_for_the_next_input(  # noqa: PLR0911
         session_id=layout.session_id,
         session_dir=layout.session_dir,
         ask=input,
-        config_path=args.config,
+        config_paths=args.config,
         budget_overrides=_setup.BudgetOverrides.from_args(args),
         sandbox_overrides=_setup.SandboxOverrides.from_args(args),
         model=getattr(args, "model", ""),
@@ -451,7 +451,7 @@ def _dispatch_attach(args: argparse.Namespace) -> int:
         json_out=args.json,
         since=args.since,
         raw=args.raw,
-        config_path=args.config,
+        config_paths=args.config,
     )
 
 
@@ -459,7 +459,7 @@ def _dispatch_steer(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 steer`."""
     from agent6.ui.cli import steer_cmd
 
-    return steer_cmd._cmd_steer(args.target, args.text, now=args.now, config_path=args.config)
+    return steer_cmd._cmd_steer(args.target, args.text, now=args.now, config_paths=args.config)
 
 
 def _dispatch_stop(args: argparse.Namespace) -> int:
@@ -589,12 +589,12 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
             strategy=args.strategy,
             into=args.into,
             message=args.message,
-            config_path=args.config,
+            config_paths=args.config,
         )
     if args.sessions_command == "compare":
         return sessions_compare._cmd_compare(
             session_ids=tuple(args.session_ids),
-            config_path=args.config,
+            config_paths=args.config,
             rejudge=args.rejudge,
         )
     if args.sessions_command == "review":
@@ -607,7 +607,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
         return sessions_cmds._cmd_commits(session_id=args.session_id)
     if args.sessions_command == "prune":
         return sessions_merge._cmd_prune(
-            delete_squashed=args.delete_squashed, config_path=args.config
+            delete_squashed=args.delete_squashed, config_paths=args.config
         )
     if args.sessions_command == "dir":
         return sessions_cmds._cmd_sessions_dir(args.session_id)
@@ -637,7 +637,7 @@ def _dispatch_tui(args: argparse.Namespace) -> int:
 
     if args.target:
         return watch._cmd_watch_target(
-            args.target, tui=True, json_out=False, since=None, raw=False, config_path=args.config
+            args.target, tui=True, json_out=False, since=None, raw=False, config_paths=args.config
         )
     return plan_watch._cmd_tui(args.config)
 
@@ -655,7 +655,7 @@ def _dispatch_web(args: argparse.Namespace) -> int:
 
     return web_cmds._cmd_web(
         args.target,
-        config_path=args.config,
+        config_paths=args.config,
         host=args.host,
         port=args.port,
         allow_non_loopback=args.allow_non_loopback,
@@ -764,11 +764,15 @@ def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
         return config_cmds._cmd_config_get(args.config, args.key, machine=args.machine_file)
     if args.config_command == "set":
         return config_cmds._cmd_config_set(
-            args.key, args.value, repo=args.repo, machine=args.machine_file, config_path=args.config
+            args.key,
+            args.value,
+            repo=args.repo,
+            machine=args.machine_file,
+            config_paths=args.config,
         )
     if args.config_command == "unset":
         return config_cmds._cmd_config_unset(
-            args.key, repo=args.repo, machine=args.machine_file, config_path=args.config
+            args.key, repo=args.repo, machine=args.machine_file, config_paths=args.config
         )
     if args.config_command in ("add", "remove"):
         return config_cmds._config_list_edit(
@@ -777,7 +781,7 @@ def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
             repo=args.repo,
             machine=args.machine_file,
             add=args.config_command == "add",
-            config_path=args.config,
+            config_paths=args.config,
         )
     if args.config_command == "fix":
         return config_cmds._cmd_config_fix(machine=args.machine_file)
@@ -835,17 +839,17 @@ def _dispatch_skills(args: argparse.Namespace) -> int:
     from agent6.ui.cli import skills_cmds
 
     if args.skills_command == "install":
-        return skills_cmds._cmd_skills_install(args.url, force=args.force, config_path=args.config)
+        return skills_cmds._cmd_skills_install(args.url, force=args.force, config_paths=args.config)
     if args.skills_command == "update":
         return skills_cmds._cmd_skills_update(args.name)
     if args.skills_command == "list":
         return skills_cmds._cmd_skills_list(args.config)
     if args.skills_command == "enable":
         return skills_cmds._cmd_skills_enable(
-            args.name, always=args.always, repo=args.repo, config_path=args.config
+            args.name, always=args.always, repo=args.repo, config_paths=args.config
         )
     if args.skills_command == "disable":
-        return skills_cmds._cmd_skills_disable(args.name, repo=args.repo, config_path=args.config)
+        return skills_cmds._cmd_skills_disable(args.name, repo=args.repo, config_paths=args.config)
     if args.skills_command == "remove":
         return skills_cmds._cmd_skills_remove(args.name, args.config)
     raise AssertionError("unreachable")  # pragma: no cover -- skills subparser is required
@@ -877,7 +881,7 @@ def _dispatch_init(args: argparse.Namespace) -> int:
     from agent6.ui.cli import init_cmds
 
     return init_cmds._cmd_init(
-        ecosystem=args.ecosystem, assume_yes=args.yes, config_path=args.config
+        ecosystem=args.ecosystem, assume_yes=args.yes, config_paths=args.config
     )
 
 
@@ -911,10 +915,10 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
             token_env=args.token_env,
             pass_env=args.pass_env,
             to_repo=args.to_repo,
-            config_path=args.config,
+            config_paths=args.config,
         )
     if args.mcp_command == "remove":
-        return mcp_connect.cmd_mcp_remove(args.name, to_repo=args.to_repo, config_path=args.config)
+        return mcp_connect.cmd_mcp_remove(args.name, to_repo=args.to_repo, config_paths=args.config)
     return mcp_connect.cmd_mcp_list(args.config)
 
 
@@ -934,10 +938,10 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.machine_command in ("check", "test", "graph", "run"):
         args.file = machine_cmds.machine_file(args.file)
     if args.machine_command == "check":
-        return machine_check._cmd_machine_check(args.file, config_path=args.config)
+        return machine_check._cmd_machine_check(args.file, config_paths=args.config)
     if args.machine_command == "test":
         return machine_check._cmd_machine_test(
-            args.file, blackboard=args.blackboard, config_path=args.config
+            args.file, blackboard=args.blackboard, config_paths=args.config
         )
     if args.machine_command == "graph":
         return machine_check._cmd_machine_graph(args.file, fmt=args.format)
@@ -945,7 +949,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
         return machine_run.run_machine(
             args.file,
             app_reporter.STDIO_REPORTER,
-            config_path=args.config,
+            config_paths=args.config,
             exit_on_wait=args.exit_on_wait,
             disable_sandbox=args.dangerously_disable_sandbox,
             auto_approve=args.auto_approve,
@@ -965,7 +969,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
             app_reporter.STDIO_REPORTER,
             output=args.output,
             max_attempts=args.max_attempts,
-            config_path=args.config,
+            config_paths=args.config,
             budget_overrides=_setup.BudgetOverrides.from_args(args),
         )
     raise AssertionError("unreachable")  # pragma: no cover -- machine subparser is required
@@ -975,7 +979,7 @@ def _dispatch_acp(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 acp`."""
     from agent6.ui.acp import serve_acp
 
-    return serve_acp(config_path=args.config)
+    return serve_acp(config_paths=args.config)
 
 
 def _dispatch_system(args: argparse.Namespace) -> int:
@@ -1032,6 +1036,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     args = parser.parse_args(cli_parser._inject_default_verb(raw))
+    args.config = cli_parser.config_files(args)
     # `system` is host setup that runs as root and runs no LLM, so the root gate exempts it.
     if args.command != "system":
         root_rc = _common._enforce_root_policy(getattr(args, "allow_root", False))

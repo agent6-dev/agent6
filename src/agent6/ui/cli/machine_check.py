@@ -60,7 +60,7 @@ def _fail(path: pathlib.Path, problems: list[str], label: str = "") -> int:
 
 
 def _load_validated(
-    path: pathlib.Path, *, config_path: pathlib.Path | None = None
+    path: pathlib.Path, *, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[MachineSpec | None, list[str], str]:
     """Load a machine file and validate its bundle and config overlays, as `machine run` does.
 
@@ -69,7 +69,7 @@ def _load_validated(
 
     Args:
         path: The machine file.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         `(spec, problems, label)`; the spec is None when validation failed, and the label
@@ -83,7 +83,7 @@ def _load_validated(
     if bundle_problems:
         return None, bundle_problems, "bundle"
     try:
-        resolve_configs(spec, pathlib.Path.cwd(), _setup.detect_env(), config_path=config_path)
+        resolve_configs(spec, pathlib.Path.cwd(), _setup.detect_env(), config_paths=config_paths)
     except SandboxWidenedError as exc:
         return None, exc.problems, "config"
     except (ConfigError, detect.IsolationUnavailableError) as exc:
@@ -160,13 +160,13 @@ def _leaves(table: dict[str, Any]) -> str:
     return ", ".join(f"{key} = {value!r}" for key, value in table.items())
 
 
-def _cmd_machine_check(path: pathlib.Path, *, config_path: pathlib.Path | None = None) -> int:
+def _cmd_machine_check(path: pathlib.Path, *, config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     """Validate a machine file offline and print OK or FAIL.
 
     Returns:
         The exit code, 1 on FAIL.
     """
-    spec, problems, label = _load_validated(path, config_path=config_path)
+    spec, problems, label = _load_validated(path, config_paths=config_paths)
     if spec is None:
         return _fail(path, problems, label)
     script_problems = lint_and_typecheck(path.parent / "scripts")
@@ -189,14 +189,17 @@ def _cmd_machine_check(path: pathlib.Path, *, config_path: pathlib.Path | None =
 
 
 def _cmd_machine_test(
-    path: pathlib.Path, *, blackboard: pathlib.Path | None, config_path: pathlib.Path | None = None
+    path: pathlib.Path,
+    *,
+    blackboard: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Run the offline simulation: validation, script lint and types, mock tests, dry-run.
 
     Args:
         path: The machine file.
         blackboard: A TOML fixture overlaid on the blackboard defaults.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code, 1 on FAIL.
@@ -204,7 +207,7 @@ def _cmd_machine_test(
     Raises:
         OperatorError: The fixture is not valid TOML.
     """
-    spec, problems, label = _load_validated(path, config_path=config_path)
+    spec, problems, label = _load_validated(path, config_paths=config_paths)
     if spec is None:
         return _fail(path, problems, label)
     script_problems = lint_and_typecheck(path.parent / "scripts")

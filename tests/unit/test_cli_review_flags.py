@@ -85,7 +85,7 @@ def test_an_empty_range_is_reported_before_provider_preflight(
     )
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        None,
+        (),
         base="HEAD",
         head="HEAD",
         paths=("src/x.py",),
@@ -233,7 +233,7 @@ def test_an_arbitrary_range_uses_the_selected_heads_log(
     monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock(return_value=provider))
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        None, base=base, head=head, paths=()
+        (), base=base, head=head, paths=()
     )
 
     recent_log = provider.last_user.split("\n\nDIFF:", 1)[0]
@@ -266,7 +266,7 @@ def test_an_unknown_pinned_provider_is_named_without_a_reviewer_route(
     )
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        None,
+        (),
         base=base,
         head=head,
         paths=(),
@@ -306,7 +306,7 @@ def test_a_fully_pinned_panel_needs_no_reviewer_route(
     )
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        None,
+        (),
         base=base,
         head=head,
         paths=(),
@@ -377,7 +377,7 @@ def _explore_review(
     monkeypatch.setattr(providers, "build_review_seats", _fake_seats)
     monkeypatch.setattr(harness__reviewer, "run_panel", _fake_panel)
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        None, base=base, head=head, paths=(), reviewers=1
+        (), base=base, head=head, paths=(), reviewers=1
     )
     return rc, seen
 
@@ -444,7 +444,7 @@ def test_a_panel_with_an_unpinned_seat_still_requires_the_reviewer_route(
 
     with pytest.raises(ConfigError, match="reviewer"):
         review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-            None, base=base, head=head, paths=(), reviewers=2, personas="security"
+            (), base=base, head=head, paths=(), reviewers=2, personas="security"
         )
 
 
@@ -496,7 +496,7 @@ def test_the_recent_log_survives_a_head_that_is_also_a_path_or_empty(
     monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock(return_value=provider))
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        None, base=base, head=head, paths=()
+        (), base=base, head=head, paths=()
     )
 
     assert rc == 0
@@ -539,7 +539,7 @@ def test_personas_a_configured_roster_ignores_are_not_read(
     monkeypatch.setattr(_setup, "check_provider_keys", _keys)
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        None, base=base, head=head, paths=(), reviewers=1, personas="tests@oops"
+        (), base=base, head=head, paths=(), reviewers=1, personas="tests@oops"
     )
 
     assert rc == 2
@@ -576,7 +576,7 @@ def test_a_tracked_file_named_head_does_not_break_the_diff(
     monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock(return_value=provider))
 
-    rc = review_cmds._cmd_review(None, base="", head="", paths=())  # pyright: ignore[reportPrivateUsage]
+    rc = review_cmds._cmd_review((), base="", head="", paths=())  # pyright: ignore[reportPrivateUsage]
 
     assert rc == 0, capsys.readouterr().err
     assert "print(1)" in provider.last_user
@@ -611,7 +611,7 @@ def test_review_model_routes_the_reviewer(
     monkeypatch.setattr(providers, "build_role_provider", built)
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        None, base="", head="", paths=(), model="other/read-only-m"
+        (), base="", head="", paths=(), model="other/read-only-m"
     )
 
     assert rc == 0, capsys.readouterr().err
@@ -639,7 +639,7 @@ def test_review_model_naming_no_provider_is_refused_before_the_diff(
     monkeypatch.setattr(review_cmds, "_reviewed_diff", mock.MagicMock(side_effect=AssertionError))
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        None, base="", head="", paths=(), model="nope/m"
+        (), base="", head="", paths=(), model="nope/m"
     )
 
     assert rc == 2

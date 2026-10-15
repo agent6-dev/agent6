@@ -152,13 +152,13 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self,
         agent6_dir: pathlib.Path,
         repo_cwd: pathlib.Path,
-        config_path: pathlib.Path | None = None,
+        config_paths: tuple[pathlib.Path, ...] = (),
     ) -> None:
         """Bind the hub to the state dir, the repo new sessions launch in and the config path."""
         super().__init__()
         self.agent6_dir = agent6_dir
         self.repo_cwd = repo_cwd  # not derivable from the state dir, which is out of the workspace
-        self.config_path = config_path  # stamped into everything the hub spawns or loads
+        self.config_paths = config_paths  # stamped into everything the hub spawns or loads
         self._runs: list[pathlib.Path] = []
         # The poll's rows by session id, so `check_action` never re-folds a session.
         self._summaries: dict[str, SessionSummary] = {}
@@ -343,9 +343,9 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self.app.push_screen(
             new_work.NewWorkScreen(
                 self.repo_cwd,
-                self.config_path,
-                presets=layer.available_preset_names(self.repo_cwd, self.config_path),
-                routes=choices.available_routes(self.repo_cwd, self.config_path),
+                self.config_paths,
+                presets=layer.available_preset_names(self.repo_cwd, self.config_paths),
+                routes=choices.available_routes(self.repo_cwd, self.config_paths),
             )
         )
 
@@ -423,7 +423,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         def cb(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            ok, msg = _run_delete_cli(self.repo_cwd, session_id, self.config_path)
+            ok, msg = _run_delete_cli(self.repo_cwd, session_id, self.config_paths)
             self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
             self.action_refresh()
 
@@ -435,7 +435,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         def cb(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            ok, msg = _run_merge_cli(self.repo_cwd, session_id, self.config_path)
+            ok, msg = _run_merge_cli(self.repo_cwd, session_id, self.config_paths)
             self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
             self.action_refresh()
 
@@ -476,7 +476,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             if not confirmed:
                 return
             ok, msg = _run_prune_cli(
-                self.repo_cwd, delete_squashed=delete_squashed, config_path=self.config_path
+                self.repo_cwd, delete_squashed=delete_squashed, config_paths=self.config_paths
             )
             self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
             self.action_refresh()
@@ -489,7 +489,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         def cb(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            ok, msg = _run_clear_asks_cli(self.repo_cwd, self.config_path)
+            ok, msg = _run_clear_asks_cli(self.repo_cwd, self.config_paths)
             self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
             self.action_refresh()
 
@@ -506,7 +506,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
     def action_open_config(self) -> None:
         """Push the config editor, or name `agent6 config fix` when the config is invalid."""
         try:
-            layer.load_effective(self.repo_cwd, self.config_path)
+            layer.load_effective(self.repo_cwd, self.config_paths)
         except ConfigError as exc:
             self.app.notify(
                 "Config is invalid, so it can't be opened. Run `agent6 config fix` in a"
@@ -515,12 +515,12 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 timeout=15.0,
             )
             return
-        self.app.push_screen(config_page.ConfigScreen(self.repo_cwd, self.config_path))
+        self.app.push_screen(config_page.ConfigScreen(self.repo_cwd, self.config_paths))
 
     def action_open_machines(self) -> None:
         """Push the machines screen."""
         self.app.push_screen(
-            machines.MachinesScreen(self.agent6_dir, self.repo_cwd, self.config_path)
+            machines.MachinesScreen(self.agent6_dir, self.repo_cwd, self.config_paths)
         )
 
 
@@ -556,18 +556,18 @@ class Agent6HomeApp(theme.PlainNotify, theme.MuxPointerShapes, app.App[pathlib.P
         self,
         agent6_dir: pathlib.Path,
         repo_cwd: pathlib.Path,
-        config_path: pathlib.Path | None = None,
+        config_paths: tuple[pathlib.Path, ...] = (),
     ) -> None:
         """Bind the app to the state dir, the repo and the config path."""
         super().__init__()
         self.agent6_dir = agent6_dir
         self.repo_cwd = repo_cwd
-        self.config_path = config_path
+        self.config_paths = config_paths
 
     def on_mount(self) -> None:
         """Apply the saved theme before the first paint, then push the hub."""
         theme.setup_theme(self)
-        self.push_screen(HomeScreen(self.agent6_dir, self.repo_cwd, self.config_path))
+        self.push_screen(HomeScreen(self.agent6_dir, self.repo_cwd, self.config_paths))
 
     def get_system_commands(
         self, screen: textual_screen.Screen[object]
@@ -579,29 +579,29 @@ class Agent6HomeApp(theme.PlainNotify, theme.MuxPointerShapes, app.App[pathlib.P
 
 
 def _run_merge_cli(
-    repo_cwd: pathlib.Path, session_id: str, config_path: pathlib.Path | None = None
+    repo_cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str]:
     """Return whether `agent6 sessions merge` succeeded on the session, and its output."""
     return spawn.run_cli_capture(
-        [*spawn.agent6_argv(config_path), "sessions", "merge", session_id], repo_cwd
+        [*spawn.agent6_argv(config_paths), "sessions", "merge", session_id], repo_cwd
     )
 
 
 def _run_delete_cli(
-    repo_cwd: pathlib.Path, session_id: str, config_path: pathlib.Path | None = None
+    repo_cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str]:
     """Return whether `agent6 sessions rm` succeeded on the session, and its output."""
     ok, msg = spawn.run_cli_capture(
-        [*spawn.agent6_argv(config_path), "sessions", "rm", "--", session_id], repo_cwd
+        [*spawn.agent6_argv(config_paths), "sessions", "rm", "--", session_id], repo_cwd
     )
     return ok, msg or ("removed" if ok else "could not remove")
 
 
 def _run_prune_cli(
-    repo_cwd: pathlib.Path, *, delete_squashed: bool, config_path: pathlib.Path | None = None
+    repo_cwd: pathlib.Path, *, delete_squashed: bool, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str]:
     """Return whether `agent6 sessions prune` succeeded, and its output."""
-    argv = [*spawn.agent6_argv(config_path), "sessions", "prune"]
+    argv = [*spawn.agent6_argv(config_paths), "sessions", "prune"]
     if delete_squashed:
         argv.append("--delete-squashed")
     ok, msg = spawn.run_cli_capture(argv, repo_cwd)
@@ -609,17 +609,17 @@ def _run_prune_cli(
 
 
 def _run_clear_asks_cli(
-    repo_cwd: pathlib.Path, config_path: pathlib.Path | None = None
+    repo_cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str]:
     """Return whether `agent6 sessions rm --asks` succeeded, and its output."""
     ok, msg = spawn.run_cli_capture(
-        [*spawn.agent6_argv(config_path), "sessions", "rm", "--asks", "--yes"], repo_cwd
+        [*spawn.agent6_argv(config_paths), "sessions", "rm", "--asks", "--yes"], repo_cwd
     )
     return ok, msg or ("saved asks cleared" if ok else "could not clear the saved asks")
 
 
 def run_home(
-    agent6_dir: pathlib.Path, repo_cwd: pathlib.Path, config_path: pathlib.Path | None = None
+    agent6_dir: pathlib.Path, repo_cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> pathlib.Path | None:
     """Return the session dir the hub chose to open, or None to quit."""
-    return Agent6HomeApp(agent6_dir, repo_cwd, config_path).run()
+    return Agent6HomeApp(agent6_dir, repo_cwd, config_paths).run()

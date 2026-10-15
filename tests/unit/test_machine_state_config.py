@@ -527,11 +527,15 @@ def test_a_config_flag_file_is_part_of_the_ceiling(
     _operator(OPERATOR.replace('extra_write_paths = ["/srv/outbox"]', "extra_write_paths = []"))
     ops = _write(tmp_path, '[sandbox]\nextra_write_paths = ["/srv/outbox"]\n', name="ops.toml")
     spec = load_machine(_write(tmp_path, MACHINE))
-    configs = resolve_configs(spec, tmp_path, _setup.detect_env(), config_path=ops)
+    configs = resolve_configs(spec, tmp_path, _setup.detect_env(), config_paths=(ops,))
     assert configs.states["judge"].config.sandbox.extra_write_paths == ("/srv/outbox",)
     # A state must not be able to rewrite its own ceiling: the file is read-only in every jail.
-    assert ops.resolve() in machine_protect_paths(tmp_path / "m.asm.toml", tmp_path, ops)
+    assert ops.resolve() in machine_protect_paths(tmp_path / "m.asm.toml", tmp_path, (ops,))
     assert ops.resolve() not in machine_protect_paths(tmp_path / "m.asm.toml", tmp_path)
+    # Every `--config` file is part of the ceiling, so each is read-only.
+    more = _write(tmp_path, "[review]\nperiod = 7\n", name="more.toml")
+    protected = machine_protect_paths(tmp_path / "m.asm.toml", tmp_path, (ops, more))
+    assert ops.resolve() in protected and more.resolve() in protected
 
 
 def test_the_operator_flags_apply_after_the_overlays(

@@ -76,7 +76,7 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
         raise ConfigError("stop before run_task")  # short-circuit the branch
 
     monkeypatch.setattr(layer, "load_effective", _capture_load_effective)
-    rc = cli_resume._cmd_resume(None, "parked-AAAA11", force=False)
+    rc = cli_resume._cmd_resume((), "parked-AAAA11", force=False)
     assert rc == 2
     # A config-selected preset re-resolves from the config files; only a
     # --preset flag is replayed (HarnessStamp.replay_preset's contract).
@@ -92,7 +92,7 @@ def test_resume_refuses_a_malformed_steer_directive_before_any_execution(
     declines ends as a silent finish and flips a passed run to failed.
     """
     monkeypatch.chdir(tmp_path)
-    assert cli_resume._cmd_resume(None, "any-run-AAAAAA", force=False, steer="/pin") == 2
+    assert cli_resume._cmd_resume((), "any-run-AAAAAA", force=False, steer="/pin") == 2
     assert "pin needs an instruction" in capsys.readouterr().err
 
 
@@ -149,7 +149,7 @@ def test_parked_resume_carries_the_original_flag_selected_profile_stamp(
     )
     captured = _stub_start_of_run(resume_mod, monkeypatch, tmp_path)
 
-    assert cli_resume._cmd_resume(None, "parked-BBBB22", force=False) == 0
+    assert cli_resume._cmd_resume((), "parked-BBBB22", force=False) == 0
     assert captured["preset_stamp"] == ("strict", True)
 
 
@@ -171,7 +171,7 @@ def test_parked_resume_with_its_own_profile_flag_lets_run_task_derive_the_stamp(
     )
     captured = _stub_start_of_run(resume_mod, monkeypatch, tmp_path)
 
-    assert cli_resume._cmd_resume(None, "parked-CCCC33", force=False, preset="none") == 0
+    assert cli_resume._cmd_resume((), "parked-CCCC33", force=False, preset="none") == 0
     assert captured["preset_stamp"] is None
     assert captured["preset"] == "none"
 
@@ -197,7 +197,7 @@ def test_parked_resume_of_a_config_selected_profile_re_derives_the_stamp(
     )
     captured = _stub_start_of_run(resume_mod, monkeypatch, tmp_path)
 
-    assert cli_resume._cmd_resume(None, "parked-DDDD44", force=False) == 0
+    assert cli_resume._cmd_resume((), "parked-DDDD44", force=False) == 0
     assert captured["preset_stamp"] is None  # re-derives, not the stale manifest name
 
 
@@ -302,7 +302,7 @@ def test_plan_resume_requires_the_planner_role(
     monkeypatch.setattr(_setup, "detect_env", _stop)
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)  # no key in a unit test
     with pytest.raises(_Stop):
-        cli_resume._cmd_resume(None, "plan-AAAA11", force=False)
+        cli_resume._cmd_resume((), "plan-AAAA11", force=False)
 
 
 def test_resume_preset_flag_is_recorded_for_later_executions(
@@ -328,10 +328,10 @@ def test_resume_preset_flag_is_recorded_for_later_executions(
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
     monkeypatch.setattr(git_ops, "verify_git_identity", _nothing)
     monkeypatch.setattr(app__execution, "run_execution", _finished_execution)
-    assert cli_resume._cmd_resume(None, "plan-PRESET1", force=False, preset="quick") == 0
+    assert cli_resume._cmd_resume((), "plan-PRESET1", force=False, preset="quick") == 0
     stamp = sessions_manifest.read_manifest(session_dir).harness
     assert (stamp.preset, stamp.preset_from_flag, stamp.replay_preset) == ("quick", True, "quick")
-    assert cli_resume._cmd_resume(None, "plan-PRESET1", force=False) == 0
+    assert cli_resume._cmd_resume((), "plan-PRESET1", force=False) == 0
     assert sessions_manifest.read_manifest(session_dir).harness.replay_preset == "quick"
 
 
@@ -370,7 +370,7 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
 
     monkeypatch.setattr(_session, "select_isolation", _refuse)
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)  # no key in a unit test
-    assert cli_resume._cmd_resume(None, "plan-PIDORDER", force=False) == 2
+    assert cli_resume._cmd_resume((), "plan-PIDORDER", force=False) == 2
     assert order == ["isolation"]
     assert not (session_dir / "worker.pid").exists()
 
@@ -390,7 +390,7 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     monkeypatch.setattr(_session, "select_isolation", _select)
     monkeypatch.setattr(_setup, "check_provider_keys", _none)  # no key in a unit test
     monkeypatch.setattr(app__execution, "run_execution", _execution)
-    assert cli_resume._cmd_resume(None, "plan-PIDORDER", force=False) == 0
+    assert cli_resume._cmd_resume((), "plan-PIDORDER", force=False) == 0
     assert order == ["isolation", "pid", "execution"]
 
 
@@ -419,7 +419,7 @@ def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
 
     assert (
         cli_resume._cmd_resume(
-            None,
+            (),
             "plan-PICKREFUSE",
             force=False,
             preset="quick",
@@ -471,7 +471,7 @@ def test_a_resume_after_a_death_mid_turn_asks_nothing_and_keeps_the_record_for_t
     monkeypatch.setattr(app__execution, "run_execution", _fail_startup)
 
     with pytest.raises(_Stop):
-        cli_resume._cmd_resume(None, "plan-CRASHMARK", force=False)
+        cli_resume._cmd_resume((), "plan-CRASHMARK", force=False)
 
     assert "mid-turn" not in capsys.readouterr().err
     assert _snapshot.read_turn_marker(marker) == flight
@@ -523,7 +523,7 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid_on_resume(
 
     with pytest.raises(OSError, match="console teardown failed"):
         resume_mod.resume_task(
-            None, "plan-TEARDOWN", started_at=time.time(), frontend=frontend, force=False
+            (), "plan-TEARDOWN", started_at=time.time(), frontend=frontend, force=False
         )
 
     assert not (session_dir / "worker.pid").exists()
@@ -553,7 +553,7 @@ def test_a_misspelled_away_mode_refuses_a_resume(
 
     monkeypatch.setattr(app__execution, "run_execution", _execution)
 
-    assert cli_resume._cmd_resume(None, "plan-TYPO", force=False) == 2
+    assert cli_resume._cmd_resume((), "plan-TYPO", force=False) == 2
     assert "'denny' is not an away-mode" in capsys.readouterr().err
 
 
@@ -599,7 +599,7 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
         frontend.spawn_detached_resume.side_effect = _spawn
         assert (
             resume_mod.resume_task(
-                None, "parked-DETACH", started_at=time.time(), frontend=frontend, force=False
+                (), "parked-DETACH", started_at=time.time(), frontend=frontend, force=False
             )
             == 0
         )
@@ -648,7 +648,7 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
 
     assert (
         resume_mod.resume_task(
-            None, "parked-LEAVES", started_at=time.time(), frontend=mock.MagicMock(), force=False
+            (), "parked-LEAVES", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
         == 0
     )
@@ -729,7 +729,7 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     monkeypatch.setattr(app__execution, "run_execution", _finished_execution)
     assert (
         resume_mod.resume_task(
-            None, "note-UNTRACKED", started_at=time.time(), frontend=mock.MagicMock(), force=False
+            (), "note-UNTRACKED", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
         == 0
     )
@@ -799,7 +799,7 @@ def test_the_resume_note_names_the_files_it_hands_to_the_operator(
     monkeypatch.setattr(app__execution, "run_execution", _finished_execution)
     assert (
         resume_mod.resume_task(
-            None, "note-ARRIVED", started_at=time.time(), frontend=mock.MagicMock(), force=False
+            (), "note-ARRIVED", started_at=time.time(), frontend=mock.MagicMock(), force=False
         )
         == 0
     )
@@ -861,7 +861,7 @@ def test_plan_resume_builds_the_planner_provider(
 
     monkeypatch.setattr(providers, "build_role_provider", _capture_role)
     with pytest.raises(_Stop):
-        cli_resume._cmd_resume(None, "plan-BBBB22", force=False)
+        cli_resume._cmd_resume((), "plan-BBBB22", force=False)
     assert captured == ["planner"]
 
 
@@ -890,7 +890,7 @@ def test_an_id_matching_two_buckets_is_refused_by_name(
     _session_dir(state, "runs", "quiet-fox-AAAAAA", "run")
     _session_dir(state, "asks", "quiet-fox-BBBBBB", "ask")
 
-    rc = cli_resume._cmd_resume(None, "quiet-fox-", force=False)
+    rc = cli_resume._cmd_resume((), "quiet-fox-", force=False)
 
     assert rc == 2
     err = capsys.readouterr().err
@@ -915,7 +915,7 @@ def test_a_session_resume_cannot_continue_is_left_untouched(
     (draft / "worker.pid").write_text("4242\n", encoding="utf-8")
     (draft / "answer_1.json").write_text("{}", encoding="utf-8")
 
-    rc = cli_resume._cmd_resume(None, "brave-elk-CCCCCC", force=False)
+    rc = cli_resume._cmd_resume((), "brave-elk-CCCCCC", force=False)
 
     assert rc == 2
     assert (draft / "worker.pid").read_text(encoding="utf-8") == "4242\n"
@@ -941,7 +941,7 @@ def test_a_resumed_ask_needs_no_repo_and_answers_where_a_fresh_one_does(
 
     # No snapshot: the refusal that follows proves the git preflight was skipped
     # (it ran BEFORE the snapshot check and would have refused first).
-    rc = cli_resume._cmd_resume(None, "quiet-fox-AAAAAA", force=False)
+    rc = cli_resume._cmd_resume((), "quiet-fox-AAAAAA", force=False)
     assert rc == 2
     assert "no resume snapshot" in capsys.readouterr().err
 
@@ -987,7 +987,7 @@ def test_resuming_a_finished_run_without_a_steer_is_refused(
     approvals.mkdir()
     (approvals / "a1.answer").write_text("yes", encoding="utf-8")
 
-    rc = cli_resume._cmd_resume(None, "done-BBBB22", force=False)
+    rc = cli_resume._cmd_resume((), "done-BBBB22", force=False)
 
     assert rc == 2
     err = capsys.readouterr().err
@@ -1018,7 +1018,7 @@ def test_a_finished_run_still_resumes_with_a_steer(
         json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True}) + "\n",
         encoding="utf-8",
     )
-    rc = cli_resume._cmd_resume(None, "done-CCCC33", force=False, steer="do more")
+    rc = cli_resume._cmd_resume((), "done-CCCC33", force=False, steer="do more")
 
     assert rc == 2  # this fixture has no snapshot; the point is WHICH refusal
     err = capsys.readouterr().err
@@ -1079,7 +1079,7 @@ def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
 
     # No snapshot: refused, and the task stays.
     rc = resume_mod.resume_task(
-        None, sid, started_at=time.time(), frontend=mock.MagicMock(), force=False, steer="do more"
+        (), sid, started_at=time.time(), frontend=mock.MagicMock(), force=False, steer="do more"
     )
     assert rc == 2
     assert sessions_manifest.read_manifest(session_dir).user_task == "t"
@@ -1100,7 +1100,7 @@ def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
         encoding="utf-8",
     )
     rc = resume_mod.resume_task(
-        None, sid, started_at=time.time(), frontend=mock.MagicMock(), force=False, steer="do more"
+        (), sid, started_at=time.time(), frontend=mock.MagicMock(), force=False, steer="do more"
     )
     assert rc == 0
     assert sessions_manifest.read_manifest(session_dir).user_task == ("do more" if ended else "t")
@@ -1131,7 +1131,7 @@ def test_resume_refuses_a_fan_out_coordinator(
         ),
         encoding="utf-8",
     )
-    assert cli_resume._cmd_resume(None, "fan-AAAA11", force=False, steer="") == 2
+    assert cli_resume._cmd_resume((), "fan-AAAA11", force=False, steer="") == 2
     err = capsys.readouterr().err
     assert "fan-out coordinator is not resumable" in err and "sessions show fan-AAAA11" in err
 
@@ -1191,7 +1191,7 @@ def test_a_parked_resume_with_no_provider_key_refuses_and_stays_parked(
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
 
     rc = resume_mod.resume_task(
-        None, "parked-NOKEY", frontend=mock.MagicMock(), force=False, started_at=time.time()
+        (), "parked-NOKEY", frontend=mock.MagicMock(), force=False, started_at=time.time()
     )
 
     assert rc == 2
@@ -1229,7 +1229,7 @@ def test_a_parked_resume_says_it_is_starting_once_it_starts(
 
     monkeypatch.setattr(app__execution, "run_execution", _execution)
     rc = resume_mod.resume_task(
-        None, "parked-STARTS", started_at=time.time(), frontend=mock.MagicMock(), force=False
+        (), "parked-STARTS", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
 
     assert rc == 0
@@ -1267,9 +1267,9 @@ def test_resume_model_flag_is_recorded_and_replayed(
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
     monkeypatch.setattr(git_ops, "verify_git_identity", _nothing)
     monkeypatch.setattr(app__execution, "run_execution", _finished_execution)
-    assert cli_resume._cmd_resume(None, "plan-MODEL1", force=False, model="claude-refused") == 2
+    assert cli_resume._cmd_resume((), "plan-MODEL1", force=False, model="claude-refused") == 2
     assert sessions_manifest.read_manifest(session_dir).models.driver_from_flag is False
-    assert cli_resume._cmd_resume(None, "plan-MODEL1", force=False, model="claude-y") == 0
+    assert cli_resume._cmd_resume((), "plan-MODEL1", force=False, model="claude-y") == 0
     stamped = sessions_manifest.read_manifest(session_dir).models
     assert stamped.driver_from_flag and stamped.driver is not None
     assert (stamped.driver.provider, stamped.driver.model) == ("anthropic", "claude-y")
@@ -1277,7 +1277,7 @@ def test_resume_model_flag_is_recorded_and_replayed(
     route = cfg.model_route("planner", "claude-y")
     stamps.stamp_execution(session_dir, cfg.with_model_route("planner", route), "plan", "none")
     assert sessions_manifest.read_manifest(session_dir).models.driver_from_flag
-    assert cli_resume._cmd_resume(None, "plan-MODEL1", force=False) == 0
+    assert cli_resume._cmd_resume((), "plan-MODEL1", force=False) == 0
     # The replayed execution carries the recorded pair, spelled provider/model.
     assert routes == [
         ("claude-refused", "claude-refused"),
@@ -1300,7 +1300,7 @@ def test_a_parked_resume_hands_run_task_the_config_path(
     seen: list[object] = []
 
     def _capture_run_task(*_a: object, **kw: object) -> int:
-        seen.append(kw.get("config_path"))
+        seen.append(kw.get("config_paths"))
         return 0
 
     monkeypatch.setattr(run, "run_task", _capture_run_task)
@@ -1311,6 +1311,6 @@ def test_a_parked_resume_hands_run_task_the_config_path(
         encoding="utf-8",
     )
 
-    assert cli_resume._cmd_resume(config_path, "parked-AAAA11", force=False) == 0
+    assert cli_resume._cmd_resume((config_path,), "parked-AAAA11", force=False) == 0
 
-    assert seen == [config_path]
+    assert seen == [(config_path,)]

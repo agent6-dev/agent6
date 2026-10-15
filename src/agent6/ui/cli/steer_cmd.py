@@ -21,7 +21,7 @@ from agent6.viewmodel import listing, session_is_live
 
 
 def _cmd_steer(
-    target: str, text: str, *, now: bool = False, config_path: pathlib.Path | None = None
+    target: str, text: str, *, now: bool = False, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> int:
     """Send a composer line to a live session.
 
@@ -29,7 +29,7 @@ def _cmd_steer(
         target: The session id or prefix.
         text: The line, as typed in a composer; `/stop` stops the session.
         now: Interrupt the current call instead of waiting for a boundary.
-        config_path: The invocation's `--config`, which a `/btw` asks on.
+        config_paths: The invocation's `--config`, which a `/btw` asks on.
 
     Returns:
         The exit code; 2 when the session is unknown, not live, or the line is a view command.
@@ -58,7 +58,7 @@ def _cmd_steer(
         return 2
     # The one owner of what a typed line does, shared with the TUI, the web and the pause menu.
     did, said = directives.submit_composer_line(
-        layout.session_dir, text, now=now, config_path=config_path
+        layout.session_dir, text, now=now, config_paths=config_paths
     )
     if not did:
         _common.error(f"{said} ({layout.session_id})")

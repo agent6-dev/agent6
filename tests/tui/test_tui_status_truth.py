@@ -307,7 +307,7 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: pathlib.Path, monkey
         steer: str = "",
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> str:
         spawned.append((rid, steer))
         return ""
@@ -373,7 +373,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
         steer: str = "",
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> str:
         spawned.append((rid, steer, preset, model))
         return "the checkout is busy" if steer == "refuse me" else ""

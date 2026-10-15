@@ -45,7 +45,7 @@ def test_prompt_show_run_mode_injects_agents_md(
 ) -> None:
     repo = _git_repo(tmp_path)
     _isolate(tmp_path, monkeypatch, repo)
-    rc = prompt_cmds._cmd_prompt_show(None, mode="run")
+    rc = prompt_cmds._cmd_prompt_show((), mode="run")
     out = capsys.readouterr().out
     assert rc == 0
     # The run-mode base and the per-repo summary block.
@@ -65,11 +65,11 @@ def test_prompt_show_leaves_mcp_tools_pending(
         '[mcp]\nenabled = true\n[mcp.servers.preview]\ncommand = ["nonexistent-mcp"]\n',
         encoding="utf-8",
     )
-    assert prompt_cmds._cmd_prompt_show(config, mode="run", as_json=True) == 0
+    assert prompt_cmds._cmd_prompt_show((config,), mode="run", as_json=True) == 0
     exchange = json.loads(capsys.readouterr().out)
     assert exchange["mcp_tools_pending"] is True
     assert not any(t["name"].startswith("mcp__") for t in exchange["tools"])
-    assert prompt_cmds._cmd_prompt_show(config, mode="run") == 0
+    assert prompt_cmds._cmd_prompt_show((config,), mode="run") == 0
     assert "discovered at run start" in capsys.readouterr().out
 
 
@@ -78,7 +78,7 @@ def test_prompt_show_plan_mode_differs(
 ) -> None:
     repo = _git_repo(tmp_path)
     _isolate(tmp_path, monkeypatch, repo)
-    rc = prompt_cmds._cmd_prompt_show(None, mode="plan")
+    rc = prompt_cmds._cmd_prompt_show((), mode="plan")
     out = capsys.readouterr().out
     assert rc == 0 and "PLAN mode" in out
 
@@ -100,7 +100,7 @@ def test_prompt_show_includes_recorded_memories(
     state.mkdir(parents=True, exist_ok=True)
     memory.add(state, "facts", "the deploy script needs sudo")
 
-    assert prompt_cmds._cmd_prompt_show(None, mode="run") == 0
+    assert prompt_cmds._cmd_prompt_show((), mode="run") == 0
     out = capsys.readouterr().out
     assert "the deploy script needs sudo" in out
 
@@ -117,12 +117,12 @@ def test_prompt_show_prints_the_tools_and_the_first_message(
     """
     repo = _git_repo(tmp_path)
     _isolate(tmp_path, monkeypatch, repo)
-    assert prompt_cmds._cmd_prompt_show(None, mode="run") == 0
+    assert prompt_cmds._cmd_prompt_show((), mode="run") == 0
     out = capsys.readouterr().out
     assert "=== tools (" in out and "--- run_command" in out and "--- finish_session" in out
     assert "=== first user message ===" in out and "`finish_session` requests the run end" in out
 
-    assert prompt_cmds._cmd_prompt_show(None, mode="ask", as_json=True) == 0
+    assert prompt_cmds._cmd_prompt_show((), mode="ask", as_json=True) == 0
     exchange = json.loads(capsys.readouterr().out)
     names = [t["name"] for t in exchange["tools"]]
     assert "read_file" in names and "agent6_docs" in names
@@ -148,7 +148,7 @@ def test_prompt_show_infers_the_gate_a_run_would_infer(
     )
     _isolate(tmp_path, monkeypatch, repo)
 
-    assert prompt_cmds._cmd_prompt_show(None, mode="run") == 0
+    assert prompt_cmds._cmd_prompt_show((), mode="run") == 0
 
     out = capsys.readouterr().out
     assert "pytest -q" in out

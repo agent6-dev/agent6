@@ -23,11 +23,15 @@ from agent6.ui.cli import _common
 from agent6.viewmodel import listing, machine_state
 
 
-def _explicit_config(kw: dict[str, object]) -> pathlib.Path | None:
-    """Return the `--config FILE` already typed on the line, so completions read that config."""
+def _explicit_config(kw: dict[str, object]) -> tuple[pathlib.Path, ...]:
+    """Return the `--config FILE` layers already typed on the line, before and after the verb."""
     parsed = kw.get("parsed_args")
-    raw = getattr(parsed, "config", None)
-    return raw if isinstance(raw, pathlib.Path) else None
+    before = getattr(parsed, "config", None)
+    after = getattr(parsed, "config_after", None)
+    return (
+        *(before if isinstance(before, list) else []),
+        *(after if isinstance(after, list) else []),
+    )
 
 
 def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
@@ -112,7 +116,9 @@ def _complete_parallel_models(prefix: str, **kw: object) -> list[str]:
 _WITHHELD_ENUM_VALUES: dict[str, frozenset[str]] = {"sandbox.isolation": frozenset({"none"})}
 
 
-def _config_enum_choices(config_path: pathlib.Path | None = None) -> dict[str, tuple[str, ...]]:
+def _config_enum_choices(
+    config_paths: tuple[pathlib.Path, ...] = (),
+) -> dict[str, tuple[str, ...]]:
     """Return every closed-value leaf's allowed values, through the view the config surfaces render.
 
     A bool completes like an enum: `config set` takes exactly `true` or `false`.
@@ -120,7 +126,7 @@ def _config_enum_choices(config_path: pathlib.Path | None = None) -> dict[str, t
     from agent6.viewmodel import config_view  # noqa: PLC0415  # noqa: PLC0415
 
     try:
-        view = config_view.build_config_view(layer.load_effective(pathlib.Path.cwd(), config_path))
+        view = config_view.build_config_view(layer.load_effective(pathlib.Path.cwd(), config_paths))
     except ConfigError:
         # A config that does not load still completes: the schema carries the choices.
         view = config_view.build_config_view(
@@ -128,7 +134,7 @@ def _config_enum_choices(config_path: pathlib.Path | None = None) -> dict[str, t
                 config=Config(),
                 sources={},
                 layers=(),
-                presets=tuple(layer.available_preset_names(pathlib.Path.cwd(), config_path)),
+                presets=tuple(layer.available_preset_names(pathlib.Path.cwd(), config_paths)),
             )
         )
     out: dict[str, tuple[str, ...]] = {}
@@ -143,11 +149,11 @@ def _config_enum_choices(config_path: pathlib.Path | None = None) -> dict[str, t
     return out
 
 
-def _config_list_keys(config_path: pathlib.Path | None = None) -> set[str]:
+def _config_list_keys(config_paths: tuple[pathlib.Path, ...] = ()) -> set[str]:
     """Return the list leaves `config add` and `config remove` accept."""
     from agent6.viewmodel import config_view  # noqa: PLC0415  # noqa: PLC0415
 
-    effective = layer.load_effective(pathlib.Path.cwd(), config_path)
+    effective = layer.load_effective(pathlib.Path.cwd(), config_paths)
     return {
         setting.key
         for setting in config_view.build_config_view(effective).settings
@@ -155,7 +161,7 @@ def _config_list_keys(config_path: pathlib.Path | None = None) -> set[str]:
     }
 
 
-def _user_preset_names(config_path: pathlib.Path | None = None) -> list[str]:
+def _user_preset_names(config_paths: tuple[pathlib.Path, ...] = ()) -> list[str]:
     """Return the user-defined `[presets.*]` names.
 
     A built-in name is withheld: writing `presets.<builtin>.*` replaces the built-in
@@ -164,7 +170,7 @@ def _user_preset_names(config_path: pathlib.Path | None = None) -> list[str]:
     try:
         return [
             p.name
-            for p in layer.preset_catalog(pathlib.Path.cwd(), config_path).presets
+            for p in layer.preset_catalog(pathlib.Path.cwd(), config_paths).presets
             if p.origin != "built-in"
         ]
     except ConfigError:
@@ -238,20 +244,19 @@ def _complete_config_values(
             return []
     parts = key.split(".", 2)
     schema_key = parts[2] if len(parts) == 3 and parts[0] == "presets" else key
-    raw = getattr(parsed_args, "config", None)
-    config_path = raw if isinstance(raw, pathlib.Path) else None
+    config_paths = _explicit_config({"parsed_args": parsed_args})
     if getattr(parsed_args, "config_command", "") in (
         "add",
         "remove",
-    ) and schema_key not in _config_list_keys(config_path):
+    ) and schema_key not in _config_list_keys(config_paths):
         return []
-    choices = list(_config_enum_choices(config_path).get(schema_key, ()))
+    choices = list(_config_enum_choices(config_paths).get(schema_key, ()))
     if key.endswith(".extra_body"):
         choices += list(_EXTRA_BODY_RECIPES)
     if not choices:
         with contextlib.suppress(ConfigError):
             choices = models_choices.config_value_choices(
-                layer.load_effective(pathlib.Path.cwd(), config_path), schema_key
+                layer.load_effective(pathlib.Path.cwd(), config_paths), schema_key
             )
     return [v for v in choices if v.startswith(prefix)]
 

@@ -25,27 +25,27 @@ from agent6.providers import claude_code
 from agent6.ui.cli import _common
 
 
-def _connected_providers(config_path: pathlib.Path | None) -> list[str]:
+def _connected_providers(config_paths: tuple[pathlib.Path, ...]) -> list[str]:
     """Return the provider names the effective config declares; empty on any error."""
     try:
-        eff = layer.load_effective(pathlib.Path.cwd(), config_path)
+        eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
     except ConfigError:
         return []
     return sorted(eff.config.providers)
 
 
-def _models_for(config_path: pathlib.Path | None, provider: str) -> list[str]:
+def _models_for(config_paths: tuple[pathlib.Path, ...], provider: str) -> list[str]:
     """Return the known model ids for a provider; empty when the config does not load."""
     try:
-        eff = layer.load_effective(pathlib.Path.cwd(), config_path)
+        eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
     except ConfigError:
         return []
     return choices.provider_model_choices(eff.config, provider)
 
 
-def _prompt_for_provider(config_path: pathlib.Path | None) -> str:
+def _prompt_for_provider(config_paths: tuple[pathlib.Path, ...]) -> str:
     """Return the provider picked interactively, defaulting to the first connected one."""
-    providers = _connected_providers(config_path)
+    providers = _connected_providers(config_paths)
     if providers:
         print("Connected providers: " + ", ".join(providers))
         default = providers[0]
@@ -57,14 +57,14 @@ def _prompt_for_provider(config_path: pathlib.Path | None) -> str:
     return _common.safe_input("Provider: ") or ""
 
 
-def _prompt_for_model(config_path: pathlib.Path | None, provider: str) -> str | None:
+def _prompt_for_model(config_paths: tuple[pathlib.Path, ...], provider: str) -> str | None:
     """Return the model picked interactively from the provider's list.
 
     Returns:
         The model, "" when nothing was typed, or None after a refusal it printed (a number
         past the list).
     """
-    options = _models_for(config_path, provider)
+    options = _models_for(config_paths, provider)
     if options:
         print(f"Models for {provider}:")
         for i, model in enumerate(options, 1):
@@ -83,13 +83,13 @@ def _prompt_for_model(config_path: pathlib.Path | None, provider: str) -> str | 
     return _common.safe_input("Model: ") or ""
 
 
-def _show_assignments(config_path: pathlib.Path | None) -> int:
+def _show_assignments(config_paths: tuple[pathlib.Path, ...]) -> int:
     """Print the three role assignments with their config origin.
 
     Returns:
         The exit code, 0.
     """
-    eff = layer.load_effective(pathlib.Path.cwd(), config_path)
+    eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
     print("Role assignments (planner/reviewer fall back to worker when unset):\n")
     show_roles: tuple[RoleName, ...] = ("planner", "worker", "reviewer")
     for r in show_roles:
@@ -109,21 +109,21 @@ def _show_assignments(config_path: pathlib.Path | None) -> int:
     return 0
 
 
-def _print_catalog(config_path: pathlib.Path | None, role: str, provider: str) -> int:
+def _print_catalog(config_paths: tuple[pathlib.Path, ...], role: str, provider: str) -> int:
     """Print the provider's model ids, one per line, with the set hint on stderr.
 
     The listing for a piped invocation naming no model: the one non-interactive way to
     discover model ids, for a `--parallel` spec among others.
 
     Args:
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         role: The role the hint names.
         provider: The provider whose catalog to print.
 
     Returns:
         The exit code, 0.
     """
-    options = _models_for(config_path, provider)
+    options = _models_for(config_paths, provider)
     if not options:
         _common.error(
             f"no known models for {provider}: no listing reached and no role names one."
@@ -136,10 +136,10 @@ def _print_catalog(config_path: pathlib.Path | None, role: str, provider: str) -
     return 0
 
 
-def _warn_unusable_provider(config_path: pathlib.Path | None, provider: str) -> None:
+def _warn_unusable_provider(config_paths: tuple[pathlib.Path, ...], provider: str) -> None:
     """Warn when a set names a keyless provider: config accepts it, the first run would refuse."""
     try:
-        eff = layer.load_effective(pathlib.Path.cwd(), config_path)
+        eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
     except ConfigError:
         return
     entry = eff.config.providers.get(provider)
@@ -169,7 +169,7 @@ def _warn_unusable_provider(config_path: pathlib.Path | None, provider: str) -> 
 
 
 def _read_route(
-    config_path: pathlib.Path | None, role: str, route: str, *, interactive: bool
+    config_paths: tuple[pathlib.Path, ...], role: str, route: str, *, interactive: bool
 ) -> tuple[str, str]:
     """Return `(provider, model)` from a `[PROVIDER/]MODEL` value.
 
@@ -178,7 +178,7 @@ def _read_route(
     the model to pick. A blank value prompts for the provider on a terminal.
 
     Args:
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         role: The role being set.
         route: The value as typed.
         interactive: Both channels are a terminal.
@@ -194,11 +194,11 @@ def _read_route(
     if not route:
         if raw_route:
             raise ConfigError(f"{raw_route!r}: no model id.")
-        provider = _prompt_for_provider(config_path) if interactive else ""
+        provider = _prompt_for_provider(config_paths) if interactive else ""
         if not provider:
             raise ConfigError("no provider given: name it as provider/model.")
         return provider, ""
-    cfg = layer.load_effective(pathlib.Path.cwd(), config_path).config
+    cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
     if "/" not in route and route in cfg.providers:
         return route, ""
     if not cfg.providers and "/" in route:
@@ -220,7 +220,7 @@ def _read_route(
 
 
 def _cmd_model(
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     *,
     role: str | None,
     route: str,
@@ -230,7 +230,7 @@ def _cmd_model(
     """Show or set the model and reasoning effort for a role.
 
     Args:
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         role: `planner`, `worker`, `reviewer` or `all`; None shows the assignments.
         route: The `[PROVIDER/]MODEL` value; "" prompts or lists.
         effort: The reasoning effort to set.
@@ -240,11 +240,11 @@ def _cmd_model(
         The exit code; 2 on a refused value.
     """
     if not role:
-        return _show_assignments(config_path)
+        return _show_assignments(config_paths)
     # Interactive means both channels are a tty: a piped stdout gets the listing, not a prompt.
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     try:
-        provider, model = _read_route(config_path, role, route, interactive=interactive)
+        provider, model = _read_route(config_paths, role, route, interactive=interactive)
     except ConfigError as exc:
         _common.error(str(exc))
         return 2
@@ -252,9 +252,9 @@ def _cmd_model(
         if effort:
             # The flag only means something for a set; a silent drop would read as applied.
             print("note: --effort ignored (no model named; this is a listing).", file=sys.stderr)
-        return _print_catalog(config_path, role, provider)
+        return _print_catalog(config_paths, role, provider)
     if not model:
-        picked = _prompt_for_model(config_path, provider)
+        picked = _prompt_for_model(config_paths, provider)
         if not picked:
             if picked == "":
                 _common.error("no model given.")
@@ -275,5 +275,5 @@ def _cmd_model(
             return 2
     where = "[models.*] (all roles)" if role == "all" else f"[models.{role}]"
     print(f"Set {where} = {provider}/{model}{f' (effort={effort})' if effort else ''} in {target}.")
-    _warn_unusable_provider(config_path, provider)
+    _warn_unusable_provider(config_paths, provider)
     return 0

@@ -87,47 +87,47 @@ def route_for(cfg: Config, mode: str) -> str:
     return f"{rm.provider}/{rm.model}" if rm is not None else ""
 
 
-def available_routes(cwd: pathlib.Path, config_path: pathlib.Path | None) -> list[str]:
+def available_routes(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...]) -> list[str]:
     """Return `route_choices` for the config a hub at a directory runs under.
 
     Args:
         cwd: The hub's directory.
-        config_path: An explicit config file, or None.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         The routes, or [] on any config error.
     """
     try:
-        cfg = layer.load_effective(cwd, config_path).config
+        cfg = layer.load_effective(cwd, config_paths).config
     except ConfigError:
         return []
     return route_choices(cfg)
 
 
-def default_preset(cwd: pathlib.Path, config_path: pathlib.Path | None) -> str:
+def default_preset(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...]) -> str:
     """Return the preset the config at a directory selects.
 
     Args:
         cwd: The hub's directory.
-        config_path: An explicit config file, or None.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         The selected preset, or "" when none is selected or on any config error.
     """
     try:
-        return layer.preset_catalog(cwd, config_path).selected
+        return layer.preset_catalog(cwd, config_paths).selected
     except ConfigError:
         return ""
 
 
 def default_route(
-    cwd: pathlib.Path, config_path: pathlib.Path | None, mode: str, preset: str
+    cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...], mode: str, preset: str
 ) -> str:
     """Return the route a session of a mode runs under a preset from the config alone.
 
     Args:
         cwd: The hub's directory.
-        config_path: An explicit config file, or None.
+        config_paths: The `--config` files in command-line order.
         mode: The session mode.
         preset: The preset to load under.
 
@@ -135,7 +135,7 @@ def default_route(
         The route, or "" on any config error or an unset role.
     """
     try:
-        cfg = layer.load_effective(cwd, config_path, preset=preset).config
+        cfg = layer.load_effective(cwd, config_paths, preset=preset).config
     except ConfigError:
         return ""
     return route_for(cfg, mode)
@@ -156,7 +156,7 @@ def default_label(name: str, *, recorded: bool = False) -> str:
 
 def resume_defaults(
     cwd: pathlib.Path,
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     session_dir: pathlib.Path,
     *,
     preset: str = "",
@@ -168,7 +168,7 @@ def resume_defaults(
 
     Args:
         cwd: The hub's directory.
-        config_path: An explicit config file, or None.
+        config_paths: The `--config` files in command-line order.
         session_dir: The session to resume.
         preset: The preset picked in the row, or "".
 
@@ -185,10 +185,10 @@ def resume_defaults(
     route = (
         f"{driver.provider}/{driver.model}"
         if driver is not None
-        else default_route(cwd, config_path, mode, preset or replayed)
+        else default_route(cwd, config_paths, mode, preset or replayed)
     )
     return (
-        default_label(replayed or default_preset(cwd, config_path), recorded=bool(replayed)),
+        default_label(replayed or default_preset(cwd, config_paths), recorded=bool(replayed)),
         default_label(route, recorded=driver is not None),
     )
 

@@ -579,7 +579,7 @@ def test_a_config_defect_reaches_the_crash_path_and_an_unreadable_config_degrade
 
     monkeypatch.setattr("agent6.config.layer.load_effective", broken)
     with pytest.raises(AttributeError):
-        cli_skills_cmds._state_map(None)
+        cli_skills_cmds._state_map(())
     with pytest.raises(AttributeError):
         cli_skills_cmds._cmd_skills_list()
 
@@ -587,6 +587,6 @@ def test_a_config_defect_reaches_the_crash_path_and_an_unreadable_config_degrade
         raise ConfigError("bad toml")
 
     monkeypatch.setattr("agent6.config.layer.load_effective", unreadable)
-    assert cli_skills_cmds._state_map(None) == {}
+    assert cli_skills_cmds._state_map(()) == {}
     assert cli_skills_cmds._cmd_skills_list() == 0
     assert "config unreadable" in capsys.readouterr().err

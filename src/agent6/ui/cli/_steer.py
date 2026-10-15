@@ -304,7 +304,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
     console_view: _console_view.ConsoleView | None = None,
     session_facts: Callable[[], frontend.SessionFacts] | None = None,
     btw_runner: _steer_menu.BtwRunner | None = None,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> steer.SteerState:
     """Install the escalating SIGINT handler and return the harness's steer callables.
 
@@ -320,7 +320,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
         console_view: The live view, paused for the prompt.
         session_facts: Reads the facts the pause banner prints.
         btw_runner: Starts a btw for the menu.
-        config_path: The invocation's `--config`.
+        config_paths: The invocation's `--config`.
 
     Returns:
         The steer state; its `restore` puts the previous handlers back.
@@ -394,7 +394,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
             with pause():
                 if _menu_input.menu_capable():
                     return _steer_menu.pause_menu(
-                        session_dir, btw_runner=btw_runner, config_path=config_path
+                        session_dir, btw_runner=btw_runner, config_paths=config_paths
                     )
                 typed = tty_prompt(
                     "[agent6] paused: [enter] continue · type to steer · /stop · /exit · /detach: ",
@@ -404,7 +404,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
                     tty_message("[agent6] a steer arrived from a front-end; taking it\n")
                     return ipc.take_steer_answer(session_dir)
                 return _steer_menu.pause_line(
-                    typed, session_dir, btw_runner=btw_runner, config_path=config_path
+                    typed, session_dir, btw_runner=btw_runner, config_paths=config_paths
                 )
         finally:
             state["prompting"] = False
@@ -459,7 +459,7 @@ def make_steer_state(
     console_view: _console_view.ConsoleView | None = None,
     session_facts: Callable[[], frontend.SessionFacts] | None = None,
     btw_runner: _steer_menu.BtwRunner | None = None,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> steer.SteerState:
     """Return the steer state: the SIGINT ladder with a controlling terminal, else the file bridge.
 
@@ -469,7 +469,7 @@ def make_steer_state(
         console_view: The live view, paused for the prompt.
         session_facts: Reads the facts the pause banner prints.
         btw_runner: Starts a btw for the menu.
-        config_path: The invocation's `--config`.
+        config_paths: The invocation's `--config`.
     """
     try:
         with open("/dev/tty", encoding="utf-8"):  # noqa: PTH123
@@ -477,5 +477,5 @@ def make_steer_state(
     except OSError:
         return steer.file_bridge_steer(session_dir)
     return install_steer_sigint(
-        events, session_dir, console_view, session_facts, btw_runner, config_path
+        events, session_dir, console_view, session_facts, btw_runner, config_paths
     )

@@ -904,7 +904,7 @@ def test_a_number_outside_the_model_list_is_refused(
     """A number past the picker's list is refused, not written as a model id."""
     typed = ["7", "2"]
 
-    def models(config_path: pathlib.Path | None, provider: str) -> list[str]:
+    def models(config_paths: tuple[pathlib.Path, ...], provider: str) -> list[str]:
         return ["a", "b"]
 
     def answer(prompt: str) -> str:
@@ -912,9 +912,9 @@ def test_a_number_outside_the_model_list_is_refused(
 
     monkeypatch.setattr(modelmod, "_models_for", models)
     monkeypatch.setattr(_common, "safe_input", answer)
-    assert modelmod._prompt_for_model(None, "p") is None  # pyright: ignore[reportPrivateUsage]
+    assert modelmod._prompt_for_model((), "p") is None  # pyright: ignore[reportPrivateUsage]
     assert "no model 7: the list has 2" in capsys.readouterr().err
-    assert modelmod._prompt_for_model(None, "p") == "b"  # pyright: ignore[reportPrivateUsage]
+    assert modelmod._prompt_for_model((), "p") == "b"  # pyright: ignore[reportPrivateUsage]
 
     # The verb prints the picker's one refusal, never a second line contradicting it.
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)

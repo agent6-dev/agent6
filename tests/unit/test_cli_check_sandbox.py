@@ -337,7 +337,7 @@ def test_check_sandbox_fails_when_its_config_cannot_be_loaded(
 
     monkeypatch.setattr(check_cmds, "_cmd_check_sandbox", _sandbox_passes)
 
-    rc = check_cmds._cmd_check(bad, section="sandbox")  # pyright: ignore[reportPrivateUsage]
+    rc = check_cmds._cmd_check((bad,), section="sandbox")  # pyright: ignore[reportPrivateUsage]
 
     out = capsys.readouterr().out
     assert rc == 1

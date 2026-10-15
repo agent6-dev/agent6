@@ -14,7 +14,7 @@ from agent6.harness import ModelExchange, model_exchange_for
 
 
 def _cmd_prompt_show(
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     *,
     mode: Literal["run", "plan", "ask", "agent"],
     as_json: bool = False,
@@ -25,7 +25,7 @@ def _cmd_prompt_show(
     for this repo and the effective config in the given mode.
 
     Args:
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         mode: The session kind whose prompt to show.
         as_json: Print one JSON object instead of text.
 
@@ -33,7 +33,7 @@ def _cmd_prompt_show(
         The exit code, 0.
     """
     cwd = pathlib.Path.cwd()
-    eff = layer.load_effective(cwd, config_path)
+    eff = layer.load_effective(cwd, config_paths)
     cfg = eff.config
     if mode in ("run", "plan") and not cfg.harness.verify_command and cfg.harness.verify_infer:
         # The gate shapes the prompt, so infer it as a run does; the LLM tier spends, so not here.

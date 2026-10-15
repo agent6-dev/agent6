@@ -1267,9 +1267,9 @@ def test_a_relative_config_path_keeps_the_launch_directory(
     monkeypatch.chdir(launch)
     bridge = runner.RunBridge(
         server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()),
-        config_path=pathlib.Path("overlay.toml"),
+        config_paths=(pathlib.Path("overlay.toml"),),
     )
-    assert bridge.config_path == config
+    assert bridge.config_paths == (config,)
 
 
 def test_an_already_answered_permission_is_not_sent_to_the_editor() -> None:

@@ -469,14 +469,14 @@ class MCPServer:
         return {"sessions": [entry(row) for row in rows]}
 
 
-def run_server(config_path: pathlib.Path | None) -> int:
+def run_server(config_paths: tuple[pathlib.Path, ...]) -> int:
     """Serve from the cwd under the effective config until stdin EOF, for `agent6 mcp serve`.
 
     Returns:
         0 on a clean exit.
     """
     root = pathlib.Path.cwd()
-    cfg = layer.load_effective(root, config_path).config
+    cfg = layer.load_effective(root, config_paths).config
     server = MCPServer(
         root=root,
         config=cfg,

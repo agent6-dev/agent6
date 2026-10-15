@@ -296,7 +296,7 @@ def test_machine_overlay_value_completion_omits_operator_only_leaves(
 def test_config_key_completion_reads_user_presets_from_the_typed_config(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A preset declared only by `--config FILE` completes as a writable key namespace."""
+    """Presets from every typed config file complete as writable key namespaces."""
     import argparse
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -305,13 +305,17 @@ def test_config_key_completion_reads_user_presets_from_the_typed_config(
     explicit = tmp_path / "explicit.toml"
     explicit.write_text('[presets.team.review]\ntrigger = "before_finish"\n', encoding="utf-8")
 
+    later = tmp_path / "later.toml"
+    later.write_text("[presets.later.review]\nperiod = 9\n", encoding="utf-8")
+
     offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
         prefix="presets.",
-        parsed_args=argparse.Namespace(config=explicit),
+        parsed_args=argparse.Namespace(config=[explicit, later]),
         action=object(),
     )
 
     assert "presets.team.review.trigger" in offered
+    assert "presets.later.review.period" in offered
 
 
 def test_config_value_completion_under_a_preset_uses_the_leafs_choices(
@@ -374,17 +378,17 @@ def test_model_provider_completion_reads_the_typed_config(
         '[providers.myprovider]\napi_format = "openai"\nbase_url = "https://example.invalid/v1"\n',
         encoding="utf-8",
     )
-    assert "myprovider" in model._connected_providers(custom)
+    assert "myprovider" in model._connected_providers((custom,))
     offered = completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
-        "my", argparse.Namespace(role="worker", config=custom)
+        "my", argparse.Namespace(role="worker", config=[custom])
     )
     assert offered == ["myprovider"]
     assert not completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
-        "open", argparse.Namespace(role="worker", config=custom)
+        "open", argparse.Namespace(role="worker", config=[custom])
     )
     # No role typed yet: nothing, so the role slot stays the role choices.
     assert not completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
-        "my", argparse.Namespace(role=None, config=custom)
+        "my", argparse.Namespace(role=None, config=[custom])
     )
 
 
@@ -407,7 +411,7 @@ def test_model_verb_completion_offers_the_typed_configs_routes(
         encoding="utf-8",
     )
     offered = completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]
-        "anthropic/", argparse.Namespace(role="worker", config=custom)
+        "anthropic/", argparse.Namespace(role="worker", config=[custom])
     )
     assert offered == ["anthropic/claude-a", "anthropic/claude-x"]
 

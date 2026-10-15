@@ -765,7 +765,7 @@ def test_run_server_lets_a_config_fault_reach_the_cli_sorting(
     bad = tmp_path / "bad.toml"
     bad.write_text("[agent6]\nnope = 1\n", encoding="utf-8")
     with pytest.raises(model.ConfigError):
-        mcp_server.run_server(bad)
+        mcp_server.run_server((bad,))
     assert cli_main(["--config", str(bad), "mcp", "serve"]) == 2
     err = capsys.readouterr().err
     assert "ERROR:" in err and "failed to load config" not in err
@@ -775,4 +775,4 @@ def test_run_server_lets_a_config_fault_reach_the_cli_sorting(
 
     monkeypatch.setattr(layer, "load_effective", boom)
     with pytest.raises(RuntimeError):
-        mcp_server.run_server(None)
+        mcp_server.run_server(())

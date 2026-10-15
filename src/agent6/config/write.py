@@ -148,7 +148,7 @@ def merged_config_error(repo_root: pathlib.Path) -> str | None:
         The error message, or None when the config loads.
     """
     try:
-        layer.load_effective(repo_root, None)
+        layer.load_effective(repo_root, ())
     except config_model.ConfigError as exc:
         return str(exc)
     return None
@@ -245,7 +245,7 @@ def unknown_key_error(
         longer loads.
     """
     try:
-        pool = layer.leaf_keys(eff if eff is not None else layer.load_effective(repo_root, None))
+        pool = layer.leaf_keys(eff if eff is not None else layer.load_effective(repo_root, ()))
     except config_model.ConfigError:
         pool = sorted(layer.flatten_leaves(config_model.Config().model_dump(mode="python")))
     close = difflib.get_close_matches(key, pool, n=2)
@@ -421,7 +421,7 @@ def revalidate_write(
         if written_value_error(wkey, wvalue, repo_root=repo_root) is not None:
             return keep_or_rollback(target, prior, value_err, held=held)
     try:
-        layer.load_effective(repo_root, None)
+        layer.load_effective(repo_root, ())
     except config_model.ConfigError as exc:
         err = str(exc) + _whole_table_hint(exc, written, to_repo=to_repo)
     else:

@@ -131,12 +131,12 @@ def test_steer_btw_opens_a_side_ask_instead_of_queuing_the_directive(
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-HHHH88")
     process.write_worker_pid(d, os.getpid())
-    opened: list[tuple[pathlib.Path, str, pathlib.Path | None]] = []
+    opened: list[tuple[pathlib.Path, str, tuple[pathlib.Path, ...]]] = []
 
     def _open_btw(
-        session_dir: pathlib.Path, question: str, *, config_path: pathlib.Path | None = None
+        session_dir: pathlib.Path, question: str, *, config_paths: tuple[pathlib.Path, ...] = ()
     ) -> tuple[bool, str]:
-        opened.append((session_dir, question, config_path))
+        opened.append((session_dir, question, config_paths))
         return True, "[agent6] btw side-ask-IIII99 opened"
 
     monkeypatch.setattr("agent6.ui.btw.open_btw", _open_btw, raising=False)
@@ -146,7 +146,7 @@ def test_steer_btw_opens_a_side_ask_instead_of_queuing_the_directive(
     assert (
         main(["--config", str(cfg), "steer", "tiny-run-HHHH88", "/btw is the migration safe?"]) == 0
     )
-    assert opened == [(d, "is the migration safe?", cfg)]
+    assert opened == [(d, "is the migration safe?", (cfg,))]
     assert "btw side-ask-IIII99 opened" in capsys.readouterr().out
     assert not ipc.steer_request_pending(d)
     assert ipc.take_steer_answer(d) is None

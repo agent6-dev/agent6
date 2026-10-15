@@ -162,7 +162,7 @@ def _recorded_outcome(
 
 
 def _cmd_compare(
-    *, session_ids: tuple[str, ...], config_path: pathlib.Path | None, rejudge: bool = False
+    *, session_ids: tuple[str, ...], config_paths: tuple[pathlib.Path, ...], rejudge: bool = False
 ) -> int:
     """Print an advisory ranking of two or more already-run candidates.
 
@@ -174,7 +174,7 @@ def _cmd_compare(
 
     Args:
         session_ids: Two or more run ids, or one fan-out id.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         rejudge: Judge afresh even for a fan-out with a recorded verdict.
 
     Returns:
@@ -205,7 +205,7 @@ def _cmd_compare(
             return 2
         seen.add(layout.session_id)
         resolved.append((layout, manifest))
-    cfg = layer.load_effective(cwd, config_path).config
+    cfg = layer.load_effective(cwd, config_paths).config
 
     candidates, rows, notes = _screen_candidates(cwd, resolved)
     for note in notes:

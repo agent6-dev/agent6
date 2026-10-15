@@ -51,7 +51,7 @@ def start_btw(
     cwd: pathlib.Path,
     launch: BtwLaunch,
     list_asks: Callable[[], list[pathlib.Path]],
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[BtwSession | None, str]:
     """Open the btw and return as soon as its session dir exists.
 
@@ -63,7 +63,7 @@ def start_btw(
         cwd: The repository the ask runs in.
         launch: The spawn callable the front-end injects.
         list_asks: Lists the ask session dirs.
-        config_path: The run's `--config` file, which the ask reads too.
+        config_paths: The run's `--config` files, which the ask reads too.
 
     Returns:
         The started session and "", or None and the error.
@@ -72,7 +72,7 @@ def start_btw(
         return None, "ask something: `/btw <question>`"
     before = {d.name for d in list_asks()}
     # `--no-commands`: nobody can approve a command for a btw; resuming the ask has the tools.
-    config = ["--config", str(config_path)] if config_path is not None else []
+    config = [arg for path in config_paths for arg in ("--config", str(path))]
     err = launch(
         cwd,
         [*config, "ask", "--no-commands", "--from", parent_id, "--", question],

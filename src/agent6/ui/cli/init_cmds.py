@@ -125,7 +125,7 @@ def _offer_scaffold_commit(
     print(f"  committed the agent6 scaffold ({', '.join(rel)})")
 
 
-def _print_next_steps(cwd: pathlib.Path, config_path: pathlib.Path | None) -> None:
+def _print_next_steps(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...]) -> None:
     """Print the commands still between this repo and a first run.
 
     `connect` and `model` appear only while the effective config lacks a provider or a
@@ -133,10 +133,10 @@ def _print_next_steps(cwd: pathlib.Path, config_path: pathlib.Path | None) -> No
 
     Args:
         cwd: The repo.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
     """
     try:
-        cfg: Config | None = layer.load_effective(cwd, config_path).config
+        cfg: Config | None = layer.load_effective(cwd, config_paths).config
     except ConfigError:
         cfg = None
     print()
@@ -151,14 +151,14 @@ def _print_next_steps(cwd: pathlib.Path, config_path: pathlib.Path | None) -> No
 
 
 def _cmd_init(
-    *, ecosystem: str, assume_yes: bool = False, config_path: pathlib.Path | None = None
+    *, ecosystem: str, assume_yes: bool = False, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> int:
     """Scaffold the workspace, offer the git setup, and print the next steps.
 
     Args:
         ecosystem: The language ecosystem the scaffold targets.
         assume_yes: Take every default without a TTY.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code; 2 without a TTY or `--yes`.
@@ -189,7 +189,7 @@ def _cmd_init(
                 ecosystem=ecosystem,
                 repo_config_target=target,
                 interactive=interactive,
-                config_path=config_path,
+                config_paths=config_paths,
             )
         except ConfigError as exc:
             # init is also the command that repairs a setup, so the refusal carries the way out.
@@ -211,7 +211,7 @@ def _cmd_init(
             if dirty:
                 names = ", ".join(sorted(p.name for p in dirty))
                 print(f"  left uncommitted (already edited): {names}")
-            _print_next_steps(cwd, config_path)
+            _print_next_steps(cwd, config_paths)
         return rc
     finally:
         # Under sudo, nothing root-owned stays in the real user's trees, even after a failed step.

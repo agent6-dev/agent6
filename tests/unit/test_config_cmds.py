@@ -970,6 +970,29 @@ def test_config_set_names_the_flag_file_that_shadows_the_write(
     assert "overrides sandbox.protect_git" not in out
 
 
+def test_config_set_shadow_note_names_the_last_file_setting_the_key(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Under two `--config` files the note names the later file that sets the key."""
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    first = tmp_path / "first.toml"
+    second = tmp_path / "second.toml"
+    first.write_text('[sandbox]\nrun_commands = "yes"\nprotect_git = true\n', encoding="utf-8")
+    second.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
+    both = ["--config", str(first), "--config", str(second)]
+    assert main([*both, "config", "set", "sandbox.run_commands", "no"]) == 0
+    out = capsys.readouterr().out
+    assert f"--config {second} overrides sandbox.run_commands" in out
+    assert str(first) not in out
+    # A key only the first file sets is shadowed by the first file.
+    assert main([*both, "config", "set", "sandbox.protect_git", "false"]) == 0
+    assert f"--config {first} overrides sandbox.protect_git" in capsys.readouterr().out
+
+
 def test_config_show_legend_names_the_flag_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1012,7 +1035,7 @@ def test_config_unset_on_an_mcp_server_names_the_verb_that_removes_it(
     )
 
     rc = cc._cmd_config_unset(  # pyright: ignore[reportPrivateUsage]
-        "mcp.servers.calc", repo=False, machine=None, config_path=cfg
+        "mcp.servers.calc", repo=False, machine=None, config_paths=(cfg,)
     )
 
     assert rc == 2
@@ -1027,7 +1050,7 @@ def test_config_unset_on_an_unknown_key_matches_show_and_get(
     cfg.write_text("[agent6]\nconfig_version = 1\n", encoding="utf-8")
 
     rc = cc._cmd_config_unset(  # pyright: ignore[reportPrivateUsage]
-        "mcp.servers.nope", repo=False, machine=None, config_path=cfg
+        "mcp.servers.nope", repo=False, machine=None, config_paths=(cfg,)
     )
 
     assert rc == 2

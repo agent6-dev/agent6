@@ -574,7 +574,7 @@ def test_get_honours_the_global_config_flag(
     assert _run(["--config", str(explicit), "config", "get", "review.period"]) == 0
     out = capsys.readouterr().out
     assert "review.period = 77" in out
-    assert "[flag]" in out
+    assert f"[flag ({explicit})]" in out
 
 
 def test_get_refuses_a_missing_global_config_file(iso: pathlib.Path) -> None:

@@ -65,10 +65,10 @@ def _installed_dir() -> pathlib.Path:
 
 
 def _search_dirs(
-    repo_root: pathlib.Path, config_path: pathlib.Path | None = None
+    repo_root: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[pathlib.Path, ...]:
     """Return the discovery search path: the effective config's dirs plus the managed one."""
-    cfg = layer.load_effective(repo_root, config_path).config
+    cfg = layer.load_effective(repo_root, config_paths).config
     return agent6_skills.skill_search_dirs(cfg.skills.extra_dirs, _installed_dir())
 
 
@@ -373,13 +373,15 @@ def _install_from_git(url: str, *, force: bool) -> list[str]:
         ]
 
 
-def _cmd_skills_install(url: str, *, force: bool, config_path: pathlib.Path | None = None) -> int:
+def _cmd_skills_install(
+    url: str, *, force: bool, config_paths: tuple[pathlib.Path, ...] = ()
+) -> int:
     """Install the skills at a URL or path and print each name.
 
     Args:
         url: A SKILL.md URL, a git URL, or a local path.
         force: Replace existing installs.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code, 0.
@@ -419,20 +421,20 @@ def _cmd_skills_install(url: str, *, force: bool, config_path: pathlib.Path | No
                 f"note: /{name} is a built-in pause-menu command and keeps its meaning;"
                 " the skill stays reachable via the <skills> index, use_skill, and --skill"
             )
-    if _print_disabled_notes(installed, config_path):
+    if _print_disabled_notes(installed, config_paths):
         print(_common.sgr("Installed; `agent6 skills list` shows the effective state.", "2"))
     else:
         print(_common.sgr("Enabled and active now; `agent6 skills list` to review.", "2"))
     return 0
 
 
-def _print_disabled_notes(installed: list[str], config_path: pathlib.Path | None) -> bool:
+def _print_disabled_notes(installed: list[str], config_paths: tuple[pathlib.Path, ...]) -> bool:
     """Name every installed skill a surviving `skills.state = "disabled"` leaf covers.
 
     Returns:
         Whether any was named; the closing line must not then read "active".
     """
-    disabled = sorted(n for n in installed if _state_map(config_path).get(n) == "disabled")
+    disabled = sorted(n for n in installed if _state_map(config_paths).get(n) == "disabled")
     for name in disabled:
         print(
             f'note: skills.state.{name} = "disabled" applies to this name;'
@@ -441,13 +443,13 @@ def _print_disabled_notes(installed: list[str], config_path: pathlib.Path | None
     return bool(disabled)
 
 
-def _state_map(config_path: pathlib.Path | None) -> dict[str, str]:
+def _state_map(config_paths: tuple[pathlib.Path, ...]) -> dict[str, str]:
     """Return the effective `[skills.state]` map, or {} when config is unreadable.
 
     The notes built on it then just do not print; the command's own work is already done.
     """
     try:
-        return dict(layer.load_effective(pathlib.Path.cwd(), config_path).config.skills.state)
+        return dict(layer.load_effective(pathlib.Path.cwd(), config_paths).config.skills.state)
     except ConfigError:
         return {}
 
@@ -559,7 +561,7 @@ def _cmd_skills_update(name: str) -> int:
     return 0
 
 
-def _cmd_skills_list(config_path: pathlib.Path | None = None) -> int:
+def _cmd_skills_list(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     """List the installed skills grouped by origin, with their state when any is not enabled.
 
     Returns:
@@ -567,7 +569,7 @@ def _cmd_skills_list(config_path: pathlib.Path | None = None) -> int:
     """
     repo_root = pathlib.Path.cwd()
     try:
-        cfg = layer.load_effective(repo_root, config_path).config
+        cfg = layer.load_effective(repo_root, config_paths).config
     except ConfigError as exc:
         print(f"(config unreadable, showing installed dir only: {exc})", file=sys.stderr)
         cfg = None
@@ -620,7 +622,7 @@ def _cmd_skills_list(config_path: pathlib.Path | None = None) -> int:
 
 
 def _known_skill_names(
-    repo_root: pathlib.Path, config_path: pathlib.Path | None = None
+    repo_root: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[str, ...]:
     """Return the installed skill names; refuses when discovery itself fails.
 
@@ -631,7 +633,7 @@ def _known_skill_names(
         OperatorError: The installed skills could not be read.
     """
     try:
-        skills, _ = agent6_skills.discover_skills(_search_dirs(repo_root, config_path))
+        skills, _ = agent6_skills.discover_skills(_search_dirs(repo_root, config_paths))
     except OSError as exc:
         raise errors.OperatorError(f"could not read the installed skills: {exc}") from exc
     return tuple(s.name for s in skills)
@@ -643,14 +645,14 @@ def _state_target(repo: bool) -> pathlib.Path:
 
 
 def _require_known(
-    name: str, repo_root: pathlib.Path, config_path: pathlib.Path | None = None
+    name: str, repo_root: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> None:
     """Refuse a name no installed skill has.
 
     Raises:
         OperatorError: The skill is unknown.
     """
-    known = _known_skill_names(repo_root, config_path)
+    known = _known_skill_names(repo_root, config_paths)
     if name not in known:
         raise errors.OperatorError(
             f"unknown skill {name!r}; installed: {', '.join(known) or '(none)'}"
@@ -658,7 +660,7 @@ def _require_known(
 
 
 def _cmd_skills_enable(
-    name: str, *, always: bool, repo: bool, config_path: pathlib.Path | None = None
+    name: str, *, always: bool, repo: bool, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> int:
     """Set a skill's state to enabled or always, clearing a plain enable.
 
@@ -666,7 +668,7 @@ def _cmd_skills_enable(
         name: The skill.
         always: Include the skill in every session's prompt.
         repo: Write to the repo config.
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code, 0.
@@ -675,8 +677,8 @@ def _cmd_skills_enable(
         OperatorError: The skill is unknown.
     """
     # A state leaf can outlive its skill, so clearing it must not need the skill to exist.
-    if not (not always and _state_map(config_path).get(name)):
-        _require_known(name, pathlib.Path.cwd(), config_path)
+    if not (not always and _state_map(config_paths).get(name)):
+        _require_known(name, pathlib.Path.cwd(), config_paths)
     target = _state_target(repo)
     paths.mkdir_for_real_user(target.parent)
     try:
@@ -693,7 +695,9 @@ def _cmd_skills_enable(
     return 0
 
 
-def _cmd_skills_disable(name: str, *, repo: bool, config_path: pathlib.Path | None = None) -> int:
+def _cmd_skills_disable(
+    name: str, *, repo: bool, config_paths: tuple[pathlib.Path, ...] = ()
+) -> int:
     """Set a skill's state to disabled.
 
     Returns:
@@ -702,7 +706,7 @@ def _cmd_skills_disable(name: str, *, repo: bool, config_path: pathlib.Path | No
     Raises:
         OperatorError: The skill is unknown.
     """
-    _require_known(name, pathlib.Path.cwd(), config_path)
+    _require_known(name, pathlib.Path.cwd(), config_paths)
     target = _state_target(repo)
     paths.mkdir_for_real_user(target.parent)
     try:
@@ -713,7 +717,7 @@ def _cmd_skills_disable(name: str, *, repo: bool, config_path: pathlib.Path | No
     return 0
 
 
-def _cmd_skills_remove(name: str, config_path: pathlib.Path | None = None) -> int:
+def _cmd_skills_remove(name: str, config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     """Delete the installed skill from the managed skills dir.
 
     The name becomes a path component under that dir and an rmtree target, so it must be
@@ -733,7 +737,7 @@ def _cmd_skills_remove(name: str, config_path: pathlib.Path | None = None) -> in
     target = _installed_dir() / name
     if not target.is_dir():
         # Distinguish "managed elsewhere" from "unknown" for a useful error.
-        skills, _ = agent6_skills.discover_skills(_search_dirs(pathlib.Path.cwd(), config_path))
+        skills, _ = agent6_skills.discover_skills(_search_dirs(pathlib.Path.cwd(), config_paths))
         match = next((s for s in skills if s.name == name), None)
         if match is not None:
             raise errors.OperatorError(
@@ -743,7 +747,7 @@ def _cmd_skills_remove(name: str, config_path: pathlib.Path | None = None) -> in
         raise errors.OperatorError(f"{name!r} is not installed")
     shutil.rmtree(target)
     print(f"removed {name}")
-    if state := _state_map(config_path).get(name, ""):
+    if state := _state_map(config_paths).get(name, ""):
         print(
             f'note: skills.state.{name} = "{state}" remains in config and applies if'
             f" {name!r} is installed again; `agent6 skills enable {name}` clears it"

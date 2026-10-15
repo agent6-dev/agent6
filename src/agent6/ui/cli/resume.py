@@ -15,7 +15,7 @@ from agent6.ui.cli import run
 
 
 def _cmd_resume(
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     session_id: str,
     *,
     force: bool,
@@ -30,7 +30,7 @@ def _cmd_resume(
     """Resume a paused or crashed run from its snapshot.
 
     Args:
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         session_id: The session, or "" for the newest resumable one.
         force: Resume past a head mismatch.
         tui: Open the dashboard.
@@ -45,9 +45,9 @@ def _cmd_resume(
         The exit code from `app.resume.resume_task`.
     """
     return resume.resume_task(
-        config_path,
+        config_paths,
         session_id,
-        frontend=run.session_frontend(config_path),
+        frontend=run.session_frontend(config_paths),
         force=force,
         started_at=time.time(),
         tui=tui,

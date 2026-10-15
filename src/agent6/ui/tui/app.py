@@ -104,13 +104,13 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         *,
         exit_on_end: bool = False,
         from_hub: bool = False,
-        config_path: pathlib.Path | None = None,
+        config_paths: tuple[pathlib.Path, ...] = (),
     ) -> None:
         super().__init__()
         self.session_dir = session_dir
         self._review_running = False  # Run > Review this run…: one call at a time
-        # The invocation's `--config F`; a detach-resume it spawns re-applies F.
-        self.config_path = config_path
+        # The invocation's `--config` files; a detach-resume it spawns re-applies them.
+        self.config_paths = config_paths
         # From the hub loop, Esc returns to it and q quits it; standalone, both close the view.
         self.from_hub = from_hub
         self.logs_path = session_dir / layout.LOGS_NAME
@@ -155,8 +155,8 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         # The preset and model a composer resume continues under ("" is no flag).
         self.resume_preset = ""
         self.resume_model = ""
-        presets = layer.available_preset_names(pathlib.Path.cwd(), config_path)
-        routes = choices.available_routes(pathlib.Path.cwd(), config_path)
+        presets = layer.available_preset_names(pathlib.Path.cwd(), config_paths)
+        routes = choices.available_routes(pathlib.Path.cwd(), config_paths)
         self._dash = dashboard.DashboardScreen(
             presets=presets, routes=routes, prompts=self._prompts
         )
@@ -171,7 +171,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
     def resume_defaults(self, preset: str) -> tuple[str, str]:
         """Return the resume rows' no-flag labels for a preset."""
         return choices.resume_defaults(
-            pathlib.Path.cwd(), self.config_path, self.session_dir, preset=preset
+            pathlib.Path.cwd(), self.config_paths, self.session_dir, preset=preset
         )
 
     def task_label(self) -> listing.TaskLabel:
@@ -416,7 +416,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             return
         if self.session_controllable():
             did, said = directives.submit_composer_line(
-                self.session_dir, text, config_path=self.config_path
+                self.session_dir, text, config_paths=self.config_paths
             )
             self.notify(said, severity="information" if did else "warning")
         else:
@@ -454,7 +454,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             return
         said: list[str] = []
         result = undo.undo_fork(
-            self.config_path,
+            self.config_paths,
             self.session_dir.name,
             cwd=pathlib.Path.cwd(),
             reporter=reporter.Reporter(out=said.append, err=said.append),
@@ -532,7 +532,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             steer=steer,
             preset=self.resume_preset,
             model=self.resume_model,
-            config_path=self.config_path,
+            config_paths=self.config_paths,
         )
         self.call_from_thread(
             self.notify, err or started, severity="error" if err else "information"
@@ -620,7 +620,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             if yes:
                 ok, msg = spawn.run_cli_capture(
                     [
-                        *spawn.agent6_argv(self.config_path),
+                        *spawn.agent6_argv(self.config_paths),
                         "sessions",
                         "rm",
                         "--",
@@ -708,7 +708,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             runs: The runs bucket the new session lands in.
         """
         new_dir, err = spawn.spawn_and_locate(
-            [*spawn.agent6_argv(self.config_path), "run", "--from", self.session_dir.name],
+            [*spawn.agent6_argv(self.config_paths), "run", "--from", self.session_dir.name],
             pathlib.Path.cwd(),
             before={p for p in runs.iterdir() if p.is_dir()},
             list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
@@ -732,7 +732,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         """
         said: list[str] = []
         child, rc = fork.create_fork(
-            self.config_path,
+            self.config_paths,
             self.session_dir.name,
             cwd=pathlib.Path.cwd(),
             reporter=reporter.Reporter(out=said.append, err=said.append),
@@ -770,7 +770,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         try:
             ok, text = spawn.run_cli_output(
                 [
-                    *spawn.agent6_argv(self.config_path),
+                    *spawn.agent6_argv(self.config_paths),
                     "sessions",
                     "review",
                     "--",
@@ -853,7 +853,7 @@ def run_tui(
     *,
     exit_on_end: bool = False,
     from_hub: bool = False,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> TuiExit:
     """Run the views over a session and print the reattach hint after a detach.
 
@@ -861,13 +861,13 @@ def run_tui(
         session_dir: The session to follow.
         exit_on_end: Hold on the payoff once the run ends, then exit with it.
         from_hub: The hub loop opened the view.
-        config_path: The invocation's `--config`.
+        config_paths: The invocation's `--config`.
 
     Returns:
         How the view ended.
     """
     app = Agent6TUI(
-        session_dir, exit_on_end=exit_on_end, from_hub=from_hub, config_path=config_path
+        session_dir, exit_on_end=exit_on_end, from_hub=from_hub, config_paths=config_paths
     )
     result = app.run() or TuiExit()
     if app.detached:

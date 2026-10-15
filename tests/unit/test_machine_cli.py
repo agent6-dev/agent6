@@ -1379,6 +1379,24 @@ def test_run_warns_naming_the_config_file_the_ask_came_from(
     assert "config set --repo" not in err
 
 
+def test_run_warns_naming_the_last_config_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Under two `--config` files the remedy names the last one: a value set there wins."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "runwarn.asm.toml"
+    f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
+    first = tmp_path / "ask.toml"
+    first.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
+    second = tmp_path / "later.toml"
+    second.write_text("[review]\nperiod = 7\n", encoding="utf-8")
+    assert main(["--config", str(first), "--config", str(second), "machine", "run", str(f)]) == 2
+    err = capsys.readouterr().err
+    assert f'set sandbox.run_commands = "yes" in {second}' in err
+    assert str(first) not in err
+
+
 def test_run_auto_approve_suppresses_the_warning_and_leaves_the_env_alone(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

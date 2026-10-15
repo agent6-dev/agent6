@@ -61,17 +61,19 @@ def _read_machine_overlay(machine: pathlib.Path | None) -> dict[str, object] | N
 
 
 def _effective_with_overlay(
-    config_path: pathlib.Path | None, machine: pathlib.Path | None
+    config_paths: tuple[pathlib.Path, ...], machine: pathlib.Path | None
 ) -> layer.EffectiveConfig:
     """Return the effective config, with a machine file's `[config]` overlay on top when named."""
     overlay = _read_machine_overlay(machine)
     if overlay is None:
-        return layer.load_effective(pathlib.Path.cwd(), config_path)
-    return layer.load_effective_with_overlay(pathlib.Path.cwd(), overlay, explicit_path=config_path)
+        return layer.load_effective(pathlib.Path.cwd(), config_paths)
+    return layer.load_effective_with_overlay(
+        pathlib.Path.cwd(), overlay, explicit_paths=config_paths
+    )
 
 
 def _cmd_config_show(
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     *,
     as_json: bool,
     keys: list[str] | None = None,
@@ -81,7 +83,7 @@ def _cmd_config_show(
     """Print the effective config, every leaf with its origin, or the asked-for keys in full.
 
     Args:
-        config_path: The invocation's `--config`.
+        config_paths: The invocation's `--config`.
         as_json: Print JSON.
         keys: Leaves or section prefixes to show untruncated, with their descriptions.
         descriptions: Print each leaf's description.
@@ -90,7 +92,7 @@ def _cmd_config_show(
     Returns:
         The exit code.
     """
-    eff = _effective_with_overlay(config_path, machine)
+    eff = _effective_with_overlay(config_paths, machine)
     resolved = confine.resolved_config_values(eff.config)
     if keys:
         # An asked-for key is the one place a description can never bury the values.
@@ -138,13 +140,13 @@ def _cmd_config_path() -> int:
     return 0
 
 
-def _cmd_config_presets(config_path: pathlib.Path | None = None) -> int:
+def _cmd_config_presets(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     """Print every known preset with the overrides it applies, the selected one marked.
 
     Returns:
         The exit code.
     """
-    cat = layer.preset_catalog(pathlib.Path.cwd(), config_path)
+    cat = layer.preset_catalog(pathlib.Path.cwd(), config_paths)
     if cat.selected:
         print(f"preset = {cat.selected}  [{cat.source}]")
     else:
@@ -255,7 +257,7 @@ def _leaf_problems(text: str) -> str:
 
 
 def _sandbox_problems(
-    overlay: dict[str, object], config_path: pathlib.Path | None
+    overlay: dict[str, object], config_paths: tuple[pathlib.Path, ...]
 ) -> dict[str, str]:
     """Return the problem `machine check` reports per sandbox key of a machine's `[config]`.
 
@@ -263,14 +265,14 @@ def _sandbox_problems(
 
     Args:
         overlay: The `[config]` table.
-        config_path: The invocation's `--config`, part of the operator's ceiling.
+        config_paths: The invocation's `--config`, part of the operator's ceiling.
 
     Raises:
         ConfigError: A layer does not load.
     """
     cwd, env = pathlib.Path.cwd(), _setup.detect_env()
-    operator = layer.load_effective(cwd, config_path).config
-    machine = layer.load_effective_with_overlay(cwd, overlay, explicit_path=config_path).config
+    operator = layer.load_effective(cwd, config_paths).config
+    machine = layer.load_effective_with_overlay(cwd, overlay, explicit_paths=config_paths).config
     try:
         return sandbox_widening(
             operator,
@@ -283,7 +285,7 @@ def _sandbox_problems(
 
 
 def _added_widening(
-    prior_text: str | None, overlay: dict[str, object], config_path: pathlib.Path | None
+    prior_text: str | None, overlay: dict[str, object], config_paths: tuple[pathlib.Path, ...]
 ) -> str | None:
     """Return the refusal for each sandbox widening an edit added to a machine's `[config]`.
 
@@ -293,17 +295,17 @@ def _added_widening(
     Args:
         prior_text: The file before the write; None when it did not exist.
         overlay: The `[config]` table as the file now holds it.
-        config_path: The invocation's `--config`, part of the operator's ceiling.
+        config_paths: The invocation's `--config`, part of the operator's ceiling.
 
     Raises:
         ConfigError: A layer does not load.
     """
-    after = _sandbox_problems(overlay, config_path)
+    after = _sandbox_problems(overlay, config_paths)
     if not after:
         return None
     try:
         prior = tomllib.loads(prior_text or "").get("config", {})
-        before = _sandbox_problems(prior if isinstance(prior, dict) else {}, config_path)
+        before = _sandbox_problems(prior if isinstance(prior, dict) else {}, config_paths)
     except (tomllib.TOMLDecodeError, ConfigError):
         before = {}
     added = [
@@ -319,7 +321,7 @@ def _revalidate_machine(
     prior_text: str | None,
     *,
     held: bool = True,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> str | None:
     """Re-validate a machine file after an overlay write, restoring the prior text on failure.
 
@@ -330,7 +332,7 @@ def _revalidate_machine(
         target: The machine file.
         prior_text: The file before the write; None when it did not exist.
         held: The lock was held; when not, a broken edit is kept, saying so.
-        config_path: The invocation's `--config`, part of the operator's ceiling.
+        config_paths: The invocation's `--config`, part of the operator's ceiling.
 
     Returns:
         The error to print, or None.
@@ -340,10 +342,10 @@ def _revalidate_machine(
         data = io.read_toml_file(target)
         overlay = data.get("config", {})
         overlay = overlay if isinstance(overlay, dict) else {}
-        layer.load_effective_with_overlay(pathlib.Path.cwd(), overlay, explicit_path=config_path)
+        layer.load_effective_with_overlay(pathlib.Path.cwd(), overlay, explicit_paths=config_paths)
         if "states" in data and _machine_is_valid(prior_text):
             load_machine(target)
-        err = _added_widening(prior_text, overlay, config_path)
+        err = _added_widening(prior_text, overlay, config_paths)
     except ConfigError as exc:
         err = _leaf_problems(str(exc))
     except MachineError as exc:
@@ -363,19 +365,19 @@ def _warn_if_still_broken() -> None:
 
 
 def _cmd_config_get(
-    config_path: pathlib.Path | None, key: str, *, machine: pathlib.Path | None
+    config_paths: tuple[pathlib.Path, ...], key: str, *, machine: pathlib.Path | None
 ) -> int:
     """Print a leaf's effective value and the layer that set it.
 
     Args:
-        config_path: The invocation's `--config`.
+        config_paths: The invocation's `--config`.
         key: The dotted leaf.
         machine: A machine file whose overlay goes on top.
 
     Returns:
         The exit code.
     """
-    eff = _effective_with_overlay(config_path, machine)
+    eff = _effective_with_overlay(config_paths, machine)
     found = layer.effective_leaf(eff, key)
     if found is None:
         _common.error(_config_key_error(key, eff))
@@ -390,17 +392,22 @@ def _cmd_config_get(
     return 0
 
 
-def _flag_shadow_note(key: str, config_path: pathlib.Path | None) -> str | None:
-    """Return a note when the `--config FILE` in force sets the key the write just landed under."""
-    if config_path is None:
+def _flag_shadow_note(key: str, config_paths: tuple[pathlib.Path, ...]) -> str | None:
+    """Return a note when a `--config FILE` in force sets the key the write just landed under.
+
+    Under several files the note names the last one that sets the key: its value wins.
+    """
+    if not config_paths:
         return None
     try:
-        eff = layer.load_effective(pathlib.Path.cwd(), config_path)
+        eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
     except ConfigError:
         return None
-    if eff.sources.get(key) != "flag":
+    source = eff.sources.get(key, "")
+    located = next((lyr for lyr in eff.layers if lyr.name == "flag" and lyr.source == source), None)
+    if located is None:
         return None
-    return f"note: --config {config_path} overrides {key} while that flag is used."
+    return f"note: --config {located.path} overrides {key} while that flag is used."
 
 
 def _cmd_config_set(
@@ -409,7 +416,7 @@ def _cmd_config_set(
     *,
     repo: bool,
     machine: pathlib.Path | None,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Set a leaf or table in the target file.
 
@@ -418,7 +425,7 @@ def _cmd_config_set(
         value: The value as typed.
         repo: Write the repo config.
         machine: Write this machine file's overlay.
-        config_path: The invocation's `--config`, for the shadow note.
+        config_paths: The invocation's `--config`, for the shadow note.
 
     Returns:
         The exit code.
@@ -436,14 +443,14 @@ def _cmd_config_set(
             prior = errors.read_operator_file(target) if target.is_file() else None
             io.read_toml_file(target)  # no line surgery on a file that does not parse
             io.upsert_toml_leaf(target, prefix + key, parsed)
-            err = _revalidate_machine(target, prior, held=held, config_path=config_path)
+            err = _revalidate_machine(target, prior, held=held, config_paths=config_paths)
     if err:
         _common.error(f"{err}")
         return 2
     if machine is None:
         _warn_if_still_broken()
     print(f"Set {key} = {io.format_toml_value(parsed)} in {target}")
-    if machine is None and (note := _flag_shadow_note(key, config_path)):
+    if machine is None and (note := _flag_shadow_note(key, config_paths)):
         print(note)
     return 0
 
@@ -455,10 +462,12 @@ def _config_key_error(key: str, eff: layer.EffectiveConfig) -> str:
     return write.unknown_key_error(key, pathlib.Path.cwd(), eff=eff)
 
 
-def _not_a_leaf(key: str, config_path: pathlib.Path | None, machine: pathlib.Path | None) -> str:
+def _not_a_leaf(
+    key: str, config_paths: tuple[pathlib.Path, ...], machine: pathlib.Path | None
+) -> str:
     """Return why the key cannot be unset; an MCP server table names the verb that removes it."""
     try:
-        eff = _effective_with_overlay(config_path, machine)
+        eff = _effective_with_overlay(config_paths, machine)
     except ConfigError:
         return f"{key!r} is not a config leaf (see `agent6 config show`)."
     name = key.removeprefix("mcp.servers.")
@@ -468,7 +477,11 @@ def _not_a_leaf(key: str, config_path: pathlib.Path | None, machine: pathlib.Pat
 
 
 def _cmd_config_unset(
-    key: str, *, repo: bool, machine: pathlib.Path | None, config_path: pathlib.Path | None = None
+    key: str,
+    *,
+    repo: bool,
+    machine: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Remove a leaf, so it reverts to the next layer or the built-in default.
 
@@ -476,7 +489,7 @@ def _cmd_config_unset(
         key: The dotted leaf.
         repo: Edit the in-repo config.
         machine: Edit this machine file's overlay.
-        config_path: The invocation's `--config`.
+        config_paths: The invocation's `--config`.
 
     Returns:
         The exit code.
@@ -487,13 +500,13 @@ def _cmd_config_unset(
     # An unset repairs a config that no longer loads, so a failing validation must not block it.
     try:
         known_leaf = (
-            layer.effective_leaf(layer.load_effective(pathlib.Path.cwd(), config_path), key)
+            layer.effective_leaf(layer.load_effective(pathlib.Path.cwd(), config_paths), key)
             is not None
         )
     except ConfigError:
         known_leaf = True
     if not known_leaf:
-        _common.error(f"{_not_a_leaf(key, config_path, machine)}")
+        _common.error(f"{_not_a_leaf(key, config_paths, machine)}")
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     if not target.is_file():
@@ -517,7 +530,7 @@ def _cmd_config_unset(
     if machine is None:
         _warn_if_still_broken()
     print(f"Unset {key} in {target}")
-    if machine is None and (note := _flag_shadow_note(key, config_path)):
+    if machine is None and (note := _flag_shadow_note(key, config_paths)):
         print(note)
     return 0
 
@@ -529,7 +542,7 @@ def _config_list_edit(
     repo: bool,
     machine: pathlib.Path | None,
     add: bool,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Add to or remove from a list leaf in the target file.
 
@@ -539,7 +552,7 @@ def _config_list_edit(
         repo: Edit the in-repo config.
         machine: Edit this machine file's overlay.
         add: Add the entry; False removes it.
-        config_path: The invocation's `--config`, part of the ceiling on a machine overlay.
+        config_paths: The invocation's `--config`, part of the ceiling on a machine overlay.
 
     Returns:
         The exit code.
@@ -556,7 +569,7 @@ def _config_list_edit(
             # A new override starts from the value it overrides, not [].
             try:
                 base = (
-                    layer.load_effective(pathlib.Path.cwd(), None)
+                    layer.load_effective(pathlib.Path.cwd(), ())
                     if repo or machine is not None
                     else layer.load_global_only()
                 )
@@ -586,7 +599,7 @@ def _config_list_edit(
                 written=[(key, items)],
             )
         else:
-            err = _revalidate_machine(target, prior, held=held, config_path=config_path)
+            err = _revalidate_machine(target, prior, held=held, config_paths=config_paths)
         if err:
             _common.error(f"{value!r} is not valid for {key}:\n{err}")
             return 2

@@ -190,14 +190,14 @@ class WebServer(http_server.ThreadingHTTPServer):
         addr: tuple[str, int],
         cwd: pathlib.Path,
         target: str,
-        config_path: pathlib.Path | None = None,
+        config_paths: tuple[pathlib.Path, ...] = (),
         *,
         secret: str,
     ) -> None:
         super().__init__(addr, _Handler)
         self.cwd = cwd
         self.target = target
-        self.config_path = config_path
+        self.config_paths = config_paths
         self.session_token = auth.session_token(secret)
         self._pid_lock = threading.Lock()
         self._watch_counts: dict[str, int] = {}
@@ -273,14 +273,14 @@ def _create_web_server(
     port: int,
     cwd: pathlib.Path,
     target: str,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
     *,
     secret: str,
 ) -> WebServer:
     """Return a server bound to the host and port, IPv6 when the host is an IPv6 literal."""
     bind_host = _bind_host(host)
     server_cls: type[WebServer] = _IPv6WebServer if _is_ipv6_literal(bind_host) else WebServer
-    return server_cls((bind_host, port), cwd, target, config_path, secret=secret)
+    return server_cls((bind_host, port), cwd, target, config_paths, secret=secret)
 
 
 class _Handler(http_server.BaseHTTPRequestHandler):
@@ -300,9 +300,9 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         return self.server.cwd
 
     @property
-    def config_path(self) -> pathlib.Path | None:
-        """The explicit config file, or None."""
-        return self.server.config_path
+    def config_paths(self) -> tuple[pathlib.Path, ...]:
+        """The `--config` files in command-line order."""
+        return self.server.config_paths
 
     # -- routing --------------------------------------------------------------
 
@@ -453,20 +453,20 @@ class _Handler(http_server.BaseHTTPRequestHandler):
                 body.task,
                 preset=body.preset,
                 model=body.model,
-                config_path=self.config_path,
+                config_paths=self.config_paths,
             )
             session_id = session_dir.name if session_dir is not None else None
             self._ok_or_err(session_id is not None, {"session_id": session_id}, err)
             return
         if path == "/api/sessions/rm_asks":
             self._read_body()  # drains the body for keep-alive framing
-            ok, msg = actions.remove_asks(self.cwd, self.config_path)
+            ok, msg = actions.remove_asks(self.cwd, self.config_paths)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         if path == "/api/sessions/prune":
             body = PruneBody.model_validate(self._read_body())
             ok, msg = actions.prune_sessions(
-                self.cwd, delete_squashed=body.delete_squashed, config_path=self.config_path
+                self.cwd, delete_squashed=body.delete_squashed, config_paths=self.config_paths
             )
             self._ok_or_err(ok, {"message": msg}, msg)
             return
@@ -487,22 +487,22 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             body = ConfigSetBody.model_validate(self._read_body())
             if body.unset:
                 ok, msg = actions.unset_config(
-                    self.cwd, body.key, repo=body.repo, config_path=self.config_path
+                    self.cwd, body.key, repo=body.repo, config_paths=self.config_paths
                 )
             else:
                 ok, msg = actions.set_config(
-                    self.cwd, body.key, body.value, repo=body.repo, config_path=self.config_path
+                    self.cwd, body.key, body.value, repo=body.repo, config_paths=self.config_paths
                 )
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         if path == "/api/machine/create":
             body = MachineCreateBody.model_validate(self._read_body())
-            draft, err = actions.spawn_machine_create(self.cwd, body.task, self.config_path)
+            draft, err = actions.spawn_machine_create(self.cwd, body.task, self.config_paths)
             self._ok_or_err(draft is not None, {"draft": draft}, err)
             return
         if path == "/api/machine/run":
             body = MachineRunBody.model_validate(self._read_body())
-            ok, msg = actions.spawn_machine_run(self.cwd, body.file, self.config_path)
+            ok, msg = actions.spawn_machine_run(self.cwd, body.file, self.config_paths)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "session":
@@ -541,7 +541,7 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             return
         if verb == "steer":
             body = SteerBody.model_validate(self._read_body())
-            ok, msg = actions.steer(self.cwd, session_id, body.text, config_path=self.config_path)
+            ok, msg = actions.steer(self.cwd, session_id, body.text, config_paths=self.config_paths)
         elif verb == "approve":
             ab = ApproveBody.model_validate(self._read_body())
             ok, msg = actions.approve(self.cwd, session_id, ab.id, ab.answer)
@@ -551,14 +551,14 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         elif verb == "merge":
             mb = MergeBody.model_validate(self._read_body())
             ok, msg = actions.merge_run(
-                self.cwd, session_id, mb.strategy, config_path=self.config_path
+                self.cwd, session_id, mb.strategy, config_paths=self.config_paths
             )
         elif verb in ("undo", "fork"):
             self._read_body()
             payload, err = (
-                actions.undo_session(self.cwd, session_id, self.config_path)
+                actions.undo_session(self.cwd, session_id, self.config_paths)
                 if verb == "undo"
-                else actions.fork_run(self.cwd, session_id, self.config_path)
+                else actions.fork_run(self.cwd, session_id, self.config_paths)
             )
             self._ok_or_err(payload is not None, payload or {}, err)
             return
@@ -570,7 +570,7 @@ class _Handler(http_server.BaseHTTPRequestHandler):
                 rb.text,
                 preset=rb.preset,
                 route=rb.model,
-                config_path=self.config_path,
+                config_paths=self.config_paths,
             )
         elif verb == "stop":
             sb = StopBody.model_validate(self._read_body())
@@ -580,11 +580,11 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             ok, msg = actions.compact_run(self.cwd, session_id)
         elif verb == "rm":
             self._read_body()
-            ok, msg = actions.remove_session(self.cwd, session_id, self.config_path)
+            ok, msg = actions.remove_session(self.cwd, session_id, self.config_paths)
         elif verb in ("run_plan", "review"):
             self._read_body()
             act = actions.run_plan if verb == "run_plan" else actions.review_run
-            payload, err = act(self.cwd, session_id, self.config_path)
+            payload, err = act(self.cwd, session_id, self.config_paths)
             self._ok_or_err(payload is not None, payload or {}, err)
             return
         else:
@@ -633,7 +633,7 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             return
         self._send_json(
             model.routes_payload(
-                self.cwd, self.config_path, mode=mode, preset=(q.get("preset") or [""])[0]
+                self.cwd, self.config_paths, mode=mode, preset=(q.get("preset") or [""])[0]
             )
         )
 
@@ -666,7 +666,7 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             )
             return
         if path == "/api/hub":
-            self._send_json(model.hub_payload(self.cwd, self.config_path))
+            self._send_json(model.hub_payload(self.cwd, self.config_paths))
             return
         if path == "/api/routes":
             self._send_routes()
@@ -674,14 +674,14 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         if path in ("/api/config", "/api/config/provider_choices"):
             # The add-provider form's choices come from the schema the TUI form reads.
             self._send_json(
-                model.config_payload(self.cwd, self.config_path)
+                model.config_payload(self.cwd, self.config_paths)
                 if path == "/api/config"
                 else {**write.provider_choices(), "defaults": write.PROVIDER_DEFAULTS}
             )
             return
         if path.startswith("/api/config/suggest/"):
             key = path.removeprefix("/api/config/suggest/")
-            self._send_json({"values": model.config_suggestions(self.cwd, key, self.config_path)})
+            self._send_json({"values": model.config_suggestions(self.cwd, key, self.config_paths)})
             return
         parts = path.strip("/").split("/")
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "session":
@@ -728,7 +728,7 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             self._send_json(model.conversation_payload(draft_dir))
         elif sub == "diff":
             q = parse.parse_qs(parse.urlsplit(self.path).query)
-            workspace = model.draft_workspace(self.cwd, name, self.config_path)
+            workspace = model.draft_workspace(self.cwd, name, self.config_paths)
             if workspace is None:
                 gone = "the drafting workspace is gone (removed with a published draft)"
                 payload, why = None, gone
@@ -780,7 +780,7 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             preset = (parse.parse_qs(parse.urlsplit(self.path).query).get("preset") or [""])[0]
             self._send_json(
                 model.resume_defaults_payload(
-                    self.cwd, self.config_path, session_dir, preset=preset
+                    self.cwd, self.config_paths, session_dir, preset=preset
                 )
             )
         elif sub == "events":
@@ -932,7 +932,7 @@ def run_web(
     port: int,
     secret: auth.Secret,
     cwd: pathlib.Path | None = None,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Serve the web UI until interrupted.
 
@@ -942,7 +942,7 @@ def run_web(
         port: The bind port.
         secret: The secret a browser signs in with.
         cwd: The repository; None is the process cwd.
-        config_path: An explicit config file, or None.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         The exit code: 2 when the bind failed.
@@ -951,7 +951,7 @@ def run_web(
     bind_host = _bind_host(host)
     try:
         server = _create_web_server(
-            bind_host, port, workdir, target, config_path, secret=secret.value
+            bind_host, port, workdir, target, config_paths, secret=secret.value
         )
     except OSError as exc:
         print(f"agent6 web: cannot bind {bind_host}:{port}: {exc}", file=sys.stderr)

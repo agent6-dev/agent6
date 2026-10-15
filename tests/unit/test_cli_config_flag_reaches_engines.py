@@ -25,9 +25,9 @@ from agent6.ui.cli import sessions_cmds, sessions_merge
 def test_merge_planner_passes_the_explicit_config_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    seen: list[pathlib.Path | None] = []
+    seen: list[tuple[pathlib.Path, ...]] = []
 
-    def fake_load(cwd: pathlib.Path, explicit: pathlib.Path | None) -> Any:
+    def fake_load(cwd: pathlib.Path, explicit: tuple[pathlib.Path, ...]) -> Any:
         seen.append(explicit)
         raise sessions_merge.ConfigError("stop here")
 
@@ -62,10 +62,10 @@ def test_merge_planner_passes_the_explicit_config_path(
     monkeypatch.setattr(git_ops, "branch_exists", _exists)
     explicit = tmp_path / "special.toml"
     rc = sessions_merge._plan_merge(  # pyright: ignore[reportPrivateUsage]
-        tmp_path, "sid", None, None, config_path=explicit
+        tmp_path, "sid", None, None, config_paths=(explicit,)
     )
     assert rc == 2  # the stubbed ConfigError surfaced as the exit path
-    assert seen == [explicit]
+    assert seen == [(explicit,)]
 
 
 def test_acp_run_bridge_passes_the_explicit_config_path(
@@ -80,9 +80,9 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
     from agent6.ui.acp import session as acp_session
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    seen: list[pathlib.Path | None] = []
+    seen: list[tuple[pathlib.Path, ...]] = []
 
-    def fake_load(cwd: pathlib.Path, explicit: pathlib.Path | None = None, **_kw: Any) -> Any:
+    def fake_load(cwd: pathlib.Path, explicit: tuple[pathlib.Path, ...] = (), **_kw: Any) -> Any:
         seen.append(explicit)
         raise _ConfigError("stop here")
 
@@ -97,16 +97,17 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
 
     server = _Server()
     cfg_path = tmp_path / "overlay.toml"
-    bridge = acp_runner.RunBridge(server=server, config_path=cfg_path)  # type: ignore[arg-type]
+    # The ignore covers the `_Server` stand-in; `config_paths` carries the real tuple shape.
+    bridge = acp_runner.RunBridge(server=server, config_paths=(cfg_path,))  # type: ignore[arg-type]
     session = acp_session.Session(acp_id="t", cwd=tmp_path)
     assert bridge.run(session, "task") == "refusal"
-    assert seen == [cfg_path]
+    assert seen == [(cfg_path,)]
 
 
 def test_hub_spawns_stamp_the_explicit_config_into_argv(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """A hub started with --config F stamps F into the argv of everything it spawns."""
+    """A hub stamps every config file into spawned argv in command-line order."""
     from agent6.ui import spawn
 
     argvs: list[list[str]] = []
@@ -119,11 +120,16 @@ def test_hub_spawns_stamp_the_explicit_config_into_argv(
 
     cfg = tmp_path / "overlay.toml"
     monkeypatch.setattr(spawn, "spawn_and_locate", fake_spawn)
-    spawn.spawn_new_work(tmp_path, "run", "t", config_path=cfg)
+    spawn.spawn_new_work(tmp_path, "run", "t", config_paths=(cfg, tmp_path / "later.toml"))
     assert len(argvs) == 1
     for argv in argvs:
         flag = argv.index("--config")
-        assert argv[flag + 1] == str(cfg)
+        assert argv[flag : flag + 4] == [
+            "--config",
+            str(cfg),
+            "--config",
+            str(tmp_path / "later.toml"),
+        ]
         assert flag < argv.index("run"), "--config is a top-level flag: before the subcommand"
 
 
@@ -154,7 +160,7 @@ def test_detached_resume_reapplies_the_overlay(
     run.mkdir(parents=True)
     (run / "worker.pid").write_text("4242", encoding="utf-8")  # the fake child owns the run
     cfg = tmp_path / "overlay.toml"
-    assert spawn_mod.spawn_detached_resume(tmp_path, "run-1", config_path=cfg) == ""
+    assert spawn_mod.spawn_detached_resume(tmp_path, "run-1", config_paths=(cfg,)) == ""
     (argv,) = seen
     assert argv[1:3] == ["--config", str(cfg)]
     assert "resume" in argv

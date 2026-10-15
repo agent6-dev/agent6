@@ -51,7 +51,7 @@ def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
         steer: str = "",
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> str:
         spawned.append((rid, steer, preset, model))
         return ""
@@ -107,13 +107,13 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
         steer: str = "",
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> str:
         spawned.append((rid, steer))
         return ""
 
-    def _fake_undo_fork(config_path: object, *_a: object, **_k: object) -> tuple[str, str]:
-        forked_under.append(config_path)
+    def _fake_undo_fork(config_paths: object, *_a: object, **_k: object) -> tuple[str, str]:
+        forked_under.append(config_paths)
         rep = _k["reporter"]
         assert isinstance(rep, reporter.Reporter)
         rep.note("put 2 path(s) back to turn 1 (abc123): a.txt (HEAD and the index are untouched)")
@@ -130,7 +130,7 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
     (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
     async def scenario() -> None:
-        app = app_mod.Agent6TUI(run, config_path=tmp_path / "custom.toml")
+        app = app_mod.Agent6TUI(run, config_paths=(tmp_path / "custom.toml",))
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.pause()
@@ -139,7 +139,7 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
             bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert bar.text == "the message taken back"
             assert app.continue_as == "fork-child-BBBBBB"
-            assert forked_under == [tmp_path / "custom.toml"]
+            assert forked_under == [(tmp_path / "custom.toml",)]
             # The rewind notice reaches the screen, as it reaches a `run -i` terminal.
             shown = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
             assert any("put 2 path(s) back to turn 1" in m for m in shown), shown
@@ -172,7 +172,7 @@ def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
         steer: str = "",
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> str:
         spawned.append((rid, steer))
         return ""
@@ -257,7 +257,7 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
         steer: str = "",
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> str:
         spawned.append((rid, steer))
         return ""
@@ -450,7 +450,10 @@ def test_a_refused_btw_toasts_as_a_warning(
     """A refused side question toasts at the error severity, like every other refusal."""
 
     def refused(
-        _session_dir: pathlib.Path, _question: str, *, config_path: pathlib.Path | None = None
+        _session_dir: pathlib.Path,
+        _question: str,
+        *,
+        config_paths: tuple[pathlib.Path, ...] = (),
     ) -> tuple[bool, str]:
         return False, "no live run to ask beside"
 

@@ -37,11 +37,11 @@ def agent6_exe() -> str:
     return shutil.which("agent6") or "agent6"
 
 
-def agent6_argv(config_path: pathlib.Path | None) -> list[str]:
+def agent6_argv(config_paths: tuple[pathlib.Path, ...]) -> list[str]:
     """Return the argv head every spawn starts from: the exe, plus the front-end's `--config`."""
     argv = [agent6_exe()]
-    if config_path is not None:
-        argv += ["--config", str(config_path)]
+    for path in config_paths:
+        argv += ["--config", str(path)]
     return argv
 
 
@@ -57,7 +57,7 @@ def spawn_new_work(  # noqa: PLR0911
     *,
     preset: str = "",
     model: str = "",
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[pathlib.Path | None, str]:
     """Start a session detached from a hub.
 
@@ -73,7 +73,7 @@ def spawn_new_work(  # noqa: PLR0911
         task: The task text.
         preset: The `--preset` value, when any.
         model: The `--model` value, when any.
-        config_path: The front-end's explicit config, when any.
+        config_paths: The front-end's explicit config, when any.
 
     Returns:
         The new session's dir (the first lane's for a fan-out) and "", or None and why.
@@ -99,10 +99,10 @@ def spawn_new_work(  # noqa: PLR0911
                 " (or /parallel it) from its run view, or wait for it to finish"
             )
         return _spawn_run(
-            cwd, mode, task, preset=preset, model=model, spec="", config_path=config_path
+            cwd, mode, task, preset=preset, model=model, spec="", config_paths=config_paths
         )
     refusal = validate.directive_model_refusal(
-        cwd, segments, config_path, preset=preset, model=model
+        cwd, segments, config_paths, preset=preset, model=model
     )
     if refusal is not None:
         return None, refusal
@@ -117,7 +117,7 @@ def spawn_new_work(  # noqa: PLR0911
             preset=preset,
             model=model,
             spec=seg.spec or "1",
-            config_path=config_path,
+            config_paths=config_paths,
         )
         if session_dir is None:
             lines.append(f"lane {i} ({seg.task}): {err}")
@@ -141,7 +141,7 @@ def _spawn_run(
     preset: str,
     model: str,
     spec: str,
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
 ) -> tuple[pathlib.Path | None, str]:
     """Spawn one detached session and locate it by its new session dir.
 
@@ -150,7 +150,7 @@ def _spawn_run(
     Returns:
         The session dir and "", or None and why.
     """
-    argv = [*agent6_argv(config_path), mode]
+    argv = [*agent6_argv(config_paths), mode]
     if preset:
         argv += ["--preset", preset]
     if model:
@@ -175,7 +175,7 @@ def spawn_detached_resume(
     steer: str = "",
     preset: str = "",
     model: str = "",
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
     flags: Sequence[str] = (),
 ) -> str:
     """Start a detached `agent6 resume` so a run keeps going after the operator detaches.
@@ -193,7 +193,7 @@ def spawn_detached_resume(
             directive refuses here with the message the child would print.
         preset: The `--preset` the execution continues under, when any.
         model: The `--model` the execution continues under, when any.
-        config_path: The front-end's explicit config, when any.
+        config_paths: The front-end's explicit config, when any.
         flags: Further `resume` options.
 
     Returns:
@@ -205,7 +205,7 @@ def spawn_detached_resume(
         session_dir = id.resolve_session(paths.state_dir(cwd), session_id).session_dir
     except id.SessionIdError as exc:
         return str(exc)
-    argv = [*agent6_argv(config_path), "resume", session_id]
+    argv = [*agent6_argv(config_paths), "resume", session_id]
     if preset:
         argv.append(f"--preset={preset}")
     if model:

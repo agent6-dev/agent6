@@ -21,7 +21,7 @@ from agent6.viewmodel import listing
 
 
 def _cmd_fork(
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     source_session_id: str,
     *,
     at_turn: int | None = None,
@@ -38,7 +38,7 @@ def _cmd_fork(
     the new direction at the first safe boundary; `--no-run` only creates the fork dir.
 
     Args:
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         source_session_id: The session to fork, or "" for the newest.
         at_turn: The checkpoint turn; None takes the latest.
         new_session_id: The fork's id; "" allocates one.
@@ -73,7 +73,7 @@ def _cmd_fork(
                 " or fork an earlier turn with --at-turn N."
             )
             return 2
-    frontend = run.session_frontend(config_path)
+    frontend = run.session_frontend(config_paths)
 
     def refuse_continuation(cfg: Config, mode: str) -> str | None:
         # The resume below would refuse the same way, after the fork existed.
@@ -87,7 +87,7 @@ def _cmd_fork(
         )
 
     child_id, rc = fork.create_fork(
-        config_path,
+        config_paths,
         source_session_id,
         at_turn=at_turn,
         new_session_id=new_session_id,
@@ -107,7 +107,7 @@ def _cmd_fork(
 
     # The fork's branch sits at the checkpoint's sha, so the head guard passes; force stays off.
     return resume.resume_task(
-        config_path,
+        config_paths,
         child_id,
         frontend=frontend,
         force=False,

@@ -226,7 +226,7 @@ class _ForkPlan:
 
 
 def _plan_fork(
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     source_session_id: str,
     *,
     at_turn: int | None = None,
@@ -242,7 +242,7 @@ def _plan_fork(
     stamps the policy the fork runs under.
 
     Args:
-        config_path: An explicit config file, or None for discovery.
+        config_paths: The `--config` files in command-line order; none means discovery alone.
         source_session_id: The source session's id; empty for the most recent.
         at_turn: The checkpoint turn; None takes the newest state.
         new_session_id: An explicit id for the fork; empty allocates one.
@@ -295,7 +295,7 @@ def _plan_fork(
 
     try:
         # The child's stamp derives from the same preset-resolved config resume replays.
-        cfg = layer.load_effective(cwd, config_path, preset=sm.harness.replay_preset).config
+        cfg = layer.load_effective(cwd, config_paths, preset=sm.harness.replay_preset).config
         recorded = sm.models.replay_driver
         route = (
             kinds.ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
@@ -363,7 +363,7 @@ def _plan_fork(
 
 
 def create_fork(
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     source_session_id: str,
     *,
     at_turn: int | None = None,
@@ -384,7 +384,7 @@ def create_fork(
     no worktree either way.
 
     Args:
-        config_path: An explicit config file, or None for discovery.
+        config_paths: The `--config` files in command-line order; none means discovery alone.
         source_session_id: The source session's id; empty for the most recent.
         at_turn: The checkpoint turn; None takes the newest state.
         new_session_id: An explicit id for the fork; empty allocates one.
@@ -403,7 +403,7 @@ def create_fork(
     """
     try:
         plan = _plan_fork(
-            config_path,
+            config_paths,
             source_session_id,
             at_turn=at_turn,
             new_session_id=new_session_id,

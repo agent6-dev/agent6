@@ -87,7 +87,7 @@ def test_only_a_flag_selected_preset_is_replayed_on_resume(repo: pathlib.Path) -
     assert layer.load_effective(repo).config.review.concurrency == 5  # repo-selected preset wins
     _write_repo_config(repo, f"[review]\nconcurrency = 3\n\n{_PROFILE_T}")
     assert layer.load_effective(repo).config.review.concurrency == 3  # no selection: config wins
-    assert layer.load_effective(repo, None, preset="t").config.review.concurrency == 5  # as a flag
+    assert layer.load_effective(repo, (), preset="t").config.review.concurrency == 5  # as a flag
 
 
 def test_user_preset_named_standard_replaces_the_builtin(repo: pathlib.Path) -> None:
@@ -188,7 +188,7 @@ def test_flag_preset_loses_to_explicit_config_file(
     _write_repo_config(repo, _PROFILE_T)  # custom preset defined in repo config
     explicit = tmp_path / "explicit.toml"
     explicit.write_text("[review]\nconcurrency = 7\n", encoding="utf-8")
-    cfg = layer.load_effective(repo, explicit, preset="t").config
+    cfg = layer.load_effective(repo, (explicit,), preset="t").config
     assert cfg.review.concurrency == 7  # explicit --config FILE beats the preset
 
 

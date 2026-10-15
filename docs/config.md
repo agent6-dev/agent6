@@ -13,8 +13,11 @@ The layers, lowest precedence first:
 | built-in defaults | (none) | (secure defaults, always present) |
 | global *(default location)* | `$XDG_CONFIG_HOME/agent6/config.toml` | `agent6 connect`, `agent6 model` |
 | per-repo *(override)* | `<state-dir>/<repo-id>/config.toml` | `agent6 init`, `agent6 config set --repo` |
-| flag | `--config FILE` | `agent6 run --config FILE` |
+| flag (FILE) | `--config FILE` | `agent6 run --config FILE` |
 | machine overlay | a machine file's `[config]` table | `agent6 config set --machine-file FILE` |
+
+`--config FILE` may repeat; later files win, and each file is layered after the repo config.
+In the `flag (FILE)` source `config show` prints, FILE is the path as given on the command line.
 
 A selected preset is inserted above the config layer that selected it; [Presets](#presets) gives the precedence rules.
 The per-repo config lives in the state dir, out of the workspace: per-machine, never committed.

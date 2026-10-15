@@ -908,7 +908,7 @@ def test_finished_run_bar_resumes_with_the_instruction(
         steer: str = "",
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> str:
         spawned.append((rid, steer))
         return ""
@@ -964,7 +964,7 @@ def test_end_hold_follows_the_resumed_execution(tmp_path: pathlib.Path, monkeypa
         steer: str = "",
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> str:
         spawned.append((rid, steer))
         (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -1567,7 +1567,7 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
         steer: str = "",
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> str:
         spawned.append((rid, steer))
         return ""

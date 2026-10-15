@@ -69,7 +69,7 @@ def test_lane_config_preserves_protect_git_provenance(
     config_path = _workdirs.write_lane_config(
         origin.config, spec, explicit_leaves=origin.explicit_leaves
     )
-    lane = layer.load_effective(spec.workdir, explicit_path=config_path)
+    lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
 
     assert lane.config.sandbox.isolation == "hardened"
     assert lane.config.sandbox.protect_git is True
@@ -99,11 +99,11 @@ def test_lane_config_keeps_an_explicit_reset_to_default(repo: pathlib.Path) -> N
         origin.config, spec, explicit_leaves=origin.explicit_leaves
     )
     written = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    lane = layer.load_effective(spec.workdir, explicit_path=config_path)
+    lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
 
     assert written["sandbox"]["protect_git"] is True
     assert lane.config.sandbox.protect_git is True
-    assert lane.sources["sandbox.protect_git"] == "flag"
+    assert lane.sources["sandbox.protect_git"] == f"flag ({config_path})"
 
 
 def test_lane_config_keeps_worker_route_and_budget_override(repo: pathlib.Path) -> None:
@@ -124,7 +124,7 @@ def test_lane_config_keeps_worker_route_and_budget_override(repo: pathlib.Path) 
 
     config_path = _workdirs.write_lane_config(cfg, spec, explicit_leaves=origin.explicit_leaves)
     written = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    lane = layer.load_effective(spec.workdir, explicit_path=config_path)
+    lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
 
     assert written["models"]["worker"]["model"] == "lane-model"
     assert written["budget"]["max_usd"] == 3.5

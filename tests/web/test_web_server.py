@@ -145,9 +145,9 @@ def test_explicit_config_reaches_the_server(tmp_path: pathlib.Path) -> None:
     A dropped path ran the whole browser surface on the default layers.
     """
     cfg = tmp_path / "f.toml"
-    srv = web_server._create_web_server("127.0.0.1", 0, tmp_path, "", cfg, secret=signin.SECRET)  # pyright: ignore[reportPrivateUsage]
+    srv = web_server._create_web_server("127.0.0.1", 0, tmp_path, "", (cfg,), secret=signin.SECRET)  # pyright: ignore[reportPrivateUsage]
     try:
-        assert srv.config_path == cfg
+        assert srv.config_paths == (cfg,)
     finally:
         srv.server_close()
 
@@ -271,7 +271,7 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
         steer: str = "",
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> str:
         calls.append((cwd, session_id, steer, preset, model))
         return ""
@@ -1940,7 +1940,7 @@ def test_bare_diff_returns_the_latest_commit(
     base, c1, c2 = _git_chain(tmp_path)
     sid = "latest-run"
     if draft:
-        cfg = layer.load_effective(tmp_path, None).config
+        cfg = layer.load_effective(tmp_path, ()).config
         workspace = _workdirs.subordinate_workdir_root(cfg, tmp_path, sid)
         workspace.mkdir(parents=True)
         base, c1, c2 = _git_chain(workspace)
@@ -2432,7 +2432,7 @@ def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
     calls: list[tuple[str, pathlib.Path]] = []
 
     def _fake_fork(
-        config_path: object, source: str, *, cwd: pathlib.Path, **_k: object
+        config_paths: object, source: str, *, cwd: pathlib.Path, **_k: object
     ) -> tuple[str, int]:
         calls.append((source, cwd))
         return "run-f-child", 0
@@ -2558,7 +2558,7 @@ def test_new_work_carries_the_picked_model(
         *,
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ) -> tuple[pathlib.Path | None, str]:
         seen.append((mode, task, preset, model))
         return tmp_path / "sid", ""

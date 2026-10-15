@@ -53,7 +53,7 @@ def test_a_filled_config_can_be_used_as_an_explicit_config(
     monkeypatch.chdir(tmp_path)
 
     # The point: this must not raise.
-    reloaded = layer.load_effective(tmp_path, filled).config
+    reloaded = layer.load_effective(tmp_path, (filled,)).config
     assert reloaded.agent6.config_version == 1
 
 
@@ -143,7 +143,7 @@ def test_key_detail_takes_several_keys_in_the_order_asked() -> None:
 def _effort_config(tmp_path: pathlib.Path, body: str) -> layer.EffectiveConfig:
     cfg = tmp_path / "config.toml"
     cfg.write_text(body, encoding="utf-8")
-    return layer.load_effective(tmp_path, cfg)
+    return layer.load_effective(tmp_path, (cfg,))
 
 
 def test_an_unset_effort_shows_what_the_openai_wire_actually_sends(
@@ -343,3 +343,20 @@ def test_mapping_display_handles_non_json_values() -> None:
     assert config_view.format_value({"path": pathlib.Path("example")}, display_safe=True) == (
         '{"path": "example"}'
     )
+
+
+def test_repeated_config_show_names_each_winning_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Each displayed value names the command-line file that last set it."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.chdir(tmp_path)
+    first = tmp_path / "first.toml"
+    second = tmp_path / "second.toml"
+    first.write_text("[review]\nperiod = 7\n[budget]\nmax_usd = 2\n", encoding="utf-8")
+    second.write_text("[budget]\nmax_usd = 3\n", encoding="utf-8")
+    assert main(["--config", str(first), "--config", str(second), "config", "show"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert any("review.period" in line and str(first) in line for line in lines)
+    assert any("budget.max_usd" in line and str(second) in line for line in lines)

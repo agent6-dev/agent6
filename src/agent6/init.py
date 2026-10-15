@@ -176,10 +176,10 @@ def _append_gitignore(root: pathlib.Path, missing: list[str]) -> str:
 
 
 def _setup_verify_command(
-    root: pathlib.Path, *, ecosystem: str, ask: _Ask, config_path: pathlib.Path | None = None
+    root: pathlib.Path, *, ecosystem: str, ask: _Ask, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> None:
     """Set `harness.verify_command` from the repo when unset, asking before an override."""
-    effective = layer.load_effective(root, config_path)
+    effective = layer.load_effective(root, config_paths)
     hide = effective.config.sandbox.hide_paths
     leaf = layer.effective_leaf(effective, "harness.verify_command")
     value, source = leaf or ((), "default")
@@ -218,11 +218,11 @@ def _setup_verify_command(
 
 
 def _setup_agents_md(
-    root: pathlib.Path, *, ecosystem: str, ask: _Ask, config_path: pathlib.Path | None = None
+    root: pathlib.Path, *, ecosystem: str, ask: _Ask, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> None:
     """Create a starter AGENTS.md, or append a verify section when the existing one lacks it."""
     agents = root / "AGENTS.md"
-    hide = layer.load_effective(root, config_path).config.sandbox.hide_paths
+    hide = layer.load_effective(root, config_paths).config.sandbox.hide_paths
     inferred = verify_infer.infer_verify_command(
         root, verify_infer.read_agents_md(root, hide), hide=hide
     )
@@ -263,7 +263,7 @@ def init_workspace(
     ecosystem: str = "",
     repo_config_target: pathlib.Path | None = None,
     interactive: bool = False,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Run the setup wizard.
 
@@ -272,7 +272,7 @@ def init_workspace(
         ecosystem: Overrides the detected ecosystem.
         repo_config_target: Overrides the per-repo config path.
         interactive: Prompt each step; otherwise every step takes its default.
-        config_path: The explicit config the effective config is read under.
+        config_paths: The `--config` files the effective config is read under.
 
     Returns:
         The CLI exit code.
@@ -297,7 +297,7 @@ def init_workspace(
         print("  skipped; using the global config + built-in defaults.")
 
     # 2. verify_command (optional; inferred).
-    _setup_verify_command(root, ecosystem=detected, ask=ask, config_path=config_path)
+    _setup_verify_command(root, ecosystem=detected, ask=ask, config_paths=config_paths)
 
     # 3. .gitignore: the question names the entries it would add.
     try:
@@ -313,5 +313,5 @@ def init_workspace(
             print("  skipped .gitignore")
 
     # 4. AGENTS.md.
-    _setup_agents_md(root, ecosystem=detected, ask=ask, config_path=config_path)
+    _setup_agents_md(root, ecosystem=detected, ask=ask, config_paths=config_paths)
     return 0

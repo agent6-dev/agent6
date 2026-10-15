@@ -654,7 +654,7 @@ def test_an_interrupt_at_the_isolation_question_removes_the_worktree(
 
     with pytest.raises(KeyboardInterrupt):
         run_lifecycle.run_task(
-            layer.load_effective(repo, None).config,
+            layer.load_effective(repo, ()).config,
             "task",
             frontend=cli_run.session_frontend(),
             started_at=time.time(),
@@ -751,7 +751,7 @@ def test_an_error_before_the_session_lock_removes_the_worktree(
 
     with pytest.raises(OSError, match="No space left"):
         run_lifecycle.run_task(
-            layer.load_effective(repo, None).config,
+            layer.load_effective(repo, ()).config,
             "task",
             frontend=cli_run.session_frontend(),
             started_at=time.time(),
@@ -774,7 +774,7 @@ def test_a_refusal_before_the_manifest_removes_the_worktree(
     monkeypatch.setattr(ipc, "submit_steer", _unwritable)
 
     rc = run_lifecycle.run_task(
-        layer.load_effective(repo, None).config,
+        layer.load_effective(repo, ()).config,
         "task",
         frontend=cli_run.session_frontend(),
         started_at=time.time(),

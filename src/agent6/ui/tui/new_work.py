@@ -113,7 +113,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     def __init__(
         self,
         repo_cwd: pathlib.Path,
-        config_path: pathlib.Path | None = None,
+        config_paths: tuple[pathlib.Path, ...] = (),
         *,
         presets: list[str] | None = None,
         routes: list[str] | None = None,
@@ -121,7 +121,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         """Bind the screen to the repo, its config and the preset and route choices."""
         super().__init__()
         self.repo_cwd = repo_cwd
-        self.config_path = config_path
+        self.config_paths = config_paths
         self._presets = presets if presets is not None else []
         self._routes = routes if routes is not None else []
         self._starting = False
@@ -150,7 +150,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
                 id="draft-mode",
             )
             yield widgets.Static("preset", classes="picker-label")
-            preset = choices.default_preset(self.repo_cwd, self.config_path)
+            preset = choices.default_preset(self.repo_cwd, self.config_paths)
             yield forms.Picker(
                 [(choices.default_label(preset), ""), *((p, p) for p in self._presets)],
                 value="",
@@ -158,7 +158,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
                 id="draft-preset",
             )
             yield widgets.Static("model", classes="picker-label")
-            route = choices.default_route(self.repo_cwd, self.config_path, "run", "")
+            route = choices.default_route(self.repo_cwd, self.config_paths, "run", "")
             yield forms.Picker(
                 self._model_options(route), value="", allow_blank=False, id="draft-model"
             )
@@ -182,7 +182,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         """Reset the model picker to the config default for the mode and preset."""
         mode = str(self.query_one("#draft-mode", widgets.Select).value)
         preset = str(self.query_one("#draft-preset", widgets.Select).value)
-        route = choices.default_route(self.repo_cwd, self.config_path, mode, preset)
+        route = choices.default_route(self.repo_cwd, self.config_paths, mode, preset)
         self.query_one("#draft-model", widgets.Select).set_options(self._model_options(route))
 
     def action_close(self) -> None:
@@ -222,7 +222,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         passed in: a screen dismissed mid-spawn has no parent to reach it through.
         """
         session_dir, err = spawn.spawn_new_work(
-            self.repo_cwd, mode, task, preset=preset, model=model, config_path=self.config_path
+            self.repo_cwd, mode, task, preset=preset, model=model, config_paths=self.config_paths
         )
         app.call_from_thread(self._started, session_dir, err, task)
 

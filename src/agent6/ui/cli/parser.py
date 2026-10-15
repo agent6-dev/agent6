@@ -76,6 +76,15 @@ _GLOBAL_VALUE_OPTS = frozenset({"--config"})
 _GLOBAL_FLAG_OPTS = frozenset({"--allow-root"})
 
 
+def config_files(args: argparse.Namespace) -> tuple[pathlib.Path, ...]:
+    """Return every `--config FILE` in command-line order.
+
+    The top-level flag appends to `config`, a verb's to `config_after` (absent when no verb
+    saw one); the merge happens once, at dispatch, and the app layer below sees one tuple.
+    """
+    return (*(args.config or []), *getattr(args, "config_after", ()))
+
+
 def _shell_default_help() -> str:
     """Return the completions `shell` help, naming what detection resolves to.
 
@@ -202,13 +211,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser.add_argument("--version", action="version", version=f"agent6 {__version__}")
     parser.add_argument(
         "--config",
+        action="append",
         type=pathlib.Path,
         default=None,
         metavar="FILE",
         help=(
             "A config file layered over the global config (its path is below) and"
             " the per-repo config (kept under the state dir, out of the workspace)."
-            " Default: those two and the built-in defaults."
+            " Repeatable; later files win. Default: those two and the built-in defaults."
         ),
     )
     parser.add_argument(

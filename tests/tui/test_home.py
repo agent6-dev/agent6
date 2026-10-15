@@ -229,7 +229,7 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
         *,
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ):
         started.append((mode, task, preset))
         return tmp_path / "located", ""
@@ -284,7 +284,7 @@ def test_a_start_whose_screen_was_left_still_opens_the_session(
         *,
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ):
         entered.set()
         if not gate.wait(timeout=5.0):
@@ -338,7 +338,7 @@ def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
         *,
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ):
         entered.set()
         gate.wait(timeout=5.0)
@@ -391,7 +391,7 @@ def test_new_task_view_keeps_the_text_on_a_refusal(
         *,
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ):
         return None, "REFUSING: 1 tracked file has uncommitted changes:\n- [git] seed.txt"
 
@@ -493,7 +493,7 @@ def test_merge_action_confirms_then_shells_out(tmp_path: pathlib.Path, monkeypat
     calls: list[str] = []
 
     def _fake_merge(
-        cwd: pathlib.Path, session_id: str, config_path: object = None
+        cwd: pathlib.Path, session_id: str, config_paths: object = ()
     ) -> tuple[bool, str]:
         calls.append(session_id)
         return True, "merged"
@@ -860,7 +860,7 @@ def test_delete_action_confirms_then_shells_out(
     calls: list[str] = []
 
     def _fake_delete(
-        cwd: pathlib.Path, session_id: str, config_path: object = None
+        cwd: pathlib.Path, session_id: str, config_paths: object = ()
     ) -> tuple[bool, str]:
         calls.append(session_id)
         return True, "removed"
@@ -931,12 +931,12 @@ def test_prune_and_clear_asks_are_hub_actions_that_shell_the_cli(
     calls: list[tuple[str, bool]] = []
 
     def _fake_prune(
-        cwd: pathlib.Path, *, delete_squashed: bool, config_path: object = None
+        cwd: pathlib.Path, *, delete_squashed: bool, config_paths: object = ()
     ) -> tuple[bool, str]:
         calls.append(("prune", delete_squashed))
         return True, "pruned"
 
-    def _fake_clear(cwd: pathlib.Path, config_path: object = None) -> tuple[bool, str]:
+    def _fake_clear(cwd: pathlib.Path, config_paths: object = ()) -> tuple[bool, str]:
         calls.append(("asks", False))
         return True, "cleared"
 
@@ -1028,10 +1028,10 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
     resolved = {("run", ""): "o/a", ("plan", ""): "o/b", ("plan", "ultra"): "o/c"}
 
-    def _route(cwd: pathlib.Path, config_path: object, mode: str, preset: str) -> str:
+    def _route(cwd: pathlib.Path, config_paths: object, mode: str, preset: str) -> str:
         return resolved.get((mode, preset), "")
 
-    def _preset(cwd: pathlib.Path, config_path: object) -> str:
+    def _preset(cwd: pathlib.Path, config_paths: object) -> str:
         return "quick"
 
     monkeypatch.setattr(choices, "default_route", _route)
@@ -1045,7 +1045,7 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
         *,
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ):
         started.append((mode, task, preset, model))
         return tmp_path / "located", ""
@@ -1109,7 +1109,7 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
     resolved = {("run", ""): "o/a"}
 
-    def _route(cwd: pathlib.Path, config_path: object, mode: str, preset: str) -> str:
+    def _route(cwd: pathlib.Path, config_paths: object, mode: str, preset: str) -> str:
         return resolved.get((mode, preset), "")
 
     monkeypatch.setattr(choices, "default_route", _route)
@@ -1122,7 +1122,7 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
         *,
         preset: str = "",
         model: str = "",
-        config_path: object = None,
+        config_paths: object = (),
     ):
         started.append((mode, task, preset, model))
         return tmp_path / "located", ""
@@ -1134,7 +1134,7 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
 
     async def empty_list() -> None:
         # No routes and no default (a config naming no provider) opens too.
-        def _no_route(cwd: pathlib.Path, config_path: object, mode: str, preset: str) -> str:
+        def _no_route(cwd: pathlib.Path, config_paths: object, mode: str, preset: str) -> str:
             return ""
 
         monkeypatch.setattr(choices, "default_route", _no_route)

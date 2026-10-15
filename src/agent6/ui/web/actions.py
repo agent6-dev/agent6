@@ -41,14 +41,14 @@ from agent6.viewmodel import (
 
 
 def spawn_machine_create(
-    cwd: pathlib.Path, task: str, config_path: pathlib.Path | None = None
+    cwd: pathlib.Path, task: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[str | None, str]:
     """Spawn `agent6 machine create <task>` detached.
 
     Args:
         cwd: The repository.
         task: What the machine is for.
-        config_path: An explicit config file, or None.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         The draft dir name to watch and "", or None and the reason.
@@ -56,7 +56,7 @@ def spawn_machine_create(
     if not task.strip():
         return None, "empty task"
     draft, err = spawn.spawn_and_locate(
-        [*spawn.agent6_argv(config_path), "machine", "create", "--", task],
+        [*spawn.agent6_argv(config_paths), "machine", "create", "--", task],
         cwd,
         before=set(model.draft_dir_paths(cwd)),
         list_dirs=lambda: model.draft_dir_paths(cwd),
@@ -65,7 +65,7 @@ def spawn_machine_create(
 
 
 def spawn_machine_run(
-    cwd: pathlib.Path, machine_file: str, config_path: pathlib.Path | None = None
+    cwd: pathlib.Path, machine_file: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str]:
     """Spawn `agent6 machine run <file>` detached.
 
@@ -75,7 +75,7 @@ def spawn_machine_run(
     Args:
         cwd: The repository.
         machine_file: A listed machine file, by path or listed name (never an arbitrary path).
-        config_path: An explicit config file, or None.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         Whether it started, and the note or the refusal.
@@ -96,7 +96,7 @@ def spawn_machine_run(
         return False, f"invalid machine file: {exc}"
     instance = layout.machines_root(agent6_paths.state_dir(cwd)) / spec.machine
     err = spawn.spawn_and_confirm(
-        [*spawn.agent6_argv(config_path), "machine", "run", machine_file],
+        [*spawn.agent6_argv(config_paths), "machine", "run", machine_file],
         cwd,
         started=lambda pid: process.read_worker_pid(instance) == pid,
     )
@@ -157,7 +157,7 @@ def answer_question(
 
 
 def steer(
-    cwd: pathlib.Path, session_id: str, text: str, *, config_path: pathlib.Path | None = None
+    cwd: pathlib.Path, session_id: str, text: str, *, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str]:
     """Steer a live run at its next safe boundary.
 
@@ -165,7 +165,7 @@ def steer(
         cwd: The repository.
         session_id: The run.
         text: A free instruction; "" continues, "abort" stops the run.
-        config_path: The server's `--config`, which a `/btw` asks on.
+        config_paths: The server's `--config`, which a `/btw` asks on.
 
     Returns:
         Whether the request landed, and the note or the refusal.
@@ -173,11 +173,11 @@ def steer(
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
-    return directives.submit_composer_line(session_dir, text, config_path=config_path)
+    return directives.submit_composer_line(session_dir, text, config_paths=config_paths)
 
 
 def fork_run(
-    cwd: pathlib.Path, session_id: str, config_path: pathlib.Path | None = None
+    cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[dict[str, str] | None, str]:
     """Fork a run at its latest checkpoint into a new, unstarted run.
 
@@ -189,14 +189,14 @@ def fork_run(
         return None, f"no session {session_id!r}"
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
-    child, rc = fork.create_fork(config_path, session_dir.name, cwd=cwd, reporter=reporter)
+    child, rc = fork.create_fork(config_paths, session_dir.name, cwd=cwd, reporter=reporter)
     if rc != 0:
         return None, (spawn.capture_message(said[-1]) if said else "fork failed")
     return {"new_session_id": child}, ""
 
 
 def undo_session(
-    cwd: pathlib.Path, session_id: str, config_path: pathlib.Path | None = None
+    cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[dict[str, str] | None, str]:
     """Fork a finished run at the state before its last operator message, unstarted.
 
@@ -213,7 +213,7 @@ def undo_session(
         return None, "the session is live; /undo rides the steer channel from the composer"
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
-    result = undo.undo_fork(config_path, session_dir.name, cwd=cwd, reporter=reporter)
+    result = undo.undo_fork(config_paths, session_dir.name, cwd=cwd, reporter=reporter)
     if result is None:
         return None, (spawn.capture_message(said[-1]) if said else "undo failed")
     child, text = result
@@ -228,7 +228,7 @@ def resume_run(
     *,
     preset: str = "",
     route: str = "",
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Resume a finished or stopped run detached.
 
@@ -238,7 +238,7 @@ def resume_run(
         text: The first steering instruction, or "".
         preset: The preset to continue under; "" as recorded.
         route: The `[provider/]model` to continue on; "" as recorded.
-        config_path: An explicit config file, or None.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         Whether it started, and the note or the refusal; a live run is refused.
@@ -257,13 +257,13 @@ def resume_run(
             " type what to do next (Enter resumes it with the instruction)"
         )
     err = spawn.spawn_detached_resume(
-        cwd, session_dir.name, steer=text, preset=preset, model=route, config_path=config_path
+        cwd, session_dir.name, steer=text, preset=preset, model=route, config_paths=config_paths
     )
     return (err == ""), (err or "resuming")
 
 
 def run_plan(
-    cwd: pathlib.Path, session_id: str, config_path: pathlib.Path | None = None
+    cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[dict[str, str] | None, str]:
     """Execute a finished plan by spawning `agent6 run --from <id>` detached.
 
@@ -290,7 +290,7 @@ def run_plan(
     runs = layout.bucket_dir(agent6_paths.state_dir(cwd), "runs")
     agent6_paths.mkdir_for_real_user(runs)
     new_dir, err = spawn.spawn_and_locate(
-        [*spawn.agent6_argv(config_path), "run", "--from", session_id],
+        [*spawn.agent6_argv(config_paths), "run", "--from", session_id],
         cwd,
         before={p for p in runs.iterdir() if p.is_dir()},
         list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
@@ -484,14 +484,17 @@ def machine_steer(cwd: pathlib.Path, name: str, text: str, *, state: str = "") -
 
 
 def merge_run(
-    cwd: pathlib.Path, session_id: str, strategy: str = "", config_path: pathlib.Path | None = None
+    cwd: pathlib.Path,
+    session_id: str,
+    strategy: str = "",
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Merge a run's branch through `agent6 sessions merge`.
 
     Returns:
         Whether the CLI succeeded, and its message.
     """
-    argv = [*spawn.agent6_argv(config_path), "sessions", "merge"]
+    argv = [*spawn.agent6_argv(config_paths), "sessions", "merge"]
     if strategy:
         argv += ["--strategy", strategy]
     argv += ["--", session_id]
@@ -499,7 +502,7 @@ def merge_run(
 
 
 def review_run(
-    cwd: pathlib.Path, session_id: str, config_path: pathlib.Path | None = None
+    cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[dict[str, str] | None, str]:
     """Review a finished run's record through `agent6 sessions review`, a call of minutes.
 
@@ -507,7 +510,7 @@ def review_run(
         The review markdown in a dict and "", or None and the CLI's refusal.
     """
     ok, text = spawn.run_cli_output(
-        [*spawn.agent6_argv(config_path), "sessions", "review", "--", session_id],
+        [*spawn.agent6_argv(config_paths), "sessions", "review", "--", session_id],
         cwd,
         timeout_s=900.0,
     )
@@ -515,26 +518,29 @@ def review_run(
 
 
 def prune_sessions(
-    cwd: pathlib.Path, *, delete_squashed: bool = False, config_path: pathlib.Path | None = None
+    cwd: pathlib.Path,
+    *,
+    delete_squashed: bool = False,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Prune merged run branches through `agent6 sessions prune`.
 
     Args:
         cwd: The repository.
         delete_squashed: Pass `--delete-squashed`, without which a squash-merged branch stays.
-        config_path: An explicit config file, or None.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         Whether the CLI succeeded, and its message.
     """
-    argv = [*spawn.agent6_argv(config_path), "sessions", "prune"]
+    argv = [*spawn.agent6_argv(config_paths), "sessions", "prune"]
     if delete_squashed:
         argv.append("--delete-squashed")
     return spawn.run_cli_capture(argv, cwd)
 
 
 def remove_session(
-    cwd: pathlib.Path, session_id: str, config_path: pathlib.Path | None = None
+    cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str]:
     """Delete one run's history through `agent6 sessions rm`; the branch is prune's.
 
@@ -542,18 +548,18 @@ def remove_session(
         Whether the CLI succeeded, and its message; a live run is refused.
     """
     return spawn.run_cli_capture(
-        [*spawn.agent6_argv(config_path), "sessions", "rm", "--", session_id], cwd
+        [*spawn.agent6_argv(config_paths), "sessions", "rm", "--", session_id], cwd
     )
 
 
-def remove_asks(cwd: pathlib.Path, config_path: pathlib.Path | None = None) -> tuple[bool, str]:
+def remove_asks(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()) -> tuple[bool, str]:
     """Clear every saved ask through `agent6 sessions rm --asks`.
 
     Returns:
         Whether the CLI succeeded, and its message.
     """
     return spawn.run_cli_capture(
-        [*spawn.agent6_argv(config_path), "sessions", "rm", "--asks", "--yes"], cwd
+        [*spawn.agent6_argv(config_paths), "sessions", "rm", "--asks", "--yes"], cwd
     )
 
 
@@ -563,14 +569,14 @@ def set_config(
     value: str,
     *,
     repo: bool = False,
-    config_path: pathlib.Path | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Set one config leaf through `agent6 config set`, which validates key and value.
 
     Returns:
         Whether the CLI succeeded, and its message.
     """
-    argv = [*spawn.agent6_argv(config_path), "config", "set"]
+    argv = [*spawn.agent6_argv(config_paths), "config", "set"]
     if repo:
         argv.append("--repo")
     argv += ["--", key, value]
@@ -615,14 +621,18 @@ def add_provider(
 
 
 def unset_config(
-    cwd: pathlib.Path, key: str, *, repo: bool = False, config_path: pathlib.Path | None = None
+    cwd: pathlib.Path,
+    key: str,
+    *,
+    repo: bool = False,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Unset one config leaf through `agent6 config unset`.
 
     Returns:
         Whether the CLI succeeded, and its message.
     """
-    argv = [*spawn.agent6_argv(config_path), "config", "unset"]
+    argv = [*spawn.agent6_argv(config_paths), "config", "unset"]
     if repo:
         argv.append("--repo")
     argv += ["--", key]

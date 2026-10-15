@@ -89,7 +89,7 @@ def draft_dir_for(cwd: pathlib.Path, name: str) -> pathlib.Path | None:
 
 
 def draft_workspace(
-    cwd: pathlib.Path, name: str, config_path: pathlib.Path | None
+    cwd: pathlib.Path, name: str, config_paths: tuple[pathlib.Path, ...]
 ) -> pathlib.Path | None:
     """Return the workspace a `machine create` draft commits in, or None once it is gone.
 
@@ -97,7 +97,7 @@ def draft_workspace(
     trees; publishing the draft removes it.
     """
     try:
-        cfg = layer.load_effective(cwd, config_path).config
+        cfg = layer.load_effective(cwd, config_paths).config
     except ConfigError:
         return None
     workspace = _workdirs.subordinate_workdir_root(cfg, cwd, name)
@@ -217,13 +217,13 @@ def list_machine_files(cwd: pathlib.Path) -> list[dict[str, str]]:
 
 
 def routes_payload(
-    cwd: pathlib.Path, config_path: pathlib.Path | None, *, mode: str, preset: str
+    cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...], *, mode: str, preset: str
 ) -> dict[str, Any]:
     """Return the new-work composer's model picker.
 
     Args:
         cwd: The repository.
-        config_path: An explicit config file, or None.
+        config_paths: The `--config` files in command-line order.
         mode: The session mode the default route is for.
         preset: The preset the default route is under.
 
@@ -231,32 +231,36 @@ def routes_payload(
         Every `provider/model` the config can run, and the label of the no-flag entry.
     """
     return {
-        "routes": choices.available_routes(cwd, config_path),
+        "routes": choices.available_routes(cwd, config_paths),
         "default_label": choices.default_label(
-            choices.default_route(cwd, config_path, mode, preset)
+            choices.default_route(cwd, config_paths, mode, preset)
         ),
     }
 
 
 def resume_defaults_payload(
-    cwd: pathlib.Path, config_path: pathlib.Path | None, session_dir: pathlib.Path, *, preset: str
+    cwd: pathlib.Path,
+    config_paths: tuple[pathlib.Path, ...],
+    session_dir: pathlib.Path,
+    *,
+    preset: str,
 ) -> dict[str, str]:
     """Return the resume row's no-flag preset and model labels under a picked preset."""
     preset_label, model_label = choices.resume_defaults(
-        cwd, config_path, session_dir, preset=preset
+        cwd, config_paths, session_dir, preset=preset
     )
     return {"preset_label": preset_label, "model_label": model_label}
 
 
-def hub_payload(cwd: pathlib.Path, config_path: pathlib.Path | None = None) -> dict[str, Any]:
+def hub_payload(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()) -> dict[str, Any]:
     """Return the hub: sessions, machines, drafts, machine files and the preset choices."""
     return {
         "sessions": _list_sessions(cwd),
         "machines": _list_machines(cwd),
         "machine_files": list_machine_files(cwd),
         "drafts": _list_drafts(cwd),
-        "presets": layer.available_preset_names(cwd, config_path),
-        "preset_default_label": choices.default_label(choices.default_preset(cwd, config_path)),
+        "presets": layer.available_preset_names(cwd, config_paths),
+        "preset_default_label": choices.default_label(choices.default_preset(cwd, config_paths)),
     }
 
 
@@ -351,13 +355,15 @@ def machine_reasoning_snapshot(
 # --- config ------------------------------------------------------------------
 
 
-def config_payload(cwd: pathlib.Path, config_path: pathlib.Path | None = None) -> dict[str, Any]:
+def config_payload(
+    cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
+) -> dict[str, Any]:
     """Return the effective config per leaf, keyed by dotted key.
 
     The shared fields are what `agent6 config show --json` prints; `input` is each
     value's round-trippable editor text. No secret is included.
     """
-    eff = layer.load_effective(cwd, config_path)
+    eff = layer.load_effective(cwd, config_paths)
     resolved = confine.resolved_config_values(eff.config)
     payload: dict[str, Any] = json.loads(
         config_view.render_show(eff, as_json=True, resolved=resolved)
@@ -375,7 +381,7 @@ def config_payload(cwd: pathlib.Path, config_path: pathlib.Path | None = None) -
 
 
 def config_suggestions(
-    cwd: pathlib.Path, key: str, config_path: pathlib.Path | None = None
+    cwd: pathlib.Path, key: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> list[str]:
     """Return value suggestions for one open-text config leaf.
 
@@ -383,9 +389,9 @@ def config_suggestions(
     offers. A config error suggests nothing.
     """
     if key == "preset":
-        return layer.available_preset_names(cwd, config_path)
+        return layer.available_preset_names(cwd, config_paths)
     try:
-        eff = layer.load_effective(cwd, config_path)
+        eff = layer.load_effective(cwd, config_paths)
     except ConfigError:
         return []
     return choices.config_value_choices(eff, key)

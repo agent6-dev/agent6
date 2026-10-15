@@ -76,7 +76,7 @@ def test_review_diff_with_base_is_plain_diff(repo: pathlib.Path) -> None:
 @pytest.mark.parametrize("base", ["", "base"])
 def test_review_refuses_a_range_in_head(base: str, capsys: pytest.CaptureFixture[str]) -> None:
     """A range in --head cannot discard --base or select the working tree."""
-    assert review_cmds._cmd_review(None, base=base, head="a..b", paths=()) == 2
+    assert review_cmds._cmd_review((), base=base, head="a..b", paths=()) == 2
     assert "--head must be a ref; use --base a..b" in capsys.readouterr().err
 
 

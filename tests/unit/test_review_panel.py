@@ -616,7 +616,7 @@ def test_review_degrades_on_an_unreadable_agents_md(
     monkeypatch.setattr(review_cmds, "_run_review_panel", _fake_panel)
     try:
         rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-            None, base="", head="", paths=(), reviewers=1
+            (), base="", head="", paths=(), reviewers=1
         )
     finally:
         agents.chmod(0o600)
@@ -668,14 +668,14 @@ def test_the_panel_reviews_under_the_freeform_reviews_label(
     test_review_diff_collect._git(tmp_path, "commit", "--allow-empty", "-qm", "init")
     start = test_review_diff_collect._git(tmp_path, "rev-parse", "HEAD").strip()
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        None, base="main", head="HEAD", paths=("src/x.py",), reviewers=1
+        (), base="main", head="HEAD", paths=("src/x.py",), reviewers=1
     )
     assert rc == 0
     assert seen["label"] == f"main...HEAD -- src/x.py (from {start})"
     captured = capsys.readouterr()
     assert f"[agent6] reviewing: main...HEAD -- src/x.py (from {start})\n" in captured.err
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        None, base="", head="HEAD", paths=("src/x.py",), reviewers=1
+        (), base="", head="HEAD", paths=("src/x.py",), reviewers=1
     )
     assert rc == 0
     assert seen["label"] == "working tree vs HEAD -- src/x.py"

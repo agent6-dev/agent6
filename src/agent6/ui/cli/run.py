@@ -76,7 +76,7 @@ def _remember_steer(
     return state
 
 
-def session_frontend(config_path: pathlib.Path | None = None) -> frontend.SessionFrontend:
+def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.SessionFrontend:
     """Return the presentation seam the run and resume lifecycles drive.
 
     One per invocation: the console-view cell is run-scoped. The console view is created
@@ -85,7 +85,7 @@ def session_frontend(config_path: pathlib.Path | None = None) -> frontend.Sessio
     exe-spawn primitives it cannot reach (`ui.spawn`) are injected.
 
     Args:
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
     """
     # Late-bound: the approver and questioner are built before the view or steer state exists.
     console_cell: list[_console_view.ConsoleView | None] = [None]
@@ -141,9 +141,9 @@ def session_frontend(config_path: pathlib.Path | None = None) -> frontend.Sessio
                         else []
                     ),
                     events=events,
-                    config_path=config_path,
+                    config_paths=config_paths,
                 ),
-                config_path=config_path,
+                config_paths=config_paths,
             ),
         ),
         confirm_unconfined_autorun=_preflight.confirm_unconfined_autorun,
@@ -191,7 +191,7 @@ def session_frontend(config_path: pathlib.Path | None = None) -> frontend.Sessio
         ),
         agent6_exe=spawn.agent6_exe,
         spawn_detached_resume=lambda cwd, sid, flags: spawn.spawn_detached_resume(
-            cwd, sid, config_path=config_path, flags=flags
+            cwd, sid, config_paths=config_paths, flags=flags
         ),
     )
 
@@ -244,7 +244,7 @@ def _compose_task(
 
 
 def _cmd_run(
-    config_path: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
     task: str,
     *,
     session_id: str = "",
@@ -271,7 +271,7 @@ def _cmd_run(
     injected seam.
 
     Args:
-        config_path: The `--config` file, if any.
+        config_paths: The `--config` files in command-line order, if any.
         task: The task as typed.
         session_id: A session id to use; "" allocates one.
         interactive: Stay attached for a conversation.
@@ -298,7 +298,7 @@ def _cmd_run(
         return 2
     effective = _setup.load_session_config(
         pathlib.Path.cwd(),
-        config_path,
+        config_paths,
         mode=mode,
         preset=preset,
         budget_overrides=budget_overrides,
@@ -347,7 +347,7 @@ def _cmd_run(
     return run.run_task(
         cfg,
         task,
-        frontend=session_frontend(config_path),
+        frontend=session_frontend(config_paths),
         started_at=time.time(),
         session_id=session_id,
         source_session_id=source_session_id or None,
@@ -362,5 +362,5 @@ def _cmd_run(
         model=model,
         explicit_leaves=explicit_leaves,
         worktree=worktree,
-        config_path=config_path,
+        config_paths=config_paths,
     )
