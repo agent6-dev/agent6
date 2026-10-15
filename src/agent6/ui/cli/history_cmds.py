@@ -30,7 +30,7 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
         session_id: The session, or "" for every session in every bucket.
 
     Returns:
-        The exit code: 0 with hits, 1 with none, 2 when the session cannot be resolved.
+        The exit code: 0 with hits, 1 with none, 2 on resolution or search errors.
     """
     rg = shutil.which("rg")
     if rg is None:
@@ -58,14 +58,16 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
         argv.append("--fixed-strings")
     argv.extend(["--", query, *(str(t) for t in targets)])
     completed = subprocess.run(argv, check=False, capture_output=True, text=True)
-    if completed.returncode not in (0, 1):  # 1 == no matches, not an error
-        sys.stderr.write(completed.stderr)
-        return completed.returncode
     hits = _parse_rg_matches(completed.stdout)
-    _render_history_hits(
-        hits, targets[0] if session_id else paths.state_dir(cwd) / sessions_layout.SESSIONS_ROOT
-    )
-    return 0 if hits else 1
+    incomplete = completed.returncode not in (0, 1)  # 1 == no matches, not an error
+    if incomplete:
+        _common.error("search incomplete: some files were not read.")
+        sys.stderr.write(completed.stderr)
+    if hits or not incomplete:
+        _render_history_hits(
+            hits, targets[0] if session_id else paths.state_dir(cwd) / sessions_layout.SESSIONS_ROOT
+        )
+    return 2 if incomplete else 0 if hits else 1
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

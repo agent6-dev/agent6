@@ -92,6 +92,9 @@ The end block adds `running command was cut short` when the stop ended a running
 `--after-step` leaves `running · stopping after this step` in listings until the step ends, then prints `operator stopped the run after step N`.
 A starting or waiting run keeps that status and adds `stopping after this step` beside its other details.
 
+`history search` keeps the matches it read if a file disappears or another search error occurs, prints `search incomplete: some files were not read.` and the error, and exits with code 2.
+It does not report `no matches` when the search is incomplete.
+
 A session's cost covers every execution, in dollars or in plan points, and in both for a run that spent both (`1pt + $0.03`); `sessions list`, `sessions show`, the end-of-run total and the fan-out report print the same figure.
 A fan-out's report ends with the plan's latest reading among its lanes (`plan usage (<entry>): N% of the 7-day window`); the fan-out itself reads `finished · lanes ranked`, and each lane carries its own gate verdict.
 The tokens and the points against `max_percent` on `sessions show` are the latest execution's.

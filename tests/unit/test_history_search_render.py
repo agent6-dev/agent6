@@ -7,10 +7,58 @@ from __future__ import annotations
 import base64
 import json
 import pathlib
+import shutil
 
 import pytest
 
-from agent6.ui.cli import history_cmds
+from agent6 import paths
+from agent6.sessions import layout as sessions_layout
+from agent6.ui.cli import _common, history_cmds
+
+
+@pytest.mark.parametrize("query", ["NEEDLE", "absent"])
+def test_search_read_error_keeps_hits_and_reports_incomplete(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    query: str,
+) -> None:
+    """A disappearing search target must not discard other sessions' matches."""
+    if shutil.which("rg") is None:
+        pytest.skip("ripgrep is required")
+    monkeypatch.chdir(tmp_path)
+    state_home = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_home))
+    state_dir = paths.state_dir(tmp_path)
+    assert state_dir.is_relative_to(state_home)
+    runs = state_dir / sessions_layout.SESSIONS_ROOT / "runs"
+    saved = runs / "saved-record"
+    saved.mkdir(parents=True)
+    (saved / "logs.jsonl").write_text(
+        json.dumps({"type": "session.end", "summary": "NEEDLE survived"}) + "\n",
+        encoding="utf-8",
+    )
+    vanished = runs / "vanished-record"
+    vanished.mkdir()
+    discover = _common.all_session_dirs
+
+    def discover_then_remove(cwd: pathlib.Path) -> list[pathlib.Path]:
+        targets = discover(cwd)
+        vanished.rmdir()
+        return targets
+
+    monkeypatch.setattr(_common, "all_session_dirs", discover_then_remove)
+    assert history_cmds._cmd_history_search(query, fixed=True, session_id="") == 2
+    output = capsys.readouterr()
+    if query == "NEEDLE":
+        assert "NEEDLE survived" in output.out
+        assert "1 matching line in 1 session" in output.out
+    else:
+        assert output.out == ""
+    assert "no matches" not in output.out
+    assert "search incomplete: some files were not read." in output.err
+    assert str(vanished) in output.err
+    assert "No such file or directory" in output.err
 
 
 def _rg_match(path: str, line: str, col: int) -> str:
