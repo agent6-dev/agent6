@@ -100,7 +100,7 @@ def complete_steer(text: str, *, mode: ComposerMode) -> str | None:
         return None
     if len(rows) == 1:
         return rows[0][0] + " "
-    lcp = os.path.commonprefix([c for c, _h in rows])
+    lcp = os.path.commonprefix([c for c, _h in rows])  # noqa: RUF071 - completion wants a character prefix
     return lcp if len(lcp) > len(text) else text
 
 

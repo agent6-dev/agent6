@@ -132,6 +132,7 @@ ignore = [
     "ANN401",   # Any stays allowed at the boundaries that need it
     "D105",     # a magic method's docstring says nothing its name does not
     "D107",     # the class docstring carries the attributes; __init__ repeats it
+    "ICN001",   # no alias convention applies; import datetime is module style
     "PLR0913",  # too many args; fine in our typed APIs
     "PLR0917",  # same call, counted positionally
     "PLR2004",  # magic-value comparisons; noisy in tests
