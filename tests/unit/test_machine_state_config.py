@@ -148,6 +148,26 @@ def _widening(operator: Config, state: Config, isolation: kinds.IsolationLevel =
     return "; ".join(sandbox_widening(operator, isolation, state, isolation).values())
 
 
+@pytest.fixture
+def working_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
+    """Stub the jail and its namespace probe, so fake command results cannot fill the probe's cache.
+
+    Returns:
+        The policies the run handed the jail, in order.
+    """
+    ran: list[kinds.JailPolicy] = []
+
+    def ok(policy: kinds.JailPolicy) -> kinds.CommandResult:
+        ran.append(policy)
+        return kinds.CommandResult(
+            argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0
+        )
+
+    monkeypatch.setattr(jail, "run_in_jail", ok)
+    monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: True)
+    return ran
+
+
 # --- the grammar ------------------------------------------------------------------------------
 
 
@@ -555,6 +575,7 @@ def test_each_tool_state_gets_its_own_jail_policy(
         build("ghost", ("true",), 5.0, ())
 
 
+@pytest.mark.usefixtures("working_jail")
 def test_each_agent_state_gets_its_own_overlay(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -573,13 +594,6 @@ def test_each_agent_state_gets_its_own_overlay(
         return run_agent
 
     monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
-
-    def ran(policy: kinds.JailPolicy) -> kinds.CommandResult:
-        return kinds.CommandResult(
-            argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0
-        )
-
-    monkeypatch.setattr(jail, "run_in_jail", ran)
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
     assert run.run_machine(_write(tmp_path, MACHINE), reporter) == 0, said
@@ -599,6 +613,7 @@ def test_an_agent_request_naming_no_state_ends_as_an_error(tmp_path: pathlib.Pat
     assert result.reason == "error: no config was resolved for state 'ghost'"
 
 
+@pytest.mark.usefixtures("working_jail")
 def test_a_machine_run_prints_the_home_grant_warning(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -606,13 +621,6 @@ def test_a_machine_run_prints_the_home_grant_warning(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path.parent))
     _operator(f'[sandbox]\nextra_read_paths = ["{tmp_path.parent}"]\n')
-
-    def ran(policy: kinds.JailPolicy) -> kinds.CommandResult:
-        return kinds.CommandResult(
-            argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0
-        )
-
-    monkeypatch.setattr(jail, "run_in_jail", ran)
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
     assert run.run_machine(_write(tmp_path, ONE_TOOL_STATE), reporter) == 0, said
@@ -621,18 +629,30 @@ def test_a_machine_run_prints_the_home_grant_warning(
     assert f"grants {str(tmp_path.parent)!r}, your home directory" in warned[0]
 
 
+@pytest.mark.usefixtures("working_jail")
+def test_a_stubbed_jail_leaves_no_namespace_verdict_in_the_process() -> None:
+    """A stubbed run leaves `jail.strict_namespaces_work`'s process-wide cache empty."""
+    jail.strict_namespaces_work.cache_clear()
+    try:
+        assert _setup.detect_env().userns_supported is True
+        assert jail.strict_namespaces_work.cache_info().currsize == 0
+    finally:
+        jail.strict_namespaces_work.cache_clear()
+
+
 # --- the refusal reaches the operator at check and at run ------------------------------------
 
 
 def test_run_and_check_refuse_a_widening_before_anything_runs(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    working_jail: list[kinds.JailPolicy],
 ) -> None:
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
     _operator(OPERATOR.replace('extra_read_paths = ["/srv/inbox", "/opt/toolchain"]', ""))
-    ran: list[kinds.JailPolicy] = []
-    monkeypatch.setattr(jail, "run_in_jail", ran.append)
     mfile = _write(tmp_path, MACHINE)
     assert main(["machine", "check", str(mfile)]) == 1
     assert (
@@ -643,7 +663,7 @@ def test_run_and_check_refuse_a_widening_before_anything_runs(
     assert run.run_machine(mfile, reporter) == 2
     said = " ".join(str(c.args[0]) for c in reporter.refuse.call_args_list)
     assert '[states.scan.config] sets sandbox.extra_read_paths = ["/srv/inbox"]' in said
-    assert ran == []
+    assert working_jail == []
 
 
 def test_check_and_run_report_every_tables_widening(
