@@ -43,6 +43,7 @@ ALLOWED = {
     "app/machine_agent.py",
     "git_ops.py",
     "git_policy.py",
+    "providers/_claude_code_session.py",
     "providers/claude_code.py",
     "providers/token_command.py",
     "sandbox/detect.py",
