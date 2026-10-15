@@ -17,6 +17,63 @@ def _read(path: str) -> list[dict[str, object]]:
     ]
 
 
+def test_memory_tool_paths_keep_the_filename_on_every_surface() -> None:
+    """Memory calls use the boundaries label before conversation and log clipping."""
+    from agent6 import paths
+    from agent6.viewmodel import log_line, transcript_render, transcript_style
+
+    path = str(paths.state_base() / ("long-repo-id-" * 10) / "memory/calculator-validation.md")
+    args = {"path": path, "new_string": "A fact."}
+    events = [
+        {"type": "tool.call", "name": "apply_edit", "args": args},
+        {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "created"},
+    ]
+    label = "repo memory/calculator-validation.md"
+    item = fold_transcript(events)[0]
+    assert item.arg == label
+    rendered = "".join(
+        text for line in transcript_style.item_lines(item, detail="collapsed") for text, _ in line
+    )
+    assert label in rendered
+    assert label in restate([{"type": "session.start", "user_task": "remember"}, *events])
+    assert label in log_line.render_args(args)
+    turns = transcript_render.fold_conversation(
+        [
+            {
+                "request": {
+                    "body": {
+                        "system": "prompt",
+                        "messages": [
+                            {
+                                "role": "assistant",
+                                "content": [
+                                    {
+                                        "type": "tool_use",
+                                        "id": "write",
+                                        "name": "apply_edit",
+                                        "input": args,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                },
+                "response": {},
+            }
+        ]
+    )
+    assert any(label in arguments for turn in turns for _, arguments in turn.tool_calls)
+    assert args["path"] == path
+    for ordinary in (
+        "memory/calculator-validation.md",
+        "/tmp/memory/calculator-validation.md",
+        str(paths.state_base() / "repo/sessions/file.md"),
+        str(paths.state_base() / "repo/memory"),
+        str(paths.state_base() / "repo/memory/../secrets.md"),
+    ):
+        assert log_line.render_args({"path": ordinary}, max_value=1000) == f"path={ordinary}"
+
+
 def test_session_start_opens_the_conversation_with_the_task() -> None:
     """The shared fold supplies the clipped task headline on every conversation surface."""
     from agent6.viewmodel import listing, transcript, transcript_style

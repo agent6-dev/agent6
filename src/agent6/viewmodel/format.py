@@ -10,12 +10,13 @@ pins the copy.
 
 from __future__ import annotations
 
+import pathlib
 import shlex
 import time
 from collections.abc import Mapping
 from typing import Literal
 
-from agent6 import budget, terminal
+from agent6 import budget, paths, terminal
 from agent6.sessions import manifest
 
 # Text characters, not graphics, so every terminal font renders them.
@@ -27,6 +28,29 @@ TASK_STATUS_GLYPH = {
     "skipped": "–",  # noqa: RUF001
     "obsolete": "×",  # noqa: RUF001
 }
+
+
+PATH_KEYS = ("path", "file")
+
+
+def tool_path(value: str) -> str:
+    """Label repo memory paths without exposing their state-directory prefix.
+
+    Args:
+        value: A tool's path argument.
+
+    Returns:
+        A repo memory label and relative path, or the original argument elsewhere.
+    """
+    path = pathlib.PurePath(value)
+    try:
+        relative = path.relative_to(paths.state_base())
+    except ValueError:
+        return value
+    parts = relative.parts
+    if len(parts) < 3 or parts[1] != "memory" or ".." in parts:
+        return value
+    return "/".join(("repo memory", *parts[2:]))
 
 
 def setup_output(event: Mapping[str, object]) -> str:

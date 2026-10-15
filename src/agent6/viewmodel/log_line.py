@@ -8,7 +8,7 @@ import shlex
 from typing import Any
 
 from agent6 import terminal
-from agent6.viewmodel import events
+from agent6.viewmodel import events, format
 
 
 def _edit_kind(edit: dict[str, object]) -> str:
@@ -30,6 +30,8 @@ def _render_arg_value(key: str, value: Any) -> str:
         An argv as a shell line, questions as the first one's text, edits as their
         kinds, a string as is, anything else as its repr.
     """
+    if key in format.PATH_KEYS and isinstance(value, str):
+        return format.tool_path(value)
     if key == "argv" and isinstance(value, (list, tuple)) and value:
         return shlex.join(str(a) for a in value)
     if key == "questions" and isinstance(value, (list, tuple)) and value:

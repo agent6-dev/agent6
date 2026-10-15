@@ -178,7 +178,8 @@ def salient_arg(args: Any) -> str:
     for key in _PRIMARY_ARGS:
         value = args.get(key)
         if isinstance(value, (str, int)):
-            return _clip(str(value))
+            text = format.tool_path(str(value)) if key in format.PATH_KEYS else str(value)
+            return _clip(text)
     key, value = next(iter(args.items()))
     return _clip(f"{key}={value}")
 

@@ -8,6 +8,7 @@ The fold walks them in seq order across the Chat Completions, Anthropic and Resp
 wire shapes, emitting only the messages each call introduced, so the cumulative
 snapshots are not double-printed and a compaction restart shows as a marker.
 `agent6 sessions transcript` is the CLI front end.
+The rendered transcript is a reading surface with labelled paths, not the wire arguments.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import re
 from typing import Any
 
 from agent6.providers import result_text
+from agent6.viewmodel import format
 
 # Equals ELISION_PREFIX in harness/_compaction.py (a test pins it), so the read model
 # needs no engine import.
@@ -213,6 +215,13 @@ def _pretty_args(raw: Any) -> str:
             raw = json.loads(raw)
         except ValueError:
             return raw.strip()
+    if isinstance(raw, dict):
+        raw = {
+            key: format.tool_path(value)
+            if key in format.PATH_KEYS and isinstance(value, str)
+            else value
+            for key, value in raw.items()
+        }
     try:
         return json.dumps(raw, ensure_ascii=False, sort_keys=True)
     except (TypeError, ValueError):
