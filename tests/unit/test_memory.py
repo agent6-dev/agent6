@@ -46,6 +46,15 @@ def test_add_keeps_the_full_first_line(tmp_path: pathlib.Path, *, by_hand: bool)
     assert memory.index_text(tmp_path) == f"- {name}: {first}"
 
 
+@pytest.mark.parametrize("first", ["# Title", "## Title", "Title"])
+@pytest.mark.parametrize("rest", ["", "\nDetails stay in the fact file."])
+def test_index_strips_heading_markers(tmp_path: pathlib.Path, first: str, rest: str) -> None:
+    """The index keeps the first line's text, without heading markers or a body fallback."""
+    memory.add(tmp_path, "fact", first + rest)
+    assert memory.index_entries(tmp_path) == (("fact", "Title"),)
+    assert memory.index_text(tmp_path) == "- fact: Title"
+
+
 def test_add_refuses_duplicate_and_bad_names(tmp_path: pathlib.Path) -> None:
     memory.add(tmp_path, "one", "fact")
     with pytest.raises(memory.MemoryStoreError, match="exists"):

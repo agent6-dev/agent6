@@ -656,7 +656,7 @@ def index_entries(state_dir: pathlib.Path) -> tuple[tuple[str, str], ...]:
         except OSError:
             continue
         first = next((line.strip() for line in text.splitlines() if line.strip()), "(empty)")
-        entries.append((path.stem, first))
+        entries.append((path.stem, first.lstrip("#").lstrip(" ")))
     return tuple(entries)
 
 
