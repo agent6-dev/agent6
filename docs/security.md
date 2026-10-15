@@ -257,6 +257,7 @@ Every path they take resolves through `Workspace`:
 - A symlink that stays inside the root is followed (`AGENTS.md -> docs/AGENTS.md`).
 
 **Repo memory** is a prompt-injection persistence channel: the rendered index joins the system prompt of later runs on the same repo.
+Memory (`<state_dir>/memory/`) holds facts the model may correct; rules belong in the repo's committed `AGENTS.md` or the operator rulings file `<state_dir>/decisions.md`, which the harness appends to, the operator edits with any editor, and the model sees only as read-only text injected into its prompt.
 
 - Entries are inert data.
 - The injected index is size-capped and framed as untrusted.

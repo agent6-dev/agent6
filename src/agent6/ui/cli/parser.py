@@ -448,10 +448,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help=(
             "Manage the repo's agent memory (one fact per file + index); a bare"
             " `agent6 memory` lists it."
+            " Memory holds facts the model may correct; rules go in AGENTS.md or the"
+            " operator rulings file (<state_dir>/decisions.md)."
         ),
     )
     mem_sub = mem_p.add_subparsers(dest="memory_command", required=True, metavar="<subcommand>")
-    mem_add = _common._sub(mem_sub, "add", help="Write <name>.md.")
+    mem_add = _common._sub(
+        mem_sub,
+        "add",
+        help="Write <name>.md: a fact the model may correct.",
+    )
     mem_add.add_argument(
         "name",
         help=(
@@ -476,7 +482,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     _common._sub(
         mem_sub,
         "decisions",
-        help="Print the operator rulings the harness recorded (<state_dir>/decisions.md).",
+        help=(
+            "Print the operator rulings the harness recorded (<state_dir>/decisions.md)."
+            " The operator edits that file with any editor; the model sees it only as"
+            " read-only text injected into its prompt."
+        ),
     )
 
     _machine_args._add_machine_parser(sub)

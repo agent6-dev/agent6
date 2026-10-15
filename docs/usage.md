@@ -300,6 +300,8 @@ agent6 completions bash|zsh|fish|xonsh [--print]
 agent6 config fill [--force]                         # write the defaults + global layers as one explicit global config
 ```
 
+Memory (`<state_dir>/memory/`) holds facts the model may correct; a rule goes in the repo's committed `AGENTS.md` or the operator rulings file `<state_dir>/decisions.md`, which the harness appends to, the operator edits with any editor, and the model sees only as read-only text injected into its prompt.
+
 ## Configuration
 
 Config is layered, lowest first: built-in defaults, `~/.config/agent6/config.toml`, the per-repo config, `--config FILE`, a machine's `[config]` overlay.
