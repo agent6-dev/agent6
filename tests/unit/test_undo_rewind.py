@@ -14,7 +14,7 @@ import subprocess as sp
 
 import pytest
 
-from agent6 import git_ops, paths
+from agent6 import errors, git_ops, paths
 from agent6.app import reporter, undo
 from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
@@ -703,7 +703,7 @@ def test_a_failed_rewind_still_journals_the_undone_end(
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
     def _fails(*_a: object, **_k: object) -> undo._Rewound:  # pyright: ignore[reportPrivateUsage]
-        raise git_ops.GitError("restore refused")
+        raise errors.GitError("restore refused")
 
     monkeypatch.setattr(undo, "_rewind_checkout", _fails)
 

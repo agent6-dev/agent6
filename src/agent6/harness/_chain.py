@@ -10,7 +10,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6 import git_ops
+from agent6 import errors, git_ops
 from agent6.config import GitCommitConfig
 
 _DIRTY_NOTE_CAP = 500  # paths a dirty-worktree note counts before it says "+"
@@ -112,7 +112,7 @@ class RunChain:
         rest = tuple(p for p in paths if p not in self.untracked_at_start)
         try:
             kept = git_ops.unignored(self.root, rest)
-        except (git_ops.GitError, OSError):
+        except (errors.GitError, OSError):
             return (), untracked
         return tuple(p for p in rest if p not in kept), untracked
 
@@ -127,7 +127,7 @@ class RunChain:
             return ""
         try:
             return git_ops.chain_tip(self.root, self.ref) or self.fallback_parent or ""
-        except (git_ops.GitError, OSError):
+        except (errors.GitError, OSError):
             return ""
 
     def is_dirty(self) -> bool:
@@ -158,7 +158,7 @@ class RunChain:
         """
         try:
             return self.is_dirty()
-        except (git_ops.GitError, OSError):
+        except (errors.GitError, OSError):
             return False
 
     def dirty_note(self) -> str:
@@ -180,7 +180,7 @@ class RunChain:
                 _DIRTY_NOTE_CAP,
                 exclude=self.untracked_at_start,
             )
-        except (git_ops.GitError, OSError):
+        except (errors.GitError, OSError):
             return ""
         if not paths:
             return ""
@@ -198,7 +198,7 @@ class RunChain:
             return git_ops.worktree_tree(
                 self.root, self.tip() or self.fallback_parent, self.untracked_at_start
             )
-        except (git_ops.GitError, OSError):
+        except (errors.GitError, OSError):
             return ""
 
     def checkpoint_head_sha(self) -> str:
@@ -215,7 +215,7 @@ class RunChain:
             return self.tip()
         try:
             return git_ops.status(self.root).head_sha
-        except (git_ops.GitError, OSError):
+        except (errors.GitError, OSError):
             return ""
 
     def name_status(self) -> tuple[tuple[str, str], ...]:

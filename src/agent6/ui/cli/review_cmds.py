@@ -15,7 +15,7 @@ import sys
 import time
 
 from agent6 import budget as agent6_budget
-from agent6 import git_ops
+from agent6 import git_ops, git_policy
 from agent6 import paths as agent6_paths
 from agent6.app import _setup, finalize, providers
 from agent6.config import (
@@ -74,7 +74,7 @@ def _collect_review_diff(
     Returns:
         The completed `git diff`, decoded with replacement so a non-UTF-8 file cannot crash it.
     """
-    hardening = git_ops.git_hardening_flags(root)
+    hardening = git_policy.git_hardening_flags(root)
     untracked: list[str] = []
     if not base:
         status = subprocess.run(
@@ -94,7 +94,7 @@ def _collect_review_diff(
             git,
             *hardening,
             "diff",
-            *git_ops.DIFF_SHOW_SAFETY_FLAGS,
+            *git_policy.DIFF_SHOW_SAFETY_FLAGS,
             "--end-of-options",
             rev,
         ]
@@ -156,7 +156,13 @@ def _is_checked_out(git: str, root: pathlib.Path, rev: str) -> bool:
     if checked_out is None or git_ops.chain_tip(root, rev) != checked_out:
         return False
     status = subprocess.run(
-        [git, *git_ops.git_hardening_flags(root), "status", "--porcelain", "--untracked-files=no"],
+        [
+            git,
+            *git_policy.git_hardening_flags(root),
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+        ],
         cwd=root,
         capture_output=True,
         errors="replace",
@@ -335,7 +341,7 @@ def _reviewed_diff(
             left = rev.split("..", 1)[0] or "HEAD"
             start_args = ["rev-parse", "--verify", "--end-of-options", f"{left}^{{commit}}"]
         start = subprocess.run(
-            [git, *git_ops.git_hardening_flags(root), *start_args],
+            [git, *git_policy.git_hardening_flags(root), *start_args],
             cwd=root,
             capture_output=True,
             errors="replace",
@@ -427,7 +433,7 @@ def _cmd_review(  # noqa: PLR0911
     log_proc = subprocess.run(
         [
             git,
-            *git_ops.git_hardening_flags(root),
+            *git_policy.git_hardening_flags(root),
             "log",
             "-n",
             "10",

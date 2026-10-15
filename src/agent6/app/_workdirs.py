@@ -10,7 +10,7 @@ import shlex
 import shutil
 from collections.abc import Callable
 
-from agent6 import git_ops, paths
+from agent6 import errors, git_ops, paths
 from agent6.config import Config, layer
 from agent6.harness import subrun
 from agent6.sessions import ipc
@@ -192,7 +192,7 @@ def sweep_fanout_clones(
                 ):
                     why = "commits this repo cannot reach; merge or archive the lane first"
                     break
-            except git_ops.GitError as exc:
+            except errors.GitError as exc:
                 why = (
                     f"git could not check its commits: {exc}; review this clone before removing it"
                 )

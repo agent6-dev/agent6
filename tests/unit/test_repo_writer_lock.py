@@ -20,7 +20,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import git_ops, paths
+from agent6 import errors, git_ops, paths
 from agent6.app import _execution as app__execution
 from agent6.app import _session, _setup, stamps
 from agent6.app import run as app_run
@@ -802,7 +802,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     )
 
     def _broken(_cwd: pathlib.Path) -> frozenset[str]:
-        raise git_ops.GitError("git status failed: index.lock exists")
+        raise errors.GitError("git status failed: index.lock exists")
 
     monkeypatch.setattr(git_ops, "untracked_paths", _broken)
     seen.clear()

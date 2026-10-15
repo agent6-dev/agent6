@@ -37,9 +37,11 @@ _PATTERN = re.compile(
 # completions_cmd.py matches inside a string literal only (the generated xonsh
 # completer, which runs in the operator's shell, not in agent6).
 ALLOWED = {
+    "_git_command.py",
     "app/finalize.py",
     "app/machine_agent.py",
     "git_ops.py",
+    "git_policy.py",
     "providers/claude_code.py",
     "providers/token_command.py",
     "sessions/ipc.py",

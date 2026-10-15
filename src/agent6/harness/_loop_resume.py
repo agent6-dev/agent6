@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from agent6 import git_ops, portable
+from agent6 import errors, portable
 from agent6.harness import _compaction, _conversation, _loop_state, _metric, _operator, _snapshot
 from agent6.prompts import revision as prompts_revision
 
@@ -139,7 +139,7 @@ def carry_verify_verdict(
         if snap.head_sha != harness.chain.checkpoint_head_sha():
             return
         dirty = harness.chain.is_dirty()
-    except (git_ops.GitError, OSError):
+    except (errors.GitError, OSError):
         return
     if not dirty:
         state.verify.last_ok = snap.last_verify_ok

@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from agent6 import budget, git_ops
+from agent6 import budget, errors, git_ops
 from agent6.app import finalize as _finalize
 from agent6.app import reporter
 from agent6.harness import _advice, _snapshot
@@ -929,7 +929,7 @@ def test_finalize_auto_stash_prints_a_failed_bystander_putback(
     git_ops.stash_tracked_changes(repo, git_ops.auto_stash_message("r1"))
 
     def raising_restore(cwd: object, entry: object) -> bool:
-        raise git_ops.GitError(
+        raise errors.GitError(
             "a stash pushed concurrently ('x') was taken by a raced drop and putting"
             " it back failed; restore it with:\n    git stash store -m 'x' abc123"
         )
@@ -1133,7 +1133,7 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
     """A GitError on the dirty check makes the banner say it could not check, claiming nothing."""
 
     def _boom(_path: pathlib.Path, **_kw: object) -> object:
-        raise git_ops.GitError("git unreadable here")
+        raise errors.GitError("git unreadable here")
 
     monkeypatch.setattr(git_ops, "status", _boom)
     result = _snapshot.SessionResult(

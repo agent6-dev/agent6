@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import directive, git_ops
+from agent6 import directive, errors, git_ops
 from agent6.app import parallel, preflight
 from agent6.harness import _parallel_dispatch as pd
 from agent6.harness import subrun
@@ -57,7 +57,7 @@ def test_join_lane_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     assert pd.join_lane_result(pathlib.Path("/r"), _res(ok=True), **kw).status == "conflict"
 
     def _boom(*_a: Any, **_k: Any) -> str | None:
-        raise git_ops.GitError("fetch failed")
+        raise errors.GitError("fetch failed")
 
     monkeypatch.setattr(git_ops, "chain_merge", _boom)
     j = pd.join_lane_result(pathlib.Path("/r"), _res(ok=True), **kw)

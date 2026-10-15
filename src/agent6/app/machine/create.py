@@ -13,7 +13,7 @@ import contextlib
 import pathlib
 import shutil
 
-from agent6 import budget, event_log, git_ops, kinds, paths, portable
+from agent6 import budget, errors, event_log, git_ops, kinds, paths, portable
 from agent6.app import _session, _setup, _workdirs, machine_agent, preflight
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import _bundle, _scriptcheck
@@ -207,7 +207,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     try:
         workspace.mkdir(parents=True)
         git_ops.init_repo(workspace)
-    except (OSError, git_ops.GitError) as exc:
+    except (OSError, errors.GitError) as exc:
         reporter.error(f"could not prepare the drafting workspace {workspace}: {exc}")
         events.emit("session.end", reason="workspace_failed", iterations=0, all_passed=False)
         return 1
@@ -223,7 +223,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         name, email = git_ops.verify_git_identity(
             workspace, git_ops.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
         )
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         reporter.error(str(exc))
         events.emit("session.end", reason="no_git_identity", iterations=0, all_passed=False)
         return 2

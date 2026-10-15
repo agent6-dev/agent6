@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import git_ops, paths, skills, task_text
+from agent6 import errors, paths, skills, task_text
 from agent6 import memory as agent6_memory
 from agent6.config import Config
 from agent6.graph import curator as graph_curator
@@ -68,7 +68,8 @@ from agent6.providers import (
     ToolDefinition,
 )
 from agent6.sessions import ipc
-from agent6.tools import dispatch, errors, mcp_client, results, schema
+from agent6.tools import dispatch, mcp_client, results, schema
+from agent6.tools import errors as tool_errors
 
 # Bytes a repeated tool result must exceed before the dedupe stub replaces it.
 _DEDUPE_MIN_CHARS = 500
@@ -387,7 +388,7 @@ class Harness:
             try:
                 for notice in self.gate.start_baseline(state):
                     conversation.notice(notice.text)
-            except errors.OperatorCommandUnexecutableError as exc:
+            except tool_errors.OperatorCommandUnexecutableError as exc:
                 return self._unexecutable_abort(exc, iteration=start_iteration, state=state)
         # The allowance is this execution's: a resumed one re-arms it (-1 is unbounded).
         for iteration in (
@@ -778,7 +779,7 @@ class Harness:
                 refusal = turn.resp.refused.get(tu.id)
                 if refusal is not None:
                     # The provider's front-end refused the input; the same error is the result.
-                    raise errors.ToolError(refusal)
+                    raise tool_errors.ToolError(refusal)
                 tree_before = self._tree_before_command(name)
                 result = self.dispatcher.dispatch(name, tool_input)
                 wire_result = result.to_wire()
@@ -810,10 +811,10 @@ class Harness:
                 )
                 # Only a dispatched finish counts; a refused one is an error result.
                 self._capture_finish(state, turn, name, tool_input)
-            except errors.ToolError as exc:
+            except tool_errors.ToolError as exc:
                 content = self._note_tool_error(state, name, tool_input, exc)
                 self._take(state, turn, ctx, _guards.tool_error_ladder(turn, state, ctx))
-            except errors.OperatorCommandUnexecutableError as exc:
+            except tool_errors.OperatorCommandUnexecutableError as exc:
                 return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
             turn.tool_results.append(
                 _conversation.ToolResultItem(
@@ -830,7 +831,7 @@ class Harness:
         # The gate run the harness adds to the turn, after the model's calls.
         try:
             self.gate.harness_verify(state, turn)
-        except errors.OperatorCommandUnexecutableError as exc:
+        except tool_errors.OperatorCommandUnexecutableError as exc:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         return None
 
@@ -1057,7 +1058,7 @@ class Harness:
         state: _loop_state.LoopState,
         name: str,
         tool_input: dict[str, Any],
-        exc: errors.ToolError,
+        exc: tool_errors.ToolError,
     ) -> str:
         """Note one failed dispatch for the spiral guard and the reachability note.
 
@@ -1074,7 +1075,7 @@ class Harness:
         self.log(f"  tool_error: {name}: {exc}")
         state.spiral.note_error(
             _nudges.tool_error_signature(name, str(exc)),
-            denial=isinstance(exc, errors.ToolDeniedError),
+            denial=isinstance(exc, tool_errors.ToolDeniedError),
             content=content,
         )
         return content
@@ -1125,7 +1126,7 @@ class Harness:
                 and self.gate.may_run(withheld=state.verify.withheld)
             ):
                 self.gate.maybe_adopt(state, turn)
-        except (git_ops.GitError, OSError) as exc:
+        except (errors.GitError, OSError) as exc:
             self.checkpoints.report_failure(exc, commit_subject, iteration=turn.iteration)
         # The operator's after-commit hook; the default answers "continue".
         if sha:
@@ -1177,7 +1178,7 @@ class Harness:
             turn.metric_feedback = self.metrics.auto_feedback(
                 state, iteration=turn.iteration, sha=sha
             )
-        except errors.OperatorCommandUnexecutableError as exc:
+        except tool_errors.OperatorCommandUnexecutableError as exc:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         turn.metric_plateau_finish = self.metrics.plateau_finish(state.metric.history)
         return None
@@ -1269,7 +1270,7 @@ class Harness:
         """
         try:
             self.gate.harness_verify(state, turn, ending=True)
-        except errors.OperatorCommandUnexecutableError as exc:
+        except tool_errors.OperatorCommandUnexecutableError as exc:
             return self._unexecutable_abort(exc, iteration=turn.iteration, state=state)
         turn.ending = ending
         for gate in gates:
@@ -1746,7 +1747,7 @@ class Harness:
 
     def _unexecutable_abort(
         self,
-        exc: errors.OperatorCommandUnexecutableError,
+        exc: tool_errors.OperatorCommandUnexecutableError,
         *,
         iteration: int,
         state: _loop_state.LoopState,

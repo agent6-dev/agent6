@@ -12,7 +12,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import commit_message, git_ops, kinds
+from agent6 import _git_command, commit_message, errors, git_ops, git_policy, kinds
 
 
 def _init_repo(path: pathlib.Path) -> None:
@@ -173,7 +173,7 @@ def test_git_ops_neutralizes_repo_fsmonitor(tmp_path: pathlib.Path) -> None:
         check=True,
     )
     (tmp_path / "new.txt").write_text("x\n", encoding="utf-8")
-    # Index-refreshing op through agent6's hardened _run.
+    # Index-refreshing op through agent6's hardened command runner.
     git_ops.status(tmp_path)
     git_ops.commit_all(tmp_path, "msg")
     assert not marker.exists(), "repo core.fsmonitor command executed on the host"
@@ -193,7 +193,7 @@ def test_git_ops_skips_repo_hooks_by_default(tmp_path: pathlib.Path) -> None:
     """
     from agent6.config import Config
 
-    assert git_ops._hook_policy["honor_repo_hooks"] is False  # the module's own default
+    assert "core.hooksPath=/dev/null" in git_policy.git_hardening_flags(tmp_path)
     assert Config().git.run_repo_hooks is False  # the config default that sets it
 
     _init_repo(tmp_path)
@@ -210,11 +210,11 @@ def test_git_ops_runs_repo_hooks_when_enabled(tmp_path: pathlib.Path) -> None:
     _add_pre_commit_hook(tmp_path, marker)
     (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")
     try:
-        git_ops.set_repo_hook_policy(True)  # git.run_repo_hooks = true
+        git_policy.set_repo_hook_policy(True)  # git.run_repo_hooks = true
         git_ops.commit_all(tmp_path, "c")
         assert marker.exists()
     finally:
-        git_ops.set_repo_hook_policy(False)  # reset process-wide policy for other tests
+        git_policy.set_repo_hook_policy(False)  # reset process-wide policy for other tests
 
 
 def test_git_ops_neutralizes_repo_diff_external(tmp_path: pathlib.Path) -> None:
@@ -415,19 +415,49 @@ def test_create_branch_at_idempotent_and_refuses_move(tmp_path: pathlib.Path) ->
     git_ops.create_branch_at(tmp_path, "agent6/fork", base)  # idempotent: no raise
     (tmp_path / "c.txt").write_text("c\n", encoding="utf-8")
     other = git_ops.commit_all(tmp_path, "third")
-    with pytest.raises(git_ops.GitError):
+    with pytest.raises(errors.GitError):
         git_ops.create_branch_at(tmp_path, "agent6/fork", other)
 
 
-def test_git_ops_never_spells_a_destructive_verb() -> None:
-    """The hard rule, at argv level: no function in git_ops passes a destructive verb to git.
+def test_only_git_ops_imports_the_runner() -> None:
+    """Only git_ops may import or access the private git runner."""
+    root = pathlib.Path(git_ops.__file__).parent
+    callers: list[str] = []
+    for path in root.rglob("*.py"):
+        if path == root / "git_ops.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if (
+                (isinstance(node, ast.Name) and node.id == "_git_command")
+                or (isinstance(node, ast.Attribute) and node.attr == "_git_command")
+                or (
+                    isinstance(node, ast.Import)
+                    and any(a.name == "agent6._git_command" for a in node.names)
+                )
+                or (
+                    isinstance(node, ast.ImportFrom)
+                    and (
+                        node.module == "agent6._git_command"
+                        or (
+                            node.module == "agent6"
+                            and any(a.name == "_git_command" for a in node.names)
+                        )
+                    )
+                )
+            ):
+                callers.append(f"{path.relative_to(root)}:{node.lineno}")
+    assert not callers, f"git runner access outside git_ops.py: {callers}"
+
+
+@pytest.mark.parametrize("module_name", ["_git_command.py", "git_ops.py", "git_policy.py"])
+def test_git_ops_never_spells_a_destructive_verb(module_name: str) -> None:
+    """Pin git_ops, _git_command and git_policy, including direct subprocess calls.
 
     The one sanctioned exception is force_delete_squash_merged_branch's `branch -D`, operator-only
     and content-safe.
     """
-    from agent6 import git_ops as gm
-
-    src = pathlib.Path(gm.__file__).read_text(encoding="utf-8")
+    root = pathlib.Path(git_ops.__file__).parent
+    src = (root / module_name).read_text(encoding="utf-8")
     tree = ast.parse(src)
     forbidden = {"push", "--force", "-f", "--hard", "rebase", "--amend", "filter-branch", "-D"}
     offenders: list[str] = []
@@ -438,31 +468,39 @@ def test_git_ops_never_spells_a_destructive_verb() -> None:
             if not isinstance(call, ast.Call) or gm_run_name(call) is None:
                 continue
             words = {
-                a.value
-                for a in call.args
-                if isinstance(a, ast.Constant) and isinstance(a.value, str)
+                node.value
+                for arg in call.args
+                for node in ast.walk(arg)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)
             }
             hit = words & forbidden
             # `stash push` is git's stash verb, not a remote push.
             if "stash" in words:
                 hit -= {"push"}
-            if fn.name == "force_delete_squash_merged_branch":
+            if module_name == "git_ops.py" and fn.name == "force_delete_squash_merged_branch":
                 hit -= {"-D"}
             if hit:
-                offenders.append(f"{fn.name}: {sorted(hit)}")
-    assert not offenders, f"destructive git verbs in git_ops: {offenders}"
+                offenders.append(f"{module_name}:{fn.name}: {sorted(hit)}")
+    assert not offenders, f"destructive git verbs in {module_name}: {offenders}"
 
 
 def gm_run_name(call: ast.Call) -> str | None:
-    """The callee name if this is a git-invoking call (`_run(...)`)."""
+    """The callee name for command-layer or direct subprocess calls."""
     func = call.func
-    if isinstance(func, ast.Name) and func.id == "_run":
+    if isinstance(func, ast.Name) and func.id in {"run", "spawn", "nul_fields"}:
         return func.id
+    if (
+        isinstance(func, ast.Attribute)
+        and isinstance(func.value, ast.Name)
+        and func.value.id in {"_git_command", "subprocess"}
+        and func.attr in {"run", "spawn", "nul_fields", "Popen"}
+    ):
+        return func.attr
     return None
 
 
 def test_status_on_non_repo(tmp_path: pathlib.Path) -> None:
-    with pytest.raises(git_ops.GitError):
+    with pytest.raises(errors.GitError):
         git_ops.status(tmp_path)
 
 
@@ -493,7 +531,7 @@ def test_verify_git_identity_missing_raises(
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
-    with pytest.raises(git_ops.GitError, match="Git identity not configured"):
+    with pytest.raises(errors.GitError, match="Git identity not configured"):
         git_ops.verify_git_identity(repo, git_ops.CommitIdentity())
 
 
@@ -526,7 +564,7 @@ def test_commit_error_surfaces_stdout_when_stderr_empty(tmp_path: pathlib.Path) 
     """
     _init_repo(tmp_path)
     # `git commit` exits 1 with "nothing to commit, working tree clean" on stdout.
-    with pytest.raises(git_ops.GitError) as excinfo:
+    with pytest.raises(errors.GitError) as excinfo:
         git_ops.commit_all(tmp_path, "no-op commit on clean repo")
     msg = str(excinfo.value)
     # The detail (from stdout) must be present so callers can pattern-match.
@@ -602,7 +640,7 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
     entry = git_ops.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None
 
-    real_run = git_ops._run  # pyright: ignore[reportPrivateUsage]
+    real_run = _git_command.run
     raced = False
 
     def racing_run(
@@ -630,7 +668,7 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
             )
         return res
 
-    monkeypatch.setattr(git_ops, "_run", racing_run)
+    monkeypatch.setattr(_git_command, "run", racing_run)
     assert git_ops.restore_stash(tmp_path, entry) is True
     assert (tmp_path / "pre.txt").read_text(encoding="utf-8") == "pre-run work\n"
     listing = subprocess.run(
@@ -667,7 +705,7 @@ def test_raced_drop_failed_putback_raises_with_recovery(
     entry = git_ops.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None
 
-    real_run = git_ops._run  # pyright: ignore[reportPrivateUsage]
+    real_run = _git_command.run
     raced = False
 
     def racing_run(
@@ -699,8 +737,8 @@ def test_raced_drop_failed_putback_raises_with_recovery(
             )
         return res
 
-    monkeypatch.setattr(git_ops, "_run", racing_run)
-    with pytest.raises(git_ops.GitError) as excinfo:
+    monkeypatch.setattr(_git_command, "run", racing_run)
+    with pytest.raises(errors.GitError) as excinfo:
         git_ops.restore_stash(tmp_path, entry)
     msg = str(excinfo.value)
     assert "git stash store" in msg  # the recovery command, ready to paste
@@ -722,8 +760,8 @@ def test_git_runs_under_a_pinned_locale(tmp_path: pathlib.Path) -> None:
             seen.update({k: v for k, v in env.items() if k in ("LC_ALL", "LANG")})  # pyright: ignore[reportUnknownArgumentType]
         return real(argv, **kwargs)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
-    with mock.patch.object(git_ops.subprocess, "Popen", capture):
-        git_ops._run(tmp_path, "stash", "list", check=False)  # pyright: ignore[reportPrivateUsage]
+    with mock.patch.object(_git_command.subprocess, "Popen", capture):
+        _git_command.run(tmp_path, "stash", "list", check=False)
     assert seen.get("LC_ALL") == "C"
 
 
@@ -761,7 +799,7 @@ class _HungGit:
 
 def _hang_the_op_only(fake: _HungGit) -> object:
     """A Popen replacement that hangs only the git op, not the driver-neutralization enumeration."""
-    real = git_ops.subprocess.Popen
+    real = _git_command.subprocess.Popen
 
     def fake_popen(*a: object, **k: object) -> object:
         argv = a[0] if a else k.get("args", [])
@@ -784,10 +822,10 @@ def test_timeout_terminates_first_and_leaves_a_survivor_lock(tmp_path: pathlib.P
     fake_popen = _hang_the_op_only(fake)
 
     with (
-        mock.patch.object(git_ops.subprocess, "Popen", fake_popen),
-        pytest.raises(git_ops.GitError, match="timed out"),
+        mock.patch.object(_git_command.subprocess, "Popen", fake_popen),
+        pytest.raises(errors.GitError, match="timed out"),
     ):
-        git_ops._run(tmp_path, "commit", "-m", "x", check=False)  # pyright: ignore[reportPrivateUsage]
+        _git_command.run(tmp_path, "commit", "-m", "x", check=False)
     assert fake.calls == ["terminate"]  # graceful exit: never escalated to KILL
     assert lock.exists()  # a survivor lock after TERM is not ours to delete
 
@@ -802,10 +840,10 @@ def test_timeout_keeps_a_preexisting_index_lock(tmp_path: pathlib.Path) -> None:
     fake_popen = _hang_the_op_only(fake)
 
     with (
-        mock.patch.object(git_ops.subprocess, "Popen", fake_popen),
-        pytest.raises(git_ops.GitError, match="timed out"),
+        mock.patch.object(_git_command.subprocess, "Popen", fake_popen),
+        pytest.raises(errors.GitError, match="timed out"),
     ):
-        git_ops._run(tmp_path, "status", check=False)  # pyright: ignore[reportPrivateUsage]
+        _git_command.run(tmp_path, "status", check=False)
     assert lock.exists()  # never ours to delete
 
 
@@ -818,10 +856,10 @@ def test_timeout_clears_the_lock_its_own_child_created(tmp_path: pathlib.Path) -
     fake_popen = _hang_the_op_only(fake)
 
     with (
-        mock.patch.object(git_ops.subprocess, "Popen", fake_popen),
-        pytest.raises(git_ops.GitError, match="timed out"),
+        mock.patch.object(_git_command.subprocess, "Popen", fake_popen),
+        pytest.raises(errors.GitError, match="timed out"),
     ):
-        git_ops._run(tmp_path, "commit", "-m", "x", check=False)  # pyright: ignore[reportPrivateUsage]
+        _git_command.run(tmp_path, "commit", "-m", "x", check=False)
     assert fake.calls == ["terminate", "kill"]  # TERM tried before KILL
     assert not lock.exists()  # the dead child's own lock is cleared
 
@@ -1080,7 +1118,7 @@ def test_plumb_merge_ff_moves_the_ref_and_refuses_divergence(tmp_path: pathlib.P
     assert git_ops.status(tmp_path).is_clean
 
     diverged = _lane_commit(tmp_path, base, "other.txt", "y\n")
-    with pytest.raises(git_ops.GitError):
+    with pytest.raises(errors.GitError):
         git_ops.plumb_merge(tmp_path, "main", diverged, strategy="ff")
     assert _rev(tmp_path, "main") == theirs  # a refused ff moves nothing
 
@@ -1150,7 +1188,7 @@ def test_clone_repo_raises_on_existing_dest(tmp_path: pathlib.Path) -> None:
     dest = tmp_path / "clone"
     dest.mkdir()
     (dest / "occupied.txt").write_text("x\n", encoding="utf-8")
-    with pytest.raises(git_ops.GitError):
+    with pytest.raises(errors.GitError):
         git_ops.clone_repo(origin, dest)
 
 
@@ -1187,7 +1225,7 @@ def test_fetch_branch_refuses_non_ff_update(tmp_path: pathlib.Path) -> None:
         ["git", "-C", str(clone), "checkout", "-q", "-b", "agent6/r1", "main"], check=True
     )
     _commit_file(clone, "theirs.txt", "t\n", "clone r1")  # diverged from origin's r1
-    with pytest.raises(git_ops.GitError):
+    with pytest.raises(errors.GitError):
         git_ops.fetch_branch(origin, clone, "agent6/r1:agent6/r1")
     kept = subprocess.run(
         ["git", "-C", str(origin), "rev-parse", "refs/heads/agent6/r1"],
@@ -1852,7 +1890,7 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
     base = git_ops.status(tmp_path).head_sha
     theirs = _lane_commit(tmp_path, base, "README.md", "run change\n")
     _commit_file(tmp_path, "README.md", "main change\n", "main edit")
-    real_run = git_ops._run  # pyright: ignore[reportPrivateUsage]
+    real_run = _git_command.run
 
     def old_git(cwd: pathlib.Path, *args: str, **kw: object) -> kinds.CommandResult:
         if args[:1] == ("merge-tree",):
@@ -1875,8 +1913,8 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
             )
         return real_run(cwd, *args, **kw)  # pyright: ignore[reportArgumentType]
 
-    monkeypatch.setattr(git_ops, "_run", old_git)
-    with pytest.raises(git_ops.GitError, match=r"git version 2\.39\.0.*git 2\.40 or newer"):
+    monkeypatch.setattr(_git_command, "run", old_git)
+    with pytest.raises(errors.GitError, match=r"git version 2\.39\.0.*git 2\.40 or newer"):
         git_ops.plumb_merge(
             tmp_path, "main", theirs, strategy="merge", message=None, merge_base=base
         )

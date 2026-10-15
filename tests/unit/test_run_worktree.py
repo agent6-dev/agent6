@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import git_ops, kinds, paths
+from agent6 import errors, git_ops, kinds, paths
 from agent6.app import _session, fork_worktrees, parallel, preflight, providers, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.app import run as run_lifecycle
@@ -611,7 +611,7 @@ def test_a_failed_worktree_add_leaves_nothing_behind(
     repo = _repo(tmp_path, monkeypatch)
 
     def _fail(_repo: pathlib.Path, _dest: pathlib.Path, _sha: str) -> None:
-        raise git_ops.GitError("fatal: could not create the worktree")
+        raise errors.GitError("fatal: could not create the worktree")
 
     monkeypatch.setattr(git_ops, "add_worktree", _fail)
 

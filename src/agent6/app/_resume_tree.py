@@ -19,7 +19,7 @@ import pathlib
 import shlex
 from collections.abc import Callable, Collection, Sequence
 
-from agent6 import git_ops, terminal
+from agent6 import errors, git_ops, terminal
 from agent6.app import preflight
 from agent6.app import reporter as app_reporter
 from agent6.tools import schema
@@ -234,7 +234,7 @@ def settle(
             return None
     try:
         git_ops.stash_tracked_changes(cwd, git_ops.auto_stash_message(session_id), outside)
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         reporter.refuse(f"stashing the edits made outside the run failed: {exc}")
         return None
     names = ", ".join(terminal.printable_name(p) for p in outside[:4])

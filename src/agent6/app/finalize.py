@@ -16,7 +16,7 @@ import subprocess
 from collections.abc import Callable, Collection, Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import child_env, commit_message, event_log, git_ops, terminal
+from agent6 import child_env, commit_message, errors, event_log, git_ops, terminal
 from agent6.app import merge
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, NotifyConfig
@@ -101,7 +101,7 @@ def stranded_edits(
     if merged or wire.commits_ref(manifest, cwd):
         return False
     dirty = False
-    with contextlib.suppress(git_ops.GitError):
+    with contextlib.suppress(errors.GitError):
         exclude = sessions_layout.read_untracked_at_start(layout.session_dir)
         dirty = not git_ops.status(cwd, exclude=exclude).is_clean
     return dirty
@@ -409,7 +409,7 @@ def _print_run_branch_footer(
         # The model managed git: there is no agent6 branch to merge or diff.
         current = ""
         head = ""
-        with contextlib.suppress(git_ops.GitError):
+        with contextlib.suppress(errors.GitError):
             st = git_ops.status(cwd)
             current = st.branch
             head = st.head_sha[:12]
@@ -429,7 +429,7 @@ def _print_run_branch_footer(
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
         # An operator who checked the run branch out should know how to leave it.
         current = ""
-        with contextlib.suppress(git_ops.GitError):
+        with contextlib.suppress(errors.GitError):
             current = git_ops.status(cwd).branch
         if run_branch and current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
@@ -478,7 +478,7 @@ def _print_left_out(
         return
     try:
         held = git_ops.tree_paths(cwd, ref) if ref else frozenset[str]()
-    except git_ops.GitError:
+    except errors.GitError:
         return
     reasons = {"ignored": "ignored by git", "untracked": "untracked before the run"}
     # A path a later commit holds, or one gone from disk, is no longer left out.
@@ -516,7 +516,7 @@ def _print_no_commit_footer(
     try:
         exclude = sessions_layout.read_untracked_at_start(layout.session_dir)
         tree_clean: bool | None = git_ops.status(cwd, exclude=exclude).is_clean
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         tree_clean = None
         reporter.out(
             f"\ncould not check the working tree (git failed: {exc}); inspect it manually."
@@ -575,7 +575,7 @@ def print_interrupt_end(
         base_branch = manifest.base_branch
     if run_branch:
         current = ""
-        with contextlib.suppress(git_ops.GitError):
+        with contextlib.suppress(errors.GitError):
             current = git_ops.status(cwd).branch
         if current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
@@ -625,7 +625,7 @@ def finalize_auto_merge(
     )
     try:
         git_ops.verify_git_identity(cwd, identity)
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         reporter.note(
             f"auto_merge skipped: {exc}",
         )
@@ -697,7 +697,7 @@ def _stash_apply_cmd(cwd: pathlib.Path, sha: str, base_branch: str, *, in_worktr
         return shlex.join(["git", "-C", str(cwd), "stash", "apply", sha])
     apply = f"git stash apply {sha}"
     current = ""
-    with contextlib.suppress(git_ops.GitError):
+    with contextlib.suppress(errors.GitError):
         current = git_ops.status(cwd).branch
     return f"git checkout {base_branch} && {apply}" if current != base_branch else apply
 
@@ -761,7 +761,7 @@ def finalize_auto_stash(
         return
     try:
         st = git_ops.status(cwd, exclude=exclude)
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         reporter.note(f"could not read the worktree ({exc}); restore with: {recover}")
         return
     if not in_worktree and run_branch and st.branch == run_branch:
@@ -773,7 +773,7 @@ def finalize_auto_stash(
             return
         try:
             git_ops.create_branch(cwd, base_branch)  # checks out the existing base branch
-        except git_ops.GitError as exc:
+        except errors.GitError as exc:
             reporter.note(
                 f"could not switch to {base_branch} to restore the stash ({exc}); "
                 f"restore with: {recover}"
@@ -782,7 +782,7 @@ def finalize_auto_stash(
     where = f"in the worktree {cwd}" if in_worktree else f"onto {base_branch}"
     try:
         restored = git_ops.restore_stash(cwd, entry)
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         # The apply landed; putting back a concurrent stash the drop displaced failed.
         reporter.note(f"restored your pre-run changes {where}, but {exc}")
         return

@@ -12,7 +12,7 @@ from __future__ import annotations
 import pathlib
 from collections.abc import Callable, Sequence
 
-from agent6 import directive, git_ops, paths, terminal
+from agent6 import directive, errors, git_ops, paths, terminal
 from agent6.app import _setup, confine, parallel, preflight
 from agent6.config import Config, ConfigError
 from agent6.models import validate
@@ -133,7 +133,7 @@ def dispatch_parallel(
             return 2
     try:
         modified = git_ops.modified_paths(origin)
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         _common.error(f"{exc}")
         return 2
     if modified and cfg.git.dirty_tree == "ask":

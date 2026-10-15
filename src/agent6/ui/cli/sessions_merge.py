@@ -14,7 +14,7 @@ import pathlib
 import sys
 from typing import Literal
 
-from agent6 import commit_message, git_ops, paths
+from agent6 import commit_message, errors, git_ops, paths
 from agent6.app import _workdirs, fork_worktrees, merge, resume
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import subrun
@@ -183,7 +183,7 @@ def _plan_merge(  # noqa: PLR0911
     )
     try:
         git_ops.verify_git_identity(cwd, identity)  # refuse cleanly before mutating anything
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         _common.error(f"{exc}")
         return 2
     return _MergePlan(
@@ -206,7 +206,7 @@ def _manual_merge_cmd(cwd: pathlib.Path, plan: _MergePlan) -> str:
     moves to the target.
     """
     steps: list[str] = []
-    with contextlib.suppress(git_ops.GitError):
+    with contextlib.suppress(errors.GitError):
         st = git_ops.status(cwd)
         if st.modified_count:
             steps.append("git stash")
@@ -461,7 +461,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | Non
     branches = git_ops.list_run_branches(cwd)
     try:
         current = git_ops.status(cwd).branch
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         _common.error(f"{exc}")
         return 2
     repo_state = paths.state_dir(cwd)

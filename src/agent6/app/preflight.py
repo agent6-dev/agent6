@@ -17,7 +17,7 @@ from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import event_log, git_ops, kinds, terminal, verify_infer
+from agent6 import errors, event_log, git_ops, kinds, terminal, verify_infer
 from agent6.app import _setup, providers
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, parse_seat_spec, plan_metered
@@ -227,7 +227,7 @@ def git_preflight(
         git_ops.verify_git_identity(cwd, identity)
         # Captured before a run branch exists: `sessions diff` needs the start point.
         pre_status = git_ops.status(cwd)
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         reporter.error(str(exc))
         raise SessionRefusedError(2) from exc
     # A run started on another run's branch piles onto unmerged work: confirm first.
@@ -280,7 +280,7 @@ def unmerged_run_holding_the_tree(
         try:
             if git_ops.worktree_matches(cwd, tip, modified):
                 return d.name
-        except git_ops.GitError:
+        except errors.GitError:
             return ""
     return ""
 
@@ -309,7 +309,7 @@ def included_run(
         start = git_ops.worktree_tree(cwd, base_sha or None, exclude)
         if git_ops.tree_diff_paths(cwd, tip, start):
             return None
-    except git_ops.GitError:
+    except errors.GitError:
         return None
     return manifest.IncludedRun(session_id=session_id, tip=tip)
 

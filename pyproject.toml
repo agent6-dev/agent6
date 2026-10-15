@@ -155,6 +155,7 @@ max-complexity = 20
 # is the module style, and the rule would refuse it.
 banned-from = [
     "agent6._data.words",
+    "agent6._git_command",
     "agent6.app._execution",
     "agent6.app._lane_watch",
     "agent6.app._resume_chain",
@@ -207,6 +208,7 @@ banned-from = [
     "agent6.errors",
     "agent6.event_log",
     "agent6.git_ops",
+    "agent6.git_policy",
     "agent6.graph.curator",
     "agent6.graph.models",
     "agent6.graph.order",

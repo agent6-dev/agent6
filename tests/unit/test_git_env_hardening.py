@@ -13,7 +13,7 @@ import subprocess
 
 import pytest
 
-from agent6 import child_env, git_ops
+from agent6 import _git_command, child_env, git_ops
 from agent6.app import _setup
 from agent6.config import Config
 
@@ -35,7 +35,7 @@ def _captured_git_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -
             seen["env"] = env
         return real(*args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(git_ops.subprocess, "Popen", spy)
+    monkeypatch.setattr(_git_command.subprocess, "Popen", spy)
     git_ops.status(tmp_path)
     return seen["env"]
 

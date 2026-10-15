@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 
-from agent6 import git_ops, kinds, portable
+from agent6 import errors, git_ops, git_policy, kinds, portable
 from agent6 import paths as agent6_paths
 from agent6.app import fork_worktrees, resume
 from agent6.sessions import id, ipc
@@ -159,7 +159,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
 
     head_ref = ref.head_ref
     # Printed without the -c hardening overrides, as git_ops error messages are; executed with them.
-    args: list[str] = ["diff", *git_ops.DIFF_SHOW_SAFETY_FLAGS]
+    args: list[str] = ["diff", *git_policy.DIFF_SHOW_SAFETY_FLAGS]
     if stat:
         args.append("--stat")
     args.extend([f"{base_sha}..{head_ref}"])
@@ -171,11 +171,16 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         file=sys.stderr,
     )
     # Probe first so a zero-commit run says so; a probe error falls through to git's message.
-    probe_args = ["diff", *git_ops.DIFF_SHOW_SAFETY_FLAGS, "--quiet", f"{base_sha}..{head_ref}"]
+    probe_args = [
+        "diff",
+        *git_policy.DIFF_SHOW_SAFETY_FLAGS,
+        "--quiet",
+        f"{base_sha}..{head_ref}",
+    ]
     if paths:
         probe_args.extend(["--", *paths])
     probe = subprocess.run(
-        ["git", *git_ops.git_hardening_flags(cwd), *probe_args],
+        ["git", *git_policy.git_hardening_flags(cwd), *probe_args],
         cwd=cwd,
         check=False,
         capture_output=True,
@@ -187,7 +192,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         return 0
     pager = () if paginate else ("--no-pager",)
     proc = subprocess.run(
-        ["git", *pager, *git_ops.git_hardening_flags(cwd), *args], cwd=cwd, check=False
+        ["git", *pager, *git_policy.git_hardening_flags(cwd), *args], cwd=cwd, check=False
     )
     return proc.returncode
 
@@ -203,7 +208,7 @@ def _dirty_worktree_note(cwd: pathlib.Path, run_branch: object) -> str:
     # Hardened like the diff: `git status` would fire a poisoned core.fsmonitor on the host.
     try:
         current = subprocess.run(
-            ["git", *git_ops.git_hardening_flags(cwd), "rev-parse", "--abbrev-ref", "HEAD"],
+            ["git", *git_policy.git_hardening_flags(cwd), "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=cwd,
             check=False,
             capture_output=True,
@@ -212,7 +217,7 @@ def _dirty_worktree_note(cwd: pathlib.Path, run_branch: object) -> str:
         if current.returncode != 0 or current.stdout.strip() != str(run_branch):
             return ""
         status = subprocess.run(
-            ["git", *git_ops.git_hardening_flags(cwd), "status", "--porcelain"],
+            ["git", *git_policy.git_hardening_flags(cwd), "status", "--porcelain"],
             cwd=cwd,
             check=False,
             capture_output=True,
@@ -639,7 +644,7 @@ def _rm_session(
                     f" git branch <name> {chain_head[:12]})"
                 )
             )
-    except git_ops.GitError:
+    except errors.GitError:
         pass  # not a repo here, or git unreadable: state-dir removal stands
     what = [layout.session_id, *went]
     removed = f"{', '.join(what[:-1])} and {what[-1]}" if went else what[0]

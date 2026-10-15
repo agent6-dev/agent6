@@ -17,7 +17,7 @@ from collections.abc import Callable
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, event_log, git_ops, harness, secret_store, viewmodel
+from agent6 import commit_message, errors, event_log, git_ops, harness, secret_store, viewmodel
 from agent6.app import _setup, providers, stamps
 from agent6.config import Config, ConfigError
 from agent6.providers import ProviderError, TranscriptSink, call_for_text
@@ -365,7 +365,7 @@ def _model_squash_message(
     except (
         agent6_budget.BudgetExceededError,
         ConfigError,
-        git_ops.GitError,
+        errors.GitError,
         OSError,
         ProviderError,
         secret_store.SecretsError,
@@ -483,7 +483,7 @@ def execute_merge(
             merge_base=merge_base,
             finish_summaries=_finish_summaries(layout),
         )
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         return MergeOutcome("error", error=f"merge failed: {exc}")
     if result.conflicted:
         return MergeOutcome("conflict", conflicts=result.conflicts)

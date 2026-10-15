@@ -13,7 +13,7 @@ import dataclasses
 import pathlib
 from collections.abc import Sequence
 
-from agent6 import git_ops, paths, terminal
+from agent6 import errors, git_ops, paths, terminal
 from agent6.sessions import ipc, lock
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import session_dirs
@@ -104,7 +104,7 @@ def uncommitted_in_worktree(worktree: pathlib.Path, tips: tuple[str, ...]) -> st
             if not git_ops.chain_dirty(worktree, tip, None):
                 return ""
         held = git_ops.chain_dirty_paths(worktree, tips[-1], None, 5)
-    except (git_ops.GitError, OSError):
+    except (errors.GitError, OSError):
         # git runs with cwd=worktree, so a directory that vanished is an OSError: not dirt.
         return ""
     if not held:

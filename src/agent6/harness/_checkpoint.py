@@ -12,7 +12,7 @@ import dataclasses
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
-from agent6 import commit_message, git_ops
+from agent6 import commit_message, errors, git_ops
 from agent6.harness import _chain
 from agent6.providers import Provider, call_for_text
 
@@ -91,7 +91,7 @@ class Checkpoints:
         return sha
 
     def report_failure(
-        self, exc: git_ops.GitError | OSError, subject: str, *, iteration: int
+        self, exc: errors.GitError | OSError, subject: str, *, iteration: int
     ) -> None:
         """Log and emit a commit that failed, with a worktree status snapshot.
 
@@ -118,7 +118,7 @@ class Checkpoints:
                 f" modified={st.modified_count}"
                 f" untracked={st.untracked_count}"
             )
-        except (git_ops.GitError, OSError):
+        except (errors.GitError, OSError):
             pass  # the status itself failed: the event goes without the snapshot
         self.emit(
             "loop.auto_commit.failed",
@@ -144,7 +144,7 @@ class Checkpoints:
             self.commit(
                 f"checkpoint (iter {iteration})", iteration=iteration, label="final checkpoint"
             )
-        except (git_ops.GitError, OSError) as exc:
+        except (errors.GitError, OSError) as exc:
             self.log(f"  final checkpoint commit failed: {exc}")
 
     def _model_subject(self, changes: Sequence[tuple[str, str]], *, hint: str) -> str | None:

@@ -16,7 +16,7 @@ import shutil
 from collections.abc import Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import directive, event_log, git_ops, kinds, paths
+from agent6 import directive, errors, event_log, git_ops, kinds, paths
 from agent6.app import (
     _execution,
     _session,
@@ -278,7 +278,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             return 2
         try:
             checkout = fork_worktrees.add_session_worktree(repo, path, base_sha)
-        except git_ops.GitError as exc:
+        except errors.GitError as exc:
             reporter.error(f"could not add the run's worktree at {path}: {exc}")
             return 1
         cwd = checkout.worktree
@@ -457,7 +457,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                             cwd, git_ops.auto_stash_message(effective_session_id)
                         )
                         stashed = True
-                    except git_ops.GitError as exc:
+                    except errors.GitError as exc:
                         return _park(
                             "stash failed", f"stashing the working tree's changes failed: {exc}"
                         )

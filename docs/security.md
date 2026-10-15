@@ -408,7 +408,7 @@ Under `none` isolation nothing is enforced or refused.
 
 **agent6's own git**
 
-- agent6's own git writes go through `git_ops.py` alone
+- agent6's own git writes go through `git_ops.py`; only it may import the private runner, `_git_command.py`, enforced by tach and `test_only_git_ops_imports_the_runner`
     - it wraps the safe ops (status, add, commit, diff, branch, checkout)
     - it spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable.
       `test_git_ops_never_spells_a_destructive_verb` pins every verb but `filter-repo`, exempting two argv: `push` inside a `git stash push`, and the one `branch -D` below
@@ -416,7 +416,7 @@ Under `none` isolation nothing is enforced or refused.
       `sessions diff` and `ask` read only; `review` stages untracked files with `add -N` so they appear in its diff, undoing it with `reset` in a `finally`; `skills install` clones with fixed argv
 - One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch or chain ref the manifest confirms was squash-merged.
   A branch's commit survives in its reflog; a chain ref's line carries the sha to undelete it.
-- `git_ops.py` runs git with the configured `api_key_env` names removed from its environment: a credential helper or content driver never inherits one
+- `_git_command.py` runs git with the configured `api_key_env` names removed from its environment: a credential helper or content driver never inherits one
     - PATH, SSH, proxy, and credential-helper vars stay
     - the read-only collectors inherit the environment untouched (no remote contact; the hardening flags leave no repo-controlled code to receive it)
 
@@ -487,7 +487,7 @@ Under `none` isolation nothing is enforced or refused.
 - A lane's config carries key references, never secret values
     - the orchestrator writes each lane a `--config` via `materialize()` (the resolved `Config`: provider `base_url`, `api_key_env` names), never a raw key
     - the lane reads the same `secrets.toml` or provider env var as any other run
-- Lane git plumbing (clone, fetch, merge) goes through `git_ops.py` and lane spawning through `ui/spawn.py`, both already on the [subprocess allowlist](#12-host-side-subprocess-allowlist).
+- Lane git plumbing (clone, fetch, merge) goes through `git_ops.py` and its private runner; lane spawning goes through `ui/spawn.py` (see the [subprocess allowlist](#12-host-side-subprocess-allowlist)).
 - A lane starts from committed state only
     - the fan-out clones HEAD; a coordinator dispatch cuts lanes at the run's chain tip after chain-committing changes
     - `--parallel` refuses an origin with uncommitted tracked changes under `git.dirty_tree = "ask"`
@@ -527,7 +527,8 @@ Everything the model can influence runs through `run_in_jail` ([Sandbox](#2-sand
 A fixed set of modules also shells out directly with `subprocess.run` / `Popen`, each with fixed argv depending only on operator input.
 `tests/security/test_subprocess_allowlist.py` pins the file list; audit with `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 
-- `git_ops.py`: agent6's own git operations ([Git](#7-git)).
+- `_git_command.py` and `git_ops.py`: agent6's own git operations ([Git](#7-git)).
+- `git_policy.py`: shared hardening flags and hook/filter policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `isolation = "none"`.
   An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` level.

@@ -105,7 +105,7 @@ def test_offer_git_setup_commit_failure_stages_only_the_scaffold(
         return True
 
     def _fail_commit(_root: pathlib.Path, _message: str, _paths: tuple[str, ...]) -> str:
-        raise git_ops.GitError("identity missing")
+        raise errors.GitError("identity missing")
 
     monkeypatch.setattr(init, "_ask", _yes)
     monkeypatch.setattr(git_ops, "commit_paths", _fail_commit)

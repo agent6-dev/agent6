@@ -24,7 +24,10 @@ graph TD
     n_tools --> n_sandbox
 ```
 
-Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `commit_message`, `config`, `directive`, `errors`, `event_log`, `git_ops`, `graph`, `init`, `kinds`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secret_store`, `sessions`, `skills`, `task_text`, `terminal`, `verify_infer`, `viewmodel`.
+Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `commit_message`, `config`, `directive`, `errors`, `event_log`, `git_ops`, `git_policy`, `graph`, `init`, `kinds`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secret_store`, `sessions`, `skills`, `task_text`, `terminal`, `verify_infer`, `viewmodel`.
+
+`git_ops.py` alone uses `_git_command.py` for hardened execution, timeouts, and output decoding.
+`git_policy.py` shares hardening flags and hook/filter policy; `errors.py` owns `GitError`.
 
 - **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root, over the shared read-model fold (`viewmodel`)
     - the four front-ends: `ui/cli`, `ui/tui`, `ui/web`, `ui/acp`

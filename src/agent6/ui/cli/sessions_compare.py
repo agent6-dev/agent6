@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextlib
 import pathlib
 
-from agent6 import git_ops, paths
+from agent6 import errors, git_ops, paths
 from agent6.app import compare
 from agent6.config import layer
 from agent6.harness import judge
@@ -54,7 +54,7 @@ def _candidate_diff(
         if ref and ref != sessions_manifest.NO_MERGE_COMMIT:
             try:
                 return git_ops.diff_range(cwd, base_sha, ref), True
-            except git_ops.GitError:
+            except errors.GitError:
                 continue
     return "", False
 

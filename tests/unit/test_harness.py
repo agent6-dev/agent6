@@ -7697,7 +7697,7 @@ def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: pathlib.Path)
 
 def test_auto_commit_failure_surface_tells_the_truth(tmp_path: pathlib.Path) -> None:
     """The failure reporter is silent on the benign nothing-changed case and reports a GitError."""
-    from agent6 import git_ops
+    from agent6 import errors
 
     events: list[dict[str, Any]] = []
     wf = _wf(root=tmp_path, mode="run", per_step=True)
@@ -7709,11 +7709,13 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: pathlib.Path) -> 
     wf.events.emit = _capture  # type: ignore[method-assign]
 
     for benign in ("nothing to commit, working tree clean", "no changes added to commit"):
-        wf.checkpoints.report_failure(git_ops.GitError(benign), "s", iteration=1)
+        wf.checkpoints.report_failure(errors.GitError(benign), "s", iteration=1)
     assert events == []  # a non-failure never claims to be one
 
     wf.checkpoints.report_failure(
-        git_ops.GitError("fatal: unable to write new index file"), "agent6 iter 2: fix", iteration=2
+        errors.GitError("fatal: unable to write new index file"),
+        "agent6 iter 2: fix",
+        iteration=2,
     )
     (evt,) = [e for e in events if e["type"] == "loop.auto_commit.failed"]
     assert evt["iteration"] == 2

@@ -15,7 +15,7 @@ import dataclasses
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal
 
-from agent6 import git_ops, terminal, verify_infer
+from agent6 import errors, git_ops, terminal, verify_infer
 from agent6.harness import (
     _chain,
     _conversation,
@@ -24,7 +24,8 @@ from agent6.harness import (
     _snapshot,
     _verify_verdict,
 )
-from agent6.tools import dispatch, errors, results
+from agent6.tools import dispatch, results
+from agent6.tools import errors as tool_errors
 
 if TYPE_CHECKING:
     from agent6.harness import _loop_state
@@ -233,7 +234,7 @@ class VerifyGate:
             return False
         try:
             status = git_ops.status(self.chain.root, exclude=self.chain.untracked_at_start)
-        except (git_ops.GitError, OSError):
+        except (errors.GitError, OSError):
             return False
         return status.is_clean and status.head_sha == self.chain.base_sha
 
@@ -425,10 +426,10 @@ class VerifyGate:
         self.emit("loop.verify_harness", why="start", iteration=0)
         try:
             result = self.dispatcher.run_verify()
-        except errors.ToolDeniedError as exc:
+        except tool_errors.ToolDeniedError as exc:
             verdict.withheld = True
             return [_conversation.Notice(gate_withheld_notice("[harness verify] start", exc))]
-        except errors.ToolError:
+        except tool_errors.ToolError:
             return []
         ok = result.returncode == 0
         no_verdict = (
@@ -485,13 +486,13 @@ class VerifyGate:
         try:
             scope = self.scope_paths(state.verify) if state.verify.scoped else ()
             result = self.dispatcher.run_verify(extra_argv=scope)
-        except errors.ToolDeniedError as exc:
+        except tool_errors.ToolDeniedError as exc:
             state.verify.withheld = True
             turn.tool_results.append(
                 _conversation.Notice(gate_withheld_notice(f"[harness verify] {why}", exc))
             )
             return
-        except errors.ToolError as exc:
+        except tool_errors.ToolError as exc:
             turn.tool_results.append(
                 _conversation.Notice(f"[harness verify] {why}: not run: {exc}")
             )
@@ -548,13 +549,13 @@ class VerifyGate:
         self.emit("loop.verify_scoped", paths=list(scope), iteration=turn.iteration)
         try:
             result = self.dispatcher.run_verify(extra_argv=scope)
-        except errors.ToolDeniedError as exc:
+        except tool_errors.ToolDeniedError as exc:
             state.verify.withheld = True
             turn.tool_results.append(
                 _conversation.Notice(gate_withheld_notice("[verify] scoped re-run", exc))
             )
             return None
-        except errors.ToolError as exc:
+        except tool_errors.ToolError as exc:
             turn.tool_results.append(_conversation.Notice(f"[verify] scoped re-run not run: {exc}"))
             return None
         self.note_result(state, turn, result)
@@ -583,7 +584,7 @@ class VerifyGate:
             return ()
         try:
             paths = git_ops.tree_diff_paths(self.chain.root, red_tree, tree)
-        except (git_ops.GitError, OSError):
+        except (errors.GitError, OSError):
             return ()
         if paths and all(_nudges.is_test_path(p) for p in paths):
             return tuple(sorted(terminal.printable_name(p) for p in paths))

@@ -11,7 +11,7 @@ import shlex
 import shutil
 from typing import Literal
 
-from agent6 import git_ops, kinds, memory, verify_infer
+from agent6 import errors, git_ops, kinds, memory, verify_infer
 from agent6 import paths as agent6_paths
 from agent6.app import _setup, confine, fork_worktrees
 from agent6.config import (
@@ -456,7 +456,7 @@ def _fork_git_grant(
         return None
     try:
         repo = git_ops.git_common_dir(ws.root).parent
-    except git_ops.GitError:
+    except errors.GitError:
         return None
     for worktree, sessions in fork_worktrees.worktree_owners(agent6_paths.state_dir(repo)).items():
         if worktree.resolve() != ws.root:

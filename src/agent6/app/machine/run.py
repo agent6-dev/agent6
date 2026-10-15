@@ -19,7 +19,7 @@ from collections.abc import Callable, Iterator, Mapping
 
 import pydantic
 
-from agent6 import budget, git_ops, kinds, paths
+from agent6 import budget, errors, git_ops, kinds, paths
 from agent6.app import _setup, _workdirs, confine, machine_agent, preflight, workspace_setup
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
@@ -89,7 +89,7 @@ def uncommitted_refusal(path: pathlib.Path, cwd: pathlib.Path) -> str | None:
             continue
         try:
             dirty = git_ops.paths_dirty(cwd, (rel,))
-        except git_ops.GitError as exc:
+        except errors.GitError as exc:
             # A review-discipline gate, not a security boundary: fail open, never silently.
             print(
                 f"[agent6] WARNING: could not check {rel} for uncommitted changes: {exc}",
@@ -148,7 +148,7 @@ def machine_tool_runner(
             machine_agent.clone_at_machine_chain(
                 cwd, dest, git_ops.machine_chain_ref_for(machine_id)
             )
-        except (subrun.SubrunError, git_ops.GitError) as exc:
+        except (subrun.SubrunError, errors.GitError) as exc:
             shutil.rmtree(dest, ignore_errors=True)
             raise jail.JailUnavailableError(f"machine tree clone failed: {exc}") from exc
         try:
@@ -362,7 +362,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 base_commit = begin.base_commit
             else:
                 base_commit = git_ops.status(cwd).head_sha
-        except (git_ops.GitError, JournalError) as exc:
+        except (errors.GitError, JournalError) as exc:
             reporter.refuse(f"cannot resolve the machine's starting commit: {exc}")
             return 2
         if not base_commit:
@@ -447,7 +447,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 base = git_ops.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
                 try:
                     name, email = git_ops.verify_git_identity(cwd, base)
-                except git_ops.GitError as exc:
+                except errors.GitError as exc:
                     reporter.error(str(exc))
                     return 2
                 commit_identity = git_ops.CommitIdentity(name=name, email=email)

@@ -67,7 +67,7 @@ def _offer_git_setup(
         return
     try:
         git_ops.init_repo(root)
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         print(f"  git init failed: {exc}")
         return
     print("  created: .git/  (git init)")
@@ -81,7 +81,7 @@ def _offer_git_setup(
     try:
         git_ops.commit_paths(root, _SCAFFOLD_COMMIT_MESSAGE, rel)
         print(f"  committed the agent6 scaffold ({', '.join(rel)})")
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         # Most likely a missing git identity, actionable, not fatal.
         print(f"  commit skipped: {exc}")
         print(f"  Set git user.name / user.email, then: git add {' '.join(rel)} && git commit")
@@ -107,7 +107,7 @@ def _offer_scaffold_commit(
         if not git_ops.paths_dirty(root, rel):
             # Already committed; a whole-tree check would false-trigger on unrelated work.
             return
-    except git_ops.GitError:
+    except errors.GitError:
         return
     manual = f"git add {' '.join(rel)} && git commit -m '{_SCAFFOLD_COMMIT_MESSAGE}'"
     print()
@@ -118,7 +118,7 @@ def _offer_scaffold_commit(
         return
     try:
         git_ops.commit_paths(root, _SCAFFOLD_COMMIT_MESSAGE, rel)
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         print(f"  commit failed: {exc}")
         print(f"  Commit it yourself before `agent6 run`: {manual}")
         return

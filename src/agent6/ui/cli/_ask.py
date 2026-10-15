@@ -12,7 +12,7 @@ import sys
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, git_ops, paths
+from agent6 import errors, git_ops, git_policy, paths
 from agent6.harness import _snapshot, loop
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
@@ -82,9 +82,9 @@ def _git_diff_text(cwd: pathlib.Path, range_spec: str) -> tuple[int, str, str]:
     proc = subprocess.run(
         [
             "git",
-            *git_ops.git_hardening_flags(cwd),
+            *git_policy.git_hardening_flags(cwd),
             "diff",
-            *git_ops.DIFF_SHOW_SAFETY_FLAGS,
+            *git_policy.DIFF_SHOW_SAFETY_FLAGS,
             range_spec,
         ],
         cwd=cwd,

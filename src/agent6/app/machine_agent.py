@@ -31,7 +31,7 @@ from typing import Any
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, event_log, git_ops, kinds, paths
+from agent6 import commit_message, errors, event_log, git_ops, kinds, paths
 from agent6.app import _session, _setup, confine, providers, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
@@ -92,7 +92,7 @@ def _machine_head_sha(root: pathlib.Path) -> str | None:
     """
     try:
         return git_ops.status(root).head_sha or None
-    except (git_ops.GitError, OSError):
+    except (errors.GitError, OSError):
         return None
 
 
@@ -572,7 +572,7 @@ def build_machine_agent_runner(
             clone = clone_root / f"state-{request.step_seq:04d}"
             try:
                 clone_at_machine_chain(cwd, clone, chain)
-            except (subrun.SubrunError, git_ops.GitError) as exc:
+            except (subrun.SubrunError, errors.GitError) as exc:
                 return salvaged(f"error: clone for machine {machine_id!r} failed: {exc}")
         workdir = clone or cwd
         payload = MachineAgentRequest(
@@ -692,7 +692,7 @@ def _land_machine_clone(
     try:
         git_ops.fetch_branch(origin, clone, f"{chain_ref}:{chain_ref}")
         git_ops.fetch_branch(origin, clone, f"{chain_ref}:refs/heads/{branch}")
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         return result.model_copy(
             update={"reason": f"import of machine work failed: {exc}", "payload": None}
         )

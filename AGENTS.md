@@ -142,7 +142,7 @@
 
 ### Git and commit practices
 
-- Push, `--force`, history rewrites and `reset --hard` belong to the operator: `git_ops.py` spells none of them (pinned by `test_git_ops_never_spells_a_destructive_verb`).
+- Push, `--force`, history rewrites and `reset --hard` belong to the operator: `git_ops.py` and its private runner spell none of them, and only `git_ops.py` may import the runner (pinned by `test_git_ops_never_spells_a_destructive_verb` and `test_only_git_ops_imports_the_runner`).
   `branch -D` has one operator-only exception: `sessions prune --delete-squashed` on a branch the manifest confirms was squash-merged.
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat(scope):`, `fix(scope):`, `ci:`, `docs:`, `bench:`; the scope matches a directory under `src/agent6/` or a top-level area.
 - One concern per commit, each worth keeping on its own.

@@ -208,10 +208,10 @@ def test_an_unreadable_git_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> No
 
     "assume clean" would exonerate the run's own breakage.
     """
-    from agent6 import git_ops
+    from agent6 import errors
 
     def _boom(_root: object, **_kw: object) -> object:
-        raise git_ops.GitError("index.lock held")
+        raise errors.GitError("index.lock held")
 
     state, turn = _state(), _turn()
     monkeypatch.setattr("agent6.git_ops.status", _boom)

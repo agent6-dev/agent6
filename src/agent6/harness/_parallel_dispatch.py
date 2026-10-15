@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Literal
 
 import pydantic
 
-from agent6 import directive, git_ops
+from agent6 import directive, errors, git_ops
 from agent6.graph import curator as graph_curator
 from agent6.graph import models as graph_models
 from agent6.harness import _chain, _dag_focus, subrun
@@ -106,7 +106,7 @@ def join_lane_result(
             identity=identity,
             also_branch=also_branch,
         )
-    except (git_ops.GitError, OSError) as exc:
+    except (errors.GitError, OSError) as exc:
         return LaneJoin(rid, res.branch, "failed", "", str(exc))
     if sha is None:
         return LaneJoin(rid, res.branch, "conflict", "", "merge conflict")
@@ -459,7 +459,7 @@ class ParallelDispatcher:
                     sha=sha,
                     patch=git_ops.commit_diff(self.chain.root, sha, max_bytes=8000),
                 )
-        except (git_ops.GitError, OSError) as exc:
+        except (errors.GitError, OSError) as exc:
             self.log(f"PARALLEL: pre-dispatch checkpoint failed: {exc}")
         return not self.chain.dirty()
 

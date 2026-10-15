@@ -13,7 +13,7 @@ import json
 import os
 import pathlib
 
-from agent6 import budget, directive, event_log, git_ops, kinds, terminal
+from agent6 import budget, directive, errors, event_log, git_ops, kinds, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import (
     _execution,
@@ -166,7 +166,7 @@ def snapshot_head_mismatch(
         return None
     try:
         current_head = git_ops.chain_tip(repo_root, chain_ref)
-    except git_ops.GitError:
+    except errors.GitError:
         return None
     if current_head is None or current_head == snap_head:
         return None
@@ -427,7 +427,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             try:
                 landed = _resume_chain.landed_start(cwd, manifest)
                 off = None if landed else _resume_chain.branch_off_the_chain(cwd, manifest)
-            except git_ops.GitError as exc:
+            except errors.GitError as exc:
                 reporter.error(str(exc))
                 return 2
             if off is not None:
@@ -497,7 +497,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         if writes_code:
             try:
                 git_ops.verify_git_identity(cwd, identity)
-            except git_ops.GitError as exc:
+            except errors.GitError as exc:
                 reporter.error(str(exc))
                 return 2
 
@@ -648,7 +648,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     answerable=frontend.capabilities.can_ask
                     or ipc.away_mode(layout.session_dir) == "wait",
                 )
-            except (git_ops.GitError, OSError) as exc:
+            except (errors.GitError, OSError) as exc:
                 reporter.error(f"cannot tell the run's files from the operator's: {exc}")
                 return 2
             if unsettled is not None:
@@ -674,7 +674,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         if landed is not None:
             try:
                 resume_base_sha = _resume_chain.continue_from_head(cwd, landed, manifest, identity)
-            except git_ops.GitError as exc:
+            except errors.GitError as exc:
                 reporter.error(f"cannot continue this run from HEAD: {exc}")
                 return 2
             stamps.stamp_continued_from(layout.session_dir, resume_base_sha, landed.branch)
@@ -714,7 +714,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         if mode == "run":
             # The next auto-commit takes the previous execution's tail and any operator edit
             # since; the operator's untracked files stay out.
-            with contextlib.suppress(git_ops.GitError, OSError):
+            with contextlib.suppress(errors.GitError, OSError):
                 dirty = git_ops.chain_dirty_paths(
                     cwd,
                     git_ops.chain_ref_for(session_id),

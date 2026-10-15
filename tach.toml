@@ -30,8 +30,10 @@ depends_on = [
   "agent6.config.io",
   "agent6.config.layer",
   "agent6.directive",
+  "agent6.errors",
   "agent6.event_log",
   "agent6.git_ops",
+  "agent6.git_policy",
   "agent6.graph.curator",
   "agent6.graph.replay",
   "agent6.graph.storage",
@@ -79,6 +81,7 @@ depends_on = [
   "agent6.errors",
   "agent6.event_log",
   "agent6.git_ops",
+  "agent6.git_policy",
   "agent6.graph.order",
   "agent6.graph.storage",
   "agent6.init",
@@ -125,6 +128,7 @@ depends_on = [
   "agent6.commit_message",
   "agent6.config",
   "agent6.directive",
+  "agent6.errors",
   "agent6.git_ops",
   "agent6.graph.curator",
   "agent6.graph.models",
@@ -399,8 +403,16 @@ path = "agent6.commit_message"
 depends_on = ["agent6.task_text"]  # the squash headline is the task's headline
 
 [[modules]]
+path = "agent6._git_command"
+depends_on = ["agent6.child_env", "agent6.errors", "agent6.git_policy", "agent6.kinds"]
+
+[[modules]]
 path = "agent6.git_ops"
-depends_on = ["agent6.child_env", "agent6.commit_message", "agent6.kinds"]  # the provider-key names every child is stripped of
+depends_on = ["agent6._git_command", "agent6.commit_message", "agent6.errors", "agent6.git_policy"]
+
+[[modules]]
+path = "agent6.git_policy"
+depends_on = ["agent6.errors"]
 
 [[modules]]
 # The package __init__ re-exports the models as the public API.

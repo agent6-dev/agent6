@@ -18,7 +18,7 @@ import sys
 from collections.abc import Callable, Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, event_log, git_ops, kinds, paths
+from agent6 import commit_message, errors, event_log, git_ops, kinds, paths
 from agent6.app import _session, _setup, finalize, providers, stamps, workspace_setup
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
@@ -194,7 +194,7 @@ def _tree_left_before_the_loop(cwd: pathlib.Path, inputs: ExecutionInputs) -> st
         return git_ops.worktree_tree(
             cwd, chain_tip or inputs.base_sha or None, inputs.untracked_at_start
         )
-    except (git_ops.GitError, OSError, KeyboardInterrupt):
+    except (errors.GitError, OSError, KeyboardInterrupt):
         return ""
 
 

@@ -15,7 +15,7 @@ from typing import Any, ClassVar, Literal
 
 import pytest
 
-from agent6 import git_ops
+from agent6 import errors, git_ops
 from agent6.app import machine_agent as ma
 from agent6.app import providers, reporter
 from agent6.app.machine import StateConfig
@@ -556,7 +556,7 @@ def test_import_failure_keeps_the_clone_and_routes_failed(
     monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
 
     def _boom(*_a: object, **_k: object) -> None:
-        raise git_ops.GitError("refs locked")
+        raise errors.GitError("refs locked")
 
     monkeypatch.setattr(git_ops, "fetch_branch", _boom)
     runner = _runner(origin, tmp_path)

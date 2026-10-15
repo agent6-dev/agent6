@@ -18,13 +18,13 @@ from collections.abc import Iterator
 
 import pytest
 
-from agent6 import git_ops
+from agent6 import git_ops, git_policy
 
 
 @pytest.fixture(autouse=True)
 def _reset() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
     yield
-    git_ops.set_repo_filter_policy(False)
+    git_policy.set_repo_filter_policy(False)
 
 
 def _git(root: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -61,7 +61,7 @@ def test_the_auto_commit_does_not_run_a_repo_clean_filter(tmp_path: pathlib.Path
     root = _repo(tmp_path / "r")
     base = _git(root, "rev-parse", "HEAD").stdout.strip()
     _poison_clean_filter(root, marker)
-    git_ops.set_repo_filter_policy(False)
+    git_policy.set_repo_filter_policy(False)
     sha = git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
     assert sha is not None, "the commit did not happen"
     assert not marker.exists(), "the repo's clean filter ran a host command"
@@ -75,7 +75,7 @@ def test_run_repo_filters_true_honors_the_driver(tmp_path: pathlib.Path) -> None
     marker = tmp_path / "pwned"
     root = _repo(tmp_path / "r")
     _poison_clean_filter(root, marker)
-    git_ops.set_repo_filter_policy(True)
+    git_policy.set_repo_filter_policy(True)
     git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=None)
     assert marker.exists(), "the driver was neutralized even though the operator opted in"
 
@@ -103,7 +103,7 @@ def test_the_chain_merge_does_not_run_a_repo_merge_driver(tmp_path: pathlib.Path
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "m")
     mine = _git(root, "rev-parse", "HEAD").stdout.strip()
-    git_ops.set_repo_filter_policy(False)
+    git_policy.set_repo_filter_policy(False)
     result = git_ops.chain_merge(root, other, "merge", ref="refs/agent6/t", fallback_parent=mine)
     assert not marker.exists(), "the repo's merge driver ran a host command"
     assert result is None, "a conflicting neutralized merge should not produce a merge commit"
@@ -116,7 +116,7 @@ def test_a_clean_repo_commits_normally_with_filters_off(tmp_path: pathlib.Path) 
     """
     root = _repo(tmp_path / "r")
     (root / "new.txt").write_text("hello\n", encoding="utf-8")
-    git_ops.set_repo_filter_policy(False)
+    git_policy.set_repo_filter_policy(False)
     sha = git_ops.chain_commit(root, "c", ref="refs/agent6/t", fallback_parent=None)
     assert sha is not None
 
@@ -134,13 +134,13 @@ def test_driver_names_enumerate_and_dedup(tmp_path: pathlib.Path) -> None:
         + '\n[merge "a.b"]\n\tdriver = custom %O %A %B\n',
         encoding="utf-8",
     )
-    git_ops.set_repo_filter_policy(False)
-    overrides = git_ops._repo_driver_overrides(root)  # pyright: ignore[reportPrivateUsage]
+    git_policy.set_repo_filter_policy(False)
+    overrides = git_policy.repo_driver_overrides(root)
     assert overrides.count("filter.lfs.clean=") == 1, overrides
     assert "filter.lfs.smudge=" in overrides and "filter.lfs.process=" in overrides
     assert "merge.a.b.driver=" in overrides, "a dotted merge-driver name was mis-split"
-    git_ops.set_repo_filter_policy(True)
-    assert git_ops._repo_driver_overrides(root) == ()  # pyright: ignore[reportPrivateUsage]
+    git_policy.set_repo_filter_policy(True)
+    assert git_policy.repo_driver_overrides(root) == ()
 
 
 def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: pathlib.Path) -> None:
@@ -159,8 +159,8 @@ def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: pathli
     cfg.write_text(cfg.read_text() + "\n[include]\n\tpath = evil.cfg\n", encoding="utf-8")
     (root / ".gitattributes").write_text("* filter=pwn\n", encoding="utf-8")
     (root / "f.txt").write_text("v2\n", encoding="utf-8")
-    git_ops.set_repo_filter_policy(False)
-    assert "filter.pwn.clean=" in git_ops._repo_driver_overrides(root)  # pyright: ignore[reportPrivateUsage]
+    git_policy.set_repo_filter_policy(False)
+    assert "filter.pwn.clean=" in git_policy.repo_driver_overrides(root)
     git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
     assert not marker.exists(), "an include-hidden clean filter ran a host command"
 
@@ -176,7 +176,7 @@ def test_the_review_diff_does_not_run_a_repo_clean_filter(tmp_path: pathlib.Path
     marker = tmp_path / "pwned"
     root = _repo(tmp_path / "r")
     _poison_clean_filter(root, marker)
-    git_ops.set_repo_filter_policy(False)
+    git_policy.set_repo_filter_policy(False)
 
     proc = review_cmds._collect_review_diff("git", root, base="", head="HEAD", paths=())
     assert "f.txt" in proc.stdout, proc.stdout

@@ -25,7 +25,7 @@ from concurrent import futures as concurrent_futures
 from typing import Protocol
 
 from agent6 import budget as agent6_budget
-from agent6 import directive, event_log, git_ops, kinds, memory, paths
+from agent6 import directive, errors, event_log, git_ops, kinds, memory, paths
 from agent6.app import _lane_watch, _setup, _workdirs, finalize, preflight, stamps, workspace_setup
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
@@ -194,7 +194,7 @@ def bridge_spawner(
         if at is not None:
             # A local clone hardlinks the whole odb, so the chain's commits are present.
             git_ops.checkout_detached(spec.workdir, at)
-    except (subrun.SubrunError, git_ops.GitError) as exc:
+    except (subrun.SubrunError, errors.GitError) as exc:
         return subrun.LaneResult(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
@@ -981,7 +981,7 @@ def run_parallel(
         fanout_id = lanes[0].session_id.rsplit("-l", 1)[0]
     try:
         origin_status = git_ops.status(origin)
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         reporter.error(str(exc))
         return 2
     base_sha = origin_status.head_sha

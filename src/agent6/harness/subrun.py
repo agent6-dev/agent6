@@ -13,7 +13,7 @@ import pathlib
 import shutil
 from typing import Protocol
 
-from agent6 import git_ops, kinds, paths
+from agent6 import errors, git_ops, kinds, paths
 from agent6.sessions import layout
 
 
@@ -108,7 +108,7 @@ def clone_workspace(origin: pathlib.Path, dest: pathlib.Path) -> None:
     """
     try:
         git_ops.clone_repo(origin, dest)
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         raise SubrunError(f"clone {origin} -> {dest} failed: {exc}") from exc
 
 
@@ -145,7 +145,7 @@ def import_run(
     if git_ops.branch_exists(lane_repo, branch):
         try:
             git_ops.fetch_branch(origin, lane_repo, f"{branch}:{branch}")
-        except git_ops.GitError as exc:
+        except errors.GitError as exc:
             raise SubrunError(f"fetch {branch!r} from {lane_repo} failed: {exc}") from exc
     paths.mkdir_for_real_user(dest_session_dir.parent)
     shutil.move(str(lane_session_dir), str(dest_session_dir))

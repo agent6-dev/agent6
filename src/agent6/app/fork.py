@@ -23,7 +23,7 @@ import shutil
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from agent6 import git_ops, kinds, paths, portable
+from agent6 import errors, git_ops, kinds, paths, portable
 from agent6.app import _setup, _workdirs, fork_worktrees, resume, stamps, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
@@ -438,7 +438,7 @@ def create_fork(
         path = _workdirs.subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
         try:
             checkout = fork_worktrees.add_session_worktree(cwd, path, plan.forked_from_sha)
-        except git_ops.GitError as exc:
+        except errors.GitError as exc:
             reporter.error(f"could not add the fork's worktree at {path}: {exc}")
             return "", 1
     rc = _materialize_fork(
@@ -535,7 +535,7 @@ def _materialize_fork(
             git_ops.create_branch_at(cwd, run_branch, plan.forked_from_sha)
         if plan.mode == "run":
             git_ops.set_ref(cwd, git_ops.chain_ref_for(dst.session_id), plan.forked_from_sha)
-    except git_ops.GitError as exc:
+    except errors.GitError as exc:
         reporter.error(f"could not cut fork refs at {plan.forked_from_sha[:12]}: {exc}")
         # A fork exists only with its refs; a chain ref under this id predates the fork.
         shutil.rmtree(dst.session_dir, ignore_errors=True)

@@ -453,7 +453,7 @@ def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
     f.write_text('machine="m"\nversion=1\ninitial="s"\n[states.s]\nkind="terminal"\n')
 
     def _boom(*_a: object, **_k: object) -> bool:
-        raise git_ops.GitError("git index is corrupt")
+        raise errors.GitError("git index is corrupt")
 
     monkeypatch.setattr(git_ops, "paths_dirty", _boom)
     assert machine_run.uncommitted_refusal(f, tmp_path) is None  # fail-open preserved

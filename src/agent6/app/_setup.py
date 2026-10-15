@@ -16,7 +16,7 @@ from collections.abc import Iterable
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import child_env, event_log, git_ops, kinds, secret_store
+from agent6 import child_env, event_log, git_policy, kinds, secret_store
 from agent6.app import reporter as app_reporter
 from agent6.config import (
     AnthropicProviderEntry,
@@ -230,8 +230,8 @@ def apply_git_ops_policy(cfg: Config) -> None:
     drivers are repo-controlled host code, off by default; the provider-key env vars are
     stripped from git's environment, since a credential helper must not inherit one.
     """
-    git_ops.set_repo_hook_policy(cfg.git.run_repo_hooks)
-    git_ops.set_repo_filter_policy(cfg.git.run_repo_filters)
+    git_policy.set_repo_hook_policy(cfg.git.run_repo_hooks)
+    git_policy.set_repo_filter_policy(cfg.git.run_repo_filters)
     child_env.set_provider_key_env(
         p.api_key_env
         for p in cfg.providers.values()

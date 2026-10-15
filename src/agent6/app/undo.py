@@ -17,7 +17,7 @@ import os
 import pathlib
 from typing import Any
 
-from agent6 import event_log, git_ops, task_text, terminal
+from agent6 import errors, event_log, git_ops, task_text, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import fork, fork_worktrees, resume
 from agent6.app import reporter as app_reporter
@@ -394,7 +394,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
                 also_branch=manifest.run_branch,
                 exclude=exclude,
             )
-        except git_ops.GitError as exc:
+        except errors.GitError as exc:
             reporter.error(f"the tree as it stands could not be committed onto {where}: {exc}")
             return None
         child, rc = fork.create_fork(
@@ -429,7 +429,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
                 end_tree=listing.scan_session_log(undone.logs_path).end_tree,
                 exclude=exclude,
             )
-        except git_ops.GitError as exc:
+        except errors.GitError as exc:
             reporter.error(
                 f"the checkout was not put back to {turn}: {exc}."
                 f" Fork {child} continues from the tree as it is."

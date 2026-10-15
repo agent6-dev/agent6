@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Define the operator-error boundary.
+"""Define shared errors and the operator-error boundary.
 
 An `OperatorError` becomes a one-line `ERROR:` refusal at exit 2; any other
 fault becomes a crash report. Subsystem errors for operator-owned input
@@ -18,6 +18,10 @@ class OperatorError(Exception):
     The message is the whole surface: name the flag or file and the bad value,
     and say what a valid one looks like.
     """
+
+
+class GitError(Exception):
+    """Generic git failure."""
 
 
 def read_operator_file(path: pathlib.Path) -> str:
