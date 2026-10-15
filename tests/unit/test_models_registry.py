@@ -43,6 +43,60 @@ def test_context_window_bundled_and_normalized(cache_home: pathlib.Path) -> None
     assert models_registry.context_window("openrouter", "vendor/totally-unknown") is None
 
 
+@pytest.mark.parametrize(
+    ("model", "suffix"),
+    [
+        ("claude-fable-5-1", ""),
+        ("claude-opus-5-5", "-20260101"),
+        ("claude-sonnet-5-5", ":tag"),
+        ("claude-fable-5-1", "-20260101:tag"),
+    ],
+)
+def test_claude_minor_versions_size_compaction_from_family(
+    cache_home: pathlib.Path, model: str, suffix: str
+) -> None:
+    """Claude minor ids inherit the family's window instead of fixed compaction defaults."""
+    cfg = Config.model_validate(
+        {
+            "providers": {"claude": {"api_format": "claude_code"}},
+            "models": {"worker": {"provider": "claude", "model": model + suffix}},
+        }
+    )
+    logs: list[str] = []
+    assert models_registry.context_window("claude", model + suffix) == 1_000_000
+    drop, summarise, _ = providers.resolve_compaction_thresholds(
+        cfg, cfg.models.resolve("worker"), log=logs.append
+    )
+    assert (drop, summarise) == (1_800_000, 3_934_464)
+    assert any(f"family fallback from {model.rsplit('-', 1)[0]}" in line for line in logs)
+
+
+@pytest.mark.parametrize("suffix", ["", "-20260101:tag"])
+def test_specific_claude_window_wins_over_family(
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    """Specific minor windows beat family windows even with date and tag suffixes."""
+    monkeypatch.setitem(models_registry.BUNDLED_CONTEXT_WINDOWS, "claude-fable-5-1", 200_000)
+    assert models_registry.context_window("claude", "claude-fable-5-1" + suffix) == 200_000
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "claude-fable-6-1",
+        "claude-haiku-5-5",
+        "claude-unknown-5-1",
+        "claude-fable-5-1-preview",
+        "other-5-1",
+    ],
+)
+def test_family_fallback_does_not_guess_unknown_windows(
+    cache_home: pathlib.Path, model: str
+) -> None:
+    """Family fallback requires a known table key and a numeric minor suffix."""
+    assert models_registry.context_window("claude", model) is None
+
+
 def test_compaction_thresholds_explicit_override_wins(cache_home: pathlib.Path) -> None:
     assert models_registry.compaction_thresholds(
         "openrouter", "moonshotai/kimi-k2.6", drop_override=111, summarise_override=222

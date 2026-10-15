@@ -19,6 +19,7 @@ from agent6.providers import openai
 __all__ = [
     "BUNDLED_CONTEXT_WINDOWS",
     "DECOMPOSE_WIN_MODEL_FAMILIES",
+    "bundled_context_key",
     "compaction_thresholds",
     "context_window",
     "decompose_default",
@@ -27,6 +28,7 @@ __all__ = [
 ]
 
 # Context windows in tokens, canonical ids only (`normalize_model_id` strips a date or `:tag`).
+# Claude minor ids fall back to their family-major key; specific entries win.
 # The table wins over the live cache; Anthropic's listing reports no window.
 BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
     # The 4.x window is 200k with a 1M beta opt-in: pin [context] when enabling that beta.
@@ -66,11 +68,18 @@ def normalize_model_id(model_id: str) -> str:
     return re.sub(r"-\d{8}$", "", base)
 
 
-def _bundled_context_window(model_id: str) -> int | None:
-    """Return the bundled window for the id or its normalized form."""
+def bundled_context_key(model_id: str) -> str | None:
+    """Return the matched exact, normalized, or Claude family-major table key."""
     if model_id in BUNDLED_CONTEXT_WINDOWS:
-        return BUNDLED_CONTEXT_WINDOWS[model_id]
-    return BUNDLED_CONTEXT_WINDOWS.get(normalize_model_id(model_id))
+        return model_id
+    base = normalize_model_id(model_id)
+    if base in BUNDLED_CONTEXT_WINDOWS:
+        return base
+    if (match := re.fullmatch(r"(claude-[a-z]+-\d+)-\d+", base)) and match[
+        1
+    ] in BUNDLED_CONTEXT_WINDOWS:
+        return match[1]
+    return None
 
 
 def context_window(provider_name: str, model_id: str) -> int | None:
@@ -85,9 +94,9 @@ def context_window(provider_name: str, model_id: str) -> int | None:
     Returns:
         The window, or None when neither source knows it.
     """
-    return _bundled_context_window(model_id) or cache.cached_context_window(
-        provider_name, (model_id, normalize_model_id(model_id))
-    )
+    if key := bundled_context_key(model_id):
+        return BUNDLED_CONTEXT_WINDOWS[key]
+    return cache.cached_context_window(provider_name, (model_id, normalize_model_id(model_id)))
 
 
 def compaction_thresholds(

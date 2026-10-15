@@ -146,6 +146,7 @@ agent6 model worker claude/claude-sonnet-4-5
 - Claude Code appends the account email to every system prompt it sends; agent6 replaces it with `<operator-email>` in the model's returned text.
 - Tool results are capped at 34,000 bytes of UTF-8 for this provider (60,000 elsewhere): Claude Code writes a result over 50,000 bytes under `~/.claude/projects` and hands the model a 2 KB preview of it, and the turn's notices (a verify tail, a review critique, the nudges) ride in the same payload, with 16,000 bytes kept for them.
 - Use a full model id (`claude-sonnet-4-5`, not `sonnet`) so the context window is known for compaction sizing.
+- The bundled context-window table tries exact and date/tag-normalized ids first, then falls back from `claude-<family>-<major>-<minor>` to `claude-<family>-<major>` when that key exists; the compaction log names the family key when used.
 - `agent6 connect claude --logout` is refused: agent6 stores no Claude Code credentials; `claude auth logout` signs out.
 
 ### OpenRouter routing and caching (`extra_body`)

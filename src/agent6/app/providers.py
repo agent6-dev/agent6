@@ -73,6 +73,9 @@ def resolve_compaction_thresholds(
             if ctx
             else "fixed default (context window unknown)"
         )
+        key = models_registry.bundled_context_key(model)
+        if key is not None and key not in (model, models_registry.normalize_model_id(model)):
+            src += f"; family fallback from {key}"
         # Thresholds compaction will fire at, not a compaction that happened.
         log(f"compaction thresholds: drop at {drop:,} chars, summarise at {summarise:,} [{src}]")
     keep = cfg.context.keep_recent_chars
