@@ -277,4 +277,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "graph",
         help="Print a session's saved task graph as a tree.",
     )
-    _common._add_session_id(sessions_graph, completers._complete_session_ids)
+    _common._add_session_id(
+        sessions_graph,
+        completers._complete_session_ids,
+        help_text=(
+            "Session id or unambiguous prefix; omit for the newest session with a graph directory."
+        ),
+    )

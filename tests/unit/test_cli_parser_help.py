@@ -47,6 +47,13 @@ def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
     raise AssertionError(f"no positional {dest!r}")
 
 
+def test_graph_help_names_its_artifact_aware_default() -> None:
+    """Graph selection skips sessions without a graph directory."""
+    command = _find(_find(cli_parser.build_parser(), "sessions"), "graph")
+    text = " ".join(command.format_help().split())
+    assert "omit for the newest session with a graph directory" in text
+
+
 def test_transcript_help_names_its_artifact_aware_default() -> None:
     """Transcript selection skips sessions without a transcripts directory."""
     command = _find(_find(cli_parser.build_parser(), "sessions"), "transcript")

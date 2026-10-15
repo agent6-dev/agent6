@@ -129,6 +129,11 @@ def test_history_graph_uses_most_recent_when_no_arg(
     os.utime(runs / "older-run-AAAA11" / "logs.jsonl", (100, 100))
     os.utime(runs / "newer-run-BBBB22" / "logs.jsonl", (1000, 1000))
     ipc.register_frontend(runs / "older-run-AAAA11", 12345)
+    # The newest session has no graph directory, so selection skips it.
+    newest = runs / "newest-without-graph"
+    newest.mkdir()
+    (newest / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
+    os.utime(newest / "logs.jsonl", (2000, 2000))
     rc = main(["sessions", "graph"])
     captured = capsys.readouterr()
     assert rc == 0
