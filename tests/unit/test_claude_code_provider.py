@@ -33,6 +33,7 @@ from agent6.providers import (
     ProviderInterrupted,
     ToolDefinition,
     TranscriptSink,
+    _claude_code_session,
     _claude_code_wire,
     _stream,
     call_for_text,
@@ -746,14 +747,17 @@ def test_a_call_the_cli_refuses_after_an_answer_ends_the_call_with_its_reason(
 
 
 def test_an_echoed_reason_is_its_first_line_without_the_tag() -> None:
-    assert claude_code._echo_reason("\n<tool_use_error>InputValidationError: bad\nYou sent: x") == (
-        "InputValidationError: bad"
+    assert _claude_code_session.echo_reason(
+        "\n<tool_use_error>InputValidationError: bad\nYou sent: x"
+    ) == ("InputValidationError: bad")
+    assert (
+        _claude_code_session.echo_reason([{"type": "text", "text": "<tool_use_error>boom"}])
+        == "boom"
     )
-    assert claude_code._echo_reason([{"type": "text", "text": "<tool_use_error>boom"}]) == "boom"
-    assert claude_code._echo_reason(
+    assert _claude_code_session.echo_reason(
         "<tool_use_error>Error: No such tool available: x</tool_use_error>"
     ) == ("Error: No such tool available: x")
-    assert claude_code._echo_reason("") == "no reason given"
+    assert _claude_code_session.echo_reason("") == "no reason given"
 
 
 def test_failures_map_to_provider_errors(tmp_path: pathlib.Path) -> None:
@@ -1391,7 +1395,7 @@ def test_a_raising_operator_poll_leaves_the_watch_ticking() -> None:
     def boom() -> bool:
         raise RuntimeError("operator state unreadable")
 
-    claude_code._Watch(boom, boom).tick()  # pyright: ignore[reportPrivateUsage]
+    _claude_code_session.Watch(boom, boom).tick()
 
 
 def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:

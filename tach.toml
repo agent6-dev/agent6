@@ -164,6 +164,7 @@ depends_on = [
 ]
 
 [[modules]]
+# The _claude_code_* helpers never import claude_code.
 path = "agent6.providers"
 depends_on = [
   "agent6",  # serverInfo.version on the claude_code MCP handshake

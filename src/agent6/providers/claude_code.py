@@ -25,7 +25,6 @@ scrub it from returned text (docs/security.md).
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import json
 import os
@@ -37,25 +36,26 @@ import subprocess
 import tempfile
 import threading
 import time
-import weakref
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-import agent6
 from agent6 import budget as agent6_budget
 from agent6 import portable
-from agent6.providers import _claude_code_wire, _stream, types
+from agent6.providers import (
+    _claude_code_session,
+    _claude_code_stream,
+    _claude_code_wire,
+    _stream,
+    types,
+)
 from agent6.sandbox import jail
 
-EMAIL_PLACEHOLDER = "<operator-email>"
-_MAX_LINE_BYTES = 8 * 1024 * 1024
 # A reading follows message_stop within milliseconds (4 ms measured on CLI 2.1.251), so one
 # tick covers it; a process's first round always gets one, inside the grace or not meterable.
 _PLAN_READING_DRAIN_S = _stream.STREAM_WATCHDOG_TICK_S
 _PLAN_READING_GRACE_S = 3.0
 # The reserve the compaction thresholds keep below the window; past it the session restarts.
 _CONTEXT_RESERVE_TOKENS = 16_384
-_KILL_GRACE_S = 1.0
 
 
 def _missing_binary(binary: str) -> str:
@@ -106,389 +106,12 @@ def login_status(binary: str, *, timeout_s: float = 20.0) -> str | None:
     )
 
 
-def _reap(proc: subprocess.Popen[bytes], private_dir: pathlib.Path) -> None:
-    """End the child and remove its private directory.
-
-    SIGTERM to its process group (the CLI exits at once; on stdin EOF alone it
-    stays up while a tools/call awaits its answer), SIGKILL after the grace. The
-    reader threads close stdout and stderr at their EOF.
-    """
-    with contextlib.suppress(OSError, ValueError):
-        if proc.stdin is not None:
-            proc.stdin.close()
-    if proc.poll() is None:
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(proc.pid, signal.SIGTERM)
-        try:
-            proc.wait(timeout=_KILL_GRACE_S)
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait()
-    shutil.rmtree(private_dir, ignore_errors=True)
-
-
-@dataclasses.dataclass(slots=True)
-class _ToolCall:
-    """One pending `tools/call`: the control request to answer and its JSON-RPC id."""
-
-    request_id: str
-    rpc_id: Any
-
-
-@dataclasses.dataclass(slots=True, weakref_slot=True)
-class _Session:
-    """One spawned child and everything the continuation rule needs.
-
-    Attributes:
-        proc: The child.
-        private_dir: The child's cwd, holding the system prompt file.
-        system: The system prompt the child was spawned with.
-        tools: The tools the child was spawned with.
-        lines: The reader thread's queue; None marks stdout's EOF.
-        stderr_drain: Fills `stderr_tail`; joined before an exit is reported.
-        pushback: A line read past a round's end, returned by the next read.
-        reap: Ends the child once, on close or at interpreter exit.
-        stdin_lock: Serialises writes to the child.
-        stderr_tail: What the child wrote to stderr before dying.
-        stdin_log: The lines written since the last transcript record.
-        consumed: The caller's history as this session consumed it, one skeleton per message.
-        pending: The tool_use ids the last round produced, answered in order by the next call.
-        calls: The `tools/call` requests received, by tool_use id.
-        refused: The CLI's own error per tool_use id it refused to forward.
-        plan: The latest plan reading.
-        resolved_model: The model the CLI reported at init.
-        session_id: The CLI's session id.
-        account_email: The login's email, kept only to scrub it from returned text.
-        restart_next: The next call respawns rather than continues.
-    """
-
-    proc: subprocess.Popen[bytes]
-    private_dir: pathlib.Path
-    system: str
-    tools: list[types.ToolDefinition]
-    lines: queue.Queue[dict[str, Any] | None]
-    stderr_drain: threading.Thread
-    pushback: list[dict[str, Any] | None] = dataclasses.field(default_factory=list)
-    reap: weakref.finalize[[subprocess.Popen[bytes], pathlib.Path], _Session] = dataclasses.field(
-        init=False
-    )
-    stdin_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
-    stderr_tail: list[bytes] = dataclasses.field(default_factory=list)
-    stdin_log: list[dict[str, Any]] = dataclasses.field(default_factory=list)
-    consumed: tuple[_claude_code_wire.Skeleton, ...] = ()
-    pending: tuple[str, ...] = ()
-    calls: dict[str, _ToolCall] = dataclasses.field(default_factory=dict)
-    refused: dict[str, str] = dataclasses.field(default_factory=dict)
-    plan: agent6_budget.PlanUsage | None = None
-    resolved_model: str = ""
-    session_id: str = ""
-    account_email: str = ""
-    restart_next: bool = False
-
-    def __post_init__(self) -> None:
-        """Arm the reaper."""
-        self.reap = weakref.finalize(self, _reap, self.proc, self.private_dir)
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class _Tail:
-    """What a continuing call sends.
-
-    Attributes:
-        results: The pending tool results by tool_use id.
-        texts: The text blocks that follow them (notices, nudges, steer text).
-    """
-
-    results: dict[str, str]
-    texts: tuple[str, ...]
-
-
-def _continuation(s: _Session, messages: Sequence[Mapping[str, Any]]) -> _Tail | None:
-    """Apply the one rule for keeping the process: the history extends what it produced.
-
-    The consumed prefix keeps its skeleton; after it comes the last round's
-    assistant turn (or nothing, when the loop popped a quiet one), then user turns
-    only: the pending tool results first, text blocks after.
-
-    Args:
-        s: The session.
-        messages: The new history.
-
-    Returns:
-        What to send, or None to restart.
-    """
-    n = len(s.consumed)
-    if _claude_code_wire.history_skeleton(messages[:n]) != s.consumed:
-        return None
-    tail = list(messages[n:])
-    if (
-        tail
-        and tail[0].get("role") == "assistant"
-        and _claude_code_wire.tool_use_ids(tail[0]) == s.pending
-    ):
-        tail = tail[1:]
-    elif s.pending:
-        return None
-    if not tail or any(m.get("role") != "user" for m in tail):
-        return None
-    results: dict[str, str] = {}
-    texts: list[str] = []
-    if s.pending:
-        results = _claude_code_wire.tool_results(tail[0])
-        if tuple(results) != s.pending:
-            return None
-        texts.extend(_claude_code_wire.message_texts(tail[0]))
-        tail = tail[1:]
-    if any(_claude_code_wire.tool_results(m) for m in tail):
-        return None
-    texts.extend(text for m in tail for text in _claude_code_wire.message_texts(m))
-    return _Tail(results=results, texts=tuple(texts)) if results or texts else None
-
-
-def _serve_inline(s: _Session, msg: dict[str, Any]) -> bool:
-    """Answer, from the reader thread, what needs no loop state.
-
-    The MCP handshake, `tools/list`, `ping`, an unknown method, and the CLI's own
-    initialize response, whose account block is dropped except the email kept for
-    the scrub.
-
-    Args:
-        s: The session.
-        msg: The line read.
-
-    Returns:
-        True when consumed; a `tools/call` or any other line is queued for the call.
-    """
-    kind = msg.get("type")
-    if kind == "control_response":
-        response = msg.get("response") or {}
-        if response.get("request_id") == "init-1":
-            account = (response.get("response") or {}).get("account") or {}
-            s.account_email = str(account.get("email") or "")
-            s.lines.put({"type": "_agent6_handshake_done"})
-        return True
-    if kind != "control_request":
-        return False
-    request = msg.get("request") or {}
-    if request.get("subtype") != "mcp_message":
-        return False
-    rpc = request.get("message") or {}
-    method, rpc_id = rpc.get("method"), rpc.get("id")
-    if method == "tools/call":
-        return False
-    rid = str(msg.get("request_id", ""))
-    if method == "initialize":
-        result: dict[str, Any] = {
-            "protocolVersion": (rpc.get("params") or {}).get("protocolVersion", ""),
-            "capabilities": {"tools": {}},
-            "serverInfo": {"name": _claude_code_wire.MCP_SERVER, "version": agent6.__version__},
-        }
-    elif method == "tools/list":
-        result = {
-            "tools": [
-                {"name": td.name, "description": td.description, "inputSchema": td.input_schema}
-                for td in s.tools
-            ]
-        }
-    elif method == "ping" or rpc_id is None:
-        result = {}  # a ping, or a notification acknowledged with an empty result
-    else:
-        _write(
-            s,
-            {
-                "type": "control_response",
-                "response": {
-                    "subtype": "success",
-                    "request_id": rid,
-                    "response": {
-                        "mcp_response": {
-                            "jsonrpc": "2.0",
-                            "id": rpc_id,
-                            "error": {"code": -32601, "message": "unknown method"},
-                        }
-                    },
-                },
-            },
-            log=False,
-        )
-        return True
-    _write(s, _claude_code_wire.mcp_answer(rid, rpc_id, result), log=False)
-    return True
-
-
-def _read_stdout(s: _Session) -> None:
-    """Run the reader thread, which owns the pipe.
-
-    A close from another thread while a read is in flight would let that read
-    land on the next child's descriptor.
-    """
-    stream = s.proc.stdout
-    assert stream is not None
-    while True:
-        try:
-            raw = stream.readline(_MAX_LINE_BYTES + 1)
-        except (OSError, ValueError):
-            break
-        if not raw:
-            break
-        if len(raw) > _MAX_LINE_BYTES:
-            while raw and not raw.endswith(b"\n"):
-                raw = stream.readline(_MAX_LINE_BYTES + 1)
-            s.lines.put({"type": "_agent6_error", "text": "claude wrote a line over 8 MiB"})
-            continue
-        try:
-            msg = json.loads(raw.decode("utf-8", errors="replace"))
-        except ValueError:
-            s.lines.put(
-                {"type": "_agent6_error", "text": f"claude wrote a non-JSON line: {raw[:200]!r}"}
-            )
-            continue
-        if not isinstance(msg, dict):
-            continue
-        try:
-            consumed = _serve_inline(s, msg)
-        except types.ProviderError as exc:
-            s.lines.put({"type": "_agent6_error", "text": str(exc)})
-            break
-        except Exception as exc:
-            # The thread's boundary: a frame of any shape reaches the round as an error.
-            s.lines.put(
-                {
-                    "type": "_agent6_error",
-                    "text": f"claude wrote an invalid stream-json message: {exc}",
-                }
-            )
-            break
-        if not consumed:
-            s.lines.put(msg)
-    stream.close()
-    s.lines.put(None)
-
-
-def _write(s: _Session, obj: dict[str, Any], *, log: bool = True) -> None:
-    """Write one stdin line.
-
-    Args:
-        s: The session.
-        obj: The line's object.
-        log: Whether the line joins the transcript's stdin log.
-
-    Raises:
-        ProviderError: The child stopped reading.
-    """
-    data = json.dumps(obj, separators=(",", ":")).encode() + b"\n"
-    with s.stdin_lock:
-        stdin = s.proc.stdin
-        assert stdin is not None
-        try:
-            stdin.write(data)
-            stdin.flush()
-        except (OSError, ValueError) as exc:
-            raise types.ProviderError(f"claude stopped reading stdin: {exc}") from exc
-    if log:
-        s.stdin_log.append(obj)
-
-
-def _email_prefix_len(email: str, text: str) -> int:
-    """Return the length of the longest proper prefix of the email that ends the text."""
-    return next((k for k in range(len(email) - 1, 0, -1) if text.endswith(email[:k])), 0)
-
-
 def _int(value: Any) -> int:
     """Return a usage value as an int; 0 when absent or not one."""
     try:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
-
-
-@dataclasses.dataclass(slots=True)
-class _Round:
-    """One API round as it streams in.
-
-    Attributes:
-        blocks: The assistant blocks, in Anthropic shape.
-        usage: The usage, from message_start and message_delta.
-        stop_reason: The stop reason from message_delta.
-        message_id: The message id from message_start.
-        ended: Whether message_stop landed.
-        cb: The open block's delta callback.
-        held: The streamed tail the email scrub holds back.
-    """
-
-    blocks: list[dict[str, Any]] = dataclasses.field(default_factory=list)
-    usage: dict[str, Any] = dataclasses.field(default_factory=dict)
-    stop_reason: str = ""
-    message_id: str = ""
-    ended: bool = False
-    cb: Callable[[str], None] | None = None
-    held: str = ""
-
-
-class _Watch:
-    """The wait loop's per-tick checks: operator stop and steer, and the idle clock.
-
-    Attributes:
-        limit: The active idle budget, one of the SSE providers' phase thresholds.
-        last_at: The monotonic time of the last meaningful line.
-    """
-
-    def __init__(
-        self,
-        should_abort: Callable[[], bool] | None,
-        should_interrupt: Callable[[], bool] | None,
-    ) -> None:
-        """Start the clock in the prefill phase."""
-        self._abort = should_abort
-        self._interrupt = should_interrupt
-        self.limit = _stream.STREAM_FIRST_DATA_TIMEOUT_S
-        self.last_at = time.monotonic()
-
-    def mark(self) -> None:
-        """Mark a meaningful line."""
-        self.last_at = time.monotonic()
-
-    def tick(self) -> None:
-        """Run the per-tick checks.
-
-        Raises:
-            ProviderAborted: The operator stopped the run.
-            ProviderInterrupted: The operator asked to steer.
-            ProviderError: The idle budget ran out.
-        """
-        if _stream.safe_poll(self._abort):
-            raise types.ProviderAborted("run stopped by operator")
-        if _stream.safe_poll(self._interrupt):
-            raise types.ProviderInterrupted("steer requested mid-turn")
-        if time.monotonic() - self.last_at > self.limit:
-            raise types.ProviderError(f"claude produced no output for {self.limit:.0f}s")
-
-
-def _note_refusals(s: _Session, line: Mapping[str, Any]) -> None:
-    """Note the tool calls the CLI refused itself.
-
-    A `user` echo carrying an `is_error` tool_result the CLI wrote means it refused
-    that call's input and never sent the `tools/call`; the next round follows.
-    """
-    content = (line.get("message") or {}).get("content")
-    if not isinstance(content, list):
-        return
-    for block in content:
-        if not isinstance(block, Mapping) or block.get("type") != "tool_result":
-            continue
-        if block.get("is_error"):
-            s.refused[str(block.get("tool_use_id", ""))] = _echo_reason(block.get("content"))
-
-
-def _echo_reason(content: object) -> str:
-    """Return the first line of an echoed tool_result, its `<tool_use_error>` tag off."""
-    if isinstance(content, list):
-        text = "\n".join(str(b.get("text", "")) for b in content if isinstance(b, Mapping))
-    else:
-        text = str(content or "")
-    text = text.strip().removeprefix("<tool_use_error>").removesuffix("</tool_use_error>").strip()
-    return text.splitlines()[0][:200] if text else "no reason given"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -511,7 +134,9 @@ class ClaudeCodeProvider:
     budget: agent6_budget.BudgetTracker | None = None
     context_tokens: int | None = None
     # The live session; a list, since the dataclass is frozen.
-    _cell: list[_Session | None] = dataclasses.field(default_factory=lambda: [None])
+    _cell: list[_claude_code_session.Session | None] = dataclasses.field(
+        default_factory=lambda: [None]
+    )
 
     def call(
         self,
@@ -552,7 +177,7 @@ class ClaudeCodeProvider:
         if self.budget is not None:
             self.budget.check()
         tool_list = list(tools or ())
-        watch = _Watch(should_abort, should_interrupt)
+        watch = _claude_code_session.Watch(should_abort, should_interrupt)
         s = self._cell[0] if tool_list else None
         try:
             if tool_list:
@@ -576,7 +201,7 @@ class ClaudeCodeProvider:
         if (s := self._cell[0]) is not None:
             self._close(s)
 
-    def _close(self, s: _Session) -> None:
+    def _close(self, s: _claude_code_session.Session) -> None:
         """Reap a session and forget it when it is the live one."""
         s.reap()
         if self._cell[0] is s:
@@ -586,12 +211,12 @@ class ClaudeCodeProvider:
 
     def _worker_session(
         self,
-        s: _Session | None,
+        s: _claude_code_session.Session | None,
         system: str,
         tools: list[types.ToolDefinition],
         messages: Sequence[Mapping[str, Any]],
-        watch: _Watch,
-    ) -> _Session:
+        watch: _claude_code_session.Watch,
+    ) -> _claude_code_session.Session:
         """Continue the worker's process when the history extends what it produced, else respawn.
 
         Args:
@@ -611,7 +236,7 @@ class ClaudeCodeProvider:
             and s.system == system
             and s.tools == tools
         ):
-            tail = _continuation(s, messages)
+            tail = _claude_code_session.continuation(s, messages)
             if tail is not None:
                 self._continue(s, tail, watch)
                 return s
@@ -624,8 +249,8 @@ class ClaudeCodeProvider:
         system: str,
         tools: list[types.ToolDefinition],
         messages: Sequence[Mapping[str, Any]],
-        watch: _Watch,
-    ) -> _Session:
+        watch: _claude_code_session.Watch,
+    ) -> _claude_code_session.Session:
         """Spawn one child through its handshake and the history's `system/init`.
 
         Args:
@@ -672,7 +297,7 @@ class ClaudeCodeProvider:
             name="agent6-claude-stderr",
             daemon=True,
         )
-        s = _Session(
+        s = _claude_code_session.Session(
             proc=proc,
             private_dir=private_dir,
             system=system,
@@ -682,11 +307,14 @@ class ClaudeCodeProvider:
             stderr_tail=tail,
         )
         threading.Thread(
-            target=_read_stdout, args=(s,), name="agent6-claude-stdout", daemon=True
+            target=_claude_code_session.read_stdout,
+            args=(s,),
+            name="agent6-claude-stdout",
+            daemon=True,
         ).start()
         drain.start()
         try:
-            _write(
+            _claude_code_session.write(
                 s,
                 {
                     "type": "control_request",
@@ -697,7 +325,9 @@ class ClaudeCodeProvider:
             )
             while self._next_line(s, watch).get("type") != "_agent6_handshake_done":
                 pass
-            _write(s, _claude_code_wire.user_line(_claude_code_wire.render_history(messages)))
+            _claude_code_session.write(
+                s, _claude_code_wire.user_line(_claude_code_wire.render_history(messages))
+            )
             while True:
                 line = self._next_line(s, watch)
                 if line.get("type") == "system" and line.get("subtype") == "init":
@@ -708,7 +338,7 @@ class ClaudeCodeProvider:
             s.reap()
             raise
 
-    def _audit_init(self, s: _Session, line: Mapping[str, Any]) -> None:
+    def _audit_init(self, s: _claude_code_session.Session, line: Mapping[str, Any]) -> None:
         """Check every `system/init`: the tool set is exactly what agent6 offered.
 
         Raises:
@@ -736,7 +366,12 @@ class ClaudeCodeProvider:
         s.resolved_model = str(line.get("model") or self.model)
         s.session_id = str(line.get("session_id") or "")
 
-    def _continue(self, s: _Session, tail: _Tail, watch: _Watch) -> None:
+    def _continue(
+        self,
+        s: _claude_code_session.Session,
+        tail: _claude_code_session.Tail,
+        watch: _claude_code_session.Watch,
+    ) -> None:
         """Send the continuing call: each pending result as its answer, the texts on the last.
 
         Raises:
@@ -744,7 +379,7 @@ class ClaudeCodeProvider:
                 (fatal), or the child moved on.
         """
         if not tail.results:
-            _write(s, _claude_code_wire.user_line("\n\n".join(tail.texts)))
+            _claude_code_session.write(s, _claude_code_wire.user_line("\n\n".join(tail.texts)))
             return
         # With every call refused the CLI's next round already runs; the texts go in as a user line.
         answered = [i for i in s.pending if i not in s.refused]
@@ -752,7 +387,7 @@ class ClaudeCodeProvider:
             s.refused.clear()
             s.pending = ()
             if tail.texts:
-                _write(s, _claude_code_wire.user_line("\n\n".join(tail.texts)))
+                _claude_code_session.write(s, _claude_code_wire.user_line("\n\n".join(tail.texts)))
             return
         for tool_use_id in s.pending:
             if tool_use_id in s.refused:
@@ -773,12 +408,14 @@ class ClaudeCodeProvider:
                     " loop's result cap for this provider leaves room for a turn's notices.",
                     fatal=True,
                 )
-            _write(
+            _claude_code_session.write(
                 s, _claude_code_wire.mcp_answer(call.request_id, call.rpc_id, {"content": content})
             )
         s.pending = ()
 
-    def _await_call(self, s: _Session, tool_use_id: str, watch: _Watch) -> _ToolCall:
+    def _await_call(
+        self, s: _claude_code_session.Session, tool_use_id: str, watch: _claude_code_session.Watch
+    ) -> _claude_code_session.ToolCall:
         """Return the `tools/call` for a tool_use id, stashed or the next one the CLI sends.
 
         Raises:
@@ -800,7 +437,7 @@ class ClaudeCodeProvider:
             self._absorb(s, line)
         return s.calls.pop(tool_use_id)
 
-    def _absorb(self, s: _Session, line: Mapping[str, Any]) -> None:
+    def _absorb(self, s: _claude_code_session.Session, line: Mapping[str, Any]) -> None:
         """Handle a line outside a round's stream.
 
         A tools/call is stashed, a stray can_use_tool allowed, any other control
@@ -811,7 +448,7 @@ class ClaudeCodeProvider:
         if kind == "control_request":
             self._control(s, line)
         elif kind == "user":
-            _note_refusals(s, line)
+            _claude_code_session.note_refusals(s, line)
         elif kind == "rate_limit_event":
             s.plan = (
                 _claude_code_wire.plan_usage_from_rate_limit(line.get("rate_limit_info") or {})
@@ -822,7 +459,7 @@ class ClaudeCodeProvider:
         elif kind == "result":
             self._check_result(s, line)
 
-    def _control(self, s: _Session, line: Mapping[str, Any]) -> None:
+    def _control(self, s: _claude_code_session.Session, line: Mapping[str, Any]) -> None:
         """Handle a control request.
 
         Raises:
@@ -840,10 +477,10 @@ class ClaudeCodeProvider:
                 raise types.ProviderError(
                     f"claude sent an unexpected MCP request: {rpc.get('method')!r}"
                 )
-            s.calls[tool_use_id] = _ToolCall(rid, rpc.get("id"))
+            s.calls[tool_use_id] = _claude_code_session.ToolCall(rid, rpc.get("id"))
         elif subtype == "can_use_tool":
             # Never sent under the allowed-tools argv; agent6's approval gate already ran.
-            _write(
+            _claude_code_session.write(
                 s,
                 {
                     "type": "control_response",
@@ -855,7 +492,7 @@ class ClaudeCodeProvider:
                 },
             )
         else:
-            _write(
+            _claude_code_session.write(
                 s,
                 {
                     "type": "control_response",
@@ -867,7 +504,7 @@ class ClaudeCodeProvider:
                 },
             )
 
-    def _check_result(self, s: _Session, line: Mapping[str, Any]) -> None:
+    def _check_result(self, s: _claude_code_session.Session, line: Mapping[str, Any]) -> None:
         """Raise a `result` line's error, if it carries one.
 
         Raises:
@@ -877,7 +514,7 @@ class ClaudeCodeProvider:
         subtype = str(line.get("subtype") or "")
         if not line.get("is_error") and not subtype.startswith("error"):
             return
-        text = self._scrub(s, str(line.get("result") or subtype))
+        text = _claude_code_stream.scrub(s, str(line.get("result") or subtype))
         if "not logged in" in text.lower():
             raise types.ProviderError(
                 "Claude Code is not signed in; run `claude auth login` as this user", fatal=True
@@ -889,7 +526,9 @@ class ClaudeCodeProvider:
             f"claude result {subtype}{where}: {text[:500]}", status_code=status
         )
 
-    def _next_line(self, s: _Session, watch: _Watch) -> dict[str, Any]:
+    def _next_line(
+        self, s: _claude_code_session.Session, watch: _claude_code_session.Watch
+    ) -> dict[str, Any]:
         """Return the next meaningful line, ticking the watch while waiting.
 
         Raises:
@@ -907,12 +546,14 @@ class ClaudeCodeProvider:
             if line is None:
                 # stdout closes a moment before the exit status lands.
                 try:
-                    rc: int | None = s.proc.wait(timeout=_KILL_GRACE_S)
+                    rc: int | None = s.proc.wait(timeout=_claude_code_session.KILL_GRACE_S)
                 except subprocess.TimeoutExpired:
                     rc = None
                 # A tail read before the drain's EOF misses the child's last words.
-                s.stderr_drain.join(timeout=_KILL_GRACE_S)
-                tail = self._scrub(s, portable.stderr_tail(s.stderr_tail)) or "no stderr"
+                s.stderr_drain.join(timeout=_claude_code_session.KILL_GRACE_S)
+                tail = (
+                    _claude_code_stream.scrub(s, portable.stderr_tail(s.stderr_tail)) or "no stderr"
+                )
                 raise types.ProviderError(f"claude exited {rc}: {tail}")
             kind = line.get("type")
             if kind == "_agent6_error":
@@ -937,8 +578,8 @@ class ClaudeCodeProvider:
 
     def _read_round(
         self,
-        s: _Session,
-        watch: _Watch,
+        s: _claude_code_session.Session,
+        watch: _claude_code_session.Watch,
         text_cb: Callable[[str], None] | None,
         thinking_cb: Callable[[str], None] | None,
     ) -> types.ProviderResponse:
@@ -953,17 +594,19 @@ class ClaudeCodeProvider:
         Returns:
             The round's response.
         """
-        r = _Round()
+        r = _claude_code_stream.Round()
         plan_before = s.plan
         watch.limit = _stream.STREAM_FIRST_DATA_TIMEOUT_S
         while not r.ended:
             line = self._next_line(s, watch)
             kind = line.get("type")
             if kind == "stream_event":
-                self._stream_event(s, r, line.get("event") or {}, watch, text_cb, thinking_cb)
+                _claude_code_stream.stream_event(
+                    s, r, line.get("event") or {}, watch, text_cb, thinking_cb
+                )
             elif kind == "assistant":
                 r.blocks.extend(
-                    self._block(s, b)
+                    _claude_code_stream.block(s, b)
                     for b in _claude_code_wire.message_blocks(line.get("message") or {})
                 )
             elif kind == "result":
@@ -980,78 +623,9 @@ class ClaudeCodeProvider:
         s.pending = ids
         return self._finish_round(s, r, ids)
 
-    def _stream_event(
-        self,
-        s: _Session,
-        r: _Round,
-        event: Mapping[str, Any],
-        watch: _Watch,
-        text_cb: Callable[[str], None] | None,
-        thinking_cb: Callable[[str], None] | None,
-    ) -> None:
-        """Fold one Messages stream event into the round."""
-        kind = event.get("type")
-        if kind == "message_start":
-            message = event.get("message") or {}
-            r.message_id = str(message.get("id", ""))
-            r.usage.update(message.get("usage") or {})
-            watch.limit = _stream.STREAM_IDLE_TIMEOUT_S
-        elif kind == "content_block_start":
-            thinking = (event.get("content_block") or {}).get("type") == "thinking"
-            watch.limit = (
-                _stream.STREAM_THINKING_IDLE_TIMEOUT_S
-                if thinking
-                else _stream.STREAM_IDLE_TIMEOUT_S
-            )
-        elif kind == "content_block_stop":
-            watch.limit = _stream.STREAM_IDLE_TIMEOUT_S
-            self._emit_delta(s, r, "", r.cb, final=True)
-        elif kind == "content_block_delta":
-            delta = event.get("delta") or {}
-            if delta.get("type") == "text_delta":
-                self._emit_delta(s, r, str(delta.get("text", "")), text_cb)
-            elif delta.get("type") == "thinking_delta":
-                self._emit_delta(s, r, str(delta.get("thinking", "")), thinking_cb)
-        elif kind == "message_delta":
-            r.stop_reason = str((event.get("delta") or {}).get("stop_reason") or "")
-            r.usage.update(event.get("usage") or {})
-        elif kind == "message_stop":
-            r.ended = True
-
-    def _emit_delta(
-        self,
-        s: _Session,
-        r: _Round,
-        piece: str,
-        cb: Callable[[str], None] | None,
-        *,
-        final: bool = False,
-    ) -> None:
-        """Stream a delta with the email scrubbed across delta boundaries.
-
-        A tail that could start an occurrence waits for the next delta; the block's
-        stop flushes it.
-
-        Args:
-            s: The session.
-            r: The round.
-            piece: The delta's text.
-            cb: The delta callback; None streams nothing.
-            final: Whether this flushes the held tail.
-        """
-        if cb is None:
-            return
-        r.cb = cb
-        out = self._scrub(s, r.held + piece)
-        keep = 0 if final else _email_prefix_len(s.account_email, out)
-        r.held = out[len(out) - keep :] if keep else ""
-        if keep:
-            out = out[:-keep]
-        if out:
-            with contextlib.suppress(Exception):
-                cb(out)
-
-    def _finish_round(self, s: _Session, r: _Round, ids: tuple[str, ...]) -> types.ProviderResponse:
+    def _finish_round(
+        self, s: _claude_code_session.Session, r: _claude_code_stream.Round, ids: tuple[str, ...]
+    ) -> types.ProviderResponse:
         """Meter the round and build its response.
 
         Args:
@@ -1092,7 +666,9 @@ class ClaudeCodeProvider:
             refused={i: s.refused[i] for i in ids if i in s.refused},
         )
 
-    def _read_to_result(self, s: _Session, watch: _Watch) -> None:
+    def _read_to_result(
+        self, s: _claude_code_session.Session, watch: _claude_code_session.Watch
+    ) -> None:
         """Read a prose round's `result` line, so a turn error is raised where it happened.
 
         Raises:
@@ -1111,7 +687,10 @@ class ClaudeCodeProvider:
             self._absorb(s, line)
 
     def _drain_after_round(
-        self, s: _Session, ids: tuple[str, ...], plan_before: agent6_budget.PlanUsage | None
+        self,
+        s: _claude_code_session.Session,
+        ids: tuple[str, ...],
+        plan_before: agent6_budget.PlanUsage | None,
     ) -> None:
         """Wait one drain window for the round's plan reading and the CLI's verdict on its calls.
 
@@ -1149,7 +728,12 @@ class ClaudeCodeProvider:
             self._absorb(s, line)
 
     def _record(
-        self, s: _Session, inp: int, out: int, cache_read: int, cache_creation: int
+        self,
+        s: _claude_code_session.Session,
+        inp: int,
+        out: int,
+        cache_read: int,
+        cache_creation: int,
     ) -> None:
         """Record the round's spend against the plan window.
 
@@ -1188,39 +772,12 @@ class ClaudeCodeProvider:
                 " provider usage accounting"
             )
 
-    def _block(self, s: _Session, block: Mapping[str, Any]) -> dict[str, Any]:
-        """Return one assistant block in Anthropic shape.
-
-        Tool names are bare, the email is scrubbed from text and thinking, and the
-        CLI's `caller` is dropped.
-        """
-        kind = block.get("type")
-        if kind == "text":
-            return {"type": "text", "text": self._scrub(s, str(block.get("text", "")))}
-        if kind == "thinking":
-            out: dict[str, Any] = {
-                "type": "thinking",
-                "thinking": self._scrub(s, str(block.get("thinking", ""))),
-            }
-            if block.get("signature"):
-                out["signature"] = block["signature"]
-            return out
-        if kind == "tool_use":
-            return {
-                "type": "tool_use",
-                "id": str(block.get("id", "")),
-                "name": _claude_code_wire.bare_tool_name(str(block.get("name", ""))),
-                "input": block.get("input"),
-            }
-        return dict(block)
-
-    @staticmethod
-    def _scrub(s: _Session, text: str) -> str:
-        """Return the text with the login's email replaced by the placeholder."""
-        return text.replace(s.account_email, EMAIL_PLACEHOLDER) if s.account_email else text
-
     def _record_transcript(
-        self, s: _Session, system: str, messages: list[dict[str, Any]], resp: types.ProviderResponse
+        self,
+        s: _claude_code_session.Session,
+        system: str,
+        messages: list[dict[str, Any]],
+        resp: types.ProviderResponse,
     ) -> None:
         """Record the round as one transcript entry, then clear the stdin log."""
         if self.transcript_sink is None:
