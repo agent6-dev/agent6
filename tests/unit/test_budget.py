@@ -333,6 +333,23 @@ def test_credits_inside_the_included_window_do_not_refuse() -> None:
     t.check()
 
 
+@pytest.mark.parametrize("max_percent", [-1, 10])
+def test_summary_labels_shared_plan_movement(max_percent: float) -> None:
+    """Another consumer's window movement is not presented as this run's spend."""
+    tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=max_percent)
+    tracker.note_route("m", "claude")
+    tracker.record_plan_preflight("m", budget.PlanUsage.single(68, 10080, 0))
+    # Another consumer uses seven points before this run's next reading.
+    tracker.record_plan_preflight("m", budget.PlanUsage.single(75, 10080, 0))
+
+    cap = "" if max_percent == -1 else " of max_percent 10"
+    assert (
+        "plan usage (claude): 75% of the 7-day window"
+        f" (window moved ~7 points{cap} during this run; resets in 0h)"
+    ) in tracker.format_summary()
+    assert "this run ~7 points" not in tracker.format_summary()
+
+
 def test_unlimited_credits_do_not_refuse() -> None:
     t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     _record_plan(t, _plan_with_credits(100.0, unlimited=True))
@@ -548,7 +565,7 @@ def test_plan_usage_line_does_not_invent_a_window_length() -> None:
     )
     route, spend = next(iter(t.snapshot().plans.items()))
     line = budget.format_plan_usage(route, spend, -1)
-    assert "3% of the window (this run" in line
+    assert "3% of the window (window moved" in line
     assert "secondary" not in line
     assert "0-minute" not in line
 
@@ -632,7 +649,10 @@ def test_unique_duration_plan_output_omits_backend_keys(
     tracker = budget.BudgetTracker(max_usd=1, max_tokens_fallback=100, max_percent=-1)
     _record_plan(tracker, usage)
     assert budget.format_plan_window(window, usage.windows) == label
-    assert f"30% of the {label} (this run ~0 points; resets in 0h)" in tracker.format_summary()
+    assert (
+        f"30% of the {label} (window moved ~0 points during this run; resets in 0h)"
+        in tracker.format_summary()
+    )
     assert budget.format_plan_reading("claude", usage) == (
         f"plan usage (claude): 30% of the {label} (resets in 0h)"
     )
@@ -668,7 +688,10 @@ def test_colliding_plan_windows_have_distinguishing_suffixes() -> None:
         )
         tracker = budget.BudgetTracker(max_usd=1, max_tokens_fallback=100, max_percent=-1)
         _record_plan(tracker, usage)
-        assert f"30% of the {label} (this run ~0 points; resets in 0h)" in tracker.format_summary()
+        assert (
+            f"30% of the {label} (window moved ~0 points during this run; resets in 0h)"
+            in tracker.format_summary()
+        )
         assert budget.format_plan_reading("claude", usage) == (
             f"plan usage (claude): 30% of the {label} (resets in 0h)"
         )

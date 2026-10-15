@@ -274,11 +274,11 @@ def _model_cost_usd(model: str, t: ModelUsage, provider: str = "") -> _ModelCost
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class PlanSpend:
-    """One subscription plan's latest reading and this run's consumption.
+    """One subscription plan's latest reading and observed window movement.
 
     Attributes:
         usage: The latest reading.
-        consumed: This run's consumption on the binding window, in percentage points.
+        consumed: Accumulated window movement in percentage points, including other consumers.
     """
 
     usage: PlanUsage
@@ -801,7 +801,7 @@ def format_plan_usage(route: str, spend: PlanSpend, max_percent: float) -> str:
 
     Args:
         route: The provider entry.
-        spend: Its latest reading and this run's consumption.
+        spend: Its latest reading and observed window movement.
         max_percent: The cap the consumption is printed against; -1 prints none.
 
     Returns:
@@ -813,7 +813,8 @@ def format_plan_usage(route: str, spend: PlanSpend, max_percent: float) -> str:
     return (
         f"plan usage ({route}): {plan.used_percent:g}% of the"
         f" {format_plan_window(plan.binding, plan.windows)}"
-        f" (this run ~{spend.consumed:g} points{cap}; resets in {resets_h:.0f}h)"
+        f" (window moved ~{spend.consumed:g} points{cap} during this run;"
+        f" resets in {resets_h:.0f}h)"
         + (
             f"; purchased credits balance {plan.credits_balance or 'present'}"
             if plan.has_credits and not plan.credits_unlimited
