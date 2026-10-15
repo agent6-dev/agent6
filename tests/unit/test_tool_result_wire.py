@@ -16,6 +16,7 @@ model-facing bytes, so the file stays green across the change unedited.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 from typing import Any
@@ -371,7 +372,9 @@ def test_a_handed_back_command_is_scrubbed(tmp_path: pathlib.Path) -> None:
     d = dispatch.ToolDispatcher(
         root=tmp_path, config=_config(tmp_path), session_dir=tmp_path / "run"
     )
-    with mock.patch.object(d, "_run_session", return_value=session):
+    with mock.patch.object(
+        d, "_jail_access", dataclasses.replace(d._jail_access, get_session=lambda: session)
+    ):
         try:
             out = d.dispatch("run_command", {"argv": ["sleep", "60"]}).to_wire()
             assert out["returncode"] is None and out["still_running"] is True

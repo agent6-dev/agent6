@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import pathlib
@@ -14,7 +15,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.config import Config
-from agent6.tools import _arguments, dispatch, errors, operator_prompts, schema
+from agent6.tools import _arguments, _command_tools, dispatch, errors, operator_prompts, schema
 from agent6.tools import results as tools_results
 
 _VALID_TOML = """
@@ -1716,7 +1717,9 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
 
     session.run.side_effect = run
     try:
-        with mock.patch.object(dispatch.ToolDispatcher, "_run_session", return_value=session):
+        with mock.patch.object(
+            d, "_jail_access", dataclasses.replace(d._jail_access, get_session=lambda: session)
+        ):
             result = d.dispatch("run_command", {"argv": ["sleep", "40"]})
         out = result.to_wire()
         assert out.get("stopped_by_operator", False) is stopped
@@ -1788,7 +1791,9 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: path
     session.sweep_for.return_value = frozenset()
     try:
         with (
-            mock.patch.object(dispatch.ToolDispatcher, "_run_session", return_value=session),
+            mock.patch.object(
+                d, "_jail_access", dataclasses.replace(d._jail_access, get_session=lambda: session)
+            ),
             pytest.raises(errors.ToolError, match=r"operator's stop.*777"),
         ):
             d.dispatch("run_command", {"argv": ["sleep", "40"]})
@@ -1813,7 +1818,7 @@ def test_run_command_result_carries_output_tails(
     logs = tmp_path / "logs.jsonl"
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=event_log.EventSink(logs))
 
-    def _fake_run_argv(self: object, argv: object, **kw: object) -> object:
+    def _fake_run_argv(argv: object, **kw: object) -> object:
 
         return tools_results.ExecResult(
             returncode=1,
@@ -1823,7 +1828,7 @@ def test_run_command_result_carries_output_tails(
             exec_failed=False,
         )
 
-    monkeypatch.setattr(dispatch.ToolDispatcher, "_run_argv_in_jail", _fake_run_argv)
+    monkeypatch.setattr(_command_tools, "run_argv_in_jail", _fake_run_argv)
     d.dispatch("run_command", {"argv": ["echo", "hi"]})
     (tmp_path / "f.txt").write_text("hi", encoding="utf-8")
     d.dispatch("read_file", {"path": "f.txt"})

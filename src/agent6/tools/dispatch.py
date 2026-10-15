@@ -30,6 +30,7 @@ from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import (
     _arguments,
+    _command_tools,
     _control_tools,
     _dag_tools,
     _fs_tools,
@@ -75,11 +76,6 @@ _SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
         }
     ),
 }
-
-
-def _roster(shells: background.BackgroundShells) -> tuple[str, ...]:
-    """Return the background roster as lines."""
-    return tuple(v.line() for v in shells.roster())
 
 
 class ToolDispatcher:
@@ -171,6 +167,9 @@ class ToolDispatcher:
         # Two threads racing the lazy open would leak a jail process and its namespaces.
         self._session_lock = threading.Lock()
         self._session_dir = session_dir
+        self._jail_access = _command_tools.JailAccess(
+            get_policy=self._jail_policy, get_session=self._run_session, get_net=self._net
+        )
         self._handlers: dict[str, Callable[[dict[str, Any]], results.ToolResult]] = {
             schema.Agent6DocsInput.TOOL_NAME: _fs_tools.agent6_docs,
             schema.ReadFileInput.TOOL_NAME: lambda raw: _fs_tools.read_file(self._ws, raw),
@@ -555,7 +554,12 @@ class ToolDispatcher:
         self._approve_command("run_verify_command", argv)
         timeout_s = self._config.harness.verify_timeout_s
         self._emit("verify.start", cmd=list(argv), timeout_s=timeout_s)
-        res = self._run_argv_in_jail(argv, label="verify_command", timeout_s=timeout_s)
+        res = _command_tools.run_argv_in_jail(
+            argv,
+            label="verify_command",
+            timeout_s=timeout_s,
+            access=self._jail_access,
+        )
         res = dataclasses.replace(res, command=argv)
         self._emit(
             "verify.end",
@@ -593,7 +597,11 @@ class ToolDispatcher:
             ToolError: The jail is unavailable.
         """
         self._approve_command("setup_command", argv)
-        res, _timeout = self._run_argv_raw(argv, label="setup_command")
+        res, _timeout = _command_tools.run_argv_raw(
+            argv,
+            label="setup_command",
+            access=self._jail_access,
+        )
         self._emit("workspace.setup", **kinds.workspace_setup_fields(res))
         return res
 
@@ -613,102 +621,20 @@ class ToolDispatcher:
         args = schema.RunCommandInput.model_validate(raw)
         self._approve_command("run_command", args.argv)
         if args.background:
-            return self._start_detached(args.argv)
-        return self._run_model_command(args.argv)
-
-    def _start_detached(self, argv: tuple[str, ...]) -> results.ExecResult:
-        """Start a command detached: the same hand-back as a check-in, at zero seconds.
-
-        Only a session that edits owns a background command's lifetime, derived from the same
-        tool set that withholds read_background elsewhere.
-
-        Returns:
-            The hand-back, with no output yet.
-
-        Raises:
-            ToolError: The mode cannot read a hand-back, or the command could not start.
-        """
-        if schema.ReadBackgroundInput.TOOL_NAME not in schema.mode_tools(self._mode).permitted:
-            raise tools_errors.ToolError(
-                f"background commands are not available in {self._mode} mode:"
-                " nothing there could read or stop one before the run ends"
+            return _command_tools.start_detached(
+                args.argv,
+                mode=self._mode,
+                get_background=self._background,
+                access=self._jail_access,
             )
-        shells = self._background()
-        try:
-            view = shells.start(
-                argv,
-                lambda a, rw: self._jail_policy(a, extra_rw_paths=rw),
-                session=self._run_session(),
-            )
-        except background.BackgroundError as exc:
-            raise tools_errors.ToolError(str(exc)) from exc
-        return results.ExecResult(
-            returncode=None,
-            stdout="",
-            stderr="",
-            duration_s=0.0,
-            exec_failed=False,
-            background_id=view.id,
-        )
-
-    def _run_model_command(self, argv: tuple[str, ...]) -> results.ExecResult:
-        """Run a model command; check-ins hand it back and an immediate stop ends it.
-
-        The check-in needs a jail session to own the running command, a background roster to
-        hand it to, and a mode whose tools can read the hand-back; otherwise this is a bounded
-        run with its timeout.
-
-        Returns:
-            The outcome, or the hand-back with the output so far.
-
-        Raises:
-            ToolError: The jail is unavailable or the operator's stop could not end the command.
-        """
-        session = self._run_session()
-        shells = self._shells
-        checkin = self._config.harness.command_checkin_s
-        if (
-            session is None
-            or shells is None
-            or checkin <= 0
-            or schema.ReadBackgroundInput.TOOL_NAME not in schema.mode_tools(self._mode).permitted
-        ):
-            return self._run_argv_in_jail(argv, label="run_command")
-        try:
-            policy = self._jail_policy(argv)
-            outcome = session.run(
-                argv,
-                env=policy.env,
-                timeout_s=0.0,  # the check-in replaces the kill
-                checkin_s=checkin,
-                log_dir=str(shells.log_root),
-                # An immediate stop asks for the hand-back now; a stop after the step waits.
-                interrupted=self._operator_wants_out_now,
-            )
-        except jail.JailUnavailableError as exc:
-            raise tools_errors.ToolError(f"jail unavailable: {exc}") from exc
-        if isinstance(outcome, kinds.CommandResult):
-            return _result_format.exec_result(outcome)
-        view = shells.adopt(outcome, session=session)
-        stopped_by_operator = self._operator_wants_out_now()
-        if stopped_by_operator:
-            view = shells.stop(view.id)
-            if view.detail:
-                raise tools_errors.ToolError(
-                    f"operator's stop could not end the command: {view.detail}"
-                )
-        else:
-            self._emit(
-                "command.backgrounded", id=view.id, pid=outcome.pid, seconds=outcome.duration_s
-            )
-        return results.ExecResult(
-            returncode=view.returncode if stopped_by_operator else None,
-            stdout=_result_format.clip_tail(outcome.stdout),
-            stderr=_result_format.clip_tail(outcome.stderr),
-            duration_s=outcome.duration_s,
-            exec_failed=False,
-            background_id="" if stopped_by_operator else view.id,
-            stopped_by_operator=stopped_by_operator,
+        return _command_tools.run_model_command(
+            args.argv,
+            mode=self._mode,
+            shells=self._shells,
+            checkin=self._config.harness.command_checkin_s,
+            interrupted=self._operator_wants_out_now,
+            emit=self._emit,
+            access=self._jail_access,
         )
 
     def _operator_wants_out(self) -> bool:
@@ -732,6 +658,19 @@ class ToolDispatcher:
         return ipc.stop_request_is_now(self._session_dir) or ipc.steer_answer_is_abort(
             self._session_dir
         )
+
+    def _read_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
+        """Return background output with the run's check-in and stop policy."""
+        return _command_tools.read_background(
+            raw,
+            get_background=self._background,
+            checkin=self._config.harness.command_checkin_s,
+            interrupted=self._operator_wants_out,
+        )
+
+    def _stop_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
+        """Return the background roster after stopping a command."""
+        return _command_tools.stop_background(raw, get_background=self._background)
 
     def _background(self) -> background.BackgroundShells:
         """Return the background roster.
@@ -800,48 +739,6 @@ class ToolDispatcher:
             sessions=lines, conversation=sessions.conversation(layout, max_chars=args.max_chars)
         )
 
-    def _read_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
-        """Read a background command's output, or the roster when no id is given.
-
-        Returns:
-            The roster, with the output when an id was given.
-
-        Raises:
-            ToolError: No run directory was wired, or the id is unknown.
-        """
-        args = schema.ReadBackgroundInput.model_validate(raw)
-        shells = self._background()
-        if not args.id:
-            return results.BackgroundResult(shells=_roster(shells))
-        wait_s = self._config.harness.command_checkin_s if args.wait_s is None else args.wait_s
-        try:
-            _view, output = shells.read(
-                args.id,
-                tail_lines=args.tail_lines,
-                wait_s=wait_s,
-                interrupted=self._operator_wants_out,
-            )
-        except background.BackgroundError as exc:
-            raise tools_errors.ToolError(str(exc)) from exc
-        return results.BackgroundResult(shells=_roster(shells), output=output)
-
-    def _stop_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
-        """Stop a background command.
-
-        Returns:
-            The roster after the stop.
-
-        Raises:
-            ToolError: No run directory was wired, or the id is unknown.
-        """
-        args = schema.StopBackgroundInput.model_validate(raw)
-        shells = self._background()
-        try:
-            shells.stop(args.id)
-        except background.BackgroundError as exc:
-            raise tools_errors.ToolError(str(exc)) from exc
-        return results.BackgroundResult(shells=_roster(shells))
-
     def _ask_user(self, raw: dict[str, Any]) -> results.ToolResult:
         """Return the operator's answers to the model's questions, counting the wait as theirs."""
         args = schema.AskUserInput.model_validate(raw)
@@ -896,8 +793,11 @@ class ToolDispatcher:
         argv = metric_cfg.command
         self._approve_command("run_metric_command", argv)
         self._emit("metric.start", cmd=list(argv))
-        outcome, timeout_s = self._run_argv_raw(
-            argv, label="metric_command", timeout_s=self._config.harness.verify_timeout_s
+        outcome, timeout_s = _command_tools.run_argv_raw(
+            argv,
+            label="metric_command",
+            timeout_s=self._config.harness.verify_timeout_s,
+            access=self._jail_access,
         )
         if outcome.exec_failed:
             raise tools_errors.OperatorCommandUnexecutableError(
@@ -979,56 +879,3 @@ class ToolDispatcher:
                 except (jail.JailUnavailableError, OSError):
                     self._session_failed = True
             return self._session
-
-    def _run_argv_raw(
-        self,
-        argv: tuple[str, ...],
-        *,
-        label: str,
-        timeout_s: float | None = None,
-    ) -> tuple[kinds.CommandResult, float]:
-        """Run an argv in the jail without a check-in.
-
-        Args:
-            argv: The command.
-            label: The tool's name, for the error.
-            timeout_s: The wall-clock limit; the policy's default when None.
-
-        Returns:
-            The unclipped outcome (a caller parsing the metric score needs the real bytes) and
-            the timeout the policy resolved.
-
-        Raises:
-            ToolError: The jail is unavailable.
-        """
-        try:
-            policy = self._jail_policy(argv, timeout_s=timeout_s)
-            session = self._run_session()
-            # The operator's gate needs a verdict, not a handle.
-            outcome = (
-                session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
-                if session is not None
-                else jail.run_in_jail(
-                    policy, session_net=self._net() if policy.network == "session" else None
-                )
-            )
-        except jail.JailUnavailableError as exc:
-            raise tools_errors.ToolError(f"{label}: jail unavailable: {exc}") from exc
-        if isinstance(
-            outcome, kinds.BackgroundHandoff
-        ):  # pragma: no cover - no check-in was asked for
-            raise tools_errors.ToolError(
-                f"{label}: the jail handed back a command that was never detachable"
-            )
-        return outcome, policy.timeout_s
-
-    def _run_argv_in_jail(
-        self,
-        argv: tuple[str, ...],
-        *,
-        label: str,
-        timeout_s: float | None = None,
-    ) -> results.ExecResult:
-        """Return the model's view of an argv run in the jail."""
-        outcome, timeout = self._run_argv_raw(argv, label=label, timeout_s=timeout_s)
-        return _result_format.exec_result(outcome, timeout_s=timeout)

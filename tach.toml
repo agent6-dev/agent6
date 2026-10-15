@@ -59,6 +59,7 @@ depends_on = [
   "agent6.task_text",
   "agent6.terminal",
   "agent6.tools",
+  "agent6.tools.dispatch",
   "agent6.tools.schema",
   "agent6.kinds",
   "agent6.verify_infer",
@@ -106,6 +107,7 @@ depends_on = [
   "agent6.skills",
   "agent6.terminal",
   "agent6.tools",
+  "agent6.tools.dispatch",
   "agent6.tools.schema",
   "agent6.kinds",
   "agent6.ui.acp",
@@ -154,6 +156,7 @@ depends_on = [
   "agent6.task_text",  # the session.start headline is the operator's own words
   "agent6.terminal",  # a changed path's name printed on one line
   "agent6.tools",
+  "agent6.tools.dispatch",
   "agent6.tools.schema",
   "agent6.kinds",
   "agent6.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
@@ -377,17 +380,10 @@ depends_on = []
 
 [[modules]]
 path = "agent6.tools"
-# Dispatch.py drives the in-process GraphCurator (graph.curator) using the
-# graph.models intent types, for the DAG-as-tool handlers (add_task /
-# update_task / set_cursor / list_tasks), and the memory store for the
-# cross-run memory handlers (add_memory / invalidate_memory).
-# runs.layout + runs.manifest: read_session reads this project's other sessions
-# off disk, which needs the bucket layout and the typed manifest. runs.ipc: the
-# effective command policy (config + the operator's session choice + away-mode)
-# has one owner, and the dispatcher is where it is enforced. All leaf modules
-# over the filesystem, so the dependency runs downward.
+# The in-process handlers use graph intents, workspace grants and session records.
+# Dispatch and jailed command execution have separate entries below.
 # agent6 (root): the MCP handshake sends the canonical __version__.
-depends_on = ["agent6", "agent6.child_env", "agent6.config", "agent6.event_log", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.kinds", "agent6.memory", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sandbox.detect", "agent6.sandbox.jail_jobs", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.skills", "agent6.terminal", "agent6.tools.schema"]
+depends_on = ["agent6", "agent6.child_env", "agent6.config", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.kinds", "agent6.memory", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sandbox.detect", "agent6.sandbox.jail_jobs", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.skills", "agent6.terminal", "agent6.tools.schema"]
 
 [[modules]]
 path = "agent6.terminal"
@@ -628,6 +624,7 @@ depends_on = [
   "agent6.sessions.layout",
   "agent6.sessions.manifest",
   "agent6.tools",
+  "agent6.tools.dispatch",
   "agent6.viewmodel",
 ]
 
@@ -725,3 +722,12 @@ depends_on = ["agent6.kinds", "agent6.sandbox"]
 # The start-family emitter records the worker pid before emitting the event.
 path = "agent6.sessions.process"
 depends_on = ["agent6.event_log", "agent6.paths", "agent6.portable"]
+
+[[modules]]
+# Routing and lifecycle own the command helpers' inputs; execution stays jailed.
+path = "agent6.tools.dispatch"
+depends_on = ["agent6.config", "agent6.event_log", "agent6.graph.curator", "agent6.kinds", "agent6.memory", "agent6.paths", "agent6.sandbox", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.skills", "agent6.tools", "agent6.tools._command_tools", "agent6.tools.schema"]
+
+[[modules]]
+path = "agent6.tools._command_tools"
+depends_on = ["agent6.kinds", "agent6.sandbox", "agent6.sandbox.jail_session", "agent6.tools", "agent6.tools.schema"]

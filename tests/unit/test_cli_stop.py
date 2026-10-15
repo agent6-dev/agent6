@@ -20,7 +20,7 @@ from agent6 import providers as provider_api
 from agent6.app import providers
 from agent6.app import stop as stop_mod
 from agent6.sessions import ipc, process
-from agent6.tools import dispatch, results
+from agent6.tools import _command_tools, results
 from agent6.ui.cli import main
 from agent6.ui.cli import parser as cli_parser
 
@@ -139,8 +139,8 @@ def test_worker_stop_words_match_the_request(
     # command an immediate stop ended, or for one a stop after the step let finish.
     cut_now = urgency != "after_step"
     monkeypatch.setattr(
-        dispatch.ToolDispatcher,
-        "_run_model_command",
+        _command_tools,
+        "run_model_command",
         mock.Mock(
             return_value=results.ExecResult(
                 returncode=-15 if cut_now else 0,

@@ -191,6 +191,8 @@ Either call emits a `session.end` event and returns control to the CLI.
 
 Every LLM tool call passes the same gates: audit events wrap it, the mode backstop refuses an out-of-surface name, MCP calls take an approval, and the handler table routes the rest by name.
 Commands and verify run jailed; file tools resolve through the workspace boundary.
+`tools/_command_tools.py` holds jailed execution, command check-ins, and background read and stop handlers.
+`tools/dispatch.py` owns routing, approvals, verify and metric events, and the jail-session lifecycle.
 
 Command streams lose terminal escape sequences before their 20,000-character tail cap and the model's result-byte cap.
 Background reads scrub the decoded tail before selecting lines; the 1 MiB file-read cap still counts raw bytes.

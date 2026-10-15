@@ -311,6 +311,7 @@ banned-from = [
     "agent6.terminal",
     "agent6.tools._agent6_docs",
     "agent6.tools._arguments",
+    "agent6.tools._command_tools",
     "agent6.tools._control_tools",
     "agent6.tools._dag_tools",
     "agent6.tools._edit_diag",

@@ -93,6 +93,7 @@ CONTRACTS: tuple[Contract, ...] = (
         module="agent6.tools.results",
         primary=("ToolResult",),
         writers=(
+            "tools/_command_tools.py",
             "tools/_control_tools.py",
             "tools/_dag_tools.py",
             "tools/_edit_diag.py",
