@@ -696,8 +696,19 @@ class Harness:
         Returns:
             The end the steer asked for, or None when the execution goes on.
         """
+        # This resume path handles both finished and interrupted runs.
         return self._steer_outcome(
-            self.steering.handle(conversation, iteration, state), iteration, state
+            self.steering.handle(
+                conversation,
+                iteration,
+                state,
+                heading=(
+                    "OPERATOR STEERING: This execution continues the run even if it previously"
+                    " finished, and the steer below is its task."
+                ),
+            ),
+            iteration,
+            state,
         )
 
     def _turn_pre_call(

@@ -41,7 +41,7 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 - the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`; `--after-step` lets the step finish) or a ceiling (budget, iterations) stops it
 - at a terminal it then asks for the next input: type to continue, `/exit` to finish
 - without a terminal a finished run prints its merge and inspect commands, and an unfinished run its resume command
-- a finished run takes more work with `agent6 resume <id> --steer "<what to do next>"`; a bare resume of it is refused
+- `agent6 resume <id> --steer "<what to do next>"` continues a finished run with the steer as this execution's task; a bare resume of it is refused
 
 The verify command is the success gate.
 Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.

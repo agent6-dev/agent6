@@ -1320,8 +1320,9 @@ def test_run_refuses_a_legacy_journal_without_a_starting_commit(
     )
     assert main(["machine", "run", str(source)]) == 2
     output = capsys.readouterr().err
-    assert "journal has no starting commit" in output
-    assert "To start fresh, archive the instance directory" in output
+    assert (
+        "journal has no starting commit.\nTo start fresh, archive the instance directory"
+    ) in output
     assert "mv --" in output
 
 

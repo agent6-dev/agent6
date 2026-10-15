@@ -1498,6 +1498,10 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
 
     # The seeded steer entered the conversation BEFORE the first provider call.
     assert "median" in provider.calls[0]
+    assert (
+        "This execution continues the run even if it previously finished,"
+        " and the steer below is its task."
+    ) in provider.calls[0]
     # It drove the run to a real finish, not a dropped-steer silent finish.
     assert result.reason == "finish_session"
     assert result.completed is True

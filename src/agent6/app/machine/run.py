@@ -355,7 +355,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 begin = events[0]
                 if not isinstance(begin, machine_journal.MachineBegin) or not begin.base_commit:
                     reporter.refuse(
-                        "this machine's journal has no starting commit; "
+                        "this machine's journal has no starting commit.\n"
                         + machine_journal.fresh_start_remedy(root)
                     )
                     return 2

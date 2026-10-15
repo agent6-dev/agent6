@@ -137,6 +137,8 @@ class Steering:
         conversation: _conversation.Conversation,
         iteration: int,
         state: _loop_state.LoopState,
+        *,
+        heading: str = "OPERATOR STEERING (a mid-run instruction from the operator):",
     ) -> str | None:
         """Take the operator's steer between iterations.
 
@@ -147,6 +149,7 @@ class Steering:
             conversation: The run's conversation.
             iteration: The iteration just completed.
             state: The loop state.
+            heading: The notice introducing the operator's instruction.
 
         Returns:
             The verb's name ("abort", "exit", "undo", "detach") when the steer was one; None
@@ -183,9 +186,7 @@ class Steering:
         asked = _conversation.last_assistant_prose(conversation)
         if question := _nudges.ending_question(asked):
             self.record_decision(state, question, steer_text)
-        conversation.notice(
-            f"OPERATOR STEERING (a mid-run instruction from the operator):\n{steer_text}"
-        )
+        conversation.notice(f"{heading}\n{steer_text}")
         return None
 
     def skill(self, conversation: _conversation.Conversation, steer_text: str) -> bool:
