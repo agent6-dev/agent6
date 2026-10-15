@@ -42,6 +42,7 @@ from agent6.harness import (
 from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools import mcp_client
 from agent6.tools import results as tools_results
+from agent6.viewmodel import _session_status
 from tests.unit.turn_context import turn_context
 
 # The `[git]` surface the loop reads, empty as a real Config carries it unset.
@@ -295,8 +296,6 @@ def test_run_silent_finish_over_green_verify_stays_passed() -> None:
 
 def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
     """A gateless run's silent finish ends with all_passed=None and reads "finished"."""
-    from agent6.viewmodel import listing
-
     ev = _EventCapture()
     wf = _wf(mode="run", events=ev)  # _wf's default config has no verify_command
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
@@ -309,7 +308,9 @@ def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
     assert result is not None and result.reason == "silent_finish"
     ends = [e for e in ev.events if e["type"] == "session.end"]
     assert ends and ends[-1]["all_passed"] is None
-    assert listing.status_word(finished=True, all_passed=None, end_reason="silent_finish") == (
+    assert _session_status.status_word(
+        finished=True, all_passed=None, end_reason="silent_finish"
+    ) == (
         "finished",
         "no finish call",
     )
@@ -8029,7 +8030,6 @@ def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
     import json
 
     from agent6.ui.cli import _session_prompt
-    from agent6.viewmodel import listing
 
     ev = _EventCapture()
     wf = _wf(
@@ -8043,7 +8043,9 @@ def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
     assert out is not None and out.reason == "steer_exit" and out.completed is False
     ends = [e for e in ev.events if e["type"] == "session.end"]
     assert ends and ends[-1]["reason"] == "steer_exit"
-    assert listing.status_word(finished=True, all_passed=False, end_reason="steer_exit") == (
+    assert _session_status.status_word(
+        finished=True, all_passed=False, end_reason="steer_exit"
+    ) == (
         "stopped",
         "",
     )

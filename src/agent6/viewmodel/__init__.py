@@ -17,6 +17,8 @@ Modules:
     transcript.py        event fold: logs.jsonl -> live conversation TranscriptItems.
     transcript_style.py  one styled-line renderer for a folded TranscriptItem.
     transcript_render.py fold and Markdown render of the per-call provider transcripts.
+    _session_log.py      tolerant session journal scan.
+    _session_status.py   shared session labels and status decisions.
     listing.py           run-dir scan -> SessionSummary rows for listings and pickers.
     log_line.py          one-line renderings of an event for the log views.
     wire.py              the one-object wire snapshots of a session and of a machine.
@@ -27,6 +29,19 @@ Modules:
 
 from __future__ import annotations
 
+from agent6.viewmodel._session_log import (  # noqa: ICN003  # re-export
+    LogScan,
+    scan_session_log,
+)
+from agent6.viewmodel._session_status import (  # noqa: ICN003  # re-export
+    LIVE_STATUS_WORDS,
+    StatusFacts,
+    died_without_end,
+    produced_result,
+    status_for_session_dir,
+    status_word,
+    task_snippet,
+)
 from agent6.viewmodel._state_types import (  # noqa: ICN003  # re-export
     ApprovalPrompt,
     BudgetView,
@@ -46,25 +61,16 @@ from agent6.viewmodel._state_view import (  # noqa: ICN003  # re-export
 )
 from agent6.viewmodel.events import event_epoch  # noqa: ICN003  # re-export
 from agent6.viewmodel.listing import (  # noqa: ICN003  # re-export
-    LIVE_STATUS_WORDS,
-    LogScan,
     SessionSummary,
-    StatusFacts,
-    died_without_end,
     is_session_husk,
     is_winner,
     newest_session_dir,
-    produced_result,
-    scan_session_log,
     session_compare,
     session_dirs,
     session_is_live,
     session_mtime,
-    status_for_session_dir,
-    status_word,
     summarize_session_dir,
     summary_row,
-    task_snippet,
 )
 from agent6.viewmodel.log_line import format_log_line  # noqa: ICN003  # re-export
 from agent6.viewmodel.machine_state import (  # noqa: ICN003  # re-export

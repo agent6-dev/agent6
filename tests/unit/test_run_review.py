@@ -25,6 +25,7 @@ from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import main
+from agent6.viewmodel import _session_log
 
 _EVENTS: list[dict[str, Any]] = [
     {
@@ -266,8 +267,6 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
     false, no verify.end) reads "unverified", not "not gated"; a killed run (a green verify, no
     session.end) reads "unverified".
     """
-    from agent6.viewmodel import listing
-
     resumed = [
         {"type": "session.start", "session_id": "r", "mode": "run", "user_task": "t"},
         {
@@ -285,7 +284,7 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
     layout = _write_session(repo, session_id="run-resumed", events=resumed)
     d = run_review.run_digest(layout)
     assert d.verify == "unverified"
-    assert listing.scan_session_log(layout.logs_path).verify_verdict() is None
+    assert _session_log.scan_session_log(layout.logs_path).verify_verdict() is None
 
     never_ran = [
         {"type": "session.start", "session_id": "n", "mode": "run", "user_task": "t"},

@@ -16,7 +16,7 @@ from typing import Any
 from agent6 import terminal
 from agent6.graph import models
 from agent6.sessions import layout
-from agent6.viewmodel import _state_types, events, format, listing, log_line
+from agent6.viewmodel import _session_status, _state_types, events, format, log_line
 
 
 def initial_state() -> _state_types.SessionState:
@@ -383,7 +383,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 finished=True,
                 all_passed=all_passed,
                 end_reason=reason,
-                end_summary=listing.end_text(reason, summary, state.finish_summary),
+                end_summary=_session_status.end_text(reason, summary, state.finish_summary),
                 verify_scoped=scoped,
                 # The worker is on no task after the end: each draws its own status.
                 tasks=tuple(dataclasses.replace(t, is_cursor=False, glyph="") for t in state.tasks),

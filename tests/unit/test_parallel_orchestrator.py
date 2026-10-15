@@ -44,7 +44,7 @@ from agent6.sessions import ipc, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main, main
 from agent6.ui.cli import parallel as parallel_cmd
-from agent6.viewmodel import listing
+from agent6.viewmodel import _session_log, _session_status, listing
 
 
 def _git(repo: pathlib.Path, *args: str) -> None:
@@ -861,7 +861,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
 
     def fake_summary(rd: pathlib.Path) -> SessionSummary:
         return SessionSummary(
-            session_id=rd.name, mode="run", task_label=listing.TaskLabel("t"),
+            session_id=rd.name, mode="run", task_label=_session_status.TaskLabel("t"),
             status=next(statuses),
             reason="", cost_usd=0.0, usd_partial=False, mtime=0.0,
         )  # fmt: skip
@@ -3135,7 +3135,7 @@ def test_run_parallel_is_a_session_of_its_own(
     assert manifest.fanout == sessions_manifest.FanoutStamp(lanes=2, spec="2")
     assert manifest.run_branch is None and manifest.mode == "run"
     assert manifest.user_task == "do the task" and manifest.parallel is None
-    scan = listing.scan_session_log(coordinator / "logs.jsonl")
+    scan = _session_log.scan_session_log(coordinator / "logs.jsonl")
     # No model finished a fan-out: its lanes ran and were ranked.
     assert scan.saw_start and scan.finished and scan.end_reason == "lanes_ranked"
     types = [
@@ -3240,7 +3240,7 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
             fanout_id="crash",
         )
     coordinator = origin_state / "sessions" / "runs" / "crash"
-    scan = listing.scan_session_log(coordinator / "logs.jsonl")
+    scan = _session_log.scan_session_log(coordinator / "logs.jsonl")
     assert scan.finished and scan.end_reason == "crashed"
     assert not (coordinator / "worker.pid").exists()
     assert listing.summarize_session_dir(coordinator).status == "failed"
@@ -3263,7 +3263,7 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
             fanout_id="kbi",
         )
     coordinator = origin_state / "sessions" / "runs" / "kbi"
-    assert listing.scan_session_log(coordinator / "logs.jsonl").end_reason == "interrupted"
+    assert _session_log.scan_session_log(coordinator / "logs.jsonl").end_reason == "interrupted"
     assert listing.summarize_session_dir(coordinator).status == "stopped"
 
 

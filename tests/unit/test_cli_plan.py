@@ -10,6 +10,7 @@ import pytest
 
 from agent6 import errors, paths
 from agent6.ui.cli import cli_main, entry, main
+from agent6.viewmodel import _session_status
 
 
 def _seed_plan(tmp_path: pathlib.Path, session_id: str, body: str) -> pathlib.Path:
@@ -73,13 +74,11 @@ def test_plan_show_omit_id_uses_most_recent_plan(
 @pytest.mark.parametrize("length", [80, 100])
 def test_from_plan_title_strips_the_prefix_before_marking_a_cut(length: int) -> None:
     """The Plan prefix consumes no title space and a clipped title carries an ellipsis."""
-    from agent6.viewmodel import listing
-
     title = "x" * length
     plan = f"# Plan: {title}\n\n1. implement"
     task = entry._from_plan_task(plan, "plan-id")
     assert task.splitlines()[0] == (
-        "Execute the prepared plan: " + listing.task_snippet(title, max_chars=80)
+        "Execute the prepared plan: " + _session_status.task_snippet(title, max_chars=80)
     )
     assert plan in task
 

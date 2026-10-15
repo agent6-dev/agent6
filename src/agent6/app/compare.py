@@ -22,7 +22,7 @@ from agent6.config import Config
 from agent6.harness import judge as harness_judge
 from agent6.providers import Provider, ProviderError, TranscriptSink
 from agent6.sessions import manifest as sessions_manifest
-from agent6.viewmodel import format, listing
+from agent6.viewmodel import _session_status, format, listing
 
 # Builds the reviewer provider the judge call uses.
 BuildProvider = Callable[[Config, TranscriptSink, agent6_budget.BudgetTracker], Provider]
@@ -162,7 +162,7 @@ def print_ranked_candidates(
         plan_total = sum(
             rows[c.session_id].plan_consumed for c in candidates if c.session_id in rows
         )
-        candidates_cell = listing.cost_cell(
+        candidates_cell = _session_status.cost_cell(
             cand_total, partial=False, plan_consumed=plan_total, plan_used_percent=0.0
         ) or agent6_budget.format_usd(0.0)
         judge = outcome.judge_cost_usd

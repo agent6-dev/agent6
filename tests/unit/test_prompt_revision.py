@@ -13,6 +13,7 @@ from agent6.config import Config, load_config
 from agent6.harness import _chain, _prompt_revision, _provider_call, loop
 from agent6.providers import ProviderResponse
 from agent6.tools import results
+from agent6.viewmodel import _session_status
 
 _VALID_TOML = """
 [agent6]
@@ -251,7 +252,6 @@ def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: pathlib.P
     An operator's `q` (or Ctrl-D) at the interactive revise_prompt choice is the operator's own
     stop, not `prompt_revision_failed` ("prompt revision failed" in every listing).
     """
-    from agent6.viewmodel import listing
 
     def quit_at_the_choice(_original: str, _revised: str, _questions: tuple[str, ...]) -> None:
         return None
@@ -267,5 +267,5 @@ def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: pathlib.P
     with mock.patch("agent6.harness._context.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix the bug in src/foo.py")
     assert result.reason == "steer_abort"
-    word, _ = listing.status_word(finished=True, all_passed=False, end_reason=result.reason)
+    word, _ = _session_status.status_word(finished=True, all_passed=False, end_reason=result.reason)
     assert word == "stopped"

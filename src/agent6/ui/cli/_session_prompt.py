@@ -13,7 +13,7 @@ from agent6 import directive
 from agent6.app import _setup
 from agent6.sessions import layout
 from agent6.ui.cli import resume
-from agent6.viewmodel import listing
+from agent6.viewmodel import _session_log
 
 # Free text is the next execution's operator instruction, as `--steer` carries it.
 _NEXT_PROMPT = "next (/exit to finish): "
@@ -42,7 +42,7 @@ def follow_up_on_offer(session_dir: pathlib.Path) -> bool:
     named is the continuation) or an `/exit` (asking again would reopen what the
     operator closed); each printed its own line.
     """
-    scan = listing.scan_session_log(session_dir / layout.LOGS_NAME)
+    scan = _session_log.scan_session_log(session_dir / layout.LOGS_NAME)
     return scan.finished and scan.end_reason not in ("undone", "steer_exit")
 
 

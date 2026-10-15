@@ -20,6 +20,8 @@ import time
 from collections.abc import Iterable
 from typing import ClassVar
 
+from agent6.viewmodel import _session_status
+
 try:
     import textual
     from textual import app as textual_app
@@ -144,7 +146,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self._manifest_due = 0.0
         # The (word, reason) the hub row shows too, refreshed on the ~1/s heartbeat; derived,
         # never latched, so a crash then a resume reads as running again.
-        self.dir_status: tuple[str, str] = listing.status_for_session_dir(
+        self.dir_status: tuple[str, str] = _session_status.status_for_session_dir(
             session_dir, status_facts(self.state)
         )
         # The journal prefix folded at open; the reader starts after it.
@@ -184,14 +186,14 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             pathlib.Path.cwd(), self.config_paths, self.session_dir, preset=preset
         )
 
-    def task_label(self) -> listing.TaskLabel:
+    def task_label(self) -> _session_status.TaskLabel:
         """Return the original task and latest continuation from the live fold."""
         return self.state.task_label.fallback(self.fallback_task)
 
     def _task_lead(self) -> str:
         """Return the clipped task for a title, or the session name before a task is known."""
         task = self.task_label().task
-        return listing.task_snippet(task, max_chars=57) or self.session_dir.name
+        return _session_status.task_snippet(task, max_chars=57) or self.session_dir.name
 
     def screen_title(self, context: str) -> str:
         """Return a run screen's menu-bar subtitle.
@@ -333,7 +335,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         The covered screen's bar is relabelled too, or the two would disagree until
         its next event-driven paint.
         """
-        status = listing.status_for_session_dir(self.session_dir, status_facts(self.state))
+        status = _session_status.status_for_session_dir(self.session_dir, status_facts(self.state))
         has_unmerged = self._unmerged and self.state.finished
         # Manifest changes are polled every five seconds, not on each repaint.
         if time.monotonic() >= self._manifest_due:
@@ -807,7 +809,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
 
         Parked, stale and every end word route the composer to resume instead.
         """
-        return self.dir_status[0] in listing.LIVE_STATUS_WORDS
+        return self.dir_status[0] in _session_status.LIVE_STATUS_WORDS
 
     def finished_green(self) -> bool:
         """Return whether the agent finished over a green tree, when a bare resume has no work."""

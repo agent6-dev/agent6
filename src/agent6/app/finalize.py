@@ -24,8 +24,8 @@ from agent6.harness import _advice, _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import (
+    _session_status,
     format,
-    listing,
     scan_session_log,
     summarize_session_dir,
     tail_events,
@@ -58,7 +58,7 @@ def session_exit_code(result: _snapshot.SessionResult, *, stranded: bool = False
         0 for a green or gateless finish, 130 an operator stop, 3 budget, 4 not green,
         5 stranded, 1 else.
     """
-    if result.reason in listing.OPERATOR_STOPS:
+    if result.reason in _session_status.OPERATOR_STOPS:
         return EXIT_OPERATOR_STOP
     if result.completed:
         if result.verified in ("failed", "unverified"):

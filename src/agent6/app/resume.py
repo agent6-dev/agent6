@@ -41,7 +41,7 @@ from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts
-from agent6.viewmodel import listing
+from agent6.viewmodel import _session_log, listing
 
 
 def resumable_bucket_dirs(state_dir: pathlib.Path) -> list[pathlib.Path]:
@@ -287,7 +287,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         reporter.err(lock.SINGLE_WRITER_BUSY.format(rid=session_id))
         return 2
     # A finished run has nothing to continue without --steer; every other ending resumes.
-    scan = listing.scan_session_log(layout.logs_path)
+    scan = _session_log.scan_session_log(layout.logs_path)
     new_work = listing.needs_new_work(
         finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
     )

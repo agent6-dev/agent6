@@ -25,8 +25,8 @@ from agent6.sessions import manifest, process
 from agent6.ui.tui import theme
 from agent6.viewmodel import (
     SessionState,
+    _session_status,
     format,
-    listing,
     manifest_branches,
     manifest_header,
     session_compare,
@@ -82,7 +82,7 @@ class RunHeader(widgets.Static):
         # Tasks and cost are as of the selected step; ctx is live.
         done_n = sum(1 for t in ds.tasks if t.status in order.DONE_STATUSES)
         step = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
-        cell = listing.cost_cell(
+        cell = _session_status.cost_cell(
             ds.budget.usd_total,
             partial=ds.budget.usd_partial,
             plan_consumed=ds.budget.plan_consumed,

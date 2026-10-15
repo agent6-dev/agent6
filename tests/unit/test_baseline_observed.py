@@ -16,6 +16,7 @@ import pytest
 
 from agent6.harness import _chain, _finish_gates, _loop_state, _nudges, loop
 from agent6.tools import results
+from agent6.viewmodel import _session_status
 from tests.unit.turn_context import turn_context
 
 _BASE = "b" * 40
@@ -349,9 +350,10 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
 
 
 def test_the_listing_and_the_header_agree_on_the_word() -> None:
-    from agent6.viewmodel import listing
 
-    assert listing.status_word(finished=True, all_passed=False, end_reason="gate_red_at_base") == (
+    assert _session_status.status_word(
+        finished=True, all_passed=False, end_reason="gate_red_at_base"
+    ) == (
         "finished",
         "gate was already red",
     )

@@ -25,6 +25,7 @@ from agent6.machine import (
 )
 from agent6.sandbox import detect
 from agent6.ui.cli import main
+from agent6.viewmodel import _session_status
 
 VALID_MACHINE = """\
 machine = "greeter"
@@ -1159,8 +1160,6 @@ def test_create_failure_end_reason_names_the_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A create that never produced a valid machine folds to ("failed", reason)."""
-    from agent6.viewmodel import listing
-
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
@@ -1174,7 +1173,9 @@ def test_create_failure_end_reason_names_the_failure(
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
     end = next(e for e in events if e["type"] == "session.end")
     assert end["all_passed"] is False
-    word, detail = listing.status_word(finished=True, all_passed=False, end_reason=end["reason"])
+    word, detail = _session_status.status_word(
+        finished=True, all_passed=False, end_reason=end["reason"]
+    )
     assert word == "failed"
     assert " " not in detail  # a token, like every other session.end reason
     assert "finished" not in detail  # never success prose under a failed status

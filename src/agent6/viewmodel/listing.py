@@ -2,52 +2,21 @@
 # Copyright 2026 Eric Lesiuta
 """Scan session dirs into the listing rows every front-end's hub shows.
 
-The last-activity time, the status word and the task snippet live only here, so the
-CLI, TUI and web listings cannot disagree.
+Directory discovery and row assembly share the journal scanner and status helpers,
+so the CLI, TUI and web listings cannot disagree.
 """
 
 from __future__ import annotations
 
 import contextlib
 import dataclasses
-import json
 import pathlib
-import time
 from collections.abc import Container, Iterable, Mapping, Sequence
 
-from agent6 import budget, git_ops, kinds, task_text, terminal
-from agent6.sessions import ipc, layout, process
+from agent6 import git_ops
+from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.viewmodel import events, format
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class TaskLabel:
-    """The original task and the latest continuation, before display clipping."""
-
-    task: str = ""
-    continued_task: str = ""
-
-    def start(self, task: str) -> TaskLabel:
-        """Return the first non-empty task; REPL questions do not rename the session."""
-        return self if self.task else TaskLabel(task)
-
-    def resume(self, task: str, steer: str) -> TaskLabel:
-        """Return the original task and latest steer; an unsteered resume clears the prior steer."""
-        if not self.task:
-            return self.start(steer or task)
-        return TaskLabel(self.task, steer)
-
-    def fallback(self, task: str) -> TaskLabel:
-        """Return manifest text only when the journal holds no task."""
-        return self if self.task else TaskLabel(task_text.task_display_text(task))
-
-    def line(self, max_chars: int | None = None) -> str:
-        """Return each task clipped once at the caller's width."""
-        line = task_snippet(self.task, max_chars=max_chars)
-        if self.continued_task:
-            line += "\n" + task_snippet(f"continued: {self.continued_task}", max_chars=max_chars)
-        return line
+from agent6.viewmodel import _session_log, _session_status, format
 
 
 def session_mtime(session_dir: pathlib.Path) -> float:
@@ -115,24 +84,6 @@ def newest_session_dir(buckets: Iterable[pathlib.Path]) -> pathlib.Path | None:
     return dirs[0] if dirs else None
 
 
-def task_snippet(text: str, max_chars: int | None = None) -> str:
-    """Return a task's one-line summary for a listing.
-
-    Args:
-        text: The task text or ask transcript.
-        max_chars: The width to clip to, with an ellipsis; None leaves it whole.
-
-    Returns:
-        The task's headline, else its first non-blank line.
-    """
-    snip = task_text.task_headline(text) or next(
-        (ln.strip() for ln in text.splitlines() if ln.strip()), ""
-    )
-    if max_chars is not None and len(snip) > max_chars:
-        snip = snip[: max_chars - 1] + "…"
-    return snip
-
-
 def is_session_husk(session_dir: pathlib.Path) -> bool:
     """Return whether a session dir never started: no manifest, no log, no live worker.
 
@@ -168,27 +119,6 @@ def is_winner(session_dir: pathlib.Path) -> bool:
     return compare is not None and compare.winner
 
 
-def cost_cell(
-    cost_usd: float, *, partial: bool, plan_consumed: float, plan_used_percent: float
-) -> str:
-    """Return a session's cost, the one spelling the listings, show and the reports print.
-
-    Args:
-        cost_usd: The dollars spent across executions.
-        partial: The dollar figure is a lower bound.
-        plan_consumed: The plan points consumed across executions.
-        plan_used_percent: The account's last plan reading.
-
-    Returns:
-        The points once a subscription plan answered a call, the dollars when any were
-        spent, both for a run that spent both; "" for a clean $0.
-    """
-    metered = plan_used_percent > 0 or plan_consumed > 0
-    return format.format_cost_cell(
-        cost_usd, partial=partial, plan_points=plan_consumed if metered else None
-    )
-
-
 @dataclasses.dataclass(frozen=True, slots=True)
 class SessionSummary:
     """One listing row: everything a hub or `sessions list` needs, uncolored.
@@ -222,7 +152,7 @@ class SessionSummary:
 
     session_id: str
     mode: str
-    task_label: TaskLabel
+    task_label: _session_status.TaskLabel
     status: str
     reason: str
     cost_usd: float
@@ -243,7 +173,7 @@ class SessionSummary:
     @property
     def cost_cell(self) -> str:
         """The session's cost as `cost_cell` spells it."""
-        return cost_cell(
+        return _session_status.cost_cell(
             self.cost_usd,
             partial=self.usd_partial,
             plan_consumed=self.plan_consumed,
@@ -395,477 +325,21 @@ def summary_row(
     }
 
 
-# The operator's own stops: each reads "stopped" and exits 130.
-OPERATOR_STOPS = frozenset({"interactive_stop", "interrupted", "steer_abort", "steer_exit"})
-
-
-def end_text(reason: str, summary: str = "", finish_summary: str = "") -> str:
-    """Return the sentence a session's end carries, "" when it carries none.
-
-    Args:
-        reason: The session.end reason token.
-        summary: The journaled end sentence.
-        finish_summary: The finish tool's summary; only a clean end may use it.
-
-    Returns:
-        The journaled sentence, else a clean end's finish summary; a journal with neither
-        has the reason word its label already shows.
-    """
-    if summary.strip():
-        return summary.strip()
-    if reason in ("", "finish_session", "finish_planning"):
-        return finish_summary.strip()
-    return ""
-
-
-def status_word(
-    *,
-    finished: bool,
-    all_passed: bool | None,
-    end_reason: str,
-    scoped: bool = False,
-    gate_red: bool = False,
-    gate_timed_out: bool = False,
-    stranded: bool = False,
-) -> tuple[str, str]:
-    """Map an end state to the status word and its detail.
-
-    The one place that decides how a run's outcome reads; headers and listings share
-    it. "stopped" and "undone" are the operator's own acts, "planned" and "answered"
-    the clean exits that verified nothing, "passed" a finish_session over a green gate,
-    "finished" a deliberate finish without all-passed or an end the harness declared,
-    and anything else "failed" with the reason.
-
-    Args:
-        finished: A session.end was seen.
-        all_passed: The verify tri-state: True when the final tree was observed
-            verify-green, False when not (red, stale or an error end), None when no
-            verify command gated it.
-        end_reason: The session.end reason word.
-        scoped: The certifying gate ran scoped to the tests nearest the run's diff,
-            so a pass reads "passed · scoped gate".
-        gate_red: This execution's last verify ran and failed; False also covers a
-            stale green and a gate nothing ran.
-        gate_timed_out: That verify ended on its timeout, so it gave no verdict.
-        stranded: The run finished with its edits uncommitted and no commit landed.
-
-    Returns:
-        The `(word, detail)` pair.
-    """
-    if not finished:
-        return "running", ""
-    not_green = "gate timed out" if gate_timed_out else "gate red" if gate_red else "unverified"
-    if end_reason in OPERATOR_STOPS:
-        return "stopped", ""
-    # An end with its own word, never "passed" and never "failed", whatever the gate said.
-    own_word = {
-        "finish_planning": ("planned", ""),
-        "answered": ("answered", ""),
-        "undone": ("undone", ""),
-        "silent_finish": ("finished", "no finish call" if all_passed is not False else not_green),
-        "metric_plateau": ("finished", "metric plateau" if all_passed is not False else not_green),
-        # The harness ended the run over a green gate; the worker called no finish_session.
-        "verify_settled": ("finished", "settled"),
-        "settled": ("finished", not_green),
-        # A verify against the unmodified tree proved the gate red before the run touched it.
-        "gate_red_at_base": ("finished", "gate was already red"),
-        # A fan-out's own end: its lanes carry the gate verdicts, and no model finished it.
-        "lanes_ranked": ("finished", "lanes ranked"),
-    }
-    if end_reason in own_word:
-        word, detail = own_word[end_reason]
-        # A harness end over edits no commit holds exits 5; the label says so too.
-        if stranded and end_reason in ("silent_finish", "metric_plateau", "verify_settled"):
-            detail = f"{detail} · not committed"
-        return word, detail
-    # A clean finish whose work no commit holds says so before anything else.
-    uncommitted = "not committed" if stranded else ""
-    if all_passed:
-        return "passed", uncommitted or ("scoped gate" if scoped else "")
-    # Only an observed not-green words "failed"; a deliberate finish over one is "finished".
-    if all_passed is False and end_reason:
-        clean_end = end_reason == "finish_session"
-        # A stale-gate claim is its own detail, as the raw reason so a surface names it once.
-        word = "finished" if clean_end or end_reason == "gate_stale" else "failed"
-        return word, not_green if clean_end else end_reason
-    return "finished", uncommitted
-
-
-# The prompt events that mean "alive but blocked on the operator".
-OPERATOR_PROMPT_EVENTS = frozenset({"approval.prompt", "question.prompt"})
-OPERATOR_ANSWER_EVENTS = frozenset({"approval.answer", "question.answer"})
-
-
-# A parked submission's word; the detail beside it is the manifest's short cause.
-PARKED_WORD = "parked"
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class StatusFacts:
-    """The event-derived inputs to `status_for_session_dir`.
-
-    Both event readers produce them, the tolerant scanner behind listings and the
-    typed fold behind the live views, so every surface feeds the one status decision
-    the same answers for the same log.
-
-    Attributes:
-        started: A session.start was seen; a parked or created run has none.
-        finished: A session.end was seen and no later execution began.
-        all_passed: The verify tri-state; None when no verify command gated the end.
-        verify_scoped: The judging gate ran scoped, which qualifies a pass.
-        gate_red: This execution's last verify ran and failed.
-        gate_timed_out: That verify ended on its timeout.
-        end_reason: The session.end reason word.
-        operator_blocked: An approval or question is still unanswered.
-        blocked_kind: The oldest unanswered prompt's kind, "approval" or "question".
-        blocked_since_ep: That prompt's asked-at epoch.
-        unattended_questions: Questions this execution's harness answered empty because nobody
-            was attached.
-        stranded: This execution finished with its edits uncommitted and no commit landed.
-    """
-
-    started: bool = False
-    finished: bool = False
-    all_passed: bool | None = False
-    verify_scoped: bool = False
-    gate_red: bool = False
-    gate_timed_out: bool = False
-    end_reason: str = ""
-    operator_blocked: bool = False
-    blocked_kind: str = ""
-    blocked_since_ep: float | None = None
-    unattended_questions: int = 0
-    stranded: bool = False
-
-
-def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tuple[str, str]:
-    """Decide the status word and detail for a session that has a dir on disk.
-
-    The dir supplies what events cannot: a parked submission (the manifest), a pending
-    stop (the marker) and worker liveness (the pid file). A started session is live iff
-    its worker is. The pid is written before session.start, so no pid file means the
-    worker cleared it on the way out. Log silence cannot stand in for this: a `kill -9`
-    leaves the pid file while an abnormal exit through the finally clears it.
-
-    Args:
-        session_dir: The session's state dir.
-        facts: The event-derived facts from either reader.
-
-    Returns:
-        The `(word, detail)` pair.
-    """
-    if facts.finished:
-        word, reason = status_word(
-            finished=True,
-            all_passed=facts.all_passed,
-            end_reason=facts.end_reason,
-            scoped=facts.verify_scoped,
-            gate_red=facts.gate_red,
-            gate_timed_out=facts.gate_timed_out,
-            stranded=facts.stranded,
-        )
-        if n := facts.unattended_questions:
-            note = f"{n} question{'s' if n != 1 else ''} unanswered"
-            reason = f"{reason} · {note}" if reason else note
-        return word, reason
-    live = process.worker_is_alive(session_dir)
-    if facts.operator_blocked and live:
-        # Before session.start too: a run asks about uncommitted changes before it starts.
-        word = "waiting"
-        if facts.blocked_kind and facts.blocked_since_ep is not None:
-            age = format.format_age(time.time() - facts.blocked_since_ep)
-            reason = f"{facts.blocked_kind} {age}"
-        else:
-            reason = "needs answer"
-    elif not facts.started:
-        word, reason = _unstarted_status(session_dir)
-    elif not live:
-        return "stale", ""
-    else:
-        word, reason = "running", ""
-    if (
-        word in LIVE_STATUS_WORDS
-        and ipc.stop_request_pending(session_dir)
-        and not ipc.stop_request_is_now(session_dir)
-    ):
-        note = "stopping after this step"
-        reason = f"{reason} · {note}" if reason else note
-    return word, reason
-
-
-def _unstarted_status(session_dir: pathlib.Path) -> tuple[str, str]:
-    """Decide the status of a session before any session.start.
-
-    A live worker is still in preflight ("starting"). Without one, the dir is a parked
-    submission, a manifest that fails to parse ("unreadable"), a worker that died
-    launching (its pid file survives the kill: "stale", since a killed preflight spent
-    real dollars) or a never-started dir ("created").
-
-    Args:
-        session_dir: The session's state dir.
-
-    Returns:
-        The `(word, detail)` pair.
-    """
-    if process.worker_is_alive(session_dir):
-        return "starting", ""
-    if (session_dir / sessions_manifest.MANIFEST_NAME).is_file():
-        try:
-            manifest = sessions_manifest.read_manifest(session_dir)
-        except sessions_manifest.ManifestError as exc:
-            return "unreadable", format.clip_cell(str(exc), 60)
-        if manifest.parked_task:
-            return PARKED_WORD, manifest.parked_reason
-    if process.read_worker_pid(session_dir) is not None:
-        return "stale", "died launching"
-    return "created", ""
-
-
-# Terminal without a session.end: the fan-out's await accepts them so it cannot hang.
-_DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "unreadable", "?"})
-
-
-def died_without_end(status: str) -> bool:
-    """Return whether the status word means the session never reached its own end."""
-    return status in _DIED_WITHOUT_END
-
-
-# A positive set: a new status word is not a result a fan-out may rank until it is listed.
-_RESULT_WORDS = frozenset({"passed", "finished", "stopped", "planned", "answered"})
-
-
-def produced_result(status: str) -> bool:
-    """Return whether the status word means a deliberate end that left mergeable work.
-
-    Only such a lane is a fan-out compare candidate or joins a coordinator's branch.
-    """
-    return status in _RESULT_WORDS
-
-
-# A run in any other state reads no steer or answer marker: a surface offers resume instead.
-LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
-
-
 def session_is_live(session_dir: pathlib.Path) -> bool:
     """Return whether anything will read what the operator writes to this session.
 
     Derived from the status word, so a surface cannot disagree with the label it shows.
     """
     logs = session_dir / layout.LOGS_NAME
-    facts = scan_session_log(logs).status_facts() if logs.is_file() else StatusFacts()
-    return status_for_session_dir(session_dir, facts)[0] in LIVE_STATUS_WORDS
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class LogScan:
-    """One tolerant pass over a session's journal, behind the hub listing and `sessions show`.
-
-    One owner, so the resume rules (bank the cost of past executions, un-finish) and
-    the torn-line tolerances cannot drift between consumers. Token counters are the
-    current execution's; `cost_usd` and `plan_consumed` are cumulative, matching the typed
-    fold's BudgetView.
-
-    Attributes:
-        saw_start: A session.start or loop.resume.start was seen; neither means unstarted.
-        mode: The session's mode, "?" until a start event names it.
-        task_label: The first task and the latest resume steer from the journal.
-        finished: A session.end was seen and no later execution began.
-        all_passed: The verify tri-state; None when no verify command gated the end.
-        verify_scoped: The judging gate ran scoped.
-        end_reason: The session.end reason word.
-        stranded: The latest execution finished with its edits uncommitted and no commit landed.
-        setup_output: The workspace's setup command and retained output, or its failure diagnostic.
-        end_summary: The journaled end sentence, "" while an execution runs or none was recorded.
-        baseline_ok: The start gate's verdict on the tree before the run's first turn; None
-            when none was recorded.
-        verified: The gate's word for the final tree, as the last session.end carried it:
-            `passed`, `failed`, `unverified` or `not_applicable`; "" while a later execution
-            runs, and for an end that carried none.
-        end_tree: The worktree's tree id that end recorded; "" when it recorded none or a
-            later execution began.
-        undone_to: The fork `/undo` continues the session as; "" when it was never undone.
-        provider_error: The last failed driving call's error, the reason behind a
-            `provider_error` end; "" when none failed.
-        cost_usd: The spend across every execution; None when no budget.update was seen.
-        usd_partial: Some execution had unpriced spend, so `cost_usd` is a lower bound.
-        executions: One plus the completed resume executions.
-        input_tokens: This execution's input tokens, None until a budget.update carries them.
-        output_tokens: This execution's output tokens.
-        cache_read_tokens: The cached side of the input, None when the event lacked it.
-        cache_creation_tokens: Cache-creation tokens, None when the event lacked it.
-        plan_consumed: The plan points consumed across every execution; 0.0 until a plan
-            call runs.
-        plan_prior_executions: The points banked by completed executions.
-        plan_cap: `[budget].max_percent` for this execution, 0.0 until a plan call runs.
-        plan_used_percent: The account's last reading, 0.0 until a plan call runs.
-        plan_usage: That reading's windows, None until a plan call reports them.
-        iteration: The last event's iteration.
-        start_ep: session.start's epoch, else the first event's (a fork's log has none).
-        last_ep: The last event's epoch.
-        last_type: The last event's type.
-        operator_blocked: A prompt is still unanswered on this execution.
-        blocked_kind: The oldest unanswered prompt's kind, "approval" or "question".
-        blocked_since_ep: That prompt's asked-at epoch.
-        last_verify_rc: This execution's last verify.end exit code.
-        verify_timeout_s: The limit that verify ran out, 0.0 when it ended on its own.
-        pins: The operator's pinned instructions in force.
-        unattended_questions: This execution's questions answered empty because nobody was
-            attached.
-        left_out: The (path, reason) of each edit the commits left out, across every
-            execution; the reason is `ignored` or `untracked` (`loop.edit.left_out`).
-    """
-
-    saw_start: bool = False
-    mode: str = "?"
-    task_label: TaskLabel = dataclasses.field(default_factory=TaskLabel)
-    finished: bool = False
-    all_passed: bool | None = False
-    verify_scoped: bool = False
-    end_reason: str = ""
-    stranded: bool = False
-    setup_output: str = ""
-    end_summary: str = ""
-    baseline_ok: bool | None = None
-    verified: str = ""
-    end_tree: str = ""
-    undone_to: str = ""
-    provider_error: str = ""
-    cost_usd: float | None = None
-    usd_partial: bool = False
-    executions: int = 1
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    cache_read_tokens: int | None = None
-    cache_creation_tokens: int | None = None
-    plan_consumed: float = 0.0
-    plan_prior_executions: float = 0.0
-    plan_cap: float = 0.0
-    plan_used_percent: float = 0.0
-    plan_usage: budget.PlanUsage | None = None
-    iteration: int | None = None
-    start_ep: float | None = None
-    last_ep: float | None = None
-    last_type: str | None = None
-    operator_blocked: bool = False
-    blocked_kind: str = ""
-    blocked_since_ep: float | None = None
-    last_verify_rc: int | None = None
-    verify_timeout_s: float = 0.0
-    pins: tuple[str, ...] = ()
-    unattended_questions: int = 0
-    left_out: tuple[tuple[str, str], ...] = ()
-
-    def verify_verdict(self) -> bool | None:
-        """Return the gate verdict for judging candidates.
-
-        The status word cannot answer it: a finish over a red gate folds to "finished".
-
-        Returns:
-            True when the run ended all-passed, False when this execution's last verify
-            failed, None when nothing observed the final tree (gateless, no verify this
-            execution, a green made stale by later edits, or a mode other than run).
-        """
-        if self.mode != "run":
-            return None
-        if self.finished and self.all_passed:
-            return True
-        if self.last_verify_rc is not None and self.last_verify_rc != 0:
-            return False
-        return None
-
-    def gate_word(self) -> str:
-        """Return `verified`, with `timed_out` for a red that is the gate running out its limit.
-
-        The one word `sessions show` and `sessions merge` describe the final tree by.
-        """
-        return "timed_out" if self.verified == "failed" and self.verify_timeout_s else self.verified
-
-    @property
-    def cost_cell(self) -> str:
-        """The session's cost as `cost_cell` spells it; "" before any budget.update."""
-        if self.cost_usd is None:
-            return ""
-        return cost_cell(
-            self.cost_usd,
-            partial=self.usd_partial,
-            plan_consumed=self.plan_consumed,
-            plan_used_percent=self.plan_used_percent,
-        )
-
-    def status_facts(self) -> StatusFacts:
-        """Return this scan's answers to the status questions.
-
-        The typed fold's `_state_view.status_facts` agrees on the same log.
-        """
-        return StatusFacts(
-            started=self.saw_start,
-            finished=self.finished,
-            all_passed=self.all_passed,
-            verify_scoped=self.verify_scoped,
-            gate_red=self.last_verify_rc is not None and self.last_verify_rc != 0,
-            gate_timed_out=self.verify_timeout_s > 0,
-            end_reason=self.end_reason,
-            operator_blocked=self.operator_blocked,
-            blocked_kind=self.blocked_kind,
-            blocked_since_ep=self.blocked_since_ep,
-            unattended_questions=self.unattended_questions,
-            stranded=self.stranded,
-        )
-
-
-def _plan_usage(ev: Mapping[str, object]) -> budget.PlanUsage | None:
-    """Return the plan windows a budget.update carries, or None when it carries none."""
-    raw = ev.get("plan_windows")
-    windows: list[budget.PlanWindow] = []
-    for w in raw if isinstance(raw, list) else ():
-        if not isinstance(w, dict):
-            continue
-        try:
-            windows.append(
-                budget.PlanWindow(
-                    str(w["name"]),
-                    float(w["used_percent"]),
-                    int(w["window_minutes"]),
-                    float(w["resets_at"]),
-                )
-            )
-        except (KeyError, TypeError, ValueError):
-            continue
-    return budget.PlanUsage(windows=tuple(windows)) if windows else None
-
-
-def _figure(ev: Mapping[str, object], key: str, last_good: float) -> float:
-    """Read a budget.update figure as the typed fold does.
-
-    Args:
-        ev: The event.
-        key: The figure's key.
-        last_good: The figure to keep when the value is unusable.
-
-    Returns:
-        0.0 for an absent key (an aggregate event carries only what it summed), else
-        the tolerant float.
-    """
-    return _tolerant_float(ev[key], last_good) if key in ev else 0.0
-
-
-def _tolerant_float(raw: object, last_good: float) -> float:
-    """Read a figure that a torn or adversarial line may have mangled.
-
-    Args:
-        raw: The raw value.
-        last_good: The figure to keep when the value is unusable; falsy junk keeps it
-            too, where an `or 0.0` fallback would reset it.
-
-    Returns:
-        The float of a real number or numeric string, else `last_good`.
-    """
-    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
-        return float(raw)
-    if isinstance(raw, str):
-        with contextlib.suppress(ValueError):
-            return float(raw)
-    return last_good
+    facts = (
+        _session_log.scan_session_log(logs).status_facts()
+        if logs.is_file()
+        else _session_status.StatusFacts()
+    )
+    return (
+        _session_status.status_for_session_dir(session_dir, facts)[0]
+        in _session_status.LIVE_STATUS_WORDS
+    )
 
 
 def needs_new_work(*, finished: bool, end_reason: str, all_passed: bool | None) -> bool:
@@ -889,7 +363,7 @@ def needs_new_work(*, finished: bool, end_reason: str, all_passed: bool | None) 
 
 def finished_needs_new_work(session_dir: pathlib.Path) -> bool:
     """Return `needs_new_work` over the run's log, for a verb that holds only the dir."""
-    scan = scan_session_log(session_dir / layout.LOGS_NAME)
+    scan = _session_log.scan_session_log(session_dir / layout.LOGS_NAME)
     return needs_new_work(
         finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
     )
@@ -960,232 +434,6 @@ def needs_new_work_refusal(session_id: str) -> str:
     )
 
 
-def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915  # one branch per event type
-    """Fold a session's journal into a `LogScan`.
-
-    A live writer can leave a torn multibyte tail, so the file is decoded with
-    replacement and the mangled line fails `json.loads` and is skipped.
-
-    Args:
-        logs: The journal path.
-
-    Returns:
-        The scan; an empty one when the file cannot be read.
-    """
-    mode, task = "?", TaskLabel("")
-    finished, end_reason, end_summary, verified = False, "", "", ""
-    stranded = False
-    end_tree = ""
-    baseline_ok: bool | None = None
-    undone_to = ""
-    setup_output = ""
-    provider_error = ""
-    all_passed: bool | None = False
-    verify_scoped = False
-    saw_start = False
-    usd_execution = 0.0
-    usd_prior_executions = 0.0
-    saw_budget = False
-    usd_partial = False
-    executions = 1
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    cache_read_tokens: int | None = None
-    cache_creation_tokens: int | None = None
-    plan_consumed = plan_prior_executions = plan_cap = plan_used_percent = 0.0
-    plan_usage: budget.PlanUsage | None = None
-    iteration: int | None = None
-    start_ep: float | None = None
-    first_ep: float | None = None
-    last_ep: float | None = None
-    last_type: str | None = None
-    # Only an answer or an execution boundary clears a prompt: a steer request leaves it waiting.
-    pending_prompts: dict[str, tuple[str, float | None]] = {}
-    unattended_questions = 0
-    last_verify_rc: int | None = None
-    verify_timeout_s = 0.0
-    pins: list[str] = []
-    left_out: dict[str, str] = {}
-    try:
-        with logs.open(encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                try:
-                    ev = json.loads(line)
-                except ValueError:
-                    continue
-                if not isinstance(ev, dict):
-                    continue
-                etype = ev.get("type")
-                ep = events.event_epoch(ev.get("ts"))
-                if ep is not None:
-                    last_ep = ep
-                    if first_ep is None:
-                        first_ep = ep
-                if isinstance(etype, str):
-                    last_type = etype
-                if isinstance(ev.get("iteration"), int):
-                    iteration = ev["iteration"]
-                if etype in OPERATOR_PROMPT_EVENTS:
-                    # Keyed by str(id) like the answer side, so an int id still clears.
-                    if (pid := ev.get("id")) is not None:
-                        kind = "approval" if etype == "approval.prompt" else "question"
-                        pending_prompts[str(pid)] = (kind, ep)
-                elif etype in OPERATOR_ANSWER_EVENTS:
-                    pending_prompts.pop(str(ev.get("id")), None)
-                    if etype == "question.answer" and ev.get("unseen") is True:
-                        unattended_questions += 1
-                if etype == "session.start":
-                    task = task.start(str(ev.get("user_task", "")))
-                    saw_start = True
-                    finished, stranded, verified = False, False, ""
-                    end_summary = ""
-                    end_tree = ""
-                    mode = str(ev.get("mode", mode))
-                    # A new execution re-asks with restarted ids; a held-over prompt waits forever.
-                    pending_prompts.clear()
-                    unattended_questions = 0
-                    last_verify_rc = None
-                    verify_timeout_s = 0.0
-                    if start_ep is None:
-                        start_ep = ep
-                elif etype == "session.end":
-                    finished = True
-                    if isinstance(ev.get("iterations"), int):
-                        iteration = ev["iterations"]
-                    # An explicit null is the ungated tri-state; an absent key folds False.
-                    raw_ap = ev.get("all_passed", False)
-                    all_passed = None if raw_ap is None else bool(raw_ap)
-                    verify_scoped = bool(ev.get("scoped", False))
-                    end_reason = str(ev.get("reason", ""))
-                    end_summary = str(ev.get("summary", ""))
-                    if end_reason == "setup_command_failed" and ev.get("summary"):
-                        setup_output = terminal.scrub_terminal_controls(str(ev["summary"]))
-                    verified = str(ev.get("verified") or "")
-                    end_tree = str(ev.get("tree", ""))
-                elif etype == "loop.resume.start":
-                    task = task.resume(str(ev.get("user_task", "")), str(ev.get("steer", "")))
-                    if saw_start:
-                        # Each execution's budget starts at 0: bank the finished one's total.
-                        usd_prior_executions += usd_execution
-                        usd_execution = 0.0
-                        input_tokens = output_tokens = None
-                        cache_read_tokens = cache_creation_tokens = None
-                        # The account's reading stays: the run is plan-metered before its
-                        # next call too.
-                        plan_prior_executions += plan_consumed
-                        plan_consumed = plan_cap = 0.0
-                        last_verify_rc = None
-                        verify_timeout_s = 0.0
-                        executions += 1
-                    saw_start = True
-                    mode = str(ev.get("mode", mode))
-                    finished, stranded, verified = False, False, ""
-                    end_summary = ""
-                    end_tree = ""
-                    pending_prompts.clear()
-                    unattended_questions = 0
-                elif etype == "session.stranded":
-                    stranded = True
-                elif etype == "session.undone":
-                    undone_to = str(ev.get("new_session_id", ""))
-                elif etype == "workspace.setup":
-                    setup_output = format.setup_output(ev)
-                elif etype == "verify.start":
-                    # The verdict before it described an older tree; the run page drops it too.
-                    last_verify_rc = None
-                    verify_timeout_s = 0.0
-                elif etype == "verify.end":
-                    rc = ev.get("exit_code")
-                    if isinstance(rc, int) and not isinstance(rc, bool):
-                        last_verify_rc = rc
-                        verify_timeout_s = events.verify_limit_hit(rc, ev.get("timeout_s"))
-                elif etype == "role.result":
-                    # A side call's failure never ends the run, so it is not the reason.
-                    if ev.get("ok") is False and not kinds.is_side_role(str(ev.get("role", ""))):
-                        provider_error = str(ev.get("error", ""))
-                elif etype == "loop.baseline" and baseline_ok is None:
-                    baseline_ok = bool(ev.get("ok"))
-                elif etype == "loop.edit.left_out":
-                    for reason in ("ignored", "untracked"):
-                        raw_paths = ev.get(reason)
-                        for p in raw_paths if isinstance(raw_paths, list) else []:
-                            left_out[str(p)] = reason
-                elif etype == "loop.pin.added":
-                    pins.append(str(ev.get("text", "")))
-                elif etype == "loop.pin.restored":
-                    raw_pins = ev.get("pins")
-                    pins = [str(p) for p in raw_pins] if isinstance(raw_pins, list) else []
-                elif etype == "budget.update":
-                    saw_budget = True
-                    usd_execution = _figure(ev, "usd_total", usd_execution)
-                    usd_partial = bool(ev.get("usd_partial")) or usd_partial
-                    ti, to = ev.get("input_total"), ev.get("output_total")
-                    if isinstance(ti, int):
-                        # The four counters travel as one group: no stale cached side from earlier.
-                        cr, cc = ev.get("cache_read_total"), ev.get("cache_creation_total")
-                        input_tokens = ti
-                        cache_read_tokens = cr if isinstance(cr, int) else None
-                        cache_creation_tokens = cc if isinstance(cc, int) else None
-                    output_tokens = to if isinstance(to, int) else output_tokens
-                    plan_consumed = _figure(ev, "plan_consumed", plan_consumed)
-                    plan_cap = _figure(ev, "plan_cap", plan_cap)
-                    plan_used_percent = _figure(ev, "plan_used_percent", plan_used_percent)
-                    plan_usage = _plan_usage(ev) or plan_usage
-    except OSError:
-        pass
-    return LogScan(
-        saw_start=saw_start,
-        mode=mode,
-        task_label=task,
-        finished=finished,
-        all_passed=all_passed,
-        verify_scoped=verify_scoped,
-        end_reason=end_reason,
-        stranded=stranded,
-        end_summary=end_summary,
-        baseline_ok=baseline_ok,
-        verified=verified,
-        setup_output=setup_output,
-        end_tree=end_tree,
-        undone_to=undone_to,
-        provider_error=provider_error,
-        cost_usd=(usd_prior_executions + usd_execution) if saw_budget else None,
-        usd_partial=usd_partial,
-        executions=executions,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cache_read_tokens=cache_read_tokens,
-        cache_creation_tokens=cache_creation_tokens,
-        plan_consumed=plan_prior_executions + plan_consumed,
-        plan_prior_executions=plan_prior_executions,
-        plan_cap=plan_cap,
-        plan_used_percent=plan_used_percent,
-        plan_usage=plan_usage,
-        unattended_questions=unattended_questions,
-        iteration=iteration,
-        start_ep=start_ep if start_ep is not None else first_ep,
-        last_ep=last_ep,
-        last_type=last_type,
-        operator_blocked=bool(pending_prompts),
-        blocked_kind=(
-            oldest[0]
-            if (
-                oldest := min(
-                    pending_prompts.values(),
-                    key=lambda kv: kv[1] if kv[1] is not None else float("inf"),
-                    default=None,
-                )
-            )
-            else ""
-        ),
-        blocked_since_ep=oldest[1] if oldest else None,
-        last_verify_rc=last_verify_rc,
-        verify_timeout_s=verify_timeout_s,
-        pins=tuple(pins),
-        left_out=tuple(left_out.items()),
-    )
-
-
 def unmerged(
     manifest: sessions_manifest.SessionManifest, word: str, branch_tips: Mapping[str, str]
 ) -> bool:
@@ -1235,7 +483,7 @@ def summarize_session_dir(
         The row.
     """
     logs = session_dir / layout.LOGS_NAME
-    scan = scan_session_log(logs) if logs.is_file() else LogScan()
+    scan = _session_log.scan_session_log(logs) if logs.is_file() else _session_log.LogScan()
     manifest: sessions_manifest.SessionManifest | None = None
     with contextlib.suppress(sessions_manifest.ManifestError):
         manifest = sessions_manifest.read_manifest(session_dir)
@@ -1246,8 +494,8 @@ def summarize_session_dir(
         if mode == "?":
             mode = manifest.mode or mode
     if mode == "?" and not label.task:
-        label = TaskLabel("(no logs)")
-    word, reason = status_for_session_dir(session_dir, scan.status_facts())
+        label = _session_status.TaskLabel("(no logs)")
+    word, reason = _session_status.status_for_session_dir(session_dir, scan.status_facts())
     lineage = manifest.parallel if manifest is not None else None
     has_unmerged = (
         unmerged(manifest, word, branch_tips)

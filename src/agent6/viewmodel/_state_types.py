@@ -7,7 +7,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Literal
 
-from agent6.viewmodel import format, listing
+from agent6.viewmodel import _session_status, format
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
@@ -329,7 +329,9 @@ class SessionState:
 
     session_id: str = ""
     mode: str = ""
-    task_label: listing.TaskLabel = dataclasses.field(default_factory=listing.TaskLabel)
+    task_label: _session_status.TaskLabel = dataclasses.field(
+        default_factory=_session_status.TaskLabel
+    )
     tasks: tuple[TaskNodeView, ...] = ()
     cursor_task_id: str | None = None
     last_role: RoleCall | None = None

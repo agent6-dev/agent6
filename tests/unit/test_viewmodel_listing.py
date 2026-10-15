@@ -14,6 +14,8 @@ import pytest
 
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import (
+    _session_log,
+    _session_status,
     format,
     is_session_husk,
     is_winner,
@@ -972,7 +974,7 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> No
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
     )
-    scan = listing.scan_session_log(rd / "logs.jsonl")
+    scan = _session_log.scan_session_log(rd / "logs.jsonl")
     assert scan.executions == 1
     assert scan.cost_usd == 0.05
 
@@ -988,7 +990,7 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> No
             {"type": "budget.update", "usd_total": 0.01},
         ],
     )
-    scan2 = listing.scan_session_log(rd2 / "logs.jsonl")
+    scan2 = _session_log.scan_session_log(rd2 / "logs.jsonl")
     assert scan2.executions == 2
     assert scan2.cost_usd == pytest.approx(0.06)
 
@@ -1014,7 +1016,7 @@ def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: path
         json.dumps({"session_id": "fork-3", "mode": "run", "user_task": "t", "base_sha": ""}),
         encoding="utf-8",
     )
-    scan = listing.scan_session_log(rd / "logs.jsonl")
+    scan = _session_log.scan_session_log(rd / "logs.jsonl")
     assert scan.mode == "run"
     assert scan.verify_verdict() is True
     assert listing.summary_row(summarize_session_dir(rd))["verify_ok"] is True
@@ -1274,7 +1276,7 @@ def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: pathlib.Path) 
         + "\n",
         encoding="utf-8",
     )
-    assert listing.scan_session_log(
+    assert _session_log.scan_session_log(
         log
     ).operator_blocked  # the int id still registers as unanswered
 
@@ -1282,7 +1284,7 @@ def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: pathlib.Path) 
         log.read_text(encoding="utf-8") + json.dumps({"type": "approval.answer", "id": 7}) + "\n",
         encoding="utf-8",
     )
-    assert not listing.scan_session_log(log).operator_blocked  # answered by the same int id
+    assert not _session_log.scan_session_log(log).operator_blocked  # answered by the same int id
 
 
 def test_a_crashed_run_reads_dead_at_once(tmp_path: pathlib.Path) -> None:
@@ -1341,7 +1343,7 @@ def _summary(session_id: str, *, mtime: float, coordinator: str = "", lane: int 
     return listing.SessionSummary(
         session_id=session_id,
         mode="run",
-        task_label=listing.TaskLabel("t"),
+        task_label=_session_status.TaskLabel("t"),
         status="passed",
         reason="",
         cost_usd=0.0,
@@ -1417,14 +1419,14 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: pathlib.Pat
         + "\n",
         encoding="utf-8",
     )
-    scan = listing.scan_session_log(logs)
+    scan = _session_log.scan_session_log(logs)
     assert (scan.input_tokens, scan.output_tokens) == (18, 2194)
     assert (scan.cache_read_tokens, scan.cache_creation_tokens) == (42486, 22617)
     logs.write_text(
         json.dumps({"type": "budget.update", "input_total": 1, "output_total": 2}) + "\n",
         encoding="utf-8",
     )
-    old = listing.scan_session_log(logs)
+    old = _session_log.scan_session_log(logs)
     assert (old.cache_read_tokens, old.cache_creation_tokens) == (None, None)
     # The four travel as one group: an aggregate event without the cached side
     # (a draft's summed attempts) shows none, not an earlier event's figures.
@@ -1443,7 +1445,7 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: pathlib.Pat
         + "\n",
         encoding="utf-8",
     )
-    aggregate = listing.scan_session_log(logs)
+    aggregate = _session_log.scan_session_log(logs)
     assert (aggregate.input_tokens, aggregate.output_tokens) == (250, 50)
     assert (aggregate.cache_read_tokens, aggregate.cache_creation_tokens) == (None, None)
 
@@ -1477,7 +1479,7 @@ def test_summary_names_the_questions_nobody_answered(tmp_path: pathlib.Path) -> 
     )
 
     (rd / "worker.pid").unlink()
-    assert listing.scan_session_log(rd / "logs.jsonl").unattended_questions == 1
+    assert _session_log.scan_session_log(rd / "logs.jsonl").unattended_questions == 1
     s = summarize_session_dir(rd)
     assert (s.status, s.reason) == ("passed", "1 question unanswered")
 
@@ -1508,7 +1510,7 @@ def test_a_resume_starts_the_unanswered_count_again(tmp_path: pathlib.Path) -> N
         ],
     )
     (rd / "worker.pid").unlink()
-    assert listing.scan_session_log(rd / "logs.jsonl").unattended_questions == 0
+    assert _session_log.scan_session_log(rd / "logs.jsonl").unattended_questions == 0
     s = summarize_session_dir(rd)
     assert (s.status, s.reason) == ("passed", "")
 
@@ -1547,16 +1549,14 @@ def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: path
 
 def test_a_timed_out_gate_reads_gate_timed_out_beside_gate_red_and_unverified() -> None:
     """A finish over a gate that ran out its timeout read "finished · gate red"."""
-    from agent6.viewmodel import listing
-
     for reason in ("finish_session", "silent_finish", "settled"):
-        assert listing.status_word(
+        assert _session_status.status_word(
             finished=True, all_passed=False, end_reason=reason, gate_red=True, gate_timed_out=True
         ) == ("finished", "gate timed out")
-        assert listing.status_word(
+        assert _session_status.status_word(
             finished=True, all_passed=False, end_reason=reason, gate_red=True
         ) == ("finished", "gate red")
-        assert listing.status_word(finished=True, all_passed=False, end_reason=reason) == (
+        assert _session_status.status_word(finished=True, all_passed=False, end_reason=reason) == (
             "finished",
             "unverified",
         )
@@ -1564,10 +1564,8 @@ def test_a_timed_out_gate_reads_gate_timed_out_beside_gate_red_and_unverified() 
 
 def test_the_three_finishes_over_a_red_gate_share_a_word() -> None:
     """A finish_session over a red gate is "finished" whatever the worker said about the gate."""
-    from agent6.viewmodel import listing
-
     for reason in ("finish_session", "gate_red_at_base", "gate_stale"):
-        word, _detail = listing.status_word(
+        word, _detail = _session_status.status_word(
             finished=True, all_passed=False, gate_red=True, end_reason=reason
         )
         assert word == "finished", reason
@@ -1575,20 +1573,18 @@ def test_the_three_finishes_over_a_red_gate_share_a_word() -> None:
 
 def test_the_scan_reads_the_gates_word_and_tolerates_its_absence(tmp_path: pathlib.Path) -> None:
     """The scan folds `session.end.verified`; a log written without it folds ""."""
-    from agent6.viewmodel import listing
-
     log = tmp_path / "logs.jsonl"
     start = {"type": "session.start", "mode": "run", "user_task": "t"}
     end = {"type": "session.end", "reason": "steer_abort", "all_passed": False}
     log.write_text(json.dumps(start) + "\n" + json.dumps(end) + "\n", encoding="utf-8")
-    assert listing.scan_session_log(log).verified == ""
+    assert _session_log.scan_session_log(log).verified == ""
     worded = {**end, "verified": "unverified"}
     log.write_text(json.dumps(start) + "\n" + json.dumps(worded) + "\n", encoding="utf-8")
-    assert listing.scan_session_log(log).verified == "unverified"
+    assert _session_log.scan_session_log(log).verified == "unverified"
     # A later execution has not ended, so it has no word yet.
     resumed = [start, worded, {"type": "loop.resume.start", "mode": "run"}]
     log.write_text("".join(json.dumps(e) + "\n" for e in resumed), encoding="utf-8")
-    assert listing.scan_session_log(log).verified == ""
+    assert _session_log.scan_session_log(log).verified == ""
 
 
 def test_the_scan_names_the_fork_an_undo_continues_as(tmp_path: pathlib.Path) -> None:
@@ -1600,7 +1596,7 @@ def test_the_scan_names_the_fork_an_undo_continues_as(tmp_path: pathlib.Path) ->
         {"type": "session.end", "reason": "undone", "iterations": 3, "all_passed": False},
     ]
     log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    scan = listing.scan_session_log(log)
+    scan = _session_log.scan_session_log(log)
     assert (scan.end_reason, scan.undone_to) == ("undone", "child-BBBB22")
     assert listing.undone_refusal("src-AAAA11", scan.undone_to) == (
         "run 'src-AAAA11' was taken back by /undo; its continuation is child-BBBB22:\n"
@@ -1631,13 +1627,13 @@ def test_branch_facts_name_a_forks_worktree(tmp_path: pathlib.Path) -> None:
 )
 def test_a_stranded_harness_end_says_not_committed(end_reason: str, detail: str) -> None:
     """These ends exit 5 when no commit holds the edits; the label said nothing of it."""
-    assert listing.status_word(
+    assert _session_status.status_word(
         finished=True, all_passed=True, end_reason=end_reason, stranded=True
     ) == (
         "finished",
         detail,
     )
-    assert listing.status_word(finished=True, all_passed=True, end_reason=end_reason) == (
+    assert _session_status.status_word(finished=True, all_passed=True, end_reason=end_reason) == (
         "finished",
         detail.removesuffix(" · not committed"),
     )
@@ -1671,8 +1667,8 @@ def test_unsteered_resume_keeps_one_task_line(tmp_path: pathlib.Path, task: str)
 
 def test_a_short_task_prefix_is_not_the_journal_clip() -> None:
     """A resumed execution names its steer even when it extends the original words."""
-    label = listing.TaskLabel("fix bug").resume("fix bug", "fix bug again")
-    assert label == listing.TaskLabel("fix bug", "fix bug again")
+    label = _session_status.TaskLabel("fix bug").resume("fix bug", "fix bug again")
+    assert label == _session_status.TaskLabel("fix bug", "fix bug again")
 
 
 @pytest.mark.parametrize(
@@ -1690,7 +1686,7 @@ def test_empty_start_does_not_claim_the_task(tmp_path: pathlib.Path, manifest_ta
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     (tmp_path / "manifest.json").write_text(json.dumps({"user_task": manifest_task}))
     summary = listing.summarize_session_dir(tmp_path)
-    assert summary.task_label == listing.TaskLabel("original task", "latest work")
+    assert summary.task_label == _session_status.TaskLabel("original task", "latest work")
     folded = state.fold_session(journal)
     assert folded.task_label.task == "original task"
     assert folded.task_label.continued_task == "latest work"
@@ -1705,8 +1701,8 @@ def test_manifest_and_journal_use_the_same_task_derivation() -> None:
     from agent6 import task_text
 
     raw = "<prior-run>context</prior-run>\n  " + "x" * 240 + "\n---\n"
-    label = listing.TaskLabel(task_text.task_display_text(raw)).fallback(raw)
-    assert label == listing.TaskLabel("x" * task_text.TASK_DISPLAY_CHARS)
+    label = _session_status.TaskLabel(task_text.task_display_text(raw)).fallback(raw)
+    assert label == _session_status.TaskLabel("x" * task_text.TASK_DISPLAY_CHARS)
 
 
 def test_ask_repl_questions_are_not_continuations(tmp_path: pathlib.Path) -> None:

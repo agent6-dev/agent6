@@ -19,7 +19,7 @@ from agent6.app import reporter, undo
 from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, process
-from agent6.viewmodel import listing
+from agent6.viewmodel import _session_log, _session_status
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -229,9 +229,9 @@ def test_undo_of_a_finished_run_journals_its_undone_end(
     assert [e["type"] for e in tail[-2:]] == ["session.undone", "session.end"]
     assert tail[-2]["new_session_id"] == child and tail[-2]["undone_text"] == "steer 1"
     assert tail[-1]["reason"] == "undone" and tail[-1]["iterations"] == 2
-    scan = listing.scan_session_log(layout.logs_path)
+    scan = _session_log.scan_session_log(layout.logs_path)
     assert scan.undone_to == child
-    word, _detail = listing.status_word(
+    word, _detail = _session_status.status_word(
         finished=scan.finished, all_passed=scan.all_passed, end_reason=scan.end_reason
     )
     assert word == "undone"

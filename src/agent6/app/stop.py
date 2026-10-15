@@ -29,7 +29,7 @@ import time
 from agent6.sandbox import jail
 from agent6.sessions import ipc, layout, manifest, process
 from agent6.tools import background
-from agent6.viewmodel import listing, session_is_live, summarize_session_dir
+from agent6.viewmodel import _session_status, listing, session_is_live, summarize_session_dir
 
 STOP_WAIT_S = 5.0  # a run that reads its requests ends within this
 FANOUT_WAIT_S = 30.0  # a coordinator drains its ended lanes and imports what landed within this
@@ -169,7 +169,7 @@ def _not_live_state(session_dir: pathlib.Path) -> str:
     summary = summarize_session_dir(session_dir)
     if summary.status == "parked":
         return "is parked and has not started"
-    if listing.produced_result(summary.status):
+    if _session_status.produced_result(summary.status):
         return f"is already {summary.status}"
     return f"is not running ({summary.status})"
 

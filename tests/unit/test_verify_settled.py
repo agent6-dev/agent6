@@ -27,7 +27,7 @@ from agent6.harness import (
     loop,
 )
 from agent6.tools import results
-from agent6.viewmodel import listing
+from agent6.viewmodel import _session_status
 from tests.unit.turn_context import turn_context
 
 
@@ -328,6 +328,6 @@ def test_an_operator_steer_restarts_the_idle_streak_and_its_nudge(tmp_path: path
 def test_a_green_harness_end_reads_finished_never_passed(reason: str, detail: str) -> None:
     """A harness-declared end over a green gate must not read passed, even when scoped."""
     for scoped in (False, True):
-        assert listing.status_word(
+        assert _session_status.status_word(
             finished=True, all_passed=True, end_reason=reason, scoped=scoped
         ) == ("finished", detail)

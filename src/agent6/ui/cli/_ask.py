@@ -18,7 +18,7 @@ from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common, _steer
-from agent6.viewmodel import listing, newest_session_dir
+from agent6.viewmodel import _session_log, newest_session_dir
 
 
 def summarize_session_log(logs_path: pathlib.Path) -> str:
@@ -201,7 +201,7 @@ def build_session_seed(cwd: pathlib.Path, session_id: str, *, latest: bool) -> S
         if (
             rc != 0
             and not git_ops.branch_exists(cwd, run_branch)
-            and not listing.scan_session_log(layout.logs_path).finished
+            and not _session_log.scan_session_log(layout.logs_path).finished
         ):
             # The branch is cut by the first commit; before it there is nothing to diff.
             diff_body = "(no diff: the run has made no commit yet)"

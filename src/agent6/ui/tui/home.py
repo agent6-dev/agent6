@@ -42,6 +42,7 @@ from agent6.ui.tui import (
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
     SessionSummary,
+    _session_status,
     format,
     is_winner,
     session_dirs,
@@ -217,7 +218,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         )
         self._fanouts = {row.summary.session_id: row for row in listing if row.lanes}
 
-        pending: list[tuple[tuple[str | text.Text, ...], viewmodel_listing.TaskLabel]] = []
+        pending: list[tuple[tuple[str | text.Text, ...], _session_status.TaskLabel]] = []
 
         def add(row: viewmodel_listing.ListingRow, id_cell: str) -> None:
             # The time is the row's: a fan-out's latest lane activity, as `sessions list` shows it.

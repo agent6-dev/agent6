@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agent6.viewmodel import fold_transcript, restate, salient_arg
+from agent6.viewmodel import _session_status, fold_transcript, restate, salient_arg
 
 
 def _read(path: str) -> list[dict[str, object]]:
@@ -76,13 +76,13 @@ def test_memory_tool_paths_keep_the_filename_on_every_surface() -> None:
 
 def test_session_start_opens_the_conversation_with_the_task() -> None:
     """The shared fold supplies the clipped task headline on every conversation surface."""
-    from agent6.viewmodel import listing, transcript, transcript_style
+    from agent6.viewmodel import transcript, transcript_style
 
     task = "x" * 230 + "\nsecond line"
     items = fold_transcript([{"type": "session.start", "user_task": task}])
     assert len(items) == 1
     assert items[0].kind == "task"
-    assert items[0].body == listing.task_snippet(task, max_chars=200)
+    assert items[0].body == _session_status.task_snippet(task, max_chars=200)
     assert transcript_style.item_lines(items[0], detail="hidden") == [
         [(f"{transcript.DONE} {items[0].body}", "task")]
     ]

@@ -24,7 +24,7 @@ from agent6.harness import (
     loop,
 )
 from agent6.tools import results
-from agent6.viewmodel import listing
+from agent6.viewmodel import _session_status
 
 
 def test_a_stale_gate_finish_reads_finished_with_its_cause() -> None:
@@ -34,7 +34,9 @@ def test_a_stale_gate_finish_reads_finished_with_its_cause() -> None:
     the run its word. A stale gate is a detail, not a new status word: `died_without_end`,
     the compare gates and the TUI colours key off the existing set.
     """
-    assert listing.status_word(finished=True, all_passed=False, end_reason="gate_stale") == (
+    assert _session_status.status_word(
+        finished=True, all_passed=False, end_reason="gate_stale"
+    ) == (
         "finished",
         "gate_stale",
     )
@@ -45,7 +47,7 @@ def test_a_green_tree_is_still_what_passes() -> None:
 
     `gate_stale` never reaches a green run (see finish_reason).
     """
-    assert listing.status_word(finished=True, all_passed=True, end_reason="gate_stale") == (
+    assert _session_status.status_word(finished=True, all_passed=True, end_reason="gate_stale") == (
         "passed",
         "",
     )

@@ -17,7 +17,7 @@ from agent6.models import registry
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.web import model
-from agent6.viewmodel import config_view, machine_snapshot, session_snapshot
+from agent6.viewmodel import _session_status, config_view, machine_snapshot, session_snapshot
 
 
 def _bucket(cwd: pathlib.Path, sub: str) -> pathlib.Path:
@@ -786,15 +786,13 @@ def test_the_hub_row_carries_the_one_line_task_the_cli_table_shows(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The card title is the task's first user-authored line, with the composed task beside it."""
-    from agent6.viewmodel import listing
-
     monkeypatch.chdir(tmp_path)
     task = "Fix the parser\n\nSeeded context the card must not show " + "z" * 80
     _run(tmp_path, "r2", [{"type": "session.start", "mode": "run", "user_task": task}])
 
     (row,) = model.hub_payload(tmp_path)["sessions"]
     assert row["task_clipped"] == task
-    assert row["task_line"] == listing.task_snippet(task) == "Fix the parser"
+    assert row["task_line"] == _session_status.task_snippet(task) == "Fix the parser"
 
 
 def test_the_draft_hub_row_keeps_the_cli_json_task(

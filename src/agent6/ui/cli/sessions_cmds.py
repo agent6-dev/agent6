@@ -23,6 +23,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common, _steer
 from agent6.viewmodel import (
+    _session_status,
     format,
     is_winner,
     newest_session_dir,
@@ -70,7 +71,7 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
 
     def cells(
         row: viewmodel_listing.ListingRow, id_cell: str
-    ) -> tuple[str, str, str, str, str, viewmodel_listing.TaskLabel]:
+    ) -> tuple[str, str, str, str, str, _session_status.TaskLabel]:
         """Return a row's six cells with the id cell as given."""
         s = row.summary
         styled, plain = _common.styled_status(
@@ -88,7 +89,7 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
             s.task_label,
         )
 
-    rows: list[tuple[str, str, str, str, str, viewmodel_listing.TaskLabel]] = []
+    rows: list[tuple[str, str, str, str, str, _session_status.TaskLabel]] = []
 
     def emit(row: viewmodel_listing.ListingRow, depth: int) -> None:
         """Append the row's cells, then its lanes' when listing them."""

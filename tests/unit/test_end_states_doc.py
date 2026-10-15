@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The end-state table in docs/usage.md is rendered from the code's own list of end reasons.
 
-One row per `SessionEndReason`: its headline from `listing.status_word`, its exit code from
+One row per `SessionEndReason`: its headline from `_session_status.status_word`, its exit code from
 `finalize.session_exit_code`. A new reason, a moved label or a moved exit code turns this red
 until the page moves with it. Print the table to paste:
 
@@ -16,7 +16,7 @@ from typing import get_args
 
 from agent6.app import finalize
 from agent6.harness import _snapshot
-from agent6.viewmodel import format, listing
+from agent6.viewmodel import _session_status, format
 
 _USAGE = pathlib.Path(__file__).resolve().parents[2] / "docs" / "usage.md"
 
@@ -60,7 +60,7 @@ def _row(reason: _snapshot.SessionEndReason) -> str:
     labels: list[str] = []
     exits: dict[int, list[str]] = {}
     for name, all_passed, gate_red, gate_timed_out, verified in gates:
-        word, detail = listing.status_word(
+        word, detail = _session_status.status_word(
             finished=True,
             all_passed=all_passed,
             end_reason=reason,

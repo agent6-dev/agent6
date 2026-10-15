@@ -32,7 +32,7 @@ from agent6.ui.acp import frontend as acp_frontend
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 from agent6.ui.acp import updates
-from agent6.viewmodel import listing, transcript
+from agent6.viewmodel import _session_log, transcript
 from agent6.viewmodel import tail as viewmodel_tail
 
 # Bounds the join on a tail wedged on a filesystem; `_stop` ends it one read pass after the run.
@@ -534,7 +534,7 @@ class RunBridge:
             )
         # Only a journal that grew and ended this execution carries a reason of this turn.
         grown = viewmodel_tail.journal_size(layout.logs_path) > journal_before
-        scan = listing.scan_session_log(layout.logs_path)
+        scan = _session_log.scan_session_log(layout.logs_path)
         end_reason = scan.end_reason if grown and scan.finished else ""
         return stop_reason(code, end_reason=end_reason)
 

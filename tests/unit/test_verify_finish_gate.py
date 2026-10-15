@@ -24,7 +24,7 @@ from agent6.harness import (
     loop,
 )
 from agent6.prompts import loop as prompts_loop
-from agent6.viewmodel import listing
+from agent6.viewmodel import _session_status
 
 
 def _wf(
@@ -180,13 +180,15 @@ def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
             iteration=1,
         )
         assert (emitted[-1]["all_passed"], emitted[-1]["scoped"]) == (True, scoped)
-    assert listing.status_word(
+    assert _session_status.status_word(
         finished=True, all_passed=True, end_reason="finish_session", scoped=True
     ) == ("passed", "scoped gate")
-    assert listing.status_word(
+    assert _session_status.status_word(
         finished=True, all_passed=False, end_reason="finish_session", scoped=True, gate_red=True
     ) == ("finished", "gate red")
-    assert listing.status_word(finished=True, all_passed=False, end_reason="finish_session") == (
+    assert _session_status.status_word(
+        finished=True, all_passed=False, end_reason="finish_session"
+    ) == (
         "finished",
         "unverified",
     )

@@ -27,7 +27,7 @@ from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.viewmodel import listing
+from agent6.viewmodel import _session_log
 
 _STEER_NOTICE = "OPERATOR STEERING"
 
@@ -426,7 +426,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
                 checkout,
                 tip=git_ops.chain_tip(checkout, ref) or sha,
                 sha=sha,
-                end_tree=listing.scan_session_log(undone.logs_path).end_tree,
+                end_tree=_session_log.scan_session_log(undone.logs_path).end_tree,
                 exclude=exclude,
             )
         except errors.GitError as exc:
@@ -450,7 +450,7 @@ def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_te
     Without it the source would read passed with a merge line, and `sessions merge` would
     land the taken-back work.
     """
-    iterations = listing.scan_session_log(undone.logs_path).iteration or 0
+    iterations = _session_log.scan_session_log(undone.logs_path).iteration or 0
     events = event_log.EventSink(undone.logs_path)
     with contextlib.suppress(event_log.EventWriteError):
         events.emit("session.undone", new_session_id=child, undone_text=undone_text)

@@ -23,7 +23,7 @@ from agent6.harness import judge, subrun
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
-from agent6.viewmodel import format, listing, produced_result, summarize_session_dir
+from agent6.viewmodel import _session_log, format, listing, produced_result, summarize_session_dir
 
 
 def imported_branch_note(origin: pathlib.Path, branch: str) -> str:
@@ -261,7 +261,7 @@ def import_lanes(
             reporter=reporter,
         )
         summary = summarize_session_dir(dest)
-        scan = listing.scan_session_log(dest / sessions_layout.LOGS_NAME)
+        scan = _session_log.scan_session_log(dest / sessions_layout.LOGS_NAME)
         budget_stops += scan.end_reason == "budget_exhausted"
         if scan.plan_usage is not None and (provider := lane_provider(dest)):
             seen = (listing.session_mtime(dest), scan.plan_usage)
@@ -361,7 +361,7 @@ def print_report(
         reporter.out("\nfailed lanes:")
         for res, err in failed:
             reporter.out(f"  - lane {res.spec.lane} [{res.spec.session_id}]: {err}")
-            scan = listing.scan_session_log(res.session_dir / sessions_layout.LOGS_NAME)
+            scan = _session_log.scan_session_log(res.session_dir / sessions_layout.LOGS_NAME)
             for line in scan.setup_output.splitlines():
                 reporter.out(f"    {line}")
             if scan.end_reason == "budget_exhausted":

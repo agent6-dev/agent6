@@ -25,7 +25,7 @@ from agent6 import errors, event_log, paths
 from agent6.sessions import process
 from agent6.ui.cli import _common, _terminal_guard
 from agent6.ui.cli import parser as cli_parser
-from agent6.viewmodel import listing
+from agent6.viewmodel import _session_status
 
 
 def _plan_title(plan_md: str) -> str:
@@ -38,7 +38,7 @@ def _plan_title(plan_md: str) -> str:
             break
     if title.lower().startswith("plan:"):
         title = title[len("plan:") :].strip() or title
-    return listing.task_snippet(title, max_chars=80)
+    return _session_status.task_snippet(title, max_chars=80)
 
 
 def _from_plan_task(plan_md: str, session_id: str) -> str:

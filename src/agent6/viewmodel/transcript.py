@@ -19,8 +19,8 @@ from collections.abc import Callable, Iterable
 from typing import Any, Literal
 
 from agent6 import budget, kinds, terminal
+from agent6.viewmodel import _session_status, format
 from agent6.viewmodel import events as viewmodel_events
-from agent6.viewmodel import format, listing
 
 # Text characters, not graphics, so every terminal font renders them.
 CALL = "→"
@@ -587,7 +587,7 @@ class TranscriptFold:
         if etype in viewmodel_events.SESSION_START_EVENTS:
             out = self.settle_open_calls("the run ended")
             if etype == "session.start":
-                task = listing.task_snippet(str(event.get("user_task", "")), max_chars=200)
+                task = _session_status.task_snippet(str(event.get("user_task", "")), max_chars=200)
                 if task:
                     out.append(TranscriptItem("task", body=task))
             return out
@@ -597,7 +597,7 @@ class TranscriptFold:
             counts = self._receipt_detail()
             reason = str(event.get("reason", ""))
             all_passed = event.get("all_passed")
-            word, detail = listing.status_word(
+            word, detail = _session_status.status_word(
                 finished=True,
                 all_passed=all_passed if isinstance(all_passed, bool) else None,
                 end_reason=reason,
@@ -606,7 +606,7 @@ class TranscriptFold:
                 gate_timed_out=self._gate is not None and self._gate[1],
                 stranded=self._stranded,
             )
-            body = listing.end_text(reason, str(event.get("summary", "")), self._finish)
+            body = _session_status.end_text(reason, str(event.get("summary", "")), self._finish)
             self._ended = True
             out.append(
                 TranscriptItem(

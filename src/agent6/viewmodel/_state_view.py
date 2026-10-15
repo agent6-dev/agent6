@@ -21,11 +21,11 @@ from agent6.models import registry
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
 from agent6.tools import background
-from agent6.viewmodel import _state_types, events, format, listing, policy
+from agent6.viewmodel import _session_status, _state_types, events, format, listing, policy
 from agent6.viewmodel import state as session_fold
 
 
-def status_facts(state: _state_types.SessionState) -> listing.StatusFacts:
+def status_facts(state: _state_types.SessionState) -> _session_status.StatusFacts:
     """Return the fold's answers to the status questions.
 
     The typed twin of `LogScan.status_facts`; the two agree on the same log.
@@ -41,7 +41,7 @@ def status_facts(state: _state_types.SessionState) -> listing.StatusFacts:
     ] + [("question", q.asked_ep) for q in state.pending_questions if not q.answered]
     oldest = min(pending, key=lambda p: p[1] if p[1] is not None else float("inf"), default=None)
     gate = state.last_verify
-    return listing.StatusFacts(
+    return _session_status.StatusFacts(
         started=state.started,
         finished=state.finished,
         all_passed=state.all_passed,
@@ -118,7 +118,7 @@ def session_state_as_dict(
         partial=state.budget.usd_partial,
         usd_cap=state.budget.usd_cap,
         usd_prior_executions=state.budget.usd_prior_executions,
-        cell=listing.cost_cell(
+        cell=_session_status.cost_cell(
             state.budget.usd_total,
             partial=state.budget.usd_partial,
             plan_consumed=state.budget.plan_consumed,
@@ -133,8 +133,8 @@ def session_state_as_dict(
     d["open_approval"] = None if current is None else current.id
     fallback_task = ""
     if session_dir is not None:
-        word, reason = listing.status_for_session_dir(session_dir, status_facts(state))
-        d["live"] = word in listing.LIVE_STATUS_WORDS
+        word, reason = _session_status.status_for_session_dir(session_dir, status_facts(state))
+        d["live"] = word in _session_status.LIVE_STATUS_WORDS
         # A forked execution's log opens at loop.resume.start and folds its identity empty.
         d["session_id"] = d["session_id"] or session_dir.name
         d["mode"] = d.get("mode") or ""
@@ -154,7 +154,7 @@ def session_state_as_dict(
     else:
         d["live"] = None
         facts = status_facts(state)
-        word, reason = listing.status_word(
+        word, reason = _session_status.status_word(
             finished=state.finished,
             all_passed=state.all_passed,
             end_reason=state.end_reason,

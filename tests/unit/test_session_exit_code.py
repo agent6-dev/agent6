@@ -16,7 +16,7 @@ import pytest
 
 from agent6.app import finalize
 from agent6.harness import _snapshot
-from agent6.viewmodel import listing
+from agent6.viewmodel import _session_status
 
 
 def _result(
@@ -62,7 +62,9 @@ def test_exit_code_operator_stop_is_130() -> None:
         assert finalize.session_exit_code(stopped, stranded=True) == 130
     # One owner: exactly the ends the listing words "stopped" exit 130.
     for reason in get_args(_snapshot.SessionEndReason):
-        word, _detail = listing.status_word(finished=True, all_passed=False, end_reason=reason)
+        word, _detail = _session_status.status_word(
+            finished=True, all_passed=False, end_reason=reason
+        )
         code = finalize.session_exit_code(_result(completed=False, reason=reason))
         assert (code == 130) == (word == "stopped"), reason
 
