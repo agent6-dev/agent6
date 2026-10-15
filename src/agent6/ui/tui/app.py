@@ -131,7 +131,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         # Set by action_detach_exit; run_tui reads it to print the reattach hint.
         self.detached = False
         self._unmerged = False
-        self._unmerged_due = 0.0
+        self._manifest_due = 0.0
         # The (word, reason) the hub row shows too, refreshed on the ~1/s heartbeat; derived,
         # never latched, so a crash then a resume reads as running again.
         self.dir_status: tuple[str, str] = listing.status_for_session_dir(
@@ -174,15 +174,13 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             pathlib.Path.cwd(), self.config_path, self.session_dir, preset=preset
         )
 
-    def manifest_task(self) -> str:
-        """Return the manifest's task, which a resume with new work restamps; "" without one."""
-        with contextlib.suppress(sessions_manifest.ManifestError):
-            return sessions_manifest.read_manifest(self.session_dir).user_task
-        return ""
+    def task_label(self) -> listing.TaskLabel:
+        """Return the original task and latest continuation from the live fold."""
+        return self.state.task_label.fallback(self.fallback_task)
 
     def _task_lead(self) -> str:
         """Return the clipped task for a title, or the session name before a task is known."""
-        task = self.manifest_task() or self.state.user_task or self.fallback_task
+        task = self.task_label().task
         return listing.task_snippet(task, max_chars=57) or self.session_dir.name
 
     def screen_title(self, context: str) -> str:
@@ -327,15 +325,20 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         """
         status = listing.status_for_session_dir(self.session_dir, state.status_facts(self.state))
         has_unmerged = self._unmerged and self.state.finished
-        # An ended run's mark, re-read every few beats: a merge elsewhere clears it.
-        if self.state.finished and time.monotonic() >= self._unmerged_due:
-            self._unmerged_due = time.monotonic() + 5.0
-            has_unmerged = False
+        # Manifest changes are polled every five seconds, not on each repaint.
+        if time.monotonic() >= self._manifest_due:
+            self._manifest_due = time.monotonic() + 5.0
+            if self.state.finished:
+                has_unmerged = False
             with contextlib.suppress(sessions_manifest.ManifestError):
                 manifest = sessions_manifest.read_manifest(self.session_dir)
-                has_unmerged = listing.unmerged(
-                    manifest, status[0], git_ops.run_ref_tips(pathlib.Path.cwd())
-                )
+                if manifest.user_task != self.fallback_task:
+                    self.fallback_task = manifest.user_task
+                    self._dirty = True
+                if self.state.finished:
+                    has_unmerged = listing.unmerged(
+                        manifest, status[0], git_ops.run_ref_tips(pathlib.Path.cwd())
+                    )
         if status != self.dir_status or has_unmerged != self._unmerged:
             self.dir_status = status
             self._unmerged = has_unmerged

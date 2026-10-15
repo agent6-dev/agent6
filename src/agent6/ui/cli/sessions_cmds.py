@@ -28,7 +28,6 @@ from agent6.viewmodel import (
     newest_session_dir,
     session_dirs,
     summarize_session_dir,
-    task_snippet,
     wire,
 )
 from agent6.viewmodel import listing as viewmodel_listing
@@ -71,7 +70,7 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
 
     def cells(
         row: viewmodel_listing.ListingRow, id_cell: str
-    ) -> tuple[str, str, str, str, str, str]:
+    ) -> tuple[str, str, str, str, str, viewmodel_listing.TaskLabel]:
         """Return a row's six cells with the id cell as given."""
         s = row.summary
         styled, plain = _common.styled_status(
@@ -80,9 +79,16 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
             color=color,
             label=format.listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
         )
-        return format.format_when(row.mtime), styled, plain, s.cost_cell, id_cell, s.task
+        return (
+            format.format_when(row.mtime),
+            styled,
+            plain,
+            s.cost_cell,
+            id_cell,
+            s.task_label,
+        )
 
-    rows: list[tuple[str, str, str, str, str, str]] = []
+    rows: list[tuple[str, str, str, str, str, viewmodel_listing.TaskLabel]] = []
 
     def emit(row: viewmodel_listing.ListingRow, depth: int) -> None:
         """Append the row's cells, then its lanes' when listing them."""
@@ -107,8 +113,11 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
     print(f"{'updated':<11}  {'status':<{status_w}}  {'cost':<8}  {'id':<{id_w}}  task")
     for when, styled, plain, cost, session_id, task in rows:
         pad = " " * (status_w - len(plain))
-        snip = task_snippet(task, max_chars=task_w)
+        task_lines = task.line(max_chars=task_w).splitlines()
+        snip = task_lines[0] if task_lines else ""
         print(f"{when:<11}  {styled}{pad}  {cost:<8}  {session_id:<{id_w}}  {snip}")
+        for continuation in task_lines[1:]:
+            print(" " * fixed + continuation)
     return 0
 
 
@@ -511,9 +520,10 @@ def _rm_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) -> str
     """
     tips = git_ops.run_ref_tips(cwd)
     summary = summarize_session_dir(layout.session_dir, branch_tips=tips)
+    task = summary.task_label.line(100).replace("\n", "\n" + " " * 11)
     lines = [
         f"sessions rm will delete {layout.session_id}",
-        f"  task:    {task_snippet(summary.task, 100)}",
+        f"  task:    {task}",
         f"  state:   {format.status_label(summary.status, summary.reason)}",
     ]
     if summary.unmerged:

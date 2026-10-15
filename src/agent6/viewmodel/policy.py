@@ -90,6 +90,13 @@ def session_policy(session_dir: pathlib.Path) -> SessionPolicy:
     try:
         m = manifest.read_manifest(session_dir)
     except manifest.ManifestError:
+        m = None
+    return manifest_policy(m)
+
+
+def manifest_policy(m: manifest.SessionManifest | None) -> SessionPolicy:
+    """Return the policy from an already-read manifest, or empty when unavailable."""
+    if m is None:
         return SessionPolicy("", "", "", (), "")
     driver = m.models.driver
     return SessionPolicy(

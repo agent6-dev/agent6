@@ -852,7 +852,8 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
 
     def fake_summary(rd: pathlib.Path) -> SessionSummary:
         return SessionSummary(
-            session_id=rd.name, mode="run", task="t", status=next(statuses),
+            session_id=rd.name, mode="run", task_label=listing.TaskLabel("t"),
+            status=next(statuses),
             reason="", cost_usd=0.0, usd_partial=False, mtime=0.0,
         )  # fmt: skip
 

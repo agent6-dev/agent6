@@ -1,7 +1,6 @@
 {
   "session_id": "golden-run-GLDN01",
   "mode": "run",
-  "user_task": "# Fix the bug\n\nRestore the thing.",
   "tasks": [
     {
       "id": "ok",
@@ -198,6 +197,8 @@
   "live": null,
   "status": "passed",
   "status_label": "passed",
+  "user_task": "# Fix the bug\n\nRestore the thing.",
+  "continued_task": "",
   "task_line": "Fix the bug",
   "dead_state": "",
   "operator_blocked": false

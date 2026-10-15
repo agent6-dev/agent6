@@ -1771,7 +1771,7 @@ def test_the_menu_bar_title_keeps_the_tasks_brackets(tmp_path: pathlib.Path) -> 
         async with app.run_test(size=(120, 30)) as pilot:
             for _ in range(30):
                 await pilot.pause()
-                if app.state.user_task:
+                if app.state.task_label.task:
                     break
             await pilot.pause()
             shown = app.screen.query_one(".app-title", widgets.Static).render()

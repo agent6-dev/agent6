@@ -301,7 +301,7 @@ def test_list_runs_reads_manifests(tmp_path: pathlib.Path) -> None:
     assert "manifest" not in sessions_out[0]
     # The row the hubs share rides on top of the manifest: an editor reads the
     # same status words the CLI and web list, which the raw manifest lacks.
-    assert sessions_out[1]["task"] == "alpha" and sessions_out[0]["mode"] == "run"
+    assert sessions_out[1]["task_clipped"] == "alpha" and sessions_out[0]["mode"] == "run"
     assert {"status", "label", "level", "reason", "cost"} <= set(sessions_out[0])
 
 

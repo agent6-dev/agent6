@@ -70,6 +70,7 @@ class ExecutionInputs:
         standing_goal: The standing goal.
         pins: The pinned notes.
         resuming: Whether this is a resumed execution.
+        resume_steer: The steer that started this resumed execution.
         worktree_git_dir: The repository git dir of a session in its own worktree, the one
             grant its jail makes beyond the workspace.
     """
@@ -95,6 +96,7 @@ class ExecutionInputs:
     standing_goal: str = ""
     pins: tuple[str, ...] = ()
     resuming: bool = False
+    resume_steer: str = ""
     worktree_git_dir: pathlib.Path | None = None
 
 
@@ -490,7 +492,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                             tool_calls=0,
                         )
                     elif inputs.task is None:
-                        result = wf.resume()
+                        result = wf.resume(steer=inputs.resume_steer)
                     elif mode == "ask" and inputs.interactive:
                         result = frontend.run_ask_repl(wf, budget, layout, inputs.task)
                     else:

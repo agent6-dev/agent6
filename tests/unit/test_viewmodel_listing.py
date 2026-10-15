@@ -27,6 +27,32 @@ from agent6.viewmodel import (
 )
 
 
+def test_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
+    """Two executions keep the original label and show the latest work below it."""
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {"version": 3, "session_id": tmp_path.name, "mode": "run", "user_task": "do more"}
+        )
+    )
+    journal = [
+        {"type": "session.start", "mode": "run", "user_task": "original task"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "loop.resume.start", "steer": "do more"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
+    summary = listing.summarize_session_dir(tmp_path)
+    assert summary.task_label.task == "original task"
+    assert listing.summary_row(summary)["task_line"] == "original task\ncontinued: do more"
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"version": 3, "mode": "run", "user_task": "latest work"})
+    )
+    with (tmp_path / "logs.jsonl").open("a") as log:
+        log.write(json.dumps({"type": "loop.resume.start", "steer": "latest work"}) + "\n")
+    summary = listing.summarize_session_dir(tmp_path)
+    assert summary.task_label.line() == "original task\ncontinued: latest work"
+
+
 def test_run_mtime_prefers_log_over_dir(tmp_path: pathlib.Path) -> None:
     d = tmp_path / "run"
     d.mkdir()
@@ -363,7 +389,7 @@ def test_summary_reads_mode_task_and_passed(tmp_path: pathlib.Path) -> None:
         ],
     )
     s = summarize_session_dir(rd)
-    assert (s.mode, s.task, s.status, s.reason) == ("run", "fix [the] bug", "passed", "")
+    assert (s.mode, s.task_label.task, s.status, s.reason) == ("run", "fix [the] bug", "passed", "")
     assert s.cost_usd == 0.12
 
 
@@ -576,11 +602,8 @@ def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: pathlib.Path) 
     assert format.listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged) == "undone"
 
 
-def test_summary_task_is_the_manifests_operator_words(tmp_path: pathlib.Path) -> None:
-    """The manifest owns the listing's task: the operator's words, never a clipped or composed copy.
-
-    session.start clips user_task to 200 chars; `run --skill` and `--from` prepend blocks.
-    """
+def test_summary_task_is_the_journals_operator_words(tmp_path: pathlib.Path) -> None:
+    """The journal owns the listing task, even when the manifest holds a longer copy."""
     from agent6 import task_text
     from agent6.app import stamps
     from agent6.config import Config
@@ -596,7 +619,7 @@ def test_summary_task_is_the_manifests_operator_words(tmp_path: pathlib.Path) ->
             {
                 "type": "session.start",
                 "mode": "run",
-                "user_task": task_text.operator_task_text(composed)[:200],
+                "user_task": task_text.task_display_text(composed),
             },
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
@@ -612,7 +635,11 @@ def test_summary_task_is_the_manifests_operator_words(tmp_path: pathlib.Path) ->
         mode="run",
     )
     s = summarize_session_dir(rd)
-    assert (s.mode, s.task, s.status) == ("run", words.strip(), "passed")
+    assert (s.mode, s.task_label.task, s.status) == (
+        "run",
+        task_text.task_display_text(composed),
+        "passed",
+    )
 
 
 def test_summary_resume_unfinishes(tmp_path: pathlib.Path) -> None:
@@ -758,13 +785,13 @@ def test_run_is_live_unstarted_dirs(tmp_path: pathlib.Path) -> None:
     assert session_is_live(live) is True
 
 
-def test_summary_ask_task_comes_from_transcript(tmp_path: pathlib.Path) -> None:
+def test_summary_ask_task_comes_from_journal(tmp_path: pathlib.Path) -> None:
     rd = _write_run(
         tmp_path,
         "asks",
         "a1",
         [
-            {"type": "session.start", "mode": "ask", "user_task": '<file path="a.py">\nx'},
+            {"type": "session.start", "mode": "ask", "user_task": "what is the default port?"},
             {"type": "session.end", "all_passed": True},
         ],
     )
@@ -772,7 +799,7 @@ def test_summary_ask_task_comes_from_transcript(tmp_path: pathlib.Path) -> None:
         "# agent6 ask\n\n## Question\n\nwhat is the default port?\n", encoding="utf-8"
     )
     s = summarize_session_dir(rd)
-    assert task_snippet(s.task) == "what is the default port?"
+    assert task_snippet(s.task_label.task) == "what is the default port?"
 
 
 def test_summary_ask_task_is_the_question_behind_a_prior_run_block(tmp_path: pathlib.Path) -> None:
@@ -782,7 +809,11 @@ def test_summary_ask_task_is_the_question_behind_a_prior_run_block(tmp_path: pat
         "asks",
         "a3",
         [
-            {"type": "session.start", "mode": "ask", "user_task": "q"},
+            {
+                "type": "session.start",
+                "mode": "ask",
+                "user_task": "in one line, what does __all__ do?",
+            },
             {"type": "session.end", "all_passed": True},
         ],
     )
@@ -792,12 +823,12 @@ def test_summary_ask_task_is_the_question_behind_a_prior_run_block(tmp_path: pat
         encoding="utf-8",
     )
     s = summarize_session_dir(rd)
-    assert s.task == "in one line, what does __all__ do?"
+    assert s.task_label.task == "in one line, what does __all__ do?"
     (rd / "transcript.md").write_text(
         "# agent6 ask\n\n## Question\n\n<div> is not centered, why?\n\n## Answer\n\nFlex.\n",
         encoding="utf-8",
     )
-    assert summarize_session_dir(rd).task == "<div> is not centered, why?"
+    assert summarize_session_dir(rd).task_label.task == "in one line, what does __all__ do?"
 
 
 def test_summary_ask_task_is_the_question_even_when_it_starts_with_a_hash(
@@ -809,7 +840,11 @@ def test_summary_ask_task_is_the_question_even_when_it_starts_with_a_hash(
         "asks",
         "a2",
         [
-            {"type": "session.start", "mode": "ask", "user_task": "q"},
+            {
+                "type": "session.start",
+                "mode": "ask",
+                "user_task": "#include <stdio.h> fails to compile, why?",
+            },
             {"type": "session.end", "all_passed": True},
         ],
     )
@@ -819,14 +854,14 @@ def test_summary_ask_task_is_the_question_even_when_it_starts_with_a_hash(
         encoding="utf-8",
     )
     s = summarize_session_dir(rd)
-    assert task_snippet(s.task) == "#include <stdio.h> fails to compile, why?"
+    assert task_snippet(s.task_label.task) == "#include <stdio.h> fails to compile, why?"
 
 
 def test_summary_no_logs(tmp_path: pathlib.Path) -> None:
     rd = tmp_path / "sessions" / "runs" / "empty"
     rd.mkdir(parents=True)
     s = summarize_session_dir(rd)
-    assert (s.status, s.task) == ("created", "(no logs)")
+    assert (s.status, s.task_label.task) == ("created", "(no logs)")
 
 
 def test_summary_torn_manifest_reads_unreadable_not_created(tmp_path: pathlib.Path) -> None:
@@ -884,7 +919,7 @@ def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: pathlib.Path) 
         json.dumps({"mode": "plan", "user_task": "carry this forward"}), encoding="utf-8"
     )
     s = summarize_session_dir(rd)
-    assert (s.mode, s.task, s.status) == ("plan", "carry this forward", "created")
+    assert (s.mode, s.task_label.task, s.status) == ("plan", "carry this forward", "created")
 
 
 def test_summary_launching_run_reads_starting(tmp_path: pathlib.Path) -> None:
@@ -898,7 +933,7 @@ def test_summary_launching_run_reads_starting(tmp_path: pathlib.Path) -> None:
     )
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # a live worker
     s = summarize_session_dir(rd)
-    assert (s.mode, s.task, s.status) == ("run", "refactor the loop", "starting")
+    assert (s.mode, s.task_label.task, s.status) == ("run", "refactor the loop", "starting")
 
 
 def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: pathlib.Path) -> None:
@@ -1108,7 +1143,7 @@ def test_summary_survives_a_valid_json_non_object_line(tmp_path: pathlib.Path) -
         encoding="utf-8",
     )
     s = summarize_session_dir(rd)  # must not raise
-    assert s.task == "do a thing"
+    assert s.task_label.task == "do a thing"
     assert s.status == "passed"
 
 
@@ -1225,7 +1260,7 @@ def test_summary_forked_execution_reads_mode_and_task_from_manifest(tmp_path: pa
         encoding="utf-8",
     )
     s = summarize_session_dir(rd)
-    assert (s.mode, s.task) == ("run", "carry on")
+    assert (s.mode, s.task_label.task) == ("run", "carry on")
 
 
 def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: pathlib.Path) -> None:
@@ -1305,7 +1340,7 @@ def _summary(session_id: str, *, mtime: float, coordinator: str = "", lane: int 
     return listing.SessionSummary(
         session_id=session_id,
         mode="run",
-        task="t",
+        task_label=listing.TaskLabel("t"),
         status="passed",
         reason="",
         cost_usd=0.0,
@@ -1605,3 +1640,141 @@ def test_a_stranded_harness_end_says_not_committed(end_reason: str, detail: str)
         "finished",
         detail.removesuffix(" · not committed"),
     )
+
+
+@pytest.mark.parametrize("task", ["original task", "first line\nsecond line", "x" * 240])
+def test_unsteered_resume_keeps_one_task_line(tmp_path: pathlib.Path, task: str) -> None:
+    """The journal clip and embedded newlines do not invent a continuation."""
+    from agent6 import task_text
+
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "mode": "run",
+                "user_task": task,
+            }
+        )
+    )
+    journal = [
+        {"type": "session.start", "mode": "run", "user_task": task[: task_text.TASK_DISPLAY_CHARS]},
+        {"type": "session.end"},
+        {"type": "loop.resume.start"},
+    ]
+    (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
+    summary = listing.summarize_session_dir(tmp_path)
+    assert summary.task_label.task == task_text.task_display_text(task)
+    assert summary.task_label.continued_task == ""
+    assert summary.task_label.line(300) == task_text.task_display_text(task).splitlines()[0]
+
+
+def test_a_short_task_prefix_is_not_the_journal_clip() -> None:
+    """A resumed execution names its steer even when it extends the original words."""
+    label = listing.TaskLabel("fix bug").resume("fix bug", "fix bug again")
+    assert label == listing.TaskLabel("fix bug", "fix bug again")
+
+
+@pytest.mark.parametrize(
+    "manifest_task", ["", "original task", "<prior-run>context</prior-run>\nlatest work"]
+)
+def test_empty_start_does_not_claim_the_task(tmp_path: pathlib.Path, manifest_task: str) -> None:
+    """Both folds retain the first non-empty task and the latest later start."""
+    from agent6.viewmodel import state
+
+    journal = [
+        {"type": "session.start", "user_task": "", "mode": "run"},
+        {"type": "session.start", "user_task": "original task", "mode": "run"},
+        {"type": "loop.resume.start", "steer": "latest work", "mode": "run"},
+    ]
+    (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
+    (tmp_path / "manifest.json").write_text(json.dumps({"user_task": manifest_task}))
+    summary = listing.summarize_session_dir(tmp_path)
+    assert summary.task_label == listing.TaskLabel("original task", "latest work")
+    folded = state.fold_session(journal)
+    assert folded.task_label.task == "original task"
+    assert folded.task_label.continued_task == "latest work"
+    payload = state.session_state_as_dict(folded, tmp_path)
+    assert payload["user_task"] == "original task"
+    assert payload["continued_task"] == "latest work"
+    assert "original_task" not in payload
+
+
+def test_manifest_and_journal_use_the_same_task_derivation() -> None:
+    """Context blocks, whitespace and the writer's clip do not create a continuation."""
+    from agent6 import task_text
+
+    raw = "<prior-run>context</prior-run>\n  " + "x" * 240 + "\n---\n"
+    label = listing.TaskLabel(task_text.task_display_text(raw)).fallback(raw)
+    assert label == listing.TaskLabel("x" * task_text.TASK_DISPLAY_CHARS)
+
+
+def test_ask_repl_questions_are_not_continuations(tmp_path: pathlib.Path) -> None:
+    """Two ask REPL questions retain one task line, even with a different manifest task."""
+    from agent6.viewmodel import state
+
+    journal = [
+        {"type": "session.start", "mode": "ask", "user_task": "first question"},
+        {"type": "session.end", "all_passed": True},
+        {"type": "session.start", "mode": "ask", "user_task": "second question"},
+        {"type": "session.end", "all_passed": True},
+    ]
+    (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"mode": "ask", "user_task": "second question"})
+    )
+    summary = listing.summarize_session_dir(tmp_path)
+    assert summary.task_label.line() == "first question"
+    payload = state.session_state_as_dict(state.fold_session(journal), tmp_path)
+    assert payload["task_line"] == "first question"
+    assert payload["continued_task"] == ""
+
+
+@pytest.mark.parametrize("started", [False, True])
+def test_task_clip_is_the_same_before_and_after_start(
+    tmp_path: pathlib.Path, *, started: bool
+) -> None:
+    """Manifest fallback and journal start expose the same clipped task in both folds."""
+    from agent6 import task_text
+    from agent6.viewmodel import state
+
+    task = "<prior-run>context</prior-run>\n" + "x" * 240
+    clipped = task_text.task_display_text(task)
+    (tmp_path / "manifest.json").write_text(json.dumps({"mode": "run", "user_task": task}))
+    journal = [{"type": "session.start", "user_task": clipped}] if started else []
+    (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
+    summary = listing.summarize_session_dir(tmp_path)
+    row = listing.summary_row(summary)
+    assert row["task_clipped"] == "x" * task_text.TASK_DISPLAY_CHARS
+    assert "task" not in row
+    payload = state.session_state_as_dict(state.fold_session(journal), tmp_path)
+    assert payload["user_task"] == row["task_clipped"]
+
+
+def test_unsteered_resume_clears_previous_continuation(tmp_path: pathlib.Path) -> None:
+    """Both folds clear the prior steer when the latest resume carries none."""
+    from agent6.viewmodel import state
+
+    journal = [
+        {"type": "session.start", "user_task": "original"},
+        {"type": "session.end", "all_passed": True},
+        {"type": "loop.resume.start", "user_task": "original", "steer": "follow up"},
+        {"type": "session.end", "all_passed": True},
+        {"type": "loop.resume.start", "user_task": "follow up", "steer": ""},
+    ]
+    (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
+    assert listing.summarize_session_dir(tmp_path).task_label.line() == "original"
+    assert state.fold_session(journal).task_label.line() == "original"
+
+
+def test_older_journal_keeps_raw_task_blocks(tmp_path: pathlib.Path) -> None:
+    """Older journals show block text rather than substituting a manifest or transcript task."""
+    from agent6.viewmodel import state
+
+    raw = '<file path="a.py">\nx'
+    journal = [{"type": "session.start", "mode": "ask", "user_task": raw}]
+    (tmp_path / "logs.jsonl").write_text(json.dumps(journal[0]) + "\n")
+    (tmp_path / "manifest.json").write_text(json.dumps({"user_task": "question"}))
+    label = listing.summarize_session_dir(tmp_path).task_label
+    assert label.task == raw
+    assert label.line() == '<file path="a.py">'
+    assert state.fold_session(journal).task_label == label

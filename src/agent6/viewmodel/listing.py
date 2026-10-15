@@ -21,6 +21,35 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import events, format
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class TaskLabel:
+    """The original task and the latest continuation, before display clipping."""
+
+    task: str = ""
+    continued_task: str = ""
+
+    def start(self, task: str) -> TaskLabel:
+        """Return the first non-empty task; REPL questions do not rename the session."""
+        return self if self.task else TaskLabel(task)
+
+    def resume(self, task: str, steer: str) -> TaskLabel:
+        """Return the original task and latest steer; an unsteered resume clears the prior steer."""
+        if not self.task:
+            return self.start(steer or task)
+        return TaskLabel(self.task, steer)
+
+    def fallback(self, task: str) -> TaskLabel:
+        """Return manifest text only when the journal holds no task."""
+        return self if self.task else TaskLabel(task_text.task_display_text(task))
+
+    def line(self, max_chars: int | None = None) -> str:
+        """Return each task clipped once at the caller's width."""
+        line = task_snippet(self.task, max_chars=max_chars)
+        if self.continued_task:
+            line += "\n" + task_snippet(f"continued: {self.continued_task}", max_chars=max_chars)
+        return line
+
+
 def session_mtime(session_dir: pathlib.Path) -> float:
     """Return a session's last-activity time as epoch seconds.
 
@@ -167,7 +196,7 @@ class SessionSummary:
     Attributes:
         session_id: The session's id.
         mode: "run", "plan", "ask" or "?".
-        task: The raw task text; callers snippet it for their layout.
+        task_label: The original task and latest continuation, before display clipping.
         status: The status word (created, starting, running, waiting, stale, passed,
             answered, planned, finished, stopped, undone, failed).
         reason: The detail beside the word: the end reason when failed, what it waits
@@ -193,7 +222,7 @@ class SessionSummary:
 
     session_id: str
     mode: str
-    task: str
+    task_label: TaskLabel
     status: str
     reason: str
     cost_usd: float
@@ -333,13 +362,14 @@ def summary_row(
 
     Returns:
         The row, with the status cell rendered as `label` and `level` so a client
-        needs no copy of the status maps, and the one-line `task_line` beside the task.
+        needs no copy of the status maps, and `task_line` with an optional continuation line.
     """
     return {
         "session_id": s.session_id,
         "mode": s.mode,
-        "task": s.task,
-        "task_line": task_snippet(s.task),
+        "task_clipped": s.task_label.task,
+        "task_line": s.task_label.line(),
+        "continued_task": s.task_label.continued_task,
         "status": s.status,
         "reason": s.reason,
         "end_reason": s.end_reason,
@@ -638,7 +668,7 @@ class LogScan:
     Attributes:
         saw_start: A session.start or loop.resume.start was seen; neither means unstarted.
         mode: The session's mode, "?" until a start event names it.
-        task: The task text as session.start carried it.
+        task_label: The first task and the latest resume steer from the journal.
         finished: A session.end was seen and no later execution began.
         all_passed: The verify tri-state; None when no verify command gated the end.
         verify_scoped: The judging gate ran scoped.
@@ -687,7 +717,7 @@ class LogScan:
 
     saw_start: bool = False
     mode: str = "?"
-    task: str = ""
+    task_label: TaskLabel = dataclasses.field(default_factory=TaskLabel)
     finished: bool = False
     all_passed: bool | None = False
     verify_scoped: bool = False
@@ -942,7 +972,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     Returns:
         The scan; an empty one when the file cannot be read.
     """
-    mode, task = "?", ""
+    mode, task = "?", TaskLabel("")
     finished, end_reason, end_summary, verified = False, "", "", ""
     stranded = False
     end_tree = ""
@@ -1005,12 +1035,12 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     if etype == "question.answer" and ev.get("unseen") is True:
                         unattended_questions += 1
                 if etype == "session.start":
+                    task = task.start(str(ev.get("user_task", "")))
                     saw_start = True
                     finished, stranded, verified = False, False, ""
                     end_summary = ""
                     end_tree = ""
                     mode = str(ev.get("mode", mode))
-                    task = str(ev.get("user_task", ""))
                     # A new execution re-asks with restarted ids; a held-over prompt waits forever.
                     pending_prompts.clear()
                     unattended_questions = 0
@@ -1033,6 +1063,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     verified = str(ev.get("verified") or "")
                     end_tree = str(ev.get("tree", ""))
                 elif etype == "loop.resume.start":
+                    task = task.resume(str(ev.get("user_task", "")), str(ev.get("steer", "")))
                     if saw_start:
                         # Each execution's budget starts at 0: bank the finished one's total.
                         usd_prior_executions += usd_execution
@@ -1105,7 +1136,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     return LogScan(
         saw_start=saw_start,
         mode=mode,
-        task=task,
+        task_label=task,
         finished=finished,
         all_passed=all_passed,
         verify_scoped=verify_scoped,
@@ -1185,12 +1216,14 @@ def unmerged(
 
 
 def summarize_session_dir(
-    session_dir: pathlib.Path, *, branch_tips: Mapping[str, str] | None = None
+    session_dir: pathlib.Path,
+    *,
+    branch_tips: Mapping[str, str] | None = None,
 ) -> SessionSummary:
     """Fold a session dir's journal and manifest into one listing row.
 
-    The manifest owns the task (the event clips it to 200 chars); an ask's task is
-    the first line under its transcript's first heading, which shows what was asked.
+    The journal owns the original task and resume steer; the manifest is a fallback
+    only before the journal records a task.
 
     Args:
         session_dir: The session's state dir.
@@ -1206,27 +1239,15 @@ def summarize_session_dir(
     manifest: sessions_manifest.SessionManifest | None = None
     with contextlib.suppress(sessions_manifest.ManifestError):
         manifest = sessions_manifest.read_manifest(session_dir)
-    mode, task = scan.mode, scan.task
+    mode, label = scan.mode, scan.task_label
     if manifest is not None:
-        # A log with no session.start yet (preflight, `fork --no-run`, a fork) names no mode.
-        task = manifest.user_task or task
+        if not label.task:
+            label = label.fallback(manifest.user_task)
         if mode == "?":
             mode = manifest.mode or mode
-    if mode == "?" and not task:
-        task = "(no logs)"
+    if mode == "?" and not label.task:
+        label = TaskLabel("(no logs)")
     word, reason = status_for_session_dir(session_dir, scan.status_facts())
-    if mode == "ask":
-        with contextlib.suppress(OSError):
-            transcript = (session_dir / "transcript.md").read_text(
-                encoding="utf-8", errors="replace"
-            )
-            # A `--from` run's context block goes first; then the first line after the heading is
-            # the question, which may itself begin with `#` or `<`.
-            asked = task_text.operator_task_text(transcript)
-            lines = asked.splitlines()
-            heading = next((i for i, ln in enumerate(lines) if ln.startswith("## ")), None)
-            body = lines[heading + 1 :] if heading is not None else []
-            task = next((ln.strip() for ln in body if ln.strip()), "")[:200] or asked[:200]
     lineage = manifest.parallel if manifest is not None else None
     has_unmerged = (
         unmerged(manifest, word, branch_tips)
@@ -1236,7 +1257,7 @@ def summarize_session_dir(
     return SessionSummary(
         session_id=session_dir.name,
         mode=mode,
-        task=task,
+        task_label=label,
         status=word,
         reason=reason,
         end_reason=scan.end_reason if scan.finished else "",

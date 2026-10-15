@@ -101,7 +101,10 @@ class SessionStart:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ResumeStart:
-    """loop.resume.start: a finished or stopped run restarts in place."""
+    """loop.resume.start: a finished or stopped run restarts with an optional steer."""
+
+    user_task: str = ""
+    steer: str = ""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -539,7 +542,9 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
         case "session.start":
             return SessionStart(user_task=str(raw.get("user_task", "")))
         case "loop.resume.start":
-            return ResumeStart()
+            return ResumeStart(
+                user_task=str(raw.get("user_task", "")), steer=str(raw.get("steer", ""))
+            )
         case "graph.update":
             nodes = raw.get("nodes", {}) or {}
             if not isinstance(nodes, dict):

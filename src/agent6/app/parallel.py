@@ -25,7 +25,7 @@ from concurrent import futures as concurrent_futures
 from typing import Protocol
 
 from agent6 import budget as agent6_budget
-from agent6 import directive, errors, event_log, git_ops, kinds, memory, paths
+from agent6 import directive, errors, event_log, git_ops, kinds, memory, paths, task_text
 from agent6.app import _lane_watch, _setup, _workdirs, finalize, preflight, stamps, workspace_setup
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
@@ -1014,15 +1014,16 @@ def run_parallel(
         fanout=sessions_manifest.FanoutStamp(lanes=len(lanes), spec=spec),
     )
     events = event_log.EventSink(layout.logs_path)
+    display_task = task_text.task_display_text(task)
     process.emit_session_start(
         events,
         layout.session_dir,
         "session.start",
         session_id=fanout_id,
-        user_task=task[:200],
+        user_task=display_task,
         mode="run",
     )
-    events.emit("loop.parallel.dispatched", group=fanout_id, lanes=len(lanes), tasks=[task[:200]])
+    events.emit("loop.parallel.dispatched", group=fanout_id, lanes=len(lanes), tasks=[display_task])
     configured_gate = bool(cfg.harness.verify_command)
     if spawner is None:
         # A clone lacks the untracked signals verify inference reads in the origin.

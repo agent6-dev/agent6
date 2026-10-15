@@ -463,6 +463,7 @@ function paintRun(cards, s) {
   const kv = el('div', 'kv');
   const add = (k, v) => { kv.appendChild(el('div', 'k', k)); kv.appendChild(el('div', 'v', v)); };
   add('task', s.task_line || '(none)');
+  kv.lastElementChild.classList.add('task');
   add('id', s.session_id || cards._id || ''); // older logs carry no session_id in session.start
   add('state', runState(s));
   // The harness's end sentence (a stop, a failure, a guard); an end the model wrote

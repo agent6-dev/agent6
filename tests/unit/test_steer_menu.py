@@ -683,3 +683,22 @@ def test_the_menu_help_matches_the_owner_for_every_shared_command() -> None:
     assert set(cli__steer_menu.MENU_ONLY_HELP) - shared == set(cli__steer_menu.MENU_ONLY_HELP) - {
         "/pin"
     }
+
+
+def test_pause_menu_continuation_aligns_with_task(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The continuation begins in the same column as the original task."""
+    import json
+
+    journal = [
+        {"type": "session.start", "mode": "run", "user_task": "original task"},
+        {"type": "session.end", "all_passed": True},
+        {"type": "loop.resume.start", "steer": "write docs"},
+    ]
+    (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
+    cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status"]))
+    lines = capsys.readouterr().out.splitlines()
+    original = next(line for line in lines if "task: original task" in line)
+    continued = next(line for line in lines if "continued: write docs" in line)
+    assert original.index("original task") == continued.index("continued:")

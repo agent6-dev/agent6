@@ -1517,6 +1517,28 @@ def test_a_steered_fork_takes_the_steer_as_its_own_task(
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["user_task"] == "create README.md only"
     assert manifest["parent_session_id"] == "sunny-otter-AAAA11", "lineage still names the source"
+    from agent6.viewmodel import listing
+    from agent6.viewmodel import state as viewmodel_state
+
+    # The real fork copies snapshots, not the source journal.
+    assert not dst.logs_path.exists()
+    journal = [
+        {
+            "type": "loop.resume.start",
+            "mode": "run",
+            "user_task": "source task",
+            "steer": "create README.md only",
+        }
+    ]
+    dst.logs_path.write_text(json.dumps(journal[0]) + "\n")
+    summary = listing.summarize_session_dir(dst.session_dir)
+    assert summary.task_label.task == "create README.md only"
+    assert summary.task_label.continued_task == ""
+    payload = viewmodel_state.session_state_as_dict(
+        viewmodel_state.fold_session(journal), dst.session_dir
+    )
+    assert payload["user_task"] == payload["task_line"] == "create README.md only"
+    assert payload["continued_task"] == ""
 
 
 def test_a_refused_resume_leaves_the_forks_task_alone(

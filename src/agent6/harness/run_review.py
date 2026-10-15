@@ -293,7 +293,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     return RunDigest(
         session_id=layout.session_id,
         mode=summary.mode,
-        task=summary.task,
+        task=summary.task_label.task,
         status=summary.status,
         end_reason=end_reason,
         verify=verify,

@@ -201,7 +201,7 @@ def test_hub_lists_runs(server: tuple[web_server.WebServer, int], tmp_path: path
     assert ids == {"run-a", "run-b"}
     by_id = {r["session_id"]: r for r in hub["sessions"]}
     assert by_id["run-b"]["status"] == "passed"
-    assert by_id["run-b"]["task"] == "task b"
+    assert by_id["run-b"]["task_clipped"] == "task b"
 
 
 def test_machine_snapshot_matches_watch_json(

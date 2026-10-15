@@ -178,7 +178,7 @@ def _shared_facts(
     scan = viewmodel_listing.scan_session_log(log)
     state = viewmodel_state.fold_session(events)
     listing: dict[str, Any] = {
-        "task": scan.task,
+        "task": scan.task_label.task,
         "finished": scan.finished,
         "end_reason": scan.end_reason if scan.finished else "",
         "all_passed": scan.all_passed if scan.finished else None,
@@ -199,7 +199,7 @@ def _shared_facts(
         "unattended": scan.unattended_questions,
     }
     viewer: dict[str, Any] = {
-        "task": state.user_task,
+        "task": state.task_label.task,
         "finished": state.finished,
         "end_reason": state.end_reason if state.finished else "",
         "all_passed": state.all_passed if state.finished else None,

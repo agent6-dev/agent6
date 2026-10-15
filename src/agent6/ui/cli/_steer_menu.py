@@ -34,7 +34,6 @@ from agent6.viewmodel import (
     state,
     status_for_session_dir,
     tail_events,
-    task_snippet,
 )
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
@@ -129,14 +128,6 @@ def _fold(session_dir: pathlib.Path) -> state.SessionState:
     return fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False))
 
 
-def _read_preset(session_dir: pathlib.Path) -> str:
-    """Return the preset the run started with, or ""."""
-    try:
-        return manifest.read_manifest(session_dir).harness.preset
-    except manifest.ManifestError:
-        return ""
-
-
 def _print_status(session_dir: pathlib.Path) -> None:
     """Print the run's status line: tasks, tools, cost, context and preset."""
     s = _fold(session_dir)
@@ -156,11 +147,18 @@ def _print_status(session_dir: pathlib.Path) -> None:
         ctx += f" · elided {s.compact_elided} ({s.compact_gists_live} gists)"
     if s.pins:
         ctx += f" · pins {len(s.pins)}"
-    preset = _read_preset(session_dir)
+    preset, fallback_task = "", ""
+    try:
+        saved = manifest.read_manifest(session_dir)
+        preset, fallback_task = saved.harness.preset, saved.user_task
+    except manifest.ManifestError:
+        pass
     prof = f" · preset {preset}" if preset else ""
     calls = _common.plural(len(s.tool_calls), "tool")
     print(f"[agent6] {label} · tasks {tasks} · {calls} · cost {cost}{ctx}{prof}")
-    print(f"         model {model} · task: {task_snippet(s.user_task, max_chars=80)}")
+    lead = f"         model {model} · task: "
+    task = s.task_label.fallback(fallback_task).line(max_chars=80)
+    print(lead + task.replace("\n", "\n" + " " * len(lead)))
 
 
 def _print_pins(session_dir: pathlib.Path) -> None:

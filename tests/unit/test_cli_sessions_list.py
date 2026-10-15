@@ -14,6 +14,7 @@ from agent6 import paths
 from agent6.ui.cli import (
     _common,  # pyright: ignore[reportPrivateUsage]
     sessions_cmds,
+    sessions_show,
 )
 
 
@@ -72,7 +73,7 @@ def test_runs_list_json_carries_the_row_facts(
     assert [r["session_id"] for r in rows] == ["fan-l2"]
     row = rows[0]
     assert row["winner"] is True
-    assert (row["mode"], row["status"], row["task"]) == ("run", "passed", "fan-l2")
+    assert (row["mode"], row["status"], row["task_clipped"]) == ("run", "passed", "fan-l2")
     assert row["end_reason"] == "finish_session"
     # The one listing row shape, shared with `/api/hub` (viewmodel.summary_row).
     assert set(row) == {
@@ -96,8 +97,9 @@ def test_runs_list_json_carries_the_row_facts(
         "mtime",
         "when",
         "winner",
-        "task",
+        "task_clipped",
         "task_line",
+        "continued_task",
         "lanes",
         "lane",
         "coordinator",
@@ -479,10 +481,10 @@ def test_model_controlled_run_refuses_the_git_surfaces() -> None:
     assert msg is not None and "model" in msg and "x2" in msg
 
 
-def test_the_json_row_carries_the_whole_task(
+def test_the_json_row_carries_the_journal_task(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The `--json` row carries the whole task; only the table clips for width."""
+    """The `--json` row preserves embedded newlines in the clipped journal task."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -502,7 +504,7 @@ def test_the_json_row_carries_the_whole_task(
     assert main(["sessions", "list", "--json"]) == 0
 
     (row,) = json.loads(capsys.readouterr().out)
-    assert row["task"] == task
+    assert row["task_clipped"] == task
 
 
 def _fan_out(runs: pathlib.Path) -> None:
@@ -628,3 +630,46 @@ def test_show_names_no_commit_for_a_fork_sitting_on_its_base(
     out = capsys.readouterr().out
     assert "changes:    none (the run made no commit)" in out
     assert "merge with:" not in out
+
+
+@pytest.mark.parametrize("show", [False, True])
+def test_continued_run_keeps_its_label(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    show: bool,
+) -> None:
+    """Both CLI task lines retain the original task above the latest continuation."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.chdir(tmp_path)
+    runs = _common._runs_dir(tmp_path)
+    _run(runs, "original-task")
+    d = runs / "original-task"
+    (d / "manifest.json").write_text(
+        json.dumps({"version": 3, "session_id": d.name, "mode": "run", "user_task": "do more"})
+    )
+    with (d / "logs.jsonl").open("a") as f:
+        f.write(json.dumps({"type": "loop.resume.start", "steer": "do more"}) + "\n")
+        f.write(json.dumps({"type": "session.end", "all_passed": True}) + "\n")
+    assert (sessions_show._cmd_status(d.name) if show else sessions_cmds._cmd_list()) == 0
+    out = capsys.readouterr().out
+    assert "continued: do more" in out
+    assert "original-task" in out.split("continued:")[0]
+    original_line = next(
+        line
+        for line in out.splitlines()
+        if "original-task" in line and not line.startswith("session:")
+    )
+    continued_line = next(line for line in out.splitlines() if "continued:" in line)
+    assert continued_line.index("continued:") == original_line.rindex("original-task")
+
+    assert (
+        sessions_show._cmd_status(d.name, as_json=True)
+        if show
+        else sessions_cmds._cmd_list(as_json=True)
+    ) == 0
+    data = json.loads(capsys.readouterr().out)
+    payload = data if show else data[0]
+    assert payload["task_clipped"] == "original-task"
+    assert payload["task_line"] == "original-task\ncontinued: do more"

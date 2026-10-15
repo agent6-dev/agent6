@@ -179,7 +179,7 @@ class Harness:
         self._emit_start(
             "session.start",
             session_id=self.session_id,
-            user_task=task_text.operator_task_text(user_task)[:200],
+            user_task=task_text.task_display_text(user_task),
             mode=self.mode,
         )
         self.log("LOOP: LOAD_CONTEXT")
@@ -256,12 +256,15 @@ class Harness:
             operator_task=user_task,
         )
 
-    def resume(self) -> _snapshot.SessionResult:
+    def resume(self, *, steer: str = "") -> _snapshot.SessionResult:
         """Resume a session from its snapshot and drive the new execution to its end.
 
         The snapshot is the one written before the last model call; the root task id is
         reattached to the dispatcher and the loop re-enters at the saved iteration with the
         saved conversation. The budget tracker is fresh per execution.
+
+        Args:
+            steer: The operator's steer that started this resumed execution.
 
         Returns:
             How the execution ended.
@@ -285,6 +288,8 @@ class Harness:
         self._emit_start(
             "loop.resume.start",
             session_id=self.session_id,
+            user_task=task_text.task_display_text(snapshot.original_task),
+            steer=task_text.task_display_text(steer),
             mode=self.mode,
             iteration=snapshot.next_iteration,
             messages=len(snapshot.messages),

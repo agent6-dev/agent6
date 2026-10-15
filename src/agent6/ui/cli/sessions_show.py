@@ -316,10 +316,11 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
     changes = _changes(target.name, manifest, undone=scan.finished and scan.end_reason == "undone")
     tips = git_ops.run_ref_tips(pathlib.Path.cwd())
+    summary = summarize_session_dir(target, branch_tips=tips)
     lanes = _fanout_lanes(layout, manifest, tips)
     lane_manifests = _lane_manifests(layout.state_dir, lanes)
     status, status_cell, status_detail = _status_state(
-        summarize_session_dir(target, branch_tips=tips),
+        summary,
         scan,
         last_age=last_age,
     )
@@ -331,7 +332,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                 {
                     "session_id": target.name,
                     "mode": mode_display,
-                    "task": manifest.user_task or scan.task,
+                    "task_clipped": summary.task_label.task,
+                    "continued_task": summary.task_label.continued_task,
+                    "task_line": summary.task_label.line(),
                     "model": model,
                     "model_from_flag": model_from_flag,
                     "preset": manifest.harness.preset or None,
@@ -385,8 +388,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 
     pid_note = _pid_note(pid, alive=alive, finished=scan.finished)
     print(f"session:    {target.name}  (mode={mode_display or '?'})")
-    if task := listing.task_snippet(manifest.user_task or scan.task):
-        print(f"task:       {task}")
+    if task := summary.task_label.line():
+        print("task:       " + task.replace("\n", "\n" + " " * 12))
     _print_lineage(manifest)
     _print_parallel_compare(manifest)
     _print_fanout(manifest, lanes, lane_manifests)

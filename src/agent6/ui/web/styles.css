@@ -113,7 +113,7 @@ main { padding: 0; }
 }
 @media (hover: hover) { .item:hover { background: var(--surface2); border-left-color: var(--accent); } }
 .item .grow { flex: 1; min-width: 0; }
-.item .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .title, .item .continued { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .sub { font-size: 12px; color: var(--muted); }
 .lanes-toggle {
   display: block; margin-top: 4px; padding: 0; background: none; border: 0;
@@ -124,6 +124,7 @@ main { padding: 0; }
 
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
 .kv .k { color: var(--muted); }
+.kv .v.task { white-space: pre-line; }
 
 .bar { height: 8px; background: var(--surface2); border-radius: 999px; overflow: hidden; }
 .bar > span { display: block; height: 100%; background: var(--accent); }

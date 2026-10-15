@@ -11,6 +11,17 @@ from __future__ import annotations
 
 import re
 
+TASK_DISPLAY_CHARS = 200
+
+
+def task_display_text(text: str) -> str:
+    """Return the operator's task text in the journal's canonical display form.
+
+    Clipping can collapse two steers that share their first TASK_DISPLAY_CHARS characters.
+    """
+    return operator_task_text(text)[:TASK_DISPLAY_CHARS]
+
+
 _BLOCK_RE = re.compile(r"<(prior-run|file|skill|plan)\b[^>]*>.*?</\1>\s*", re.DOTALL)
 _OPEN_BLOCK_RE = re.compile(r"<(prior-run|file|skill|plan)\b[^>]*>.*\Z", re.DOTALL)
 SKILLS_PREAMBLE = "Apply the operator-installed skill(s) below to this task."

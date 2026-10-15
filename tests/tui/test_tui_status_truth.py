@@ -116,8 +116,9 @@ def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: pathlib.Path) -
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("unreadable", [False, True])
 def test_end_hold_title_uses_the_listing_label(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, unreadable: bool
 ) -> None:
     """A finished TUI title includes the unmerged mark its hub row shows."""
     from agent6 import git_ops
@@ -159,9 +160,11 @@ def test_end_hold_title_uses_the_listing_label(
         ).model_dump_json(),
         encoding="utf-8",
     )
+    if unreadable:
+        (d / "manifest.json").write_text("not JSON")
     app._refresh_dir_status()
     assert "unmerged" in app.screen_title("conversation")  # re-read every few beats, not each
-    app._unmerged_due = 0.0
+    app._manifest_due = 0.0
     app._refresh_dir_status()
     assert "unmerged" not in app.screen_title("conversation")
 
@@ -1331,3 +1334,75 @@ def test_a_session_that_never_commits_shows_no_commit_pane(tmp_path: pathlib.Pat
                 assert app._dash.query_one("#diff").display is (mode == "run")
 
         asyncio.run(scenario())
+
+
+def test_header_continuation_keeps_original_task(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The title and header retain the original label across two executions."""
+    from agent6.viewmodel import listing
+
+    def no_scan(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("a live header must not rescan the journal")
+
+    monkeypatch.setattr(listing, "summarize_session_dir", no_scan)
+
+    d = tmp_path / "continued-run"
+    d.mkdir()
+    journal = [
+        {"type": "session.start", "mode": "run", "user_task": "original task"},
+        {"type": "session.end", "all_passed": True},
+        {"type": "loop.resume.start", "steer": "do more"},
+        {"type": "session.end", "all_passed": True},
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
+    (d / "manifest.json").write_text(
+        json.dumps({"version": 3, "session_id": d.name, "mode": "run", "user_task": "do more"})
+    )
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            rendered = str(app._dash.query_one("#top", widgets.Static).render())
+            assert "task: original task" in rendered
+            assert "continued: do more" in rendered
+            lines = rendered.splitlines()
+            task_line = next(line for line in lines if "task: original task" in line)
+            continued_line = next(line for line in lines if "continued:" in line)
+            assert continued_line.index("continued:") == task_line.index("original task")
+
+            assert "original task" in app.screen_title("conversation")
+            from agent6.sessions import manifest
+
+            original = manifest.read_manifest
+            reads = 0
+
+            def counted(path: pathlib.Path) -> manifest.SessionManifest:
+                nonlocal reads
+                reads += 1
+                return original(path)
+
+            monkeypatch.setattr(manifest, "read_manifest", counted)
+            app._manifest_due = 0.0
+            app._refresh_dir_status()
+            app._refresh_dir_status()
+            assert reads == 1
+
+    asyncio.run(scenario())
+
+
+def test_header_keeps_fallback_before_first_start(tmp_path: pathlib.Path) -> None:
+    """The header keeps its known task while the first start and manifest are unavailable."""
+    _mk_parked(tmp_path)
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(tmp_path)
+        (tmp_path / "manifest.json").unlink()
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            rendered = str(app._dash.query_one("#top", widgets.Static).render())
+            assert "task: fix the flaky test" in rendered
+            assert "fix the flaky test" in app.screen_title("conversation")
+
+    asyncio.run(scenario())

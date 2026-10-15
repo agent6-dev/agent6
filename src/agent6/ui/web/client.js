@@ -412,9 +412,15 @@ let moreOpen = false;
 
 // One session row; a fan-out's lanes (`r.lanes`, the server's nested rows)
 // fold under it behind a `lanes: N` line, and expand to the same rows indented.
+function taskTitle(parent, taskLine) {
+  const [task, continued] = taskLine.split('\n');
+  parent.appendChild(el('div', 'title', task));
+  if (continued) parent.appendChild(el('div', 'continued', continued));
+}
+
 function paintSession(r, it, g) {
   it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
-  g.appendChild(el('div', 'title', r.task_line || r.task || '(no task)'));
+  taskTitle(g, r.task_line || r.task_clipped || '(no task)');
   const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
   // id_cell carries the winner mark the CLI and TUI id cells carry.
   g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${esc(r.when)}${cost}`));
@@ -493,7 +499,7 @@ function machinesCard(machines) {
 function draftsCard(drafts) {
   return listCard('Machine drafts', drafts, '', (d, it, g) => {
     it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.session_id);
-    g.appendChild(el('div', 'title', d.task_line || d.task || d.session_id));
+    taskTitle(g, d.task_line || d.task_clipped || d.session_id);
     g.appendChild(el('div', 'sub', `draft · ${esc(d.session_id)} · ${esc(d.when)}`));
     it.appendChild(pill(d.level, d.label || d.status)); // keep the reason (failed · provider_error)
   });

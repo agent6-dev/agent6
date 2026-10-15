@@ -46,7 +46,6 @@ from agent6.viewmodel import (
     is_winner,
     session_dirs,
     summarize_session_dir,
-    task_snippet,
 )
 from agent6.viewmodel import listing as viewmodel_listing
 
@@ -218,7 +217,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         )
         self._fanouts = {row.summary.session_id: row for row in listing if row.lanes}
 
-        pending: list[tuple[str | text.Text, ...]] = []
+        pending: list[tuple[tuple[str | text.Text, ...], viewmodel_listing.TaskLabel]] = []
 
         def add(row: viewmodel_listing.ListingRow, id_cell: str) -> None:
             # The time is the row's: a fan-out's latest lane activity, as `sessions list` shows it.
@@ -229,7 +228,12 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 "cost": s.cost_cell,
                 "id": text.Text(id_cell),
             }
-            pending.append((*(cells[label] for label in labels[:-1]), s.task))
+            pending.append(
+                (
+                    tuple(cells[label] for label in labels[:-1]),
+                    s.task_label,
+                )
+            )
             survivors.append(dirs[s.session_id])
             rows[s.session_id] = s
 
@@ -252,13 +256,18 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             emit(row, 0)
         # The task column takes what the other columns leave, floor 24, as `sessions list` sizes it.
         fixed = sum(
-            max(len(label), max((len(str(cells[i])) for cells in pending), default=0)) + 2
+            max(len(label), max((len(str(cells[i])) for cells, _task in pending), default=0)) + 2
             for i, label in enumerate(labels[:-1])
         )
         task_w = max(24, table.scrollable_content_region.width - fixed - 2)
-        for *cells, task in pending:
+        for cells, task in pending:
             # A Text cell: the task is typed input and may carry markup brackets.
-            table.add_row(*cells, text.Text(task_snippet(str(task), max_chars=task_w)))
+            lines = task.line(max_chars=task_w).splitlines()
+            table.add_row(
+                *cells,
+                text.Text("\n".join(lines)),
+                height=max(1, len(lines)),
+            )
         self._runs = survivors
         self._summaries = rows
         if selected:

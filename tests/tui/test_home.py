@@ -1274,3 +1274,32 @@ def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: pathlib.Path
             assert table.virtual_size.width <= table.scrollable_content_region.width
 
     asyncio.run(scenario())
+
+
+def test_home_continuation_has_two_visible_lines(tmp_path: pathlib.Path) -> None:
+    """The home table allocates a second row line for the latest resume steer."""
+    from textual import widgets
+
+    from agent6.ui.tui import home as tui_home
+
+    a6 = tmp_path / ".agent6"
+    _write_run(
+        a6,
+        "runs",
+        "continued",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "original task"},
+            {"type": "session.end", "all_passed": True},
+            {"type": "loop.resume.start", "steer": "write docs"},
+        ],
+    )
+
+    async def scenario() -> None:
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#sessions", widgets.DataTable)
+            assert str(table.get_row_at(0)[-1]) == "original task\ncontinued: write docs"
+            assert table.ordered_rows[0].height == 2
+
+    asyncio.run(scenario())

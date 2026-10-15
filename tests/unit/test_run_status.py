@@ -1153,7 +1153,7 @@ def test_status_prints_the_task_and_names_a_plans_page(
     assert "task:       add a flag\n" in out and "more" not in out
     assert "plan:" not in out
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
-    assert json.loads(capsys.readouterr().out)["task"] == "# add a flag\nmore"
+    assert json.loads(capsys.readouterr().out)["task_clipped"] == "# add a flag\nmore"
 
     (d / "manifest.json").write_text(json.dumps({"mode": "plan"}))
     (d / "plan.md").write_text("# Plan\n", encoding="utf-8")

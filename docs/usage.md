@@ -102,6 +102,8 @@ The tokens and the points against `max_percent` on `sessions show` are the lates
 `N questions unanswered` beside a status counts the questions of the current execution that nobody was attached to see; a resume starts the count again.
 
 `sessions show` and the conversation's last line print the sentence the run ended on; `--json` keeps the `end_reason` word for scripts.
+`sessions show --json` and `sessions list --json` return the original label clipped to 200 characters in `task_clipped`, the latest resume steer (also clipped to 200 characters) in `continued_task`, and their display text in `task_line`, including a newline followed by `continued: <steer>` when the run has a continuation.
+An unsteered resume clears `continued_task`.
 A `steer` reaches the model at its next step, and `steer --now` interrupts the call in flight; every surface acknowledges it in those words.
 
 `agent6 exec` runs your own command on your own stdio.
@@ -147,7 +149,9 @@ State is snapshotted before each model call and checkpointed per turn.
 - `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
 - a `--parallel` lane continues through `agent6 fork <lane-id>`, in a worktree at the lane's last commit; `resume` refuses a lane from your checkout, whose tree is not the lane's
 - a fan-out stopped only by lane caps reads `failed · budget exhausted` and exits `3`; its report says to raise the budget cap and fork each stopped lane
-- a `--steer` on a fork, or on resuming a run the agent finished, becomes the new run's task and names its row and its merge subject
+- a `--steer` on a fork becomes the fork's task and names its row and its merge subject
+- a resume with `--steer` keeps the original session label, with the latest steer beneath it as `continued: <steer>`; new questions in an ask REPL are not continuations
+- on resuming a finished run, `--steer` also names the execution's task and its merge subject
 - a gate withheld after denied or interrupted approval stays withheld only for that execution.
   When the snapshot records that withholding, a resume with the gate and commands allowed tells the model once that the gate is available again, without claiming it passed
 - a resume after the run's work landed continues from the checkout's HEAD when HEAD holds the merge: the run's next commits, `sessions diff` and its next merge then hold only the new work, so nothing lands twice

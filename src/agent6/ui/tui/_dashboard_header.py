@@ -102,10 +102,9 @@ class RunHeader(widgets.Static):
         pct = tui.context_pct()
         ctx = f"   ctx: {pct}%" if pct is not None else ""
         status = f"{finished}   " if finished else ""
+        lead = f"role: {role_line} · task: "
         task = markup.escape(
-            listing.task_snippet(
-                tui.manifest_task() or s.user_task or tui.fallback_task, max_chars=120
-            )
+            tui.task_label().line(max_chars=120).replace("\n", "\n" + " " * len(lead))
         )
         header = text.Text.from_markup(
             f"[b]agent6[/]  {status}{step}   cost: {cost}{budget}{as_of}{ctx}\n"

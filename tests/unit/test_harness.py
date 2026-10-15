@@ -4858,8 +4858,13 @@ def test_resume_raises_on_missing_snapshot(tmp_path: pathlib.Path) -> None:
         wf.resume()
 
 
-def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("steer", ["", "write docs", "x" * 240])
+def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path, steer: str) -> None:
     """resume() loads snapshot, calls provider once, finishes via silent_finish."""
+    import json
+
+    from agent6 import event_log, task_text
+
     snap_path = tmp_path / "loop_state.json"
     # The snapshot as a prior run left it: iter 4 done, iter 5 about to start.
     snap_path.write_text(
@@ -4877,8 +4882,17 @@ def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path) -> None:
     dispatcher = mock.MagicMock()
     dispatcher.set_run_root_node_id = mock.MagicMock()
 
-    wf = _wf(provider=provider, dispatcher=dispatcher, resume_state_path=snap_path)
-    result = wf.resume()
+    wf = _wf(
+        provider=provider,
+        dispatcher=dispatcher,
+        resume_state_path=snap_path,
+        events=event_log.EventSink(tmp_path / "logs.jsonl"),
+    )
+    result = wf.resume(steer=steer)
+    start = json.loads((tmp_path / "logs.jsonl").read_text().splitlines()[0])
+    assert start["type"] == "loop.resume.start"
+    assert start["steer"] == task_text.task_display_text(steer)
+    assert start["user_task"] == "go"
 
     assert result.completed is True
     assert result.reason == "silent_finish"

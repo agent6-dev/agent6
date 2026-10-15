@@ -43,7 +43,7 @@ def test_run_summary_captures_cost_and_status(tmp_path: pathlib.Path) -> None:
     )
     (s,) = model.hub_payload(tmp_path)["sessions"]
     assert s["mode"] == "run"
-    assert s["task"] == "the task"
+    assert s["task_clipped"] == "the task"
     assert s["status"] == "passed"
     assert s["cost_usd"] == 0.0123
     assert s["usd_partial"] is False
@@ -139,7 +139,7 @@ def test_run_summary_survives_torn_utf8_tail(tmp_path: pathlib.Path) -> None:
     head = json.dumps({"type": "session.start", "mode": "run", "user_task": "torn tail"}).encode()
     (d / "logs.jsonl").write_bytes(head + b"\n" + full[:cut])
     (s,) = model.hub_payload(tmp_path)["sessions"]
-    assert s["task"] == "torn tail"
+    assert s["task_clipped"] == "torn tail"
 
 
 def test_conversation_payload_folds_the_event_log(tmp_path: pathlib.Path) -> None:
@@ -212,7 +212,7 @@ def test_run_snapshot_carries_the_one_line_task_the_listings_show(tmp_path: path
         json.dumps({"mode": "run", "user_task": task}), encoding="utf-8"
     )
     snap = session_snapshot(d)
-    assert snap["user_task"] == task
+    assert snap["user_task"] == "# Fix the parser\n\nbody"
     assert snap["task_line"] == "Fix the parser"
 
 
@@ -394,7 +394,7 @@ def test_hub_payload_lists_machine_drafts(tmp_path: pathlib.Path) -> None:
     hub = model.hub_payload(tmp_path)
     (s,) = hub["drafts"]
     assert s["session_id"] == "breezy-fern-AB12CD"
-    assert s["task"] == "author a triage machine"
+    assert s["task_clipped"] == "author a triage machine"
 
 
 def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: pathlib.Path) -> None:
@@ -761,7 +761,7 @@ def test_a_dead_workers_open_call_reads_dead_not_running(tmp_path: pathlib.Path)
 def test_the_hub_row_and_the_cli_json_row_are_one_shape(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The shared row includes the full task, not a web-only clipped value."""
+    """The hub and CLI share the journal task and its display clipping."""
     from agent6.ui.cli import sessions_cmds  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
@@ -793,11 +793,11 @@ def test_the_hub_row_carries_the_one_line_task_the_cli_table_shows(
     _run(tmp_path, "r2", [{"type": "session.start", "mode": "run", "user_task": task}])
 
     (row,) = model.hub_payload(tmp_path)["sessions"]
-    assert row["task"] == task
+    assert row["task_clipped"] == task
     assert row["task_line"] == listing.task_snippet(task) == "Fix the parser"
 
 
-def test_the_draft_hub_row_keeps_the_full_cli_json_task(
+def test_the_draft_hub_row_keeps_the_cli_json_task(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from agent6.ui.cli import sessions_cmds  # pyright: ignore[reportPrivateUsage]
@@ -917,3 +917,23 @@ def test_hub_folds_a_fan_outs_lanes_under_its_row(tmp_path: pathlib.Path) -> Non
     assert [ln["session_id"] for ln in row["lanes"]] == ["fan-l1"]
     assert row["lanes"][0]["model"] == "openrouter/moonshotai/kimi-k2.6"
     assert row["lanes"][0]["model_from_flag"] is True
+
+
+def test_hub_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
+    """The hub JSON labels two executions with the original task and latest steer."""
+    d = _run(
+        tmp_path,
+        "continued-run",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "original task"},
+            {"type": "session.end", "all_passed": True},
+            {"type": "loop.resume.start", "steer": "do more"},
+            {"type": "session.end", "all_passed": True},
+        ],
+    )
+    (d / "manifest.json").write_text(
+        json.dumps({"version": 3, "session_id": d.name, "mode": "run", "user_task": "do more"})
+    )
+    (row,) = model.hub_payload(tmp_path)["sessions"]
+    assert row["task_clipped"] == "original task"
+    assert row["task_line"] == "original task\ncontinued: do more"

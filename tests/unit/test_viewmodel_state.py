@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 from typing import Any
 
@@ -180,7 +181,7 @@ def test_run_start_records_task() -> None:
     s = viewmodel_state.apply_event(
         viewmodel_state.initial_state(), {"type": "session.start", "user_task": "fix bug"}
     )
-    assert s.user_task == "fix bug"
+    assert s.task_label.task == "fix bug"
 
 
 def test_run_start_records_run_id() -> None:
@@ -547,7 +548,7 @@ def test_fold_run_reduces_events_to_a_snapshot() -> None:
             {"type": "session.end", "all_passed": True},
         ]
     )
-    assert state.user_task == "do it"
+    assert state.task_label.task == "do it"
     assert state.finished and state.all_passed
     assert state.last_role is not None and state.last_role.streamed_text == "hi"
 
@@ -1149,8 +1150,8 @@ def test_the_end_takes_the_cursor_off_the_task_in_progress() -> None:
     assert not s.tasks[1].is_cursor and s.tasks[1].glyph == "✓"
 
 
-def test_the_snapshot_takes_the_manifests_task_over_the_first_start(tmp_path: pathlib.Path) -> None:
-    """A resume with new work restamps the manifest's task; every surface's task line follows."""
+def test_the_snapshot_keeps_the_folded_original_task(tmp_path: pathlib.Path) -> None:
+    """The snapshot retains the folded label even before its journal reaches disk."""
     from agent6.app import stamps
     from agent6.sessions import manifest as sessions_manifest
 
@@ -1167,4 +1168,53 @@ def test_the_snapshot_takes_the_manifests_task_over_the_first_start(tmp_path: pa
         viewmodel_state.initial_state(), {"type": "session.start", "user_task": "the first task"}
     )
     d = viewmodel_state.session_state_as_dict(s, session_dir)
-    assert d["user_task"] == "the follow-up" and d["task_line"] == "the follow-up"
+    assert d["user_task"] == "the first task"
+    assert d["task_line"] == "the first task"
+
+
+@pytest.mark.parametrize("manifest_text", ["", "not JSON"])
+def test_task_identity_survives_missing_or_invalid_manifest(
+    tmp_path: pathlib.Path,
+    manifest_text: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Snapshot task fields agree without a readable manifest or a journal scan."""
+    from agent6.viewmodel import listing
+
+    def no_scan(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("a snapshot must not scan the journal")
+
+    monkeypatch.setattr(listing, "summarize_session_dir", no_scan)
+    if manifest_text:
+        (tmp_path / "manifest.json").write_text(manifest_text)
+    folded = viewmodel_state.fold_session(
+        [
+            {"type": "session.start", "user_task": "original task"},
+            {"type": "session.end"},
+            {"type": "loop.resume.start"},
+        ]
+    )
+    payload = viewmodel_state.session_state_as_dict(folded, tmp_path)
+    assert payload["user_task"] == payload["task_line"] == "original task"
+    assert payload["continued_task"] == ""
+
+
+def test_snapshot_reads_manifest_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task, mode and policy share the snapshot's manifest read."""
+    from agent6.sessions import manifest
+
+    original = manifest.read_manifest
+    calls = 0
+
+    def counted(path: pathlib.Path) -> manifest.SessionManifest:
+        nonlocal calls
+        calls += 1
+        return original(path)
+
+    (tmp_path / "manifest.json").write_text(json.dumps({"user_task": "original task"}))
+    monkeypatch.setattr(manifest, "read_manifest", counted)
+    folded = viewmodel_state.fold_session([{"type": "session.start", "user_task": "original task"}])
+    viewmodel_state.session_state_as_dict(folded, tmp_path)
+    assert calls == 1

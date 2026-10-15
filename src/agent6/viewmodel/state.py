@@ -306,7 +306,7 @@ class SessionState:
     Attributes:
         session_id: The session's id, "" until an event carries it.
         mode: The session's mode, "" until known.
-        user_task: The task text.
+        task_label: The first non-empty task and latest resume steer from the journal.
         tasks: The live task tree in DFS pre-order.
         cursor_task_id: The task the worker is on.
         last_role: The last model call.
@@ -347,7 +347,7 @@ class SessionState:
 
     session_id: str = ""
     mode: str = ""
-    user_task: str = ""
+    task_label: listing.TaskLabel = dataclasses.field(default_factory=listing.TaskLabel)
     tasks: tuple[TaskNodeView, ...] = ()
     cursor_task_id: str | None = None
     last_role: RoleCall | None = None
@@ -447,7 +447,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             # No banking, unlike ResumeStart: the REPL's one tracker is already cumulative.
             return dataclasses.replace(
                 state,
-                user_task=task,
+                task_label=state.task_label.start(task),
                 mode=str(event.get("mode", state.mode)),
                 started=True,
                 finished=False,
@@ -463,10 +463,11 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 tool_count=0,
             )
 
-        case events.ResumeStart():
+        case events.ResumeStart(user_task=task, steer=steer):
             # The new execution's counters start fresh: bank the spend, zero the rest.
             return dataclasses.replace(
                 state,
+                task_label=state.task_label.resume(task, steer),
                 mode=str(event.get("mode", state.mode)),
                 started=True,
                 finished=False,
@@ -1000,18 +1001,20 @@ def session_state_as_dict(
         row["label"] = step.label
     current = open_approval_of(state)
     d["open_approval"] = None if current is None else current.id
+    fallback_task = ""
     if session_dir is not None:
         word, reason = listing.status_for_session_dir(session_dir, status_facts(state))
         d["live"] = word in listing.LIVE_STATUS_WORDS
-        d["policy"] = policy.session_policy(session_dir).line()
         # A forked execution's log opens at loop.resume.start and folds its identity empty.
         d["session_id"] = d["session_id"] or session_dir.name
         d["mode"] = d.get("mode") or ""
+        manifest = None
         with contextlib.suppress(sessions_manifest.ManifestError):
             manifest = sessions_manifest.read_manifest(session_dir)
-            # The manifest's task is current: a resume with new work restamps it there.
-            d["user_task"] = manifest.user_task or d["user_task"]
+            if not state.task_label.task:
+                fallback_task = manifest.user_task
             d["mode"] = d["mode"] or manifest.mode
+        d["policy"] = policy.manifest_policy(manifest).line()
         d["ports"] = process.listening_ports(session_dir)
         # On every frame: the run view streams from this dict.
         d["shells"] = background.roster_from_dir(session_dir / background.SHELLS_DIR)
@@ -1036,7 +1039,11 @@ def session_state_as_dict(
         if session_dir is not None
         else format.status_label(word, reason)
     )
-    d["task_line"] = listing.task_snippet(d["user_task"])
+    label = state.task_label.fallback(fallback_task)
+    d.pop("task_label")
+    d["user_task"] = label.task
+    d["continued_task"] = label.continued_task
+    d["task_line"] = label.line()
     d["dead_state"] = format.dead_run_note(word, reason)[0]
     # From the fold, so a dir-less consumer still gets the "blocked, not working" signal.
     d["operator_blocked"] = status_facts(state).operator_blocked
