@@ -1072,7 +1072,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     # A side call's failure never ends the run, so it is not the reason.
                     if ev.get("ok") is False and not kinds.is_side_role(str(ev.get("role", ""))):
                         provider_error = str(ev.get("error", ""))
-                elif etype == "loop.baseline":
+                elif etype == "loop.baseline" and baseline_ok is None:
                     baseline_ok = bool(ev.get("ok"))
                 elif etype == "loop.edit.left_out":
                     for reason in ("ignored", "untracked"):

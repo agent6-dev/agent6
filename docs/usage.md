@@ -47,6 +47,9 @@ The verify command is the success gate.
 Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
 A fresh run runs the gate once before its first turn, so a gate that was red before the run's edits is known as that: the model is told, and a finish that leaves the same red reads `finished · gate was already red` (`harness.verify_at_start = false` for a gate too slow to run twice).
 A red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
+The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits, and a red base says it was already red.
+A fork starts its own log without the parent's baseline; its base is the commit it forked from.
+Only an unknown baseline prints the worktree recipe for checking the base; a timed-out gate instead names the timeout setting to raise.
 [`[harness]`](config.md#harness) has the inference order and `verify_when`.
 
 The start banner's budget notices name each model once, with the roles that use it (`'m' (planner, worker)`).

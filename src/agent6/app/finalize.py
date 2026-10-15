@@ -183,11 +183,10 @@ def _print_red_gate(
     layout: sessions_layout.SessionLayout,
     reporter: app_reporter.Reporter,
 ) -> None:
-    """Say what a red gate leaves open: a timeout, or a base nothing checked.
+    """Explain a red gate from the session's recorded baseline.
 
     A gate that ran out its limit gave no verdict, so the block names the limit to raise.
-    A run whose first verify ran on an unmodified tree ends `gate_red_at_base`
-    instead. Saying "unknown" beats a second gate run in the teardown.
+    Only an unknown baseline needs the recipe for checking the base.
 
     Args:
         result: The session's result.
@@ -196,7 +195,8 @@ def _print_red_gate(
     """
     if result.verified != "failed" or result.reason == "gate_red_at_base":
         return
-    if limit := scan_session_log(layout.logs_path).verify_timeout_s:
+    scan = scan_session_log(layout.logs_path)
+    if limit := scan.verify_timeout_s:
         reporter.out(
             f"\nthe verify gate ran out its {limit:.0f}s limit (harness.verify_timeout_s),"
             " so it gave no verdict on the final tree."
@@ -211,6 +211,11 @@ def _print_red_gate(
         m = sessions_manifest.read_manifest(layout.session_dir)
         gate, base = m.harness.verify_command, (m.forked_from_sha or m.base_sha)
     if not (gate and base):
+        return
+    if scan.baseline_ok is not None:
+        word = "green" if scan.baseline_ok else "already red"
+        attribution = "; this run's edits made it red" if scan.baseline_ok else ""
+        reporter.out(f"\nthe gate was {word} at the base ({base[:12]}){attribution}.")
         return
     reporter.out(
         f"\nthe gate is red, and nothing checked it before this run started ({base[:12]})."

@@ -620,12 +620,18 @@ def test_fork_clones_state_writes_lineage_and_branch(
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
     src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    src.logs_path.write_text(
+        json.dumps({"type": "loop.baseline", "ok": True, "iteration": 0}) + "\n",
+        encoding="utf-8",
+    )
 
     rc = fork._cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True)
     assert rc == 0
 
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
     assert dst.session_dir.is_dir()
+    # A parent's baseline describes another base; the fork starts with no log verdict.
+    assert not dst.logs_path.exists()
     # loop_state.json + seed checkpoint 0000.json carry the latest (turn 3) state.
     seed = _snapshot.load_session_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "turn 3"

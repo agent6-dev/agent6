@@ -124,8 +124,13 @@ def test_nothing_runs_a_second_gate_at_the_end_of_a_run(tmp_path: pathlib.Path) 
         assert "gate_on_base" not in src, f"{module.__name__} still runs a second gate"
 
 
+@pytest.mark.parametrize("forked_from_sha", ["", "b" * 40])
+@pytest.mark.parametrize("prior_timeout", [False, True])
 def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    forked_from_sha: str,
+    prior_timeout: bool,
 ) -> None:
     """The end block answers whether verify passed from the run's last verify, or says so."""
     import json
@@ -136,9 +141,25 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
 
     rd = tmp_path / "sessions" / "runs" / "r1"
     rd.mkdir(parents=True)
+    records = []
+    if prior_timeout:
+        records.extend(
+            [
+                {"type": "loop.start"},
+                {"type": "verify.end", "exit_code": 124, "timeout_s": 30},
+                {"type": "session.end", "verified": "failed"},
+                {"type": "loop.resume.start"},
+            ]
+        )
+    records.extend(
+        [
+            {"type": "verify.start"},
+            {"type": "verify.end", "exit_code": 1},
+            {"type": "session.end", "reason": "finish_session", "all_passed": False},
+        ]
+    )
     (rd / "logs.jsonl").write_text(
-        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": False}) + "\n",
-        encoding="utf-8",
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
     )
     (rd / "manifest.json").write_text(
         json.dumps(
@@ -147,6 +168,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
                 "session_id": "r1",
                 "mode": "run",
                 "base_sha": "a" * 40,
+                "forked_from_sha": forked_from_sha,
                 "harness": {"verify_command": ["uv", "run", "pytest"]},
             }
         ),
@@ -169,10 +191,69 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
     )
     out = capsys.readouterr().out
     assert "nothing checked it before this run started" in out
+    assert f"({(forked_from_sha or 'a' * 40)[:12]})" in out
+    assert "ran out its" not in out
     assert "uv run pytest" in out
     # One blank line on each side of the note: after the summary, before the cost receipt.
     assert "  s\n\nthe gate is red" in out
     assert "uv run pytest)\n\nToken + cost summary:" in out
+
+
+@pytest.mark.parametrize("baseline_ok", [True, False])
+def test_a_resumed_red_gate_reads_the_first_executions_baseline(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], baseline_ok: bool
+) -> None:
+    """A resume's red gate does not erase the recorded verdict on the base."""
+    import json
+
+    from agent6 import budget
+    from agent6.app import finalize
+    from agent6.harness import _snapshot
+
+    layout = _layout(tmp_path)
+    records = [
+        {"type": "loop.start"},
+        {"type": "verify.start"},
+        {"type": "verify.end", "exit_code": 0 if baseline_ok else 1},
+        {"type": "loop.baseline", "ok": baseline_ok, "iteration": 0},
+        {"type": "session.end", "reason": "finish_session", "verified": "passed"},
+        {"type": "loop.resume.start"},
+        {"type": "loop.baseline", "ok": not baseline_ok, "iteration": 0},
+        {"type": "verify.start"},
+        {"type": "verify.end", "exit_code": 1},
+        {"type": "session.end", "reason": "finish_session", "verified": "failed"},
+    ]
+    layout.logs_path.write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    stamps.pin_gate(
+        layout.session_dir, ("pytest",), "configured", events=_sink(tmp_path), reporter=_quiet()[0]
+    )
+    finalize.print_session_end(
+        _snapshot.SessionResult(
+            completed=True,
+            reason="finish_session",
+            summary="s",
+            iterations=1,
+            tool_calls=1,
+            verified="failed",
+        ),
+        layout=layout,
+        cwd=tmp_path,
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=False,
+        reporter=app_reporter.STDIO_REPORTER,
+    )
+    out = capsys.readouterr().out
+    assert "nothing checked" not in out
+    assert "git worktree add" not in out
+    assert "000000000000" in out
+    if baseline_ok:
+        assert "green at the base" in out
+        assert "this run's edits made it red" in out
+    else:
+        assert "red at the base" in out
+        assert "this run's edits made it red" not in out
 
 
 def test_a_run_records_the_isolation_it_actually_ran_under(tmp_path: pathlib.Path) -> None:
