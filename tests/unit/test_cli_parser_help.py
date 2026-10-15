@@ -47,6 +47,15 @@ def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
     raise AssertionError(f"no positional {dest!r}")
 
 
+def test_memory_add_help_states_name_limits() -> None:
+    """Memory add names the length and first-character restrictions."""
+    command = _find(_find(cli_parser.build_parser(), "memory"), "add")
+    text = " ".join(command.format_help().split())
+    assert "1-64 characters" in text
+    assert "lowercase letters, digits, dashes" in text
+    assert "start with a letter or digit" in text
+
+
 def test_the_command_list_is_grouped_and_complete() -> None:
     """`agent6 --help` lists its commands in titled groups, work verbs first.
 

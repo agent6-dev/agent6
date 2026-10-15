@@ -51,6 +51,19 @@ def test_bad_name_refuses_loud(env: pathlib.Path) -> None:
         memory_cmds._cmd_memory_add("Bad Name", "x")
 
 
+@pytest.mark.parametrize("name", ["-fact", "a" * 65])
+def test_add_rejects_names_outside_help_limits(env: pathlib.Path, name: str) -> None:
+    """A leading dash or more than 64 characters is not a memory name."""
+    with pytest.raises(memory.MemoryStoreError, match="bad memory name"):
+        memory_cmds._cmd_memory_add(name, "A fact.")
+
+
+@pytest.mark.parametrize("name", ["a", "0", "a" * 64, "0-fact"])
+def test_add_accepts_name_boundaries(env: pathlib.Path, name: str) -> None:
+    """The documented endpoints and a digit prefix are accepted."""
+    assert memory_cmds._cmd_memory_add(name, "A fact.") == 0
+
+
 def test_decisions_prints_the_rulings_or_says_none(
     env: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

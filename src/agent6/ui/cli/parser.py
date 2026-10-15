@@ -442,7 +442,13 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     mem_sub = mem_p.add_subparsers(dest="memory_command", required=True, metavar="<subcommand>")
     mem_add = _common._sub(mem_sub, "add", help="Write <name>.md and its index line.")
-    mem_add.add_argument("name", help="Memory name (lowercase letters, digits, dashes).")
+    mem_add.add_argument(
+        "name",
+        help=(
+            "Memory name: 1-64 characters (lowercase letters, digits, dashes);"
+            " start with a letter or digit."
+        ),
+    )
     mem_add.add_argument("body", help="The fact (in quotes; first line becomes the index hook).")
     _common._sub(mem_sub, "list", help="Print the MEMORY.md index.")
     mem_show = _common._sub(mem_sub, "show", help="Print one memory file.")
