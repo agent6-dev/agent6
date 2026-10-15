@@ -223,7 +223,8 @@ agent6 plan "refactor the config loader"      # edit-free plan; run --from <id> 
 agent6 plan show <session-id>                 # print the plan
 agent6 plan edit <session-id>                 # open plan.md in $EDITOR (answer its open questions)
 agent6 resume <session-id> --steer "answered" # the planner re-reads and revises
-agent6 review --base origin/main --head HEAD  # read-only diff review; --path P narrows, --model M picks the reviewer
+agent6 review --base origin/main --head HEAD  # review from the merge base; --path P narrows, --model M picks the reviewer
+agent6 review --base origin/main..HEAD        # explicit two-dot range reviews the endpoint diff
 agent6 sessions review <session-id>           # read-only review of a finished run's record
 agent6 ask "how does the task-graph curator work?"
 ```

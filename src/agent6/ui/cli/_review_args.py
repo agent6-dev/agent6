@@ -76,7 +76,10 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     review_p.add_argument(
         "--base",
         default="",
-        help="Base ref. Default: review uncommitted changes (working tree vs HEAD).",
+        help=(
+            "Base ref (review from its merge base with --head), or an explicit range such as"
+            " main..HEAD for an endpoint diff. Default: uncommitted changes (working tree vs HEAD)."
+        ),
     )
     review_p.add_argument(
         "--head",

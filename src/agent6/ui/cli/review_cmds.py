@@ -33,6 +33,19 @@ from agent6.tools import dispatch as tools_dispatch
 from agent6.ui.cli import _common
 
 
+def _review_range(base: str, head: str) -> str:
+    """Use the merge base for ref pairs and preserve an explicit range.
+
+    Returns:
+        The git diff revision expression, or HEAD for a working-tree review.
+    """
+    if not base:
+        return "HEAD"
+    if ".." in base:
+        return base
+    return f"{base}...{head}"
+
+
 def _collect_review_diff(
     git: str,
     root: pathlib.Path,
@@ -43,8 +56,9 @@ def _collect_review_diff(
 ) -> subprocess.CompletedProcess[str]:
     """Collect the diff `agent6 review` reviews, leaving the index as it was.
 
-    With a base, a plain read-only `git diff base..head`. Without one, the working tree
-    against HEAD including untracked files: git shows those only through intent-to-add
+    With refs, a read-only `git diff base...head`; explicit ranges pass through.
+    Without a base, diff the working tree against HEAD including untracked files.
+    Git shows those only through intent-to-add
     entries, so the currently untracked paths are registered and `git reset` afterwards, in
     a `finally`; staged and tracked changes are never touched. Every invocation carries
     git_ops' hardening flags plus `--no-ext-diff --no-textconv`, so a poisoned `.git/config`
@@ -74,7 +88,7 @@ def _collect_review_diff(
         if untracked:
             subprocess.run([git, *hardening, "add", "-N", "--", *untracked], cwd=root, check=False)
     try:
-        rev = f"{base}..{head}" if base else "HEAD"
+        rev = _review_range(base, head)
         # `--end-of-options` and `--` keep a rev that is also a path a rev.
         diff_args = [
             git,
@@ -301,7 +315,8 @@ def _reviewed_diff(
     if git is None:
         _common.error("git not found on PATH.")
         return 2
-    label = ("working tree vs HEAD" if not base else f"{base}..{head}") + (
+    rev = _review_range(base, head)
+    label = ("working tree vs HEAD" if not base else rev) + (
         f" -- {' '.join(paths)}" if paths else ""
     )
     diff_proc = _collect_review_diff(git, root, base=base, head=head, paths=paths)
@@ -312,6 +327,24 @@ def _reviewed_diff(
     if not diff.strip():
         print(f"(no diff to review: {label})", file=sys.stderr)
         return 0
+    if base:
+        if "..." in rev:
+            left, right = rev.split("...", 1)
+            start_args = ["merge-base", "--end-of-options", left or "HEAD", right or "HEAD"]
+        else:
+            left = rev.split("..", 1)[0] or "HEAD"
+            start_args = ["rev-parse", "--verify", "--end-of-options", f"{left}^{{commit}}"]
+        start = subprocess.run(
+            [git, *git_ops.git_hardening_flags(root), *start_args],
+            cwd=root,
+            capture_output=True,
+            errors="replace",
+            check=False,
+        )
+        if start.returncode != 0:
+            _common.error(f"git diff start resolution failed: {start.stderr.strip()}")
+            return 2
+        label += f" (from {start.stdout.strip()})"
     return git, root, diff, label
 
 
@@ -358,6 +391,9 @@ def _cmd_review(  # noqa: PLR0911
     Returns:
         The exit code: 0 reviewed or PASS, 2 refused, 3 budget, and the panel's 1 or 4.
     """
+    if ".." in head:
+        _common.error("--head must be a ref; use --base a..b for an explicit range.")
+        return 2
     if not base and head not in ("", "HEAD"):
         _common.error(
             "--head requires --base; without --base, review uses the working tree vs HEAD."
@@ -414,6 +450,7 @@ def _cmd_review(  # noqa: PLR0911
     layout_root = agent6_paths.state_dir(root) / "reviews"
     transcript_sink = TranscriptSink(layout_root)
 
+    print(f"[agent6] reviewing: {label}", file=sys.stderr)
     if reviewers >= 1:
         return _run_review_panel(
             cfg,
@@ -442,7 +479,6 @@ def _cmd_review(  # noqa: PLR0911
         _common.error(f"provider init failed: {exc}")
         return 2
 
-    print(f"[agent6] reviewing: {label}", file=sys.stderr)
     try:
         text = code_review.review_diff(
             reviewer,

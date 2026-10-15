@@ -95,7 +95,7 @@ def test_an_empty_range_is_reported_before_provider_preflight(
     captured = capsys.readouterr()
     assert rc == 0
     assert captured.out == ""
-    assert captured.err == "(no diff to review: HEAD..HEAD -- src/x.py)\n"
+    assert captured.err == "(no diff to review: HEAD...HEAD -- src/x.py)\n"
 
 
 def test_personas_without_reviewers_is_said_to_be_ignored(

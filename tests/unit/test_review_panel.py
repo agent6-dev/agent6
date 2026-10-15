@@ -20,6 +20,7 @@ from agent6.app import _setup, providers
 from agent6.config import layer
 from agent6.harness import _panel as harness__panel
 from agent6.harness import _reviewer as harness__reviewer
+from tests.unit import test_review_diff_collect
 
 # A real unified diff touching foo.py new-lines 10..14 and creating bar.py 1..2.
 SAMPLE_DIFF = """\
@@ -624,7 +625,7 @@ def test_review_degrades_on_an_unreadable_agents_md(
 
 
 def test_the_panel_reviews_under_the_freeform_reviews_label(
-    monkeypatch: Any, tmp_path: Any
+    monkeypatch: Any, tmp_path: Any, capsys: Any
 ) -> None:
     """One label for both reviews.
 
@@ -661,11 +662,18 @@ def test_the_panel_reviews_under_the_freeform_reviews_label(
     monkeypatch.setattr(_setup, "check_provider_keys", _no_key_error)
     monkeypatch.setattr(review_cmds, "_collect_review_diff", _fake_diff)
     monkeypatch.setattr(review_cmds, "_run_review_panel", _fake_panel)
+    test_review_diff_collect._git(tmp_path, "init", "-q", "-b", "main")
+    test_review_diff_collect._git(tmp_path, "config", "user.name", "t")
+    test_review_diff_collect._git(tmp_path, "config", "user.email", "t@t")
+    test_review_diff_collect._git(tmp_path, "commit", "--allow-empty", "-qm", "init")
+    start = test_review_diff_collect._git(tmp_path, "rev-parse", "HEAD").strip()
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         None, base="main", head="HEAD", paths=("src/x.py",), reviewers=1
     )
     assert rc == 0
-    assert seen["label"] == "main..HEAD -- src/x.py"
+    assert seen["label"] == f"main...HEAD -- src/x.py (from {start})"
+    captured = capsys.readouterr()
+    assert f"[agent6] reviewing: main...HEAD -- src/x.py (from {start})\n" in captured.err
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         None, base="", head="HEAD", paths=("src/x.py",), reviewers=1
     )
