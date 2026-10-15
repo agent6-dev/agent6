@@ -190,7 +190,12 @@ def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
     assert (state.memory.written, state.ever_edited, turn.edited) == (False, True, True)
     both = "diff --git a/src/code.py b/src/code.py\n" + workspace + "diff --git a/x b/x\n" + memory
     state, turn = note(both)
-    assert (state.memory.written, state.ever_edited, turn.edited) == (False, True, True)
+    assert (state.memory.written, state.ever_edited, turn.edited) == (True, True, True)
+    wf = _wf()
+    _verify(wf, state, _turn(2), rc=1)
+    green = _turn(3)
+    _verify(wf, state, green, rc=0)
+    assert _flip(wf, state, green) is None
 
 
 def test_a_preview_edit_is_no_edit() -> None:

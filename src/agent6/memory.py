@@ -490,6 +490,7 @@ def merge_memory(
                 continue
             if fate == "deleted":
                 origin.unlink()
+                _drop_use(dst_state_dir, name)
             elif fate == "held":
                 if path is not None:
                     paths.mkdir_for_real_user(held_dir)
@@ -534,7 +535,8 @@ def seed_store(src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path) -> int:
 
     A lane's clone has an empty store; copies, never links, so a lane cannot write
     the origin's store mid-run. Anything already there stays, and a store entry that
-    is not a fact file is not copied. The origin's rulings are copied beside the
+    is not a fact file is not copied. A name seeded earlier is left alone on a retry,
+    a fact the lane has since deleted included. The origin's rulings are copied beside the
     store, when the lane has none; an origin with no store leaves the lane storeless.
 
     Args:
@@ -559,15 +561,11 @@ def seed_store(src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path) -> int:
         recover_unrecorded_copy = not seed_path(dst_state_dir).exists()
         earlier = seed_digests(dst_state_dir)
         for path in sorted(src.iterdir()):
-            if not _is_fact_file(path):
+            if not _is_fact_file(path) or path.stem in earlier:
                 continue
             target = dst / path.name
             if target.exists():
-                if (
-                    recover_unrecorded_copy
-                    and path.stem not in earlier
-                    and _sha256(path) == _sha256(target)
-                ):
+                if recover_unrecorded_copy and _sha256(path) == _sha256(target):
                     digests[path.stem] = _sha256(target)
                 continue
             portable.atomic_write(target, path.read_bytes())

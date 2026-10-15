@@ -139,6 +139,74 @@ def test_tools_reach_the_memory_dir_and_nothing_else_in_state(
         )
 
 
+def test_mixed_patch_records_memory_and_workspace_effects(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One patch over the workspace and the store is workspace work that also wrote a fact.
+
+    Judged as workspace work alone, the fact got no provenance, the flip advisory stayed armed
+    at a model that had just written memory, and the left-out advisory named the store file
+    (spelled store-relative in the result) as ignored by git whenever the repo ignores that name.
+    The workspace half keeps its own left-out notice.
+    """
+    import subprocess
+    from unittest import mock
+
+    from agent6.harness import _chain, _conversation, _loop_state
+    from tests.unit import test_harness
+
+    dispatcher, state_dir = _dispatcher(tmp_path, monkeypatch)
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    (repo / ".gitignore").write_text("fresh.md\n", encoding="utf-8")
+    (repo / "notes.txt").write_text("the operator's\n", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore", "code.py"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"],
+        cwd=repo,
+        check=True,
+    )
+    target = agent6_memory.memory_dir(state_dir) / "fresh.md"
+    patch = (
+        "*** Begin Patch\n*** Update File: code.py\n@@\n-x = 1\n+x = 2\n"
+        "*** Update File: notes.txt\n@@\n-the operator's\n+edited\n"
+        f"*** Add File: {target}\n+A fact.\n*** End Patch\n"
+    )
+    tool_input = {"patch": patch}
+    result = dispatcher.dispatch("apply_patch", tool_input)
+    assert target.read_text() == "A fact.\n"
+    events = mock.MagicMock()
+    wf = test_harness._wf(  # pyright: ignore[reportPrivateUsage]
+        repo, mode="run", state_dir=state_dir, events=events
+    )
+    wf.chain = _chain.RunChain(
+        repo,
+        ref="refs/agent6/t/head",
+        fallback_parent="HEAD",
+        untracked_at_start=frozenset({"notes.txt"}),
+    )
+    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state.verify.note_pass()
+    turn = _loop_state.TurnState(
+        iteration=1, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+    )
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state, turn, "apply_patch", result, tool_input
+    )
+    assert state.ever_edited and not state.verify.green_and_untouched
+    assert state.memory.written
+    assert state.memory.wrote == ["fresh"]
+    assert state.memory.created == ["fresh"]
+    note = wf._left_out_note(turn, "apply_patch", result, tool_input)  # pyright: ignore[reportPrivateUsage]
+    assert note == (
+        "notes.txt was untracked when the run started: the edit is on disk, and this"
+        " run's commits leave it out."
+    )
+    events.emit.assert_called_once_with(
+        "loop.edit.left_out", iteration=1, ignored=[], untracked=["notes.txt"]
+    )
+
+
 def test_memory_grant_absent_without_state_dir(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()

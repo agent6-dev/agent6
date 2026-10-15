@@ -858,13 +858,15 @@ class Harness:
         if self.mode != "run":
             return ""
         # A memory write names its file inside the store, which is no path of the repository.
-        if _memory_touch.memory_store_facts(self.state_dir, name, result, tool_input) is not None:
+        touch = _memory_touch.memory_store_touch(self.state_dir, name, result, tool_input)
+        if touch is not None and touch.whole_store:
             return ""
+        store_paths = () if touch is None else touch.store_paths
         if isinstance(result, results.EditResult):
             paths: tuple[str, ...] = (result.path,)
         elif isinstance(result, results.PatchResult):
             written = tuple(p for p, _ in result.files) or (result.path,)
-            paths = tuple(p for p in written if p not in result.deleted)
+            paths = tuple(p for p in written if p not in result.deleted and p not in store_paths)
         else:
             return ""
         ignored, untracked = self.chain.left_out(paths)
@@ -1003,18 +1005,18 @@ class Harness:
         Returns:
             True for a write to the store, which is not workspace work.
         """
-        facts = _memory_touch.memory_store_facts(self.state_dir, name, result, tool_input)
-        if facts is None:
+        touch = _memory_touch.memory_store_touch(self.state_dir, name, result, tool_input)
+        if touch is None:
             return False
         if name == "read_file":
-            for fact in facts:
+            for fact in touch.facts:
                 state.memory.read[fact] = state.memory.read.get(fact, 0) + 1
             return False
         if name in ("apply_edit", "apply_patch"):
             state.memory.written = True
-            for fact, op in facts.items():
+            for fact, op in touch.facts.items():
                 state.memory.note_write(fact, op)
-            return True
+            return touch.whole_store
         return False
 
     def _capture_finish(

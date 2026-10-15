@@ -596,6 +596,53 @@ def test_carry_back_lands_a_lanes_use_record(tmp_path: pathlib.Path) -> None:
     assert any("use record carried for 1" in line for line in said)
 
 
+def test_carry_back_deletion_drops_provenance_before_recreation(tmp_path: pathlib.Path) -> None:
+    """An imported deletion ends the fact's provenance, as `memory rm` does.
+
+    Left in place, the origin's record kept naming the fact's writers and readers after the
+    file was gone, and a lane that later recreated the name inherited them.
+    """
+    from agent6.app import parallel, reporter
+
+    origin, lane = tmp_path / "origin", tmp_path / "lane"
+    memory.add(origin, "fact", "Original.")
+    memory.record_use(origin, session="run-o", wrote=("fact",), read={"fact": 3}, when=0.0)
+    assert memory.read_use(origin)["fact"].writers == ("operator", "run-o")
+    memory.seed_store(origin, lane)
+    memory.remove(lane, "fact")
+    parallel.carry_back(
+        lane,
+        origin,
+        tmp_path / "imported",
+        lane=1,
+        reporter=reporter.Reporter(out=print, err=print),
+    )
+    assert "fact" not in memory.read_use(origin)
+    lane = tmp_path / "lane-2"
+    memory.seed_store(origin, lane)
+    memory.memory_dir(lane).joinpath("fact.md").write_text("Another life.\n", encoding="utf-8")
+    memory.record_use(lane, session="lane-2", wrote=("fact",), created=("fact",), read={})
+    parallel.carry_back(
+        lane,
+        origin,
+        tmp_path / "imported-2",
+        lane=2,
+        reporter=reporter.Reporter(out=print, err=print),
+    )
+    assert memory.read_use(origin)["fact"].writers == ("lane-2",)
+
+
+def test_reseeding_keeps_a_lanes_deleted_fact_deleted(tmp_path: pathlib.Path) -> None:
+    """Retrying seeding must not resurrect a fact the lane deleted after its first seed."""
+    origin, lane = tmp_path / "origin", tmp_path / "lane"
+    memory.add(origin, "fact", "Original.")
+    memory.seed_store(origin, lane)
+    memory.remove(lane, "fact")
+    assert memory.seed_store(origin, lane) == 0
+    assert not (memory.memory_dir(lane) / "fact.md").exists()
+    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held").deleted == ("fact",)
+
+
 def _legacy_rulings(state_dir: pathlib.Path, text: str = "- old ruling\n") -> pathlib.Path:
     legacy = memory.memory_dir(state_dir) / "DECISIONS.md"
     legacy.parent.mkdir(parents=True, exist_ok=True)

@@ -8,6 +8,7 @@ after every dispatched call.
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 from typing import Any
 
@@ -15,16 +16,30 @@ from agent6 import memory
 from agent6.tools import patch_apply, results
 
 
-def memory_store_facts(
+@dataclasses.dataclass(frozen=True, slots=True)
+class MemoryTouch:
+    """What one tool call did inside the memory store.
+
+    Attributes:
+        facts: Fact name to `read`, `create`, `edit` or `delete`.
+        store_paths: Every path under the store, spelled store-relative as the results spell it.
+        whole_store: Whether every path the call named is under the store.
+    """
+
+    facts: dict[str, str]
+    store_paths: tuple[str, ...]
+    whole_store: bool
+
+
+def memory_store_touch(
     state_dir: pathlib.Path | None, name: str, result: results.ToolResult, tool_input: Any
-) -> dict[str, str] | None:
-    """Return the memory-store facts a tool call addressed, each with what it did.
+) -> MemoryTouch | None:
+    """Return what a tool call did inside the memory store.
 
     Judged on the model's input paths: the store sits outside the workspace
     root, so only an absolute path reaches it. `apply_patch` names its files in
-    the headers; every one must be under the store, since a patch over the store
-    and the workspace together is workspace work. A fact is a file the store's
-    name rule accepts; other files are not.
+    the headers, and one patch may address the store and the workspace both.
+    A fact is a file the store's name rule accepts; other files are not.
 
     Args:
         state_dir: The run's state directory, or None when no store is wired.
@@ -33,8 +48,7 @@ def memory_store_facts(
         tool_input: The model's input to the tool.
 
     Returns:
-        Fact name to `read`, `create`, `edit` or `delete`; {} when the call was
-        about the store but no fact; None when it was not wholly about the store.
+        The touch; None when no path is under the store.
     """
     if state_dir is None or not isinstance(tool_input, dict):
         return None
@@ -58,15 +72,22 @@ def memory_store_facts(
             ops = [patch_apply.patch_op(section) for section in sections]
     except patch_apply.PatchError:
         return None
-    if not paths or not all(p.startswith("/") for p in paths):
-        return None
     # Both sides resolved: a symlinked state home never sits under the store's raw path.
     store = memory.memory_dir(state_dir).resolve()
-    resolved = [pathlib.Path(p).resolve() for p in paths]
-    if not all(p.is_relative_to(store) for p in resolved):
+    addressed = [
+        (pathlib.Path(p).resolve(), op)
+        for p, op in zip(paths, ops, strict=True)
+        if pathlib.Path(p).is_absolute()
+    ]
+    inside = [(p, op) for p, op in addressed if p.is_relative_to(store)]
+    if not inside:
         return None
-    return {
-        p.stem: op
-        for p, op in zip(resolved, ops, strict=True)
-        if p.parent == store and p.suffix == ".md" and memory.is_memory_name(p.stem)
-    }
+    return MemoryTouch(
+        facts={
+            p.stem: op
+            for p, op in inside
+            if p.parent == store and p.suffix == ".md" and memory.is_memory_name(p.stem)
+        },
+        store_paths=tuple(str(p.relative_to(store)) for p, _ in inside),
+        whole_store=len(inside) == len(paths),
+    )
