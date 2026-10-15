@@ -21,7 +21,7 @@ from typing import IO
 from agent6 import directive, kinds, paths
 from agent6.models import validate
 from agent6.sandbox import jail
-from agent6.sessions import id, ipc, layout, lock
+from agent6.sessions import id, layout, lock, process
 from agent6.viewmodel import listing
 
 
@@ -216,7 +216,7 @@ def spawn_detached_resume(
     return spawn_and_confirm(
         argv,
         cwd,
-        started=lambda pid: ipc.read_worker_pid(session_dir) == pid,
+        started=lambda pid: process.read_worker_pid(session_dir) == pid,
         extra_env=DETACHED_RUN_ENV,
     )
 

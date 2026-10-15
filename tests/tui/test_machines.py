@@ -13,6 +13,7 @@ from textual import widgets
 
 from agent6 import paths
 from agent6.machine import MachineSpec
+from agent6.sessions import process
 from agent6.ui import notify, spawn
 from agent6.ui.tui import composer, modals
 from agent6.ui.tui import machines as machmod
@@ -1420,7 +1421,6 @@ def test_a_click_on_a_stale_lit_verb_explains_itself_once(tmp_path: pathlib.Path
 
     from agent6.machine import journal as machine_journal
     from agent6.machine import load_machine
-    from agent6.sessions import ipc
 
     f = _write(tmp_path / "tiny.asm.toml", TINY)
     spec = load_machine(f)
@@ -1428,7 +1428,7 @@ def test_a_click_on_a_stale_lit_verb_explains_itself_once(tmp_path: pathlib.Path
     instance.mkdir(parents=True)
     (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     machine_journal.MachineJournal(instance).begin(machine="tiny", version=1)
-    ipc.write_worker_pid(instance, os.getpid())
+    process.write_worker_pid(instance, os.getpid())
 
     class _Host(textual_app.App[None]):
         def on_mount(self) -> None:

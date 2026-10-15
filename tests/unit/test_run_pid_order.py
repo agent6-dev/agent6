@@ -23,7 +23,7 @@ from agent6.app import _execution as app__execution
 from agent6.app import _session
 from agent6.app import run as run_mod
 from agent6.config import Config
-from agent6.sessions import ipc
+from agent6.sessions import process
 from agent6.tools import operator_prompts
 
 
@@ -52,7 +52,7 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
     def _isolation(*_a: object, **_k: object) -> str:
         return "none"
 
-    monkeypatch.setattr(ipc, "write_worker_pid", _pid)
+    monkeypatch.setattr(process, "write_worker_pid", _pid)
     monkeypatch.setattr(_session, "select_isolation", _isolation)
 
     def _execution(*_a: object, **_k: object) -> object:

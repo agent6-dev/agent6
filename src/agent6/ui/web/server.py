@@ -27,7 +27,7 @@ import pydantic
 from agent6 import __version__, kinds
 from agent6.config import is_loopback_host, write
 from agent6.machine import MachineError
-from agent6.sessions import ipc
+from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.web import _sse, actions, auth, model, page
 from agent6.viewmodel import (
@@ -218,7 +218,7 @@ class WebServer(http_server.ThreadingHTTPServer):
         with self._pid_lock:
             n = self._watch_counts.get(key, 0)
             if n == 0:
-                ipc.register_frontend(session_dir, os.getpid())
+                process.register_frontend(session_dir, os.getpid())
             self._watch_counts[key] = n + 1
 
     def release_session(self, session_dir: pathlib.Path) -> None:
@@ -234,7 +234,7 @@ class WebServer(http_server.ThreadingHTTPServer):
                 self._watch_counts[key] = n
                 return
             self._watch_counts.pop(key, None)
-            ipc.unregister_frontend(session_dir, os.getpid())
+            process.unregister_frontend(session_dir, os.getpid())
 
 
 class _IPv6WebServer(WebServer):

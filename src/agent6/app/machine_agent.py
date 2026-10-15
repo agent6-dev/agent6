@@ -39,7 +39,7 @@ from agent6.harness import _chain, _compaction, _operator, loop, subrun
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import jail
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.tools import dispatch, operator_prompts
 from agent6.viewmodel import machine_state
 
@@ -242,7 +242,7 @@ def _build_machine_bridges(
     ipc.clear_pending_answers(agent_state, started_at=time.time())
 
     def approve(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
-        if ipc.frontend_is_live(instance_dir):
+        if process.frontend_is_live(instance_dir):
             answer = ipc.read_answer(agent_state, request.id, live_dir=instance_dir)
             if answer is not None:
                 return operator_prompts.ApprovalAnswer(
@@ -261,7 +261,7 @@ def _build_machine_bridges(
 
     def ask(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         empty = tuple("" for _ in request.questions)
-        if ipc.frontend_is_live(instance_dir):
+        if process.frontend_is_live(instance_dir):
             answers = ipc.read_question_answers(agent_state, request.id, live_dir=instance_dir)
             if answers is not None:
                 return operator_prompts.QuestionAnswer(answers, "frontend")
@@ -290,7 +290,7 @@ def _build_machine_bridges(
         ipc.clear_steer_request(agent_state)
 
     def steer_prompt() -> str | None:
-        if not ipc.frontend_is_live(instance_dir):
+        if not process.frontend_is_live(instance_dir):
             ipc.clear_steer_request(agent_state)
             return None
         answer = ipc.read_steer_answer(agent_state, live_dir=instance_dir)

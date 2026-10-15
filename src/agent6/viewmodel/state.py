@@ -22,7 +22,7 @@ from typing import Any, Literal
 from agent6 import terminal
 from agent6.graph import models
 from agent6.models import registry
-from agent6.sessions import ipc, layout
+from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import background
 from agent6.viewmodel import events, format, listing, log_line, policy
@@ -1012,7 +1012,7 @@ def session_state_as_dict(
             # The manifest's task is current: a resume with new work restamps it there.
             d["user_task"] = manifest.user_task or d["user_task"]
             d["mode"] = d["mode"] or manifest.mode
-        d["ports"] = ipc.listening_ports(session_dir)
+        d["ports"] = process.listening_ports(session_dir)
         # On every frame: the run view streams from this dict.
         d["shells"] = background.roster_from_dir(session_dir / background.SHELLS_DIR)
         if d["mode"] == "plan":

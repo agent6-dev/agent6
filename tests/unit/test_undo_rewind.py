@@ -18,7 +18,7 @@ from agent6 import errors, git_ops, paths
 from agent6.app import reporter, undo
 from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
-from agent6.sessions import lock
+from agent6.sessions import lock, process
 from agent6.viewmodel import listing
 
 
@@ -424,8 +424,6 @@ def test_undo_of_a_live_plan_session_refuses(
     """A live plan or ask session refuses /undo too, though it takes no checkout writer lock."""
     import subprocess as sp2
 
-    from agent6.sessions import ipc
-
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
@@ -457,7 +455,7 @@ def test_undo_of_a_live_plan_session_refuses(
     _checkpoint(layout, 2, head_sha=c1, ops=2)
     proc = sp2.Popen(["sleep", "30"])
     try:
-        ipc.write_worker_pid(layout.session_dir, proc.pid)
+        process.write_worker_pid(layout.session_dir, proc.pid)
         said: list[str] = []
 
         result = undo.undo_fork(
@@ -478,11 +476,9 @@ def test_undo_from_the_live_session_itself_is_allowed(
     """The loop's own /undo runs inside the worker holding the checkout; its lock is no obstacle."""
     import os
 
-    from agent6.sessions import ipc
-
     repo, c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)
     state = paths.state_dir(repo)
-    ipc.write_worker_pid(
+    process.write_worker_pid(
         sessions_layout.SessionLayout(state_dir=state, session_id="run-AAAA11").session_dir,
         os.getpid(),
     )

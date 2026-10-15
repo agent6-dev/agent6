@@ -19,7 +19,7 @@ from agent6 import directive, paths
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import loop
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import directives
 from agent6.ui.cli import main
@@ -66,7 +66,7 @@ def test_agent6_steer_takes_it_too(
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / "tiny-run-AAAA11"
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text("", encoding="utf-8")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
 
     assert main(["steer", "tiny-run", "/standing keep hunting defects"]) == 0
 

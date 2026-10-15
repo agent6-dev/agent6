@@ -19,7 +19,7 @@ from agent6.app import _execution, _session, _setup, frontend, providers, report
 from agent6.config import Config
 from agent6.harness import _snapshot
 from agent6.harness import loop as harness_loop
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
 from agent6.ui.acp import frontend as acp_frontend
@@ -159,7 +159,7 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pa
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    ipc.write_worker_pid(layout.session_dir, os.getpid())
+    process.write_worker_pid(layout.session_dir, os.getpid())
 
     _execution.detach_to_background(
         frontend=_frontend(calls),
@@ -169,7 +169,8 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pa
         flags=[],
         reporter=reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
     )
-    assert ipc.read_worker_pid(layout.session_dir) == os.getpid()  # the child overwrites it
+    # the child overwrites it
+    assert process.read_worker_pid(layout.session_dir) == os.getpid()
 
     _execution.detach_to_background(
         frontend=_frontend(calls, spawn_err="agent6 exe not found"),
@@ -179,7 +180,8 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pa
         flags=[],
         reporter=reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
     )
-    assert ipc.read_worker_pid(layout.session_dir) is None  # nothing took over: really dead
+    # nothing took over: really dead
+    assert process.read_worker_pid(layout.session_dir) is None
 
 
 def _returning(value: object) -> Callable[..., object]:

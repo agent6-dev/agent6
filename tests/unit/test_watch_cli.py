@@ -12,7 +12,7 @@ import time
 import pytest
 
 from agent6 import paths
-from agent6.sessions import ipc
+from agent6.sessions import process
 from agent6.ui.cli import main
 
 # A branch -> terminal machine: no model/jail, reaches a journaled end at once.
@@ -280,7 +280,8 @@ def test_attach_to_a_launching_run_says_starting_not_resume(
         ),
         encoding="utf-8",
     )
-    ipc.write_worker_pid(session_dir, os.getpid())  # a live worker, mid-preflight
+    # a live worker, mid-preflight
+    process.write_worker_pid(session_dir, os.getpid())
 
     assert main(["attach", "launching-run-88"]) == 0
     out = capsys.readouterr().out
@@ -329,7 +330,7 @@ def test_attach_returns_nonzero_when_a_live_runs_worker_dies(
     _make_run(tmp_path, "dying-run", [{"type": "session.start", "user_task": "t"}])
     monkeypatch.chdir(tmp_path)
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "dying-run"
-    ipc.write_worker_pid(session_dir, os.getpid())
+    process.write_worker_pid(session_dir, os.getpid())
 
     result: list[int] = []
     watcher = threading.Thread(
@@ -470,7 +471,8 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
     )
     monkeypatch.chdir(tmp_path)
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "done-run"
-    ipc.write_worker_pid(session_dir, os.getpid())  # reads as live: the follow path
+    # reads as live: the follow path
+    process.write_worker_pid(session_dir, os.getpid())
     result: list[int] = []
     t = threading.Thread(
         target=lambda: result.append(main(["attach", "done-run", "--raw", "--since", "5"])),

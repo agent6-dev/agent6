@@ -18,7 +18,7 @@ from agent6 import git_ops, paths
 from agent6.app import _workdirs, confine
 from agent6.config import ConfigError, io, layer
 from agent6.models import choices
-from agent6.sessions import ipc, layout, manifest
+from agent6.sessions import layout, manifest, process
 from agent6.viewmodel import (
     MachineSummary,
     NewestExecutionFold,
@@ -293,7 +293,7 @@ def conversation_payload(session_dir: pathlib.Path) -> dict[str, Any]:
     """Return a run's conversation and the operator's past inputs, from one read of the log."""
     events = list(tail_events(session_dir / layout.LOGS_NAME, follow=False))
     return {
-        "items": conversation_items(events, worker_dead=not ipc.worker_is_alive(session_dir)),
+        "items": conversation_items(events, worker_dead=not process.worker_is_alive(session_dir)),
         "operator_inputs": operator_inputs(events),
     }
 
@@ -301,7 +301,7 @@ def conversation_payload(session_dir: pathlib.Path) -> dict[str, Any]:
 def restate_payload(session_dir: pathlib.Path) -> dict[str, Any]:
     """Return `/restate` for the web composer, over the session's whole journal."""
     events = list(tail_events(session_dir / layout.LOGS_NAME, follow=False))
-    return {"text": restate(events, worker_dead=not ipc.worker_is_alive(session_dir))}
+    return {"text": restate(events, worker_dead=not process.worker_is_alive(session_dir))}
 
 
 def machine_conversation_payload(machine_dir: pathlib.Path) -> dict[str, Any]:
@@ -311,7 +311,7 @@ def machine_conversation_payload(machine_dir: pathlib.Path) -> dict[str, Any]:
         return {"items": []}
     events = list(tail_events(log, follow=False))
     # The machine's worker (one pid for every state) is the one to probe.
-    items = conversation_items(events, worker_dead=not ipc.worker_is_alive(machine_dir))
+    items = conversation_items(events, worker_dead=not process.worker_is_alive(machine_dir))
     return {"items": items}
 
 

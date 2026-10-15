@@ -17,7 +17,7 @@ from collections.abc import Callable
 import pytest
 
 from agent6 import directive, paths
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.ui.cli import main
 from agent6.ui.web import actions
 
@@ -26,7 +26,7 @@ def _live_run(tmp_path: pathlib.Path) -> pathlib.Path:
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / "live-one-AAAAAA"
     d.mkdir(parents=True, exist_ok=True)
     (d / "logs.jsonl").write_text('{"type": "session.start", "mode": "run"}\n', encoding="utf-8")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     return d
 
 
@@ -75,7 +75,7 @@ def _paused(tmp_path: pathlib.Path) -> pathlib.Path:
     (tmp_path / "logs.jsonl").write_text(
         '{"type": "session.start", "user_task": "t", "mode": "run"}\n', encoding="utf-8"
     )
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     return tmp_path
 
 
@@ -142,7 +142,7 @@ def test_agent6_steer_acts_on_the_directive_instead_of_sending_it(
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / "tiny-run-AAAA11"
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text("", encoding="utf-8")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
 
     assert main(["steer", "tiny-run", "/task add a --json flag"]) == 0
 
@@ -160,7 +160,7 @@ def test_agent6_steer_takes_now_as_the_composers_spell_it(
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / "tiny-run-BBBB22"
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text("", encoding="utf-8")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
 
     assert main(["steer", "tiny-run", "/now wrap up"]) == 0
 

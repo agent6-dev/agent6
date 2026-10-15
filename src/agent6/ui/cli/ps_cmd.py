@@ -13,7 +13,7 @@ import json
 import pathlib
 
 from agent6 import paths
-from agent6.sessions import ipc, layout
+from agent6.sessions import layout, process
 from agent6.ui.cli import _common
 from agent6.viewmodel import format, listing, machine_state
 
@@ -118,7 +118,7 @@ def _live_rows() -> _Live:
                     real = sdir.resolve()
                     if (
                         not sdir.is_dir()
-                        or not ipc.worker_is_alive(sdir)
+                        or not process.worker_is_alive(sdir)
                         or (real in rows_by_dir and not sdir.is_symlink())
                     ):
                         continue
@@ -130,8 +130,8 @@ def _live_rows() -> _Live:
                         sdir.name,
                         summary.mode,
                         format.status_label(summary.status, summary.reason),
-                        ipc.read_worker_pid(sdir),
-                        ipc.frontend_is_live(sdir),
+                        process.read_worker_pid(sdir),
+                        process.frontend_is_live(sdir),
                         coordinator=summary.coordinator,
                         worktree=summary.worktree or None,
                     )
@@ -139,7 +139,7 @@ def _live_rows() -> _Live:
             machines = repo_dir / "machines"
             if machines.is_dir():
                 for mdir in sorted(machines.iterdir()):
-                    if not mdir.is_dir() or not ipc.worker_is_alive(mdir):
+                    if not mdir.is_dir() or not process.worker_is_alive(mdir):
                         continue
                     machine = machine_state.summarize_machine_dir(mdir)
                     rows.append(
@@ -149,7 +149,7 @@ def _live_rows() -> _Live:
                             mdir.name,
                             "machine",
                             format.status_label(machine.status, machine.reason),
-                            ipc.read_worker_pid(mdir),
+                            process.read_worker_pid(mdir),
                             False,
                         )
                     )

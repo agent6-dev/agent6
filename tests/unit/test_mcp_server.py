@@ -15,8 +15,8 @@ import pytest
 from agent6 import paths
 from agent6.config import Config, layer, load_config
 from agent6.graph import models, storage
-from agent6.sessions import ipc, manifest
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest, process
 from agent6.tools import errors, results
 from agent6.ui import mcp_server as ui_mcp_server
 
@@ -663,7 +663,7 @@ def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: pa
     (newer / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
     os.utime(older / "logs.jsonl", (1000, 1000))
     os.utime(newer / "logs.jsonl", (2000, 2000))
-    ipc.register_frontend(older, 12345)
+    process.register_frontend(older, 12345)
     assert ui_mcp_server._most_recent_session_id(tmp_path) == "aaa-newer-BBB222"
 
 

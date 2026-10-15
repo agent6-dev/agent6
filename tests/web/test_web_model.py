@@ -15,6 +15,7 @@ from agent6.config import layer
 from agent6.models import cache as models_cache
 from agent6.models import registry
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import process
 from agent6.ui.web import model
 from agent6.viewmodel import config_view, machine_snapshot, session_snapshot
 
@@ -114,7 +115,6 @@ def test_run_summary_carries_the_partial_cost_marker(tmp_path: pathlib.Path) -> 
 def test_driverless_prestart_hub_row_matches_the_cli_status_and_label(
     tmp_path: pathlib.Path,
 ) -> None:
-    from agent6.sessions import ipc
     from agent6.viewmodel import listing
 
     d = _bucket(tmp_path, "runs") / "starting"
@@ -122,7 +122,7 @@ def test_driverless_prestart_hub_row_matches_the_cli_status_and_label(
     (d / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
     )
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
 
     cli_row = listing.summary_row(listing.summarize_session_dir(d))
     (web_row,) = model.hub_payload(tmp_path)["sessions"]
@@ -622,8 +622,6 @@ def test_run_snapshot_labels_waiting_starting_created(tmp_path: pathlib.Path) ->
     """
     import os
 
-    from agent6.sessions import ipc
-
     d = _run(
         tmp_path,
         "blocked1",
@@ -632,13 +630,13 @@ def test_run_snapshot_labels_waiting_starting_created(tmp_path: pathlib.Path) ->
             {"type": "approval.prompt", "id": "approval-1", "prompt": "rm -rf?"},
         ],
     )
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     assert session_snapshot(d)["status_label"] == "waiting · needs answer"
 
     e = _bucket(tmp_path, "runs") / "fresh1"
     e.mkdir(parents=True)
     (e / "manifest.json").write_text(json.dumps({"session_id": "fresh1"}), encoding="utf-8")
-    ipc.write_worker_pid(e, os.getpid())
+    process.write_worker_pid(e, os.getpid())
     assert session_snapshot(e)["status_label"] == "starting"
     (e / "worker.pid").unlink()
     assert session_snapshot(e)["status_label"] == "created"
@@ -672,8 +670,6 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: pathlib.Path) -> Non
     """
     import os
 
-    from agent6.sessions import ipc
-
     parked = _bucket(tmp_path, "runs") / "parked2"
     parked.mkdir(parents=True)
     (parked / "manifest.json").write_text(
@@ -688,7 +684,7 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: pathlib.Path) -> Non
     assert session_snapshot(crashed)["live"] is False
 
     alive = _run(tmp_path, "alive2", [{"type": "session.start", "mode": "run", "user_task": "t"}])
-    ipc.write_worker_pid(alive, os.getpid())
+    process.write_worker_pid(alive, os.getpid())
     assert session_snapshot(alive)["live"] is True
 
     done = _run(
@@ -733,11 +729,10 @@ def test_the_states_that_offer_resume_are_not_live(tmp_path: pathlib.Path) -> No
 
 def test_conversation_payload_carries_an_in_flight_call(tmp_path: pathlib.Path) -> None:
     """A call the fold reports in flight shows as running until its result replaces it."""
-    from agent6.sessions import ipc
-
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
     d = _run(tmp_path, "r3", [{"type": "session.start", "user_task": "x"}, {**call, "call_id": 1}])
-    ipc.write_worker_pid(d, os.getpid())  # a live worker: the call is in flight
+    # a live worker: the call is in flight
+    process.write_worker_pid(d, os.getpid())
 
     def flat_items() -> list[str]:
         items = model.conversation_payload(d)["items"]

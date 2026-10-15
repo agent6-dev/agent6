@@ -24,7 +24,7 @@ from textual import screen as textual_screen
 from textual import widgets
 
 from agent6.app import stop as app_stop
-from agent6.sessions import ipc, manifest
+from agent6.sessions import ipc, manifest, process
 from agent6.ui import spawn
 from agent6.ui.tui import _dashboard_header, composer, modals, prompts
 from agent6.ui.tui import app as tui_app
@@ -782,7 +782,8 @@ def test_dashboard_claims_are_per_process(tmp_path: pathlib.Path) -> None:
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
     peer = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     try:
-        ipc.register_frontend(tmp_path, peer.pid)  # a live web viewer's claim
+        # a live web viewer's claim
+        process.register_frontend(tmp_path, peer.pid)
 
         async def scenario() -> None:
             app = tui_app.Agent6TUI(tmp_path)
@@ -793,7 +794,7 @@ def test_dashboard_claims_are_per_process(tmp_path: pathlib.Path) -> None:
             # Unmount removed only our claim; the peer keeps bridging.
             assert not (tmp_path / "frontends" / str(os.getpid())).exists()
             assert (tmp_path / "frontends" / str(peer.pid)).exists()
-            assert ipc.frontend_is_live(tmp_path)
+            assert process.frontend_is_live(tmp_path)
 
         asyncio.run(scenario())
     finally:
@@ -807,13 +808,15 @@ def test_dead_peer_claim_does_not_mask_the_live_dashboard(tmp_path: pathlib.Path
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
 
-    ipc.register_frontend(tmp_path, 999999999)  # dead
+    # dead
+    process.register_frontend(tmp_path, 999999999)
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert ipc.frontend_is_live(tmp_path)  # our claim carries it
+            # our claim carries it
+            assert process.frontend_is_live(tmp_path)
             assert not (tmp_path / "frontends" / "999999999").exists()  # pruned
             assert (tmp_path / "frontends" / str(os.getpid())).exists()
 
@@ -872,7 +875,7 @@ def test_dashboard_bar_is_default_focus_and_steers(tmp_path: pathlib.Path) -> No
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-        ipc.write_worker_pid(tmp_path, os.getpid())
+        process.write_worker_pid(tmp_path, os.getpid())
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await _show_dashboard(pilot)
@@ -1013,7 +1016,7 @@ def test_stop_now_aborts_via_bridge(
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-        ipc.write_worker_pid(tmp_path, os.getpid())
+        process.write_worker_pid(tmp_path, os.getpid())
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
@@ -1044,7 +1047,7 @@ def test_ctrl_z_on_the_run_spawned_view_detaches_the_run_itself(tmp_path: pathli
 
     async def spawned_view() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-        ipc.write_worker_pid(tmp_path, os.getpid())
+        process.write_worker_pid(tmp_path, os.getpid())
         app = tui_app.Agent6TUI(tmp_path, exit_on_end=True)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
@@ -1097,7 +1100,7 @@ def test_a_typed_stop_is_the_one_stop(
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-        ipc.write_worker_pid(tmp_path, os.getpid())
+        process.write_worker_pid(tmp_path, os.getpid())
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
@@ -1131,7 +1134,7 @@ def test_stop_after_step_drops_the_marker(tmp_path: pathlib.Path) -> None:
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-        ipc.write_worker_pid(tmp_path, os.getpid())
+        process.write_worker_pid(tmp_path, os.getpid())
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
@@ -1199,7 +1202,8 @@ def test_working_timer_anchors_to_the_last_events_ts_not_the_attach(tmp_path: pa
     async def scenario() -> None:
 
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-        ipc.write_worker_pid(tmp_path, os.getpid())  # alive-but-wedged, not stale
+        # alive-but-wedged, not stale
+        process.write_worker_pid(tmp_path, os.getpid())
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
@@ -1278,7 +1282,7 @@ def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: pathlib.Path) -> 
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-        ipc.write_worker_pid(tmp_path, os.getpid())
+        process.write_worker_pid(tmp_path, os.getpid())
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
@@ -1743,7 +1747,7 @@ def test_the_composer_title_shows_its_brackets(tmp_path: pathlib.Path) -> None:
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-        ipc.write_worker_pid(tmp_path, os.getpid())
+        process.write_worker_pid(tmp_path, os.getpid())
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()

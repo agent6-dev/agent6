@@ -14,7 +14,7 @@ import sys
 import time
 
 from agent6 import errors, paths
-from agent6.sessions import id, ipc
+from agent6.sessions import id, ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import schema
 from agent6.ui.cli import _common, _console_view, _interact
@@ -299,7 +299,7 @@ class _PromptWatch:
         if self.closed_by:
             return True
         # Liveness first: a worker that answers and exits between the two reads shows its answer.
-        alive = ipc.worker_is_alive(self.session_dir)
+        alive = process.worker_is_alive(self.session_dir)
         for event in tail_events(
             self.session_dir / sessions_layout.LOGS_NAME,
             follow=False,
@@ -507,7 +507,7 @@ def _install_front_end(
         )
         return None
     front_end = _CliFrontEnd(target, view)
-    ipc.register_frontend(target, os.getpid())
+    process.register_frontend(target, os.getpid())
     print(
         f"[agent6] attached to {target.name}: approvals and questions prompt here."
         f" Ctrl-C detaches; agent6 stop {target.name} stops it.",
@@ -547,7 +547,7 @@ def _watch_transcript(target: pathlib.Path) -> int:
     def worker_dead() -> bool:
         """Return whether the worker is gone, from its pid alone."""
         # Per poll, O(1): once following, the worker pid is the liveness evidence.
-        return not ipc.worker_is_alive(target)
+        return not process.worker_is_alive(target)
 
     view = _console_view.ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
     front_end = _install_front_end(target, view)
@@ -572,7 +572,8 @@ def _watch_transcript(target: pathlib.Path) -> int:
     finally:
         view.close()  # stop the heartbeat thread, clear any spinner line
         if front_end is not None:
-            ipc.unregister_frontend(target, os.getpid())  # our claim only
+            # our claim only
+            process.unregister_frontend(target, os.getpid())
     if not interrupted and not scan_session_log(events_path).finished:
         # No session.end settled the call the worker died on.
         view.settle_dead("the run died")
@@ -676,7 +677,7 @@ def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:  # noqa: C901,
             try:
                 new_ino = events_path.stat().st_ino
             except OSError:
-                if ipc.worker_is_alive(target):
+                if process.worker_is_alive(target):
                     time.sleep(0.5)
                     continue
                 print(f"[agent6] {events_path} is gone; stopping.", file=sys.stderr)
@@ -687,7 +688,7 @@ def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:  # noqa: C901,
                 try:
                     fh = events_path.open("rb")
                 except OSError:
-                    if ipc.worker_is_alive(target):
+                    if process.worker_is_alive(target):
                         time.sleep(0.5)
                         continue
                     print(f"[agent6] {events_path} is gone; stopping.", file=sys.stderr)
@@ -695,7 +696,7 @@ def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:  # noqa: C901,
                 current_ino = new_ino
                 pending = b""
                 continue
-            if not ipc.worker_is_alive(target):
+            if not process.worker_is_alive(target):
                 _print_crashed_line(target)
                 return 1
             time.sleep(0.25)

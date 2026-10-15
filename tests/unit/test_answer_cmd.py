@@ -14,7 +14,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import answer_cmd as cli_answer_cmd  # pyright: ignore[reportPrivateUsage]
 
@@ -39,7 +39,8 @@ def _run_with_question(
         "".join(json.dumps(e) + "\n" for e in events),
         encoding="utf-8",
     )
-    ipc.write_worker_pid(layout.session_dir, os.getpid())  # this process = a live worker
+    # this process = a live worker
+    process.write_worker_pid(layout.session_dir, os.getpid())
     # A detached run left on "wait" is the seat this verb exists for.
     ipc.set_away_mode(layout.session_dir, "wait")
     return layout
@@ -113,7 +114,7 @@ def test_answer_refuses_a_run_that_is_not_waiting(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(layout.session_dir, os.getpid())
+    process.write_worker_pid(layout.session_dir, os.getpid())
     ipc.set_away_mode(layout.session_dir, "wait")
 
     assert cli_answer_cmd._cmd_answer("curious-fox", ("yes",)) == 2
@@ -126,7 +127,7 @@ def test_answer_refuses_a_dead_run(
 ) -> None:
     """Only a live run holds a question open; a dead one's answer file would sit unread forever."""
     layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
-    ipc.write_worker_pid(layout.session_dir, 999_999_999)
+    process.write_worker_pid(layout.session_dir, 999_999_999)
 
     assert cli_answer_cmd._cmd_answer("curious-fox", ("9090",)) == 2
 
@@ -197,7 +198,8 @@ def test_a_live_run_with_no_question_says_so(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(layout.session_dir, os.getpid())  # live, no away-mode, no front-end
+    # live, no away-mode, no front-end
+    process.write_worker_pid(layout.session_dir, os.getpid())
 
     assert cli_answer_cmd._cmd_answer("curious-fox", ("yes",)) == 2
 

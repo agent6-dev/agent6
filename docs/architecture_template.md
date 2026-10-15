@@ -234,7 +234,7 @@ The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent
 
 [app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) implements those Protocols and is the only module that knows how to run a lane.
 [app/_workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_workdirs.py) resolves `[parallel].workdir` for clones and linked worktrees, writes lane configs, recovers orphaned lanes and removes imported or safely swept clones.
-The detached spawn it drives (`ui.spawn`'s `spawn_and_locate`, the path the web and TUI hubs start a run with) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`, and liveness and stop requests go to the run-dir bridge (`sessions.ipc`).
+The detached spawn it drives (`ui.spawn`'s `spawn_and_locate`, the path the web and TUI hubs start a run with) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`, and liveness probes use `sessions.process` and stop requests use the run-dir bridge (`sessions.ipc`).
 
 **`agent6 run --parallel N|[provider/]model,...`** plans one `LaneSpec` per lane, each spawned as an ordinary detached `agent6 run` with its own jail and `run_commands` policy.
 
@@ -396,6 +396,7 @@ Two shared layers sit under them.
 
 - the read side, [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel): the `SessionState` and `MachineState` fold plus its wire form, exactly what `agent6 attach --json` and the web endpoints emit
 - the write side: [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) for detached spawns, and [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) for the approval, question, steer, stop-request and compact-request file contract the harness polls
+- process identities, worker and network pid records, and front-end claims: `sessions/process.py`, shared by the bridge and its callers
 
 A run started from a hub, or detached mid-run with `/detach`, keeps going with no terminal on it (`ui/spawn.py`); `agent6 attach <id>` opens it again, tailing the same journal every other surface folds.
 

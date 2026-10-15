@@ -18,6 +18,7 @@ import pytest
 
 from agent6 import git_ops, paths, portable
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import process
 from agent6.ui.cli import _steer, main
 
 _ID = "dead-run-BBBB22"
@@ -300,9 +301,8 @@ def test_rm_refuses_a_session_that_went_live_while_the_question_stood(
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
 
     def _resumed_meanwhile(_what: str, _question: str) -> bool:
-        from agent6.sessions import ipc
 
-        ipc.write_worker_pid(layout.session_dir, os.getpid())
+        process.write_worker_pid(layout.session_dir, os.getpid())
         return True
 
     monkeypatch.setattr(_steer, "delete_confirmed", _resumed_meanwhile)

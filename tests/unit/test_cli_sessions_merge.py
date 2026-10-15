@@ -14,6 +14,7 @@ import pytest
 from agent6 import git_ops, paths
 from agent6.app import providers as app_providers
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import process
 from agent6.ui.cli import main
 
 
@@ -226,23 +227,21 @@ def test_runs_merge_refuses_while_the_worker_is_alive(
     A merge switches the shared checkout to the base branch, where the worker's next auto-commit
     would land mid-run WIP; every other guard passes on a run's clean tree.
     """
-    from agent6.sessions import ipc
-
     monkeypatch.chdir(tmp_path)
     base = _setup_run(tmp_path, "run-LIVE11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-LIVE11"
     )
-    ipc.write_worker_pid(layout.session_dir, os.getpid())  # this test process = a live worker
+    # this test process = a live worker
+    process.write_worker_pid(layout.session_dir, os.getpid())
 
     rc = main(["sessions", "merge", "run-LIVE11"])
     assert rc == 2
     assert "still live" in capsys.readouterr().err
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "0"  # nothing landed
 
-    ipc.write_worker_pid(
-        layout.session_dir, 999_999_999
-    )  # dead pid -> a finished/crashed run merges
+    # dead pid -> a finished/crashed run merges
+    process.write_worker_pid(layout.session_dir, 999_999_999)
     rc = main(["sessions", "merge", "run-LIVE11"])
     assert rc == 0
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"

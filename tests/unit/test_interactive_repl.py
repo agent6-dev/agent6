@@ -19,6 +19,7 @@ import pytest
 from agent6 import budget, paths
 from agent6.harness import _chain, _operator
 from agent6.sessions import ipc as sessions_ipc
+from agent6.sessions import process
 from agent6.ui import steer
 from agent6.ui.cli import _repl, entry
 
@@ -292,7 +293,7 @@ def test_steer_prompt_clears_request_marker_on_no_answer(
     assert ipc.steer_request_pending(session_dir)
 
     # TUI is live but the modal yields no answer (dismissed / 600s timeout).
-    monkeypatch.setattr(sessions_ipc, "frontend_is_live", _tui_live)
+    monkeypatch.setattr(process, "frontend_is_live", _tui_live)
     monkeypatch.setattr(sessions_ipc, "read_steer_answer", _answer_none)
 
     state = _steer.install_steer_sigint(mock.MagicMock(), session_dir)
@@ -315,7 +316,7 @@ def test_steer_prompt_keeps_marker_on_real_answer(
 
     session_dir = tmp_path
     ipc.request_steer(session_dir)
-    monkeypatch.setattr(sessions_ipc, "frontend_is_live", _tui_live)
+    monkeypatch.setattr(process, "frontend_is_live", _tui_live)
     monkeypatch.setattr(sessions_ipc, "read_steer_answer", _answer_text)
 
     state = _steer.install_steer_sigint(mock.MagicMock(), session_dir)

@@ -13,7 +13,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.sessions import layout
+from agent6.sessions import layout, process
 from agent6.ui.cli import completers
 
 _TINY_MACHINE = """
@@ -142,13 +142,12 @@ def test_live_only_verbs_offer_only_live_sessions(
     import argparse
     import os
 
-    from agent6.sessions import ipc
     from agent6.ui.cli import parser as cli_parser
 
     monkeypatch.chdir(tmp_path)
     _seed(tmp_path)
     live = layout.bucket_dir(paths.state_dir(tmp_path), "runs") / "runny-one-AAAAAA"
-    ipc.write_worker_pid(live, os.getpid())
+    process.write_worker_pid(live, os.getpid())
     offered = completers._complete_live_session_ids("")  # pyright: ignore[reportPrivateUsage]
     assert offered == ["runny-one-AAAAAA"]
 
@@ -182,8 +181,6 @@ def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
     import json
     import os
 
-    from agent6.sessions import ipc
-
     monkeypatch.chdir(tmp_path)
     ended = layout.bucket_dir(paths.state_dir(tmp_path), "runs") / "ended-one-EEEEEE"
     ended.mkdir(parents=True)
@@ -194,7 +191,7 @@ def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
         + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(ended, os.getpid())
+    process.write_worker_pid(ended, os.getpid())
     assert completers._complete_live_session_ids("") == []  # pyright: ignore[reportPrivateUsage]
 
 
@@ -432,7 +429,7 @@ def test_forward_offers_the_newest_sessions_ports_in_its_first_slot(
     def _ports(_path: pathlib.Path) -> list[int]:
         return [8000, 9000]
 
-    monkeypatch.setattr("agent6.sessions.ipc.listening_ports", _ports)
+    monkeypatch.setattr("agent6.sessions.process.listening_ports", _ports)
 
     offered = completers._complete_session_ports(  # pyright: ignore[reportPrivateUsage]
         prefix="8",

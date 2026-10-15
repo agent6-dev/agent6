@@ -13,6 +13,7 @@ import pytest
 from agent6 import git_ops, paths
 from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import process
 from agent6.ui.cli import main
 
 
@@ -454,8 +455,6 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
     """`rm` deletes history but refuses a live run, whose worker would keep writing."""
     import os
 
-    from agent6.sessions import ipc
-
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -466,7 +465,8 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
         (d / "logs.jsonl").write_text(
             '{"type": "session.start", "mode": "run"}\n', encoding="utf-8"
         )
-    ipc.write_worker_pid(live, os.getpid())  # this test process is genuinely alive
+    # this test process is genuinely alive
+    process.write_worker_pid(live, os.getpid())
     with (dead / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "session.end", "reason": "finish_session", "all_passed": true}\n')
 
@@ -1016,8 +1016,6 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
     """
     import os
 
-    from agent6.sessions import ipc
-
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
@@ -1032,7 +1030,7 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
     after = _git(tmp_path, "commit-tree", f"{base}^{{tree}}", "-p", base, "-m", "a later execution")
     _git(tmp_path, "update-ref", "refs/heads/agent6/fork-moved011", after)
     live = _fork_with_worktree(tmp_path, "fork-live0011", merged=True)
-    ipc.write_worker_pid(
+    process.write_worker_pid(
         sessions_layout.SessionLayout(
             state_dir=paths.state_dir(tmp_path), session_id="fork-live0011"
         ).session_dir,
@@ -1432,8 +1430,6 @@ def test_prune_keeps_a_live_runs_branch_whatever_its_stamp_says(
     """
     import os
 
-    from agent6.sessions import ipc
-
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@t")
@@ -1455,13 +1451,13 @@ def test_prune_keeps_a_live_runs_branch_whatever_its_stamp_says(
         merged_sha=_git(tmp_path, "rev-parse", "HEAD"),
     )
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="live1")
-    ipc.write_worker_pid(layout.session_dir, os.getpid())
+    process.write_worker_pid(layout.session_dir, os.getpid())
 
     _make_branch(tmp_path, "live2", "m.txt")
     _git(tmp_path, "merge", "--no-ff", "-q", "-m", "merge live2", "agent6/live2")
     _manifest(tmp_path, "live2", base, merged=True, merged_sha=_git(tmp_path, "rev-parse", "HEAD"))
     live2 = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="live2")
-    ipc.write_worker_pid(live2.session_dir, os.getpid())
+    process.write_worker_pid(live2.session_dir, os.getpid())
     live2.manifest_path.write_text("{", encoding="utf-8")  # torn: its liveness still counts
 
     assert main(["sessions", "prune", "--delete-squashed"]) == 0

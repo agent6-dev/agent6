@@ -18,7 +18,7 @@ from typing import Any
 
 from agent6 import budget, event_log, portable, terminal
 from agent6.app import frontend
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.ui import keymap, steer
 from agent6.ui.cli import _common, _console_view, _menu_input, _steer_menu
 
@@ -338,7 +338,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
             raise KeyboardInterrupt
         if state["stage"] == 1:
             state["stage"] = 2
-            if not ipc.frontend_is_live(session_dir):
+            if not process.frontend_is_live(session_dir):
                 tty_message("\n[agent6] interrupting this step. Ctrl-C again to stop the run.\n")
             return
         state["stage"] = 1
@@ -347,7 +347,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
             ipc.clear_steer_answer(session_dir)
         events.emit("session.steer_requested", source="sigint")
         # A live front-end prompts in its own modal; its terminal is not scribbled on.
-        if not ipc.frontend_is_live(session_dir):
+        if not process.frontend_is_live(session_dir):
             tty_message(
                 "\n[agent6] pausing after this step: Enter continues, type to steer,"
                 " /stop ends it, /detach backgrounds it. Ctrl-C again to interrupt now.\n"
@@ -377,7 +377,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
         seeded = ipc.take_steer_answer(session_dir)
         if seeded is not None:
             return seeded
-        if ipc.frontend_is_live(session_dir):
+        if process.frontend_is_live(session_dir):
             answer = ipc.read_steer_answer(session_dir)
             # An abandoned modal: a persisting request would block again at the next boundary.
             if answer is None:

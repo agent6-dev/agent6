@@ -26,7 +26,7 @@ import pytest
 from agent6 import paths
 from agent6.app import fork
 from agent6.machine import journal as machine_journal
-from agent6.sessions import ipc
+from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.cli import main
 from agent6.ui.web import server as web_server
@@ -364,7 +364,7 @@ def test_stop_now_lands_both_bridges_and_reports_the_run_stopped(
     worker = subprocess.Popen(
         [sys.executable, "-c", _STOP_WORKER, str(runs)], start_new_session=True
     )
-    ipc.write_worker_pid(runs, worker.pid)
+    process.write_worker_pid(runs, worker.pid)
     try:
         status, data = _post(port, "/api/session/run-n/stop", {})
         assert status == 200 and data["ok"] is True
@@ -541,9 +541,10 @@ def test_approve_writes_answer_file(
     (session_dir / "logs.jsonl").write_text(
         '{"type":"approval.prompt","id":"p1","prompt":"Allow it?"}\n', encoding="utf-8"
     )
-    ipc.write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    # a prompt is answerable only while live
+    process.write_worker_pid(session_dir, os.getpid())
     # The watching browser's own claim; without one the answer would reach nobody.
-    ipc.register_frontend(session_dir, os.getpid())
+    process.register_frontend(session_dir, os.getpid())
     status, body = _post(port, "/api/session/appr-run/approve", {"id": "p1", "answer": "yes"})
     assert status == 200
     assert body["ok"] is True
@@ -560,9 +561,10 @@ def _run_asking_one_question(tmp_path: pathlib.Path, session_id: str) -> pathlib
     (session_dir / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
-    ipc.write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    # a prompt is answerable only while live
+    process.write_worker_pid(session_dir, os.getpid())
     # The watching browser's own claim; without one the answer would reach nobody.
-    ipc.register_frontend(session_dir, os.getpid())
+    process.register_frontend(session_dir, os.getpid())
     return session_dir
 
 
@@ -636,9 +638,10 @@ def test_approve_id_traversal_is_contained(
     (session_dir / "logs.jsonl").write_text(
         '{"type":"approval.prompt","id":"p1","prompt":"Allow it?"}\n', encoding="utf-8"
     )
-    ipc.write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    # a prompt is answerable only while live
+    process.write_worker_pid(session_dir, os.getpid())
     # The watching browser's own claim; without one the answer would reach nobody.
-    ipc.register_frontend(session_dir, os.getpid())
+    process.register_frontend(session_dir, os.getpid())
     escape = tmp_path / "pwned.answer"
     status, _ = _post(
         port, "/api/session/trav-run/approve", {"id": "../../../../pwned", "answer": "yes"}
@@ -672,7 +675,7 @@ def _make_machine_with_state(
         encoding="utf-8",
     )
     if running:
-        ipc.write_worker_pid(inst, os.getpid())
+        process.write_worker_pid(inst, os.getpid())
     return inst, state
 
 
@@ -928,7 +931,7 @@ def test_sse_run_emits_the_last_delta_of_a_burst(
         ],
     )
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "delta-run"
-    ipc.write_worker_pid(session_dir, os.getpid())
+    process.write_worker_pid(session_dir, os.getpid())
     conn = signin.SignedIn(port, timeout=5)
     try:
         conn.request("GET", "/api/session/delta-run/events")
@@ -1417,7 +1420,8 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
         assert machine["ended"] is None  # no journaled end was invented
         assert machine["status"] == "stopped"
         assert machine["worker_lost"]["reason"] == "no worker running"
-        ipc.write_worker_pid(inst, os.getpid())  # `machine run` resumes it
+        # `machine run` resumes it
+        process.write_worker_pid(inst, os.getpid())
         resumed = _read_until(
             resp, lambda f: cast("dict[str, Any]", f.get("machine", {})).get("status") != "stopped"
         )
@@ -1755,7 +1759,7 @@ def test_a_failed_frontend_claim_does_not_consume_the_first_viewer(
         if attempts == 1:
             raise OSError("disk was briefly read-only")
 
-    monkeypatch.setattr(ipc, "register_frontend", register)
+    monkeypatch.setattr(process, "register_frontend", register)
     srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=signin.SECRET)
     try:
         with pytest.raises(OSError, match="read-only"):
@@ -1911,13 +1915,13 @@ def test_plan_session_label_folds_the_mode_like_the_hub(
     _srv, port = server
     _make_run(tmp_path, "live-plan", [{"type": "session.start", "mode": "plan"}])
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / "live-plan"
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     try:
         snap = json.loads(_get(port, "/api/session/live-plan")[1])
         row = json.loads(_get(port, "/api/hub")[1])["sessions"][0]
         assert snap["status_label"] == row["label"] == "plan · running"
     finally:
-        ipc.clear_worker_pid(d)
+        process.clear_worker_pid(d)
 
 
 @pytest.mark.parametrize("draft", [False, True])

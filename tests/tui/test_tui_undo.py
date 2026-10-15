@@ -17,6 +17,7 @@ import pytest
 from textual import widgets
 
 from agent6.app import fork, reporter, undo
+from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.tui import app as app_mod
 from agent6.ui.tui import composer
@@ -212,8 +213,6 @@ def test_fork_of_a_live_run_leaves_the_composer_steering_this_run(
     """The live composer steers this run; a fork made while live is created unstarted."""
     import os
 
-    from agent6.sessions import ipc
-
     def _fake_create_fork(*_a: object, **_k: object) -> tuple[str, int]:
         return ("fork-child-DDDDDD", 0)
 
@@ -227,7 +226,7 @@ def test_fork_of_a_live_run_leaves_the_composer_steering_this_run(
         + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(run, os.getpid())
+    process.write_worker_pid(run, os.getpid())
 
     async def scenario() -> None:
         app = app_mod.Agent6TUI(run)

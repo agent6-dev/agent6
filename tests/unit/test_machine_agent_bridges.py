@@ -19,7 +19,7 @@ from agent6 import event_log
 from agent6.app import machine_agent as app_machine_agent
 from agent6.app import providers
 from agent6.harness import loop
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.tools import dispatch, schema
 
 
@@ -49,7 +49,7 @@ def test_a_machine_command_grant_does_not_answer_another_scopes_prompt(
 def test_stale_answers_cleared_before_state_reexecution(tmp_path: pathlib.Path) -> None:
     # A re-executed `<seq>-<state>` dir drops the aborted attempt's stale answer files.
     instance, state, events = _dirs(tmp_path)
-    ipc.register_frontend(instance, os.getpid())
+    process.register_frontend(instance, os.getpid())
     ipc.write_answer(state, "approval-1", "yes")  # stale: from the aborted attempt
     ipc.write_question_answers(state, "question-1", ["stale"])
     for stale in (
@@ -78,7 +78,8 @@ def test_headless_defaults_when_no_frontend(tmp_path: pathlib.Path) -> None:
 
 def test_approval_answer_read_from_per_state_dir(tmp_path: pathlib.Path) -> None:
     instance, state, events = _dirs(tmp_path)
-    ipc.register_frontend(instance, os.getpid())  # a live front-end owns the instance
+    # a live front-end owns the instance
+    process.register_frontend(instance, os.getpid())
     b = app_machine_agent._build_machine_bridges(
         instance, state, events
     )  # clears pre-existing answers
@@ -92,7 +93,7 @@ def test_approval_answer_read_from_per_state_dir(tmp_path: pathlib.Path) -> None
 
 def test_question_answer_read_from_per_state_dir(tmp_path: pathlib.Path) -> None:
     instance, state, events = _dirs(tmp_path)
-    ipc.register_frontend(instance, os.getpid())
+    process.register_frontend(instance, os.getpid())
     b = app_machine_agent._build_machine_bridges(instance, state, events)
     threading.Thread(
         target=lambda: (
@@ -108,7 +109,7 @@ def test_question_answer_read_from_per_state_dir(tmp_path: pathlib.Path) -> None
 def test_machine_approval_ignores_a_premature_answer(tmp_path: pathlib.Path) -> None:
     # An answer pre-written before the prompt is cleared, not consumed; the headless deny applies.
     instance, state, events = _dirs(tmp_path)
-    ipc.register_frontend(instance, os.getpid())
+    process.register_frontend(instance, os.getpid())
     b = app_machine_agent._build_machine_bridges(instance, state, events)
     ipc.write_answer(state, "approval-1", "yes")  # premature: no prompt yet
     # No writer thread, so the approver falls through to the deny; a short timeout keeps it quick.
@@ -127,7 +128,7 @@ def test_machine_approval_ignores_a_premature_answer(tmp_path: pathlib.Path) -> 
 
 def test_steer_request_and_answer_bridge(tmp_path: pathlib.Path) -> None:
     instance, state, events = _dirs(tmp_path)
-    ipc.register_frontend(instance, os.getpid())
+    process.register_frontend(instance, os.getpid())
     b = app_machine_agent._build_machine_bridges(instance, state, events)
     # A front-end drops a steer.request in the per-state dir.
 
@@ -216,7 +217,7 @@ def test_away_wait_parks_a_prompt_for_the_frontend(tmp_path: pathlib.Path) -> No
 
     def _answer_late() -> None:
         time.sleep(0.4)
-        ipc.register_frontend(instance, os.getpid())
+        process.register_frontend(instance, os.getpid())
         ipc.write_answer(state, "approval-1", "yes")
 
     t = threading.Thread(target=_answer_late)

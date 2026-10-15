@@ -15,7 +15,7 @@ from typing import Any
 
 from textual import widgets
 
-from agent6.sessions import ipc
+from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.tui import app as app_mod
 from agent6.ui.tui import modals
@@ -75,7 +75,7 @@ def test_review_of_a_live_run_is_refused_without_a_call(
 
     monkeypatch.setattr(spawn, "run_cli_output", _fake_output)
     run = _run_dir(tmp_path, "live-run-AAAAAA", ended=False)
-    ipc.write_worker_pid(run, os.getpid())
+    process.write_worker_pid(run, os.getpid())
 
     async def scenario() -> None:
         app = app_mod.Agent6TUI(run)

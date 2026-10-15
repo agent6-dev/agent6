@@ -11,7 +11,7 @@ import sys
 from collections.abc import Callable, Sequence
 
 from agent6 import portable, terminal
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.tools import operator_prompts, schema
 from agent6.ui import keymap
 from agent6.ui import steer as ui_steer
@@ -156,7 +156,7 @@ def build_approver(
             return operator_prompts.ApprovalAnswer(approved, source)
 
         # A live front-end is always asked; away-mode governs only when nothing is attached.
-        if ipc.frontend_is_live(session_dir):
+        if process.frontend_is_live(session_dir):
             if headless:
                 park()
             answer = ipc.read_answer(session_dir, request.id)
@@ -233,7 +233,7 @@ def build_questioner(
             parked = True
 
         # A live front-end is always asked; away-mode is the fallback without one.
-        if ipc.frontend_is_live(session_dir):
+        if process.frontend_is_live(session_dir):
             # A run with no terminal says on stderr what it waits on and that it was answered.
             if not portable.has_controlling_tty():
                 park()

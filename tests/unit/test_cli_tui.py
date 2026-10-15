@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from agent6 import event_log, portable
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.tools import operator_prompts, schema
 from agent6.ui import steer
 from agent6.ui.cli import _interact as interactmod
@@ -87,7 +87,7 @@ def test_approver_uses_tui_answer_when_live(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
-    monkeypatch.setattr(ipc, "frontend_is_live", _live)
+    monkeypatch.setattr(process, "frontend_is_live", _live)
     monkeypatch.setattr(ipc, "read_answer", _ans_yes)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
     approve = _prompts(tmp_path, events).approve
@@ -106,7 +106,7 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
 
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
-    monkeypatch.setattr(ipc, "frontend_is_live", _live)
+    monkeypatch.setattr(process, "frontend_is_live", _live)
     monkeypatch.setattr(
         ipc, "read_answer", functools.partial(ipc.read_answer, timeout_s=0.4, poll_s=0.05)
     )
@@ -129,7 +129,7 @@ def test_approver_consumes_an_answer_written_after_the_prompt(
 
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
-    monkeypatch.setattr(ipc, "frontend_is_live", _live)
+    monkeypatch.setattr(process, "frontend_is_live", _live)
     monkeypatch.setattr(
         ipc, "read_answer", functools.partial(ipc.read_answer, timeout_s=3.0, poll_s=0.05)
     )
@@ -156,7 +156,7 @@ def test_approver_falls_back_to_stdin_without_tui(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
-    monkeypatch.setattr(ipc, "frontend_is_live", _dead)
+    monkeypatch.setattr(process, "frontend_is_live", _dead)
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
     approve = _prompts(tmp_path, events).approve
@@ -179,7 +179,7 @@ def test_approver_headless_no_frontend_waits_not_denies(
 
     def attach_and_answer() -> None:
         time.sleep(0.3)
-        ipc.register_frontend(tmp_path, os.getpid())
+        process.register_frontend(tmp_path, os.getpid())
         ipc.write_answer(tmp_path, "approval-1", "yes")
 
     threading.Thread(target=attach_and_answer, daemon=True).start()
@@ -194,7 +194,7 @@ def test_approver_session_allows_every_later_command(
     # "allow session" approves this command and every later one across the run.
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
-    monkeypatch.setattr(ipc, "frontend_is_live", _dead)
+    monkeypatch.setattr(process, "frontend_is_live", _dead)
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_session)
     approve = _prompts(tmp_path, events).approve
@@ -210,7 +210,7 @@ def test_approver_tui_timeout_falls_back_to_stdin(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
-    monkeypatch.setattr(ipc, "frontend_is_live", _live)
+    monkeypatch.setattr(process, "frontend_is_live", _live)
     monkeypatch.setattr(ipc, "read_answer", _ans_none)  # TUI died / timed out
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
@@ -360,7 +360,7 @@ def test_approver_live_front_end_wins_over_away_mode(
 
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
-    monkeypatch.setattr(ipc, "frontend_is_live", _live)  # a front-end is attached
+    monkeypatch.setattr(process, "frontend_is_live", _live)  # a front-end is attached
     monkeypatch.setattr(ipc, "read_answer", _ans_yes)  # and it approved
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # no stdin fall
     ipc.set_away_mode(tmp_path, "deny")  # would deny if the front-end did NOT win
@@ -385,7 +385,8 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
 
     def attach_and_answer() -> None:
         time.sleep(0.3)
-        ipc.register_frontend(tmp_path, os.getpid())  # a front-end re-attaches
+        # a front-end re-attaches
+        process.register_frontend(tmp_path, os.getpid())
         ipc.write_answer(tmp_path, "approval-1", "yes")  # and answers
 
     threading.Thread(target=attach_and_answer, daemon=True).start()
@@ -553,7 +554,7 @@ def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
     def _approve_yes(_p: str, **_k: object) -> str:
         return "yes"
 
-    monkeypatch.setattr(ipc, "frontend_is_live", _not_live)
+    monkeypatch.setattr(process, "frontend_is_live", _not_live)
     monkeypatch.setattr(ipc, "away_mode", _no_away)
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
     monkeypatch.setattr(cli__steer, "tty_message", notices.append)
@@ -589,7 +590,7 @@ def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
         return real_pause(self)
 
     monkeypatch.setattr(_console_view.ConsoleView, "pause", _pause)
-    monkeypatch.setattr(ipc, "frontend_is_live", _dead)
+    monkeypatch.setattr(process, "frontend_is_live", _dead)
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
 

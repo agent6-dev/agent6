@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 import pytest
 
-from agent6.sessions import ipc as sessions_ipc
+from agent6.sessions import process
 from agent6.ui.cli import _menu_input
 from agent6.ui.cli import _steer_menu as cli__steer_menu
 
@@ -543,7 +543,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
 
     printed: list[str] = []
     monkeypatch.setattr(_steer, "tty_message", printed.append)
-    monkeypatch.setattr(sessions_ipc, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
+    monkeypatch.setattr(process, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
 
     facts = frontend.SessionFacts(
         spend_usd=1.42,
@@ -605,7 +605,7 @@ def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
     from agent6.ui.cli import _steer
 
     monkeypatch.setattr(_steer, "tty_message", lambda _t: None)  # type: ignore[misc]
-    monkeypatch.setattr(sessions_ipc, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
+    monkeypatch.setattr(process, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
     monkeypatch.setattr(_menu_input, "menu_capable", lambda: False)
 
     def at_the_open_menu(_text: str, **_kw: object) -> str:
@@ -647,7 +647,7 @@ def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
         return "focus on the failing test"
 
     monkeypatch.setattr(_steer, "tty_message", lambda _t: None)  # type: ignore[misc]
-    monkeypatch.setattr(sessions_ipc, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
+    monkeypatch.setattr(process, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
     monkeypatch.setattr(_menu_input, "menu_capable", lambda: False)
     monkeypatch.setattr(_steer, "tty_prompt", typed)
 

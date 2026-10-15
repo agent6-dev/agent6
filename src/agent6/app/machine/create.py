@@ -26,7 +26,7 @@ from agent6.machine import (
     dry_run,
     load_machine,
 )
-from agent6.sessions import id, ipc, layout
+from agent6.sessions import id, layout, process
 
 _CREATE_TIMEOUT_S = 900.0
 
@@ -198,7 +198,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     events_log = scratch / layout.LOGS_NAME
     events = event_log.EventSink(events_log)
     # A terminal draft has its own session.end, which the status reads first: no clearing.
-    ipc.emit_session_start(events, scratch, "session.start", user_task=task, mode="machine")
+    process.emit_session_start(events, scratch, "session.start", user_task=task, mode="machine")
     reporter.err(
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
     )

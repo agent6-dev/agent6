@@ -31,7 +31,7 @@ from agent6.app import _workdirs, compare, parallel, providers, reporter, stamps
 from agent6.config import Config, ConfigError
 from agent6.harness import subrun
 from agent6.providers import ProviderResponse
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main, main
 from agent6.ui.cli import parallel as parallel_cmd
@@ -518,7 +518,6 @@ def test_coordinator_dispatch_wait_honors_a_stop_request(
 
     def fake_lane(spec: subrun.LaneSpec, task: str, **kwargs: object) -> subrun.LaneResult:
         del task
-        from agent6.sessions import ipc
 
         assert ipc.request_stop(coordinator_dir)
         should_stop = kwargs["should_stop"]
@@ -865,7 +864,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
 
     monkeypatch.setattr(lane_watch, "summarize_session_dir", fake_summary)
     monkeypatch.setattr(lane_watch.time, "sleep", fake_sleep)
-    monkeypatch.setattr(ipc, "worker_is_alive", fake_worker_is_alive)
+    monkeypatch.setattr(process, "worker_is_alive", fake_worker_is_alive)
 
     assert lane_watch.await_lanes([res]) is False
     assert "waiting on a question (answer via agent6 attach" in capsys.readouterr().err
@@ -2360,10 +2359,10 @@ def test_await_lane_returns_when_should_stop_fires(
     lane_dir = tmp_path / "lane-run"
     lane_dir.mkdir()
     _write_fake_run(lane_dir / "sub", "t", status="running", cost=0.0)
-    from agent6.sessions import ipc
 
     session_dir = lane_dir / "sub"
-    ipc.write_worker_pid(session_dir, _os.getpid())  # a live lane: never terminal
+    # a live lane: never terminal
+    process.write_worker_pid(session_dir, _os.getpid())
     spec = subrun.LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", route=None)
     res = subrun.LaneResult(
         spec=spec, session_dir=session_dir, branch="agent6/x", ok=True, error=""
@@ -2388,11 +2387,10 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
     import os as _os
     import threading as _threading
 
-    from agent6.sessions import ipc
-
     lane_dir = tmp_path / "lane-run" / "sub"
     _write_fake_run(lane_dir, "t", status="running", cost=0.0)
-    ipc.write_worker_pid(lane_dir, _os.getpid())  # live forever from the test's view
+    # live forever from the test's view
+    process.write_worker_pid(lane_dir, _os.getpid())
     spec = subrun.LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", route=None)
 
     def fake_spawner(spec: subrun.LaneSpec, task: str) -> subrun.LaneResult:
@@ -2968,7 +2966,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
     lane = lanes[0].workdir
     assert lane.is_dir()
     assert not listing.session_dirs(paths.state_dir(lane))
-    assert not ipc.worker_is_alive(paths.state_dir(origin) / "sessions" / "runs" / "failed11")
+    assert not process.worker_is_alive(paths.state_dir(origin) / "sessions" / "runs" / "failed11")
     for _ in range(2):
         assert main(["sessions", "prune"]) == 0
         out = capsys.readouterr().out
@@ -2990,8 +2988,6 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     before its first checkpoint (and every plan or ask lane) holds a full repo clone for good, under
     a prune message about commits it never held.
     """
-    from agent6.sessions import ipc
-
     workdir = tmp_path / "cache"
     cfg = Config.model_validate({"parallel": {"workdir": str(workdir)}})
     lane = workdir / paths.repo_id(origin) / "fan-starting" / "lane-1"
@@ -3003,7 +2999,7 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     session = paths.state_dir(lane) / "sessions" / "runs" / "fan-starting-l1"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text("", encoding="utf-8")  # a record, not a husk
-    ipc.write_worker_pid(session, os.getpid())
+    process.write_worker_pid(session, os.getpid())
 
     assert _workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
     assert lane.is_dir()
@@ -3155,8 +3151,6 @@ def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
     `stop <fan-out>` writes the coordinator's stop marker; the await reads it between polls, asks
     every live lane to stop, and returns interrupted so the import and the report still run.
     """
-    from agent6.sessions import ipc
-
     lane = tmp_path / "lane"
     _write_fake_run(lane, "t", status="running", cost=0.0)
     spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", route=None)
@@ -3170,7 +3164,7 @@ def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
 
     monkeypatch.setattr(lane_watch.time, "sleep", _no_sleep)
     monkeypatch.setattr(lane_watch, "STOP_GRACE_S", 0.0)
-    monkeypatch.setattr(ipc, "worker_is_alive", _alive)
+    monkeypatch.setattr(process, "worker_is_alive", _alive)
 
     assert lane_watch.await_lanes([res], should_stop=lambda: True) is True
     # Marked `now`: a lane's running command is handed back at once, within the drain's grace.
@@ -3182,8 +3176,6 @@ def test_a_stop_during_spawn_prevents_more_lanes(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
 ) -> None:
     """A stopped fan-out must not keep cloning and launching unneeded lanes."""
-    from agent6.sessions import ipc
-
     origin_state = paths.state_dir(origin)
     cfg = Config()
     calls: list[int] = []
@@ -3276,8 +3268,6 @@ def test_a_fan_out_leaves_no_stop_marker_behind(
     A stop request in the coordinator's dir, honoured or arrived after the lanes ended, is consumed
     with the session.
     """
-    from agent6.sessions import ipc
-
     origin_state = paths.state_dir(origin)
     cfg = Config()
     coordinator = origin_state / "sessions" / "runs" / "fan"

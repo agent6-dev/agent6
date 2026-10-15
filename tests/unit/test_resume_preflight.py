@@ -23,8 +23,8 @@ from agent6.app import resume as resume_mod
 from agent6.config import layer
 from agent6.harness import _snapshot
 from agent6.sandbox import detect
-from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import process
 from agent6.ui.cli import resume as cli_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli import run as cli_run
 
@@ -356,13 +356,13 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")  # run_commands="ask" with no tty refuses
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "plan-PIDORDER"
     order: list[str] = []
-    real_write = ipc.write_worker_pid
+    real_write = process.write_worker_pid
 
     def _write(session_dir: pathlib.Path, pid: int) -> None:
         order.append("pid")
         real_write(session_dir, pid)
 
-    monkeypatch.setattr(ipc, "write_worker_pid", _write)
+    monkeypatch.setattr(process, "write_worker_pid", _write)
 
     def _refuse(*_a: object, **_k: object) -> str:
         order.append("isolation")
@@ -570,7 +570,6 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
     from unittest import mock
 
     from agent6.app import _execution as app__execution
-    from agent6.sessions import ipc
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -593,7 +592,8 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
         frontend = mock.MagicMock()
 
         def _spawn(_cwd: pathlib.Path, _sid: str, _flags: object) -> str:
-            ipc.write_worker_pid(session_dir, child.pid)  # the child claimed the run
+            # the child claimed the run
+            process.write_worker_pid(session_dir, child.pid)
             return ""
 
         frontend.spawn_detached_resume.side_effect = _spawn
@@ -603,7 +603,7 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
             )
             == 0
         )
-        assert ipc.read_worker_pid(session_dir) == child.pid
+        assert process.read_worker_pid(session_dir) == child.pid
     finally:
         child.kill()
         child.wait()

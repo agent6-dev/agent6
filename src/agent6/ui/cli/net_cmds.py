@@ -29,8 +29,8 @@ from agent6 import kinds
 from agent6.app import _setup
 from agent6.config import Config
 from agent6.sandbox import detect, jail
-from agent6.sessions import ipc, manifest
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest, process
 from agent6.ui.cli import _common, exec_cmds
 from agent6.viewmodel import session_is_live, summarize_session_dir
 
@@ -54,7 +54,7 @@ def join_session_network(session_dir: pathlib.Path) -> None:
         SessionNetworkUnavailableError: The run publishes no holder, the host is not Linux, or
             the namespaces could not be entered.
     """
-    pid = ipc.read_session_netns_pid(session_dir)
+    pid = process.read_session_netns_pid(session_dir)
     if pid is None:
         raise SessionNetworkUnavailableError(
             "this session has no network of its own to join. A run only makes one"
@@ -139,7 +139,7 @@ def forward(
         The exit code; 2 when there is no network to join or the bind fails.
     """
     # Refuse before binding: the join happens per connection, in the child.
-    if ipc.read_session_netns_pid(layout.session_dir) is None:
+    if process.read_session_netns_pid(layout.session_dir) is None:
         print(f"REFUSING: {no_session_network_reason(layout)}", file=out)
         return 2
     # The same number on both sides unless told otherwise, as `kubectl port-forward 3000` means.
@@ -173,7 +173,7 @@ def forward(
                 try:
                     conn, _ = listener.accept()
                 except TimeoutError:
-                    if ipc.read_session_netns_pid(layout.session_dir) is None:
+                    if process.read_session_netns_pid(layout.session_dir) is None:
                         print(
                             f"[agent6] {layout.session_id} ended; nothing left to reach.",
                             file=out,
@@ -269,7 +269,7 @@ def exec_in_session(
     if not session_is_live(layout.session_dir):
         _common.refuse(f"{no_session_network_reason(layout)}")
         return 2
-    pid = ipc.read_session_netns_pid(layout.session_dir)
+    pid = process.read_session_netns_pid(layout.session_dir)
     # The run's recorded policy, not today's config; unstamped falls back with a warning.
     stamped = _stamped_policy(layout)
     if stamped is not None:

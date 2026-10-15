@@ -24,8 +24,8 @@ from agent6.app import reporter as app_reporter
 from agent6.config import ConfigError, layer
 from agent6.graph import storage
 from agent6.harness import _snapshot
-from agent6.sessions import ipc, lock
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import listing
 
@@ -278,9 +278,9 @@ def _checkout_writer_lock(
         The held fd and "", or None and the refusal; None and "" when this process is the
         undone session's worker, whose lock is no obstacle.
     """
-    if ipc.read_worker_pid(undone.session_dir) == os.getpid():
+    if process.read_worker_pid(undone.session_dir) == os.getpid():
         return None, ""
-    if ipc.worker_is_alive(undone.session_dir):
+    if process.worker_is_alive(undone.session_dir):
         return None, (
             f"run {undone.session_id!r} is still live; /undo would put the tree back"
             " under it. Stop it first:\n"
@@ -377,7 +377,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         reporter.refuse(refusal)
         return None
     # A live source's own loop journals its undone end; a finished one gets it here.
-    offline = ipc.read_worker_pid(undone.session_dir) != os.getpid()
+    offline = process.read_worker_pid(undone.session_dir) != os.getpid()
     ref = git_ops.chain_ref_for(undone.session_id)
     where = manifest.run_branch or ref
     exclude = sessions_layout.read_untracked_at_start(undone.session_dir)

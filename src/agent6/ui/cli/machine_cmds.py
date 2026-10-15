@@ -30,7 +30,7 @@ from agent6.machine import (
     load_machine,
     write_stop_request,
 )
-from agent6.sessions import ipc, layout
+from agent6.sessions import layout, process
 from agent6.ui import notify
 from agent6.ui.cli import _common, machine_check, plan_watch
 from agent6.viewmodel import (
@@ -260,7 +260,7 @@ def _cmd_machine_status(machine_id: str) -> int:
     ms = fold_machine(spec, events)
     pending, pending_note = _armed_wait_tolerant(root, ms)
 
-    alive = ipc.worker_is_alive(root)
+    alive = process.worker_is_alive(root)
     spend, inflight_state = machine_spend(events, root, alive=alive)
     # machine_word_for_dir owns running/waiting/stopped for every surface; parked beats alive.
     word = machine_word_for_dir(ms, root)
@@ -268,7 +268,7 @@ def _cmd_machine_status(machine_id: str) -> int:
     print(f"machine: {spec.machine} (v{spec.version})")
     if alive and word == "running":
         running_in = f", running {inflight_state!r}" if inflight_state else ""
-        print(f"  status: running (worker pid {ipc.read_worker_pid(root)} alive){running_in}")
+        print(f"  status: running (worker pid {process.read_worker_pid(root)} alive){running_in}")
     else:
         # A live worker blocked on an operator prompt: "waiting", naming the state to answer in.
         print(
@@ -412,7 +412,7 @@ def _watch_liveness_exit(root: pathlib.Path, machine_id: str, ms: MachineState) 
     """
     word = machine_word_for_dir(ms, root)
     current = next((st.name for st in ms.states if st.is_current), "?")
-    if word == "waiting" and not ipc.worker_is_alive(root):
+    if word == "waiting" and not process.worker_is_alive(root):
         print(
             f"\nWAITING in {current!r} with no worker running: resume with"
             f" `agent6 machine run {machine_id}`; a poke wakes it on that run:"

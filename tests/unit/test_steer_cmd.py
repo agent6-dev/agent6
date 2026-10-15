@@ -11,7 +11,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import stop as app_stop
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.ui.cli import main
 
 
@@ -29,7 +29,7 @@ def test_steer_queues_for_a_live_run(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-AAAA11")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
 
     assert main(["steer", "tiny-run", "land your best patch now"]) == 0
     out = capsys.readouterr().out
@@ -56,7 +56,7 @@ def test_steer_reports_a_failed_marker_write(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     session = _run_session(tmp_path, "tiny-run-EEEE55")
-    ipc.write_worker_pid(session, os.getpid())
+    process.write_worker_pid(session, os.getpid())
     (session / "steer.request").mkdir()
 
     assert main(["steer", "tiny-run-EEEE55", "hello"]) == 1
@@ -73,7 +73,8 @@ def test_steer_refuses_a_session_that_is_not_running(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-BBBB22")
-    ipc.write_worker_pid(d, 10**9)  # a pid that is never alive
+    # a pid that is never alive
+    process.write_worker_pid(d, 10**9)
 
     assert main(["steer", "tiny-run-BBBB22", "hello"]) == 2
     err = capsys.readouterr().err
@@ -98,7 +99,7 @@ def test_steer_refuses_a_finished_run_even_with_a_stale_live_pid(
         + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
 
     assert main(["steer", "done-run-FFFF66", "more work"]) == 2
     err = capsys.readouterr().err
@@ -113,7 +114,7 @@ def test_steer_compact_writes_the_compaction_marker(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-GGGG77")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
 
     assert main(["steer", "tiny-run-GGGG77", "/compact focus on test failures"]) == 0
     out = capsys.readouterr().out
@@ -129,7 +130,7 @@ def test_steer_btw_opens_a_side_ask_instead_of_queuing_the_directive(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-HHHH88")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     opened: list[tuple[pathlib.Path, str, pathlib.Path | None]] = []
 
     def _open_btw(
@@ -167,7 +168,7 @@ def test_steer_stop_is_the_one_stop(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-BBBB22")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     assert main(["steer", "tiny-run", "/stop"]) == 0
     assert calls == [d] and "tiny-run-BBBB22 stopped" in capsys.readouterr().out
     assert not ipc.steer_request_pending(d)
@@ -191,7 +192,7 @@ def test_steer_notes_an_unanswered_prompt_park(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-CCCC33")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     events = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {
@@ -222,7 +223,7 @@ def test_steer_names_the_answer_verb_for_a_question(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-DDDD44")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     events = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {
@@ -254,7 +255,7 @@ def test_steer_refuses_a_view_only_word(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-AAAA11")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
 
     assert main(["steer", "tiny-run", "/shells"]) == 2
     err = capsys.readouterr().err

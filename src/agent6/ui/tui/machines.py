@@ -40,7 +40,7 @@ from agent6.machine import (
     validate_semantics,
     write_stop_request,
 )
-from agent6.sessions import ipc, layout
+from agent6.sessions import ipc, layout, process
 from agent6.ui import notify, spawn
 from agent6.ui.tui import composer, forms, menubar, modals, screen_chrome, theme
 from agent6.ui.tui import prompts as tui_prompts
@@ -199,7 +199,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         # The dir may not exist yet when watching a just-spawned run.
         paths.mkdir_for_real_user(self._root)
         # A per-process claim; concurrent web and TUI watchers each hold their own.
-        ipc.register_frontend(self._root, os.getpid())
+        process.register_frontend(self._root, os.getpid())
         try:
             events = self._journal.read()
         except JournalError:
@@ -213,7 +213,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
 
     def on_unmount(self) -> None:
         """Drop this process's front-end claim."""
-        ipc.unregister_frontend(self._root, os.getpid())
+        process.unregister_frontend(self._root, os.getpid())
 
     def _current_state_dir(self) -> pathlib.Path | None:
         """Return the current agent state's dir, where its answer files live."""
@@ -383,7 +383,9 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         else:
             status = f"{probes.status_word(ms)} · {ms.current}"
         # A machine runs unattended against the USD ceiling, so the header carries its spend.
-        spend, _in_flight = machine_spend(events, self._root, alive=ipc.worker_is_alive(self._root))
+        spend, _in_flight = machine_spend(
+            events, self._root, alive=process.worker_is_alive(self._root)
+        )
         cost = budget.format_usd(spend.usd, partial=spend.partial)
         self.query_one("#mw-head", textual_widgets.Static).update(
             rich_text.Text(
@@ -818,7 +820,7 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         err = spawn.spawn_and_confirm(
             [*spawn.agent6_argv(self.config_path), "machine", "run", str(path)],
             self.repo_cwd,
-            started=lambda pid: ipc.read_worker_pid(instance) == pid,
+            started=lambda pid: process.read_worker_pid(instance) == pid,
         )
         app.call_from_thread(self._machine_run_started, path, err)
 

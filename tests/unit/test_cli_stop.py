@@ -19,7 +19,7 @@ from agent6 import paths
 from agent6 import providers as provider_api
 from agent6.app import providers
 from agent6.app import stop as stop_mod
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.tools import dispatch, results
 from agent6.ui.cli import main
 from agent6.ui.cli import parser as cli_parser
@@ -213,7 +213,7 @@ def test_after_step_writes_the_marker_and_names_the_resume(
     monkeypatch.chdir(tmp_path)
     d = _run(tmp_path, "step-run-AAAAAA")
     (d / "loop_state.json").write_text("{}", encoding="utf-8")  # a turn ran: a resume can start
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     assert main(["stop", "step-run", "--after-step"]) == 0
     out = capsys.readouterr().out
     assert "step-run-AAAAAA stops after its current step" in out
@@ -232,7 +232,7 @@ def test_all_stops_every_live_session(
         for d in live
     ]
     for d, proc in zip(live, workers, strict=True):
-        ipc.write_worker_pid(d, proc.pid)
+        process.write_worker_pid(d, proc.pid)
     try:
         assert main(["stop", "--all"]) == 0
         out = capsys.readouterr().out
@@ -292,7 +292,7 @@ def test_a_fanout_stops_only_its_live_lanes(
         for d in (fan, live)
     ]
     for d, proc in zip((fan, live), workers, strict=True):
-        ipc.write_worker_pid(d, proc.pid)
+        process.write_worker_pid(d, proc.pid)
     try:
         assert main(["stop", "fan-run-AAAAAA"]) == 0
         out = capsys.readouterr().out
@@ -363,12 +363,12 @@ def test_a_fanouts_lanes_end_before_its_coordinator_drains(
     worker = subprocess.Popen(
         [sys.executable, "-c", _ANSWERING_WORKER, str(lane)], start_new_session=True
     )
-    ipc.write_worker_pid(lane, worker.pid)
+    process.write_worker_pid(lane, worker.pid)
     coordinator = subprocess.Popen(
         [sys.executable, "-c", _DRAINING_COORDINATOR, str(fan), str(lane)],
         start_new_session=True,
     )
-    ipc.write_worker_pid(fan, coordinator.pid)
+    process.write_worker_pid(fan, coordinator.pid)
     _wait_for_file(fan / "draining")  # the drain loop is running, so the wait times a drain
     try:
         assert main(["stop", "drain-run-AAAAAA"]) == 0
@@ -418,7 +418,7 @@ def test_a_marker_that_cannot_be_written_is_an_error(
     """A stop marker that cannot be written is an error, not an announced stop."""
     monkeypatch.chdir(tmp_path)
     rd = _session_dir(tmp_path, "live-run-RO1111")
-    ipc.write_worker_pid(rd, os.getpid())
+    process.write_worker_pid(rd, os.getpid())
     rd.chmod(0o555)
     try:
         assert main(["stop", "live-run-RO1111", "--after-step"]) == 1
@@ -444,7 +444,8 @@ def test_a_finished_run_with_a_lingering_pid_is_already_over(
         '{"type": "session.end", "all_passed": true, "reason": "finish_session"}\n',
         encoding="utf-8",
     )
-    ipc.write_worker_pid(rd, os.getpid())  # teardown not finished yet
+    # teardown not finished yet
+    process.write_worker_pid(rd, os.getpid())
     assert main(["stop", "done-run-CCC333"]) == 0
     assert not ipc.stop_request_pending(rd)
     err = capsys.readouterr().err
@@ -472,7 +473,8 @@ def test_a_dead_run_is_not_running(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     rd = _session_dir(tmp_path, "dead-run-BBB222")
-    ipc.write_worker_pid(rd, 2**31 - 1)  # no such process
+    # no such process
+    process.write_worker_pid(rd, 2**31 - 1)
     assert main(["stop", "dead-run-BBB222"]) == 0
     assert not ipc.stop_request_pending(rd)
     assert "not running" in capsys.readouterr().err
@@ -487,7 +489,7 @@ def test_a_fan_out_gets_no_resume_hint(
     (rd / "manifest.json").write_text(
         '{"version": 3, "mode": "run", "fanout": {"lanes": 2, "spec": "2"}}', encoding="utf-8"
     )
-    ipc.write_worker_pid(rd, os.getpid())
+    process.write_worker_pid(rd, os.getpid())
     assert main(["stop", "fan-AAAA11", "--after-step"]) == 0
     assert ipc.stop_request_pending(rd)
     out = capsys.readouterr().out
@@ -505,7 +507,7 @@ def test_a_bare_stop_targets_the_newest_live_session(
     worker = subprocess.Popen(
         [sys.executable, "-c", _ANSWERING_WORKER, str(live)], start_new_session=True
     )
-    ipc.write_worker_pid(live, worker.pid)
+    process.write_worker_pid(live, worker.pid)
     try:
         assert main(["stop"]) == 0
         out = capsys.readouterr().out
@@ -551,7 +553,7 @@ def test_a_bare_stop_passes_over_a_fan_outs_lane(
         for d in (fan, lane)
     ]
     for d, proc in zip((fan, lane), workers, strict=True):
-        ipc.write_worker_pid(d, proc.pid)
+        process.write_worker_pid(d, proc.pid)
     try:
         assert main(["stop"]) == 0
         out = capsys.readouterr().out

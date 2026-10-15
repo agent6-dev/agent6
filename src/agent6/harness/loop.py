@@ -67,7 +67,7 @@ from agent6.providers import (
     ProviderResponse,
     ToolDefinition,
 )
-from agent6.sessions import ipc
+from agent6.sessions import process
 from agent6.tools import dispatch, mcp_client, results, schema
 from agent6.tools import errors as tool_errors
 
@@ -2057,7 +2057,7 @@ class Harness:
     def _emit_start(self, event_type: str, **fields: Any) -> None:
         """Emit a start-family event through the emitter that stamps the worker pid."""
         if self.events is not None:
-            ipc.emit_session_start(self.events, self.events.path.parent, event_type, **fields)
+            process.emit_session_start(self.events, self.events.path.parent, event_type, **fields)
 
     def _emit_budget(self, iteration: int) -> None:
         """Emit the per-iteration usage heartbeat that tells a long model call from a stall.

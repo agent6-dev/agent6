@@ -16,6 +16,7 @@ import pytest
 
 from agent6 import git_ops, portable
 from agent6.sessions import ipc as sessions_ipc
+from agent6.sessions import process
 from agent6.ui.cli import (
     _common,  # pyright: ignore[reportPrivateUsage]
     sessions_show,  # pyright: ignore[reportPrivateUsage]
@@ -55,8 +56,9 @@ def test_status_running_with_live_pid(
             {"ts": _ts(3), "type": "loop.tool.call", "iteration": 3},
         ],
     )
-    sessions_ipc.write_worker_pid(d, os.getpid())  # this test process is genuinely alive
-    assert sessions_ipc.worker_is_alive(d)
+    # this test process is genuinely alive
+    process.write_worker_pid(d, os.getpid())
+    assert process.worker_is_alive(d)
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
     assert "running" in out
@@ -68,7 +70,7 @@ def test_status_json_is_machine_readable(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
-    sessions_ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     assert sessions_show._cmd_status("", as_json=True) == 0  # "" -> most recent run
     obj = json.loads(capsys.readouterr().out)
     assert obj["session_id"] == "winsome-dawn-YWH5ZS"
@@ -129,7 +131,7 @@ def test_a_finished_runs_elapsed_time_stops_at_its_receipt(
             },
         ],
     )
-    sessions_ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
 
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     assert json.loads(capsys.readouterr().out)["elapsed_s"] == 10.0
@@ -151,7 +153,7 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
             {"ts": _ts(300), "type": "approval.prompt", "id": "approval-1", "prompt": "rm -rf?"},
         ],
     )
-    sessions_ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
     assert "waiting" in out and "needs answer" in out
@@ -188,7 +190,7 @@ def test_status_names_what_a_long_step_waits_on(
         monkeypatch,
         [{"ts": _ts(400), "type": "session.start", "mode": "run"}, {"ts": _ts(300), **last}],
     )
-    sessions_ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
     assert (obj["status"], obj["detail"]) == ("running", detail)
@@ -211,7 +213,7 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
         ],
     )
     (d / "worker.pid").write_text("999999")  # almost certainly not a live pid
-    assert not sessions_ipc.worker_is_alive(d)
+    assert not process.worker_is_alive(d)
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "state:      stale (worker exited without finishing (crashed or killed))" in out
@@ -236,7 +238,7 @@ def test_show_stale_run_offers_resume(
     )
     (d / "loop_state.json").write_text("{}", encoding="utf-8")  # a turn ran: a resume can start
     if pid_file:
-        sessions_ipc.write_worker_pid(d, 999999999)
+        process.write_worker_pid(d, 999999999)
 
     assert sessions_show._cmd_status("winsome-dawn") == 0
 
@@ -263,7 +265,7 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
         assert word == listing.summarize_session_dir(d).status
         return word
 
-    sessions_ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     assert state_word() == "running"
     (d / "logs.jsonl").unlink()
     assert state_word() == "starting"
@@ -280,7 +282,7 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
         + "\n",
         encoding="utf-8",
     )
-    sessions_ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     assert state_word() == "waiting"
     (d / "worker.pid").write_text("999999999", encoding="utf-8")
     assert state_word() == "stale"
@@ -516,11 +518,11 @@ def test_status_shows_fan_out_compare_outcome(
 
 
 def test_worker_pid_clear(tmp_path: pathlib.Path) -> None:
-    sessions_ipc.write_worker_pid(tmp_path, os.getpid())
-    assert sessions_ipc.read_worker_pid(tmp_path) == os.getpid()
-    sessions_ipc.clear_worker_pid(tmp_path)
-    assert sessions_ipc.read_worker_pid(tmp_path) is None
-    assert not sessions_ipc.worker_is_alive(tmp_path)
+    process.write_worker_pid(tmp_path, os.getpid())
+    assert process.read_worker_pid(tmp_path) == os.getpid()
+    process.clear_worker_pid(tmp_path)
+    assert process.read_worker_pid(tmp_path) is None
+    assert not process.worker_is_alive(tmp_path)
 
 
 def test_status_shows_usage_from_budget_update_event(
@@ -562,7 +564,7 @@ def test_status_shows_usage_from_budget_update_event(
             },
         ],
     )
-    sessions_ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "in=4200 out=800 cache_r=42486 cache_c=22617" in out  # the latest update wins
@@ -636,7 +638,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
     )
     logs = d / "logs.jsonl"
     logs.write_text(logs.read_text(encoding="utf-8") + "42\n", encoding="utf-8")
-    sessions_ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
     assert obj["cost_usd"] == pytest.approx(0.025)
@@ -684,7 +686,7 @@ def test_status_text_labels_plan_points_on_a_resumed_run(
             {"ts": _ts(5), "type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    sessions_ipc.write_worker_pid(d, 999999999)
+    process.write_worker_pid(d, 999999999)
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "plan=0/2pt (latest execution)" in out
@@ -721,7 +723,7 @@ def test_status_text_labels_execution_scoped_figures_on_a_resumed_run(
             {"ts": _ts(5), "type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    sessions_ipc.write_worker_pid(d, 999999999)
+    process.write_worker_pid(d, 999999999)
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "in=300 out=50 (latest execution)" in out
@@ -742,10 +744,11 @@ def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     d = tmp_path / "run"
     d.mkdir()
-    sessions_ipc.write_worker_pid(d, 1)  # init: exists, foreign-owned -> PermissionError
-    assert not sessions_ipc.worker_is_alive(d)
-    sessions_ipc.write_worker_pid(d, os.getpid())
-    assert sessions_ipc.worker_is_alive(d)
+    # init: exists, foreign-owned -> PermissionError
+    process.write_worker_pid(d, 1)
+    assert not process.worker_is_alive(d)
+    process.write_worker_pid(d, os.getpid())
+    assert process.worker_is_alive(d)
 
 
 def test_concurrent_answer_writers_do_not_race_on_the_temp(tmp_path: pathlib.Path) -> None:
@@ -809,18 +812,16 @@ def test_a_nonpositive_recorded_pid_never_reads_alive(tmp_path: pathlib.Path) ->
     """
     for junk in ("0", "-1"):
         (tmp_path / "worker.pid").write_text(junk, encoding="utf-8")
-        assert sessions_ipc.worker_is_alive(tmp_path) is False, junk
+        assert process.worker_is_alive(tmp_path) is False, junk
 
 
 def test_pid_alive_rejects_nonpositive_values_without_proc(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """PID 0 and -1 are process-group selectors on hosts without /proc too."""
-    from agent6.sessions import ipc
-
-    monkeypatch.setattr(ipc, "_HAS_PROC", False)
-    assert ipc.pid_alive(0) is False
-    assert ipc.pid_alive(-1) is False
+    monkeypatch.setattr(process, "_HAS_PROC", False)
+    assert process.pid_alive(0) is False
+    assert process.pid_alive(-1) is False
 
 
 @pytest.mark.skipif(not pathlib.Path("/proc/self/stat").exists(), reason="needs /proc (Linux)")
@@ -836,8 +837,8 @@ def test_a_zombie_worker_is_not_alive(tmp_path: pathlib.Path) -> None:
             time.sleep(0.01)
         else:
             pytest.fail("child did not become a zombie")
-        sessions_ipc.write_worker_pid(tmp_path, proc.pid)
-        assert sessions_ipc.worker_is_alive(tmp_path) is False
+        process.write_worker_pid(tmp_path, proc.pid)
+        assert process.worker_is_alive(tmp_path) is False
     finally:
         proc.wait()
 
@@ -851,9 +852,7 @@ def test_a_zombie_is_not_alive_without_proc_either(
     A zombie still answers kill-0, so a host that skips the state check reads it alive forever, the
     stale-`running` symptom the `/proc` branch exists to kill.
     """
-    from agent6.sessions import ipc
-
-    monkeypatch.setattr(ipc, "_HAS_PROC", False)
+    monkeypatch.setattr(process, "_HAS_PROC", False)
     proc = subprocess.Popen(["/bin/true"])
     try:
         deadline = time.monotonic() + 5.0
@@ -864,7 +863,7 @@ def test_a_zombie_is_not_alive_without_proc_either(
             time.sleep(0.01)
         else:
             pytest.fail("child did not become a zombie")
-        assert ipc.pid_alive(proc.pid) is False
+        assert process.pid_alive(proc.pid) is False
     finally:
         proc.wait()
 
@@ -886,11 +885,12 @@ def test_worker_pid_is_published_atomically(tmp_path: pathlib.Path) -> None:
     monkey = pytest.MonkeyPatch()
     monkey.setattr(portable, "atomic_write", spy)
     try:
-        sessions_ipc.write_worker_pid(tmp_path, os.getpid())
+        process.write_worker_pid(tmp_path, os.getpid())
     finally:
         monkey.undo()
     assert seen == ["worker.pid"]
-    assert sessions_ipc.worker_is_alive(tmp_path) is True  # still a valid record
+    # still a valid record
+    assert process.worker_is_alive(tmp_path) is True
 
 
 def test_a_started_session_with_no_pid_file_is_not_running(
@@ -942,7 +942,7 @@ def test_a_start_event_is_never_readable_before_the_pid_file(
         real_emit(self, event_type, **fields)
 
     monkeypatch.setattr(event_log.EventSink, "emit", spy)
-    sessions_ipc.emit_session_start(
+    process.emit_session_start(
         event_log.EventSink(sdir / "logs.jsonl"), sdir, "session.start", mode="run"
     )
     assert pid_present_at_emit == [True]
@@ -1123,7 +1123,7 @@ def test_show_json_label_matches_the_listing_cell(
 
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "plan"}])
     (d / "manifest.json").write_text(json.dumps({"mode": "plan"}), encoding="utf-8")
-    sessions_ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
 
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
 

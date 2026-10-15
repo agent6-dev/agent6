@@ -33,7 +33,7 @@ from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.harness import _context
 from agent6.providers import TranscriptSink
-from agent6.sessions import id, ipc, lock
+from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts
@@ -409,7 +409,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             return 2
 
         # A live worker from here, so the start questions below reach `agent6 answer`.
-        ipc.write_worker_pid(layout.session_dir, os.getpid())
+        process.write_worker_pid(layout.session_dir, os.getpid())
 
         if mode == "run":
             # One run-mode worker per checkout, taken before any tree mutation.
@@ -554,7 +554,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             finally:
                 if not detach_requested:
                     # A detach keeps the pid until the background `resume` claims it.
-                    ipc.clear_worker_pid(layout.session_dir)
+                    process.clear_worker_pid(layout.session_dir)
                 if stashed:
                     finalize.end_auto_stash(
                         cwd,

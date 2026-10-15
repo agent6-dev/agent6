@@ -16,9 +16,9 @@ from collections.abc import Mapping
 
 from agent6 import git_ops, terminal
 from agent6.app import merge, resume
-from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.sessions import process
 from agent6.ui.cli import _common
 from agent6.viewmodel import (
     LogScan,
@@ -198,7 +198,7 @@ def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
     # Liveness matches the recorded start time, so a recycled pid reads dead, not "not running".
     return (
         f"  (worker pid {pid} was recycled)"
-        if ipc.pid_alive(pid)
+        if process.pid_alive(pid)
         else f"  (worker pid {pid} not running)"
     )
 
@@ -301,8 +301,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     logs = target / sessions_layout.LOGS_NAME
     scan = scan_session_log(logs) if logs.is_file() else LogScan()
 
-    pid = ipc.read_worker_pid(target)
-    alive = ipc.worker_is_alive(target)
+    pid = process.read_worker_pid(target)
+    alive = process.worker_is_alive(target)
     last_age = (time.time() - scan.last_ep) if scan.last_ep is not None else None
     # A live run is still elapsing; a finished or dead one stopped at its last event.
     elapsed = (
@@ -480,7 +480,7 @@ def _print_listening_ports(session_dir: pathlib.Path) -> None:
     A run's commands share a network with no way in from outside, so a dev server the agent
     started is invisible here, its port included; the line names the command that opens it.
     """
-    ports = ipc.listening_ports(session_dir)
+    ports = process.listening_ports(session_dir)
     if not ports:
         return
     listed = ", ".join(str(p) for p in ports)

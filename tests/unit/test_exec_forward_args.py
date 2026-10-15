@@ -18,8 +18,8 @@ import pytest
 from agent6 import paths
 from agent6.app import _setup
 from agent6.sandbox import detect
-from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import process
 from agent6.tools import policy
 from agent6.ui import cli
 
@@ -115,7 +115,7 @@ def test_exec_refuses_a_workspace_under_a_hidden_path(
     monkeypatch.setattr(exec_cmds, "run_attached", _ran)
     (tmp_path / "run").mkdir()
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
-    ipc.write_worker_pid(layout.session_dir, os.getpid())
+    process.write_worker_pid(layout.session_dir, os.getpid())
     workspace = tmp_path / "repo"
     workspace.mkdir()
     cfg = Config.model_validate({"sandbox": {"network": "host", "hide_paths": [str(tmp_path)]}})
@@ -140,7 +140,8 @@ def test_exec_refuses_a_session_network_nobody_holds(
     monkeypatch.setattr(detect, "resolve_isolation", _strict)
     (tmp_path / "run").mkdir()
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
-    ipc.write_worker_pid(layout.session_dir, os.getpid())  # live, but holding no network
+    # live, but holding no network
+    process.write_worker_pid(layout.session_dir, os.getpid())
     cfg = Config.model_validate({"sandbox": {"network": "session"}})
     rc = net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
     err = capsys.readouterr().err
@@ -180,7 +181,8 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
 
     layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="r1")
     layout.ensure()
-    ipc.write_worker_pid(layout.session_dir, os.getpid())  # exec joins a live run only
+    # exec joins a live run only
+    process.write_worker_pid(layout.session_dir, os.getpid())
     (layout.session_dir / "manifest.json").write_text(
         json.dumps(
             {
@@ -210,7 +212,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
         return word
 
     monkeypatch.setattr(policy, "jail_policy", fake_jail_policy)
-    monkeypatch.setattr(ipc, "read_session_netns_pid", _no_pid)
+    monkeypatch.setattr(process, "read_session_netns_pid", _no_pid)
     monkeypatch.setattr(_setup, "detect_env", _env)
     monkeypatch.setattr(detect, "resolve_isolation", _resolve)
 
@@ -291,7 +293,7 @@ def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: pa
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(run, os.getpid())
+    process.write_worker_pid(run, os.getpid())
     out = io.StringIO()
     assert net_cmds.forward(layout, 8765, 0, out=out) == 2
     assert "strict isolation" in out.getvalue()
@@ -361,8 +363,9 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(layout.session_dir, os.getpid())
-    ipc.write_session_netns_pid(layout.session_dir, os.getpid())  # the MCP server's
+    process.write_worker_pid(layout.session_dir, os.getpid())
+    # the MCP server's
+    process.write_session_netns_pid(layout.session_dir, os.getpid())
     layout.manifest_path.write_text(
         json.dumps(
             {
@@ -430,7 +433,7 @@ def test_exec_runs_in_the_sessions_worktree_with_its_recorded_git_dir(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(layout.session_dir, os.getpid())
+    process.write_worker_pid(layout.session_dir, os.getpid())
     layout.manifest_path.write_text(
         json.dumps(
             {
@@ -483,10 +486,10 @@ def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
     monkeypatch.setattr(detect, "resolve_isolation", _strict)
     (tmp_path / "run").mkdir()
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
-    ipc.write_worker_pid(layout.session_dir, os.getpid())
+    process.write_worker_pid(layout.session_dir, os.getpid())
     holder = subprocess.Popen(["sleep", "30"])
     try:
-        ipc.write_session_netns_pid(layout.session_dir, holder.pid)
+        process.write_session_netns_pid(layout.session_dir, holder.pid)
         real_policy = policy.jail_policy
 
         def _holder_dies(*args: Any, **kwargs: Any) -> Any:
@@ -529,7 +532,8 @@ def test_forward_leaves_no_connect_timeout_on_the_bridge(
     free.close()
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="busy-run", subdir="runs")
     layout.session_dir.mkdir(parents=True)
-    ipc.write_session_netns_pid(layout.session_dir, os.getpid())  # a live holder: us
+    # a live holder: us
+    process.write_session_netns_pid(layout.session_dir, os.getpid())
     # The client ends the run once connected, so the next accept timeout returns the loop.
     client_script = (
         "import os, socket, time\n"
@@ -583,7 +587,8 @@ def test_forward_drops_a_connection_it_cannot_fork_for(
 
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="fwd")
     layout.session_dir.mkdir(parents=True)
-    ipc.write_session_netns_pid(layout.session_dir, os.getpid())  # a live holder: us
+    # a live holder: us
+    process.write_session_netns_pid(layout.session_dir, os.getpid())
     probe = socket.socket()
     probe.bind(("127.0.0.1", 0))
     port = probe.getsockname()[1]
@@ -633,7 +638,7 @@ def test_forward_closes_its_listener_when_the_bind_fails(tmp_path: pathlib.Path)
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    ipc.write_session_netns_pid(layout.session_dir, os.getpid())
+    process.write_session_netns_pid(layout.session_dir, os.getpid())
     out = io.StringIO()
     with socket.socket() as busy:
         busy.bind(("127.0.0.1", 0))
@@ -669,7 +674,7 @@ def test_forward_refuses_an_out_of_range_local_port(
 
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="serving-run-AAAAAA")
     layout.ensure()
-    ipc.write_session_netns_pid(layout.session_dir, os.getpid())
+    process.write_session_netns_pid(layout.session_dir, os.getpid())
     out = io.StringIO()
     rc = net_cmds.forward(layout, 3000, local_port, out=out)
 
@@ -694,7 +699,7 @@ def test_forward_local_port_zero_picks_a_free_port(
     def _probe(_dir: pathlib.Path) -> int | None:
         return next(probes, None)
 
-    monkeypatch.setattr(ipc, "read_session_netns_pid", _probe)
+    monkeypatch.setattr(process, "read_session_netns_pid", _probe)
     out = io.StringIO()
     assert net_cmds.forward(layout, 8080, 0, out=out) == 0
     line = next(ln for ln in out.getvalue().splitlines() if "forwarding http://127.0.0.1:" in ln)

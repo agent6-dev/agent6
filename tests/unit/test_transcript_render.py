@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.sessions import ipc
+from agent6.sessions import process
 from agent6.viewmodel import transcript_render
 
 _OPENAI = [
@@ -615,7 +615,7 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
         (runs / name / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
     os.utime(runs / "older-run" / "logs.jsonl", (100, 100))
     os.utime(runs / "newer-run" / "logs.jsonl", (1000, 1000))
-    ipc.register_frontend(runs / "older-run", 12345)
+    process.register_frontend(runs / "older-run", 12345)
 
     assert (
         history_cmds._cmd_history_transcript(

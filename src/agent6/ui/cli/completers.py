@@ -18,6 +18,7 @@ from agent6.config import (
     layer,
 )
 from agent6.models import choices as models_choices
+from agent6.sessions import process
 from agent6.ui.cli import _common
 from agent6.viewmodel import listing, machine_state
 
@@ -289,12 +290,13 @@ def _complete_session_ids(prefix: str, **_kw: object) -> list[str]:
 def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: object) -> list[str]:
     """Return the ports the session is listening on; only something inside its network sees them."""
     target = str(getattr(parsed_args, "target", "") or "")
-    from agent6.sessions import ipc  # noqa: PLC0415  # noqa: PLC0415
 
     layout = _common.resolve_or_newest_layout(pathlib.Path.cwd(), target)
     if layout is None:
         return []
-    return [str(p) for p in ipc.listening_ports(layout.session_dir) if str(p).startswith(prefix)]
+    return [
+        str(p) for p in process.listening_ports(layout.session_dir) if str(p).startswith(prefix)
+    ]
 
 
 @_never_raises

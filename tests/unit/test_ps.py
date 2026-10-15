@@ -14,7 +14,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.sessions import ipc
+from agent6.sessions import process
 from agent6.ui.cli import main, ps_cmd
 
 WAITER = """
@@ -62,7 +62,8 @@ def test_ps_reads_a_live_machine_through_the_shared_status_word(
     capsys.readouterr()
     assert not (paths.state_dir(tmp_path) / "sessions").exists()
     instance = paths.state_dir(tmp_path) / "machines" / "waiter_demo"
-    ipc.write_worker_pid(instance, os.getpid())  # this process: alive by the pid rule
+    # this process: alive by the pid rule
+    process.write_worker_pid(instance, os.getpid())
     assert ps_cmd.cmd_ps() == 0
     out = capsys.readouterr().out
     row = next(line for line in out.splitlines() if "waiter_demo" in line)
@@ -88,7 +89,7 @@ def test_ps_lists_a_linked_lane_once(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(lane, os.getpid())
+    process.write_worker_pid(lane, os.getpid())
     coordinator = base / "agent6" / "coord-repo-111111" / "sessions" / "runs"
     coordinator.mkdir(parents=True)
     (coordinator / "fan-l1").symlink_to(lane, target_is_directory=True)
@@ -110,7 +111,7 @@ def test_ps_lists_same_named_live_sessions_from_different_repositories(
             json.dumps({"type": "session.start", "mode": "run", "user_task": repo_id}) + "\n",
             encoding="utf-8",
         )
-        ipc.write_worker_pid(session, os.getpid())
+        process.write_worker_pid(session, os.getpid())
 
     assert ps_cmd.cmd_ps(as_json=True) == 0
     rows = json.loads(capsys.readouterr().out)
@@ -137,7 +138,7 @@ def test_ps_json_carries_the_row_facts(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(lane, os.getpid())
+    process.write_worker_pid(lane, os.getpid())
     assert main(["ps", "--json"]) == 0
     (row,) = json.loads(capsys.readouterr().out)
     assert row["id"] == "fan-l1" and row["mode"] == "run" and row["pid"] == os.getpid()
@@ -152,7 +153,7 @@ def _live(session_dir: pathlib.Path, manifest: dict[str, object]) -> None:
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(session_dir, os.getpid())
+    process.write_worker_pid(session_dir, os.getpid())
 
 
 @pytest.mark.parametrize(

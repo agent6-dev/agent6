@@ -18,7 +18,7 @@ import sys
 from agent6 import errors, git_ops, git_policy, kinds, portable
 from agent6 import paths as agent6_paths
 from agent6.app import fork_worktrees, resume
-from agent6.sessions import id, ipc
+from agent6.sessions import id, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common, _steer
@@ -489,7 +489,7 @@ def _rm_refusal(
         worktree: The fork's own worktree; None when another session shares and keeps it.
         tips: The branch tips the worktree's commits must reach.
     """
-    if ipc.worker_is_alive(layout.session_dir):
+    if process.worker_is_alive(layout.session_dir):
         return (
             f"{layout.session_id} is still live; stop it first (agent6 stop {layout.session_id})."
         )

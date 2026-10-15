@@ -10,7 +10,7 @@ from collections.abc import Callable
 import pytest
 
 from agent6 import paths
-from agent6.sessions import ipc, layout
+from agent6.sessions import ipc, layout, process
 from agent6.ui import spawn
 from agent6.ui.cli import parser
 from agent6.ui.web import actions
@@ -117,7 +117,6 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # started(pid) fires only when worker.pid holds the child's own pid, never a running machine's.
-
     mf = tmp_path / "tiny.asm.toml"
     mf.write_text(TINY, encoding="utf-8")
     captured_argv: list[list[str]] = []
@@ -142,7 +141,7 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
     instance = layout.machines_root(paths.state_dir(tmp_path)) / "tiny"
     instance.mkdir(parents=True)
     assert started(4242) is False  # no worker.pid yet
-    ipc.write_worker_pid(instance, 4242)
+    process.write_worker_pid(instance, 4242)
     assert started(4242) is True  # the child owns the instance
     assert started(4243) is False  # someone else's pid (a prior runner)
 
@@ -610,7 +609,7 @@ def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: pathlib.Path) -
     (inst / "journal.jsonl").write_text(begin, encoding="utf-8")
     ok, msg = actions.machine_stop(tmp_path, "tiny")
     assert ok and "not running" in msg
-    with mock.patch.object(ipc, "worker_is_alive", return_value=True):  # the gate's owner
+    with mock.patch.object(process, "worker_is_alive", return_value=True):  # the gate's owner
         ok, msg = actions.machine_stop(tmp_path, "tiny")
     assert ok and "stop requested" in msg
     assert (inst / "stop").is_file()
@@ -727,7 +726,7 @@ def test_a_now_steer_writes_the_urgent_marker(
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / "live-one-AAAAAA"
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text('{"type": "session.start", "mode": "run"}\n', encoding="utf-8")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     ok, msg = actions.steer(tmp_path, "live-one-AAAAAA", "/now stop and report")
     assert ok and msg == "steering now, interrupting the call in flight"
     assert (d / ipc.STEER_REQUEST_FILE).read_text(encoding="utf-8") == "now"

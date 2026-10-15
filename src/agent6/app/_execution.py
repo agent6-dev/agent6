@@ -35,7 +35,7 @@ from agent6.harness import (
 )
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import jail
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, operator_prompts
@@ -141,7 +141,7 @@ def detach_to_background(
     err = frontend.spawn_detached_resume(cwd, layout.session_id, flags)
     if err:
         # The handoff failed, so the pid this process kept through the spawn goes now.
-        ipc.clear_worker_pid(layout.session_dir)
+        process.clear_worker_pid(layout.session_dir)
         reporter.note(err)
         return
     reporter.out(f"\n[agent6] detached: {layout.session_id} continues in the background.")
@@ -314,7 +314,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         if _setup.wants_session_network(cfg, inputs.isolation):
             session_net = jail.SessionNetwork.open()
             # Published so `agent6 exec` can join it: a namespace is named through a /proc entry.
-            ipc.write_session_netns_pid(layout.session_dir, session_net.holder_pid)
+            process.write_session_netns_pid(layout.session_dir, session_net.holder_pid)
         mcp_manager = _setup.start_mcp_manager_if_enabled(
             cfg, cwd, inputs.isolation, reporter=reporter, events=events, session_net=session_net
         )
@@ -541,7 +541,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         try:
             with contextlib.ExitStack() as cleanup:
                 if session_net is not None:
-                    cleanup.callback(ipc.clear_session_netns_pid, layout.session_dir)
+                    cleanup.callback(process.clear_session_netns_pid, layout.session_dir)
                     cleanup.callback(session_net.close)
                 cleanup.callback(_close_mcp)
                 if dispatcher is not None:

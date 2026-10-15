@@ -24,7 +24,7 @@ from collections.abc import Callable
 
 from agent6 import kinds, paths, terminal
 from agent6.sandbox import jail, jail_jobs, jail_session
-from agent6.sessions import ipc
+from agent6.sessions import process
 
 # Every log lives under one root the run's jail session grants read-write when it opens, so a
 # run's background commands can write each other's logs; the launcher's result and each
@@ -235,7 +235,7 @@ class BackgroundShells:
             # Written after the start: this file is the whole roster for another process.
             # The host pid serves a stop from another process; a session command has none.
             host = (
-                ipc.process_identity(shell.job.pid)
+                process.process_identity(shell.job.pid)
                 if isinstance(shell.job, (jail_jobs.LocalJob, jail_jobs.BackgroundJob))
                 else None
             )
@@ -459,7 +459,7 @@ def shells_text(session_dir: pathlib.Path) -> str:
     return "\n".join(roster_from_dir(session_dir / SHELLS_DIR)) or "no background commands this run"
 
 
-def shell_host_processes(root: pathlib.Path) -> list[ipc.ProcessIdentity]:
+def shell_host_processes(root: pathlib.Path) -> list[process.ProcessIdentity]:
     """Return the live host processes the run's background commands recorded.
 
     A command inside the session's namespaces records no host identity and dies with the
@@ -467,7 +467,7 @@ def shell_host_processes(root: pathlib.Path) -> list[ipc.ProcessIdentity]:
     """
     if not root.is_dir():
         return []
-    processes: list[ipc.ProcessIdentity] = []
+    processes: list[process.ProcessIdentity] = []
     try:
         directories = sorted(root.iterdir())
     except OSError:
@@ -481,7 +481,7 @@ def shell_host_processes(root: pathlib.Path) -> list[ipc.ProcessIdentity]:
         started = meta.get("pid_start") if isinstance(meta, dict) else None
         if type(pid) is int and pid > 0 and isinstance(started, str):
             identity = (pid, started)
-            if ipc.process_is_alive(identity):
+            if process.process_is_alive(identity):
                 processes.append(identity)
     return processes
 

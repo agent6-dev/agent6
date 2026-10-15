@@ -49,7 +49,7 @@ ALLOWED = {
     "sandbox/jail.py",
     "sandbox/jail_jobs.py",
     "sandbox/jail_session.py",
-    "sessions/ipc.py",
+    "sessions/process.py",
     "ui/btw.py",
     "ui/cli/_ask.py",
     "ui/cli/_live.py",

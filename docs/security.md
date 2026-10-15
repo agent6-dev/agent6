@@ -542,7 +542,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
   Tool results stay under Claude Code's 50,000-byte persistence threshold, so no tool output is written under `~/.claude`.
   The loop caps them at 34,000 bytes for this provider, keeping 16,000 for the turn's notices; a wider payload is refused.
   `claude auth status --json` runs the same way for the sign-in preflight.
-- `sessions/ipc.py`: `ps -p <pid> -o lstart=` on hosts without `/proc` (macOS), for the `worker.pid` start-time identity, over a pid agent6 recorded.
+- `sessions/process.py`: `ps -p <pid> -o lstart=` and `ps -p <pid> -o stat=` on hosts without `/proc` (macOS), for process start-time identity and zombie checks, over a pid agent6 recorded.
 - `ui/btw.py`: spawns `agent6 ask` detached for `/btw` (every composer), so the side question keeps provider egress while the run is confined.
   Argv is the agent6 exe plus the question the operator typed, with `--` before it.
 - `ui/spawn.py`: the shared front-end spawn helper.

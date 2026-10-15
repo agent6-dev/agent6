@@ -12,7 +12,7 @@ from typing import Any
 
 from agent6 import budget, git_ops
 from agent6.machine import MachineJournal, load_machine
-from agent6.sessions import ipc, layout
+from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import format, listing, machine_state, tail
 from agent6.viewmodel import state as viewmodel_state
@@ -238,7 +238,7 @@ def machine_snapshot(
     ms = machine_state.fold_machine(spec, events)
     d = machine_state.machine_state_as_dict(ms, machine_dir, execution=execution)
     spend, in_flight = machine_state.machine_spend(
-        events, machine_dir, alive=ipc.worker_is_alive(machine_dir)
+        events, machine_dir, alive=process.worker_is_alive(machine_dir)
     )
     d["spend"] = {
         "usd": spend.usd,

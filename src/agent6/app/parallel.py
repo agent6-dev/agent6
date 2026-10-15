@@ -33,7 +33,7 @@ from agent6.config import Config, ConfigError
 from agent6.harness import judge, subrun
 from agent6.models import validate
 from agent6.providers import TranscriptSink
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import format, listing, produced_result, summarize_session_dir
@@ -781,7 +781,7 @@ def _import_lanes(
         if not res.ok:
             failed.append((res, f"failed to start: {res.error}"))
             continue
-        if ipc.worker_is_alive(res.session_dir):
+        if process.worker_is_alive(res.session_dir):
             failed.append(
                 (
                     res,
@@ -1014,7 +1014,7 @@ def run_parallel(
         fanout=sessions_manifest.FanoutStamp(lanes=len(lanes), spec=spec),
     )
     events = event_log.EventSink(layout.logs_path)
-    ipc.emit_session_start(
+    process.emit_session_start(
         events,
         layout.session_dir,
         "session.start",
@@ -1081,7 +1081,7 @@ def run_parallel(
             events.emit("session.end", reason="crashed", iterations=0, all_passed=False)
         raise
     finally:
-        ipc.clear_worker_pid(layout.session_dir)
+        process.clear_worker_pid(layout.session_dir)
 
 
 def _drive_fanout(

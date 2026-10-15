@@ -37,7 +37,7 @@ from agent6.harness import _context, _snapshot
 from agent6.providers import (
     TranscriptSink,
 )
-from agent6.sessions import id, ipc, lock
+from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts
@@ -656,7 +656,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 return 2
         # Written once the preflight passed: a refused resume never had a live worker, and the
         # question below reaches `agent6 answer`.
-        ipc.write_worker_pid(layout.session_dir, os.getpid())
+        process.write_worker_pid(layout.session_dir, os.getpid())
         settled = _resume_tree.settle(
             cwd,
             policy=cfg.git.dirty_tree,
@@ -773,7 +773,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             finally:
                 if not detach_requested and not handed_to_run_task:
                     # run_task's own teardown owns the pid when it ran.
-                    ipc.clear_worker_pid(layout.session_dir)
+                    process.clear_worker_pid(layout.session_dir)
                 if stashed.stashed and cfg is not None:
                     finalize.end_auto_stash(
                         cwd,

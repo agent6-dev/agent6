@@ -27,7 +27,7 @@ import signal
 import time
 
 from agent6.sandbox import jail
-from agent6.sessions import ipc, layout, manifest
+from agent6.sessions import ipc, layout, manifest, process
 from agent6.tools import background
 from agent6.viewmodel import listing, session_is_live, summarize_session_dir
 
@@ -89,7 +89,7 @@ def stop_session(
     resumable = not listing.resume_blocker(session_dir)
     lanes = _live_lanes(session_dir) if fanout else []
     with_lanes = f" with its {len(lanes)} live lane{'s' if len(lanes) > 1 else ''}" if lanes else ""
-    worker = ipc.read_live_worker_identity(session_dir)
+    worker = process.read_live_worker_identity(session_dir)
     # The session's own markers first: a coordinator reads its stop as its lanes end, and one
     # written after they ended is never read.
     written = (
@@ -126,7 +126,7 @@ def stop_session(
 
 def _ended(
     session_dir: pathlib.Path,
-    worker: ipc.ProcessIdentity | None,
+    worker: process.ProcessIdentity | None,
     *,
     wait_s: float,
     grace_s: float,
@@ -192,12 +192,12 @@ def _live_lanes(session_dir: pathlib.Path) -> list[pathlib.Path]:
 
 
 def _ended_within(
-    session_dir: pathlib.Path, worker: ipc.ProcessIdentity | None, wait_s: float
+    session_dir: pathlib.Path, worker: process.ProcessIdentity | None, wait_s: float
 ) -> bool:
     """Return whether the run ended, or its worker changed, within the wait."""
     deadline = time.monotonic() + wait_s
     while session_is_live(session_dir):
-        if ipc.read_live_worker_identity(session_dir) != worker:
+        if process.read_live_worker_identity(session_dir) != worker:
             return True
         if time.monotonic() >= deadline:
             return False
@@ -206,7 +206,7 @@ def _ended_within(
 
 
 def _kill(
-    session_dir: pathlib.Path, worker: ipc.ProcessIdentity | None, grace_s: float
+    session_dir: pathlib.Path, worker: process.ProcessIdentity | None, grace_s: float
 ) -> tuple[bool, int]:
     """SIGTERM the live worker and its host-side background commands, then SIGKILL the rest.
 
@@ -221,24 +221,25 @@ def _kill(
         Whether the worker was signalled, and how many commands were.
     """
     me = os.getpid()
-    targets: list[ipc.ProcessIdentity] = []
-    worker_live = worker is not None and worker[0] != me and ipc.process_is_alive(worker)
+    targets: list[process.ProcessIdentity] = []
+    worker_live = worker is not None and worker[0] != me and process.process_is_alive(worker)
     if worker is not None and worker_live:
         targets.append(worker)
     commands = [
         identity
         for identity in background.shell_host_processes(session_dir / background.SHELLS_DIR)
-        if identity[0] != me and ipc.process_is_alive(identity)
+        if identity[0] != me and process.process_is_alive(identity)
     ]
     targets.extend(commands)
     for identity in targets:
         jail.signal_group(identity[0], signal.SIGTERM)
     deadline = time.monotonic() + grace_s
     while (
-        any(ipc.process_is_alive(identity) for identity in targets) and time.monotonic() < deadline
+        any(process.process_is_alive(identity) for identity in targets)
+        and time.monotonic() < deadline
     ):
         time.sleep(_POLL_S)
     for identity in targets:
-        if ipc.process_is_alive(identity):
+        if process.process_is_alive(identity):
             jail.signal_group(identity[0], signal.SIGKILL)
     return worker_live, len(commands)

@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.ui.cli import _interact, plan_watch
 from agent6.viewmodel import tail
 
@@ -133,7 +133,7 @@ def test_open_prompt_at_attach_is_answered_and_written(
         return "yes"
 
     monkeypatch.setattr(_interact, "default_stdin_approver", _yes)
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     _write_log(
         log,
@@ -181,7 +181,7 @@ def test_react_answers_a_new_live_question(tmp_path: pathlib.Path, monkeypatch: 
         return ("beta",)
 
     monkeypatch.setattr(_interact, "default_stdin_questioner", _beta)
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     history: list[dict[str, Any]] = [{"type": "session.start"}]
     _write_log(log, history)
@@ -247,7 +247,7 @@ def test_resumed_execution_reuses_prompt_ids_and_is_still_answered(
 
     monkeypatch.setattr(_interact, "default_stdin_approver", _yes)
     monkeypatch.setattr(_interact, "default_stdin_questioner", _answer)
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     leg1: list[dict[str, Any]] = [
         {"type": "session.start"},
@@ -286,7 +286,7 @@ def test_an_answer_that_lost_to_another_surface_is_reported(
         return "yes"
 
     monkeypatch.setattr(_interact, "default_stdin_approver", _yes)
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     event: dict[str, Any] = {"type": "approval.prompt", "id": "approval-1", "prompt": "run `ls`?"}
     _write_log(log, [{"type": "session.start"}, event])
@@ -313,7 +313,7 @@ def test_an_unscoped_approval_offers_no_session_choice(
         return "no"
 
     monkeypatch.setattr(_interact, "default_stdin_approver", _approver)
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     history: list[dict[str, Any]] = [
         {"type": "session.start"},
@@ -380,7 +380,7 @@ def test_a_prompt_answered_elsewhere_ends_the_attach_prompt(
     The wait read the terminal alone: attach stayed on the prompt after another front-end
     answered it, through the end of the run, and Enter then wrote an answer for it.
     """
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     _write_log(log, [{"type": "session.start"}, prompt])
     pid, master = _attach_under_pty(tmp_path)
@@ -397,7 +397,7 @@ def test_a_prompt_answered_elsewhere_ends_the_attach_prompt(
 
 def test_an_answer_typed_at_the_attach_prompt_is_written(tmp_path: pathlib.Path) -> None:
     """A line typed at an open attach prompt is the answer the worker reads, with no notice."""
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     _write_log(tmp_path / "logs.jsonl", [{"type": "session.start"}, _OPEN_APPROVAL])
     pid, master = _attach_under_pty(tmp_path)
     try:
@@ -418,7 +418,7 @@ def test_a_worker_that_dies_ends_the_attach_prompt(tmp_path: pathlib.Path) -> No
     """
     worker = subprocess.Popen(["sleep", "60"])
     try:
-        ipc.write_worker_pid(tmp_path, worker.pid)
+        process.write_worker_pid(tmp_path, worker.pid)
         _write_log(tmp_path / "logs.jsonl", [{"type": "session.start"}, _OPEN_APPROVAL])
         pid, master = _attach_under_pty(tmp_path)
         try:
@@ -451,7 +451,7 @@ def test_a_line_typed_as_the_prompt_closes_writes_no_answer(
         return "no"
 
     monkeypatch.setattr(_interact, "default_stdin_approver", _late_no)
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     _write_log(log, [{"type": "session.start"}, _OPEN_APPROVAL])
     view = _view()
     fe = plan_watch._CliFrontEnd(tmp_path, view)  # pyright: ignore[reportPrivateUsage]
@@ -478,7 +478,7 @@ def test_a_prompt_whose_execution_ended_takes_no_answer(
         return "yes"
 
     monkeypatch.setattr(_interact, "default_stdin_approver", _late_yes)
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     _write_log(log, [{"type": "session.start"}, _OPEN_APPROVAL])
     view = _view()
     fe = plan_watch._CliFrontEnd(tmp_path, view)  # pyright: ignore[reportPrivateUsage]
@@ -498,7 +498,7 @@ def test_an_older_executions_answer_does_not_close_the_new_prompt(
     """
     asked: list[str] = []
     monkeypatch.setattr(_interact, "default_stdin_approver", _typist("yes", asked))
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     _write_log(
         log,
@@ -548,7 +548,7 @@ def test_two_open_prompts_each_close_on_their_own_answer(
         return "yes"
 
     monkeypatch.setattr(_interact, "default_stdin_approver", _approver)
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     _write_log(
         log,
         [
@@ -573,7 +573,7 @@ def test_attach_follows_on_after_a_prompt_answered_elsewhere(tmp_path: pathlib.P
     Attach printed nothing more until a key was pressed. The next prompt reuses the id in a
     resumed execution: read from the wrong journal offset, the first answer would close it.
     """
-    ipc.write_worker_pid(tmp_path, os.getpid())
+    process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     _write_log(log, [{"type": "session.start", "user_task": "t"}, _OPEN_APPROVAL])
     pid, master = pty.fork()

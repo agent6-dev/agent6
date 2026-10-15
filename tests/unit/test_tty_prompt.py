@@ -24,6 +24,7 @@ import pytest
 
 from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
+from agent6.sessions import process
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import _interact
 from agent6.ui.cli import _steer as cli__steer
@@ -252,7 +253,7 @@ def test_a_headless_park_behind_a_live_front_end_prints_too(
     def _answer(_d: object, _id: object, **_k: object) -> str:
         return "no"
 
-    monkeypatch.setattr(sessions_ipc, "frontend_is_live", _live)
+    monkeypatch.setattr(process, "frontend_is_live", _live)
     monkeypatch.setattr(sessions_ipc, "read_answer", _answer)
 
     assert _approve(tmp_path) is False

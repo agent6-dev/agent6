@@ -21,8 +21,8 @@ import pytest
 
 from agent6.config import Config
 from agent6.sandbox import jail
-from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import process
 from agent6.tools import dispatch
 from agent6.ui.cli import net_cmds
 
@@ -38,9 +38,10 @@ def _serving(
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id=session_id, subdir="runs")
     session_dir = layout.session_dir
     session_dir.mkdir(parents=True, exist_ok=True)
-    ipc.write_worker_pid(session_dir, os.getpid())  # exec joins a live run only
+    # exec joins a live run only
+    process.write_worker_pid(session_dir, os.getpid())
     net = jail.SessionNetwork.open()
-    ipc.write_session_netns_pid(session_dir, net.holder_pid)
+    process.write_session_netns_pid(session_dir, net.holder_pid)
     dispatcher = dispatch.ToolDispatcher(
         root=tmp_path,
         config=Config.model_validate({"sandbox": {"run_commands": "yes"}}),
@@ -68,13 +69,13 @@ def test_the_ports_a_run_serves_are_visible_only_from_inside(tmp_path: pathlib.P
     """
     dispatcher, net, layout = _serving(tmp_path, _PORT, "serving-1")
     try:
-        assert ipc.listening_ports(layout.session_dir) == [_PORT]
+        assert process.listening_ports(layout.session_dir) == [_PORT]
         with pytest.raises(OSError):  # not reachable from this machine
             socket.create_connection(("127.0.0.1", _PORT), timeout=2).close()
     finally:
         dispatcher.close()
         net.close()
-    assert ipc.listening_ports(layout.session_dir) == [], "the network outlived the run"
+    assert process.listening_ports(layout.session_dir) == [], "the network outlived the run"
 
 
 def test_exec_runs_where_the_agent_runs(tmp_path: pathlib.Path) -> None:
@@ -171,7 +172,7 @@ def test_forward_stops_when_its_session_ends(tmp_path: pathlib.Path) -> None:
     )
     layout.session_dir.mkdir(parents=True)
     net = jail.SessionNetwork.open()
-    ipc.write_session_netns_pid(layout.session_dir, net.holder_pid)
+    process.write_session_netns_pid(layout.session_dir, net.holder_pid)
     out = io.StringIO()
     result: list[int] = []
     thread = threading.Thread(
@@ -182,7 +183,8 @@ def test_forward_stops_when_its_session_ends(tmp_path: pathlib.Path) -> None:
     time.sleep(1.0)
     assert thread.is_alive(), "the bridge should still be waiting while the run lives"
     net.close()
-    ipc.clear_session_netns_pid(layout.session_dir)  # the run's teardown
+    # the run's teardown
+    process.clear_session_netns_pid(layout.session_dir)
     thread.join(timeout=15)
     assert not thread.is_alive(), "the bridge outlived its session"
     assert result == [0] and "ended" in out.getvalue(), out.getvalue()

@@ -14,7 +14,7 @@ import pathlib
 from collections.abc import Sequence
 
 from agent6 import errors, git_ops, paths, terminal
-from agent6.sessions import ipc, lock
+from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import session_dirs
 
@@ -149,7 +149,7 @@ def _still_needs_worktree(
     A session with no chain committed nothing and has no merge to wait for; a fork's chain is
     cut at its fork point, so a fork always has one.
     """
-    if ipc.worker_is_alive(session_dir):
+    if process.worker_is_alive(session_dir):
         return "live"
     chain = git_ops.chain_ref_for(session_dir.name)
     if manifest.merged is None and git_ops.chain_tip(repo, chain) is None:

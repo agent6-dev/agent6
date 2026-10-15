@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from typing import Any, Literal
 
 from agent6.machine import MachineError, MachineResult, journal, load_machine, schema
-from agent6.sessions import ipc, layout
+from agent6.sessions import layout, process
 from agent6.viewmodel import format
 from agent6.viewmodel import state as viewmodel_state
 from agent6.viewmodel import tail as viewmodel_tail
@@ -404,7 +404,7 @@ def probe_instance(
     Returns:
         The probes.
     """
-    alive = ipc.worker_is_alive(machine_dir)
+    alive = process.worker_is_alive(machine_dir)
     if execution is None:
         execution = (
             newest_agent_execution(machine_dir) if ms.ended is None and alive else AgentExecution()

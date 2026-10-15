@@ -20,7 +20,7 @@ from agent6 import errors, paths
 from agent6.app import _setup, machine_agent
 from agent6.machine import MachineJournal, write_stop_request
 from agent6.sandbox import detect
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.ui.cli import main
 
 
@@ -161,7 +161,7 @@ def test_status_reports_waiting_state_and_spend(
     capsys.readouterr()  # drop run output
     # `--exit-on-wait` exits the process; in-process the pid is this pytest, so clear it.
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    ipc.clear_worker_pid(root)
+    process.clear_worker_pid(root)
     code = main(["machine", "status", "waiter_delayed"])
     assert code == 0
     out = capsys.readouterr().out
@@ -180,7 +180,7 @@ def test_status_of_a_parked_instance_with_no_worker_names_the_resume_command(
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    assert not ipc.worker_is_alive(root)
+    assert not process.worker_is_alive(root)
 
     assert main(["machine", "status", "waiter_delayed"]) == 0
 
@@ -256,7 +256,7 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     assert MachineJournal(root).read_pending_wait() is not None
     # The run cleared its own pid on exit; re-stamp a live worker (this pytest).
-    ipc.write_worker_pid(root, os.getpid())
+    process.write_worker_pid(root, os.getpid())
     code = main(["machine", "status", "waiter_delayed"])
     assert code == 0
     out = capsys.readouterr().out
@@ -275,7 +275,7 @@ def test_status_names_a_poke_only_for_an_armed_wait(
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     MachineJournal(root).clear_pending_wait()
-    ipc.write_worker_pid(root, os.getpid())
+    process.write_worker_pid(root, os.getpid())
 
     assert main(["machine", "status", "waiter_delayed"]) == 0
 
@@ -293,7 +293,7 @@ def test_status_shows_a_pending_poke_until_it_is_acked(
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    ipc.clear_worker_pid(root)
+    process.clear_worker_pid(root)
     assert main(["machine", "poke", "waiter_delayed", "--message", "go"]) == 0
     capsys.readouterr()
     assert main(["machine", "status", "waiter_delayed"]) == 0
@@ -316,7 +316,8 @@ def test_status_of_an_alive_but_parked_instance_reads_waiting(
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    ipc.write_worker_pid(root, os.getpid())  # a LIVE worker alongside the persisted wait
+    # a LIVE worker alongside the persisted wait
+    process.write_worker_pid(root, os.getpid())
 
     assert main(["machine", "status", "waiter_delayed"]) == 0
     out = capsys.readouterr().out
@@ -333,7 +334,7 @@ def test_status_tolerates_a_corrupt_pending_wait(
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    ipc.clear_worker_pid(root)
+    process.clear_worker_pid(root)
     MachineJournal(root).wait_path.write_text("{ not valid json", encoding="utf-8")
 
     code = main(["machine", "status", "waiter_delayed"])
@@ -469,7 +470,7 @@ def test_status_asm_file_path_hints_the_instance_id(
     f = _write_machine(tmp_path)  # machine = "waiter_delayed"
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    ipc.clear_worker_pid(paths.state_dir(tmp_path) / "machines" / "waiter_delayed")
+    process.clear_worker_pid(paths.state_dir(tmp_path) / "machines" / "waiter_delayed")
     code = main(["machine", "status", "waiter.asm.toml"])
     assert code == 2
     err = capsys.readouterr().err
@@ -588,13 +589,14 @@ def test_watch_follows_a_live_machine_in_a_wait(
     monkeypatch.chdir(tmp_path)
     _stalled_instance(tmp_path, parked=True)
     inst = paths.state_dir(tmp_path) / "machines" / "tiny"
-    ipc.write_worker_pid(inst, os.getpid())
+    process.write_worker_pid(inst, os.getpid())
     result: list[int] = []
     t = threading.Thread(target=lambda: result.append(main(["attach", "tiny"])), daemon=True)
     t.start()
     t.join(timeout=2.0)
     assert t.is_alive(), f"attach left a live machine: exit {result}"
-    ipc.clear_worker_pid(inst)  # the worker goes: the parked instance has nothing to follow
+    # the worker goes: the parked instance has nothing to follow
+    process.clear_worker_pid(inst)
     t.join(timeout=5.0)
     assert result == [0]
     assert "WAITING" in capsys.readouterr().out
@@ -806,14 +808,14 @@ def test_run_refuses_rerun_of_ended_instance(
     root = paths.state_dir(tmp_path) / "machines" / "tiny"
     # Stand in for the previous worker having exited: a pid that is never alive.
     sentinel = 10**9
-    ipc.write_worker_pid(root, sentinel)
+    process.write_worker_pid(root, sentinel)
     code = main(["machine", "run", str(f)])
     assert code == 2  # a refusal
     err = capsys.readouterr().err
     assert "already ended" in err
     assert str(root) in err  # the archive remedy names the instance dir
     # worker.pid was NOT re-stamped with the (live) rerun process pid.
-    assert ipc.read_worker_pid(root) == sentinel
+    assert process.read_worker_pid(root) == sentinel
     # The journal still reads terminal, unchanged.
     result = drive(load_machine(root / "machine.asm.toml"), MachineJournal(root), None, live=False)
     assert result.status == "ok"
@@ -930,7 +932,7 @@ def test_poke_refuses_an_instance_without_an_open_wait(
     (root / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     MachineJournal(root).begin(machine="tiny", version=1)
     if alive:
-        ipc.write_worker_pid(root, os.getpid())
+        process.write_worker_pid(root, os.getpid())
 
     assert main(["machine", "poke", "tiny"]) == 2
 
@@ -1446,7 +1448,7 @@ model = "m"
     # A preflight refusal is not a running worker; the stamped pid must be cleared.
 
     root = paths.state_dir(repo) / "machines" / "run-warn"
-    assert ipc.read_worker_pid(root) is None
+    assert process.read_worker_pid(root) is None
 
 
 PARKED_RUN_MACHINE = """
@@ -1693,7 +1695,7 @@ def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
     def _alive(_root: pathlib.Path) -> bool:
         return True
 
-    monkeypatch.setattr(ipc, "worker_is_alive", _alive)  # the verb gate's owner
+    monkeypatch.setattr(process, "worker_is_alive", _alive)  # the verb gate's owner
     assert main(["machine", "stop", "waiter_delayed"]) == 0
     assert "stop requested" in capsys.readouterr().out
     assert (wroot / "stop").is_file()
@@ -1860,7 +1862,7 @@ def test_status_and_list_name_a_parked_approval(
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     MachineJournal(root).clear_pending_wait()
-    ipc.write_worker_pid(root, os.getpid())
+    process.write_worker_pid(root, os.getpid())
     execution = root / "states" / "0001-attempt"
     execution.mkdir(parents=True)
     (execution / "logs.jsonl").write_text(
@@ -1893,7 +1895,7 @@ def test_machine_stop_refuses_an_instance_whose_journal_it_cannot_read(
     journal.write_text("{not json\n" + journal.read_text(encoding="utf-8"), encoding="utf-8")
     for alive in (False, True):
         if alive:
-            ipc.write_worker_pid(root, os.getpid())
+            process.write_worker_pid(root, os.getpid())
         assert main(["machine", "stop", "waiter_delayed"]) == 2
         err = capsys.readouterr().err
         assert err.startswith("REFUSING: machine 'waiter_delayed':") and "journal" in err

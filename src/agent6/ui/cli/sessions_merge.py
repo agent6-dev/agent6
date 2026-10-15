@@ -18,9 +18,9 @@ from agent6 import commit_message, errors, git_ops, paths
 from agent6.app import _workdirs, fork_worktrees, merge, resume
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import subrun
-from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.sessions import process
 from agent6.ui.cli import _common, sessions_cmds
 from agent6.viewmodel import listing, scan_session_log, tail_events, worker_models
 
@@ -65,7 +65,7 @@ def _not_mergeable_now(layout: sessions_layout.SessionLayout, session_id: str) -
 
     The raw pid, not session_is_live: after session.end the finalizer may still be at work.
     """
-    if ipc.worker_is_alive(layout.session_dir):
+    if process.worker_is_alive(layout.session_dir):
         return (
             f"run {session_id!r} is still live; a merge now lands only the"
             " commits so far (its later ones need another merge) and moves your"
@@ -472,7 +472,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: pathlib.Path | Non
             print(f"[agent6] skipped {br} (checked out)", file=sys.stderr)
             continue
         layout = sessions_layout.session_layout(repo_state, br.removeprefix(git_ops.BRANCH_PREFIX))
-        if layout is not None and ipc.worker_is_alive(layout.session_dir):
+        if layout is not None and process.worker_is_alive(layout.session_dir):
             # The run is still committing to it, whatever git makes of its tip.
             live_kept += 1
             print(f"[agent6] kept {br} (live)")
@@ -585,7 +585,7 @@ def _prune_chain_refs(
             # A machine's chain (`machine_chain_ref_for`) has no session record.
             kept["machine" if sid.startswith("machine-") else "no session record"] += 1
             continue
-        if ipc.worker_is_alive(layout.session_dir):
+        if process.worker_is_alive(layout.session_dir):
             kept["live"] += 1
             continue
         stamp, why = _session_stamp(layout)

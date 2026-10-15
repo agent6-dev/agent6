@@ -36,7 +36,7 @@ from agent6 import git_ops, paths
 from agent6.app import fork, reporter, stop, undo
 from agent6.config import layer
 from agent6.models import choices
-from agent6.sessions import ipc, layout
+from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import background
 from agent6.ui import directives, spawn
@@ -216,7 +216,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         """Claim the session, fold the log on disk, push both views and start the reader."""
         theme.setup_theme(self)  # apply the saved theme before the first paint
         # A per-process claim; concurrent web, TUI and attach viewers each hold their own.
-        ipc.register_frontend(self.session_dir, os.getpid())
+        process.register_frontend(self.session_dir, os.getpid())
         self.sub_title = self.run_title()
         self._seed_from_disk()
         # Pushed, since only the push path loads a screen's CSS; the conversation is installed,
@@ -259,7 +259,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
     def on_unmount(self) -> None:
         """Stop the reader and drop this process's front-end claim."""
         self._stop.set()
-        ipc.unregister_frontend(self.session_dir, os.getpid())
+        process.unregister_frontend(self.session_dir, os.getpid())
 
     # --- reader thread -----------------------------------------------
 

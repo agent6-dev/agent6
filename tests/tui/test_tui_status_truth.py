@@ -28,6 +28,7 @@ from textual import screen, widgets
 
 from agent6.config import layer
 from agent6.models import choices
+from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.tui import _dashboard_header, composer
 from agent6.ui.tui import app as tui_app
@@ -1223,8 +1224,6 @@ def test_dashboard_header_says_what_the_run_serves(tmp_path: pathlib.Path) -> No
     import os
     import socket
 
-    from agent6.sessions import ipc
-
     d = tmp_path / "serving"
     d.mkdir()
     evs = [{"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"}]
@@ -1233,7 +1232,7 @@ def test_dashboard_header_says_what_the_run_serves(tmp_path: pathlib.Path) -> No
         srv.bind(("127.0.0.1", 0))
         srv.listen(1)
         port = srv.getsockname()[1]
-        ipc.write_session_netns_pid(d, os.getpid())
+        process.write_session_netns_pid(d, os.getpid())
 
         async def header() -> str:
             app = tui_app.Agent6TUI(d)

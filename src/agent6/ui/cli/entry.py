@@ -22,6 +22,7 @@ from collections.abc import Callable
 import argcomplete
 
 from agent6 import errors, event_log, paths
+from agent6.sessions import process
 from agent6.ui.cli import _common, _terminal_guard
 from agent6.ui.cli import parser as cli_parser
 from agent6.viewmodel import listing
@@ -539,7 +540,6 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
 
 def _dispatch_forward(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 forward`, a port of the session's network."""
-    from agent6.sessions import ipc
     from agent6.ui.cli import net_cmds
 
     target, port = args.target, args.port
@@ -551,11 +551,11 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
     if layout is None:
         return 2
     if port is None:
-        ports = ipc.listening_ports(layout.session_dir)
+        ports = process.listening_ports(layout.session_dir)
         if not ports:
             reason = (
                 f"{layout.session_id} is listening on nothing yet."
-                if ipc.read_session_netns_pid(layout.session_dir) is not None
+                if process.read_session_netns_pid(layout.session_dir) is not None
                 else net_cmds.no_session_network_reason(layout)
             )
             _common.refuse(f"{reason}")

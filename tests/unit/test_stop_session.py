@@ -18,7 +18,7 @@ import pytest
 from agent6 import kinds
 from agent6.app import stop
 from agent6.sandbox import jail
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.tools import background
 
 _ANSWERING_WORKER = """
@@ -45,9 +45,9 @@ Path(sys.argv[2]).write_text(out.how)
 _GROUP_WORKER = """
 import os, subprocess, sys, time
 from pathlib import Path
-from agent6.sessions.ipc import write_worker_pid
+from agent6.sessions import process
 d = Path(sys.argv[1])
-write_worker_pid(d, os.getpid())
+process.write_worker_pid(d, os.getpid())
 subprocess.Popen([sys.executable, "-c", sys.argv[3], str(d), sys.argv[2]])
 while True:
     time.sleep(1)
@@ -78,7 +78,7 @@ def _gone(proc: subprocess.Popen[bytes], within_s: float = 3.0) -> bool:
 
 def test_after_step_writes_the_marker_alone(tmp_path: pathlib.Path) -> None:
     d = _live_run(tmp_path, "step-run-AAAAAA")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     out = stop.stop_session(d, after_step=True)
     assert (out.ok, out.how) == (True, "after_step") and "after its current step" in out.message
     assert (d / ipc.STOP_REQUEST_FILE).exists() and not (d / ipc.STEER_ANSWER_FILE).exists()
@@ -91,7 +91,7 @@ def test_request_only_writes_both_bridges_without_waiting_or_signalling(
     """A request-only stop aborts model calls and hands commands back without touching workers."""
     d = _live_run(tmp_path, "hand-run-AAAAAA")
     worker = _spawn(_DEAF_WORKER)
-    ipc.write_worker_pid(d, worker.pid)
+    process.write_worker_pid(d, worker.pid)
 
     def _wait(*_a: object, **_kw: object) -> bool:
         pytest.fail("a request-only stop must not wait for the worker")
@@ -117,7 +117,7 @@ def test_a_run_that_answers_stops_and_is_not_killed(tmp_path: pathlib.Path) -> N
     """On the cooperative path the worker reads the abort and ends the run itself."""
     d = _live_run(tmp_path, "kind-run-AAAAAA")
     proc = _spawn(_ANSWERING_WORKER, str(d))
-    ipc.write_worker_pid(d, proc.pid)
+    process.write_worker_pid(d, proc.pid)
     try:
         out = stop.stop_session(d, wait_s=5.0, grace_s=0.5)
         assert (out.ok, out.how) == (True, "stopped"), out
@@ -143,7 +143,7 @@ def test_a_run_parked_on_an_approval_reads_the_stop(tmp_path: pathlib.Path) -> N
             + "\n"
         )
     worker = _spawn(_ANSWERING_WORKER, str(d))
-    ipc.write_worker_pid(d, worker.pid)
+    process.write_worker_pid(d, worker.pid)
     try:
         out = stop.stop_session(d, wait_s=5.0, grace_s=0.1)
         assert (out.ok, out.how) == (True, "stopped")
@@ -159,7 +159,7 @@ def test_a_worker_that_does_not_answer_is_killed_with_its_host_commands(
     d = _live_run(tmp_path, "deaf-run-AAAAAA")
     (d / "loop_state.json").write_text("{}", encoding="utf-8")  # a turn ran: resumable
     worker = _spawn("import time; time.sleep(60)")
-    ipc.write_worker_pid(d, worker.pid)
+    process.write_worker_pid(d, worker.pid)
     polite = _spawn("import time; time.sleep(60)")
     deaf = _spawn(_DEAF_WORKER)
     for name, proc in (("bg1", polite), ("bg2", deaf)):
@@ -171,7 +171,7 @@ def test_a_worker_that_does_not_answer_is_killed_with_its_host_commands(
                     "id": name,
                     "command": "sleep 60",
                     "pid": proc.pid,
-                    "pid_start": ipc.pid_record(proc.pid).partition(" ")[2],
+                    "pid_start": process.pid_record(proc.pid).partition(" ")[2],
                 }
             ),
             encoding="utf-8",
@@ -204,7 +204,7 @@ def test_a_started_host_shell_records_its_process_identity(tmp_path: pathlib.Pat
         view = shells.start(("/bin/sh", "-c", "sleep 60"), policy_for)
         meta = json.loads((tmp_path / "shells" / view.id / "meta.json").read_text(encoding="utf-8"))
         identity = (meta["pid"], meta["pid_start"])
-        assert ipc.process_is_alive(identity)
+        assert process.process_is_alive(identity)
         assert background.shell_host_processes(tmp_path / "shells") == [identity]
     finally:
         shells.stop_all()
@@ -212,7 +212,7 @@ def test_a_started_host_shell_records_its_process_identity(tmp_path: pathlib.Pat
 
 def test_a_gone_shell_pid_is_ignored(tmp_path: pathlib.Path) -> None:
     proc = _spawn("import time; time.sleep(60)")
-    identity = ipc.process_identity(proc.pid)
+    identity = process.process_identity(proc.pid)
     shell = tmp_path / "shells" / "bg1"
     shell.mkdir(parents=True)
     (shell / "meta.json").write_text(
@@ -246,7 +246,7 @@ def test_a_stop_does_not_kill_a_worker_from_a_new_resume(tmp_path: pathlib.Path)
     d = _live_run(tmp_path, "resumed-run-AAAAAA")
     first = _spawn("import time; time.sleep(60)")
     replacement = _spawn("import time; time.sleep(60)")
-    ipc.write_worker_pid(d, first.pid)
+    process.write_worker_pid(d, first.pid)
     answer: list[stop.StopOutcome] = []
     original_poll = stop_mod._POLL_S  # pyright: ignore[reportPrivateUsage]
     stop_mod._POLL_S = 0.3  # pyright: ignore[reportPrivateUsage]
@@ -261,7 +261,7 @@ def test_a_stop_does_not_kill_a_worker_from_a_new_resume(tmp_path: pathlib.Path)
             time.sleep(0.01)
         first.terminate()
         first.wait(timeout=3.0)
-        ipc.write_worker_pid(d, replacement.pid)
+        process.write_worker_pid(d, replacement.pid)
         stopper.join(timeout=3.0)
         assert not stopper.is_alive()
         assert replacement.poll() is None, "the stop killed the replacement worker"
@@ -276,8 +276,8 @@ def test_a_stop_does_not_kill_a_worker_from_a_new_resume(tmp_path: pathlib.Path)
 def test_a_recycled_worker_pid_is_not_signalled(tmp_path: pathlib.Path) -> None:
     d = _live_run(tmp_path, "recycled-worker-run-AAAAAA")
     unrelated = _spawn("import time; time.sleep(60)")
-    ipc.write_worker_pid(d, unrelated.pid)
-    recorded = ipc.pid_record(unrelated.pid).partition(" ")[2]
+    process.write_worker_pid(d, unrelated.pid)
+    recorded = process.pid_record(unrelated.pid).partition(" ")[2]
     (d / "worker.pid").write_text(f"{unrelated.pid} old:{recorded}", encoding="utf-8")
     try:
         out = stop.stop_session(d, wait_s=0.0, grace_s=0.1)
@@ -294,8 +294,8 @@ def test_a_recycled_shell_pid_is_not_signalled(tmp_path: pathlib.Path) -> None:
     d = _live_run(tmp_path, "recycled-shell-run-AAAAAA")
     worker = _spawn(_DEAF_WORKER)
     unrelated = _spawn("import time; time.sleep(60)")
-    original_start = f"old:{ipc.pid_record(unrelated.pid).partition(' ')[2]}"
-    ipc.write_worker_pid(d, worker.pid)
+    original_start = f"old:{process.pid_record(unrelated.pid).partition(' ')[2]}"
+    process.write_worker_pid(d, worker.pid)
     shell = d / "shells" / "bg1"
     shell.mkdir(parents=True)
     (shell / "meta.json").write_text(
@@ -343,7 +343,7 @@ def test_a_stop_never_signals_its_own_process_group(tmp_path: pathlib.Path) -> N
 def test_a_stop_that_finds_nothing_to_signal_says_so(tmp_path: pathlib.Path) -> None:
     """When the recorded worker is this process, the outcome says nothing was left to signal."""
     d = _live_run(tmp_path, "self-run-AAAAAA")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
     out = stop.stop_session(d, wait_s=0.0, grace_s=0.1)
     assert (out.ok, out.how) == (True, "stale"), out
     assert "nothing of it is left to signal" in out.message and "killed" not in out.message

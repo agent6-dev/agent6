@@ -27,7 +27,7 @@ from agent6.machine import (
     load_machine,
     write_stop_request,
 )
-from agent6.sessions import ipc, layout, manifest
+from agent6.sessions import ipc, layout, manifest, process
 from agent6.ui import directives, spawn
 from agent6.ui.web import model
 from agent6.viewmodel import (
@@ -98,7 +98,7 @@ def spawn_machine_run(
     err = spawn.spawn_and_confirm(
         [*spawn.agent6_argv(config_path), "machine", "run", machine_file],
         cwd,
-        started=lambda pid: ipc.read_worker_pid(instance) == pid,
+        started=lambda pid: process.read_worker_pid(instance) == pid,
     )
     return (err == ""), (err or "started")
 

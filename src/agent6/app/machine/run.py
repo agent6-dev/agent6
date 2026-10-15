@@ -48,7 +48,7 @@ from agent6.machine import (
 )
 from agent6.machine import journal as machine_journal
 from agent6.sandbox import detect, jail
-from agent6.sessions import ipc, layout
+from agent6.sessions import layout, process
 from agent6.tools import _result_format
 from agent6.tools import policy as tools_policy
 from agent6.viewmodel import machine_state
@@ -598,7 +598,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 on_tool_failure=say_tool_failure,
             )
             # Stamped after the last refusal; the finally always clears it.
-            ipc.write_worker_pid(root, os.getpid())
+            process.write_worker_pid(root, os.getpid())
             try:
                 result = drive(
                     spec,
@@ -609,7 +609,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     base_commit=base_commit,
                 )
             finally:
-                ipc.clear_worker_pid(root)
+                process.clear_worker_pid(root)
     except (JournalError, EngineError) as exc:
         reporter.error(str(exc))
         return 1

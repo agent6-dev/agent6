@@ -23,6 +23,7 @@ from agent6.config import Config
 from agent6.harness import run_review
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import process
 from agent6.ui.cli import main
 
 _EVENTS: list[dict[str, Any]] = [
@@ -550,10 +551,8 @@ def test_a_live_session_is_refused_before_any_call(
     """A live run's record is not complete; the review waits for its end."""
     import os
 
-    from agent6.sessions import ipc
-
     layout = _write_session(repo, events=_EVENTS[:1])
-    ipc.write_worker_pid(layout.session_dir, os.getpid())
+    process.write_worker_pid(layout.session_dir, os.getpid())
     monkeypatch.setattr(
         "agent6.config.layer.load_effective",
         mock.MagicMock(side_effect=AssertionError("config loaded")),

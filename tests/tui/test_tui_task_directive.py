@@ -13,7 +13,7 @@ import json
 import os
 import pathlib
 
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.ui.tui import app as tui_app
 
 
@@ -24,7 +24,7 @@ def _live_run(d: pathlib.Path) -> None:
         {"type": "role.call", "role": "worker", "model": "m"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
-    ipc.write_worker_pid(d, os.getpid())
+    process.write_worker_pid(d, os.getpid())
 
 
 def test_the_composer_queues_a_task_without_steering(tmp_path: pathlib.Path) -> None:

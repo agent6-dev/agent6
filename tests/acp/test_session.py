@@ -21,7 +21,7 @@ import pytest
 
 from agent6.app import stop
 from agent6.sandbox import jail
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 
@@ -259,7 +259,7 @@ def test_a_cancel_aborts_the_model_call_without_waiting_or_signalling(
         json.dumps({"type": "session.start", "session_id": "run-1", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    ipc.write_worker_pid(session_dir, os.getpid())
+    process.write_worker_pid(session_dir, os.getpid())
 
     def _wait(*_a: object, **_kw: object) -> bool:
         pytest.fail("an ACP cancel must not wait for the worker")

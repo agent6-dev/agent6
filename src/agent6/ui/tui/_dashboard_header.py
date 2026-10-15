@@ -21,7 +21,7 @@ from textual import widgets
 from agent6 import budget as agent6_budget
 from agent6 import kinds
 from agent6.graph import order
-from agent6.sessions import ipc, manifest
+from agent6.sessions import manifest, process
 from agent6.ui.tui import theme
 from agent6.viewmodel import (
     format,
@@ -198,7 +198,7 @@ class RunHeader(widgets.Static):
 
         A live probe, so "" once the network is gone.
         """
-        ports = ipc.listening_ports(self._tui.session_dir)
+        ports = process.listening_ports(self._tui.session_dir)
         if not ports:
             return ""
         listed = ", ".join(str(p) for p in ports)

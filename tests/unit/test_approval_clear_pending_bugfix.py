@@ -11,7 +11,7 @@ import os
 import pathlib
 import time
 
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 
 
 def test_clear_pending_drops_leftover_steer_request(tmp_path: pathlib.Path) -> None:
@@ -30,22 +30,22 @@ def test_clear_pending_preserves_live_frontend_claims(tmp_path: pathlib.Path) ->
     session_dir = tmp_path / "run"
     session_dir.mkdir()
     # Our own pid is a live process => a live foreign watcher.
-    ipc.register_frontend(session_dir, os.getpid())
-    assert ipc.frontend_is_live(session_dir)
+    process.register_frontend(session_dir, os.getpid())
+    assert process.frontend_is_live(session_dir)
 
     ipc.clear_pending_answers(session_dir, started_at=time.time() + 60)
 
     # A live watcher's claim must survive so its modals stay wired up.
-    assert ipc.frontend_is_live(session_dir)
+    assert process.frontend_is_live(session_dir)
 
 
 def test_dead_frontend_claims_are_pruned_by_the_liveness_probe(tmp_path: pathlib.Path) -> None:
     session_dir = tmp_path / "run"
     session_dir.mkdir()
     dead_pid = _find_dead_pid()
-    ipc.register_frontend(session_dir, dead_pid)
+    process.register_frontend(session_dir, dead_pid)
     # A hard-killed front-end's claim reads not-live and is pruned, so the poll never blocks on it.
-    assert not ipc.frontend_is_live(session_dir)
+    assert not process.frontend_is_live(session_dir)
     assert not (session_dir / "frontends" / str(dead_pid)).exists()
 
 
@@ -58,14 +58,16 @@ def test_concurrent_frontends_do_not_deregister_each_other(tmp_path: pathlib.Pat
     session_dir.mkdir()
     attach_pid = os.getpid()
     web_pid = _find_dead_pid()  # stands in for a second front-end's pid slot
-    ipc.register_frontend(session_dir, attach_pid)
-    ipc.register_frontend(session_dir, web_pid)
-    ipc.unregister_frontend(session_dir, web_pid)  # the browser closes
-    assert ipc.frontend_is_live(session_dir)  # the attach watcher keeps bridging
-    ipc.unregister_frontend(session_dir, attach_pid)
-    assert not ipc.frontend_is_live(session_dir)
+    process.register_frontend(session_dir, attach_pid)
+    process.register_frontend(session_dir, web_pid)
+    # the browser closes
+    process.unregister_frontend(session_dir, web_pid)
+    # the attach watcher keeps bridging
+    assert process.frontend_is_live(session_dir)
+    process.unregister_frontend(session_dir, attach_pid)
+    assert not process.frontend_is_live(session_dir)
     # Unregistering an absent claim is a no-op.
-    ipc.unregister_frontend(session_dir, attach_pid)
+    process.unregister_frontend(session_dir, attach_pid)
 
 
 def _find_dead_pid() -> int:

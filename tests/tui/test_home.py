@@ -16,7 +16,7 @@ from textual.widgets._select import SelectCurrent
 
 from agent6 import paths
 from agent6.models import choices
-from agent6.sessions import ipc
+from agent6.sessions import ipc, process
 from agent6.ui import spawn
 from agent6.viewmodel import session_dirs, session_mtime
 from tests.tui._waits import wait_for
@@ -50,7 +50,7 @@ def test_run_mtime_is_log_activity_not_dir_mtime(tmp_path: pathlib.Path) -> None
     rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     os.utime(rd / "logs.jsonl", (1000, 1000))  # last real activity
     # Opening the dashboard writes a front-end claim, bumping the dir mtime well past the log's.
-    ipc.register_frontend(rd, 123)
+    process.register_frontend(rd, 123)
     os.utime(rd, (5000, 5000))
     assert session_mtime(rd) == 1000.0  # pyright: ignore[reportPrivateUsage]
 
@@ -87,7 +87,7 @@ def test_read_question_answer_consumes_the_file(tmp_path: pathlib.Path) -> None:
 def test_clear_pending_answers_wipes_stale_state(tmp_path: pathlib.Path) -> None:
     ipc.write_answer(tmp_path, "approval-1", "yes")
     ipc.write_question_answers(tmp_path, "question-1", ["stale"])
-    ipc.register_frontend(tmp_path, 12345)
+    process.register_frontend(tmp_path, 12345)
     ipc.clear_pending_answers(tmp_path, started_at=time.time() + 60)
     assert not (ipc.approvals_dir(tmp_path) / "approval-1.answer").exists()
     assert not (ipc.questions_dir(tmp_path) / "question-1.answer").exists()

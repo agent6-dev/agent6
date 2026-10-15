@@ -19,7 +19,7 @@ from collections.abc import Callable
 from agent6 import paths
 from agent6.app import reporter as app_reporter
 from agent6.harness import subrun
-from agent6.sessions import ipc, layout
+from agent6.sessions import ipc, layout, process
 from agent6.viewmodel import summarize_session_dir
 
 # How often the await loop polls lane liveness.
@@ -58,7 +58,7 @@ def await_lane(
     """
     while True:
         summary = summarize_session_dir(res.session_dir)
-        if lane_terminal(res.session_dir, summary.status, ipc.worker_is_alive):
+        if lane_terminal(res.session_dir, summary.status, process.worker_is_alive):
             return True
         if should_stop is not None and should_stop():
             return False
@@ -83,7 +83,7 @@ def drain_lane(
         if hard_stop is not None and hard_stop.is_set():
             return False
         summary = summarize_session_dir(res.session_dir)
-        if lane_terminal(res.session_dir, summary.status, ipc.worker_is_alive):
+        if lane_terminal(res.session_dir, summary.status, process.worker_is_alive):
             return True
         if hard_stop is not None:
             if hard_stop.wait(poll_interval_s):
@@ -146,7 +146,7 @@ def await_lanes(
                 print_lane_status(
                     res.spec, summary.status, summary.cost_cell, waiting=waiting, reporter=reporter
                 )
-            if lane_terminal(res.session_dir, summary.status, ipc.worker_is_alive):
+            if lane_terminal(res.session_dir, summary.status, process.worker_is_alive):
                 pending.pop(rid)
 
     def stop_and_drain() -> None:

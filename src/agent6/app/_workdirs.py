@@ -13,9 +13,9 @@ from collections.abc import Callable
 from agent6 import errors, git_ops, paths
 from agent6.config import Config, layer
 from agent6.harness import subrun
-from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.sessions import process
 
 
 def subordinate_workdir_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
@@ -143,7 +143,9 @@ def lane_keep_reason(clone: pathlib.Path) -> str:
             "no lane session record, so a lane may still be starting; once none is, remove it"
             f" with: rm -r -- {shlex.quote(str(clone.parent))}"
         )
-    return "live lane; stop it before pruning" if any(ipc.worker_is_alive(d) for d in dirs) else ""
+    return (
+        "live lane; stop it before pruning" if any(process.worker_is_alive(d) for d in dirs) else ""
+    )
 
 
 def sweep_fanout_clones(

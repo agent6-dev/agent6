@@ -17,8 +17,8 @@ from agent6 import git_ops, paths
 from agent6.app import _setup
 from agent6.config import layer
 from agent6.sandbox import jail
-from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import process
 from agent6.ui.cli import sessions_cmds, sessions_merge
 
 
@@ -43,7 +43,7 @@ def test_merge_planner_passes_the_explicit_config_path(
     def _dead(d: pathlib.Path) -> bool:
         return False
 
-    monkeypatch.setattr(ipc, "worker_is_alive", _dead)
+    monkeypatch.setattr(process, "worker_is_alive", _dead)
 
     class _Manifest:
         session_id = "sid"

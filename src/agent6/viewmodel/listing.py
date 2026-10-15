@@ -16,7 +16,7 @@ import time
 from collections.abc import Container, Iterable, Mapping, Sequence
 
 from agent6 import budget, git_ops, kinds, task_text, terminal
-from agent6.sessions import ipc, layout
+from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import events, format
 
@@ -111,7 +111,7 @@ def is_session_husk(session_dir: pathlib.Path) -> bool:
     window and stays listed as "starting". Listings skip husks, and an id lookup must
     not let one shadow a real run of the same id in another bucket.
     """
-    return not layout.session_has_record(session_dir) and not ipc.worker_is_alive(session_dir)
+    return not layout.session_has_record(session_dir) and not process.worker_is_alive(session_dir)
 
 
 def session_compare(session_dir: pathlib.Path) -> sessions_manifest.CompareStamp | None:
@@ -538,7 +538,7 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
             note = f"{n} question{'s' if n != 1 else ''} unanswered"
             reason = f"{reason} · {note}" if reason else note
         return word, reason
-    live = ipc.worker_is_alive(session_dir)
+    live = process.worker_is_alive(session_dir)
     if facts.operator_blocked and live:
         # Before session.start too: a run asks about uncommitted changes before it starts.
         word = "waiting"
@@ -577,7 +577,7 @@ def _unstarted_status(session_dir: pathlib.Path) -> tuple[str, str]:
     Returns:
         The `(word, detail)` pair.
     """
-    if ipc.worker_is_alive(session_dir):
+    if process.worker_is_alive(session_dir):
         return "starting", ""
     if (session_dir / sessions_manifest.MANIFEST_NAME).is_file():
         try:
@@ -586,7 +586,7 @@ def _unstarted_status(session_dir: pathlib.Path) -> tuple[str, str]:
             return "unreadable", format.clip_cell(str(exc), 60)
         if manifest.parked_task:
             return PARKED_WORD, manifest.parked_reason
-    if ipc.read_worker_pid(session_dir) is not None:
+    if process.read_worker_pid(session_dir) is not None:
         return "stale", "died launching"
     return "created", ""
 

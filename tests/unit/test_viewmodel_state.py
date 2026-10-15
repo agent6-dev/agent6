@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from agent6.sessions import process
 from agent6.viewmodel import log_line
 from agent6.viewmodel import state as viewmodel_state
 
@@ -1026,8 +1027,6 @@ def test_run_state_as_dict_carries_what_the_run_serves(tmp_path: pathlib.Path) -
     import os
     import socket
 
-    from agent6.sessions import ipc
-
     d = tmp_path / "r"
     d.mkdir()
     assert viewmodel_state.session_state_as_dict(viewmodel_state.fold_session([]), d)["ports"] == []
@@ -1035,7 +1034,8 @@ def test_run_state_as_dict_carries_what_the_run_serves(tmp_path: pathlib.Path) -
         srv.bind(("127.0.0.1", 0))
         srv.listen(1)
         port = srv.getsockname()[1]
-        ipc.write_session_netns_pid(d, os.getpid())  # this process stands in for the holder
+        # this process stands in for the holder
+        process.write_session_netns_pid(d, os.getpid())
         assert (
             port
             in viewmodel_state.session_state_as_dict(viewmodel_state.fold_session([]), d)["ports"]
