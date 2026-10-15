@@ -2099,6 +2099,98 @@ def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: pathlib.Path)
     ]
 
 
+@pytest.mark.parametrize("finished", [False, True])
+@pytest.mark.parametrize("changed", [False, True])
+def test_idle_session_frames_only_follow_changed_state(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, finished: bool, changed: bool
+) -> None:
+    """Two idle heartbeats send nothing unchanged, or one frame per shell result change."""
+    from agent6.tools import background
+    from agent6.ui.web import _sse
+
+    monkeypatch.setattr(_sse, "HEARTBEAT_S", 0.02)
+    sid = "idle-shells"
+    _make_run(
+        tmp_path,
+        sid,
+        [{"type": "session.end" if finished else "session.start", "ts": time.time()}],
+    )
+    d = paths.state_dir(tmp_path) / "sessions" / "runs" / sid
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    shell = d / background.SHELLS_DIR / "bg1"
+    shell.mkdir(parents=True)
+    (shell / "meta.json").write_text('{"command": "sleep 60"}', encoding="utf-8")
+    heartbeat = 0
+    frames: list[tuple[int, dict[str, Any]]] = []
+
+    def send(payload: Any) -> bool:
+        frames.append((heartbeat, payload))
+        return True
+
+    def ping() -> bool:
+        nonlocal heartbeat
+        heartbeat += 1
+        if heartbeat > 2:
+            return False
+        if changed:
+            (shell / "result.json").write_text(
+                json.dumps({"returncode": heartbeat}), encoding="utf-8"
+            )
+        return True
+
+    _sse.stream_session(_sse.SseChannel(send=send, ping=ping), d, repo=tmp_path)
+
+    assert "last_event_age_s" in frames[0][1]
+    assert [beat for beat, _ in frames] == ([0, 1, 2] if changed else [0])
+    if changed:
+        assert frames[-1][1]["shells"] == ["[bg1] exited 2: sleep 60"]
+
+
+def test_shell_cleanup_after_end_reaches_the_open_stream(
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Shell cleanup after session.end reaches the page without another log event."""
+    from agent6.tools import background
+    from agent6.ui.web import _sse
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(_sse, "HEARTBEAT_S", 0.05)
+    sid = "shell-cleanup"
+    _make_run(
+        tmp_path,
+        sid,
+        [
+            {"type": "session.start", "mode": "run", "user_task": "work"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    d = paths.state_dir(tmp_path) / "sessions" / "runs" / sid
+    shell = d / background.SHELLS_DIR / "bg1"
+    shell.mkdir(parents=True)
+    (shell / "meta.json").write_text(json.dumps({"command": "sleep 60"}), encoding="utf-8")
+    log_before = (d / "logs.jsonl").read_bytes()
+    _, port = server
+    conn = signin.SignedIn(port, timeout=5)
+    try:
+        conn.request("GET", f"/api/session/{sid}/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        first = _read_until(resp, lambda s: bool(s.get("finished")))
+        assert "still running" in str(first["shells"])
+        (shell / "result.json").write_text('{"stopped": true}', encoding="utf-8")
+        assert main(["attach", sid, "--json"]) == 0
+        expected = json.loads(capsys.readouterr().out)["shells"]
+        assert expected == ["[bg1] stopped: sleep 60"]
+        fresh = _read_until(resp, lambda s: s.get("shells") == expected, deadline_s=2)
+        assert fresh["finished"] is True
+        assert (d / "logs.jsonl").read_bytes() == log_before
+    finally:
+        conn.close()
+
+
 def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path) -> None:
     """The finished heartbeat pushes a refreshed header when a merge lands after session.end.
 
