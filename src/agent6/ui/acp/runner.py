@@ -613,7 +613,13 @@ class RunBridge:
                     if item.kind == "tool":
                         announced.add(wire_id)
                     elif item.kind == "done":
-                        _stderr(updates.ending(item))
+                        _stderr(
+                            "\n\n".join(
+                                part
+                                for part in (item.body.strip(), updates.status_line(item))
+                                if part
+                            )
+                        )
                 if event_type == "role.result":
                     streamed.clear()
                 if order is not None:

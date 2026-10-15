@@ -18,7 +18,6 @@ _CHUNK_KIND = {
     "thinking": "agent_thought_chunk",
     "text": "agent_message_chunk",
     "operator": "user_message_chunk",
-    "marker": "agent_message_chunk",  # harness prose: a compaction, a btw answer, a notice
 }
 
 # ACP's kind per built-in tool, the editor's icon; an MCP tool reads `other`.
@@ -73,38 +72,37 @@ def updates_for(
         streamed: The item is one delta of a message in flight, sent whole.
     """
     if item.kind == "done":
-        return [
-            _update(
-                acp_session_id,
-                {"sessionUpdate": "agent_message_chunk", "content": _text(ending(item))},
+        summary = item.body.strip()
+        result: list[dict[str, Any]] = []
+        if summary:
+            result.append(
+                _update(
+                    acp_session_id,
+                    {"sessionUpdate": "agent_message_chunk", "content": _text(summary + "\n\n")},
+                )
             )
-        ]
+        result.append(message_update(acp_session_id, status_line(item)))
+        return result
     if item.kind == "commit":
         text = " ".join(part for part in ("committed", item.arg, item.detail) if part)
-        return [
-            _update(
-                acp_session_id,
-                {"sessionUpdate": "agent_message_chunk", "content": _text(text + "\n")},
-            )
-        ]
+        return [message_update(acp_session_id, text)]
     if item.kind == "tool":
         wire_id = wire_id or _execution_call_id(item)
         if item.ok is None and not announced:
-            return [
-                _update(acp_session_id, {"sessionUpdate": "tool_call", **_tool_call(item, wire_id)})
-            ]
-        return [
-            _update(
-                acp_session_id,
-                {
-                    "sessionUpdate": "tool_call_update",
-                    "toolCallId": wire_id,
-                    "status": _tool_status(item),
-                    **({"content": _tool_content(item)} if _tool_content(item) else {}),
-                    **({"locations": _tool_locations(paths, cwd)} if paths and cwd else {}),
-                },
-            )
-        ]
+            update = {"sessionUpdate": "tool_call", **_tool_call(item, wire_id)}
+        else:
+            update = {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": wire_id,
+                "status": _tool_status(item),
+                **({"content": _tool_content(item)} if _tool_content(item) else {}),
+                **({"locations": _tool_locations(paths, cwd)} if paths and cwd else {}),
+            }
+        return [_update(acp_session_id, update)]
+    if item.kind == "marker":
+        # Harness prose: a compaction, a btw answer, a notice.
+        body = item.body.strip()
+        return [message_update(acp_session_id, body)] if body else []
     chunk = _CHUNK_KIND.get(item.kind)
     # A streamed delta keeps every byte; a whole message is stripped, and a blank one is none.
     body = item.body if streamed else item.body.strip()
@@ -113,17 +111,12 @@ def updates_for(
     return [_update(acp_session_id, {"sessionUpdate": chunk, "content": _text(body)})]
 
 
-def ending(item: transcript.TranscriptItem) -> str:
-    """Return how a run ended, in the status words every surface uses.
-
-    The fold sets `body` only for a clean `finish_session`; the end reason rides in
-    `name` and `detail`, so a provider error or a red gate is never silence.
-    """
+def status_line(item: transcript.TranscriptItem) -> str:
+    """Return the run status without the model's summary."""
     parts = [f"Session {item.name or 'ended'}"]
     if item.detail:
         parts.append(f"- {item.detail}")
-    ending = " ".join(parts)
-    return f"{item.body}\n\n{ending}" if item.body.strip() else ending
+    return " ".join(parts)
 
 
 def message_update(acp_session_id: str, text: str) -> dict[str, Any]:

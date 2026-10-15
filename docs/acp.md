@@ -32,7 +32,7 @@ ACP carries a tool call as two messages.
 - `toolCallId` is `<run id>:<turn>:<call>`, unique for the life of the session; a turn's call numbers start at 1
 
 Worker text and thinking arrive as they stream; side-role output stays out of the conversation.
-What the CLI would print around the run (where the changes are, a stash notice, a refusal's reason) arrives as an `[agent6]` agent message; the cost receipt goes to stderr.
+Everything agent6 says carries `[agent6]`, the model's final summary arrives bare, and the cost receipt goes to stderr.
 
 ## Approvals
 

@@ -229,6 +229,28 @@ def test_a_run_that_failed_does_not_render_as_silence() -> None:
         assert f"Session {label}" in text
 
 
+def test_a_done_summary_is_bare_and_precedes_the_labelled_status() -> None:
+    """Only the status carries [agent6], with one paragraph break after the summary."""
+    item = transcript.TranscriptItem(
+        "done", body=" \nThe model's summary.\n\n\n", name="finished", detail="1s"
+    )
+    updates = acp_updates.updates_for(item, acp_session_id="s")
+    assert _kinds(updates) == ["agent_message_chunk", "agent_message_chunk"]
+    assert [u["params"]["update"]["content"]["text"] for u in updates] == [
+        "The model's summary.\n\n",
+        "[agent6] Session finished - 1s\n",
+    ]
+
+
+def test_a_done_without_a_summary_emits_only_the_status() -> None:
+    """A blank summary produces no chunk or dangling punctuation in the ending."""
+    for body in ("", " \n\n"):
+        item = transcript.TranscriptItem("done", body=body)
+        updates = acp_updates.updates_for(item, acp_session_id="s")
+        assert _kinds(updates) == ["agent_message_chunk"]
+        assert updates[0]["params"]["update"]["content"]["text"] == "[agent6] Session ended\n"
+
+
 def test_a_red_gate_does_not_look_like_a_green_one() -> None:
     """`finish_session` with all_passed=False is a finish over a RED verify."""
     red = updates_for_events(
@@ -251,7 +273,18 @@ def test_a_commit_is_not_dropped() -> None:
         transcript.TranscriptItem("commit", arg="abc1234", detail="3 lines"), acp_session_id="s"
     )
     text = updates[0]["params"]["update"]["content"]["text"]
-    assert "abc1234" in text and "3 lines" in text
+    assert text == "[agent6] committed abc1234 3 lines\n"
+
+
+def test_journal_notices_are_labelled_as_agent6_prose() -> None:
+    """A sandbox warning is not presented as the model's words."""
+    updates = updates_for_events(
+        [{"type": "jail.degraded", "detail": "user namespaces unavailable"}],
+        acp_session_id="s",
+    )
+    assert updates[0]["params"]["update"]["content"]["text"] == (
+        "[agent6] sandbox degraded: user namespaces unavailable\n"
+    )
 
 
 def test_two_identical_tool_calls_do_not_share_an_id() -> None:
