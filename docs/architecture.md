@@ -457,6 +457,7 @@ One listing row shape (`viewmodel.summary_row`) serves `sessions list --json` an
 Two shared layers sit under them.
 
 - the read side, [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel): the `SessionState` and `MachineState` fold plus its wire form, exactly what `agent6 attach --json` and the web endpoints emit
+- tolerant session journal scan: `viewmodel/_session_log.py`; shared labels and status decisions: `viewmodel/_session_status.py`; directory discovery and listing rows: `viewmodel/listing.py`
 - session view records: `viewmodel/_state_types.py`; status, context usage and wire rendering: `viewmodel/_state_view.py`; event handling stays in `viewmodel/state.py`
 - the write side: [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) for detached spawns, and [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) for the approval, question, steer, stop-request and compact-request file contract the harness polls
 - process identities, worker and network pid records, and front-end claims: `sessions/process.py`, shared by the bridge and its callers
@@ -556,7 +557,7 @@ A `run_command` approval publishes as `approval.prompt`.
 | Front-end write bridge | [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py), [ui/notify.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/notify.py), [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) |
 | Web UI | [ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server and one embedded page) |
 | Repo memory | [memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/memory/` (data) |
-| Machine engine | [machine/engine.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/engine.py) (reducer), [machine/journal.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/journal.py) (journal and instance dir) |
+| Machine engine | [machine/engine.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/engine.py) (replay and live loop), [machine/_execution.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/_execution.py) (state execution and reducer), [machine/_contracts.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/_contracts.py) (world protocol and execution records), [machine/journal.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/journal.py) (journal and instance dir) |
 
 ## Bench and development switches
 
