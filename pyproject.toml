@@ -259,6 +259,8 @@ banned-from = [
     "agent6.harness.subrun",
     "agent6.init",
     "agent6.kinds",
+    "agent6.machine._contracts",
+    "agent6.machine._execution",
     "agent6.machine._semantics",
     "agent6.machine.authoring",
     "agent6.machine.dryrun",

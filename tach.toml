@@ -666,7 +666,7 @@ depends_on = ["agent6.graph.models", "agent6.graph.order", "agent6.graph.storage
 
 [[modules]]
 path = "agent6.machine"
-depends_on = ["agent6.machine._semantics", "agent6.machine.authoring", "agent6.machine.dryrun", "agent6.machine.engine", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.live_world", "agent6.machine.schema", "agent6.prompts"]
+depends_on = ["agent6.machine._contracts", "agent6.machine._semantics", "agent6.machine.authoring", "agent6.machine.dryrun", "agent6.machine.engine", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.live_world", "agent6.machine.schema", "agent6.prompts"]
 
 [[modules]]
 path = "agent6.machine.authoring"
@@ -701,15 +701,15 @@ depends_on = ["agent6.machine.schema", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.engine"
-depends_on = ["agent6.machine._semantics", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template"]
+depends_on = ["agent6.machine._contracts", "agent6.machine._execution", "agent6.machine.journal", "agent6.machine.schema", "agent6.machine.template"]
 
 [[modules]]
 path = "agent6.machine.live_world"
-depends_on = ["agent6.kinds", "agent6.machine.engine", "agent6.machine.journal", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sessions.layout"]
+depends_on = ["agent6.kinds", "agent6.machine._contracts", "agent6.machine.journal", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sessions.layout"]
 
 [[modules]]
 path = "agent6.machine.dryrun"
-depends_on = ["agent6.machine._semantics", "agent6.machine.engine", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template"]
+depends_on = ["agent6.machine._contracts", "agent6.machine._execution", "agent6.machine._semantics", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template"]
 
 [[modules]]
 path = "agent6.sandbox.jail_jobs"
@@ -732,3 +732,11 @@ depends_on = ["agent6.config", "agent6.event_log", "agent6.graph.curator", "agen
 [[modules]]
 path = "agent6.tools._command_tools"
 depends_on = ["agent6.kinds", "agent6.sandbox", "agent6.sandbox.jail_session", "agent6.tools", "agent6.tools.schema"]
+
+[[modules]]
+path = "agent6.machine._contracts"
+depends_on = ["agent6.machine.journal", "agent6.machine.schema"]
+
+[[modules]]
+path = "agent6.machine._execution"
+depends_on = ["agent6.machine._contracts", "agent6.machine._semantics", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template"]

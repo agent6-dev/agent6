@@ -19,6 +19,7 @@ from agent6 import event_log
 from agent6.app import machine_agent as app_machine_agent
 from agent6.app import providers
 from agent6.harness import loop
+from agent6.machine import _contracts
 from agent6.sessions import ipc, process
 from agent6.tools import dispatch, schema
 
@@ -151,7 +152,6 @@ def test_machine_agent_wires_the_summariser_seat(
 
     from agent6.app import machine_agent
     from agent6.harness import _snapshot
-    from agent6.machine import engine
 
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
@@ -198,7 +198,7 @@ def test_machine_agent_wires_the_summariser_seat(
         overlay={"models": {"worker": {"provider": "anthropic", "model": "claude-x"}}},
         isolation="none",
         transcript_dir=tmp_path / "t",
-        request=engine.AgentRequest(prompt="go", timeout_s=5.0),
+        request=_contracts.AgentRequest(prompt="go", timeout_s=5.0),
     )
     out = machine_agent.run_one(req)
     assert out.reason == "finish_session"

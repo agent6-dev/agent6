@@ -9,6 +9,15 @@ and offline replay. An `agent` state runs an agent6 loop through an injected run
 
 from __future__ import annotations
 
+from agent6.machine._contracts import (  # noqa: ICN003  # re-export
+    AgentExecResult,
+    AgentRequest,
+    EngineError,
+    MachineResult,
+    ToolExecResult,
+    WaitWake,
+    World,
+)
 from agent6.machine._semantics import (  # noqa: ICN003  # re-export
     fixture_problems,
     load_machine,
@@ -17,16 +26,7 @@ from agent6.machine._semantics import (  # noqa: ICN003  # re-export
 )
 from agent6.machine.authoring import build_authoring_prompt  # noqa: ICN003  # re-export
 from agent6.machine.dryrun import BranchCheck, DryRunReport, StateCheck, dry_run  # noqa: ICN003  # re-export
-from agent6.machine.engine import (  # noqa: ICN003  # re-export
-    AgentExecResult,
-    AgentRequest,
-    EngineError,
-    MachineResult,
-    ToolExecResult,
-    WaitWake,
-    World,
-    drive,
-)
+from agent6.machine.engine import drive  # noqa: ICN003  # re-export
 from agent6.machine.graph import render_dot, render_mermaid  # noqa: ICN003  # re-export
 from agent6.machine.journal import (  # noqa: ICN003  # re-export
     AgentFact,

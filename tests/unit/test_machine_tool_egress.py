@@ -17,8 +17,8 @@ from agent6.machine import (
     MachineError,
     MachineJournal,
     ToolState,
+    _contracts,
     drive,
-    engine,
     live_world,
     load_machine,
 )
@@ -124,9 +124,9 @@ class _RecordingWorld:
         state: str = "",
         pass_env: tuple[str, ...] = (),
         step_seq: int = 0,
-    ) -> engine.ToolExecResult:
+    ) -> _contracts.ToolExecResult:
         self.state_calls.append((argv, state))
-        return engine.ToolExecResult(exit_code=0, stdout="", timed_out=False)
+        return _contracts.ToolExecResult(exit_code=0, stdout="", timed_out=False)
 
     def run_agent(self, request: Any) -> Any:  # pragma: no cover - no agent states here
         raise AssertionError("no agent states")
@@ -136,7 +136,7 @@ class _RecordingWorld:
 
     def sleep_until(self, wake_epoch: float | None) -> Any:  # pragma: no cover
 
-        return engine.WaitWake("tick")
+        return _contracts.WaitWake("tick")
 
     def materialize_poke(self, payload: Any) -> None:  # pragma: no cover
         pass
@@ -251,7 +251,7 @@ def test_liveworld_refuses_a_state_with_no_resolved_config(
     """A tool call never runs under another state's config, or the machine's, by fallback."""
     seen = _patch_jail(monkeypatch)
     world = _world(tmp_path, "strict")
-    with pytest.raises(engine.EngineError, match="no config was resolved for state 'ghost'"):
+    with pytest.raises(_contracts.EngineError, match="no config was resolved for state 'ghost'"):
         world.run_tool(("true",), 5.0, state="ghost")
     assert seen == []
 

@@ -13,42 +13,12 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import datetime
-import json
 from collections.abc import Mapping
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
-import pydantic
-
-from agent6.machine import _semantics, predicate, schema
+from agent6.machine import _contracts, _execution, schema
 from agent6.machine import journal as machine_journal
 from agent6.machine import template as machine_template
-
-__all__ = [
-    "AgentExecResult",
-    "AgentRequest",
-    "EngineError",
-    "MachineResult",
-    "ToolExecResult",
-    "WaitWake",
-    "World",
-    "drive",
-]
-
-
-class EngineError(Exception):
-    """A machine cannot be executed: bad data, or a journal that does not fit it."""
-
-
-class StateRuntimeError(EngineError):
-    """A state met invalid data despite the load-time checks."""
-
-
-# A data-driven state failure ends the machine cleanly, never as a poison StepEvent.
-_STATE_RUNTIME_ERRORS = (
-    StateRuntimeError,
-    predicate.PredicateError,
-    machine_template.TemplateError,
-)
 
 
 def _now_iso() -> str:
@@ -56,547 +26,11 @@ def _now_iso() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat(timespec="microseconds")
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
-class ToolExecResult:
-    """The observable result of running one `tool` command."""
-
-    exit_code: int
-    stdout: str
-    timed_out: bool
-    stderr: str = ""
-
-
-class AgentRequest(pydantic.BaseModel):
-    """What the engine asks the world to run for one `agent` state.
-
-    The `request` block of `request.json` across the machine-agent subprocess boundary
-    (the envelope is `MachineAgentRequest` in `app/machine_agent.py`); bytes pinned by
-    `tests/unit/test_machine_agent_ipc.py`.
-
-    Attributes:
-        prompt: The rendered prompt.
-        timeout_s: The wall-clock cap.
-        effort: The reasoning effort the `machine create` authoring agent runs at, or None; a
-            state sets its own in its `config` table.
-        max_usd: The slice's spend cap, or None.
-        max_percent: The slice's plan-points cap, or None.
-        mode: The nested loop's mode: `agent` (a read-only structured judge) or `run`.
-        state_name: The state, for its own watchable logs.jsonl; "" for the authoring agent.
-        step_seq: The transition, likewise; 0 for the authoring agent.
-        output_schema: The finish contract the execution refuses a non-conforming result by.
-        schemas: The spec's schema table verbatim, so nested records resolve execution side.
-    """
-
-    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
-
-    prompt: str
-    timeout_s: float
-    effort: str | None = None
-    max_usd: float | None = None
-    max_percent: float | None = None
-    mode: str = "agent"
-    state_name: str = ""
-    step_seq: int = 0
-    output_schema: str | None = None
-    schemas: dict[str, dict[str, schema.FieldSpec]] = pydantic.Field(default_factory=dict)
-
-
-class AgentExecResult(pydantic.BaseModel):
-    """The observable result of one agent loop.
-
-    `result.json` across the machine-agent subprocess boundary (written by `run_one`,
-    validated back in `app/machine_agent.py`); bytes pinned by
-    `tests/unit/test_machine_agent_ipc.py`.
-
-    Attributes:
-        reason: The loop's stop reason: `finish_session`, `budget_exhausted`, `timeout`,
-            `max_iterations`.
-        payload: The structured object passed to `finish_session`, or None.
-        usd: The slice's spend, summed into the machine's.
-        usd_partial: `usd` is a known under-estimate (an unpriced model).
-        input_tokens: The slice's input tokens.
-        output_tokens: The slice's output tokens.
-        plan_consumed: The slice's plan points, summed into `machine create`'s ledger.
-    """
-
-    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
-
-    reason: str
-    payload: dict[str, Any] | None
-    usd: float = 0.0
-    usd_partial: bool = False
-    input_tokens: int = 0
-    output_tokens: int = 0
-    plan_consumed: float = 0.0
-
-    @pydantic.field_validator("payload")
-    @classmethod
-    def _scrub_payload(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Replace lone surrogates, which `json.loads` accepts and `model_dump_json` refuses.
-
-        Unscrubbed, the subprocess dies before writing `result.json` and the host routes a
-        finished agent to its `on.failed` edge.
-
-        Returns:
-            The scrubbed payload, or None.
-        """
-        return value if value is None else machine_journal.scrub_lone_surrogates(value)
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class WaitWake:
-    """How a `wait` woke.
-
-    Attributes:
-        woke_by: A clock `tick`, an operator `signal` poke, or a `stop` request that
-            interrupted the sleep (the wait stays armed, nothing is journaled).
-        payload: The JSON a poke carried, journaled in the WaitFact; None for a bare poke
-            or a tick.
-    """
-
-    woke_by: Literal["tick", "signal", "stop"]
-    payload: Any = None
-
-
-class World(Protocol):
-    """Everything the engine may observe from the outside."""
-
-    def run_tool(
-        self,
-        argv: tuple[str, ...],
-        timeout_s: float,
-        *,
-        state: str = "",
-        pass_env: tuple[str, ...] = (),
-        step_seq: int = 0,
-    ) -> ToolExecResult:
-        """Run one tool command under the named state's sandbox."""
-        ...
-
-    def run_agent(self, request: AgentRequest) -> AgentExecResult:
-        """Run one agent loop."""
-        ...
-
-    def now(self) -> float:
-        """Return the clock as an epoch."""
-        ...
-
-    def sleep_until(self, wake_epoch: float | None) -> WaitWake:
-        """Block until the instant or a poke; None is a timerless wait, until a poke."""
-        ...
-
-    def materialize_poke(self, payload: Any) -> None:
-        """Write a poke payload where the next tool can read it."""
-        ...
-
-    def notify(self, kind: str, state: str, message: str, level: str) -> None:
-        """Fire the operator notify hook for a `notify` message or the `machine.end`."""
-        ...
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class MachineResult:
-    """How a drive ended.
-
-    Attributes:
-        status: `ok` or `failed` from a journaled end; `incomplete` for a replay that ends
-            before a terminal; `waiting` for an `--exit-on-wait` park; `stopped` for a stop.
-        reason: The terminal's reason, the failure, or where the machine parked.
-        state: The state the machine is in.
-        transitions: The transitions taken.
-    """
-
-    status: Literal["ok", "failed", "incomplete", "waiting", "stopped"]
-    reason: str
-    state: str
-    transitions: int
-
-    @classmethod
-    def from_end(cls, end: machine_journal.MachineEnd) -> MachineResult:
-        """Return the result a journaled end records."""
-        return cls(end.status, end.reason, end.state, end.transitions)
-
-
-def initial_blackboard(spec: schema.MachineSpec) -> dict[str, Any]:
-    """Return the blackboard of a fresh instance: every variable at its declared value."""
-    blackboard: dict[str, Any] = {}
-    for name, var in spec.vars.operator.items():
-        blackboard[name] = var.value
-    for name, var in spec.vars.code.items():
-        blackboard[name] = var.default
-    for name, var in spec.vars.agent.items():
-        blackboard[name] = var.default
-    return blackboard
-
-
-def _apply_capture(
-    spec: schema.MachineSpec,
-    state: schema.ToolState,
-    stdout: str,
-    blackboard: dict[str, Any],
-) -> None:
-    """Apply a tool's capture to the blackboard in place.
-
-    Raises:
-        StateRuntimeError: The stdout is not JSON, or does not match the output schema; the
-            capture gate halts the machine before a poison fact is journaled.
-    """
-    capture = state.capture
-    if capture is None:
-        return
-    try:
-        result_obj: Any = machine_journal.scrub_lone_surrogates(json.loads(stdout))
-    except json.JSONDecodeError as exc:
-        raise StateRuntimeError(f"tool stdout is not valid JSON for capture: {exc}") from exc
-    if state.output_schema is not None:
-        problems = _semantics.validate_record_payload(
-            spec.schemas, state.output_schema, result_obj, where="tool stdout"
-        )
-        if problems:
-            raise StateRuntimeError(
-                "tool stdout does not match output_schema: " + "; ".join(problems)
-            )
-    if capture.stdout_json is not None:
-        blackboard[capture.stdout_json] = result_obj
-        return
-    if capture.set is not None:
-        scope: dict[str, Any] = {**blackboard, "result": result_obj}
-        for target, template_text in capture.set.items():
-            template = machine_template.parse_template(template_text)
-            blackboard[target] = machine_template.render_value(
-                template, scope, where=f"state capture.set.{target}"
-            )
-
-
-def _apply_agent_capture(
-    state: schema.AgentState, payload: Any, blackboard: dict[str, Any]
-) -> None:
-    """Apply an agent's capture of its validated payload to the blackboard in place."""
-    capture = state.capture
-    if capture.finish_json is not None:
-        blackboard[capture.finish_json] = payload
-        return
-    if capture.set is not None:
-        scope: dict[str, Any] = {**blackboard, "result": payload}
-        for target, template_text in capture.set.items():
-            template = machine_template.parse_template(template_text)
-            blackboard[target] = machine_template.render_value(
-                template, scope, where=f"agent capture.set.{target}"
-            )
-
-
-def reduce(
-    spec: schema.MachineSpec,
-    state: schema.StateSpec,
-    fact: machine_journal.Fact,
-    blackboard: dict[str, Any],
-) -> dict[str, Any]:
-    """Apply a journaled fact to the blackboard.
-
-    Args:
-        spec: The machine.
-        state: The state that produced the fact.
-        fact: The fact.
-        blackboard: The blackboard before the step.
-
-    Returns:
-        A new blackboard.
-
-    Raises:
-        StateRuntimeError: The captured value does not match its schema or cannot render.
-    """
-    updated = dict(blackboard)
-    if (
-        isinstance(state, schema.ToolState)
-        and isinstance(fact, machine_journal.ToolFact)
-        and not fact.timed_out
-        and fact.exit_code == 0
-    ):
-        _apply_capture(spec, state, fact.stdout, updated)
-    elif (
-        isinstance(state, schema.AgentState)
-        and isinstance(fact, machine_journal.AgentFact)
-        and fact.outcome == "ok"
-    ):
-        problems = _semantics.validate_record_payload(
-            spec.schemas, state.output_schema, fact.payload, where="agent payload"
-        )
-        if problems:
-            raise StateRuntimeError(
-                "agent payload does not match output_schema: " + "; ".join(problems)
-            )
-        _apply_agent_capture(state, fact.payload, updated)
-    return updated
-
-
-def _route_branch(
-    state: schema.BranchState, blackboard: Mapping[str, object]
-) -> tuple[int, str, str]:
-    """Return the (clause index, label, goto) of the first clause that fires.
-
-    Raises:
-        EngineError: No clause fired, which `validate_semantics` rules out.
-    """
-    for index, clause in enumerate(state.when):
-        if clause.else_ is not None:
-            return index, "else", clause.goto
-        assert clause.if_ is not None
-        if predicate.evaluate(predicate.parse_predicate(clause.if_), blackboard):
-            return index, clause.if_, clause.goto
-    raise EngineError(f"branch fell through with no matching clause: {state.when!r}")
-
-
-def _is_forever(state: schema.WaitState) -> bool:
-    """Return whether the wait has no timer and parks until a poke."""
-    return state.every_secs is None and state.until is None
-
-
-def _compute_wake(state: schema.WaitState, blackboard: Mapping[str, object], now: float) -> float:
-    """Return the wait's absolute wake instant.
-
-    Raises:
-        StateRuntimeError: The rendered timing is not a positive integer or an ISO-8601
-            instant, or the wait has no timer.
-    """
-    if state.every_secs is not None:
-        rendered = machine_template.render_string(
-            machine_template.parse_template(state.every_secs), blackboard, where="every_secs"
-        )
-        try:
-            seconds = int(rendered)
-        except ValueError as exc:
-            raise StateRuntimeError(
-                f"`every_secs` did not render to an integer: {rendered!r}"
-            ) from exc
-        if seconds < 1:
-            raise StateRuntimeError(f"`every_secs` must be >= 1: {seconds}")
-        return now + seconds
-    if state.until is not None:
-        rendered = machine_template.render_string(
-            machine_template.parse_template(state.until), blackboard, where="until"
-        )
-        try:
-            moment = datetime.datetime.fromisoformat(rendered)
-        except ValueError as exc:
-            raise StateRuntimeError(f"`until` is not an ISO-8601 instant: {rendered!r}") from exc
-        if moment.tzinfo is None:
-            moment = moment.replace(tzinfo=datetime.UTC)
-        return moment.timestamp()
-    raise StateRuntimeError("a timerless `wait` has no wake instant to compute")
-
-
-def _arm_pending_wait(
-    state: schema.WaitState,
-    blackboard: Mapping[str, object],
-    journal: machine_journal.MachineJournal,
-    world: World,
-    state_name: str,
-    seq: int,
-) -> machine_journal.PendingWait:
-    """Return the pending wait of this visit, arming a fresh one when none is.
-
-    The absolute instant is persisted before anything waits on it, so a resume compares
-    against the same instant; the seq tells this visit from an earlier visit's uncleared
-    record.
-    """
-    pending = journal.read_pending_wait()
-    if pending is None or pending.state != state_name or pending.seq != seq:
-        wake = None if _is_forever(state) else _compute_wake(state, blackboard, world.now())
-        pending = machine_journal.PendingWait(state=state_name, wake_epoch=wake, seq=seq)
-        journal.write_pending_wait(pending)
-    return pending
-
-
-def _block_on_wait(
-    state: schema.WaitState,
-    blackboard: Mapping[str, object],
-    journal: machine_journal.MachineJournal,
-    world: World,
-    state_name: str,
-    seq: int,
-) -> tuple[str, str, machine_journal.Fact] | None:
-    """Block on a wait in the foreground.
-
-    The driver clears the pending record once the transition is journaled: a stale one would
-    suppress the notify on re-entry and reuse its instant under a later `--exit-on-wait`.
-
-    Returns:
-        The (label, goto, fact) of the wake, or None when a stop request interrupted the
-        sleep, leaving the wait armed and nothing journaled.
-    """
-    pending = _arm_pending_wait(state, blackboard, journal, world, state_name, seq)
-    woke = world.sleep_until(pending.wake_epoch)
-    if woke.woke_by == "stop":
-        return None
-    return (
-        woke.woke_by,
-        state.on[woke.woke_by],
-        machine_journal.WaitFact(
-            wake_epoch=pending.wake_epoch, woke_by=woke.woke_by, payload=woke.payload
-        ),
-    )
-
-
-def _fire_persisted_wait(
-    state: schema.WaitState,
-    blackboard: Mapping[str, object],
-    journal: machine_journal.MachineJournal,
-    world: World,
-    state_name: str,
-    seq: int,
-) -> tuple[str, str, machine_journal.Fact] | None:
-    """Arm or fire a wait without blocking (`--exit-on-wait`).
-
-    Returns:
-        The (label, goto, fact) when a poke arrived or the instant has passed, or None when
-        the wait is not ready, its record persisted for the caller to yield on.
-    """
-    pending = _arm_pending_wait(state, blackboard, journal, world, state_name, seq)
-    signaled, payload = journal.take_signal()
-    if signaled:
-        return (
-            "signal",
-            state.on["signal"],
-            machine_journal.WaitFact(
-                wake_epoch=pending.wake_epoch, woke_by="signal", payload=payload
-            ),
-        )
-    if pending.wake_epoch is not None and world.now() >= pending.wake_epoch:
-        return (
-            "tick",
-            state.on["tick"],
-            machine_journal.WaitFact(wake_epoch=pending.wake_epoch, woke_by="tick"),
-        )
-    return None
-
-
-def _tool_outcome(
-    fact: machine_journal.ToolFact | ToolExecResult,
-) -> Literal["ok", "nonzero", "timeout"]:
-    """Return the label a tool result routes on."""
-    if fact.timed_out:
-        return "timeout"
-    if fact.exit_code != 0:
-        return "nonzero"
-    return "ok"
-
-
-def _agent_outcome(
-    spec: schema.MachineSpec, state: schema.AgentState, result: AgentExecResult
-) -> Literal["ok", "failed", "budget_exhausted", "timeout"]:
-    """Return the label an agent result routes on; `ok` needs a payload matching the schema."""
-    if result.reason == "budget_exhausted":
-        return "budget_exhausted"
-    if result.reason == "timeout":
-        return "timeout"
-    if result.reason == "finish_session" and result.payload is not None:
-        problems = _semantics.validate_record_payload(
-            spec.schemas, state.output_schema, result.payload, where="finish_session payload"
-        )
-        if not problems:
-            return "ok"
-    return "failed"
-
-
-def _agent_usd_cap(state_cap: float | None, remaining: float | None) -> float | None:
-    """Return the smaller of the state's own cap and the machine's unspent budget.
-
-    The aggregate gate guards only state starts, so the child needs this cap to stay under
-    the machine's max_usd.
-    """
-    if state_cap is None:
-        return remaining
-    if remaining is None:
-        return state_cap
-    return min(state_cap, remaining)
-
-
-def _execute(
-    spec: schema.MachineSpec,
-    state: schema.StateSpec,
-    blackboard: Mapping[str, object],
-    world: World,
-    *,
-    seq: int = 0,
-    state_name: str = "",
-    remaining_usd: float | None = None,
-) -> tuple[str, str, machine_journal.Fact]:
-    """Execute one tool, branch or agent state against the world.
-
-    Args:
-        spec: The machine.
-        state: The state to execute.
-        blackboard: The current blackboard.
-        world: The world.
-        seq: The transition, for the agent state's own log.
-        state_name: The state's name, likewise.
-        remaining_usd: The machine's unspent budget, or None when uncapped.
-
-    Returns:
-        The label, the goto and the fact to journal.
-
-    Raises:
-        EngineError: The state is a terminal.
-    """
-    if isinstance(state, schema.ToolState):
-        argv = machine_template.render_command(state.command, blackboard, where="command")
-        result = world.run_tool(
-            tuple(argv),
-            float(state.timeout_secs),
-            state=state_name,
-            pass_env=state.pass_env,
-            step_seq=seq,
-        )
-        label = _tool_outcome(result)
-        fact: machine_journal.Fact = machine_journal.ToolFact(
-            exit_code=result.exit_code,
-            stdout=result.stdout,
-            timed_out=result.timed_out,
-            stderr=result.stderr,
-        )
-        return label, state.on[label], fact
-    if isinstance(state, schema.BranchState):
-        index, label, goto = _route_branch(state, blackboard)
-        return label, goto, machine_journal.BranchFact(clause_index=index)
-    if isinstance(state, schema.AgentState):
-        prompt = machine_template.render_string(
-            machine_template.parse_template(state.prompt), blackboard, where="agent prompt"
-        )
-        result = world.run_agent(
-            AgentRequest(
-                prompt=prompt,
-                timeout_s=float(state.timeout_secs),
-                max_usd=_agent_usd_cap(state.max_usd, remaining_usd),
-                mode=state.mode,
-                state_name=state_name,
-                step_seq=seq,
-                output_schema=state.output_schema,
-                schemas=spec.schemas,
-            )
-        )
-        outcome = _agent_outcome(spec, state, result)
-        payload = result.payload if outcome == "ok" else None
-        return (
-            outcome,
-            state.on[outcome],
-            machine_journal.AgentFact(
-                outcome=outcome,
-                reason=result.reason,
-                payload=payload,
-                usd=result.usd,
-                usd_partial=result.usd_partial,
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
-            ),
-        )
-    raise EngineError(f"cannot execute terminal state directly: {state!r}")
-
-
 def _emit_notify(
     state: schema.StateSpec,
     blackboard: Mapping[str, object],
     journal: machine_journal.MachineJournal,
-    world: World,
+    world: _contracts.World,
     state_name: str,
 ) -> None:
     """Journal a state's `notify` message on entry and fire the operator hook.
@@ -627,20 +61,20 @@ def _terminal_reason(state: schema.TerminalState, blackboard: Mapping[str, objec
         return machine_template.render_string(
             machine_template.parse_template(state.reason), blackboard, where="reason"
         )
-    except _STATE_RUNTIME_ERRORS as exc:
+    except _execution.STATE_RUNTIME_ERRORS as exc:
         return f"{state.reason} (reason not rendered: {exc})"
 
 
 def _emit_end(
     journal: machine_journal.MachineJournal,
-    world: World,
+    world: _contracts.World,
     *,
     status: Literal["ok", "failed"],
     reason: str,
     state: str,
     transitions: int,
     unbooked: machine_journal.AgentFact | None = None,
-) -> MachineResult:
+) -> _contracts.MachineResult:
     """Journal a `machine.end` and fire the operator notify hook for it.
 
     Args:
@@ -669,17 +103,17 @@ def _emit_end(
     )
     journal.append(end)
     world.notify("end", state, reason, status)
-    return MachineResult.from_end(end)
+    return _contracts.MachineResult.from_end(end)
 
 
 def _end_failed(
     journal: machine_journal.MachineJournal,
-    world: World,
+    world: _contracts.World,
     state: str,
     transitions: int,
     exc: Exception,
     unbooked: machine_journal.AgentFact | None = None,
-) -> MachineResult:
+) -> _contracts.MachineResult:
     """Journal a failed end for a runtime state error.
 
     Returns:
@@ -713,7 +147,7 @@ class _EngineState:
 
     spec: schema.MachineSpec
     journal: machine_journal.MachineJournal
-    world: World | None
+    world: _contracts.World | None
     exit_on_wait: bool
     blackboard: dict[str, Any]
     state: str
@@ -750,15 +184,15 @@ def _validate_recorded_route(
         EngineError: The recorded clause, label or goto disagrees with the fact.
     """
     if isinstance(state, schema.BranchState) and isinstance(event.fact, machine_journal.BranchFact):
-        clause_index, expected_label, expected_goto = _route_branch(state, blackboard)
+        clause_index, expected_label, expected_goto = _execution.route_branch(state, blackboard)
         if event.fact.clause_index != clause_index:
-            raise EngineError(
+            raise _contracts.EngineError(
                 f"journal branch fact selects clause {event.fact.clause_index} at seq"
                 f" {event.seq}, but the replayed blackboard selects clause {clause_index}."
                 f"{remedy}"
             )
     elif isinstance(state, schema.ToolState) and isinstance(event.fact, machine_journal.ToolFact):
-        expected_label = _tool_outcome(event.fact)
+        expected_label = _execution.tool_outcome(event.fact)
         expected_goto = state.on[expected_label]
     elif isinstance(state, schema.AgentState) and isinstance(event.fact, machine_journal.AgentFact):
         expected_label = event.fact.outcome
@@ -767,14 +201,14 @@ def _validate_recorded_route(
         expected_label = event.fact.woke_by
         expected_goto = state.on[expected_label]
     else:  # the caller's fact-kind check makes this unreachable
-        raise EngineError(f"journal fact at seq {event.seq} cannot be routed")
+        raise _contracts.EngineError(f"journal fact at seq {event.seq} cannot be routed")
     if event.label != expected_label:
-        raise EngineError(
+        raise _contracts.EngineError(
             f"journal records label {event.label!r} at seq {event.seq}, but its fact"
             f" implies label {expected_label!r}.{remedy}"
         )
     if event.goto != expected_goto:
-        raise EngineError(
+        raise _contracts.EngineError(
             f"journal records goto {event.goto!r} at seq {event.seq}, but its fact"
             f" implies goto {expected_goto!r}.{remedy}"
         )
@@ -808,37 +242,39 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
             continue
         state_spec = spec.states.get(state)
         if state_spec is None:
-            raise EngineError(
+            raise _contracts.EngineError(
                 f"journal references state {state!r}, which the loaded machine no"
                 " longer declares (the file was edited since this instance started)."
                 f"{remedy}"
             )
         if event.state != state:
-            raise EngineError(
+            raise _contracts.EngineError(
                 f"journal diverges at seq {event.seq}: it records state"
                 f" {event.state!r}, the replayed position is {state!r}.{remedy}"
             )
         if event.seq != transitions:
-            raise EngineError(
+            raise _contracts.EngineError(
                 f"journal is not contiguous: expected seq {transitions}, found"
                 f" {event.seq} (state {state!r}).{remedy}"
             )
         expected_kind = _STATE_FACT_KINDS.get(type(state_spec))
         if expected_kind is None or not isinstance(event.fact, expected_kind):
-            raise EngineError(
+            raise _contracts.EngineError(
                 f"journal fact at seq {event.seq} is {type(event.fact).__name__},"
                 f" which state {state!r} cannot produce.{remedy}"
             )
         if event.goto not in _declared_gotos(state_spec):
-            raise EngineError(
+            raise _contracts.EngineError(
                 f"journal goto {event.goto!r} at seq {event.seq} is not an edge"
                 f" state {state!r} declares.{remedy}"
             )
         try:
             _validate_recorded_route(state_spec, event, blackboard, remedy)
-            blackboard = reduce(spec, state_spec, event.fact, blackboard)
-        except _STATE_RUNTIME_ERRORS as exc:
-            raise EngineError(f"cannot replay journaled step at state {state!r}: {exc}") from exc
+            blackboard = _execution.reduce(spec, state_spec, event.fact, blackboard)
+        except _execution.STATE_RUNTIME_ERRORS as exc:
+            raise _contracts.EngineError(
+                f"cannot replay journaled step at state {state!r}: {exc}"
+            ) from exc
         if isinstance(event.fact, machine_journal.AgentFact):
             spent_usd += event.fact.usd
         state = event.goto
@@ -849,7 +285,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
     eng.spent_usd = spent_usd
 
 
-def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per state kind
+def _run_live_loop(eng: _EngineState) -> _contracts.MachineResult:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per state kind
     """Continue live from where the journal ends.
 
     One state per iteration: execute, reduce, journal the fact, advance; until a terminal, a
@@ -870,7 +306,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
     exit_on_wait = eng.exit_on_wait
     world = eng.world
     if world is None:  # pragma: no cover - defensive
-        raise EngineError("live execution requires a World")
+        raise _contracts.EngineError("live execution requires a World")
     blackboard = eng.blackboard
     state = eng.state
     transitions = eng.transitions
@@ -879,10 +315,12 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
         # A stop request parks here: the fact in flight is journaled, no end is written.
         if machine_journal.stop_requested(journal.root):
             machine_journal.clear_stop_request(journal.root)
-            return MachineResult("stopped", "stop requested by the operator", state, transitions)
+            return _contracts.MachineResult(
+                "stopped", "stop requested by the operator", state, transitions
+            )
         current = spec.states.get(state)
         if current is None:
-            raise EngineError(
+            raise _contracts.EngineError(
                 f"journal resumes at state {state!r}, which the loaded machine no"
                 " longer declares (the file was edited since this instance started)."
                 f" {machine_journal.fresh_start_remedy(journal.root)}"
@@ -898,7 +336,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
         if not already_parked:
             try:
                 _emit_notify(current, blackboard, journal, world, state)
-            except _STATE_RUNTIME_ERRORS as exc:
+            except _execution.STATE_RUNTIME_ERRORS as exc:
                 # Non-fatal, never silent: the failure is journaled and the hook told.
                 fail = f"notify failed: {exc}"
                 with contextlib.suppress(machine_journal.JournalError):
@@ -936,7 +374,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
 
         try:
             if exit_on_wait and isinstance(current, schema.WaitState):
-                fired = _fire_persisted_wait(
+                fired = _execution.fire_persisted_wait(
                     current, blackboard, journal, world, state, transitions
                 )
                 if fired is None:
@@ -945,18 +383,20 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
                         detail = f"until {pending.wake_at}"
                     else:
                         detail = "until a signal poke"
-                    return MachineResult("waiting", detail, state, transitions)
+                    return _contracts.MachineResult("waiting", detail, state, transitions)
                 label, goto, fact = fired
             elif isinstance(current, schema.WaitState):
-                blocked = _block_on_wait(current, blackboard, journal, world, state, transitions)
+                blocked = _execution.block_on_wait(
+                    current, blackboard, journal, world, state, transitions
+                )
                 if blocked is None:
                     machine_journal.clear_stop_request(journal.root)
-                    return MachineResult(
+                    return _contracts.MachineResult(
                         "stopped", "stop requested by the operator", state, transitions
                     )
                 label, goto, fact = blocked
             else:
-                label, goto, fact = _execute(
+                label, goto, fact = _execution.execute(
                     spec,
                     current,
                     blackboard,
@@ -965,15 +405,15 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
                     state_name=state,
                     remaining_usd=remaining_usd,
                 )
-        except _STATE_RUNTIME_ERRORS as exc:
+        except _execution.STATE_RUNTIME_ERRORS as exc:
             return _end_failed(journal, world, state, transitions, exc)
         if isinstance(fact, machine_journal.WaitFact) and fact.woke_by == "signal":
             world.materialize_poke(fact.payload)
         # The capture is reduced before the step is journaled: a fact that cannot be reduced would
         # re-crash every later replay, so the machine ends here and the spend rides on the end.
         try:
-            next_blackboard = reduce(spec, current, fact, blackboard)
-        except _STATE_RUNTIME_ERRORS as exc:
+            next_blackboard = _execution.reduce(spec, current, fact, blackboard)
+        except _execution.STATE_RUNTIME_ERRORS as exc:
             return _end_failed(
                 journal,
                 world,
@@ -1010,12 +450,12 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: C901, PLR0911, 
 def drive(
     spec: schema.MachineSpec,
     journal: machine_journal.MachineJournal,
-    world: World | None,
+    world: _contracts.World | None,
     *,
     live: bool,
     exit_on_wait: bool = False,
     base_commit: str | None = None,
-) -> MachineResult:
+) -> _contracts.MachineResult:
     """Run or replay a machine against its journal.
 
     Args:
@@ -1037,17 +477,17 @@ def drive(
     """
     events = journal.read()
     if events and not isinstance(events[0], machine_journal.MachineBegin):
-        raise EngineError(
+        raise _contracts.EngineError(
             "journal must start with a machine.begin event."
             f" {machine_journal.fresh_start_remedy(journal.root)}"
         )
     if any(isinstance(event, machine_journal.MachineBegin) for event in events[1:]):
-        raise EngineError(
+        raise _contracts.EngineError(
             "journal contains more than one machine.begin event."
             f" {machine_journal.fresh_start_remedy(journal.root)}"
         )
     if any(isinstance(event, machine_journal.MachineEnd) for event in events[:-1]):
-        raise EngineError(
+        raise _contracts.EngineError(
             "journal contains events after machine.end."
             f" {machine_journal.fresh_start_remedy(journal.root)}"
         )
@@ -1057,7 +497,7 @@ def drive(
     if isinstance(begin, machine_journal.MachineBegin) and (
         begin.machine != spec.machine or begin.version != spec.version
     ):
-        raise EngineError(
+        raise _contracts.EngineError(
             f"this journal was started by machine {begin.machine!r} v{begin.version},"
             f" but the file declares {spec.machine!r} v{spec.version}. A different"
             " machine reused the id, or the file changed since this instance began."
@@ -1073,7 +513,7 @@ def drive(
         journal=journal,
         world=world,
         exit_on_wait=exit_on_wait,
-        blackboard=initial_blackboard(spec),
+        blackboard=_execution.initial_blackboard(spec),
         state=spec.initial,
     )
     _rebuild_from_journal(eng, events)
@@ -1081,24 +521,24 @@ def drive(
     end = events[-1] if events and isinstance(events[-1], machine_journal.MachineEnd) else None
     if end is not None:
         if end.state != eng.state or end.transitions != eng.transitions:
-            raise EngineError(
+            raise _contracts.EngineError(
                 "journal machine.end disagrees with its replayed position:"
                 f" records state {end.state!r} after {end.transitions} transitions,"
                 f" replay reaches {eng.state!r} after {eng.transitions}."
                 f" {machine_journal.fresh_start_remedy(journal.root)}"
             )
-        return MachineResult.from_end(end)
+        return _contracts.MachineResult.from_end(end)
 
     if not live:
         current = spec.states.get(eng.state)
         if isinstance(current, schema.TerminalState):
-            return MachineResult(
+            return _contracts.MachineResult(
                 current.status,
                 _terminal_reason(current, eng.blackboard),
                 eng.state,
                 eng.transitions,
             )
-        return MachineResult(
+        return _contracts.MachineResult(
             "incomplete", "journal ends before a terminal state", eng.state, eng.transitions
         )
 
