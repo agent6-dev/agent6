@@ -417,7 +417,7 @@ def jail_policy(
         extra_protect_paths: Paths re-bound read-only beyond `.git`.
         network: A caller's own network answer; see `resolve_network`.
         env_base: The child's env instead of the passthrough set; the jail defaults (PATH, HOME,
-            the uv and bytecode settings) apply either way.
+            the `[git.commit]` identity, the uv and bytecode settings) apply either way.
         worktree_git_dir: The repository git dir agent6 recorded when it added the root as a
             fork's linked worktree, granted read-only once the worktree's own `.git` pointer
             still resolves to it. A linked worktree with no record gets no grant.
@@ -463,6 +463,13 @@ def jail_policy(
         if refusal is not None:
             raise jail.JailUnavailableError(refusal)
     env["HOME"] = str(persistent or JAIL_TMP_HOME)
+    # That HOME holds no git identity, so a `git commit` the model runs (`git.control = "model"`)
+    # carries the operator's `[git.commit]` one; an unset field leaves the identity to git (a
+    # repo-local user.name still serves). The trailer stays agent6's, added only where it commits.
+    if config.git.commit.name:
+        env["GIT_AUTHOR_NAME"] = env["GIT_COMMITTER_NAME"] = config.git.commit.name
+    if config.git.commit.email:
+        env["GIT_AUTHOR_EMAIL"] = env["GIT_COMMITTER_EMAIL"] = config.git.commit.email
     env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     # The jail is offline, so `uv run` must use the venv the operator already synced.
     env.setdefault("UV_NO_SYNC", "1")

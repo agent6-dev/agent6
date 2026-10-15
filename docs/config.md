@@ -233,8 +233,8 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 
 | Field | Default | Meaning |
 |---|---|---|
-| `name` | none | Author and committer name on the commits agent6 makes; unset uses the repo's own `git config`. A run with no resolvable identity refuses to start. |
-| `email` | none | Author and committer email on the commits agent6 makes; unset uses the repo's own `git config`. A run with no resolvable identity refuses to start. |
+| `name` | none | Author and committer name on the commits agent6 makes, and on a jailed `git commit` under `control = "model"` (passed as `GIT_AUTHOR_NAME` and `GIT_COMMITTER_NAME`); unset uses the repo's own `git config`. A run with no resolvable identity refuses to start. |
+| `email` | none | Author and committer email on the commits agent6 makes, and on a jailed `git commit` under `control = "model"` (passed as `GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_EMAIL`); unset uses the repo's own `git config`. A run with no resolvable identity refuses to start. |
 | `trailer` | `""` | A git trailer line (`Key: value`) appended to every commit agent6 makes, e.g. `"Assisted-by: agent6:{model}"` or `"Co-authored-by: agent6:{model} <noreply@agent6.dev>"`. `{model}` is the model that wrote the code (several are joined with `, `). Empty: no trailer. |
 
 ### `[git.commit.checkpoint]` and `[git.commit.squash]`

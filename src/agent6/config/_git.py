@@ -65,15 +65,19 @@ class GitCommitConfig(pydantic.BaseModel):
     name: str | None = pydantic.Field(
         default=None,
         description=(
-            "Author and committer name on the commits agent6 makes; unset uses the repo's own `git "
-            "config`. A run with no resolvable identity refuses to start."
+            "Author and committer name on the commits agent6 makes, and on a jailed `git commit` "
+            'under `control = "model"` (passed as `GIT_AUTHOR_NAME` and `GIT_COMMITTER_NAME`); '
+            "unset uses the repo's own `git config`. A run with no resolvable identity refuses "
+            "to start."
         ),
     )
     email: str | None = pydantic.Field(
         default=None,
         description=(
-            "Author and committer email on the commits agent6 makes; unset uses the repo's own "
-            "`git config`. A run with no resolvable identity refuses to start."
+            "Author and committer email on the commits agent6 makes, and on a jailed `git commit` "
+            'under `control = "model"` (passed as `GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_EMAIL`); '
+            "unset uses the repo's own `git config`. A run with no resolvable identity refuses "
+            "to start."
         ),
     )
     trailer: str = pydantic.Field(

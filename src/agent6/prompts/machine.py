@@ -175,7 +175,8 @@ data. So:
   - Pass NON-secret config (an endpoint, a user id) as an operator var spliced
     into `command`, e.g. `["python3", "scripts/fetch.py", "{{ feed_url }}"]`.
   - A jailed tool sees only `LANG`, `LC_ALL`, `TERM`, `CI`, `PATH`, `HOME`,
-    `PYTHONDONTWRITEBYTECODE`, `UV_NO_SYNC` and `AGENT6_MACHINE_DATA_DIR`: the
+    `PYTHONDONTWRITEBYTECODE`, `UV_NO_SYNC`, `AGENT6_MACHINE_DATA_DIR` and the
+    operator's configured git identity (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`): the
     operator's exported secrets do NOT reach it.
     Never hard-code a secret in a script or the `.asm.toml`; a state that needs
     one says so in its comment, so the operator arranges it.
