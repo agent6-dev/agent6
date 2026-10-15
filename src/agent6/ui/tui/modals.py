@@ -15,7 +15,7 @@ from rich import text as rich_text
 from textual import app, binding, containers, events, screen, widgets
 
 from agent6.ui.tui import forms
-from agent6.viewmodel import state
+from agent6.viewmodel import Question
 
 # The arrows move focus like Tab; a focused Input consumes left and right for its cursor.
 _ARROW_NAV = (
@@ -428,7 +428,11 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
     ]
 
     def __init__(
-        self, question_id: str, questions: tuple[state.Question, ...], *, from_harness: bool = False
+        self,
+        question_id: str,
+        questions: tuple[Question, ...],
+        *,
+        from_harness: bool = False,
     ) -> None:
         """Create the prompt for a question id and its questions."""
         super().__init__()

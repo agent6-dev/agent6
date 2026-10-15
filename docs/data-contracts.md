@@ -29,7 +29,7 @@ The manifest.json shape and its one reader; `app.manifest` is the writer.
 **SessionManifest** &mdash; The typed manifest.json a session starts with and later stamps.
 
 - **Written by:** app/stamps
-- **Read by:** app/{_execution, _parallel_results, _resume_chain, _setup, _workdirs, compare, finalize, fork, fork_worktrees, lanes, merge, parallel, preflight, resume, run, stop, undo, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, stop_cmd}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{format, listing, policy, state, wire}
+- **Read by:** app/{_execution, _parallel_results, _resume_chain, _setup, _workdirs, compare, finalize, fork, fork_worktrees, lanes, merge, parallel, preflight, resume, run, stop, undo, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, stop_cmd}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{_state_view, format, listing, policy, wire}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (24 test files exercise it)
 
 ## SessionSnapshot
@@ -67,7 +67,7 @@ Type the logs.jsonl event families the session fold consumes.
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommit`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionStranded`, `SessionUndone`, `RawEvent`
 
 - **Written by:** viewmodel/events
-- **Read by:** harness/run_review, ui/cli/{_console_view, _repl, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, listing, log_line, state, transcript}
+- **Read by:** harness/run_review, ui/cli/{_console_view, _repl, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, _state_view, listing, log_line, state, transcript}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (6 test files exercise it)
 
 ## MachineSpec
@@ -138,12 +138,12 @@ The task-graph nodes and the intents that mutate them.
 
 ## Run/machine wire snapshot
 
-[`agent6.viewmodel.state`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state.py) &middot; mutable container + 12 frozen turn types
+[`agent6.viewmodel._state_view`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/_state_view.py) &middot; plain class
 
-Fold a session's events into a `SessionState` and its wire form.
+Render session status, context usage, and the wire snapshot.
 
 **session_state_as_dict** &mdash; Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
-- **Written by:** viewmodel/{machine_state, state}
-- **Read by:** ui/cli/{_interact, _repl, _steer_menu, _task_tree, answer_cmd}, ui/tui/{_dashboard_header, _diff_pane, app, composer, conversation, dashboard, logview, modals, prompts}, ui/web/{_sse, actions, model}, viewmodel/{__init__, wire}
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (11 test files exercise it)
+- **Written by:** viewmodel/{_state_view, machine_state}
+- **Read by:** ui/cli/_steer_menu, ui/tui/app, ui/web/{_sse, model}, viewmodel/{__init__, wire}
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (7 test files exercise it)

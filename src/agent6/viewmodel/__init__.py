@@ -9,6 +9,8 @@ viewer in any language mirrors `SessionState` and `MachineState` field for field
 
 Modules:
     events.py            typed read model of the event families the fold consumes.
+    _state_types.py      frozen session view records.
+    _state_view.py       session status, context usage and wire rendering.
     state.py             event fold: list[event] -> SessionState.
     machine_state.py     journal fold: machine journal -> MachineState, plus the watch cursor.
     tail.py              stdlib JSONL file tailer, the event source.
@@ -25,6 +27,23 @@ Modules:
 
 from __future__ import annotations
 
+from agent6.viewmodel._state_types import (  # noqa: ICN003  # re-export
+    ApprovalPrompt,
+    BudgetView,
+    CommitStep,
+    Question,
+    QuestionPrompt,
+    RoleCall,
+    SessionState,
+    TaskNodeView,
+    ToolCallView,
+    approval_parts,
+)
+from agent6.viewmodel._state_view import (  # noqa: ICN003  # re-export
+    context_fill,
+    session_state_as_dict,
+    status_facts,
+)
 from agent6.viewmodel.events import event_epoch  # noqa: ICN003  # re-export
 from agent6.viewmodel.listing import (  # noqa: ICN003  # re-export
     LIVE_STATUS_WORDS,
@@ -79,22 +98,12 @@ from agent6.viewmodel.machine_state import (  # noqa: ICN003  # re-export
 from agent6.viewmodel.policy import session_policy  # noqa: ICN003  # re-export
 from agent6.viewmodel.state import (  # noqa: ICN003  # re-export
     MAX_LOG_TAIL,
-    ApprovalPrompt,
-    BudgetView,
-    QuestionPrompt,
-    RoleCall,
-    SessionState,
-    TaskNodeView,
-    ToolCallView,
     apply_event,
-    approval_parts,
     fold_session,
     initial_state,
     open_approval,
     open_approval_of,
     open_question,
-    session_state_as_dict,
-    status_facts,
     task_tree_views,
 )
 from agent6.viewmodel.tail import LogTail, tail_events  # noqa: ICN003  # re-export
@@ -122,6 +131,7 @@ __all__ = [
     "AgentExecution",
     "ApprovalPrompt",
     "BudgetView",
+    "CommitStep",
     "InstanceProbes",
     "LogScan",
     "LogTail",
@@ -130,6 +140,7 @@ __all__ = [
     "MachineWatchCursor",
     "NewestExecutionFold",
     "NotificationView",
+    "Question",
     "QuestionPrompt",
     "RoleCall",
     "SessionState",
@@ -144,6 +155,7 @@ __all__ = [
     "apply_event",
     "approval_parts",
     "armed_wait",
+    "context_fill",
     "died_without_end",
     "event_epoch",
     "execution_of",

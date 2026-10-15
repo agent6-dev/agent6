@@ -18,6 +18,7 @@ import pytest
 
 from agent6.viewmodel import listing as viewmodel_listing
 from agent6.viewmodel import state as viewmodel_state
+from agent6.viewmodel import status_facts
 
 _GOLDEN = pathlib.Path(__file__).parent / "data" / "golden_session_logs.jsonl"
 
@@ -204,8 +205,8 @@ def _shared_facts(
         "end_reason": state.end_reason if state.finished else "",
         "all_passed": state.all_passed if state.finished else None,
         "verify_scoped": state.verify_scoped,
-        "gate_red": viewmodel_state.status_facts(state).gate_red,
-        "gate_timed_out": viewmodel_state.status_facts(state).gate_timed_out,
+        "gate_red": status_facts(state).gate_red,
+        "gate_timed_out": status_facts(state).gate_timed_out,
         "cost_usd": state.budget.usd_total if scan.cost_usd is not None else None,
         "usd_partial": state.budget.usd_partial,
         "tokens": (

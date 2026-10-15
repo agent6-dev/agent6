@@ -18,7 +18,7 @@ from textual import app, message, widgets
 from agent6 import git_ops
 from agent6.sessions import manifest
 from agent6.ui.tui import forms
-from agent6.viewmodel import format, state
+from agent6.viewmodel import SessionState, format
 
 
 class DiffPane(forms.ScrollPane):
@@ -72,7 +72,7 @@ class DiffPane(forms.ScrollPane):
             return manifest.read_manifest(self._session_dir).git_control
         return "agent6"
 
-    def sync_nav(self, s: state.SessionState) -> None:
+    def sync_nav(self, s: SessionState) -> None:
         """Refresh the step selector from the state's commits, newest first.
 
         Hidden while nothing is committed, and under `[git].control = "model"`, which
@@ -124,7 +124,7 @@ class DiffPane(forms.ScrollPane):
         self.cumulative = bool(event.value)
         self.post_message(self.StepChanged())
 
-    def render_state(self, s: state.SessionState, *, sel: str | None, filt: str) -> None:
+    def render_state(self, s: SessionState, *, sel: str | None, filt: str) -> None:
         """Paint the pane for the state, skipping when none of its inputs changed.
 
         Built as rich Text, so a diff or verify body holding brackets is never parsed
@@ -149,7 +149,7 @@ class DiffPane(forms.ScrollPane):
         )
         self.query_one("#diff-body", widgets.Static).update(self._story(s, sel))
 
-    def _story(self, s: state.SessionState, sel: str | None) -> text.Text:
+    def _story(self, s: SessionState, sel: str | None) -> text.Text:
         verify = s.last_verify
         dt = text.Text()
         if self.step_sel:

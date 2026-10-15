@@ -40,7 +40,7 @@ from agent6.ui.tui import (
     theme,
 )
 from agent6.ui.tui import prompts as tui_prompts
-from agent6.viewmodel import format, state, tail
+from agent6.viewmodel import SessionState, ToolCallView, format, state, tail
 
 if TYPE_CHECKING:
     from agent6.ui.tui import app as tui_app
@@ -172,7 +172,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         """Repaint for the newly selected step."""
         self.render_state()
 
-    def _details_state(self, s: state.SessionState) -> tuple[state.SessionState, str]:
+    def _details_state(self, s: SessionState) -> tuple[SessionState, str]:
         """Return the state the task tree and the cost line show, and its "as of" suffix.
 
         Live, or as of the selected step, folded once per selection from the log.
@@ -203,12 +203,12 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         self._selected_task_id: str | None = None
         self._log_filter: str | None = None  # what the append-only log shows; a change re-renders
         self._last_log_count = 0
-        self._visible_tools: tuple[state.ToolCallView, ...] = ()  # the tool rows on screen now
+        self._visible_tools: tuple[ToolCallView, ...] = ()  # the tool rows on screen now
         # What each pane last rendered: the fold keeps untouched fields identical, so `is` says
         # nothing to redo, and a burst never rebuilds the tree and table per event.
         self._rendered_tree: tuple[object, ...] | None = None
         self._rendered_tools: tuple[object, object] | None = None
-        self._step_state: tuple[str, state.SessionState] | None = None  # the fold as of the step
+        self._step_state: tuple[str, SessionState] | None = None  # the fold as of the step
 
     @property
     def _tui(self) -> tui_app.Agent6TUI:
@@ -450,7 +450,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             self._stream_story(s, active=active)
         )
 
-    def _stream_story(self, s: state.SessionState, *, active: bool) -> rich_text.Text:
+    def _stream_story(self, s: SessionState, *, active: bool) -> rich_text.Text:
         """Return the stream pane's text: the end story, the live deltas, or the dead state.
 
         Args:

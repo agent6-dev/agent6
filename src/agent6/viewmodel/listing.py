@@ -795,7 +795,7 @@ class LogScan:
     def status_facts(self) -> StatusFacts:
         """Return this scan's answers to the status questions.
 
-        The typed fold's `state.status_facts` agrees on the same log.
+        The typed fold's `_state_view.status_facts` agrees on the same log.
         """
         return StatusFacts(
             started=self.saw_start,

@@ -25,8 +25,15 @@ from textual.css import query
 
 from agent6.ui.tui import clipboard, composer, logview, menubar, screen_chrome, settings
 from agent6.ui.tui import prompts as tui_prompts
-from agent6.viewmodel import approval_parts, events, format, policy, transcript, transcript_style
-from agent6.viewmodel import state as viewmodel_state
+from agent6.viewmodel import (
+    ApprovalPrompt,
+    approval_parts,
+    events,
+    format,
+    policy,
+    transcript,
+    transcript_style,
+)
 from agent6.viewmodel import tail as viewmodel_tail
 
 if TYPE_CHECKING:
@@ -398,7 +405,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         elif etype == "role.text_delta":
             self._live_text.append(str(event.get("text", "")))
 
-    def _open_approval(self) -> viewmodel_state.ApprovalPrompt | None:
+    def _open_approval(self) -> ApprovalPrompt | None:
         """Return the approval awaiting an answer, from the host's fold."""
         state = self._host.state
         if self._approval is not None:

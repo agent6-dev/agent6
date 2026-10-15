@@ -18,7 +18,7 @@ from textual import app as textual_app
 
 from agent6.sessions import ipc
 from agent6.ui.tui import modals
-from agent6.viewmodel import state as viewmodel_state
+from agent6.viewmodel import SessionState
 
 
 class PromptDispatcher:
@@ -45,7 +45,7 @@ class PromptDispatcher:
         """Forget every claimed prompt, at a session boundary."""
         self._seen.clear()
 
-    def dispatch(self, session_dir: pathlib.Path, state: viewmodel_state.SessionState) -> None:
+    def dispatch(self, session_dir: pathlib.Path, state: SessionState) -> None:
         """Push a modal for each unanswered, unclaimed question; close one answered elsewhere."""
         for qp in state.pending_questions:
             key = f"{session_dir}|{qp.id}"

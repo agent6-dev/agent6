@@ -18,7 +18,7 @@ from typing import Any, Literal
 
 from agent6.machine import MachineError, MachineResult, journal, load_machine, schema
 from agent6.sessions import layout, process
-from agent6.viewmodel import format
+from agent6.viewmodel import _state_types, format
 from agent6.viewmodel import state as viewmodel_state
 from agent6.viewmodel import tail as viewmodel_tail
 
@@ -235,7 +235,7 @@ class AgentExecution:
     blocked_in: str = ""
 
 
-def execution_of(state: viewmodel_state.SessionState, log: pathlib.Path) -> AgentExecution:
+def execution_of(state: _state_types.SessionState, log: pathlib.Path) -> AgentExecution:
     """Return the execution a folded state log describes.
 
     Args:
@@ -285,7 +285,7 @@ class NewestExecutionFold:
     def __init__(self) -> None:
         self._log: pathlib.Path | None = None
         self._tail: viewmodel_tail.LogTail | None = None
-        self.state: viewmodel_state.SessionState = viewmodel_state.initial_state()
+        self.state: _state_types.SessionState = viewmodel_state.initial_state()
 
     def refresh(self, machine_dir: pathlib.Path) -> pathlib.Path | None:
         """Fold what the newest state log gained since the last refresh.

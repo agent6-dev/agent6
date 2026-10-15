@@ -24,7 +24,7 @@ from agent6 import directive
 from agent6.sessions import ipc
 from agent6.ui import keymap
 from agent6.ui.tui import forms, menubar, modals
-from agent6.viewmodel import approval_parts, tail, transcript
+from agent6.viewmodel import ApprovalPrompt, SessionState, approval_parts, tail, transcript
 from agent6.viewmodel import state as viewmodel_state
 
 if TYPE_CHECKING:
@@ -303,9 +303,7 @@ class ApprovalKeys:
     def approval_answered(self, verdict: str) -> None:
         """Follow up a written answer: "allowed", "denied" or "answered elsewhere"."""
 
-    def open_approval(
-        self, state: viewmodel_state.SessionState
-    ) -> viewmodel_state.ApprovalPrompt | None:
+    def open_approval(self, state: SessionState) -> ApprovalPrompt | None:
         """Return the oldest unanswered approval this view has not answered already."""
         prompts = self._prompts
         if prompts is None:
@@ -315,7 +313,7 @@ class ApprovalKeys:
             state, taken=lambda aid: prompts.seen(session_dir, aid)
         )
 
-    def sync_approval(self, current: viewmodel_state.ApprovalPrompt | None) -> None:
+    def sync_approval(self, current: ApprovalPrompt | None) -> None:
         """Dock one row for the open approval, or none.
 
         A new id gets a fresh row, since a resumed execution reuses prompt ids and the

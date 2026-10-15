@@ -41,7 +41,17 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import background
 from agent6.ui import directives, spawn
 from agent6.ui.tui import composer, conversation, dashboard, modals, prompts, theme
-from agent6.viewmodel import events, format, listing, restate, state, tail
+from agent6.viewmodel import (
+    SessionState,
+    context_fill,
+    events,
+    format,
+    listing,
+    restate,
+    state,
+    status_facts,
+    tail,
+)
 
 # An answer submitted after the worker died: the next resume re-asks the prompt.
 _ANSWER_LOST = "the session is not live; the answer reached nothing (a resume re-asks the prompt)"
@@ -114,7 +124,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         # From the hub loop, Esc returns to it and q quits it; standalone, both close the view.
         self.from_hub = from_hub
         self.logs_path = session_dir / layout.LOGS_NAME
-        self.state: state.SessionState = state.initial_state()
+        self.state: SessionState = state.initial_state()
         self._prompts = prompts.PromptDispatcher(
             self, answerable=self.session_controllable, lost=_ANSWER_LOST
         )
@@ -135,7 +145,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         # The (word, reason) the hub row shows too, refreshed on the ~1/s heartbeat; derived,
         # never latched, so a crash then a resume reads as running again.
         self.dir_status: tuple[str, str] = listing.status_for_session_dir(
-            session_dir, state.status_facts(self.state)
+            session_dir, status_facts(self.state)
         )
         # The journal prefix folded at open; the reader starts after it.
         self._seed_log_count = 0
@@ -323,7 +333,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         The covered screen's bar is relabelled too, or the two would disagree until
         its next event-driven paint.
         """
-        status = listing.status_for_session_dir(self.session_dir, state.status_facts(self.state))
+        status = listing.status_for_session_dir(self.session_dir, status_facts(self.state))
         has_unmerged = self._unmerged and self.state.finished
         # Manifest changes are polled every five seconds, not on each repaint.
         if time.monotonic() >= self._manifest_due:
@@ -790,7 +800,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
 
     def context_pct(self) -> int | None:
         """Return the context-window fill in percent at the last completed model call."""
-        return state.context_fill(self.state)
+        return context_fill(self.state)
 
     def session_controllable(self) -> bool:
         """Return whether the run can receive operator input over the file bridge.

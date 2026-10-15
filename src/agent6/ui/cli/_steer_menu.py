@@ -27,11 +27,13 @@ from agent6.tools import background
 from agent6.ui import directives
 from agent6.ui.cli import _common, _menu_input
 from agent6.viewmodel import (
+    SessionState,
+    context_fill,
     fold_session,
     format,
     operator_inputs,
     restate,
-    state,
+    status_facts,
     status_for_session_dir,
     tail_events,
 )
@@ -123,7 +125,7 @@ class _Recall:
 _RECALL = _Recall()
 
 
-def _fold(session_dir: pathlib.Path) -> state.SessionState:
+def _fold(session_dir: pathlib.Path) -> SessionState:
     """Return the session's state, folded from its log."""
     return fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False))
 
@@ -132,7 +134,7 @@ def _print_status(session_dir: pathlib.Path) -> None:
     """Print the run's status line: tasks, tools, cost, context and preset."""
     s = _fold(session_dir)
     # The dir's probes too: a gone worker reads as running from the fold alone.
-    label = format.status_label(*status_for_session_dir(session_dir, state.status_facts(s)))
+    label = format.status_label(*status_for_session_dir(session_dir, status_facts(s)))
     done = sum(1 for t in s.tasks if t.status in order.DONE_STATUSES)
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
     role = s.last_role
@@ -140,7 +142,7 @@ def _print_status(session_dir: pathlib.Path) -> None:
     cost = budget.format_usd(s.budget.usd_total, partial=s.budget.usd_partial)
     ctx = ""
     if role is not None and role.ctx_tokens > 0:
-        fill = state.context_fill(s)
+        fill = context_fill(s)
         pct = f" ({fill}%)" if fill is not None else ""
         ctx = f" · ctx {role.ctx_tokens:,} tok{pct}"
     if s.compact_elided:

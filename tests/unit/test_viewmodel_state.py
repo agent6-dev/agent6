@@ -11,7 +11,17 @@ from typing import Any
 import pytest
 
 from agent6.sessions import process
-from agent6.viewmodel import log_line
+from agent6.viewmodel import (
+    ApprovalPrompt,
+    BudgetView,
+    CommitStep,
+    SessionState,
+    TaskNodeView,
+    approval_parts,
+    context_fill,
+    log_line,
+    session_state_as_dict,
+)
 from agent6.viewmodel import state as viewmodel_state
 
 
@@ -24,7 +34,7 @@ def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:
 
     def ended(all_passed: bool | None) -> dict[str, object]:
         end = {"type": "session.end", "reason": "finish_session", "all_passed": all_passed}
-        return viewmodel_state.session_state_as_dict(
+        return session_state_as_dict(
             viewmodel_state.apply_event(
                 viewmodel_state.apply_event(viewmodel_state.initial_state(), start), end
             )
@@ -34,9 +44,9 @@ def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:
     assert ended(True)["needs_new_work"] is True
     assert ended(None)["needs_new_work"] is True
     assert (
-        viewmodel_state.session_state_as_dict(
-            viewmodel_state.apply_event(viewmodel_state.initial_state(), start)
-        )["needs_new_work"]
+        session_state_as_dict(viewmodel_state.apply_event(viewmodel_state.initial_state(), start))[
+            "needs_new_work"
+        ]
         is False
     )
 
@@ -50,9 +60,9 @@ def test_end_summary_reaches_the_wire_and_clears_on_resume() -> None:
             {"type": "session.end", "reason": "steer_abort", "summary": summary},
         ]
     )
-    assert viewmodel_state.session_state_as_dict(s)["end_summary"] == summary
+    assert session_state_as_dict(s)["end_summary"] == summary
     s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
-    assert viewmodel_state.session_state_as_dict(s)["end_summary"] == ""
+    assert session_state_as_dict(s)["end_summary"] == ""
 
 
 def test_a_log_line_is_one_line() -> None:
@@ -104,7 +114,6 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
 
     The last completed call's prompt tokens over the model's window; None until both are known.
     """
-    from agent6.viewmodel import state as state_mod
 
     def _known(_provider: str, _model: str) -> int | None:
         return 100_000
@@ -112,9 +121,9 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
     def _unknown(_provider: str, _model: str) -> int | None:
         return None
 
-    monkeypatch.setattr(state_mod, "_window", _known)
+    monkeypatch.setattr("agent6.viewmodel._state_view.cached_context_window", _known)
     s = viewmodel_state.initial_state()
-    assert viewmodel_state.context_fill(s) is None  # no call yet
+    assert context_fill(s) is None  # no call yet
     for ev in (
         {"type": "session.start", "user_task": "x", "mode": "run"},
         {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
@@ -127,10 +136,10 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
         },
     ):
         s = viewmodel_state.apply_event(s, ev)
-    assert viewmodel_state.context_fill(s) == 41
-    assert viewmodel_state.session_state_as_dict(s)["context_pct"] == 41
-    monkeypatch.setattr(state_mod, "_window", _unknown)
-    assert viewmodel_state.context_fill(s) is None  # an unknown window is not a percent
+    assert context_fill(s) == 41
+    assert session_state_as_dict(s)["context_pct"] == 41
+    monkeypatch.setattr("agent6.viewmodel._state_view.cached_context_window", _unknown)
+    assert context_fill(s) is None  # an unknown window is not a percent
 
 
 def test_format_log_line_names_the_pins_in_force() -> None:
@@ -172,9 +181,9 @@ def _graph_event(nodes: dict[str, Any], cursor: str | None = None) -> dict[str, 
 
 def test_initial_state_is_empty() -> None:
     s = viewmodel_state.initial_state()
-    assert s == viewmodel_state.SessionState()
+    assert s == SessionState()
     assert s.tasks == ()
-    assert s.budget == viewmodel_state.BudgetView()
+    assert s.budget == BudgetView()
 
 
 def test_run_start_records_task() -> None:
@@ -212,18 +221,12 @@ def test_graph_update_builds_task_tree_dfs_with_depth() -> None:
     )
     assert s.cursor_task_id == "a1"
     assert s.tasks == (
-        viewmodel_state.TaskNodeView(
-            id="root", title="root", status="in_progress", depth=0, short_id="root"
-        ),
-        viewmodel_state.TaskNodeView(
-            id="a", title="task a", status="passed", depth=1, short_id="a"
-        ),
-        viewmodel_state.TaskNodeView(
+        TaskNodeView(id="root", title="root", status="in_progress", depth=0, short_id="root"),
+        TaskNodeView(id="a", title="task a", status="passed", depth=1, short_id="a"),
+        TaskNodeView(
             id="a1", title="task a1", status="pending", depth=2, is_cursor=True, short_id="a1"
         ),
-        viewmodel_state.TaskNodeView(
-            id="b", title="task b", status="failed", depth=1, short_id="b"
-        ),
+        TaskNodeView(id="b", title="task b", status="failed", depth=1, short_id="b"),
     )
 
 
@@ -445,9 +448,7 @@ def test_approval_prompt_then_answer() -> None:
         {"type": "approval.prompt", "id": "a001", "prompt": "Allow run_command?"},
     )
     assert len(s.pending_approvals) == 1
-    assert s.pending_approvals[0] == viewmodel_state.ApprovalPrompt(
-        id="a001", prompt="Allow run_command?"
-    )
+    assert s.pending_approvals[0] == ApprovalPrompt(id="a001", prompt="Allow run_command?")
     assert s.pending_approvals[0].head == "Allow run_command?"
     assert s.pending_approvals[0].payload == ""
     s = viewmodel_state.apply_event(s, {"type": "approval.answer", "id": "a001", "approved": True})
@@ -562,7 +563,7 @@ def test_run_state_as_dict_is_json_serializable() -> None:
             {"type": "tool.call", "name": "grep", "args": {"q": "x"}},
         ]
     )
-    d = viewmodel_state.session_state_as_dict(state)
+    d = session_state_as_dict(state)
     assert d["user_task"] == "t"
     assert d["tool_calls"][0]["name"] == "grep"  # tuple -> list, dataclass -> dict
     json.dumps(d)  # the wire form must serialize
@@ -580,7 +581,7 @@ def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: pathlib.Path) 
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 2, "user_task": "queued work"}), encoding="utf-8"
     )
-    d = viewmodel_state.session_state_as_dict(viewmodel_state.fold_session([]), session_dir)
+    d = session_state_as_dict(viewmodel_state.fold_session([]), session_dir)
     assert d["session_id"] == "sunny-otter-K4Q7B2"
     assert d["user_task"] == "queued work"
     assert d["live"] is False  # no worker: the dir word is not live
@@ -589,21 +590,19 @@ def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: pathlib.Path) 
 def test_run_state_as_dict_always_carries_live(tmp_path: pathlib.Path) -> None:
     # `live` is part of the wire shape: None (unknowable) without a dir, a real
     # bool with one -- never an absent key a client must typeof-probe.
-    assert viewmodel_state.session_state_as_dict(viewmodel_state.fold_session([]))["live"] is None
+    assert session_state_as_dict(viewmodel_state.fold_session([]))["live"] is None
     d = tmp_path / "r"
     d.mkdir()
-    assert isinstance(
-        viewmodel_state.session_state_as_dict(viewmodel_state.fold_session([]), d)["live"], bool
-    )
+    assert isinstance(session_state_as_dict(viewmodel_state.fold_session([]), d)["live"], bool)
 
 
 def test_run_state_as_dict_flags_operator_blocked() -> None:
     """The wire carries operator_blocked from the fold for a dir-less consumer."""
-    idle = viewmodel_state.session_state_as_dict(
+    idle = session_state_as_dict(
         viewmodel_state.fold_session([{"type": "session.start", "user_task": "t"}])
     )
     assert idle["operator_blocked"] is False
-    blocked = viewmodel_state.session_state_as_dict(
+    blocked = session_state_as_dict(
         viewmodel_state.fold_session(
             [
                 {"type": "session.start", "user_task": "t"},
@@ -617,9 +616,7 @@ def test_run_state_as_dict_flags_operator_blocked() -> None:
 def test_run_status_label_distinguishes_stop_finish_error() -> None:
     # All of these set finished=True; the reason is what a user needs to tell them
     # apart. A stopped run must never read as a bare "finished" (looks completed).
-    def end(
-        reason: str, all_passed: bool, *, verify_rc: int | None = None
-    ) -> viewmodel_state.SessionState:
+    def end(reason: str, all_passed: bool, *, verify_rc: int | None = None) -> SessionState:
         s = viewmodel_state.apply_event(
             viewmodel_state.initial_state(), {"type": "session.start", "user_task": "t"}
         )
@@ -632,47 +629,35 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
             s, {"type": "session.end", "reason": reason, "all_passed": all_passed}
         )
 
-    assert (
-        viewmodel_state.session_state_as_dict(viewmodel_state.initial_state())["status_label"]
-        == "running"
-    )
-    assert (
-        viewmodel_state.session_state_as_dict(end("steer_abort", False))["status_label"]
-        == "stopped"
-    )
-    assert (
-        viewmodel_state.session_state_as_dict(end("finish_session", True))["status_label"]
-        == "passed"
-    )
+    assert session_state_as_dict(viewmodel_state.initial_state())["status_label"] == "running"
+    assert session_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
+    assert session_state_as_dict(end("finish_session", True))["status_label"] == "passed"
     # all_passed False is "not certified green": an observed red names the gate,
     # a stale green or a gate nothing ran reads unverified.
-    assert viewmodel_state.session_state_as_dict(end("finish_session", False, verify_rc=1))[
-        "status_label"
-    ] == ("finished · gate red")
-    assert viewmodel_state.session_state_as_dict(end("finish_session", False))["status_label"] == (
+    assert session_state_as_dict(end("finish_session", False, verify_rc=1))["status_label"] == (
+        "finished · gate red"
+    )
+    assert session_state_as_dict(end("finish_session", False))["status_label"] == (
         "finished · unverified"
     )
-    assert viewmodel_state.session_state_as_dict(end("finish_session", False, verify_rc=0))[
-        "status_label"
-    ] == ("finished · unverified")
+    assert session_state_as_dict(end("finish_session", False, verify_rc=0))["status_label"] == (
+        "finished · unverified"
+    )
     assert (
-        viewmodel_state.session_state_as_dict(end("provider_error", False))["status_label"]
+        session_state_as_dict(end("provider_error", False))["status_label"]
         == "failed · provider error"
     )
     scoped = viewmodel_state.apply_event(
         end("finish_session", True),
         {"type": "session.end", "reason": "finish_session", "all_passed": True, "scoped": True},
     )
-    assert viewmodel_state.session_state_as_dict(scoped)["status_label"] == "passed · scoped gate"
+    assert session_state_as_dict(scoped)["status_label"] == "passed · scoped gate"
     # the raw status WORD rides along too, so a client can branch on it (the web
     # heartbeat goes quiet on "waiting" instead of painting "working" over a run
     # blocked on the operator).
-    assert (
-        viewmodel_state.session_state_as_dict(viewmodel_state.initial_state())["status"]
-        == "running"
-    )
-    assert viewmodel_state.session_state_as_dict(end("steer_abort", False))["status"] == "stopped"
-    assert viewmodel_state.session_state_as_dict(end("finish_session", True))["status"] == "passed"
+    assert session_state_as_dict(viewmodel_state.initial_state())["status"] == "running"
+    assert session_state_as_dict(end("steer_abort", False))["status"] == "stopped"
+    assert session_state_as_dict(end("finish_session", True))["status"] == "passed"
 
 
 def test_resume_start_unfinishes_the_run() -> None:
@@ -684,7 +669,7 @@ def test_resume_start_unfinishes_the_run() -> None:
     assert s.finished and s.end_reason == "steer_abort"
     s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
     assert not s.finished and s.end_reason == ""
-    assert viewmodel_state.session_state_as_dict(s)["status_label"] == "running"
+    assert session_state_as_dict(s)["status_label"] == "running"
 
 
 def test_role_result_tracks_context_tokens_and_provider() -> None:
@@ -736,7 +721,7 @@ def test_run_start_after_run_end_unfinishes_without_banking() -> None:
     s = viewmodel_state.apply_event(s, {"type": "role.call", "role": "worker", "model": "m"})
     assert s.finished is False
     assert s.end_reason == ""
-    assert viewmodel_state.session_state_as_dict(s)["status_label"] == "running"
+    assert session_state_as_dict(s)["status_label"] == "running"
     s = viewmodel_state.apply_event(s, {"type": "budget.update", "usd_total": 0.03})
     assert s.budget.usd_total == pytest.approx(0.03)
     assert s.budget.usd_prior_executions == pytest.approx(0.0)
@@ -1030,23 +1015,18 @@ def test_run_state_as_dict_carries_what_the_run_serves(tmp_path: pathlib.Path) -
 
     d = tmp_path / "r"
     d.mkdir()
-    assert viewmodel_state.session_state_as_dict(viewmodel_state.fold_session([]), d)["ports"] == []
+    assert session_state_as_dict(viewmodel_state.fold_session([]), d)["ports"] == []
     with socket.socket() as srv:
         srv.bind(("127.0.0.1", 0))
         srv.listen(1)
         port = srv.getsockname()[1]
         # this process stands in for the holder
         process.write_session_netns_pid(d, os.getpid())
-        assert (
-            port
-            in viewmodel_state.session_state_as_dict(viewmodel_state.fold_session([]), d)["ports"]
-        )
+        assert port in session_state_as_dict(viewmodel_state.fold_session([]), d)["ports"]
 
 
 def test_approval_parts_is_the_one_shape_every_surface_renders() -> None:
     """A dispatch prompt splits into the "Allow <tool>" head and the payload; JSON carries both."""
-    from agent6.viewmodel import approval_parts
-
     assert approval_parts("Allow run_command: pytest -q tests") == (
         "Allow run_command",
         "pytest -q tests",
@@ -1127,11 +1107,8 @@ def test_one_owner_for_the_open_approval() -> None:
 
 def test_a_step_label_is_one_line_every_surface_shows() -> None:
     """One step line for the TUI and the web, with no dangling separator on a subjectless step."""
-    assert (
-        viewmodel_state.CommitStep(3, "abcdef1234", "fix: parse").label
-        == "iter 3 · abcdef1 · fix: parse"
-    )
-    assert viewmodel_state.CommitStep(3, "abcdef1234", "").label == "iter 3 · abcdef1"
+    assert CommitStep(3, "abcdef1234", "fix: parse").label == "iter 3 · abcdef1 · fix: parse"
+    assert CommitStep(3, "abcdef1234", "").label == "iter 3 · abcdef1"
 
 
 def test_the_end_takes_the_cursor_off_the_task_in_progress() -> None:
@@ -1167,7 +1144,7 @@ def test_the_snapshot_keeps_the_folded_original_task(tmp_path: pathlib.Path) -> 
     s = viewmodel_state.apply_event(
         viewmodel_state.initial_state(), {"type": "session.start", "user_task": "the first task"}
     )
-    d = viewmodel_state.session_state_as_dict(s, session_dir)
+    d = session_state_as_dict(s, session_dir)
     assert d["user_task"] == "the first task"
     assert d["task_line"] == "the first task"
 
@@ -1194,7 +1171,7 @@ def test_task_identity_survives_missing_or_invalid_manifest(
             {"type": "loop.resume.start"},
         ]
     )
-    payload = viewmodel_state.session_state_as_dict(folded, tmp_path)
+    payload = session_state_as_dict(folded, tmp_path)
     assert payload["user_task"] == payload["task_line"] == "original task"
     assert payload["continued_task"] == ""
 
@@ -1216,5 +1193,5 @@ def test_snapshot_reads_manifest_once(
     (tmp_path / "manifest.json").write_text(json.dumps({"user_task": "original task"}))
     monkeypatch.setattr(manifest, "read_manifest", counted)
     folded = viewmodel_state.fold_session([{"type": "session.start", "user_task": "original task"}])
-    viewmodel_state.session_state_as_dict(folded, tmp_path)
+    session_state_as_dict(folded, tmp_path)
     assert calls == 1

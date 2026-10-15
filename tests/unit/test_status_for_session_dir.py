@@ -20,7 +20,7 @@ import pathlib
 import pytest
 
 from agent6.sessions import ipc
-from agent6.viewmodel import format, listing, transcript
+from agent6.viewmodel import format, listing, session_state_as_dict, status_facts, transcript
 from agent6.viewmodel import state as viewmodel_state
 
 LIVE = os.getpid()
@@ -188,7 +188,7 @@ def test_both_fact_producers_and_the_listing_agree(
     scan = listing.scan_session_log(logs) if logs.is_file() else listing.LogScan()
     fold = viewmodel_state.fold_session([] if events is None else events)
     assert listing.status_for_session_dir(d, scan.status_facts()) == (word, reason)
-    assert listing.status_for_session_dir(d, viewmodel_state.status_facts(fold)) == (word, reason)
+    assert listing.status_for_session_dir(d, status_facts(fold)) == (word, reason)
     summary = listing.summarize_session_dir(d)
     assert (summary.status, summary.reason) == (word, reason)
 
@@ -232,7 +232,7 @@ def test_harness_end_labels_agree_across_the_scan_and_both_folds(
     fold = viewmodel_state.fold_session(events)
     expected = ("finished", gate_detail or detail)
     assert listing.status_for_session_dir(d, scan.status_facts()) == expected
-    assert listing.status_for_session_dir(d, viewmodel_state.status_facts(fold)) == expected
+    assert listing.status_for_session_dir(d, status_facts(fold)) == expected
     summary = listing.summarize_session_dir(d)
     assert (summary.status, summary.reason) == expected
     label = f"finished · {gate_detail or detail}"
@@ -267,12 +267,10 @@ def test_pending_step_stop_labels_agree_in_the_listing_and_typed_fold(
     fold = viewmodel_state.fold_session(events)
     scan = listing.scan_session_log(d / "logs.jsonl")
     assert listing.status_for_session_dir(d, scan.status_facts()) == (word, reason)
-    assert listing.status_for_session_dir(d, viewmodel_state.status_facts(fold)) == (word, reason)
+    assert listing.status_for_session_dir(d, status_facts(fold)) == (word, reason)
     row = listing.summarize_session_dir(d)
     assert (row.status, row.reason) == (word, reason)
-    assert viewmodel_state.session_state_as_dict(fold, d)["status_label"] == format.status_label(
-        word, reason
-    )
+    assert session_state_as_dict(fold, d)["status_label"] == format.status_label(word, reason)
     assert listing.summary_row(row)["label"] == format.status_label(word, reason)
 
 
@@ -289,7 +287,7 @@ def test_a_verify_cut_short_leaves_no_verdict_in_either_producer(tmp_path: pathl
     ]
     d = _mk(tmp_path, "cut-short", events)
     scan_facts = listing.scan_session_log(d / "logs.jsonl").status_facts()
-    fold_facts = viewmodel_state.status_facts(viewmodel_state.fold_session(events))
+    fold_facts = status_facts(viewmodel_state.fold_session(events))
     assert (scan_facts.gate_red, fold_facts.gate_red) == (False, False)
     assert listing.status_for_session_dir(d, scan_facts) == listing.status_for_session_dir(
         d, fold_facts
@@ -302,12 +300,10 @@ def test_clearing_a_pending_step_stop_clears_its_label(tmp_path: pathlib.Path) -
     d = _mk(tmp_path, "clear-AAAAAA", events, pid=LIVE)
     fold = viewmodel_state.fold_session(events)
     assert ipc.request_stop(d)
-    assert viewmodel_state.session_state_as_dict(fold, d)["status_label"] == (
-        "running · stopping after this step"
-    )
+    assert session_state_as_dict(fold, d)["status_label"] == ("running · stopping after this step")
     ipc.clear_stop_request(d)
     assert listing.summarize_session_dir(d).reason == ""
-    assert viewmodel_state.session_state_as_dict(fold, d)["status_label"] == "running"
+    assert session_state_as_dict(fold, d)["status_label"] == "running"
 
 
 @pytest.mark.parametrize(("all_passed", "word"), [(True, "passed"), (None, "finished")])
@@ -328,7 +324,7 @@ def test_a_finish_whose_edits_got_no_commit_reads_not_committed(
     d = _mk(tmp_path, "strand-AAAAAA", events)
     scan = listing.scan_session_log(d / "logs.jsonl")
     fold = viewmodel_state.fold_session(events)
-    for facts in (scan.status_facts(), viewmodel_state.status_facts(fold)):
+    for facts in (scan.status_facts(), status_facts(fold)):
         assert listing.status_for_session_dir(d, facts) == (word, "not committed")
     row = listing.summarize_session_dir(d)
     assert format.status_label(row.status, row.reason) == f"{word} · not committed"
@@ -337,7 +333,7 @@ def test_a_finish_whose_edits_got_no_commit_reads_not_committed(
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in resumed), encoding="utf-8")
     scan = listing.scan_session_log(d / "logs.jsonl")
     fold = viewmodel_state.fold_session(resumed)
-    for facts in (scan.status_facts(), viewmodel_state.status_facts(fold)):
+    for facts in (scan.status_facts(), status_facts(fold)):
         assert listing.status_for_session_dir(d, facts) == (word, "")
 
 
@@ -383,7 +379,7 @@ def test_waiting_names_the_prompt_kind_and_age_in_both_producers(tmp_path: pathl
         fold = viewmodel_state.fold_session(events)
         expect = ("waiting", f"{kind} 5m")
         assert listing.status_for_session_dir(d, scan.status_facts()) == expect
-        assert listing.status_for_session_dir(d, viewmodel_state.status_facts(fold)) == expect
+        assert listing.status_for_session_dir(d, status_facts(fold)) == expect
 
     no_ts: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},

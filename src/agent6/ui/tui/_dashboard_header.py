@@ -24,12 +24,12 @@ from agent6.graph import order
 from agent6.sessions import manifest, process
 from agent6.ui.tui import theme
 from agent6.viewmodel import (
+    SessionState,
     format,
     listing,
     manifest_branches,
     manifest_header,
     session_compare,
-    state,
 )
 
 if TYPE_CHECKING:
@@ -55,7 +55,12 @@ class RunHeader(widgets.Static):
         return cast("app.Agent6TUI", self.app)
 
     def refresh_lines(
-        self, s: state.SessionState, ds: state.SessionState, as_of: str, *, active: bool
+        self,
+        s: SessionState,
+        ds: SessionState,
+        as_of: str,
+        *,
+        active: bool,
     ) -> None:
         """Repaint the header.
 
@@ -188,7 +193,7 @@ class RunHeader(widgets.Static):
         return self._branch_line
 
     @staticmethod
-    def _pins_top(s: state.SessionState) -> str:
+    def _pins_top(s: SessionState) -> str:
         """Return the pinned instructions line."""
         return f"\npins: {' | '.join(s.pins)}" if s.pins else ""
 

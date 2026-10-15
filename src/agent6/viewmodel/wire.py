@@ -14,7 +14,7 @@ from agent6 import budget, git_ops
 from agent6.machine import MachineJournal, load_machine
 from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.viewmodel import format, listing, machine_state, tail
+from agent6.viewmodel import _state_view, format, listing, machine_state, tail
 from agent6.viewmodel import state as viewmodel_state
 
 
@@ -204,9 +204,9 @@ def session_snapshot(
         as_of = {"iteration": at.steps[-1].iteration, "sha": at.steps[-1].sha}
     else:
         state = viewmodel_state.fold_session(events)
-    word, _reason = listing.status_for_session_dir(session_dir, viewmodel_state.status_facts(state))
+    word, _reason = listing.status_for_session_dir(session_dir, _state_view.status_facts(state))
     header = manifest_header(session_dir, repo=repo, status=word)
-    snap = viewmodel_state.session_state_as_dict(
+    snap = _state_view.session_state_as_dict(
         state, session_dir, unmerged=bool(header.get("unmerged"))
     )
     snap["as_of"] = as_of

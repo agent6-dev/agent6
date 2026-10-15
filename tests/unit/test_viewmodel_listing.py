@@ -22,6 +22,7 @@ from agent6.viewmodel import (
     session_compare,
     session_is_live,
     session_mtime,
+    session_state_as_dict,
     summarize_session_dir,
     task_snippet,
 )
@@ -1693,7 +1694,7 @@ def test_empty_start_does_not_claim_the_task(tmp_path: pathlib.Path, manifest_ta
     folded = state.fold_session(journal)
     assert folded.task_label.task == "original task"
     assert folded.task_label.continued_task == "latest work"
-    payload = state.session_state_as_dict(folded, tmp_path)
+    payload = session_state_as_dict(folded, tmp_path)
     assert payload["user_task"] == "original task"
     assert payload["continued_task"] == "latest work"
     assert "original_task" not in payload
@@ -1724,7 +1725,7 @@ def test_ask_repl_questions_are_not_continuations(tmp_path: pathlib.Path) -> Non
     )
     summary = listing.summarize_session_dir(tmp_path)
     assert summary.task_label.line() == "first question"
-    payload = state.session_state_as_dict(state.fold_session(journal), tmp_path)
+    payload = session_state_as_dict(state.fold_session(journal), tmp_path)
     assert payload["task_line"] == "first question"
     assert payload["continued_task"] == ""
 
@@ -1746,7 +1747,7 @@ def test_task_clip_is_the_same_before_and_after_start(
     row = listing.summary_row(summary)
     assert row["task_clipped"] == "x" * task_text.TASK_DISPLAY_CHARS
     assert "task" not in row
-    payload = state.session_state_as_dict(state.fold_session(journal), tmp_path)
+    payload = session_state_as_dict(state.fold_session(journal), tmp_path)
     assert payload["user_task"] == row["task_clipped"]
 
 
