@@ -616,6 +616,34 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
     os.utime(runs / "older-run" / "logs.jsonl", (100, 100))
     os.utime(runs / "newer-run" / "logs.jsonl", (1000, 1000))
     ipc.register_frontend(runs / "older-run", 12345)
+
+    assert (
+        history_cmds._cmd_history_transcript(
+            "", as_json=True, no_thinking=False, tools="both", seq=""
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)[0]["seq"] == 1
+    assert "newer-run" in captured.err
+
+
+def test_history_transcript_skips_sessions_without_a_transcripts_dir(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Transcript selection skips a newer session without a transcripts directory."""
+    from agent6.ui.cli import history_cmds
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "st"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    runs = paths.state_dir(repo) / "sessions" / "runs"
+    tdir = runs / "older-with-transcripts" / "transcripts"
+    tdir.mkdir(parents=True)
+    (tdir / "20260101-000001.json").write_text(json.dumps(_OPENAI[0]), encoding="utf-8")
+    (tdir.parent / "logs.jsonl").write_text("{}\n", encoding="utf-8")
+    os.utime(tdir.parent / "logs.jsonl", (100, 100))
     # A newer session without a transcripts directory is not a candidate.
     newest = runs / "newest-without-transcripts"
     newest.mkdir()
@@ -630,7 +658,7 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
     )
     captured = capsys.readouterr()
     assert json.loads(captured.out)[0]["seq"] == 1
-    assert "newer-run" in captured.err
+    assert "older-with-transcripts" in captured.err
 
 
 def test_streamed_openai_response_without_a_role_is_the_assistant() -> None:
