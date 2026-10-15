@@ -9,6 +9,15 @@ import argparse
 from agent6.config import layer
 from agent6.ui.cli import _common, completers
 
+# `run -i` and `resume -i` share one hook (`app/_execution.py`), so they share one help.
+_INTERACTIVE_HELP = (
+    "Pause for input after each automatic commit. The prompt accepts /continue"
+    " (default), /diff, /cost, /undo, /watch, /mcp, /init, /help, /quit, and /exit."
+    " /undo puts the files back to before the last message and ends the run undone; the"
+    " fork it prints continues with `agent6 resume <fork> --steer`."
+    " /quit and /exit stop without another prompt. Requires a foreground terminal."
+)
+
 
 def _add_model_flag(parser: argparse.ArgumentParser) -> None:
     """Add `--model` with route completion."""
@@ -140,13 +149,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "-i",
         "--interactive",
         action="store_true",
-        help=(
-            "Pause for input after each automatic commit. The prompt accepts /continue"
-            " (default), /diff, /cost, /undo, /watch, /mcp, /init, /help, /quit, and /exit."
-            " /undo puts the files back to before the last message and ends the run undone; the"
-            " fork it prints continues with `agent6 resume <fork> --steer`."
-            " /quit and /exit stop without another prompt. Requires a foreground terminal."
-        ),
+        help=_INTERACTIVE_HELP,
     )
     run_p.add_argument(
         "--tui",
@@ -202,11 +205,7 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "-i",
         "--interactive",
         action="store_true",
-        help=(
-            "Keep the session open for another instruction when the agent stops replying,"
-            " instead of ending it. This is the same as `run -i`. Requires a foreground"
-            " terminal."
-        ),
+        help=_INTERACTIVE_HELP,
     )
     resume_p.add_argument(
         "--tui",

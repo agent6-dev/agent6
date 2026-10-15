@@ -41,7 +41,7 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 - the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`; `--after-step` lets the step finish) or a ceiling (budget, iterations) stops it
 - at a terminal it then asks for the next input: type to continue, `/exit` to finish
 - without a terminal a finished run prints its merge and inspect commands, and an unfinished run its resume command
-- `agent6 resume <id> --steer "<what to do next>"` continues a finished run with the steer as this execution's task; a bare resume of it is refused
+- `agent6 resume <id> --steer "<what to do next>"` continues a run ended by `finish_session` with the gate green or no gate set; the steer is this execution's task, and a bare resume of that run is refused
 
 The verify command is the success gate.
 Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
@@ -96,7 +96,7 @@ A starting or waiting run keeps that status and adds `stopping after this step` 
 It does not report `no matches` when the search is incomplete.
 
 A session's cost covers every execution, in dollars or in plan points, and in both for a run that spent both (`1pt + $0.03`); `sessions list`, `sessions show`, the end-of-run total and the fan-out report print the same figure.
-A fan-out's report ends with the plan's latest reading among its lanes (`plan usage (<entry>): N% of the 7-day window`); the fan-out itself reads `finished · lanes ranked`, and each lane carries its own gate verdict.
+A fan-out's report ends with the plan's latest reading among its lanes, naming the binding window and reset time (for example, `plan usage (<entry>): N% of the 7-day window (resets in 100h)`); the fan-out itself reads `finished · lanes ranked`, and each lane carries its own gate verdict.
 The tokens and the points against `max_percent` on `sessions show` are the latest execution's.
 `elapsed` on a resumed run is the wall time from its first start to its last event, the time between executions included.
 `N questions unanswered` beside a status counts the questions of the current execution that nobody was attached to see; a resume starts the count again.
@@ -131,7 +131,7 @@ Every front-end answers a prompt by writing one file in the session directory, a
   - `[agent6] approval-2 approved (await-frontend)` when the run waits for a front-end reply
 - `agent6 answer <id>` prints the open question; `agent6 answer <id> TEXT...` answers it, one TEXT per question
 - a prompt `agent6 attach` is showing closes once another front-end answers it: attach prints `already answered from another surface`, writes no answer and keeps following; the TUI's question modal closes the same way, with the same notice
-- an approval reads `<session dir>/approvals/<id>.answer`: `yes`, `no`, `session` or `session-deny` (anything else denies; the `session` answers only where the prompt's event says `standing: true`)
+- an approval reads `<session dir>/approvals/<id>.answer`: `yes`, `no`, `session` or `session-deny` (anything else denies; `session` approves this call, and `session` and `session-deny` also apply to later calls only where the prompt's event says `standing: true`)
 - a question reads `<session dir>/questions/<id>.answer`: a JSON list of answers in the prompt's order
 - the prompt's `id` is in `logs.jsonl` (`approval.prompt`, `question.prompt`); write the file atomically (a sibling, then rename), the run consumes it as soon as it exists
 
@@ -144,14 +144,15 @@ agent6 fork <session-id> --at-turn 7 # a new run from turn 7; --steer seeds it, 
 
 State is snapshotted before each model call and checkpointed per turn.
 
-- `fork` continues a copy from a turn as a new run in its own git worktree ([isolated workspaces](#isolated-workspaces)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `rm` treat it like any run ([session state](architecture.md#session-state-on-disk))
+- `fork` continues a copy of a run from a turn in its own git worktree ([isolated workspaces](#isolated-workspaces)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `rm` treat it like any run ([session state](architecture.md#session-state-on-disk))
+  A plan or ask fork stays read-only in the current checkout.
   `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
 - `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
 - a `--parallel` lane continues through `agent6 fork <lane-id>`, in a worktree at the lane's last commit; `resume` refuses a lane from your checkout, whose tree is not the lane's
 - a fan-out stopped only by lane caps reads `failed · budget exhausted` and exits `3`; its report says to raise the budget cap and fork each stopped lane
 - a `--steer` on a fork becomes the fork's task and names its row and its merge subject
 - a resume with `--steer` keeps the original session label, with the latest steer beneath it as `continued: <steer>`; new questions in an ask REPL are not continuations
-- on resuming a finished run, `--steer` also names the execution's task and its merge subject
+- on resuming a run ended by `finish_session` with the gate green or no gate set, `--steer` also names the execution's task and its merge subject
 - a gate withheld after denied or interrupted approval stays withheld only for that execution.
   When the snapshot records that withholding, a resume with the gate and commands allowed tells the model once that the gate is available again, without claiming it passed
 - a resume after the run's work landed continues from the checkout's HEAD when HEAD holds the merge: the run's next commits, `sessions diff` and its next merge then hold only the new work, so nothing lands twice
@@ -260,7 +261,7 @@ agent6 ask "how does the task-graph curator work?"
 
 ## Isolated workspaces
 
-`run --worktree`, a fork, each `--parallel` lane and a run-mode machine state work in a worktree or a clone of their own.
+`run --worktree`, a run-mode fork, each `--parallel` lane and a run-mode machine state work in a worktree or a clone of their own.
 
 - It starts with the repository's tracked files at the commit it was cut from: no uncommitted change, and nothing git does not track (`.venv`, `node_modules`, a build directory).
 - `[parallel].setup_command` builds what is missing; it runs once in each new workspace, before the first turn:

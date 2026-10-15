@@ -47,6 +47,15 @@ def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
     raise AssertionError(f"no positional {dest!r}")
 
 
+def test_resume_interactive_help_matches_run() -> None:
+    """Resume -i and run -i share one hook, so their help is one string."""
+    parser = cli_parser.build_parser()
+    run_help = _option(_find(parser, "run"), "-i").help or ""
+    resume_help = _option(_find(parser, "resume"), "-i").help or ""
+    assert "Pause for input after each automatic commit" in run_help
+    assert resume_help == run_help
+
+
 def test_graph_help_names_its_artifact_aware_default() -> None:
     """Graph help states the artifact-aware default."""
     command = _find(_find(cli_parser.build_parser(), "sessions"), "graph")
