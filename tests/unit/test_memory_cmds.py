@@ -58,7 +58,7 @@ def test_add_rejects_names_outside_help_limits(env: pathlib.Path, name: str) -> 
         memory_cmds._cmd_memory_add(name, "A fact.")
 
 
-@pytest.mark.parametrize("name", ["a", "0", "a" * 64, "0-fact"])
+@pytest.mark.parametrize("name", ["a", "0", "a" * 64, "0-fact", "fact-"])
 def test_add_accepts_name_boundaries(env: pathlib.Path, name: str) -> None:
     """The documented endpoints and a digit prefix are accepted."""
     assert memory_cmds._cmd_memory_add(name, "A fact.") == 0

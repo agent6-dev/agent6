@@ -65,7 +65,7 @@ def test_prompt_show_help_names_pending_mcp_tools() -> None:
     """Prompt show help names the pending MCP tools."""
     command = _find(_find(cli_parser.build_parser(), "prompt"), "show")
     text = " ".join(command.format_help().split())
-    assert "Preview" in text
+    assert "Preview a run's first model call for this repo" in text
     assert "MCP tools are not included; they are discovered at run start" in text
     assert "Print everything" not in text
 
@@ -77,6 +77,7 @@ def test_memory_add_help_states_name_limits() -> None:
     assert "1-64 characters" in text
     assert "lowercase letters, digits, dashes" in text
     assert "start with a letter or digit" in text
+    assert "A trailing dash is allowed" in text
 
 
 def test_the_command_list_is_grouped_and_complete() -> None:

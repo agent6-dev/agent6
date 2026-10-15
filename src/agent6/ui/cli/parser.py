@@ -356,7 +356,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         prompt_sub,
         "show",
         help=(
-            "Preview a run's first model call here: the system prompt (static blocks"
+            "Preview a run's first model call for this repo: the system prompt (static blocks"
             " + the per-repo <repo-priors> block), the built-in tool definitions this"
             " config exposes, and the first user message with a task placeholder."
             " MCP tools are not included; they are discovered at run start."
@@ -446,7 +446,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "name",
         help=(
             "Memory name: 1-64 characters (lowercase letters, digits, dashes);"
-            " start with a letter or digit."
+            " start with a letter or digit. A trailing dash is allowed."
         ),
     )
     mem_add.add_argument("body", help="The fact (in quotes; first line becomes the index hook).")
