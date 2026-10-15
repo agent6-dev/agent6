@@ -1022,6 +1022,66 @@ on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done"
 )
 
 
+def test_machine_start_and_resume_share_one_begin_and_setup_source(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resume uses the journal's commit after HEAD moves and carries setup in the IPC overlay."""
+    from agent6 import git_ops, kinds
+    from agent6.config import Config
+    from agent6.machine import journal as machine_journal
+    from agent6.sessions import layout
+
+    config_home = tmp_path.parent / f"{tmp_path.name}-config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    (config_home / "agent6").mkdir(parents=True)
+    (config_home / "agent6" / "config.toml").write_text(
+        """
+[agent6]
+config_version = 1
+[providers.anthropic]
+api_format = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+[models.worker]
+provider = "anthropic"
+model = "x"
+""",
+        encoding="utf-8",
+    )
+    _git_init(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / "wait.asm.toml"
+    source.write_text(WAIT_THEN_RUN, encoding="utf-8")
+    agents = tmp_path / "AGENTS.md"
+    agents.write_text("## Setup command\n\n```sh\ntrue\n```\n")
+    subprocess.run(["git", "add", "wait.asm.toml", "AGENTS.md"], check=True)
+    subprocess.run(["git", "commit", "-qm", "machine base"], check=True)
+    base = git_ops.status(tmp_path).head_sha
+    carried: list[tuple[str, ...]] = []
+    real_overlay = machine_agent.state_overlay
+
+    def capture(cfg: Config, isolation: kinds.IsolationLevel) -> machine_agent.StateOverlay:
+        overlay = real_overlay(cfg, isolation)
+        carried.append(tuple(overlay.overlay["parallel"]["setup_command"]))
+        return overlay
+
+    monkeypatch.setattr(machine_agent, "state_overlay", capture)
+    argv = ["machine", "run", str(source), "--exit-on-wait", "--auto-approve"]
+    assert main(argv) == 0
+    root = layout.machines_root(paths.state_dir(tmp_path)) / "wait-then-run"
+    journal = MachineJournal(root)
+    first = journal.read()[0]
+    assert isinstance(first, machine_journal.MachineBegin)
+    assert first.base_commit == base
+    agents.write_text("## Setup command\n\n```sh\nfalse\n```\n")
+    subprocess.run(["git", "commit", "-qam", "move checkout"], check=True)
+    assert git_ops.status(tmp_path).head_sha != base
+    assert main(argv) == 0
+    assert carried == [("true",), ("true",)]
+    begins = [event for event in journal.read() if isinstance(event, machine_journal.MachineBegin)]
+    assert begins == [first]
+
+
 def test_run_says_where_a_machines_work_landed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1236,6 +1296,54 @@ def test_machine_run_end_line_carries_spend_and_tokens(
     out = capsys.readouterr().out
     assert f"{ending.upper()}: hard-usd" in out
     assert "spent $0.02 (in=123 tok, out=45 tok)" in out
+
+
+def test_run_refuses_a_legacy_journal_without_a_starting_commit(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A pre-record instance must restart rather than infer setup from a different commit."""
+    from agent6.sessions import layout
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.chdir(tmp_path)
+    _git_init(tmp_path)
+    source = tmp_path / "legacy.asm.toml"
+    source.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
+    subprocess.run(["git", "add", "legacy.asm.toml"], check=True)
+    subprocess.run(["git", "commit", "-qm", "legacy machine"], check=True)
+    root = layout.machines_root(paths.state_dir(tmp_path)) / "run-warn"
+    journal = MachineJournal(root)
+    journal.ensure_dirs()
+    journal.journal_path.write_text(
+        '{"type":"machine.begin","ts":"t","machine":"run-warn","version":1}\n',
+        encoding="utf-8",
+    )
+    assert main(["machine", "run", str(source)]) == 2
+    output = capsys.readouterr().err
+    assert "journal has no starting commit" in output
+    assert "To start fresh, archive the instance directory" in output
+    assert "mv --" in output
+
+
+def test_run_refuses_clone_setup_under_ask_at_preflight(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A machine needing setup refuses ask once, before creating a clone or calling a model."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.chdir(tmp_path)
+    _git_init(tmp_path)
+    machine_file = tmp_path / "setup.asm.toml"
+    machine_file.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("## Setup command\n\n```sh\ntrue\n```\n")
+    subprocess.run(["git", "add", "setup.asm.toml", "AGENTS.md"], check=True)
+    subprocess.run(["git", "commit", "-qm", "machine"], check=True)
+    assert main(["machine", "run", str(machine_file)]) == 2
+    output = capsys.readouterr().err
+    assert output.count("REFUSING:") == 1
+    assert "needs workspace setup" in output
+    assert "sandbox.run_commands='ask'" in output
+    assert "--auto-approve" in output
+    assert "sandbox.run_commands='yes'" in output
 
 
 def test_run_warns_on_mode_run_states_under_ask_policy(

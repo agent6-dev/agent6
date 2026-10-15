@@ -1,4 +1,4 @@
-{"type":"machine.begin","ts":"2026-07-16T00:00:00.000000+00:00","machine":"demo","version":1}
+{"type":"machine.begin","ts":"2026-07-16T00:00:00.000000+00:00","machine":"demo","version":1,"base_commit":null}
 {"type":"step","ts":"2026-07-16T00:00:01.000000+00:00","seq":0,"state":"scan","label":"ok","goto":"branch","fact":{"kind":"tool","exit_code":0,"stdout":"{\"note\": \"ok\"}","timed_out":false,"stderr":"warn: slow\n"}}
 {"type":"step","ts":"2026-07-16T00:00:02.000000+00:00","seq":1,"state":"branch","label":"else","goto":"poll","fact":{"kind":"branch","clause_index":2}}
 {"type":"step","ts":"2026-07-16T00:00:03.000000+00:00","seq":2,"state":"poll","label":"signal","goto":"review","fact":{"kind":"wait","wake_epoch":null,"woke_by":"signal","payload":{"from":"operator"}}}

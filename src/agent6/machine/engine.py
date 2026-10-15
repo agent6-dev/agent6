@@ -168,6 +168,7 @@ class World(Protocol):
         *,
         state: str = "",
         pass_env: tuple[str, ...] = (),
+        step_seq: int = 0,
     ) -> ToolExecResult:
         """Run one tool command under the named state's sandbox."""
         ...
@@ -540,7 +541,11 @@ def _execute(
     if isinstance(state, schema.ToolState):
         argv = machine_template.render_command(state.command, blackboard, where="command")
         result = world.run_tool(
-            tuple(argv), float(state.timeout_secs), state=state_name, pass_env=state.pass_env
+            tuple(argv),
+            float(state.timeout_secs),
+            state=state_name,
+            pass_env=state.pass_env,
+            step_seq=seq,
         )
         label = _tool_outcome(result)
         fact: machine_journal.Fact = machine_journal.ToolFact(
@@ -1009,6 +1014,7 @@ def drive(
     *,
     live: bool,
     exit_on_wait: bool = False,
+    base_commit: str | None = None,
 ) -> MachineResult:
     """Run or replay a machine against its journal.
 
@@ -1020,6 +1026,7 @@ def drive(
             recorded path (`machine replay`).
         exit_on_wait: At the first wait that is not ready, persist its instant and return
             `waiting` for an external scheduler to re-invoke.
+        base_commit: The starting commit, recorded only when creating the instance.
 
     Returns:
         How the drive ended.
@@ -1059,7 +1066,7 @@ def drive(
 
     if not events and live:
         journal.ensure_dirs()
-        journal.begin(machine=spec.machine, version=spec.version)
+        journal.begin(machine=spec.machine, version=spec.version, base_commit=base_commit)
 
     eng = _EngineState(
         spec=spec,

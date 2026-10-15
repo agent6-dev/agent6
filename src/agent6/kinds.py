@@ -316,3 +316,15 @@ class SandboxReport:
     name: str
     ok: bool
     detail: str
+
+
+def workspace_setup_fields(result: CommandResult) -> dict[str, object]:
+    """Return the shared workspace.setup event body."""
+    return {
+        "cmd": list(result.argv),
+        "exit_code": result.returncode,
+        "duration_s": result.duration_s,
+        "exec_failed": result.exec_failed,
+        "stdout_tail": result.stdout[-2000:],
+        "stderr_tail": result.stderr[-2000:],
+    }

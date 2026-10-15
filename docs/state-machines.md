@@ -205,6 +205,14 @@ Where a run state's work lands:
     - while the tip is not in HEAD it refuses, naming the merge and delete remedies
     - a branch left without its ref is an ordinary branch, and the instance starts from HEAD
 - a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip
+    - setup comes from `[parallel].setup_command`, else the AGENTS.md block at `machine.begin.base_commit` (the commit the machine started from), never the writable chain tip
+    - setup runs per tool call, in each fresh clone, and gets the state's `timeout_secs` before the tool receives its own `timeout_secs`; setup time adds to the state's elapsed time
+    - each clone runs the [workspace setup command](usage.md#isolated-workspaces) before the state executes; setup output tails, argv, exit code and duration are recorded as `workspace.setup` events in the instance's `states/<step>-<state>/logs.jsonl`, bounded by `machine.state_log_keep`
+    - a failed setup command takes the tool state's `nonzero` edge (`timeout` for a timed-out setup); clone or jail host failures abort the machine instead
+    - an agent state's failed setup command returns `setup_command_failed`
+    - [setup approval policy](security.md#4-commands-and-environment) is checked at preflight
+    - setup inherits the tool state's `pass_env` and network
+    - instances started before `machine.begin.base_commit` was recorded must restart using the refusal's fresh-start remedy; this pre-alpha format has no compatibility shim
     - an edit-then-check loop sees the committed work with no plumbing
 - a `tool` state's tree writes are scratch, discarded with its clone; durable output goes to the blackboard or `$AGENT6_MACHINE_DATA_DIR`
 - a machine with no run states runs its tool states in your checkout, unchanged

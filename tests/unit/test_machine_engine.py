@@ -380,6 +380,7 @@ class FakeWorld:
         *,
         state: str = "",
         pass_env: tuple[str, ...] = (),
+        step_seq: int = 0,
     ) -> machine_engine.ToolExecResult:
         self.calls.append(argv)
         self.state_calls.append((argv, state))
@@ -796,7 +797,9 @@ def test_run_tool_uses_the_injected_jail_runner(tmp_path: pathlib.Path) -> None:
     """The tool step executes through LiveWorld.jail_runner, the seam a run-machine overrides."""
     seen: list[kinds.JailPolicy] = []
 
-    def _runner(policy: kinds.JailPolicy) -> kinds.CommandResult:
+    def _runner(
+        state: str, policy: kinds.JailPolicy, events_log: pathlib.Path | None
+    ) -> kinds.CommandResult:
         seen.append(policy)
         return kinds.CommandResult(
             argv=policy.argv, returncode=0, stdout="{}", stderr="", duration_s=0.0
@@ -846,7 +849,13 @@ def test_a_foreground_wait_persists_its_deadline_before_sleeping(tmp_path: pathl
             self.persisted: list[float | None] = []
 
         def run_tool(
-            self, argv: Any, timeout_s: Any, *, state: Any = "", pass_env: Any = ()
+            self,
+            argv: Any,
+            timeout_s: Any,
+            *,
+            state: Any = "",
+            pass_env: Any = (),
+            step_seq: int = 0,
         ) -> Any:
             raise AssertionError("no tool states")
 
@@ -1793,6 +1802,7 @@ def test_stop_request_parks_at_the_transition_boundary(tmp_path: pathlib.Path) -
         *,
         state: str = "",
         pass_env: Any = (),
+        step_seq: int = 0,
     ) -> machine_engine.ToolExecResult:
         machine_journal.write_stop_request(journal.root)
         return real_run_tool(argv, timeout_s, state=state)

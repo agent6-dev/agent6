@@ -3,10 +3,10 @@
 """Build the environment of an isolated workspace before its first turn.
 
 A `run --worktree` worktree, a fork's worktree, a lane's clone and a machine state's clone
-hold tracked files only. `[parallel].setup_command` runs once in each, through the session's
-own dispatcher, so it gets the jail every command of that run gets. A session's manifest
-records that its workspace is set up. With no command configured, the `## Setup command`
-block of AGENTS.md supplies it; a fresh worktree or fan-out reads the workspace's commit.
+hold tracked files only. `[parallel].setup_command` runs once in each, through an injected
+runner using the workspace's command policy and jail. A session's manifest records that its
+workspace is set up. With no command configured, the `## Setup command` block of AGENTS.md
+supplies it from the workspace's base commit, never a model-written machine chain tip.
 A gate whose first word is a path git does not track cannot run in such a workspace until
 a setup command builds it: with none, the start
 refuses before anything is created.
@@ -19,12 +19,12 @@ import os
 import pathlib
 import shlex
 from collections.abc import Sequence
+from typing import Protocol
 
 from agent6 import git_ops, kinds, verify_infer
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.sessions import manifest as sessions_manifest
-from agent6.tools import dispatch, results
 from agent6.tools import errors as tools_errors
 from agent6.tools import policy as tools_policy
 
@@ -32,7 +32,7 @@ from agent6.tools import policy as tools_policy
 _TAIL_LINES = 20
 
 
-def _output_tail(res: results.ExecResult) -> list[str]:
+def _output_tail(res: kinds.CommandResult) -> list[str]:
     """Return the last lines of the command's output, stdout before stderr."""
     lines = [line for part in (res.stdout, res.stderr) for line in part.rstrip().splitlines()]
     return lines[-_TAIL_LINES:]
@@ -148,17 +148,36 @@ class Prepared:
     Attributes:
         problem: What is not ready, the output tail under it; None when the workspace is.
         ran: Whether the setup command ran and left the workspace ready.
+        result: The setup outcome, or None when no command ran.
     """
 
     problem: str | None
     ran: bool
+    result: kinds.CommandResult | None = None
+
+
+class SetupRunner(Protocol):
+    """The command policy and execution that workspace preparation needs."""
+
+    @property
+    def isolation(self) -> kinds.IsolationLevel:
+        """Return the workspace's isolation level."""
+        ...
+
+    def command_policy(self) -> str:
+        """Return whether commands are allowed, withheld or require approval."""
+        ...
+
+    def run_setup(self, argv: tuple[str, ...]) -> kinds.CommandResult:
+        """Run setup under the workspace's command policy and jail."""
+        ...
 
 
 def prepare(
     cfg: Config,
     root: pathlib.Path,
     *,
-    dispatcher: dispatch.ToolDispatcher,
+    runner: SetupRunner,
     reporter: app_reporter.Reporter,
 ) -> Prepared:
     """Run the workspace's setup command, then check that the gate's path exists there.
@@ -166,32 +185,63 @@ def prepare(
     Args:
         cfg: The session's config, its gate resolved.
         root: The workspace.
-        dispatcher: The session's dispatcher, whose jail the command runs in.
+        runner: The workspace's command policy and jailed setup runner.
         reporter: Receives the command line and its output.
 
     Returns:
         What is not ready, and whether the command ran; withheld commands run nothing and
         leave no gate to check.
     """
+    prepared = setup(cfg, runner=runner, reporter=reporter)
+    if prepared.problem is not None or runner.command_policy() == "no":
+        return prepared
     argv = cfg.parallel.setup_command
-    if dispatcher.command_policy() == "no":
-        if argv:
-            line = shlex.join(argv)
-            reporter.note(f"commands are withheld, and the setup command is one ({line}): not run")
-        return Prepared(None, ran=False)
-    if argv and (problem := run(argv, dispatcher=dispatcher, reporter=reporter)) is not None:
-        return Prepared(problem + _no_route_line(cfg, dispatcher.isolation), ran=False)
+    result = prepared.result
     gate = cfg.harness.verify_command
     path = _gate_path(gate)
     if not path or (root / path).exists():
-        return Prepared(None, ran=bool(argv))
+        return prepared
     if argv:
         return Prepared(
             f"the setup command ran ({shlex.join(argv)}), and the verify gate's `{gate[0]}` is"
             f" still missing in {root}",
             ran=False,
+            result=result,
         )
     return Prepared(_no_setup_text(gate[0], f"this workspace ({root})"), ran=False)
+
+
+def setup(cfg: Config, *, runner: SetupRunner, reporter: app_reporter.Reporter) -> Prepared:
+    """Run setup without the session-specific gate-path check.
+
+    Returns:
+        The command result and any setup failure.
+    """
+    argv = cfg.parallel.setup_command
+    if runner.command_policy() == "no":
+        if argv:
+            line = shlex.join(argv)
+            reporter.note(f"commands are withheld, and the setup command is one ({line}): not run")
+        return Prepared(None, ran=False)
+    result: kinds.CommandResult | None = None
+    if argv:
+        line = shlex.join(argv)
+        reporter.note(f"setup command: {line}")
+        try:
+            result = runner.run_setup(argv)
+        except tools_errors.ToolError as exc:
+            return Prepared(f"the setup command did not run ({line}): {exc}", ran=False)
+        tail = _output_tail(result)
+        if result.returncode != 0:
+            how = "could not start" if result.exec_failed else f"failed (exit {result.returncode})"
+            problem = "\n".join([f"the setup command {how}: {line}", *(f"    {t}" for t in tail)])
+            return Prepared(
+                problem + _no_route_line(cfg, runner.isolation), ran=False, result=result
+            )
+        for shown in tail:
+            reporter.err(f"         {shown}")
+        reporter.note(f"setup command finished in {result.duration_s:.1f}s")
+    return Prepared(None, ran=bool(argv), result=result)
 
 
 def _no_route_line(cfg: Config, isolation: kinds.IsolationLevel) -> str:
@@ -202,32 +252,3 @@ def _no_route_line(cfg: Config, isolation: kinds.IsolationLevel) -> str:
         "\n  the command ran with no route off this machine (sandbox.network), so it has to"
         " work offline. See docs/security.md."
     )
-
-
-def run(
-    argv: tuple[str, ...], *, dispatcher: dispatch.ToolDispatcher, reporter: app_reporter.Reporter
-) -> str | None:
-    """Run the setup command in the session's jail and say what failed.
-
-    Args:
-        argv: The setup command.
-        dispatcher: The session's dispatcher, whose jail the command runs in.
-        reporter: Receives the command line and its output.
-
-    Returns:
-        None when the command exited 0, else the failure, the output tail under it.
-    """
-    line = shlex.join(argv)
-    reporter.note(f"setup command: {line}")
-    try:
-        res = dispatcher.run_setup(argv)
-    except tools_errors.ToolError as exc:
-        return f"the setup command did not run ({line}): {exc}"
-    tail = _output_tail(res)
-    if res.returncode != 0:
-        how = "could not start" if res.exec_failed else f"failed (exit {res.returncode})"
-        return "\n".join([f"the setup command {how}: {line}", *(f"    {t}" for t in tail)])
-    for shown in tail:
-        reporter.err(f"         {shown}")
-    reporter.note(f"setup command finished in {res.duration_s:.1f}s")
-    return None

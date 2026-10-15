@@ -16,7 +16,7 @@ import pathlib
 import shlex
 import subprocess as sp
 import time
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -30,7 +30,6 @@ from agent6.harness import subrun
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc, lock
 from agent6.sessions import manifest as sessions_manifest
-from agent6.tools import dispatch, results
 from agent6.ui.cli import cli_main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli import run as cli_run
@@ -1226,17 +1225,60 @@ def test_a_setup_on_resume_leaves_the_runs_own_files_in_its_commits(
     assert ".setup-ran" not in _git(repo, "ls-tree", "--name-only", tip)
 
 
+@pytest.mark.parametrize("unavailable", [False, True])
+def test_dispatch_setup_keeps_timeout_and_wraps_jail_unavailability(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, unavailable: bool
+) -> None:
+    """Setup retains its jail timeout and reports jail refusal through prepare, not an abort."""
+    from agent6.sandbox import jail
+    from agent6.tools import dispatch
+
+    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}}).with_setup_command(("true",))
+    seen: list[kinds.JailPolicy] = []
+
+    def run(policy: kinds.JailPolicy, **kwargs: object) -> kinds.CommandResult:
+        seen.append(policy)
+        if unavailable:
+            raise jail.JailUnavailableError("namespace unavailable")
+        return kinds.CommandResult(
+            argv=policy.argv,
+            returncode=124,
+            stdout="",
+            stderr="timed out",
+            duration_s=policy.timeout_s,
+        )
+
+    monkeypatch.setattr(jail, "run_in_jail", run)
+    dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=cfg, isolation="none")
+    prepared = workspace_setup.prepare(
+        cfg,
+        tmp_path,
+        runner=dispatcher,
+        reporter=app_reporter.STDIO_REPORTER,
+    )
+    assert prepared.problem is not None
+    if unavailable:
+        assert "namespace unavailable" in prepared.problem
+        assert prepared.result is None
+    else:
+        assert seen[0].timeout_s > 0
+        assert prepared.result is not None
+        assert prepared.result.returncode == 124
+        assert prepared.result.duration_s == seen[0].timeout_s
+
+
 class _FailingSetup:
     """A dispatcher whose setup command exits 1 with a resolver error, at a given level."""
 
     def __init__(self, isolation: kinds.IsolationLevel) -> None:
-        self.isolation = isolation
+        self.isolation: kinds.IsolationLevel = isolation
 
     def command_policy(self) -> str:
         return "yes"
 
-    def run_setup(self, argv: tuple[str, ...]) -> results.ExecResult:
-        return results.ExecResult(
+    def run_setup(self, argv: tuple[str, ...]) -> kinds.CommandResult:
+        return kinds.CommandResult(
+            argv=argv,
             returncode=1,
             stdout="",
             stderr="error: dns error: failed to lookup address information",
@@ -1259,10 +1301,13 @@ def test_a_failed_setup_command_says_when_it_ran_with_no_route_out(
     cfg = Config.model_validate(
         {"sandbox": {"network": network}, "parallel": {"setup_command": ["uv", "sync"]}}
     )
-    dispatcher = cast("dispatch.ToolDispatcher", _FailingSetup(isolation))
+    dispatcher = _FailingSetup(isolation)
 
     found = workspace_setup.prepare(
-        cfg, tmp_path, dispatcher=dispatcher, reporter=app_reporter.STDIO_REPORTER
+        cfg,
+        tmp_path,
+        runner=dispatcher,
+        reporter=app_reporter.STDIO_REPORTER,
     )
 
     assert found.problem is not None and found.problem.startswith(
@@ -1282,10 +1327,13 @@ def test_the_no_setup_refusal_says_the_command_runs_in_the_sandbox(
     cfg = Config.model_validate(
         {"harness": {"verify_command": [".venv/bin/python", "-m", "pytest"]}}
     )
-    dispatcher = cast("dispatch.ToolDispatcher", _FailingSetup("strict"))
+    dispatcher = _FailingSetup("strict")
 
     text = workspace_setup.prepare(
-        cfg, tmp_path, dispatcher=dispatcher, reporter=app_reporter.STDIO_REPORTER
+        cfg,
+        tmp_path,
+        runner=dispatcher,
+        reporter=app_reporter.STDIO_REPORTER,
     ).problem
 
     assert text is not None

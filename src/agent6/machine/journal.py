@@ -178,6 +178,7 @@ class MachineBegin(pydantic.BaseModel):
     ts: str
     machine: str
     version: int
+    base_commit: str | None = None
 
 
 class StepEvent(pydantic.BaseModel):
@@ -395,9 +396,11 @@ class MachineJournal:
         """Return whether the instance has a journal."""
         return self.journal_path.is_file()
 
-    def begin(self, *, machine: str, version: int) -> None:
+    def begin(self, *, machine: str, version: int, base_commit: str | None = None) -> None:
         """Append the `machine.begin` event."""
-        self.append(MachineBegin(ts=_now_iso(), machine=machine, version=version))
+        self.append(
+            MachineBegin(ts=_now_iso(), machine=machine, version=version, base_commit=base_commit)
+        )
 
     def append(self, event: pydantic.BaseModel) -> None:
         """Append one event as a JSON line, fsync'd.

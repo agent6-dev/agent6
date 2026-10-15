@@ -123,6 +123,7 @@ class _RecordingWorld:
         *,
         state: str = "",
         pass_env: tuple[str, ...] = (),
+        step_seq: int = 0,
     ) -> engine.ToolExecResult:
         self.state_calls.append((argv, state))
         return engine.ToolExecResult(exit_code=0, stdout="", timed_out=False)

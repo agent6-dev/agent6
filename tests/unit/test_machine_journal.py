@@ -19,6 +19,15 @@ def _journal(tmp_path: pathlib.Path) -> machine_journal.MachineJournal:
     return j
 
 
+def test_begin_keeps_the_starting_commit_in_the_journal(tmp_path: pathlib.Path) -> None:
+    """The starting commit survives a reopen without a separate base file."""
+    journal = _journal(tmp_path)
+    journal.begin(machine="m", version=1, base_commit="a" * 40)
+    begin = machine_journal.MachineJournal(journal.root).read()[0]
+    assert isinstance(begin, machine_journal.MachineBegin)
+    assert begin.base_commit == "a" * 40
+
+
 def _golden_events() -> list[object]:
     """One event of every journal family (all four Facts) with fixed timestamps."""
     return [

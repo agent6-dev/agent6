@@ -20,10 +20,10 @@ from collections.abc import Callable, Iterator, Mapping
 import pydantic
 
 from agent6 import budget, git_ops, kinds, paths
-from agent6.app import _setup, _workdirs, confine, machine_agent, preflight
+from agent6.app import _setup, _workdirs, confine, machine_agent, preflight, workspace_setup
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
-from agent6.app.machine import _bundle, _preflight, _spend, _states
+from agent6.app.machine import _bundle, _preflight, _spend, _states, _workspace
 from agent6.config import Config, ConfigError
 from agent6.harness import subrun
 from agent6.machine import (
@@ -105,8 +105,12 @@ def uncommitted_refusal(path: pathlib.Path, cwd: pathlib.Path) -> str | None:
 
 
 def machine_tool_runner(
-    cwd: pathlib.Path, machine_id: str, clone_root: pathlib.Path
-) -> Callable[[kinds.JailPolicy], kinds.CommandResult]:
+    cwd: pathlib.Path,
+    machine_id: str,
+    clone_root: pathlib.Path,
+    states: Mapping[str, _states.StateConfig],
+    reporter: app_reporter.Reporter,
+) -> Callable[[str, kinds.JailPolicy, pathlib.Path | None], kinds.CommandResult]:
     """Return a jail runner that executes each tool policy in a fresh clone at the chain tip.
 
     Run states commit to the machine chain and never touch the checkout, so a tool state
@@ -117,20 +121,28 @@ def machine_tool_runner(
         cwd: The repository.
         machine_id: The machine whose chain the clones start from.
         clone_root: Where the per-call clones are made.
+        states: The resolved config for each state.
+        reporter: Receives setup output.
 
     Returns:
         The runner.
     """
 
-    def run(policy: kinds.JailPolicy) -> kinds.CommandResult:
+    def run(
+        state: str, policy: kinds.JailPolicy, events_log: pathlib.Path | None
+    ) -> kinds.CommandResult:
         """Run the policy in a fresh clone, with the protect paths remapped into it.
 
         Returns:
             The command's result.
 
         Raises:
-            JailUnavailableError: The clone could not be made.
+            JailUnavailableError: The clone or jail is unavailable.
+            EngineError: The caller named an unknown state.
         """
+        resolved = states.get(state)
+        if resolved is None:
+            raise EngineError(f"no config was resolved for state {state!r}")
         dest = clone_root / f"tool-{uuid.uuid4().hex[:12]}"
         try:
             machine_agent.clone_at_machine_chain(
@@ -140,16 +152,17 @@ def machine_tool_runner(
             shutil.rmtree(dest, ignore_errors=True)
             raise jail.JailUnavailableError(f"machine tree clone failed: {exc}") from exc
         try:
-            return jail.run_in_jail(
-                dataclasses.replace(
-                    policy,
-                    cwd=dest,
-                    extra_protect_paths=tuple(
-                        dest / p.relative_to(cwd) if p.is_relative_to(cwd) else p
-                        for p in policy.extra_protect_paths
-                    ),
-                )
+            protect = tuple(
+                dest / p.relative_to(cwd) if p.is_relative_to(cwd) else p
+                for p in policy.extra_protect_paths
             )
+            cfg = resolved.config
+            policy = dataclasses.replace(policy, cwd=dest, extra_protect_paths=protect)
+            # Setup and the tool each get the state's timeout_secs.
+            failed = _workspace.tool_setup_failure(cfg, policy, events_log, reporter)
+            if failed is not None:
+                return failed
+            return jail.run_in_jail(policy)
         finally:
             shutil.rmtree(dest, ignore_errors=True)
 
@@ -332,6 +345,54 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             " to always allow. Edits and the auto-commit need no approval; verify shares"
             " run_command's gate, so an unattended execution ends unverified."
         )
+    root = layout.machines_root(paths.state_dir(cwd)) / spec.machine
+    base_commit = None
+    # has_run_agent supplies both clone arguments: every tool and agent state then runs in a clone.
+    if has_run_agent:
+        try:
+            events = MachineJournal(root).read()
+            if events:
+                begin = events[0]
+                if not isinstance(begin, machine_journal.MachineBegin) or not begin.base_commit:
+                    reporter.refuse(
+                        "this machine's journal has no starting commit; "
+                        + machine_journal.fresh_start_remedy(root)
+                    )
+                    return 2
+                base_commit = begin.base_commit
+            else:
+                base_commit = git_ops.status(cwd).head_sha
+        except (git_ops.GitError, JournalError) as exc:
+            reporter.refuse(f"cannot resolve the machine's starting commit: {exc}")
+            return 2
+        if not base_commit:
+            reporter.refuse("machine clones need a committed starting point")
+            return 2
+        resolved_states = dict(configs.states)
+        inferred_setup: tuple[str, ...] = ()
+        if any(
+            not configs.states[name].config.parallel.setup_command
+            for name, state in spec.states.items()
+            if isinstance(state, (AgentState, ToolState))
+        ):
+            inferred_setup = workspace_setup.infer_if_unset(
+                cfg.with_setup_command(()), cwd, reporter=reporter, at=base_commit
+            ).parallel.setup_command
+        for name, state in spec.states.items():
+            if not isinstance(state, (AgentState, ToolState)):
+                continue
+            resolved = resolved_states[name]
+            state_cfg = resolved.config
+            if not state_cfg.parallel.setup_command:
+                state_cfg = state_cfg.with_setup_command(inferred_setup)
+            if state_cfg.parallel.setup_command and state_cfg.sandbox.run_commands == "ask":
+                reporter.refuse(
+                    f"state {name!r} needs workspace setup, but sandbox.run_commands='ask'; "
+                    "use --auto-approve or set sandbox.run_commands='yes' to allow setup"
+                )
+                return 2
+            resolved_states[name] = dataclasses.replace(resolved, config=state_cfg)
+        configs = dataclasses.replace(configs, states=resolved_states)
     snapshot_keep = cfg.machine.snapshot_keep
     # One clone base for the agent states' per-state clones and the tool states' per-call trees.
     clone_root = _workdirs.subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
@@ -390,7 +451,6 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     reporter.error(str(exc))
                     return 2
                 commit_identity = git_ops.CommitIdentity(name=name, email=email)
-            root = layout.machines_root(paths.state_dir(cwd)) / spec.machine
             agent_runner = machine_agent.build_machine_agent_runner(
                 {
                     state_name: machine_agent.state_overlay(
@@ -422,7 +482,6 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         reporter.refuse(str(exc))
         return 2
     confine.warn_cleartext_credential_endpoints(cfg, reporter=reporter)
-    root = layout.machines_root(paths.state_dir(cwd)) / spec.machine
     journal = MachineJournal(root, snapshot_keep=snapshot_keep)
     data_dir = root / "data"
     try:
@@ -527,7 +586,9 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 # A machine that writes runs its tool states in its own tree,
                 # so an edit-then-check loop sees the run states' commits.
                 jail_runner=(
-                    machine_tool_runner(cwd, spec.machine, clone_root) if has_run_agent else None
+                    machine_tool_runner(cwd, spec.machine, clone_root, configs.states, reporter)
+                    if has_run_agent
+                    else None
                 ),
                 data_dir=data_dir,
                 state_log_root=root / "states",
@@ -539,7 +600,14 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             # Stamped after the last refusal; the finally always clears it.
             ipc.write_worker_pid(root, os.getpid())
             try:
-                result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
+                result = drive(
+                    spec,
+                    journal,
+                    world,
+                    live=True,
+                    exit_on_wait=exit_on_wait,
+                    base_commit=base_commit,
+                )
             finally:
                 ipc.clear_worker_pid(root)
     except (JournalError, EngineError) as exc:

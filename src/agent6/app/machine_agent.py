@@ -410,9 +410,7 @@ def run_one(
         instance_dir = req.transcript_dir.parent
         bridges = _build_machine_bridges(instance_dir, agent_state, events_sink)
     # A state's clone is fresh; a state in the checkout has the operator's environment.
-    in_clone = not read_only and req.root != req.cwd
-    if in_clone:
-        cfg = workspace_setup.infer_if_unset(cfg, req.cwd, reporter=reporter)
+    in_clone = req.root != req.cwd
     dispatcher = dispatch.ToolDispatcher(
         root=req.root,
         config=cfg,
@@ -429,7 +427,7 @@ def run_one(
     )
     setup_left: frozenset[str] = frozenset()
     if in_clone:
-        prepared = workspace_setup.prepare(cfg, req.root, dispatcher=dispatcher, reporter=reporter)
+        prepared = workspace_setup.prepare(cfg, req.root, runner=dispatcher, reporter=reporter)
         if prepared.problem is not None:
             reporter.error(prepared.problem)
             return _result("setup_command_failed", None, budget)

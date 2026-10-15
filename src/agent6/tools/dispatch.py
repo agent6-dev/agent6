@@ -579,31 +579,23 @@ class ToolDispatcher:
             )
         return res
 
-    def run_setup(self, argv: tuple[str, ...]) -> results.ExecResult:
+    def run_setup(self, argv: tuple[str, ...]) -> kinds.CommandResult:
         """Run an isolated workspace's setup command under the policy a run command gets.
 
         Args:
             argv: The setup command.
 
         Returns:
-            The outcome, its `command` naming the argv that ran.
+            The unclipped outcome, its `argv` naming the command that ran.
 
         Raises:
             ToolDeniedError: The operator did not approve.
             ToolError: The jail is unavailable.
         """
         self._approve_command("setup_command", argv)
-        res = self._run_argv_in_jail(argv, label="setup_command")
-        self._emit(
-            "workspace.setup",
-            cmd=list(argv),
-            exit_code=res.returncode,
-            duration_s=res.duration_s,
-            exec_failed=res.exec_failed,
-            stdout_tail=res.stdout[-2000:],
-            stderr_tail=res.stderr[-2000:],
-        )
-        return dataclasses.replace(res, command=argv)
+        res, _timeout = self._run_argv_raw(argv, label="setup_command")
+        self._emit("workspace.setup", **kinds.workspace_setup_fields(res))
+        return res
 
     def _approve_command(self, name: str, argv: tuple[str, ...]) -> None:
         """Gate a command on the run's policy.

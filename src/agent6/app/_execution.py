@@ -346,7 +346,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         if workspace_setup.session_needs_setup(layout.session_dir):
             # The run's own earlier files read untracked too: the chain never moves the index.
             before = git_ops.untracked_paths(cwd) if mode == "run" else frozenset[str]()
-            prepared = workspace_setup.prepare(cfg, cwd, dispatcher=dispatcher, reporter=reporter)
+            prepared = workspace_setup.prepare(cfg, cwd, runner=dispatcher, reporter=reporter)
             unready = prepared.problem
             if prepared.ran:
                 try:

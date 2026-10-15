@@ -279,6 +279,9 @@ The agent works within the environment it is given and cannot expand it:
     - a toolchain that keeps its state under your home needs that directory granted and named, because the jail's `HOME` is its own: for rustup's `cargo`, `sandbox.extra_read_paths = ["/home/you/.rustup"]` and a gate of `env RUSTUP_HOME=/home/you/.rustup cargo test`
 - Toolchains, venvs, and deps are installed outside agent6. Access widens through config (`extra_read_paths`, `network`, `[providers.*].base_url`), all visible in `config show`.
 - The setup command of an isolated workspace (`[parallel].setup_command`, or an AGENTS.md `## Setup command` block) is a jailed command like any other
+    - Machine clones use the operator's configured command, else the AGENTS.md block at the starting commit recorded in `machine.begin`, never a block committed by a run state; read-only agent states run this setup too, under their command policy and jail
+    - Machine setup outcomes follow the [state setup and failure rules](state-machines.md#agent)
+    - A machine clone needing setup refuses `sandbox.run_commands = "ask"` at preflight rather than asking; use `--auto-approve` or set it to `"yes"` to allow setup
     - it runs through the run's own jail: the isolation, network and grants every command of that run gets, the approval `run_commands = "ask"` asks, and nothing under `"no"`
     - it has no network of its own and no read of the checkout the workspace was cut from: a setup step with a wider network would let a dependency it fetches run with it
     - an AGENTS.md block is repository content, so a repository can state the command; it reaches what a command the model chose would reach

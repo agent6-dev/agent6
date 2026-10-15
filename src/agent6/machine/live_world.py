@@ -98,7 +98,9 @@ class LiveWorld:
     state_log_keep: int = 50
     notify_hook: Callable[[str, str, str, str], None] | None = None
     data_dir: pathlib.Path | None = None
-    jail_runner: Callable[[kinds.JailPolicy], kinds.CommandResult] | None = None
+    jail_runner: (
+        Callable[[str, kinds.JailPolicy, pathlib.Path | None], kinds.CommandResult] | None
+    ) = None
     on_wait: Callable[[], None] | None = None
     on_tool_failure: Callable[[str, engine.ToolExecResult], None] | None = None
 
@@ -109,6 +111,7 @@ class LiveWorld:
         *,
         state: str = "",
         pass_env: tuple[str, ...] = (),
+        step_seq: int = 0,
     ) -> engine.ToolExecResult:
         """Run one tool command in its state's jail.
 
@@ -119,6 +122,7 @@ class LiveWorld:
             timeout_s: The wall-clock cap.
             state: The state, which selects the config its policy is built from.
             pass_env: The operator environment variables the command receives.
+            step_seq: The transition number for the per-state log directory.
 
         Returns:
             The exit code, output and whether the command timed out.
@@ -130,7 +134,11 @@ class LiveWorld:
             raise engine.EngineError("LiveWorld has no tool_policy factory wired")
         try:
             policy = self.tool_policy(state, tuple(argv), float(timeout_s), pass_env)
-            result = (self.jail_runner or jail.run_in_jail)(policy)
+            result = (
+                self.jail_runner(state, policy, self._state_log(state, step_seq))
+                if self.jail_runner
+                else jail.run_in_jail(policy)
+            )
         except jail.JailUnavailableError as exc:
             raise engine.EngineError(f"jail unavailable: {exc}") from exc
         # run_in_jail returns rc 124 on a timeout and never raises TimeoutExpired.
@@ -158,16 +166,14 @@ class LiveWorld:
             raise engine.EngineError(
                 "machine reached an `agent` state but no agent runner is configured"
             )
-        return self.agent_runner(request, self._state_log(request))
+        return self.agent_runner(request, self._state_log(request.state_name, request.step_seq))
 
-    def _state_log(self, request: engine.AgentRequest) -> pathlib.Path | None:
-        """Return the agent state's own logs.jsonl path, pruning old ones first, or None."""
-        if self.state_log_root is None or not request.state_name:
+    def _state_log(self, state: str, step_seq: int) -> pathlib.Path | None:
+        """Return the state's own logs.jsonl path, pruning old ones first, or None."""
+        if self.state_log_root is None or not state:
             return None
         _prune_state_logs(self.state_log_root, keep=self.state_log_keep)
-        return (
-            self.state_log_root / f"{request.step_seq:04d}-{request.state_name}" / layout.LOGS_NAME
-        )
+        return self.state_log_root / f"{step_seq:04d}-{state}" / layout.LOGS_NAME
 
     def now(self) -> float:
         """Return the wall clock as an epoch."""

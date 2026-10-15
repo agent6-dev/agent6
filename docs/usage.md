@@ -262,7 +262,8 @@ agent6 ask "how does the task-graph curator work?"
 - Unset, a `## Setup command` fenced block in AGENTS.md supplies it; a `--worktree` run and a `--parallel` fan-out read it from the commit the workspace is cut from, not from an uncommitted edit, and print the command and that AGENTS.md gave it.
     - an AGENTS.md that is a symlink is not read there: set `parallel.setup_command`
 - The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
-- Its command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any model call (exit `1`).
+- Machine clones follow the [state setup and failure rules](state-machines.md#agent) and [setup approval policy](security.md#4-commands-and-environment).
+- For run, fork and lane sessions, the command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any model call (exit `1`).
   No turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
 - A fan-out prints each lane's setup line when it imports the lane, and a failed lane's output in the failed lanes block; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the workspace is gone.
 - The files it leaves untracked stay out of the run's commits.
