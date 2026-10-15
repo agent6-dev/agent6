@@ -54,7 +54,8 @@ Only an unknown baseline prints the worktree recipe for checking the base; a tim
 
 The start banner's budget notices name each model once, with the roles that use it (`'m' (planner, worker)`).
 
-`agent6 run` streams in your terminal; `--tui` opens the full-screen view ([terminal UI](terminal.md)) and `-i` drives it from a stdin REPL.
+`agent6 run` streams in your terminal; `--tui` opens the full-screen view ([terminal UI](terminal.md)) and `-i` pauses for input after each automatic commit.
+`--tui` requires a terminal; `-i` requires a foreground terminal and cannot be combined with `--tui`.
 
 ## Follow and steer a run
 
@@ -72,10 +73,10 @@ agent6 stop ID --after-step   # finish the current step, then stop
 agent6 sessions show          # status, iteration, elapsed, cost, the gate's word, where the changes are; --json
 agent6 sessions diff          # the git diff the run produced; --stat, --path P
 agent6 sessions commits       # the run's per-step commits
-agent6 sessions merge         # land the work on your branch (warns first when the gate did not certify it); --strategy, --into BRANCH
+agent6 sessions merge         # land on the run's starting branch (warns first when the gate did not certify it); --strategy, --into BRANCH
 agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N, --tools calls|none
 agent6 sessions graph         # the task graph, each line led by the id /retire takes
-agent6 sessions compare <ids> # >=2 runs ranked by the reviewer model (minutes), or a fan-out's verdict; --rejudge
+agent6 sessions compare <ids> # >=2 runs ranked by the reviewer model (a mechanical ranking when it is unavailable or fails), or a fan-out's saved verdict; --rejudge
 agent6 sessions prune         # delete merged agent6/* branches and worktrees, report the rest; squash merges (the default) need --delete-squashed
 agent6 sessions rm [<id>]     # delete one run's history; asks [y/N] on a controlling terminal, otherwise requires an id or --yes; --yes skips the question, --asks clears saved asks
 agent6 sessions dir [<id>]    # the repo's run history, or that session's directory
@@ -106,7 +107,7 @@ A `steer` reaches the model at its next step, and `steer --now` interrupts the c
 - Ctrl-Z stops a job of the shell you opened; a command you run directly keeps running, since no shell could resume it
 - inside strict there is no `/dev/pts` or `/dev/tty`: `tty` prints "not a tty", and a program that opens `/dev/tty` fails
 - a command a signal ended reports 128 plus the signal, on every level
-- `agent6 exec ID` works in the run's workspace: a file your command writes there is in the run's tree, and the run's next commit holds it
+- `agent6 exec ID -- COMMAND...` works in the run's workspace: a file your command writes there is in the run's tree, and the run's next commit holds it
 
 The steer directives work from every composer, the pause menu, and `agent6 steer ID "/task ..."` from a script.
 
@@ -120,7 +121,9 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 
 Every front-end answers a prompt by writing one file in the session directory, and so can a script.
 
-- a run with no terminal prints one line on stderr when it parks (`[agent6] waiting on approval-2 (run_command); answer it with: agent6 attach <id>`) and one when the prompt is answered (`[agent6] approval-2 approved (frontend)`)
+- a run with no terminal prints one line on stderr when it parks (`[agent6] waiting on approval-2 (run_command); answer it with: agent6 attach <id>`) and one when the prompt is answered:
+  - `[agent6] approval-2 approved (frontend)` when an already-attached front-end answers
+  - `[agent6] approval-2 approved (await-frontend)` when the run waits for a front-end reply
 - `agent6 answer <id>` prints the open question; `agent6 answer <id> TEXT...` answers it, one TEXT per question
 - a prompt `agent6 attach` is showing closes once another front-end answers it: attach prints `already answered from another surface`, writes no answer and keeps following; the TUI's question modal closes the same way, with the same notice
 - an approval reads `<session dir>/approvals/<id>.answer`: `yes`, `no`, `session` or `session-deny` (anything else denies; the `session` answers only where the prompt's event says `standing: true`)
@@ -230,7 +233,7 @@ agent6 ask "how does the task-graph curator work?"
 ```
 
 - `review --reviewers 3 --personas security,correctness,tests`: a panel whose findings are checked against the diff, so only real problems gate; a seat pins its model in `[review].seats` (`security@openrouter/<model-id>`)
-- `sessions review` reports how the run ended, what went wrong, what you corrected, the questions nobody answered, and candidate memory facts and AGENTS.md lines with their evidence; it writes nothing (`agent6 memory add` lands a candidate)
+- `sessions review` reports how the run ended, what went wrong, what you corrected, the questions nobody answered, and candidate memory facts and AGENTS.md lines with their evidence; it touches no repo or memory file (`agent6 memory add` lands a candidate)
 - every review is saved under `<state-dir>/reviews/`; the path prints on stderr
 - `ask` runs in any directory; `run` and `plan` need a git repository
 
@@ -274,20 +277,20 @@ agent6 ask "how does the task-graph curator work?"
 ## Other commands
 
 ```sh
-agent6 tui [target]                  # the full-screen hub, or one session's view
-agent6 web [target]                  # the browser UI on 127.0.0.1:7658, behind a secret it prints (see web.md)
-agent6 acp                           # speak the Agent Client Protocol on stdio (see acp.md)
-agent6 check [section]               # sandbox, config (provider keys), boundaries, MCP, verify
-agent6 init [--yes] [--ecosystem E]  # the setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md
-agent6 memory add|list|show|rm       # each fact's full first line is its index hook
-agent6 memory decisions              # the operator rulings the harness recorded
-agent6 skills install|update|list    # skills from a repo, a directory or a SKILL.md URL
-agent6 skills enable [--always]      # a skill the model may use, or one it always gets; disable, remove
-agent6 mcp connect [--pass-env VAR]  # an MCP server the model may call; list, remove, serve
-agent6 machine ...                   # state machines over runs (see state-machines.md)
-agent6 system apparmor install       # the AppArmor profile the strict jail needs on some hosts; status, remove
+agent6 tui [target]                                  # the full-screen hub, or one session's view
+agent6 web [target]                                  # the browser UI on 127.0.0.1:7658, behind a secret it prints (see web.md)
+agent6 acp                                           # speak the Agent Client Protocol on stdio (see acp.md)
+agent6 check [section]                               # sandbox, config (provider keys), boundaries, MCP, verify
+agent6 init [--yes] [--ecosystem E]                  # the setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md
+agent6 memory add|list|show|rm                       # each fact's full first line is its index hook
+agent6 memory decisions                              # the operator rulings the harness recorded
+agent6 skills install|update|list                    # skills from a repo, a directory or a SKILL.md URL
+agent6 skills enable NAME [--always]                 # a skill the model may use, or one it always gets; disable, remove
+agent6 mcp connect NAME [--url URL | -- COMMAND...]  # an MCP server; --pass-env VAR passes an environment variable to a local server; list, remove, serve
+agent6 machine ...                                   # state machines over runs (see state-machines.md)
+agent6 system apparmor install                       # the AppArmor profile the strict jail needs on some hosts; status, remove
 agent6 completions bash|zsh|fish|xonsh [--print]
-agent6 config fill [--force]         # write the defaults + global layers as one explicit global config
+agent6 config fill [--force]                         # write the defaults + global layers as one explicit global config
 ```
 
 ## Configuration
