@@ -46,8 +46,9 @@ def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
     if mode == "run":
         header += (
             " A durable non-obvious fact is recorded as <name>.md there plus"
-            " its index line; a wrong one is updated or deleted with the edit"
-            " tools."
+            " its index line (`- <name>: <full first line of the fact>`);"
+            " keep that first line concise and put details below it."
+            " A wrong fact is updated or deleted with the edit tools."
         )
     tail = body if body else "(none recorded yet; an index line is `- <name>: <one line>`)"
     return f"{header}\n\n{tail}\n</memory>"

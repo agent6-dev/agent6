@@ -50,6 +50,7 @@ def test_run_mode_always_carries_the_memory_header(tmp_path: pathlib.Path) -> No
     memory = out.split("<memory>")[1].split("</memory>")[0]
     assert "edit tools" in memory
     assert "deleted" in memory
+    assert "<full first line of the fact>" in pb.memory_block("", "/state/memory", mode="run")
 
 
 def test_index_content_renders_and_clips(tmp_path: pathlib.Path) -> None:
@@ -68,6 +69,7 @@ def test_an_index_of_one_long_line_keeps_its_head(tmp_path: pathlib.Path) -> Non
     out = _build("run", big, tmp_path)
     assert "index clipped" in out
     assert "- fact: " + "x" * 100 in out
+    assert "... (index clipped; read MEMORY.md for the rest)" in out
     body = out.split("<memory>", 1)[1].split("\n\n", 1)[1].split("\n</memory>", 1)[0]
     assert len(body) <= agent6_memory.INDEX_INJECT_CAP
 

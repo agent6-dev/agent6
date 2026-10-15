@@ -21,6 +21,28 @@ def test_add_writes_file_and_index_line(tmp_path: pathlib.Path) -> None:
     assert memory.index_text(tmp_path) == "- build-quirk: The build needs FOO=1."
 
 
+@pytest.mark.parametrize("reindex", [False, True])
+def test_add_keeps_the_full_first_line(tmp_path: pathlib.Path, *, reindex: bool) -> None:
+    """New facts and recovered files keep their hook past the 120-character cut."""
+    first = (
+        "Every public calc function rejects a non-numeric operand with "
+        "ValueError('inputs must be numbers'), the way multiply does; "
+        "a new function copies that check and tests it. Keep this sentence too."
+    )
+    body = first + "\nDetails stay in the fact file."
+    name = "input-validation"
+    if reindex:
+        directory = memory.memory_dir(tmp_path)
+        directory.mkdir()
+        (directory / f"{name}.md").write_text(body + "\n", encoding="utf-8")
+        with pytest.raises(memory.MemoryStoreError, match="re-indexed"):
+            memory.add(tmp_path, name, "Do not replace the stored fact.")
+    else:
+        memory.add(tmp_path, name, body)
+    assert memory.show(tmp_path, name) == body + "\n"
+    assert memory.index_text(tmp_path) == f"- {name}: {first}"
+
+
 def test_add_refuses_duplicate_and_bad_names(tmp_path: pathlib.Path) -> None:
     memory.add(tmp_path, "one", "fact")
     with pytest.raises(memory.MemoryStoreError, match="exists"):

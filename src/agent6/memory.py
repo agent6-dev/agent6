@@ -732,13 +732,13 @@ def add(state_dir: pathlib.Path, name: str, body: str) -> pathlib.Path:
             if _index_has(state_dir, name):
                 raise MemoryStoreError(f"memory {name!r} exists; edit {path} or pick another name")
             first = (path.read_text(encoding="utf-8").strip().splitlines() or [""])[0]
-            _append_index_line(state_dir, name, first[:120])
+            _append_index_line(state_dir, name, first)
             raise MemoryStoreError(
                 f"memory {name!r} existed but was missing from the index; re-indexed it."
                 f" The body passed here was not saved; edit {path} to change it."
             )
         portable.atomic_write(path, body + "\n")
-        _append_index_line(state_dir, name, body.splitlines()[0][:120])
+        _append_index_line(state_dir, name, body.splitlines()[0])
         _record_use_unlocked(state_dir, session="operator", wrote=(name,), created=(name,), read={})
     return path
 
