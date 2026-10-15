@@ -381,7 +381,12 @@ def _cmd_config_get(
         _common.error(_config_key_error(key, eff))
         return 2
     value, source = found
-    print(f"{key} = {config_view.format_value(value)}  [{source}]")
+    parts = key.split(".")
+    if parts[0] == "presets":
+        parts = parts[2:]
+    schema = config_view.field_schema(type(eff.config), parts)
+    shown = config_view.format_value(value, display_safe=schema is not None and schema[4])
+    print(f"{key} = {shown}  [{source}]")
     return 0
 
 

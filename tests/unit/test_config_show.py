@@ -12,6 +12,7 @@ import pytest
 from agent6.app import _setup
 from agent6.config import Config, layer
 from agent6.models import registry
+from agent6.ui.cli import main
 from agent6.viewmodel import config_view
 
 
@@ -32,8 +33,6 @@ def test_config_presets_reads_the_explicit_config_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config presets` honours `--config FILE` like every other config subcommand."""
-    from agent6.ui.cli import main
-
     cfg = tmp_path / "custom.toml"
     cfg.write_text('[presets.myfast.sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -66,8 +65,6 @@ def test_config_fill_keeps_the_presets_the_file_defines(
     They are stripped before validation, so they are absent from the `Config` the snapshot is
     rendered from.
     """
-    from agent6.ui.cli import main
-
     cfg_home = tmp_path / "cfg"
     (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
@@ -86,6 +83,27 @@ def test_config_fill_keeps_the_presets_the_file_defines(
     # The selector survives and the preset's effect is not baked; the filled leaf is the default.
     assert 'preset = "myfast"' in text
     assert 'run_commands = "ask"' in text, f"the preset's effect was baked in:\n{text}"
+
+
+@pytest.mark.parametrize("verb", ["get", "show"])
+def test_mapping_setting_prints_its_contents(
+    verb: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Inspecting a mapping leaf shows its entries rather than an opaque placeholder."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "set", "skills.state", '{debugging = "disabled"}']) == 0
+    capsys.readouterr()
+
+    assert main(["config", verb, "skills.state"]) == 0
+    output = capsys.readouterr().out
+    assert '"debugging": "disabled"' in output
+    assert "global" in output
+    assert "{...}" not in output
 
 
 def test_descriptions_mode_prints_the_meaning_under_each_row() -> None:
@@ -256,3 +274,72 @@ def test_the_resolved_values_leave_the_sandbox_leaves_auto_without_a_jail_binary
     resolved = confine.resolved_config_values(cfg)
     assert "sandbox.isolation" not in resolved and "sandbox.network" not in resolved
     assert resolved == registry.resolved_adaptive_values(cfg)
+
+
+@pytest.mark.parametrize("verb", ["get", "show"])
+@pytest.mark.parametrize("field", ["extra_body", "extra_headers", "extra_query"])
+def test_mapping_credentials_are_masked(
+    verb: str,
+    field: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Unmarked mapping fields reveal keys but never credential values."""
+    cfg = tmp_path / "credentials.toml"
+    cfg.write_text(
+        f'[providers.demo]\napi_format = "openai"\n{field} = {{ token = "secret-value" }}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    args = ["--config", str(cfg), "config", verb, f"providers.demo.{field}"]
+    assert main(args) == 0
+    output = capsys.readouterr().out
+    assert '"token": "***"' in output
+    assert "secret-value" not in output
+    if verb == "show":
+        assert main([*args, "--json"]) == 0
+        assert "secret-value" not in capsys.readouterr().out
+
+
+def test_long_mapping_keeps_table_width() -> None:
+    """The unfiltered table truncates long mappings instead of widening the value column."""
+    cfg = Config.model_validate({"skills": {"state": {"x" * 200: "disabled"}}})
+    eff = layer.EffectiveConfig(config=cfg, sources={}, layers=())
+    row = next(line for line in config_view.render_show(eff).splitlines() if "skills.state" in line)
+    assert "…" in row
+    assert "x" * 200 not in row
+    assert row.endswith("default")
+    assert len(row) < 120
+
+
+@pytest.mark.parametrize("display_safe", [False, True])
+def test_json_and_text_mask_tables_inside_lists(display_safe: bool) -> None:
+    """Text and JSON use the same masking policy for nested lists of tables."""
+    value = [[{"token": "secret-value"}]]
+    setting = config_view.ConfigSetting(
+        key="example",
+        section="example",
+        value=value,
+        effective_value=value,
+        default=value,
+        source="default",
+        modified=False,
+        is_adaptive=False,
+        py_type="list",
+        choices=None,
+        description="",
+        display_safe=display_safe,
+    )
+    expected = value if display_safe else [[{"token": "***"}]]
+    assert json.loads(config_view.display_value(setting)) == expected
+    payload = config_view._leaf_json(setting)
+    for key in ("value", "effective", "default"):
+        assert payload[key] == expected
+
+
+def test_mapping_display_handles_non_json_values() -> None:
+    """A display-safe mapping stringifies values JSON cannot encode."""
+    assert config_view.format_value({"path": pathlib.Path("example")}, display_safe=True) == (
+        '{"path": "example"}'
+    )

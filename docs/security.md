@@ -441,6 +441,7 @@ Under `none` isolation nothing is enforced or refused.
 - Provider keys live in `$XDG_CONFIG_HOME/agent6/secrets.toml`, `0600` and owner-only (refused if group- or other-readable, or foreign-owned), or come from `[providers.<name>].api_key_env` (env wins).
 - They are absent from transcripts, redacted in `config show`, and masked from the jail.
   The config dir stays masked even under an explicit grant, and a grant naming it directly is refused at config load.
+- `config show` and `config get` mask mapping values unless the config model marks the field display-safe (`skills.state`); other mappings expose only their keys, including in JSON output.
 - No child agent6 spawns carries one: a jailed command's environment is built from its policy, and the unconfined paths (`isolation = "none"`, git subprocesses, MCP servers) drop every configured `api_key_env` name.
     - an `[mcp.servers.*].pass_env` naming a provider's `api_key_env` refuses at config load, so the name cannot be handed over deliberately either
 - `agent6 connect` prompts locally (`getpass`) and writes config and secrets

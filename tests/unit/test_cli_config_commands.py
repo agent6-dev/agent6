@@ -902,12 +902,8 @@ def test_nonempty_table_leaf_stays_gettable_and_unsettable(
     capsys.readouterr()
 
     assert _run(["config", "get", "providers.demo.extra_body"]) == 0
-    assert "providers.demo.extra_body = {...}  [global]" in capsys.readouterr().out
     assert _run(["config", "show", "providers.demo.extra_body"]) == 0
-    shown = capsys.readouterr().out
-    assert "providers.demo.extra_body\n" in shown
-    assert "providers.demo.extra_body.route" not in shown
-
+    assert "providers.demo.extra_body.route" not in capsys.readouterr().out
     assert _run(["config", "unset", "providers.demo.extra_body"]) == 0
     providers = _global_toml(iso)["providers"]
     assert isinstance(providers, dict)

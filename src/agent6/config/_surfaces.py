@@ -43,6 +43,8 @@ class SkillsConfig(pydantic.BaseModel):
     # One value per skill, so contradictory states are unrepresentable.
     state: dict[str, Literal["enabled", "disabled", "always"]] = pydantic.Field(
         default_factory=dict,
+        # agent6.viewmodel.config_view reads this opt-in when rendering mapping values.
+        json_schema_extra={"display_safe": True},
         description=(
             "Per-skill state by name: `enabled` (indexed, loaded on `use_skill`), `disabled` "
             "(dropped), or `always` (its full text sits in the system prompt). Layers merge key by "
