@@ -616,6 +616,11 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
     os.utime(runs / "older-run" / "logs.jsonl", (100, 100))
     os.utime(runs / "newer-run" / "logs.jsonl", (1000, 1000))
     ipc.register_frontend(runs / "older-run", 12345)
+    # A newer session without a transcripts directory is not a candidate.
+    newest = runs / "newest-without-transcripts"
+    newest.mkdir()
+    (newest / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
+    os.utime(newest / "logs.jsonl", (2000, 2000))
 
     assert (
         history_cmds._cmd_history_transcript(

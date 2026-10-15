@@ -47,6 +47,13 @@ def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
     raise AssertionError(f"no positional {dest!r}")
 
 
+def test_transcript_help_names_its_artifact_aware_default() -> None:
+    """Transcript selection skips sessions without a transcripts directory."""
+    command = _find(_find(cli_parser.build_parser(), "sessions"), "transcript")
+    text = " ".join(command.format_help().split())
+    assert "omit for the newest session with a transcripts directory" in text
+
+
 def test_prompt_show_help_names_pending_mcp_tools() -> None:
     """Prompt inspection does not promise tools it has not discovered."""
     command = _find(_find(cli_parser.build_parser(), "prompt"), "show")

@@ -243,7 +243,14 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "transcript",
         help="Print a session's complete model conversation as Markdown.",
     )
-    _common._add_session_id(sessions_tr, completers._complete_session_ids)
+    _common._add_session_id(
+        sessions_tr,
+        completers._complete_session_ids,
+        help_text=(
+            "Session id or unambiguous prefix; omit for the newest session"
+            " with a transcripts directory."
+        ),
+    )
     sessions_tr.add_argument(
         "--json",
         dest="as_json",
