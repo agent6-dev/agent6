@@ -24,7 +24,7 @@ graph TD
     n_tools --> n_sandbox
 ```
 
-Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `commit_message`, `config`, `directive`, `errors`, `event_log`, `git_ops`, `git_policy`, `graph`, `init`, `kinds`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secret_store`, `sessions`, `skills`, `task_text`, `terminal`, `verify_infer`, `viewmodel`.
+Any layer may also use the shared substrate: `_data`, `_git_command`, `budget`, `child_env`, `commit_message`, `config`, `directive`, `errors`, `event_log`, `git_ops`, `git_policy`, `graph`, `init`, `kinds`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secret_store`, `sessions`, `skills`, `task_text`, `terminal`, `verify_infer`, `viewmodel`.
 
 `git_ops.py` alone uses `_git_command.py` for hardened execution, timeouts, and output decoding.
 `git_policy.py` shares hardening flags and hook/filter policy; `errors.py` owns `GitError`.

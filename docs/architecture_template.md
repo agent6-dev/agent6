@@ -14,6 +14,9 @@ An edge is "imports from"; a dashed edge would mark an import climbing the stack
 
 Any layer may also use the shared substrate: <!-- generated: substrate-names -->.
 
+`git_ops.py` alone uses `_git_command.py` for hardened execution, timeouts, and output decoding.
+`git_policy.py` shares hardening flags and hook/filter policy; `errors.py` owns `GitError`.
+
 - **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root, over the shared read-model fold (`viewmodel`)
     - the four front-ends: `ui/cli`, `ui/tui`, `ui/web`, `ui/acp`
     - `ui/mcp_server.py`: agent6 as an MCP server
@@ -22,6 +25,7 @@ Any layer may also use the shared substrate: <!-- generated: substrate-names -->
     - never imports `agent6.ui`
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
 - **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `code_review` (the single call behind `agent6 review`), `run_review` (the read-only pass behind `agent6 sessions review`) and the review panel (`_panel`, `_reviewer`); the agent loop makes its own provider calls inline.
+  `harness/_loop_resume.py` owns snapshot carryover and persistence; `harness/_loop_steer.py` applies steering at execution boundaries.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
   `harness/_toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
 - **sandbox** ([src/agent6/sandbox/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)): the `agent6-jail` launcher and its policy.
