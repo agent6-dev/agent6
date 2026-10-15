@@ -1093,6 +1093,87 @@ def test_merge_squash_model_style_degrades_with_a_warning(
     assert _head_message(tmp_path).splitlines()[0] == "implement the thing"
 
 
+@pytest.mark.parametrize("oversized", [False, True])
+@pytest.mark.parametrize("conventions", ["", "Use Conventional Commits: type(scope): subject.\n"])
+def test_model_squash_uses_the_whole_run(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    conventions: str,
+    oversized: bool,
+) -> None:
+    """A review execution must not replace the landed diff or the original finish context."""
+    from agent6.app import merge as merge_mod
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    config_dir = tmp_path / "g" / "agent6"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text(
+        '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
+    )
+    session_id = "run-MDL222"
+    _setup_run(
+        tmp_path,
+        session_id,
+        commits=[
+            ("window.py", "context_window = 200000\n", "agent6 iter 1: checkpoint"),
+            ("review.txt", "Document the fallback.\n", "Address review feedback"),
+            ("z.txt", "é" * 100 + "\n" if not oversized else ("é" * 100 + "\n") * 1000, "data"),
+        ],
+    )
+    if conventions:
+        (tmp_path / "AGENTS.md").write_text(conventions, encoding="utf-8")
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id=session_id
+    )
+    summaries = ["Resolve minor model IDs through the family.", "Add fallback docstrings."]
+    events = []
+    for event_type, task, summary, reason in (
+        ("session.start", "implement the thing", summaries[0], "finish_session"),
+        ("loop.resume.start", "Attempt review", "Abandoned finish text.", "steer_abort"),
+        ("loop.resume.start", "Address review feedback", summaries[1], "finish_session"),
+    ):
+        events.extend(
+            [
+                {"type": event_type, "user_task": task},
+                {"type": "tool.call", "name": "finish_session", "args": {"summary": summary}},
+                {"type": "session.end", "reason": reason, "all_passed": True},
+            ]
+        )
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    seen: dict[str, str] = {}
+
+    def draft(_provider: object, *, system: str, user: str, max_tokens: int) -> str:
+        seen.update(system=system, user=user)
+        return "fix(models): resolve minor model context windows\n\nUse the family fallback."
+
+    def provider(*_args: object, **_kwargs: object) -> object:
+        return object()
+
+    monkeypatch.setattr(app_providers, "build_role_provider", provider)
+    monkeypatch.setattr(merge_mod, "call_for_text", draft)
+    assert main(["sessions", "merge", session_id, "--strategy", "squash"]) == 0
+    assert "+context_window = 200000" in seen["user"]
+    assert "+Document the fallback." in seen["user"]
+    assert "implement the thing" in seen["user"]
+    assert all(summary in seen["user"] for summary in summaries)
+    assert "Abandoned finish text." not in seen["user"]
+    if oversized:
+        diff = seen["user"].split("Base-to-tip diff", 1)[1]
+        patch, marker = diff.split("\n[diff truncated after ", 1)
+        patch = patch.split(":\n", 1)[1]
+        assert len(patch.encode("utf-8")) <= 65536
+        assert marker == f"{len(patch.splitlines())} lines]"
+    else:
+        assert "diff truncated after" not in seen["user"]
+    if conventions:
+        assert conventions in seen["system"]
+    else:
+        assert "AGENTS.md" not in seen["system"]
+        assert "Conventional Commits" not in seen["system"]
+    assert _head_message(tmp_path).startswith("fix(models): resolve minor model context windows")
+
+
 def test_merge_squash_trailer_lands_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

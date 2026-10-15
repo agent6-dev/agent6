@@ -45,7 +45,10 @@ class GitCommitSquashConfig(pydantic.BaseModel):
             "`conventional` (the same body under a `type(scope): subject` derived from the diff, "
             "no model call), `combine` (git's own squash message: the per-step log concatenated), "
             "or "
-            "`model` (model-written, falling back to `agent6` with a warning on any failure)."
+            "`model` (model-written from up to 64 KiB of the base-to-tip diff, marked when "
+            "truncated, with the task and execution finish "
+            "summaries as context and commit conventions from AGENTS.md; falls back to `agent6` "
+            "with a warning on any failure)."
         ),
     )
 

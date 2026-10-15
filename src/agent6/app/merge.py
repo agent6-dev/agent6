@@ -17,7 +17,7 @@ from collections.abc import Callable
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, event_log, git_ops, secret_store, viewmodel
+from agent6 import commit_message, event_log, git_ops, harness, secret_store, viewmodel
 from agent6.app import _setup, providers, stamps
 from agent6.config import Config, ConfigError
 from agent6.providers import ProviderError, TranscriptSink, call_for_text
@@ -119,7 +119,7 @@ def dispatch_merge(
     events: event_log.EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
     merge_base: str | None = None,
-    summary: str = "",
+    finish_summaries: tuple[str, ...] = (),
 ) -> git_ops.MergeResult:
     """Run the strategy on the target through `plumb_merge`.
 
@@ -141,8 +141,8 @@ def dispatch_merge(
         events: The run's event sink, when the merge runs inside one.
         warn: Where a degraded message is reported.
         merge_base: The base to merge from, when git's own does not serve.
-        summary: The summary the run finished on, the body of an `agent6` or
-            `conventional` squash message.
+        finish_summaries: Completed executions' summaries; the last supplies the body of
+            an `agent6` or `conventional` message, the tuple supplies model context.
 
     Returns:
         The plumbing's result.
@@ -155,7 +155,7 @@ def dispatch_merge(
             manifest,
             base_sha=merge_base or base_sha,
             run_branch=run_branch,
-            summary=summary,
+            finish_summaries=finish_summaries,
             transcript_dir=transcript_dir,
             budget=budget,
             events=events,
@@ -227,7 +227,7 @@ def _squash_message(
     *,
     base_sha: str,
     run_branch: str,
-    summary: str,
+    finish_summaries: tuple[str, ...],
     transcript_dir: pathlib.Path | None,
     budget: agent6_budget.BudgetTracker | None,
     events: event_log.EventSink | None,
@@ -245,6 +245,7 @@ def _squash_message(
         ]
         return "\n".join(parts) if rows else None
     task = manifest.user_task or "agent6 run"
+    summary = finish_summaries[-1] if finish_summaries else ""
     if style == "conventional":
         # The prefix goes on the uncut clause, so the subject is cut once.
         whole = commit_message.condense_commit_message(
@@ -263,6 +264,7 @@ def _squash_message(
             base_sha=base_sha,
             run_branch=run_branch,
             task=task,
+            finish_summaries=finish_summaries,
             transcript_dir=transcript_dir,
             budget=budget,
             events=events,
@@ -281,12 +283,13 @@ def _model_squash_message(
     base_sha: str,
     run_branch: str,
     task: str,
+    finish_summaries: tuple[str, ...] = (),
     transcript_dir: pathlib.Path | None,
     budget: agent6_budget.BudgetTracker | None,
     events: event_log.EventSink | None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> str | None:
-    """Write the squash message with one provider call from git facts only.
+    """Write the squash message from the landed diff and the run's context.
 
     Args:
         cwd: The repository.
@@ -295,6 +298,7 @@ def _model_squash_message(
         base_sha: The commit the run started from.
         run_branch: The run's branch or chain ref.
         task: The run's task.
+        finish_summaries: Completed executions' summaries, subordinate to the diff.
         transcript_dir: Where the call is transcribed; None skips the call.
         budget: The run's tracker when auto_merge runs inside a run, so the call spends the
             run's remainder; None takes a fresh per-invocation cap.
@@ -328,16 +332,33 @@ def _model_squash_message(
         files = "\n".join(
             f"{s}\t{p}" for s, p in git_ops.range_name_status(cwd, base_sha, run_branch)[:200]
         )
+        diff = git_ops.diff_range(cwd, base_sha, run_branch)
+        diff_bytes = diff.encode("utf-8")
+        if len(diff_bytes) > 65536:
+            # Keep whole lines, including when one line alone exceeds the byte budget.
+            diff = diff_bytes[:65536].rpartition(b"\n")[0].decode("utf-8")
+            diff += f"\n[diff truncated after {len(diff.splitlines())} lines]"
+        conventions = harness.agents_md_text(cwd, cfg.sandbox.hide_paths)
+        system = (
+            "Write a git commit message describing the entire base-to-tip diff being landed,"
+            " not just the latest execution or review feedback. The diff is authoritative;"
+            " the task, finish summaries and per-step subjects are context only. Use only"
+            " the facts given. Write one imperative subject line under 72 characters, a blank"
+            " line, then a short body. Output the message text only."
+        )
+        if conventions:
+            system += (
+                "\nFollow the repository's commit-message conventions stated in AGENTS.md."
+                f"\n\nAGENTS.md (project conventions):\n{conventions}"
+            )
+        summaries = "\n\n".join(finish_summaries)
         msg = call_for_text(
             provider,
-            system=(
-                "Write a git commit message for a squashed branch: one"
-                " imperative subject line under 72 characters, a blank line,"
-                " then a short body. Use only the facts given. Output the"
-                " message text only."
-            ),
+            system=system,
             user=(
-                f"Task: {task}\nPer-step subjects:\n{steps}\nChanged files (status\tpath):\n{files}"
+                f"Task: {task}\nFinish summaries (execution order):\n{summaries}\n"
+                f"Per-step subjects:\n{steps}\nChanged files (status\tpath):\n{files}\n"
+                f"Base-to-tip diff ({base_sha}..{run_branch}):\n{diff}"
             ),
             max_tokens=500,
         )
@@ -357,10 +378,19 @@ def _model_squash_message(
     return msg or None
 
 
-def _finish_summary(layout: sessions_layout.SessionLayout) -> str:
-    """Return the summary the run's last execution finished on, "" when it ended otherwise."""
-    state = viewmodel.fold_session(viewmodel.tail_events(layout.logs_path, follow=False))
-    return state.finish_summary if state.end_reason == "finish_session" else ""
+def _finish_summaries(layout: sessions_layout.SessionLayout) -> tuple[str, ...]:
+    """Return the summaries of executions that ended on a successful finish call."""
+    state = viewmodel.initial_state()
+    summaries: list[str] = []
+    for event in viewmodel.tail_events(layout.logs_path, follow=False):
+        state = viewmodel.apply_event(state, event)
+        if (
+            event.get("type") == "session.end"
+            and state.end_reason == "finish_session"
+            and state.finish_summary
+        ):
+            summaries.append(state.finish_summary)
+    return tuple(summaries)
 
 
 NO_BASE_SHA = "the manifest records no base_sha; nothing to merge from"
@@ -451,7 +481,7 @@ def execute_merge(
             events=events,
             warn=warn,
             merge_base=merge_base,
-            summary=_finish_summary(layout),
+            finish_summaries=_finish_summaries(layout),
         )
     except git_ops.GitError as exc:
         return MergeOutcome("error", error=f"merge failed: {exc}")

@@ -21,8 +21,11 @@ from agent6.providers import ToolDefinition
 from agent6.sandbox import detect
 from agent6.tools import dispatch
 
+agents_md_text = _context.agents_md_text
+
 __all__ = [
     "ModelExchange",
+    "agents_md_text",
     "model_exchange_for",
     "system_prompt_for",
 ]
