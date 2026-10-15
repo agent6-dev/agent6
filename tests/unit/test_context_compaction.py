@@ -762,7 +762,7 @@ def test_restart_summary_parser_ignores_marker_text_inside_a_pin() -> None:
 
 
 def test_restart_notice_re_shows_the_operator_rulings() -> None:
-    """A compaction restart re-shows DECISIONS.md between the pins and the summary."""
+    """A compaction restart re-shows decisions.md between the pins and the summary."""
     from agent6.prompts import revision
 
     notice = revision.context_restart_notice(

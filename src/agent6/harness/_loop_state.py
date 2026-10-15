@@ -41,7 +41,7 @@ class LoopState:
         tool_calls: Dispatches so far.
         ok_tool_calls: Dispatches that executed without a ToolError; the standing
             goal's spin guard counts only these as work since the last re-entry.
-        decisions_recorded: Rulings this execution appended to DECISIONS.md, for
+        decisions_recorded: Rulings this execution appended to decisions.md, for
             the finish-time check.
         tier2_floor_chars: The context size at the last tier-2 restart; the next
             fires only once the context grew 25% past it. Execution-local.

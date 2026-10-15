@@ -62,7 +62,6 @@ def system_prompt_for(
         memory_index=memory.index_text(recall) if recall is not None else "",
         memory_dir_path=str(memory.memory_dir(recall)) if recall is not None else "",
         decisions=memory.decisions_text(recall) if recall is not None else "",
-        decisions_path=str(memory.decisions_path(recall)) if recall is not None else "",
         skills=_installed_skills(root, config, mode),
         isolation=_shown_isolation(config),
     )

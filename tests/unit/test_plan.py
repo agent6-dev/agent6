@@ -822,9 +822,9 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: pathlib.Path) 
             mode=mode,
             skills=None,
             decisions="- 2026-08-23 00:00Z [s] Q: Modal?\n  A: No.",
-            decisions_path="/m/DECISIONS.md",
         )
-        assert "<decisions>" in text and "A: No." in text and "/m/DECISIONS.md" in text
+        assert "<decisions>" in text and "A: No." in text
+        assert "decisions.md" not in text  # a file the model cannot open is not named
         assert "recorded rulings" in text and "each ask_user answer" not in text
     assert "<decisions>" not in _prompt_blocks.build_system_prompt(
         config=Config(), repo=repo, mode="run", skills=None

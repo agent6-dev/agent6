@@ -25,8 +25,7 @@ from agent6 import errors, paths, portable
 
 MEMORY_DIR_NAME = "memory"
 INDEX_NAME = "MEMORY.md"
-# Operator rulings, harness-written and append-only; the model reads it and never writes it.
-DECISIONS_NAME = "DECISIONS.md"
+# Past the cap the operator rulings inject as their newest tail behind a clip marker.
 DECISIONS_INJECT_CAP = 4_096
 # Past the cap the index is clipped with a pointer, so a runaway index cannot flood every prompt.
 INDEX_INJECT_CAP = 4_096
@@ -294,8 +293,45 @@ def _drop_use(state_dir: pathlib.Path, name: str) -> None:
 
 
 def decisions_path(state_dir: pathlib.Path) -> pathlib.Path:
-    """Return the decisions file's path."""
-    return memory_dir(state_dir) / DECISIONS_NAME
+    """Return the decisions file's path: beside the store, outside the model's write grant."""
+    return state_dir / "decisions.md"
+
+
+def migrate_legacy_decisions(state_dir: pathlib.Path) -> str:
+    """Rename a store's old `memory/DECISIONS.md` to `decisions.md` while none exists.
+
+    The store is model-writable, so a `DECISIONS.md` beside an existing `decisions.md` is
+    named, never merged.
+
+    Args:
+        state_dir: The repo's state dir.
+
+    Returns:
+        One line saying what moved or what was ignored, or "" with no such file.
+    """
+    legacy = memory_dir(state_dir) / "DECISIONS.md"
+    if not legacy.is_file():
+        return ""
+    path = decisions_path(state_dir)
+    with _locked_memory(state_dir):
+        if not legacy.is_file():
+            return ""
+        if path.exists():
+            return f"ignored a stray {legacy}: rulings live at {path}; delete it to silence this"
+        legacy.rename(path)
+    return f"operator rulings moved from {legacy} to {path}"
+
+
+def ensure_decisions_file(state_dir: pathlib.Path) -> None:
+    """Create an empty `decisions.md` when none exists; the harness does so at every run start.
+
+    Args:
+        state_dir: The repo's state dir.
+    """
+    path = decisions_path(state_dir)
+    if not path.exists():
+        paths.mkdir_for_real_user(state_dir)
+        portable.atomic_write(path, b"")
 
 
 @contextlib.contextmanager
@@ -446,7 +482,7 @@ def merge_memory(
     paths.mkdir_for_real_user(dst)
     seeds = seed_digests(src_state_dir)
     src_index = index_text(src_state_dir).splitlines()
-    lane = {p.stem: p for p in src.glob("*.md") if p.name not in (INDEX_NAME, DECISIONS_NAME)}
+    lane = {p.stem: p for p in src.glob("*.md") if p.name != INDEX_NAME}
     landed: dict[str, list[str]] = {"carried": [], "updated": [], "deleted": [], "held": []}
     for name in sorted(seeds.keys() | lane.keys()):
         if _NAME_RE.fullmatch(name) is None:
@@ -516,15 +552,22 @@ def seed_store(src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path) -> int:
     """Copy the repo's memory into a fresh state dir, recording each copied fact's digest.
 
     A lane's clone has an empty store; copies, never links, so a lane cannot write
-    the origin's store mid-run. Anything already there stays.
+    the origin's store mid-run. Anything already there stays. The origin's rulings
+    are copied beside the store, when the lane has none; an origin with no store
+    leaves the lane storeless.
 
     Args:
         src_state_dir: The origin's state dir.
         dst_state_dir: The lane's state dir.
 
     Returns:
-        How many files were copied.
+        How many store files were copied; the rulings copy is not one.
     """
+    rulings = decisions_path(src_state_dir)
+    target_rulings = decisions_path(dst_state_dir)
+    if rulings.is_file() and not target_rulings.exists():
+        paths.mkdir_for_real_user(dst_state_dir)
+        portable.atomic_write(target_rulings, rulings.read_bytes())
     src = memory_dir(src_state_dir)
     if not src.is_dir():
         return 0
@@ -538,7 +581,7 @@ def seed_store(src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path) -> int:
             target = dst / path.name
             if not path.is_file():
                 continue
-            fact = path.suffix == ".md" and path.name not in (INDEX_NAME, DECISIONS_NAME)
+            fact = path.suffix == ".md" and path.name != INDEX_NAME
             if target.exists():
                 if (
                     recover_unrecorded_copy
@@ -566,7 +609,7 @@ def decisions_text(state_dir: pathlib.Path) -> str:
         return ""
     if len(text) <= DECISIONS_INJECT_CAP:
         return text
-    marker = f"... (earlier rulings clipped; {DECISIONS_NAME} holds all)"
+    marker = "... (earlier rulings clipped; the operator sees them all: `agent6 memory decisions`)"
     room = DECISIONS_INJECT_CAP - len(marker) - 1
     kept: list[str] = []
     used = 0

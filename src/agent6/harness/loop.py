@@ -183,6 +183,10 @@ class Harness:
             mode=self.mode,
         )
         self.log("LOOP: LOAD_CONTEXT")
+        if self.state_dir is not None:
+            if note := agent6_memory.migrate_legacy_decisions(self.state_dir):
+                self.log(f"LOOP: {note}")
+            agent6_memory.ensure_decisions_file(self.state_dir)
         repo = _context.load_repo_summary(self.chain.root, self.config.sandbox.hide_paths)
         system = _prompt_blocks.build_system_prompt(
             config=self.config,
@@ -193,9 +197,6 @@ class Harness:
             if self.state_dir is not None
             else "",
             decisions=self._load_decisions(),
-            decisions_path=str(agent6_memory.decisions_path(self.state_dir))
-            if self.state_dir
-            else "",
             skills=self._load_skills(),
             isolation=self.dispatcher.isolation,
             commands_allowed=self.dispatcher.command_policy() != "no",
@@ -1841,7 +1842,7 @@ class Harness:
         return agent6_memory.decisions_text(self.state_dir) if self.state_dir is not None else ""
 
     def _record_decision(self, state: _loop_state.LoopState, question: str, answer: str) -> None:
-        """Append an operator's answer to the repo's DECISIONS.md as a ruling.
+        """Append an operator's answer to the repo's decisions.md as a ruling.
 
         Args:
             state: The execution's state; remembers the entry for the finish-time check.
@@ -1863,7 +1864,7 @@ class Harness:
         self.emit("loop.decision.recorded", question=question[:200], answer=answer[:200])
 
     def _check_decisions_recorded(self, state: _loop_state.LoopState) -> None:
-        """Report a recorded ruling missing from DECISIONS.md at the finish; never a block.
+        """Report a recorded ruling missing from decisions.md at the finish; never a block.
 
         Args:
             state: The execution's state.
@@ -1876,7 +1877,7 @@ class Harness:
             text = ""
         missing = [e for e in state.decisions_recorded if e.strip() not in text]
         if missing:
-            self.log(f"LOOP: {len(missing)} recorded decision(s) missing from DECISIONS.md")
+            self.log(f"LOOP: {len(missing)} recorded decision(s) missing from decisions.md")
             self.emit("loop.decision.unrecorded", missing=len(missing))
 
     def _load_skills(self) -> skills.ResolvedSkills | None:

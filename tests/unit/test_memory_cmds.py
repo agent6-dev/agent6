@@ -76,6 +76,40 @@ def test_decisions_prints_the_rulings_or_says_none(
     assert capsys.readouterr().out == "- 1970-01-01 00:00Z [s] Q: Q?\n  A: A\n"
 
 
+def test_memory_commands_move_an_old_rulings_file_out_of_the_store_and_say_so(
+    env: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `memory/DECISIONS.md` left by an older agent6 moves to `decisions.md` once.
+
+    The note goes to stderr, so a piped `memory decisions` or `memory show` stays clean; a
+    stray one beside an existing `decisions.md` is reported the same way and never merged.
+    """
+    state = paths.state_dir(pathlib.Path.cwd())
+    legacy = memory.memory_dir(state) / "DECISIONS.md"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("- old ruling\n", encoding="utf-8")
+    assert memory_cmds._cmd_memory_decisions() == 0
+    out, err = capsys.readouterr()
+    assert out == "- old ruling\n"
+    assert err == f"operator rulings moved from {legacy} to {state / 'decisions.md'}\n"
+    assert memory_cmds._cmd_memory_list() == 0
+    assert "moved" not in "".join(capsys.readouterr())
+    legacy.write_text("- planted\n", encoding="utf-8")
+    assert memory_cmds._cmd_memory_decisions() == 0
+    out, err = capsys.readouterr()
+    assert out == "- old ruling\n"
+    assert err.startswith(f"ignored a stray {legacy}:")
+
+
+def test_decisions_reads_an_empty_file_as_none_recorded(
+    env: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The empty `decisions.md` a run start creates prints as no rulings, not as nothing."""
+    memory.ensure_decisions_file(paths.state_dir(pathlib.Path.cwd()))
+    assert memory_cmds._cmd_memory_decisions() == 0
+    assert "no rulings recorded" in capsys.readouterr().out
+
+
 def test_rm_keeps_the_index_bytes_it_does_not_touch(tmp_path: pathlib.Path) -> None:
     """`memory rm` keeps the index bytes it does not touch.
 

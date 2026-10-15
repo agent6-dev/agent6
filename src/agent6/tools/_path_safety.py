@@ -93,7 +93,6 @@ class Workspace:
             alike; a denial beats every grant.
         read_roots: `extra_read_paths` plus `extra_write_paths`, the trees the jail mounts too.
         write_roots: `extra_write_paths`.
-        read_only: Files inside a write grant that the harness owns: readable, never written.
         exempt: agent6's own carve-outs from `denied`, exactly the per-repo memory dir, which
             is model-writable by design; an exempt path still needs a grant to be reachable.
     """
@@ -102,7 +101,6 @@ class Workspace:
     denied: tuple[pathlib.Path, ...] = ()
     read_roots: tuple[pathlib.Path, ...] = ()
     write_roots: tuple[pathlib.Path, ...] = ()
-    read_only: tuple[pathlib.Path, ...] = ()
     exempt: tuple[pathlib.Path, ...] = ()
 
     def _denying(self, abs_path: pathlib.Path) -> pathlib.Path | None:
@@ -142,13 +140,9 @@ class Workspace:
             The contained path.
 
         Raises:
-            ToolError: The path escapes the workspace and every write grant, is denied, or is
-                harness-owned.
+            ToolError: The path escapes the workspace and every write grant, or is denied.
         """
-        sp = self._resolve(candidate, (self.root, *self.write_roots))
-        if sp.abs_path in self.read_only:
-            raise tools_errors.ToolError(f"Path is harness-owned and read-only: {candidate!r}")
-        return sp
+        return self._resolve(candidate, (self.root, *self.write_roots))
 
     def _resolve(self, candidate: str, bases: tuple[pathlib.Path, ...]) -> SafePath:
         sp = (

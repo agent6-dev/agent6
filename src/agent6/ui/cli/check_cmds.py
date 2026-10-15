@@ -629,7 +629,7 @@ def _check_boundaries_section(
     for line in _grant_lines(grants):
         print(line)
     for p in sorted(ws.exempt):
-        print(f"    rw  {p}  (repo memory, inside the hidden state dir; DECISIONS.md read-only)")
+        print(f"    rw  {p}  (repo memory, inside the hidden state dir)")
     for p in sorted(ws.denied):
         print(f"    --  {p}  (hidden: tools refuse it)")
 

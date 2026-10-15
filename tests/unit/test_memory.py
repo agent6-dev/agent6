@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+import stat
 import threading
 
 import pytest
@@ -158,7 +159,7 @@ def test_index_add_starts_a_line_of_its_own(tmp_path: pathlib.Path) -> None:
 def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(
     tmp_path: pathlib.Path,
 ) -> None:
-    """The harness-owned DECISIONS.md.
+    """The harness-owned decisions.md.
 
     Append-only entries (question, answer verbatim with continuation lines indented, session, UTC
     time); the injected text keeps the newest rulings behind a pointer past the cap.
@@ -180,14 +181,15 @@ def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(
         )
     clipped = memory.decisions_text(tmp_path)
     assert len(clipped) <= memory.DECISIONS_INJECT_CAP
-    assert clipped.startswith("... (earlier rulings clipped") and clipped.rstrip().endswith(
-        "y" * 40
-    )
+    # The marker names the operator's command, not a file the model cannot open.
+    marker = "... (earlier rulings clipped; the operator sees them all: `agent6 memory decisions`)"
+    assert clipped.startswith(marker + "\n- ") and clipped.rstrip().endswith("y" * 40)
+    assert "decisions.md" not in clipped
     assert "q199" in clipped and "Keep the modal" not in clipped
 
 
 def test_merge_decisions_appends_a_lanes_rulings(tmp_path: pathlib.Path) -> None:
-    """A fan-out lane's rulings land in the coordinator's DECISIONS.md after its own.
+    """A fan-out lane's rulings land in the coordinator's decisions.md after its own.
 
     A lane that recorded none writes nothing.
     """
@@ -738,3 +740,92 @@ def test_carry_back_lands_a_lanes_use_record(tmp_path: pathlib.Path) -> None:
     assert use["lane-fact"].writers == ("operator", "lane-1")
     assert use["lane-fact"].reads == 2
     assert any("use record carried for 1" in line for line in said)
+
+
+def _legacy_rulings(state_dir: pathlib.Path, text: str = "- old ruling\n") -> pathlib.Path:
+    legacy = memory.memory_dir(state_dir) / "DECISIONS.md"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text(text, encoding="utf-8")
+    return legacy
+
+
+def test_migrate_legacy_decisions_renames_the_file_once(tmp_path: pathlib.Path) -> None:
+    """An old `memory/DECISIONS.md` with no `decisions.md` beside the store is renamed, once."""
+    legacy = _legacy_rulings(tmp_path)
+    target = memory.decisions_path(tmp_path)
+    assert not target.is_relative_to(memory.memory_dir(tmp_path))
+    assert memory.migrate_legacy_decisions(tmp_path) == (
+        f"operator rulings moved from {legacy} to {target}"
+    )
+    assert not legacy.exists()
+    assert target.read_text(encoding="utf-8") == "- old ruling\n"
+    assert memory.migrate_legacy_decisions(tmp_path) == ""
+    assert memory.migrate_legacy_decisions(tmp_path / "no-store") == ""
+
+
+def test_a_store_write_under_the_old_rulings_name_never_reaches_the_rulings(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A `memory/DECISIONS.md` beside an existing `decisions.md` is reported and left alone.
+
+    The store is the model's write grant; a merge would launder its content into the rulings.
+    """
+    memory.ensure_decisions_file(tmp_path)
+    target = memory.decisions_path(tmp_path)
+    assert target.read_bytes() == b""
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    memory.record_decision(tmp_path, question="Q?", answer="A", session="s", when=0)
+    memory.ensure_decisions_file(tmp_path)  # a second run start keeps what is there
+    before = target.read_bytes()
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600  # one mode, whichever writer came first
+    stray = _legacy_rulings(tmp_path, "- 1970-01-01 00:00Z [x] Q: Planted?\n  A: yes\n")
+    assert memory.migrate_legacy_decisions(tmp_path) == (
+        f"ignored a stray {stray}: rulings live at {target}; delete it to silence this"
+    )
+    assert stray.exists()
+    assert target.read_bytes() == before
+    assert "Planted" not in memory.decisions_text(tmp_path)
+
+
+def test_seed_store_copies_the_origins_rulings_beside_the_lanes_store(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A lane is seeded with the origin's rulings, outside its store and outside the count.
+
+    A lane holding rulings keeps its own; an origin with no store leaves the lane storeless.
+    """
+    origin, lane = tmp_path / "origin", tmp_path / "lane"
+    memory.record_decision(origin, question="Q?", answer="A", session="s", when=0)
+    memory.add(origin, "a-fact", "A first.")
+    assert memory.seed_store(origin, lane) == 2  # the fact and the index
+    assert memory.decisions_text(lane) == memory.decisions_text(origin)
+    assert stat.S_IMODE(memory.decisions_path(lane).stat().st_mode) == 0o600
+    assert set(memory.seed_digests(lane)) == {"a-fact"}
+    other = tmp_path / "other"
+    memory.record_decision(other, question="Mine?", answer="B", session="s", when=0)
+    assert memory.seed_store(origin, other) == 2
+    assert memory.decisions_text(other) == "- 1970-01-01 00:00Z [s] Q: Mine?\n  A: B"
+    bare, storeless = tmp_path / "bare", tmp_path / "storeless"
+    bare.mkdir()
+    memory.decisions_path(bare).write_text("- ruling\n", encoding="utf-8")
+    assert memory.seed_store(bare, storeless) == 0
+    assert memory.decisions_text(storeless) == "- ruling"
+    assert not memory.memory_dir(storeless).exists()
+    assert memory.seed_store(tmp_path / "nothing", tmp_path / "untouched") == 0
+    assert not (tmp_path / "untouched").exists()
+
+
+def test_merge_memory_skips_a_stray_rulings_file_in_the_lanes_store(tmp_path: pathlib.Path) -> None:
+    """`DECISIONS` fails the name rule: a lane's `memory/DECISIONS.md` never travels as a fact."""
+    assert not memory.is_memory_name("DECISIONS")
+    origin = tmp_path / "origin"
+    lane = _seeded_lane(tmp_path, origin)
+    memory.add(lane, "lane-fact", "A lane fact.")
+    stray = _legacy_rulings(lane, "- planted\n")
+    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge(
+        carried=("lane-fact",)
+    )
+    assert stray.exists()
+    assert not (memory.memory_dir(origin) / "DECISIONS.md").exists()
+    assert memory.merge_decisions(lane, origin) == (0, 0)
+    assert memory.decisions_text(origin) == ""

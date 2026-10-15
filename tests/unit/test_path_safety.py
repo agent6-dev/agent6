@@ -96,32 +96,64 @@ def test_a_leaf_swapped_for_a_fifo_cannot_block_a_read(tmp_path: pathlib.Path) -
     assert [e.name for e in _path_safety.list_contained(ws.resolve_read("sub"))] == []
 
 
-def test_a_harness_owned_file_is_readable_but_never_writable(tmp_path: pathlib.Path) -> None:
-    """DECISIONS.md sits inside the memory grant (the model may read it) but is harness-owned.
+def test_rulings_live_outside_the_memory_write_grant(tmp_path: pathlib.Path) -> None:
+    """The memory grant has no per-file exemption; the rulings file sits outside it.
 
-    An in-process write refuses, loudly.
+    A write to it refuses because no grant holds it, through a symlinked state dir too.
     """
+    from agent6 import memory
     from agent6.config import Config
     from agent6.tools import policy
 
-    mem = tmp_path / "state" / "memory"
+    root = tmp_path / "repo"
+    root.mkdir()
+    state = tmp_path / "state"
+    mem = memory.memory_dir(state)
     mem.mkdir(parents=True)
-    (mem / "DECISIONS.md").write_text("- ruling\n", encoding="utf-8")
-    (mem / "MEMORY.md").write_text("", encoding="utf-8")
-    ws = policy.workspace_for(Config(), tmp_path, memory_dir=mem)
-    assert ws.resolve_read(str(mem / "DECISIONS.md")).abs_path == (mem / "DECISIONS.md").resolve()
-    ws.resolve_write(str(mem / "MEMORY.md"))
-    with pytest.raises(errors.ToolError, match="harness-owned"):
-        ws.resolve_write(str(mem / "DECISIONS.md"))
-    # The state dir reached through a symlink (a relocated XDG_STATE_HOME):
-    # the guard compares resolved paths, so the grant must be resolved too.
+    decisions = memory.decisions_path(state)
+    decisions.write_text("- ruling\n", encoding="utf-8")
+    ws = policy.workspace_for(Config(), root, memory_dir=mem)
+    assert not decisions.is_relative_to(mem)
+    ws.resolve_write(str(mem / "fact.md"))
+    with pytest.raises(errors.ToolError, match="only allowed inside a granted path"):
+        ws.resolve_write(str(decisions))
     link = tmp_path / "link"
-    link.symlink_to(tmp_path / "state", target_is_directory=True)
-    ws = policy.workspace_for(Config(), tmp_path, memory_dir=link / "memory")
-    with pytest.raises(errors.ToolError, match="harness-owned"):
-        ws.resolve_write(str(link / "memory" / "DECISIONS.md"))
-    with pytest.raises(errors.ToolError, match="harness-owned"):
-        ws.resolve_write(str(mem / "DECISIONS.md"))
+    link.symlink_to(state, target_is_directory=True)
+    ws = policy.workspace_for(Config(), root, memory_dir=link / "memory")
+    with pytest.raises(errors.ToolError, match="only allowed inside a granted path"):
+        ws.resolve_write(str(link / "decisions.md"))
+
+
+def test_the_rulings_file_is_hidden_even_where_a_grant_reaches_it(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the state base under the workspace, `decisions.md` is still refused, read or write.
+
+    The state-dir denial refuses it; the memory dir beside it stays readable and writable
+    through its exemption.
+    """
+    from agent6 import memory, paths
+    from agent6.config import Config
+    from agent6.tools import policy
+
+    root = tmp_path / "home"
+    root.mkdir()
+    monkeypatch.setenv("XDG_STATE_HOME", str(root / ".local" / "state"))
+    state = paths.state_base() / "repo-id"
+    mem = memory.memory_dir(state)
+    mem.mkdir(parents=True)
+    (mem / "fact.md").write_text("- a fact\n", encoding="utf-8")
+    decisions = memory.decisions_path(state)
+    decisions.write_text("- ruling\n", encoding="utf-8")
+    ws = policy.workspace_for(Config(), root, memory_dir=mem)
+    assert ws.resolve_read(str(mem / "fact.md")).abs_path == (mem / "fact.md").resolve()
+    ws.resolve_write(str(mem / "fact.md"))
+    with pytest.raises(errors.ToolError, match="hidden from this run"):
+        ws.resolve_read(str(decisions))
+    with pytest.raises(errors.ToolError, match="hidden from this run"):
+        ws.resolve_write(str(decisions))
+    with pytest.raises(errors.ToolError, match="hidden from this run"):
+        ws.resolve_read(str(decisions.relative_to(root)))
 
 
 def test_unlink_walks_to_the_parent_like_a_write(tmp_path: pathlib.Path) -> None:

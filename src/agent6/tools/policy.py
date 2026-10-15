@@ -14,7 +14,7 @@ import stat
 from collections.abc import Sequence
 from typing import Any
 
-from agent6 import kinds, memory, paths
+from agent6 import kinds, paths
 from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.tools import _path_safety, _result_format
@@ -356,7 +356,6 @@ def workspace_for(
         read_roots=(*readable, *writable, *mem),
         write_roots=(*writable, *mem),
         exempt=mem,
-        read_only=(memory_dir.resolve() / memory.DECISIONS_NAME,) if memory_dir is not None else (),
     )
 
 

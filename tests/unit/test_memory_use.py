@@ -88,9 +88,8 @@ def test_a_read_under_the_store_counts_the_fact(tmp_path: pathlib.Path) -> None:
     _read(wf, state, str(store / "quirk.md"))
     _read(wf, state, str(store / "other.md"))
     assert state.memory.read == {"quirk": 2, "other": 1}
-    # The index and the rulings are not facts; a workspace read is not memory.
+    # The index is not a fact; a workspace read is not memory.
     _read(wf, state, str(store / "MEMORY.md"))
-    _read(wf, state, str(store / "DECISIONS.md"))
     _read(wf, state, "src/app.py")
     assert state.memory.read == {"quirk": 2, "other": 1}
     assert state.memory.wrote == []

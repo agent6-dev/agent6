@@ -54,12 +54,13 @@ def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
     return f"{header}\n\n{tail}\n</memory>"
 
 
-def decisions_block(text: str, decisions_path: str) -> str:
+def decisions_block(text: str) -> str:
     """Render the <decisions> block: the operator's recorded rulings, newest last.
 
+    The model sees only this text; the file it comes from is outside its grants.
+
     Args:
-        text: The rulings file's text.
-        decisions_path: The rulings file, as the model names it.
+        text: The rulings text, clipped to the cap.
 
     Returns:
         The block, or "" when none are recorded.
@@ -68,9 +69,9 @@ def decisions_block(text: str, decisions_path: str) -> str:
     if not body:
         return ""
     return (
-        f"<decisions>\nOperator rulings at {decisions_path}, recorded by the harness:"
+        "<decisions>\nOperator rulings recorded by the harness:"
         " recorded rulings from ask_user and steers that answered a question,"
-        " newest last. Read-only; a ruling stands until the operator changes it."
+        " newest last. A ruling stands until the operator changes it."
         f"\n\n{body}\n</decisions>"
     )
 
@@ -241,7 +242,6 @@ def build_system_prompt(
     memory_index: str = "",
     memory_dir_path: str = "",
     decisions: str = "",
-    decisions_path: str = "",
     skills: agent6_skills.ResolvedSkills | None,
     isolation: kinds.IsolationLevel = "strict",
     commands_allowed: bool | None = None,
@@ -260,8 +260,7 @@ def build_system_prompt(
         mode: The run mode.
         memory_index: The MEMORY.md text.
         memory_dir_path: The memory directory, as the model names it.
-        decisions: The rulings file's text.
-        decisions_path: The rulings file, as the model names it.
+        decisions: The rulings text, clipped to the cap.
         skills: The resolved skills, or None.
         isolation: The jail level.
         commands_allowed: Whether the model may run commands; None reads the config.
@@ -397,7 +396,7 @@ def build_system_prompt(
     # Repo memory, after the repo priors; empty for plan and ask with nothing recorded.
     if memory_part := memory_block(memory_index, memory_dir_path, mode=mode):
         parts.append(memory_part)
-    if decisions_part := decisions_block(decisions, decisions_path):
+    if decisions_part := decisions_block(decisions):
         parts.append(decisions_part)
 
     # Operator-installed skills, last: `always` full texts plus the on-demand index.

@@ -466,7 +466,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     _common._sub(
         mem_sub,
         "decisions",
-        help="Print the operator rulings the harness recorded (memory/DECISIONS.md).",
+        help="Print the operator rulings the harness recorded (<state_dir>/decisions.md).",
     )
 
     _machine_args._add_machine_parser(sub)

@@ -9,9 +9,21 @@ Store refusals (a bad name, an unreadable store) raise `MemoryStoreError`, an
 from __future__ import annotations
 
 import pathlib
+import sys
 
 from agent6 import memory, paths
 from agent6.ui.cli import _steer
+
+
+def _state() -> pathlib.Path:
+    """Return the cwd repo's state dir, with an old `memory/DECISIONS.md` moved out of the store.
+
+    The move, or a stray file ignored, is reported on stderr: stdout is the command's output.
+    """
+    state = paths.state_dir(pathlib.Path.cwd())
+    if note := memory.migrate_legacy_decisions(state):
+        print(note, file=sys.stderr)
+    return state
 
 
 def _cmd_memory_add(name: str, body: str) -> int:
@@ -20,7 +32,7 @@ def _cmd_memory_add(name: str, body: str) -> int:
     Returns:
         The exit code, 0.
     """
-    path = memory.add(paths.state_dir(pathlib.Path.cwd()), name, body)
+    path = memory.add(_state(), name, body)
     print(f"wrote {path}")
     return 0
 
@@ -33,7 +45,7 @@ def _cmd_memory_list() -> int:
     Returns:
         The exit code, 0.
     """
-    state = paths.state_dir(pathlib.Path.cwd())
+    state = _state()
     text = memory.index_text(state)
     orphans = memory.unindexed_names(state)
     if not text:
@@ -87,7 +99,7 @@ def _cmd_memory_show(name: str) -> int:
     Returns:
         The exit code, 0.
     """
-    print(memory.show(paths.state_dir(pathlib.Path.cwd()), name), end="")
+    print(memory.show(_state(), name), end="")
     return 0
 
 
@@ -97,11 +109,12 @@ def _cmd_memory_decisions() -> int:
     Returns:
         The exit code, 0.
     """
-    state = paths.state_dir(pathlib.Path.cwd())
-    path = memory.decisions_path(state)
+    path = memory.decisions_path(_state())
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError:
+    except FileNotFoundError:
+        text = ""
+    if not text.strip():
         print(f"(no rulings recorded; the harness writes them to {path})")
         return 0
     print(text, end="")
@@ -118,7 +131,7 @@ def _cmd_memory_rm(name: str, *, yes: bool = False) -> int:
     Returns:
         The exit code, 0; a declined question deletes nothing.
     """
-    state = paths.state_dir(pathlib.Path.cwd())
+    state = _state()
     if not yes:
         try:
             first = memory.show(state, name).strip().splitlines()[:1]

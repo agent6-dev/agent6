@@ -123,9 +123,7 @@ def test_boundaries_report_names_the_memory_dir_for_the_file_tools_only(
     out = capsys.readouterr().out
     files, commands = out.split("  jailed commands", 1)
     assert checks == []
-    assert (
-        f"    rw  {mem}  (repo memory, inside the hidden state dir; DECISIONS.md read-only)"
-    ) in files
+    assert (f"    rw  {mem}  (repo memory, inside the hidden state dir)") in files
     assert f"    --  {paths.state_base()}  (hidden: tools refuse it)" in files
     assert not any(
         str(mem) in line and "sandbox.extra_write_paths" in line for line in out.splitlines()

@@ -8488,6 +8488,40 @@ def test_a_flat_ask_user_call_records_its_ruling(tmp_path: pathlib.Path) -> None
     assert question in memory.decisions_path(tmp_path / "state").read_text(encoding="utf-8")
 
 
+def test_run_start_moves_an_old_rulings_file_out_of_the_store_and_logs_it(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A `memory/DECISIONS.md` from an older agent6 moves to `decisions.md` at run start, once.
+
+    Every run start then leaves a `decisions.md` in place, so a `memory/DECISIONS.md` the
+    model writes into its store afterwards is logged as ignored and never becomes a ruling.
+    """
+    from agent6 import memory
+
+    state = tmp_path / "state"
+    legacy = memory.memory_dir(state) / "DECISIONS.md"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("- old ruling\n", encoding="utf-8")
+    provider = mock.MagicMock()
+    provider.call.return_value = _resp("done")
+    logs: list[str] = []
+    wf = _wf(mode="run", provider=provider, budget=None, state_dir=state, logger=logs.append)
+    wf.run("t")
+    assert not legacy.exists()
+    assert memory.decisions_text(state) == "- old ruling"
+    legacy.write_text("- planted\n", encoding="utf-8")
+    wf.run("t")
+    assert legacy.exists()
+    assert memory.decisions_text(state) == "- old ruling"
+    notes = [line.split("LOOP: ", 1)[1] for line in logs if "DECISIONS" in line]
+    assert len(notes) == 2
+    assert notes[0] == f"operator rulings moved from {legacy} to {state / 'decisions.md'}"
+    assert notes[1].startswith(f"ignored a stray {legacy}:")
+    fresh = tmp_path / "fresh"
+    _wf(mode="run", provider=provider, budget=None, state_dir=fresh, logger=logs.append).run("t")
+    assert memory.decisions_path(fresh).read_bytes() == b""
+
+
 def test_ask_user_args_the_dispatcher_coerced_still_record_their_ruling(
     tmp_path: pathlib.Path,
 ) -> None:
