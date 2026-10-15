@@ -494,8 +494,8 @@ class ReviewConfig(pydantic.BaseModel):
         ge=1,
         default=1,
         description=(
-            "How many seats the in-loop panel runs at once (`1` = one after another; the panel's "
-            "latency is its slowest seat). `agent6 review` always runs every seat in parallel."
+            "How many seats the in-loop panel runs at once (`1` = one after another). "
+            "`agent6 review` always runs every seat in parallel."
         ),
     )
     tier: ReviewTier = pydantic.Field(

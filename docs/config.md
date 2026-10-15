@@ -23,16 +23,17 @@ It can be empty or absent when the global config supplies a provider and model; 
 ## Creating and inspecting
 
 - `agent6 connect`: add a provider and, when needed, credentials (stored `0600`), global by default; `--repo` writes the provider entry to the repo config while credentials stay global.
-- `agent6 model <role> [provider/]model [--effort off|low|medium|high|xhigh|max]`: a model id alone keeps the role's provider; a provider name alone lists its models.
+- `agent6 model <role> [provider/]model [--effort off|low|medium|high|xhigh|max]`: a model id alone keeps the role's provider; a configured provider name alone opens a model picker on a terminal, or lists its models without one.
 - `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first unless `--yes` skips the prompts.
 - `agent6 config show`: every effective value and which layer set it.
   `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections) untruncated, meaning included.
 - `agent6 config set|unset|add|remove <dotted.key> [value]` (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay); `agent6 config get <dotted.key>` prints the effective value and its layer.
-  Every edit is re-validated and rolled back if invalid.
+  Every edit is re-validated; an invalid edit is rolled back when the config lock is held.
   A sibling pair that must move together is set as one inline table: `agent6 config set context '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
-- Writes are atomic; a blocked edit lock never blocks the write (worst case one lost update, reported as "kept as written").
+- Writes are atomic; failure to take the edit lock does not block the write, but concurrent edits can lose updates.
+  An invalid edit without the lock is reported as "kept as written", since rolling it back could erase another writer's update.
   A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
-- `agent6 config fill`: materialize defaults + global config into the global file.
+- `agent6 config fill`: materialize defaults + global config into the global file; pass `--force` to replace an existing file.
   The repo layer and any selected preset are left as-is.
 - `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values) from every layer and preset, a global value a repo override masks included, naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.
 - `agent6 check`: validate config + sandbox + provider keys without starting an agent run.
@@ -118,7 +119,9 @@ agent6 model worker chatgpt/gpt-5.6-sol
 - An `unsupported_value` refusal naming `reasoning.effort` and listing accepted levels, over HTTP 400 or a stream error frame, silently retries once at the lowest listed effort.
   Later calls on that provider instance keep the accepted levels; they are not persisted across machine attempts.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
-- Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit window, surfaces show `plan usage (<entry>): N% of the 7-day window` (the provider entry named), and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run). Dollar figures stay an authoritative $0.
+- Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit window, surfaces show the fullest window as `plan usage (<entry>): N% of the 7-day window`; the duration is whatever the provider reports (`5-hour window`), or `window` when unknown.
+  `[budget].max_percent` caps the points one run may consume (`--max-percent` per run).
+  Dollar figures stay an authoritative $0.
 
 ### Claude Code subscription (`api_format = "claude_code"`)
 
@@ -282,7 +285,7 @@ The table was `[harness]` from 0.0.35; a config that still says `[workflow]` is 
 | `max_total_rejections` | `4` | How many finishes a gating panel may reject per run before it disarms to `advisory` for the rest of the run, so a panel can never stall a run forever. |
 | `budget_fraction` | `0.25` | Skip the panel (the finish is accepted) once the run's remaining budget falls below this fraction of the whole. `0.25`: no panel in the last quarter. |
 | `seats` | `[]` | The panel roster, one entry per seat: a persona name (`"security"`), routed via `[models.reviewer]`, or `"<persona>@<provider>/<model>"` to pin a model per seat (`"correctness@openrouter/moonshotai/kimi-k2"`). A persona is any short stance the reviewer's prompt adopts; the built-in set cycled when none is named is `security`, `correctness`, `tests`, `over-engineering`, `edge-cases`. Empty: one reviewer seat when `trigger` is on. `agent6 review --reviewers N --personas ...` builds the same roster for a one-off review. |
-| `concurrency` | `1` | How many seats the in-loop panel runs at once (`1` = one after another; the panel's latency is its slowest seat). `agent6 review` always runs every seat in parallel. |
+| `concurrency` | `1` | How many seats the in-loop panel runs at once (`1` = one after another). `agent6 review` always runs every seat in parallel. |
 | `tier` | `"diff"` | How much a seat reads: `diff` (one call over the diff, the task, and the verify result) or `explore` (a read-only tool-using reviewer that also reads the repo around the diff to catch cross-file impact; several calls per seat, and it reads the checkout, so the reviewed head must be checked out with a clean tree). |
 
 A `block` gates only when its `file:line` is in the diff and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness`; every other finding is advisory and cannot stall the run.
@@ -445,8 +448,9 @@ agent6 as an MCP CLIENT; for the other direction (`agent6 mcp serve`, agent6 as 
 MCP servers, spawned (`command`) or connected (`url`); tools appear as `mcp__<name>__<tool>` in run mode only (plan, ask, machine and agent sessions never offer them: agent6 cannot classify an external tool as read-only).
 A spawned server runs as a jailed child by default (its own `[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out) with a curated env (never your provider keys; `pass_env` adds named vars); a `url` server is a process you run and confine yourself.
 The model chooses the arguments, so each call is approved like a command (`approve`); audit each server like a `run_command` allow-list.
-`agent6 mcp connect` handshakes first and only then writes the entry; a server that does not start is skipped with an `mcp.server_unavailable` journal event, never fatal.
-`agent6 check mcp` and the connect handshake probe under the run's sandbox with the repository bound read-only and skip a server they cannot hold that way ([the rule](security.md#2-sandbox)).
+`agent6 mcp connect` saves a spawned server unprobed with a warning when isolation resolves to `none`; otherwise it requires a successful probe before writing the entry.
+During a run, a server that does not start is skipped with an `mcp.server_unavailable` journal event, never fatal.
+`agent6 check mcp` probes under the run's sandbox with the repository bound read-only and skips a server it cannot hold that way ([the rule](security.md#2-sandbox)).
 
 ```
 agent6 mcp connect files -- npx -y @modelcontextprotocol/server-filesystem .
@@ -522,7 +526,7 @@ None of them is reachable by the model.
 | `AGENT6_JAIL_BIN` | Path to a specific `agent6-jail` binary (else bundled). |
 | `AGENT6_DANGEROUSLY_DISABLE_SANDBOX` | `1` forces `sandbox.isolation = "none"` for one invocation (same as `--dangerously-disable-sandbox`). |
 | `AGENT6_ALLOW_ROOT` | `1` permits running as root (same as `--allow-root`). |
-| `AGENT6_WEB_SECRET` | The secret a browser signs in to `agent6 web` with, at least 12 characters (same as `--secret`, which wins). Unset: each launch mints one and prints it. |
+| `AGENT6_WEB_SECRET` | The secret a browser signs in to `agent6 web` with, at least 12 characters after lowercasing and joining words with single hyphens (same as `--secret`, which wins). Unset: each launch mints one and prints it. |
 
 A provider's `api_key_env` names the env var supplying its key; omit it to read `secrets.toml`.
 The bench and development switches are listed in [architecture.md](architecture.md#bench-and-development-switches).

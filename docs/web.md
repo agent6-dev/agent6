@@ -41,7 +41,7 @@ agent6 web: secret: amber-acorn-agile-alder-alert-arrow (type it once per browse
   Its cookie holds a keyed digest of the secret, never the secret.
 - Each launch mints a new secret, and every browser signs in again.
 
-Set your own secret, at least 12 characters, to keep browsers signed in across restarts:
+Set your own secret, at least 12 characters after lowercasing and joining words with single hyphens, to keep browsers signed in across restarts:
 
 ```bash
 export AGENT6_WEB_SECRET='a phrase of your own'   # read when the server starts
@@ -51,7 +51,7 @@ agent6 web --secret 'a phrase of your own'        # the flag wins over the varia
 
 - With your own secret the printed URL carries no secret, and the terminal names where it was set, never its value.
 - A `--secret` value shows in the process list (`ps`); `AGENT6_WEB_SECRET` keeps it out.
-- A secret under 12 characters refuses to start.
+- A secret under 12 characters after that normalization refuses to start.
 - Anyone who can read the terminal, or your environment, has the secret.
 
 ## Pages
@@ -130,4 +130,4 @@ tailscale serve --bg 7658 # HTTPS + WireGuard, reachable on your tailnet
 
 - the tailnet decides who reaches the server and `tailscale serve` terminates HTTPS; each browser still [signs in](#sign-in) with the secret
 - the session cookie carries `Secure` when the proxy says it terminated HTTPS (`X-Forwarded-Proto: https`), so a browser never sends it over plain HTTP
-- a non-loopback bind sends the secret and the cookie over plain HTTP, where anyone on the network path can read them and then drive the agent, so it refuses without the opt-in: `[web].allow_non_loopback = true` for [`[web].host`](config.md#web), `--allow-non-loopback` for `--host`
+- a non-loopback bind sends the secret and the cookie over plain HTTP, where anyone on the network path can read them and then drive the agent, so it refuses without either opt-in: `[web].allow_non_loopback = true` or `--allow-non-loopback`, whether the host comes from [`[web].host`](config.md#web) or `--host`

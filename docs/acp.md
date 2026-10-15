@@ -45,7 +45,7 @@ What the CLI would print around the run (where the changes are, a stash notice, 
 
 The editor renders the buttons; the request names the tool call it gates and carries the prompt as that call's title.
 A prompt that gates no call (a pre-run question) announces a tool call of its own and closes it with the answer.
-The prompt and its answer go through the same gate every front-end answers through, so `agent6 attach` and the web show the run as waiting; the answer journals `source: "acp"`, or `"headless"` when the client declared it cannot be asked.
+The prompt and its answer go through the same gate every front-end answers through, so `agent6 attach` and the web show the run as waiting; the answer journals `source: "acp"`, `"frontend"` when another surface answered it, or `"headless"` when the client cannot answer it.
 
 - an unanswered request denies after five minutes, and the run continues without it
 - a command or an MCP tool call offers the four answers every front-end shares: "allow" (`allow_once`) and "deny" (`reject_once`) answer the one call, "allow all" (`allow_always`) grants that scope's later calls for the session, "deny all" (`reject_always`) withdraws the scope's tools for the session
@@ -69,6 +69,8 @@ A session is one conversation in one directory.
 - Mid-run steering: ACP has no message for a prompt while a turn is running.
   A session's follow-up is the next prompt, which resumes the run with that text as its first steering instruction.
 - `fs/*` and `terminal/*`: ACP lets the client own the filesystem and the terminal, and agent6 keeps both behind the jail the operator configured.
+- Free-text `ask_user` answers: the editor gets option buttons only.
+  A question without options returns an empty answer (see the [frontend cases](#approvals)).
 - Embedded resources in a prompt: text and `resource_link` blocks are read (a link rides in as its uri; the workspace boundary still decides what it reaches)
     - images and embedded resources are dropped; `promptCapabilities.embeddedContext` says so
 
