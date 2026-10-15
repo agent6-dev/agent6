@@ -418,7 +418,7 @@ def test_the_binding_window_meters_the_run_whatever_its_name() -> None:
     _record_plan(t, reading(10.5, 43.0))
     assert t.snapshot().plan_consumed == 3.0  # spark moved 3, primary 0.5
     _record_plan(t, reading(11.0, 46.0))
-    with pytest.raises(budget.BudgetExceededError, match=r"5-hour window \(gpt-5-6-spark\)"):
+    with pytest.raises(budget.BudgetExceededError, match="5-hour window"):
         t.check()
     # A reset on one window restarts that window's count from zero only.
     t2 = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=50.0)
@@ -430,11 +430,11 @@ def test_the_binding_window_meters_the_run_whatever_its_name() -> None:
 def test_percent_cap_names_the_window_whose_consumption_bound_it() -> None:
     """The max-percent error names the window that consumed the capped points."""
 
-    def reading(primary: float, spark: float) -> budget.PlanUsage:
+    def reading(primary: float, opus: float) -> budget.PlanUsage:
         return budget.PlanUsage(
             windows=(
-                budget.PlanWindow("primary", primary, 10080, 2e9),
-                budget.PlanWindow("gpt-5-6-spark", spark, 300, 2e9),
+                budget.PlanWindow("seven_day", primary, 10080, 2e9),
+                budget.PlanWindow("seven_day_opus", opus, 10080, 2e9),
             )
         )
 
@@ -442,11 +442,13 @@ def test_percent_cap_names_the_window_whose_consumption_bound_it() -> None:
     _record_plan(tracker, reading(90, 10))
     _record_plan(tracker, reading(91, 16))
 
-    with pytest.raises(budget.BudgetExceededError, match=r"5-hour window \(gpt-5-6-spark\)"):
+    with pytest.raises(budget.BudgetExceededError, match=r"7-day window \(opus\)"):
         tracker.check()
     # The latest reading need not carry the window that bound; the backend adds and drops windows.
-    _record_plan(tracker, budget.PlanUsage(windows=(budget.PlanWindow("primary", 92, 10080, 2e9),)))
-    with pytest.raises(budget.BudgetExceededError, match=r"5-hour window \(gpt-5-6-spark\)"):
+    _record_plan(
+        tracker, budget.PlanUsage(windows=(budget.PlanWindow("seven_day", 92, 10080, 2e9),))
+    )
+    with pytest.raises(budget.BudgetExceededError, match=r"7-day window \(opus\)"):
         tracker.check()
 
 
@@ -532,8 +534,8 @@ def test_credits_balance_units_convert_to_usd() -> None:
     assert usd("$inf") is None
 
 
-def test_plan_usage_line_names_a_window_with_no_reported_length() -> None:
-    """A binding window with `window_minutes` 0 is named without an invented length."""
+def test_plan_usage_line_does_not_invent_a_window_length() -> None:
+    """A window with no reported duration prints no invented length or backend key."""
     t = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
     _record_plan(
         t,
@@ -546,7 +548,8 @@ def test_plan_usage_line_names_a_window_with_no_reported_length() -> None:
     )
     route, spend = next(iter(t.snapshot().plans.items()))
     line = budget.format_plan_usage(route, spend, -1)
-    assert "3% of the window (secondary)" in line
+    assert "3% of the window (this run" in line
+    assert "secondary" not in line
     assert "0-minute" not in line
 
 
@@ -605,3 +608,67 @@ def test_each_subscription_plan_prints_its_own_named_line() -> None:
     summary = t.format_summary()
     assert "plan usage (chatgpt): 29% of the 7-day window" in summary
     assert "plan usage (claude): 54% of the 7-day window" in summary
+
+
+@pytest.mark.parametrize(
+    ("name", "minutes", "label"),
+    [
+        ("seven_day_overage_included", 10080, "7-day window"),
+        ("seven_day", 10080, "7-day window"),
+        ("five_hour", 300, "5-hour window"),
+        ("seven_day_opus", 10080, "7-day window"),
+        ("primary", 10080, "7-day window"),
+        ("gpt-5-6-spark", 300, "5-hour window"),
+        ("unknown", 0, "window"),
+        ("short", 30, "30-minute window"),
+    ],
+)
+def test_unique_duration_plan_output_omits_backend_keys(
+    name: str, minutes: int, label: str
+) -> None:
+    """A unique duration needs no key in the run receipt or fan-out reading."""
+    window = budget.PlanWindow(name, 30, minutes, 0)
+    usage = budget.PlanUsage(windows=(window,))
+    tracker = budget.BudgetTracker(max_usd=1, max_tokens_fallback=100, max_percent=-1)
+    _record_plan(tracker, usage)
+    assert budget.format_plan_window(window, usage.windows) == label
+    assert f"30% of the {label} (this run ~0 points; resets in 0h)" in tracker.format_summary()
+    assert budget.format_plan_reading("claude", usage) == (
+        f"plan usage (claude): 30% of the {label} (resets in 0h)"
+    )
+    assert tracker.snapshot().plan_latest == usage
+    assert usage.binding.name == name
+
+
+@pytest.mark.parametrize(
+    ("keys", "labels"),
+    [
+        (("seven_day_opus", "seven_day_overage"), ("opus", "overage")),
+        (("custom_alpha", "custom_beta"), ("alpha", "beta")),
+        (("primary", "secondary"), ("primary", "secondary")),
+    ],
+)
+def test_window_suffixes_come_from_shared_key_parts(
+    keys: tuple[str, str], labels: tuple[str, str]
+) -> None:
+    """Equal-duration keys retain their distinguishing underscore-separated parts."""
+    windows = tuple(budget.PlanWindow(key, 30, 10080, 0) for key in keys)
+    for window, label in zip(windows, labels, strict=True):
+        assert budget.format_plan_window(window, windows) == f"7-day window ({label})"
+
+
+def test_colliding_plan_windows_have_distinguishing_suffixes() -> None:
+    """A model-specific weekly window is distinguishable from the general weekly window."""
+    for name, label in [("seven_day", "7-day window"), ("seven_day_opus", "7-day window (opus)")]:
+        usage = budget.PlanUsage(
+            windows=tuple(
+                budget.PlanWindow(key, 30 if key == name else 10, 10080, 0)
+                for key in ("seven_day", "seven_day_opus")
+            )
+        )
+        tracker = budget.BudgetTracker(max_usd=1, max_tokens_fallback=100, max_percent=-1)
+        _record_plan(tracker, usage)
+        assert f"30% of the {label} (this run ~0 points; resets in 0h)" in tracker.format_summary()
+        assert budget.format_plan_reading("claude", usage) == (
+            f"plan usage (claude): 30% of the {label} (resets in 0h)"
+        )

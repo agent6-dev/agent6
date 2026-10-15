@@ -117,7 +117,10 @@ agent6 model worker claude/claude-sonnet-4-5
   Inside it every Claude Code capability is off: built-in tools, hooks, settings, CLAUDE.md, MCP servers, skills, slash commands, session files, auto-memory, auto-compaction.
 - `binary` names the executable (default `claude`, resolved on PATH).
   agent6 never reads the login under `~/.claude`; a `CLAUDE_CONFIG_DIR` in the environment selects a relocated one.
-- Spend is plan-metered, not dollar-metered: every round reports the account's 5-hour and 7-day windows, surfaces show the fuller one as `plan usage (<entry>): N% of the 7-day window (seven_day)`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run).
+- Spend is plan-metered, not dollar-metered: every round reports the account's 5-hour and 7-day windows.
+  The end-of-run summary and fan-out report show the fuller one as `plan usage (<entry>): N% of the 7-day window` (or `5-hour window`).
+  Window labels show the reported duration (or `window` when unknown), adding the distinguishing key suffix with the common prefix removed when reported windows share a duration.
+  `[budget].max_percent` caps the points one run may consume (`--max-percent` per run).
   Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
 - Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
   Refused: `effort = "off"` (`claude --effort` has no off value; use `low`).

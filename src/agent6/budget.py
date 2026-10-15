@@ -538,11 +538,12 @@ class BudgetTracker:
         elif self.max_percent > 0.0 and self._plan_consumed() >= self.max_percent:
             route, window, consumed = self._plan_consumption_binding()
             reading = self._plan_last_window[(route, window)]
+            windows = tuple(w for (r, _), w in self._plan_last_window.items() if r == route)
             self._exceeded_reason = (
                 f"plan budget exhausted: this run consumed ~{consumed:.1f}"
                 f" percentage points >= max_percent {self.max_percent:g}"
                 f" ({route}: account at {reading.used_percent:g}% on its"
-                f" {format_plan_window(reading)})"
+                f" {format_plan_window(reading, windows)})"
             )
         elif self.max_usd > 0.0 and self._credits_spent_usd >= self.max_usd:
             self._exceeded_reason = (
@@ -744,8 +745,16 @@ class BudgetTracker:
         return "\n".join(lines)
 
 
-def format_plan_window(window: PlanWindow) -> str:
-    """Return a plan window's duration and backend label for operator output."""
+def format_plan_window(window: PlanWindow, windows: tuple[PlanWindow, ...]) -> str:
+    """Label a window by duration, distinguishing equal durations by their keys' suffixes.
+
+    Args:
+        window: The window to label.
+        windows: The provider's reported windows, including this window.
+
+    Returns:
+        The duration with a distinguishing suffix when durations collide.
+    """
     minutes = window.window_minutes
     if minutes >= 1440:
         duration = f"{minutes / 1440:g}-day "
@@ -755,8 +764,19 @@ def format_plan_window(window: PlanWindow) -> str:
         duration = f"{minutes}-minute "
     else:
         duration = ""
-    which = "" if window.name == "primary" else f" ({window.name})"
-    return f"{duration}window{which}"
+    names = {w.name for w in windows if w.window_minutes == minutes}
+    suffix = ""
+    if len(names) > 1:
+        parts = [name.split("_") for name in names]
+        common = 0
+        for words in zip(*parts, strict=False):
+            if len(set(words)) != 1:
+                break
+            common += 1
+        distinguishing = "_".join(window.name.split("_")[common:])
+        if distinguishing:
+            suffix = f" ({distinguishing})"
+    return f"{duration}window{suffix}"
 
 
 def format_plan_reading(route: str, usage: PlanUsage) -> str:
@@ -772,7 +792,7 @@ def format_plan_reading(route: str, usage: PlanUsage) -> str:
     resets_h = max(0.0, (usage.resets_at - time.time()) / 3600)
     return (
         f"plan usage ({route}): {usage.used_percent:g}% of the"
-        f" {format_plan_window(usage.binding)} (resets in {resets_h:.0f}h)"
+        f" {format_plan_window(usage.binding, usage.windows)} (resets in {resets_h:.0f}h)"
     )
 
 
@@ -791,7 +811,8 @@ def format_plan_usage(route: str, spend: PlanSpend, max_percent: float) -> str:
     cap = "" if max_percent == -1 else f" of max_percent {max_percent:g}"
     resets_h = max(0.0, (plan.resets_at - time.time()) / 3600)
     return (
-        f"plan usage ({route}): {plan.used_percent:g}% of the {format_plan_window(plan.binding)}"
+        f"plan usage ({route}): {plan.used_percent:g}% of the"
+        f" {format_plan_window(plan.binding, plan.windows)}"
         f" (this run ~{spend.consumed:g} points{cap}; resets in {resets_h:.0f}h)"
         + (
             f"; purchased credits balance {plan.credits_balance or 'present'}"
