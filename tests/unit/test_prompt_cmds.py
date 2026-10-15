@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import subprocess
@@ -57,8 +58,6 @@ def test_prompt_show_leaves_mcp_tools_pending(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Configured MCP servers remain undiscovered in the offline preview."""
-    import json
-
     repo = _git_repo(tmp_path)
     _isolate(tmp_path, monkeypatch, repo)
     config = tmp_path / "mcp.toml"
@@ -116,8 +115,6 @@ def test_prompt_show_prints_the_tools_and_the_first_message(
     the model blind. `prompt show` prints all three, and `--json` the same as one object, with the
     tool list this config actually exposes.
     """
-    import json
-
     repo = _git_repo(tmp_path)
     _isolate(tmp_path, monkeypatch, repo)
     assert prompt_cmds._cmd_prompt_show(None, mode="run") == 0
