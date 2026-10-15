@@ -56,7 +56,9 @@ The start banner's budget notices name each model once, with the roles that use 
 ## Follow and steer a run
 
 `agent6 attach [<id>]` follows a run's conversation, or a machine's state, live.
-Ids are exact or a unique prefix and default to the most recent run.
+Ids are exact or an unambiguous prefix and default to the most recent run.
+A prefix selects the single matching session whose full id prefixes every other match, provided all matches are in the same bucket (for example, a parallel coordinator and its lanes).
+Lanes remain reachable by their own ids.
 
 ```sh
 agent6 attach                 # follow live; --raw tails events, --tui full screen, --json one snapshot

@@ -94,9 +94,9 @@ def test_friendly_token_suffix_time_sortable() -> None:
     assert suffixes == sorted(suffixes)
 
 
-def _bucket(state_dir: pathlib.Path, *ids: str) -> None:
+def _bucket(state_dir: pathlib.Path, *ids: str, bucket: str = "plans") -> None:
     for sid in ids:
-        (state_dir / "sessions" / "plans" / sid).mkdir(parents=True)
+        (state_dir / "sessions" / bucket / sid).mkdir(parents=True)
 
 
 def test_resolve_exact_match(tmp_path: pathlib.Path) -> None:
@@ -122,6 +122,41 @@ def test_resolve_ambiguous_prefix(tmp_path: pathlib.Path) -> None:
         id.resolve_session(tmp_path, "sunny", buckets=("plans",))
 
 
+def test_resolve_fanout_prefix(tmp_path: pathlib.Path) -> None:
+    """A coordinator's prefix resolves despite its lanes, which remain addressable."""
+    coordinator = "sweet-marsh-DFQQ4G"
+    _bucket(tmp_path, coordinator, f"{coordinator}-l1", f"{coordinator}-l2", bucket="runs")
+    for query in ("sweet-marsh", coordinator):
+        resolved = id.resolve_session(tmp_path, query)
+        assert (resolved.session_id, resolved.subdir) == (coordinator, "runs")
+    for lane in (1, 2):
+        sid = f"{coordinator}-l{lane}"
+        assert id.resolve_session(tmp_path, sid).session_id == sid
+    with pytest.raises(id.SessionIdError, match="ambiguous"):
+        id.resolve_session(tmp_path, f"{coordinator}-l")
+
+    _bucket(tmp_path, "sweet-marsh-AAAA11", bucket="runs")
+    with pytest.raises(id.SessionIdError, match="ambiguous"):
+        id.resolve_session(tmp_path, "sweet-marsh")
+
+
+def test_resolve_duplicate_parent_is_ambiguous(tmp_path: pathlib.Path) -> None:
+    """The same parent id in two buckets cannot win over its descendants."""
+    _bucket(tmp_path, "sweet-marsh-DFQQ4G")
+    _bucket(tmp_path, "sweet-marsh-DFQQ4G", "sweet-marsh-DFQQ4G-l1", bucket="runs")
+    for query in ("sweet-marsh", "sweet-marsh-DFQQ4G"):
+        with pytest.raises(id.SessionIdError, match="ambiguous"):
+            id.resolve_session(tmp_path, query)
+
+
+def test_resolve_parent_across_buckets_is_ambiguous(tmp_path: pathlib.Path) -> None:
+    """A shorter run id cannot take precedence over a matching plan prefix."""
+    _bucket(tmp_path, "sweet-marsh-DFQQ4G-l1")
+    _bucket(tmp_path, "sweet-marsh-DFQQ4G", bucket="runs")
+    with pytest.raises(id.SessionIdError, match="ambiguous"):
+        id.resolve_session(tmp_path, "sweet-marsh")
+
+
 def test_resolve_no_match(tmp_path: pathlib.Path) -> None:
     _bucket(tmp_path, "sunny-otter-K4Q7B2")
     with pytest.raises(id.SessionIdError, match="no session matches"):
@@ -135,7 +170,7 @@ def test_a_bucket_scoped_query_ignores_the_other_buckets(tmp_path: pathlib.Path)
     run of the same prefix.
     """
     _bucket(tmp_path, "sunny-otter-K4Q7B2")
-    (tmp_path / "sessions" / "runs" / "sunny-otter-AAAA11").mkdir(parents=True)
+    _bucket(tmp_path, "sunny-otter-AAAA11", bucket="runs")
     assert (
         id.resolve_session(tmp_path, "sunny", buckets=("plans",)).session_id == "sunny-otter-K4Q7B2"
     )

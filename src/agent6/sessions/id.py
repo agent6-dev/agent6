@@ -134,7 +134,7 @@ def unused_session_id(state_dir: pathlib.Path, bucket: str) -> str:
 def resolve_session(
     state_dir: pathlib.Path, query: str, *, buckets: Sequence[str] = layout.SESSION_BUCKETS
 ) -> layout.SessionLayout:
-    """Resolve an id or a unique prefix to one session.
+    """Resolve an id or prefix, preferring a parent only within a single bucket.
 
     Args:
         state_dir: The repo's state dir.
@@ -152,6 +152,12 @@ def resolve_session(
         raise SessionIdError("empty run id")
     matches = layout.session_matches(state_dir, query, buckets=buckets)
     if len(matches) > 1:
+        shortest = min(matches, key=lambda match: len(match.session_id))
+        if matches.count(shortest) == 1 and all(
+            match.subdir == shortest.subdir and match.session_id.startswith(shortest.session_id)
+            for match in matches
+        ):
+            return shortest
         preview = ", ".join(f"{m.subdir}/{m.session_id}" for m in matches[:5])
         raise SessionIdError(f"run id {query!r} is ambiguous ({len(matches)} matches): {preview}")
     if not matches:
