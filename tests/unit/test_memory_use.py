@@ -88,8 +88,8 @@ def test_a_read_under_the_store_counts_the_fact(tmp_path: pathlib.Path) -> None:
     _read(wf, state, str(store / "quirk.md"))
     _read(wf, state, str(store / "other.md"))
     assert state.memory.read == {"quirk": 2, "other": 1}
-    # The index is not a fact; a workspace read is not memory.
-    _read(wf, state, str(store / "MEMORY.md"))
+    # A name outside the store's rule is not a fact; a workspace read is not memory.
+    _read(wf, state, str(store / "Other.md"))
     _read(wf, state, "src/app.py")
     assert state.memory.read == {"quirk": 2, "other": 1}
     assert state.memory.wrote == []
@@ -104,9 +104,10 @@ def test_an_edit_under_the_store_records_the_fact_name(tmp_path: pathlib.Path) -
     assert state.memory.wrote == ["quirk"]
     assert state.memory.created == []
     assert state.memory.written is True
-    # An index-only edit is a memory write for the nudges, but names no fact.
+    # An edit under the store of a name outside the rule is a memory write for the nudges,
+    # but names no fact.
     state = _state()
-    _edit(wf, state, str(store / "MEMORY.md"))
+    _edit(wf, state, str(store / "Other.md"))
     assert state.memory.written is True
     assert state.memory.wrote == []
 
@@ -124,7 +125,7 @@ def test_the_edit_tools_create_marks_the_fact_created(tmp_path: pathlib.Path) ->
     _edit(wf, state, str(store / "fresh.md"), created=True)
     _patch(wf, state, f"*** Begin Patch\n*** Add File: {store}/added.md\n+x\n*** End Patch")
     _patch(wf, state, f"--- {store}/quirk.md\n+++ {store}/quirk.md\n@@ -1 +1 @@\n-a\n+b\n")
-    _patch(wf, state, f"--- /dev/null\n+++ {store}/MEMORY.md\n@@ -0,0 +1 @@\n+- x\n")
+    _patch(wf, state, f"--- /dev/null\n+++ {store}/Other.md\n@@ -0,0 +1 @@\n+- x\n")
     assert state.memory.wrote == ["quirk", "fresh", "added"]
     assert state.memory.created == ["fresh", "added"]
 

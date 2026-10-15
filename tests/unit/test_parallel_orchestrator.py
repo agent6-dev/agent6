@@ -1183,7 +1183,7 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     """A lane's memory files are carried into the origin at import.
 
     The harness nudges a lane to write memory like any run; an import that carries only its rulings
-    before tearing the lane's state dir down loses every memory file and index line the lane wrote.
+    before tearing the lane's state dir down loses every memory file the lane wrote.
     A name the origin already holds with other content (written before the lane was seeded, so not a
     seeded copy) is held back in the lane's imported run dir, and the note says where.
     """

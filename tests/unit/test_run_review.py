@@ -253,7 +253,9 @@ def test_the_digest_clips_a_runaway_index_like_the_prompt_does(repo: pathlib.Pat
         memory.add(layout.state_dir, f"fact-{i:03d}", "x" * 60)
     d = run_review.run_digest(layout)
     assert len(d.memory_index) <= memory.INDEX_INJECT_CAP
-    assert d.memory_index.endswith("... (index clipped; read MEMORY.md for the rest)")
+    assert d.memory_index.endswith(
+        "... (index clipped; the rest are <name>.md files in the memory dir)"
+    )
 
 
 def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:

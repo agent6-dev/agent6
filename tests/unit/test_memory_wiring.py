@@ -46,11 +46,11 @@ def _build(mode: str, index: str, tmp_path: pathlib.Path) -> str:
 def test_run_mode_always_carries_the_memory_header(tmp_path: pathlib.Path) -> None:
     out = _build("run", "", tmp_path)
     assert "<memory>" in out
-    assert "(none recorded yet; an index line is `- <name>: <one line>`)" in out
+    assert "(none recorded yet)" in out
     memory = out.split("<memory>")[1].split("</memory>")[0]
     assert "edit tools" in memory
     assert "deleted" in memory
-    assert "<full first line of the fact>" in pb.memory_block("", "/state/memory", mode="run")
+    assert "first line concise" in pb.memory_block("", "/state/memory", mode="run")
 
 
 def test_index_content_renders_and_clips(tmp_path: pathlib.Path) -> None:
@@ -64,12 +64,12 @@ def test_index_content_renders_and_clips(tmp_path: pathlib.Path) -> None:
 
 
 def test_an_index_of_one_long_line_keeps_its_head(tmp_path: pathlib.Path) -> None:
-    """A single index line longer than the cap rendered the clip marker alone."""
+    """A single index entry longer than the cap rendered the clip marker alone."""
     big = "- fact: " + "x" * (agent6_memory.INDEX_INJECT_CAP + 500)
     out = _build("run", big, tmp_path)
     assert "index clipped" in out
     assert "- fact: " + "x" * 100 in out
-    assert "... (index clipped; read MEMORY.md for the rest)" in out
+    assert "... (index clipped; the rest are <name>.md files in the memory dir)" in out
     body = out.split("<memory>", 1)[1].split("\n\n", 1)[1].split("\n</memory>", 1)[0]
     assert len(body) <= agent6_memory.INDEX_INJECT_CAP
 
@@ -114,7 +114,7 @@ def test_tools_reach_the_memory_dir_and_nothing_else_in_state(
     d, state = _dispatcher(tmp_path, monkeypatch)
     mem = agent6_memory.memory_dir(state)
 
-    out = d.dispatch("read_file", {"path": str(mem / "MEMORY.md")}).to_wire()
+    out = d.dispatch("read_file", {"path": str(mem / "seeded.md")}).to_wire()
     assert "seeded" in out["content"]
 
     d.dispatch(
@@ -145,7 +145,7 @@ def test_memory_grant_absent_without_state_dir(tmp_path: pathlib.Path) -> None:
     cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
     d = dispatch.ToolDispatcher(root=repo, config=cfg)
     with pytest.raises(errors.ToolError):
-        d.dispatch("read_file", {"path": str(tmp_path / "state" / "memory" / "MEMORY.md")})
+        d.dispatch("read_file", {"path": str(tmp_path / "state" / "memory" / "fact.md")})
 
 
 def test_the_memory_dir_exists_the_moment_the_grant_does(

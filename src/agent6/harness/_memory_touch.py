@@ -24,7 +24,7 @@ def memory_store_facts(
     root, so only an absolute path reaches it. `apply_patch` names its files in
     the headers; every one must be under the store, since a patch over the store
     and the workspace together is workspace work. A fact is a file the store's
-    name rule accepts; the index, the rulings and any other file are not.
+    name rule accepts; other files are not.
 
     Args:
         state_dir: The run's state directory, or None when no store is wired.

@@ -290,7 +290,7 @@ QUESTION_NUDGE = (
 MEMORY_FLIP_NUDGE = (
     "[harness memory] Verify flipped green and nothing is recorded in the"
     " memory dir this run; it takes a durable non-obvious repo fact as a"
-    " general rule (a new <name>.md plus its MEMORY.md line)."
+    " general rule (a <name>.md with a concise first line and details below)."
 )
 
 

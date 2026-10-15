@@ -256,7 +256,7 @@ Every path they take resolves through `Workspace`:
 - A file is read only when its real path stays inside the workspace root (the git root for `AGENTS.md`), outside `.git` and outside the hidden set; anything else reads as absent.
 - A symlink that stays inside the root is followed (`AGENTS.md -> docs/AGENTS.md`).
 
-**Repo memory** is a prompt-injection persistence channel: `MEMORY.md` joins the system prompt of later runs on the same repo.
+**Repo memory** is a prompt-injection persistence channel: the rendered index joins the system prompt of later runs on the same repo.
 
 - Entries are inert data.
 - The injected index is size-capped and framed as untrusted.

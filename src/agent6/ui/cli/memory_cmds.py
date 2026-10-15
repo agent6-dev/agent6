@@ -38,7 +38,7 @@ def _cmd_memory_add(name: str, body: str) -> int:
 
 
 def _cmd_memory_list() -> int:
-    """Print the whole index, each entry's use record, then the files the index omits.
+    """Print the rendered index, each entry's use record, then the store files that are not facts.
 
     A run's prompt gets the index clipped; this prints all of it.
 
@@ -46,23 +46,15 @@ def _cmd_memory_list() -> int:
         The exit code, 0.
     """
     state = _state()
-    text = memory.index_text(state)
-    orphans = memory.unindexed_names(state)
-    if not text:
+    entries = memory.index_entries(state)
+    if not entries:
         print(f"(no memories; files live under {memory.memory_dir(state)})")
     use = memory.read_use(state)
-    for line in text.splitlines():
-        print(line)
-        name = memory.index_name(line)
-        if name is None:
-            continue
-        if not (memory.memory_dir(state) / f"{name}.md").is_file():
-            # A line with no file is a prompt naming a fact that will not open.
-            print("    no file: nothing recorded under that name; `memory rm` drops the line")
-            continue
+    for name, first in entries:
+        print(f"- {name}: {first}")
         print(f"    {format_use(use.get(name, memory.MemoryUse()))}")
-    if orphans:
-        print(f"not in the index (no run sees them; `memory rm` deletes): {', '.join(orphans)}")
+    if ignored := memory.ignored_names(state):
+        print(f"ignored (not a fact file): {', '.join(ignored)}")
     return 0
 
 
@@ -122,7 +114,7 @@ def _cmd_memory_decisions() -> int:
 
 
 def _cmd_memory_rm(name: str, *, yes: bool = False) -> int:
-    """Delete a memory and its index line, asking first on a terminal.
+    """Delete a memory file, asking first on a terminal.
 
     Args:
         name: The memory.
@@ -136,7 +128,7 @@ def _cmd_memory_rm(name: str, *, yes: bool = False) -> int:
         try:
             first = memory.show(state, name).strip().splitlines()[:1]
         except memory.MemoryStoreError:
-            # No file under the name: `remove` drops a stray index line, or refuses.
+            # `remove` reports the missing file.
             first = None
         if first is not None and not _steer.delete_confirmed(
             f"memory rm will delete {name}\n  {first[0][:100] if first else '(an empty file)'}",

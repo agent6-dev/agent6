@@ -46,6 +46,22 @@ def test_add_list_show_rm_roundtrip(env: pathlib.Path, capsys: pytest.CaptureFix
     assert "no memories" in capsys.readouterr().out
 
 
+def test_list_names_the_store_files_that_are_not_facts(
+    env: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A store entry outside the fact rule (a stale `MEMORY.md`) is state the list shows."""
+    memory_cmds._cmd_memory_add("a-fact", "A first.")
+    store = memory.memory_dir(paths.state_dir(pathlib.Path.cwd()))
+    (store / "MEMORY.md").write_text("- a-fact: An older line.\n", encoding="utf-8")
+    (store / "notes.txt").write_text("x\n", encoding="utf-8")
+    capsys.readouterr()
+    assert memory_cmds._cmd_memory_list() == 0
+    out = capsys.readouterr().out
+    assert out.startswith("- a-fact: A first.\n    written ")
+    assert out.endswith("\nignored (not a fact file): MEMORY.md, notes.txt\n")
+    assert "An older line" not in out
+
+
 def test_bad_name_refuses_loud(env: pathlib.Path) -> None:
     with pytest.raises(memory.MemoryStoreError, match="bad memory name"):
         memory_cmds._cmd_memory_add("Bad Name", "x")
@@ -110,21 +126,6 @@ def test_decisions_reads_an_empty_file_as_none_recorded(
     assert "no rulings recorded" in capsys.readouterr().out
 
 
-def test_rm_keeps_the_index_bytes_it_does_not_touch(tmp_path: pathlib.Path) -> None:
-    """`memory rm` keeps the index bytes it does not touch.
-
-    An index rewrite read through the replacing decoder turns every byte that is not UTF-8 anywhere
-    in the file into U+FFFD.
-    """
-    idx = memory.index_path(tmp_path)
-    idx.parent.mkdir(parents=True, exist_ok=True)
-    idx.write_bytes(b"# Memory index\n\n- one: first\n- two: second\nnote: caf\xe9 build\n")
-    (idx.parent / "one.md").write_text("first\n", encoding="utf-8")
-    memory.remove(tmp_path, "one")
-    assert idx.read_bytes() == b"# Memory index\n\n- two: second\nnote: caf\xe9 build\n"
-    assert not (idx.parent / "one.md").exists()
-
-
 def test_list_shows_who_wrote_and_read_each_fact(
     env: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -142,36 +143,10 @@ def test_list_shows_who_wrote_and_read_each_fact(
     assert "    written " in out
     assert "by operator" in out
     assert "read 3 times, last 1970-01-02 by run-a" in out
-    # A line whose file never landed (a model's write refused after its index
-    # edit) says so, in place of a use line for a fact that will not open.
-    with (memory.memory_dir(state) / "MEMORY.md").open("a", encoding="utf-8") as fh:
-        fh.write("- ghost: A fact with no file.\n")
-    assert memory_cmds._cmd_memory_list() == 0
-    assert "- ghost: A fact with no file.\n    no file:" in capsys.readouterr().out
     # A fact the record never saw (written by hand) still reads as never read.
     (memory.memory_dir(state) / "by-hand.md").write_text("By hand.\n", encoding="utf-8")
-    with (memory.memory_dir(state) / "MEMORY.md").open("a", encoding="utf-8") as fh:
-        fh.write("- by-hand: By hand.\n")
     assert memory_cmds._cmd_memory_list() == 0
     assert "- by-hand: By hand.\n    never read\n" in capsys.readouterr().out
-
-
-def test_list_names_orphans_when_the_index_is_absent_or_blank(
-    env: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """The one orphan whose line went was the only entry.
-
-    The list said "no memories" and named nothing to prune.
-    """
-    memory_cmds._cmd_memory_add("only", "The only fact.")
-    state = paths.state_dir(pathlib.Path.cwd())
-    memory.index_path(state).unlink()
-    assert (memory.memory_dir(state) / "only.md").is_file()
-    capsys.readouterr()
-    assert memory_cmds._cmd_memory_list() == 0
-    out = capsys.readouterr().out
-    assert "no memories" in out
-    assert "not in the index (no run sees them; `memory rm` deletes): only" in out
 
 
 def test_format_use_says_each_state_plainly() -> None:
@@ -201,27 +176,3 @@ def test_format_use_says_each_state_plainly() -> None:
     )
     # A count without a last reader (a hand-edited record) still counts.
     assert memory_cmds.format_use(memory.MemoryUse(reads=2)) == "read 2 times"
-
-
-def test_list_names_the_files_the_index_no_longer_lists(
-    env: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """`memory list` names the files the index does not list.
-
-    A run that drops a fact's index line leaves its file behind, invisible to every later run; the
-    operator pruning the store needs to see it under the index.
-    """
-    memory_cmds._cmd_memory_add("kept", "A fact that stays.")
-    memory_cmds._cmd_memory_add("dropped", "A fact whose line went.")
-    state = paths.state_dir(pathlib.Path.cwd())
-    lines = memory.index_path(state).read_text(encoding="utf-8").splitlines()
-    memory.index_path(state).write_text(
-        "\n".join(ln for ln in lines if not ln.startswith("- dropped:")) + "\n", encoding="utf-8"
-    )
-    assert (memory.memory_dir(state) / "dropped.md").is_file()
-    capsys.readouterr()
-    assert memory_cmds._cmd_memory_list() == 0
-    out = capsys.readouterr().out
-    assert "- kept: A fact that stays." in out
-    assert "- dropped:" not in out
-    assert "not in the index (no run sees them; `memory rm` deletes): dropped" in out

@@ -166,7 +166,8 @@ Over a red gate it returns under the same cap, counted apart from the model's ow
 - `/compact [focus]` compacts on demand
 - `/pin <text>` survives every restart verbatim and persists in the snapshot; over the 4000-char total cap the pinning is refused loudly and the text still lands as an ordinary steer
 
-**Repo memory**: one fact per markdown file under `<state-dir>/memory/`, plus a one-line-per-entry `MEMORY.md` index.
+**Repo memory**: one fact per markdown file under `<state-dir>/memory/`, with an index rendered from each file's first non-empty line.
+A fact file is `<name>.md` under the name rule, a regular file; any other entry in the store is ignored, and `agent6 memory list` names it.
 Outside the store, `<state-dir>/decisions.md` holds the operator's rulings beside `memory-use.json`.
 The harness appends every `ask_user` answer and every steer that answered a question, verbatim with its question, session and time; an identical ruling already on file is recorded once.
 The model sees it first (a `<decisions>` block, re-shown after a compaction restart) and never opens or writes the file; `agent6 memory decisions` prints it.
@@ -178,7 +179,7 @@ A finish-time check reports any ruling missing from the file.
 - run mode writes; plan and ask read; machine modes see none
 - models never write unprompted, so the loop sends one advisory per run, when verify first recovers green with nothing recorded; `[harness].memory_advisory = false` turns it off
 - `agent6 memory add/list/show/rm` is the operator surface over the same files
-- `<state-dir>/memory-use.json`, harness-written at each execution's end: per fact, the write that created it (when the record saw it), every write as a (session, when) touch in order, and its reads (count, last reader), the entry gone once the fact is deleted (by the model or `memory rm`); `memory list` prints it under each entry, and names the files the index does not list, so a stale, never-read or orphaned fact is visible where it is pruned
+- `<state-dir>/memory-use.json`, harness-written at each execution's end: per fact, the write that created it (when the record saw it), every write as a (session, when) touch in order, and its reads (count, last reader), the entry gone once the fact is deleted (by the model or `memory rm`); `memory list` prints it under each entry, so a stale or never-read fact is visible where it is pruned
 
 **Skills** resolve at run start from `<data-dir>/skills/` plus `[skills].extra_dirs`, through one resolution: the `<skills>` index and what `use_skill` serves cannot diverge.
 

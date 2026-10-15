@@ -441,7 +441,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     mem_sub = mem_p.add_subparsers(dest="memory_command", required=True, metavar="<subcommand>")
-    mem_add = _common._sub(mem_sub, "add", help="Write <name>.md and its index line.")
+    mem_add = _common._sub(mem_sub, "add", help="Write <name>.md.")
     mem_add.add_argument(
         "name",
         help=(
@@ -449,15 +449,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " start with a letter or digit. A trailing dash is allowed."
         ),
     )
-    mem_add.add_argument("body", help="The fact (in quotes; first line becomes the index hook).")
-    _common._sub(mem_sub, "list", help="Print the MEMORY.md index.")
+    mem_add.add_argument("body", help="The fact (in quotes; the index shows its first line).")
+    _common._sub(mem_sub, "list", help="Print the rendered memory index.")
     mem_show = _common._sub(mem_sub, "show", help="Print one memory file.")
     mem_show.add_argument("name", help="Memory name.")
     mem_rm = _common._sub(
         mem_sub,
         "rm",
         help=(
-            "Delete a memory file and its index line. On a terminal it shows the memory and"
+            "Delete a memory file. On a terminal it shows the memory and"
             " asks [y/N] first; with no terminal it deletes without asking."
         ),
     )

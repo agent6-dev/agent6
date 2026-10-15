@@ -289,7 +289,7 @@ agent6 web [target]                                  # the browser UI on 127.0.0
 agent6 acp                                           # speak the Agent Client Protocol on stdio (see acp.md)
 agent6 check [section]                               # sandbox, config (provider keys), boundaries, MCP, verify
 agent6 init [--yes] [--ecosystem E]                  # the setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md
-agent6 memory add|list|show|rm                       # each fact's full first line is its index hook
+agent6 memory add|list|show|rm                       # the index renders each fact's first non-empty line
 agent6 memory decisions                              # the operator rulings the harness recorded
 agent6 skills install|update|list                    # skills from a repo, a directory or a SKILL.md URL
 agent6 skills enable NAME [--always]                 # a skill the model may use, or one it always gets; disable, remove
