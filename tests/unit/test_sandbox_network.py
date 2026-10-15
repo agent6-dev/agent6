@@ -126,6 +126,10 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     captured: dict[str, Any] = {}
 
+    class _CapturingWf(_FakeWf):
+        def __init__(self, **kw: object) -> None:
+            captured["harness"] = kw
+
     def _disp(**kw: object) -> object:
         captured.update(kw)
         return object()
@@ -133,7 +137,7 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def _prov(*_a: object, **_k: object) -> object:
         return object()
 
-    monkeypatch.setattr(harness_loop, "Harness", _FakeWf)
+    monkeypatch.setattr(harness_loop, "Harness", _CapturingWf)
     monkeypatch.setattr(providers, "build_role_provider", _prov)
     monkeypatch.setattr(providers, "reviewer_seat_provider", _prov)
     monkeypatch.setattr(dispatch, "ToolDispatcher", _disp)
@@ -162,16 +166,20 @@ def test_run_one_drops_out_of_cwd_protect_paths(
     assert captured["extra_protect_paths"] == (inside.resolve(),)
 
 
-def test_run_one_exports_commit_identity(
+_GIT_IDENTITY_KEYS = (
+    "GIT_AUTHOR_NAME",
+    "GIT_COMMITTER_NAME",
+    "GIT_AUTHOR_EMAIL",
+    "GIT_COMMITTER_EMAIL",
+)
+
+
+def test_run_one_hands_the_commit_identity_to_the_chain_and_the_jail_not_the_process(
     iso: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _stub_loop(monkeypatch)
-    for key in (
-        "GIT_AUTHOR_NAME",
-        "GIT_COMMITTER_NAME",
-        "GIT_AUTHOR_EMAIL",
-        "GIT_COMMITTER_EMAIL",
-    ):
+    """The host-resolved identity is the state's `[git.commit]`; `os.environ` never carries it."""
+    captured = _stub_loop(monkeypatch)
+    for key in _GIT_IDENTITY_KEYS:
         monkeypatch.delenv(key, raising=False)
     req = machine_agent.MachineAgentRequest(
         cwd=iso,
@@ -184,7 +192,9 @@ def test_run_one_exports_commit_identity(
     )
     out = machine_agent.run_one(req)
     assert out.reason == "finish_session"
-    assert os.environ["GIT_AUTHOR_NAME"] == "Machine Bot"
-    assert os.environ["GIT_COMMITTER_NAME"] == "Machine Bot"
-    assert os.environ["GIT_AUTHOR_EMAIL"] == "bot@example.com"
-    assert os.environ["GIT_COMMITTER_EMAIL"] == "bot@example.com"
+    assert not any(key in os.environ for key in _GIT_IDENTITY_KEYS)
+    chain = captured["harness"]["chain"]
+    assert (chain.identity.name, chain.identity.email) == ("Machine Bot", "bot@example.com")
+    # The dispatcher's config is what the jail policy reads its GIT_* env from.
+    commit = captured["config"].git.commit
+    assert (commit.name, commit.email) == ("Machine Bot", "bot@example.com")

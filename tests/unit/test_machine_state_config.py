@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import pathlib
 from typing import Any
 from unittest import mock
@@ -547,6 +548,24 @@ def test_the_operator_flags_apply_after_the_overlays(
     assert configs.states["store"].config.sandbox.run_commands == "no"
 
 
+def test_no_commands_and_disable_sandbox_reach_every_resolved_config(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--no-commands` and `--dangerously-disable-sandbox` land in the configs, not the env."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", raising=False)
+    _operator(OPERATOR + 'run_commands = "yes"\nisolation = "strict"\n')
+    spec = load_machine(_write(tmp_path, MACHINE))
+    configs = resolve_configs(
+        spec, tmp_path, _setup.detect_env(), disable_sandbox=True, no_commands=True
+    )
+    for resolved in (configs.operator, configs.machine, *configs.states.values()):
+        assert resolved.isolation == "none"
+        assert resolved.config.sandbox.isolation == "none"
+        assert resolved.config.sandbox.run_commands == "no"
+    assert "AGENT6_DANGEROUSLY_DISABLE_SANDBOX" not in os.environ
+
+
 # --- the two enforcement sites read the state's own config ------------------------------------
 
 
@@ -601,6 +620,82 @@ def test_each_agent_state_gets_its_own_overlay(
     sandbox = seen["judge"].overlay["sandbox"]
     assert sandbox["extra_write_paths"] == ["/srv/outbox"] and sandbox["extra_read_paths"] == []
     assert seen["judge"].overlay["harness"]["max_iterations"] == 7
+
+
+@pytest.mark.usefixtures("working_jail")
+def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--no-commands` and `--dangerously-disable-sandbox` ride the dispatched overlay only."""
+    from agent6.app import providers
+    from agent6.harness import _snapshot
+    from agent6.harness import loop as harness_loop
+    from agent6.machine import AgentRequest
+    from agent6.tools import dispatch
+
+    keys = ("AGENT6_NO_COMMANDS", "AGENT6_DANGEROUSLY_DISABLE_SANDBOX")
+    for key in keys:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.chdir(tmp_path)
+    _operator(OPERATOR + 'run_commands = "yes"\n')
+    seen: dict[str, machine_agent.StateOverlay] = {}
+
+    def fake_build(
+        overlays: dict[str, machine_agent.StateOverlay], *_a: object, **_k: object
+    ) -> Any:
+        seen.update(overlays)
+
+        def run_agent(*_a: object, **_k: object) -> AgentExecResult:
+            return AgentExecResult(reason="finish_session", payload={"ok": True})
+
+        return run_agent
+
+    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    said: list[str] = []
+    reporter = app_reporter.Reporter(out=said.append, err=said.append)
+    code = run.run_machine(
+        _write(tmp_path, MACHINE), reporter, disable_sandbox=True, no_commands=True
+    )
+    assert code == 0, said
+    assert not any(key in os.environ for key in keys)
+    assert seen["judge"].isolation == "none"
+
+    # The subprocess side: the overlay the supervisor dispatched is the child's effective config.
+    class _FakeWf:
+        def __init__(self, **_kw: object) -> None:
+            pass
+
+        def run(self, _prompt: str) -> _snapshot.SessionResult:
+            return _snapshot.SessionResult(
+                reason="finish_session", completed=True, summary="d", iterations=1, tool_calls=0
+            )
+
+    captured: dict[str, Any] = {}
+
+    def _disp(**kw: object) -> object:
+        captured.update(kw)
+        return object()
+
+    def _prov(*_a: object, **_k: object) -> object:
+        return object()
+
+    monkeypatch.setattr(harness_loop, "Harness", _FakeWf)
+    monkeypatch.setattr(providers, "build_role_provider", _prov)
+    monkeypatch.setattr(providers, "reviewer_seat_provider", _prov)
+    monkeypatch.setattr(dispatch, "ToolDispatcher", _disp)
+    req = machine_agent.MachineAgentRequest(
+        cwd=tmp_path,
+        root=tmp_path,
+        overlay=seen["judge"].overlay,
+        isolation=seen["judge"].isolation,
+        transcript_dir=tmp_path / "tr",
+        request=AgentRequest(prompt="judge", timeout_s=5.0, state_name="judge"),
+    )
+    assert machine_agent.run_one(req).reason == "finish_session"
+    assert captured["config"].sandbox.run_commands == "no"
+    assert captured["config"].sandbox.isolation == "none"
+    assert captured["isolation"] == "none"
+    assert not any(key in os.environ for key in keys)
 
 
 def test_an_agent_request_naming_no_state_ends_as_an_error(tmp_path: pathlib.Path) -> None:

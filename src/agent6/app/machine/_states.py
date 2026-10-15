@@ -207,16 +207,21 @@ def resolve_configs(
     env: detect.Environment,
     *,
     config_path: pathlib.Path | None = None,
+    disable_sandbox: bool = False,
     auto_approve: bool = False,
     no_commands: bool = False,
 ) -> MachineConfigs:
     """Resolve the operator's config, the machine's and each state's, and check the bounds.
+
+    The three flags land in every resolved config, so each agent state's overlay and each
+    tool state's policy carry them; the supervisor's own environment stays as it was.
 
     Args:
         spec: The machine.
         cwd: The repository whose config layers apply.
         env: The detected host environment.
         config_path: The `--config FILE` layer, part of the operator's ceiling.
+        disable_sandbox: The invocation's `--dangerously-disable-sandbox`.
         auto_approve: The invocation's `--auto-approve`.
         no_commands: The invocation's `--no-commands`.
 
@@ -229,9 +234,15 @@ def resolve_configs(
             carries every table's problems.
         IsolationUnavailableError: An explicit isolation level is unavailable on this host.
     """
+
+    def with_flags(cfg: Config) -> Config:
+        return cfg.with_sandbox_overrides(
+            disable_sandbox=disable_sandbox, auto_approve=auto_approve, no_commands=no_commands
+        )
+
     operator_eff = layer.load_effective(cwd, config_path)
     operator = operator_eff.config
-    operator_isolation = detect.resolve_isolation(operator.sandbox.isolation, env)
+    operator_isolation = detect.resolve_isolation(with_flags(operator).sandbox.isolation, env)
 
     def one(
         state_overlay: dict[str, object] | None, where: str
@@ -242,12 +253,9 @@ def resolve_configs(
             )
         except ConfigError as exc:
             raise ConfigError(f"{where}: {exc}") from exc
-        isolation = detect.resolve_isolation(eff.config.sandbox.isolation, env)
-        resolved = StateConfig(
-            eff.config.with_sandbox_overrides(auto_approve=auto_approve, no_commands=no_commands),
-            eff.explicit_leaves,
-            isolation,
-        )
+        cfg = with_flags(eff.config)
+        isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
+        resolved = StateConfig(cfg, eff.explicit_leaves, isolation)
         return resolved, sandbox_widening(operator, operator_isolation, eff.config, isolation)
 
     machine, machine_wide = one(None, "the machine's [config]")
@@ -271,11 +279,7 @@ def resolve_configs(
     if widened:
         raise SandboxWidenedError(widened)
     return MachineConfigs(
-        StateConfig(
-            operator.with_sandbox_overrides(auto_approve=auto_approve, no_commands=no_commands),
-            operator_eff.explicit_leaves,
-            operator_isolation,
-        ),
+        StateConfig(with_flags(operator), operator_eff.explicit_leaves, operator_isolation),
         machine,
         states,
     )

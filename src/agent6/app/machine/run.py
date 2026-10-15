@@ -271,13 +271,6 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         The exit code: 0 when the machine ended ok, waits or stopped, 1 on a failure, 2 on a
         refusal.
     """
-    # The three flags reach each agent subprocess through the env, which the LLM cannot reach.
-    if disable_sandbox:
-        os.environ["AGENT6_DANGEROUSLY_DISABLE_SANDBOX"] = "1"
-    if auto_approve:
-        os.environ["AGENT6_AUTO_APPROVE"] = "1"
-    if no_commands:
-        os.environ["AGENT6_NO_COMMANDS"] = "1"
     try:
         spec = load_machine(path)
     except MachineError as exc:
@@ -300,12 +293,14 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     # The machine's own file and scripts are read-only in every jail: no state rewrites them.
     protect_paths = _preflight.machine_protect_paths(path, cwd, config_path)
     # Every machine resolves its configs: a pure wait/branch machine still reads snapshot_keep.
+    # The three flags travel in them, to each agent state as its overlay and resolved isolation.
     try:
         configs = _states.resolve_configs(
             spec,
             cwd,
             env,
             config_path=config_path,
+            disable_sandbox=disable_sandbox,
             auto_approve=auto_approve,
             no_commands=no_commands,
         )

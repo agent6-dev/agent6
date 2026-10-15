@@ -184,9 +184,10 @@ def _result(
 
 
 def _apply_operator_env_grants(cfg: Config) -> Config:
-    """Apply the supervisor's `--auto-approve` and `--no-commands` choices from the env.
+    """Apply the operator's `AGENT6_AUTO_APPROVE=1` and `AGENT6_NO_COMMANDS=1` from the env.
 
-    The env is operator-only, and applies after the overlays.
+    The flags travel in the state's overlay; the two env names are the operator's own, read
+    here and applied after the overlays.
 
     Args:
         cfg: The state's config.
@@ -374,12 +375,15 @@ def run_one(
         reporter.refuse(f"machine agent config error: {exc}")
         return _result("error", None, None)
     _setup.apply_git_ops_policy(cfg)
-    # The confined process cannot read ~/.gitconfig, so the host-resolved identity is exported.
+    # A state's clone has no user.name and the jail's HOME none, so the host-resolved identity
+    # becomes the state's `[git.commit]`: the chain's commits and a jailed `git commit` read it.
     if req.commit_identity is not None:
-        if name := req.commit_identity.name:
-            os.environ["GIT_AUTHOR_NAME"] = os.environ["GIT_COMMITTER_NAME"] = name
-        if email := req.commit_identity.email:
-            os.environ["GIT_AUTHOR_EMAIL"] = os.environ["GIT_COMMITTER_EMAIL"] = email
+        data = cfg.model_dump(mode="python")
+        given = {"name": req.commit_identity.name, "email": req.commit_identity.email}
+        data.setdefault("git", {}).setdefault("commit", {}).update(
+            {key: value for key, value in given.items() if value}
+        )
+        cfg = Config.model_validate(data)
     # The engine validated the isolation already; re-check and fail closed.
     net_err = confine.check_network_support(cfg, isolation)
     if net_err is not None:

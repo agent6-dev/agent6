@@ -210,7 +210,7 @@ Where a run state's work lands:
 - a machine with no run states runs its tool states in your checkout, unchanged
 - states are sequential continuations of the branch (each starts from the previous state's tree); lanes are parallel alternatives cut at base
 - a `mode = "run"` state still returns only its outcome label and `finish_session` payload
-- `machine run` resolves a git commit identity up front (`[git.commit]` or the repo's git config) so the confined agent's commits succeed
+- `machine run` resolves a git commit identity up front (`[git.commit]` or the repo's git config) and hands it to each run state as its `[git.commit]`, so the state's commits and a jailed `git commit` carry it; the supervisor's own environment never does
 
 `run_command` in a `mode = "run"` state is gated by `sandbox.run_commands`:
 

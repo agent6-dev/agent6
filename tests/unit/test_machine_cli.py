@@ -1268,13 +1268,12 @@ def test_run_warns_naming_the_config_file_the_ask_came_from(
     assert "config set --repo" not in err
 
 
-def test_run_auto_approve_suppresses_the_warning_and_sets_the_env_grant(
+def test_run_auto_approve_suppresses_the_warning_and_leaves_the_env_alone(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    import os
-
+    """The grant travels in each state's overlay; the supervisor's own process is not approved."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    monkeypatch.delenv("AGENT6_AUTO_APPROVE", raising=False)  # snapshot: restored at teardown
+    monkeypatch.delenv("AGENT6_AUTO_APPROVE", raising=False)
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "runwarn.asm.toml"
     f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
@@ -1282,8 +1281,7 @@ def test_run_auto_approve_suppresses_the_warning_and_sets_the_env_grant(
     err = capsys.readouterr().err
     assert code == 2  # still refused on the missing worker; that is fine
     assert "auto-denies" not in err  # the grant removed the dead-end
-    # The grant reaches each agent subprocess the way the sandbox setter does.
-    assert os.environ.get("AGENT6_AUTO_APPROVE") == "1"
+    assert "AGENT6_AUTO_APPROVE" not in os.environ
 
 
 def test_a_fresh_instance_over_a_stale_chain_is_refused(
@@ -1433,25 +1431,19 @@ model = "m"
     assert gone.returncode != 0  # the spent chain ref is dropped
 
 
-def test_run_no_commands_withholds_them_from_the_machine(
+def test_run_flags_never_land_in_the_supervisors_environment(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--no-commands` reaches `machine run`'s dispatch, not only its parser."""
-    import os
-
-    from agent6.app import machine_agent
-    from agent6.config import Config
-
+    """The flags travel in the resolved configs; the process spawns nothing under them."""
+    keys = ("AGENT6_NO_COMMANDS", "AGENT6_DANGEROUSLY_DISABLE_SANDBOX")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    # setenv, not delenv: monkeypatch records an absent var as nothing to restore.
-    monkeypatch.setenv("AGENT6_NO_COMMANDS", "")
+    for key in keys:
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "nocmd.asm.toml"
     f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
-    main(["machine", "run", str(f), "--no-commands"])
-    assert os.environ.get("AGENT6_NO_COMMANDS") == "1"
-    yes = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    assert machine_agent._apply_operator_env_grants(yes).sandbox.run_commands == "no"
+    main(["machine", "run", str(f), "--no-commands", "--dangerously-disable-sandbox"])
+    assert not any(key in os.environ for key in keys)
 
 
 def test_apply_operator_env_grants_upgrades_ask_never_no(
