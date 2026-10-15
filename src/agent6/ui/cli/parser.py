@@ -356,10 +356,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         prompt_sub,
         "show",
         help=(
-            "Print everything the model receives on a run's first call here: the"
-            " system prompt (static blocks + the per-repo <repo-priors> block), the"
-            " tool definitions this config exposes (the API's `tools` field), and"
-            " the first user message around the task."
+            "Preview a run's first model call here: the system prompt (static blocks"
+            " + the per-repo <repo-priors> block), the built-in tool definitions this"
+            " config exposes, and the first user message with a task placeholder."
+            " MCP tools are not included; they are discovered at run start."
         ),
     )
     prompt_show.add_argument(

@@ -19,11 +19,10 @@ def _cmd_prompt_show(
     mode: Literal["run", "plan", "ask", "agent"],
     as_json: bool = False,
 ) -> int:
-    """Print everything the model receives on a session's first call here.
+    """Preview a session's first model call without discovering MCP tools.
 
-    The system prompt (its static blocks and the per-repo `<repo-priors>` block), the tool
-    definitions the API's `tools` field carries, and the first user message, for this repo
-    and the effective config in the given mode.
+    Print the system prompt, built-in tools and first message with a task placeholder
+    for this repo and the effective config in the given mode.
 
     Args:
         config_path: The `--config` file, if any.

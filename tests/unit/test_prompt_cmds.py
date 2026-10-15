@@ -53,6 +53,27 @@ def test_prompt_show_run_mode_injects_agents_md(
     assert "be terse here" in out
 
 
+def test_prompt_show_leaves_mcp_tools_pending(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Configured MCP servers remain undiscovered in the offline preview."""
+    import json
+
+    repo = _git_repo(tmp_path)
+    _isolate(tmp_path, monkeypatch, repo)
+    config = tmp_path / "mcp.toml"
+    config.write_text(
+        '[mcp]\nenabled = true\n[mcp.servers.preview]\ncommand = ["nonexistent-mcp"]\n',
+        encoding="utf-8",
+    )
+    assert prompt_cmds._cmd_prompt_show(config, mode="run", as_json=True) == 0
+    exchange = json.loads(capsys.readouterr().out)
+    assert exchange["mcp_tools_pending"] is True
+    assert not any(t["name"].startswith("mcp__") for t in exchange["tools"])
+    assert prompt_cmds._cmd_prompt_show(config, mode="run") == 0
+    assert "discovered at run start" in capsys.readouterr().out
+
+
 def test_prompt_show_plan_mode_differs(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

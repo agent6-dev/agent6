@@ -47,6 +47,15 @@ def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
     raise AssertionError(f"no positional {dest!r}")
 
 
+def test_prompt_show_help_names_pending_mcp_tools() -> None:
+    """Prompt inspection does not promise tools it has not discovered."""
+    command = _find(_find(cli_parser.build_parser(), "prompt"), "show")
+    text = " ".join(command.format_help().split())
+    assert "Preview" in text
+    assert "MCP tools are not included; they are discovered at run start" in text
+    assert "Print everything" not in text
+
+
 def test_memory_add_help_states_name_limits() -> None:
     """Memory add names the length and first-character restrictions."""
     command = _find(_find(cli_parser.build_parser(), "memory"), "add")

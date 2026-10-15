@@ -70,7 +70,7 @@ def system_prompt_for(
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ModelExchange:
-    """Hold everything the model receives on a run's first call, for `agent6 prompt show`.
+    """Hold a first-call preview without MCP tools, for `agent6 prompt show`.
 
     Attributes:
         mode: The loop mode.
@@ -94,10 +94,9 @@ def model_exchange_for(
     *,
     state_dir: pathlib.Path | None = None,
 ) -> ModelExchange:
-    """Build the exact exchange a run here would open with.
+    """Build a first-call preview with a task placeholder and no MCP tool discovery.
 
-    The tool list comes from a dispatcher on this config, so what a run withholds is withheld
-    here too.
+    The built-in tool list comes from a dispatcher on this config.
 
     Args:
         config: The run's config.

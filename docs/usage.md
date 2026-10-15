@@ -249,7 +249,7 @@ agent6 ask "how does the task-graph curator work?"
     - a plan whose open questions have blank `**A:**` lines still runs, after one warning that names them; `agent6 plan edit <id>` answers them first
 - `--decompose`: a task graph up front; `--skill NAME`: a skill in the prompt (a skill whose text waits on a person stalls an unattended run in `ask_user`; `agent6 skills disable NAME` keeps it out)
 - `--session-id ID`: name the session yourself
-- `agent6 prompt show [--mode run|plan|ask|agent] [--json]`: everything the model receives on the first call
+- `agent6 prompt show [--mode run|plan|ask|agent] [--json]`: preview the system prompt, built-in tools and first message with a task placeholder; MCP tools are discovered at run start and are not included
 
 ## Isolated workspaces
 
