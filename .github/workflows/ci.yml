@@ -1,9 +1,8 @@
 name: ci
 
-# Lints + type-checks once, then runs the test suite against the EXACT wheels
-# produced by build.yml (agent6-jail bundled inside) across every supported
-# Python (3.12–3.14) on BOTH amd64 and arm64 — so a version- or arch-specific
-# break can't slip through a single-target run.
+# Lints and type-checks once, then tests the wheels produced by build.yml
+# (agent6-jail bundled inside) on Python 3.12–3.15 on amd64 and arm64.
+# This catches version- and architecture-specific failures.
 
 on:
   push:
@@ -43,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.12", "3.13", "3.14"]
+        python: ["3.12", "3.13", "3.14", "3.15"]
         platform:
           - { arch: amd64, runner: ubuntu-24.04 }
           - { arch: arm64, runner: ubuntu-24.04-arm }
@@ -68,7 +67,7 @@ jobs:
 
       - name: Install the built wheel into the env
         # py3-none-<plat>: one wheel covers every supported interpreter, so the
-        # same arch wheel is exercised on 3.12, 3.13, and 3.14.
+        # same arch wheel is exercised on 3.12, 3.13, 3.14, and 3.15.
         run: |
           wheel=$(ls dist/agent6-*.whl)
           uv pip install --reinstall "$wheel"

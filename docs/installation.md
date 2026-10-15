@@ -60,6 +60,7 @@ agent6 check                # sandbox, config (provider keys), boundaries, MCP, 
 ## Requirements
 
 - Python 3.12 or newer
+- A C compiler on Python 3.15 (`tree-sitter` ships no wheel for it)
 - git 2.40 or newer (`merge-tree --merge-base`)
 - One provider: Anthropic, any OpenAI-compatible endpoint (a local one needs no key), a ChatGPT subscription, or a Claude Code login (`agent6 connect claude`)
 - Linux on x86_64 or aarch64 for the sandbox
