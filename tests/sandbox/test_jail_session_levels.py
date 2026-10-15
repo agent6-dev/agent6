@@ -19,14 +19,14 @@ import time
 import pytest
 
 from agent6 import kinds
-from agent6.sandbox import jail
+from agent6.sandbox import jail, jail_jobs, jail_session
 
 # hardened and none need no namespaces; the strict case is marked per-test.
 _NO_NAMESPACE_LEVELS: tuple[kinds.IsolationLevel, ...] = ("hardened", "none")
 
 
-def _session(cwd: pathlib.Path, isolation: kinds.IsolationLevel) -> jail.JailSession:
-    return jail.JailSession.open(
+def _session(cwd: pathlib.Path, isolation: kinds.IsolationLevel) -> jail_session.JailSession:
+    return jail_session.JailSession.open(
         kinds.JailPolicy(
             cwd=cwd, argv=("true",), isolation=isolation, network="host", timeout_s=30.0
         )
@@ -162,7 +162,7 @@ def test_a_backgrounded_setsid_daemon_dies_at_its_stop(
         # `BackgroundShells.start` takes it, so the daemon it leaves is this
         # job's own and its stop sweeps it.
         before = session.child_snapshot()
-        job = jail.SessionJob(
+        job = jail_jobs.SessionJob(
             session,
             session.start_background(
                 ("/bin/sh", "-c", f"setsid sh -c 'echo $$ > {marker}; sleep 60' & sleep 0.4")
@@ -184,7 +184,7 @@ def test_a_backgrounded_setsid_daemon_dies_at_its_stop(
         session.close()
 
 
-def _alive_in_jail(session: jail.JailSession, pid: int) -> bool:
+def _alive_in_jail(session: jail_session.JailSession, pid: int) -> bool:
     """Whether the namespace-local pid still runs, asked from inside.
 
     A zombie reads as gone, as `_running` reads one outside.
@@ -215,12 +215,12 @@ def test_a_strict_stop_sweeps_its_daemon_inside_the_namespace(
     m1, m2 = tmp_path / "d1.pid", tmp_path / "d2.pid"
     try:
         b1 = session.child_snapshot()
-        job1 = jail.SessionJob(
+        job1 = jail_jobs.SessionJob(
             session, session.start_background(daemonising(str(m1))), tmp_path / "j1", before=b1
         )
         time.sleep(1.0)
         b2 = session.child_snapshot()
-        job2 = jail.SessionJob(
+        job2 = jail_jobs.SessionJob(
             session, session.start_background(daemonising(str(m2))), tmp_path / "j2", before=b2
         )
         time.sleep(1.0)
@@ -249,7 +249,7 @@ def test_a_strict_stop_leaves_an_older_commands_late_child_alone(tmp_path: pathl
     late = tmp_path / "late.pid"
     try:
         b1 = session.child_snapshot()
-        older = jail.SessionJob(
+        older = jail_jobs.SessionJob(
             session,
             session.start_background(
                 ("/bin/sh", "-c", f"sleep 2; sleep 60 & echo $! > {late}; wait")
@@ -259,7 +259,7 @@ def test_a_strict_stop_leaves_an_older_commands_late_child_alone(tmp_path: pathl
         )
         time.sleep(0.5)
         b2 = session.child_snapshot()
-        younger = jail.SessionJob(
+        younger = jail_jobs.SessionJob(
             session,
             session.start_background(("/bin/sh", "-c", "sleep 60")),
             tmp_path / "j2",
@@ -287,7 +287,7 @@ def test_a_strict_stop_sweeps_past_a_sibling_that_exited(tmp_path: pathlib.Path)
     inner = f'setsid sh -c "echo \\$\\$ > {marker}; sleep 60" &'
     try:
         b1 = session.child_snapshot()
-        older = jail.SessionJob(
+        older = jail_jobs.SessionJob(
             session,
             session.start_background(("/bin/sh", "-c", f"sleep 2; sh -c '{inner}'; sleep 60")),
             tmp_path / "j1",
@@ -295,7 +295,7 @@ def test_a_strict_stop_sweeps_past_a_sibling_that_exited(tmp_path: pathlib.Path)
         )
         time.sleep(0.5)
         b2 = session.child_snapshot()
-        jail.SessionJob(
+        jail_jobs.SessionJob(
             session, session.start_background(("/bin/true",)), tmp_path / "j2", before=b2
         )
         time.sleep(2.5)
@@ -322,7 +322,7 @@ def test_a_strict_stop_sweeps_a_daemons_own_setsid_child(tmp_path: pathlib.Path)
     try:
         b1 = session.child_snapshot()
         pid = session.start_background(("/bin/sh", "-c", f"sh -c 'setsid sh {script} &'; sleep 60"))
-        job = jail.SessionJob(session, pid, tmp_path / "j", before=b1)
+        job = jail_jobs.SessionJob(session, pid, tmp_path / "j", before=b1)
         time.sleep(1.5)
         assert d.exists() and g.exists(), "the daemons never started; the test proves nothing"
         daemon, grandchild = int(d.read_text().strip()), int(g.read_text().strip())
@@ -348,7 +348,7 @@ def test_a_repeat_stop_after_the_launcher_died_keeps_the_recorded_exit(
     session = _session(tmp_path, "none")
     try:
         b1 = session.child_snapshot()
-        job = jail.SessionJob(
+        job = jail_jobs.SessionJob(
             session, session.start_background(("/bin/true",)), tmp_path / "j", before=b1
         )
         deadline = time.monotonic() + 5
@@ -386,12 +386,12 @@ def test_a_stop_spares_a_sibling_background_commands_daemon(
     d1 = d2 = 0
     try:
         b1 = session.child_snapshot()
-        job1 = jail.SessionJob(
+        job1 = jail_jobs.SessionJob(
             session, session.start_background(daemonising(m1)), tmp_path / "j1", before=b1
         )
         time.sleep(1.0)
         b2 = session.child_snapshot()
-        job2 = jail.SessionJob(
+        job2 = jail_jobs.SessionJob(
             session, session.start_background(daemonising(m2)), tmp_path / "j2", before=b2
         )
         time.sleep(1.0)
@@ -441,7 +441,7 @@ def test_a_confined_level_stays_silent_on_startup(tmp_path: pathlib.Path) -> Non
 def _serve_raw(cwd: pathlib.Path) -> subprocess.Popen[bytes]:
     """A serving launcher driven directly, with the check-in request written by hand."""
     proc = subprocess.Popen(
-        [str(jail._require_jail_binary())],
+        [str(jail.require_jail_binary())],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

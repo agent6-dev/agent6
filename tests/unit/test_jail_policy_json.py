@@ -10,11 +10,11 @@ from __future__ import annotations
 import pathlib
 
 from agent6 import kinds
-from agent6.sandbox import jail  # pyright: ignore[reportPrivateUsage]
+from agent6.sandbox import jail
 
 
 def _fields(policy: kinds.JailPolicy) -> dict[str, object]:
-    return jail._policy_spec(policy)
+    return jail.policy_spec(policy)
 
 
 def test_policy_json_carries_the_uncapped_default_memory_limit(tmp_path: pathlib.Path) -> None:

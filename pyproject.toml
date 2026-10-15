@@ -295,6 +295,8 @@ banned-from = [
     "agent6.providers.wire",
     "agent6.sandbox.detect",
     "agent6.sandbox.jail",
+    "agent6.sandbox.jail_jobs",
+    "agent6.sandbox.jail_session",
     "agent6.sandbox.landlock",
     "agent6.sandbox.tool_paths",
     "agent6.secret_store",

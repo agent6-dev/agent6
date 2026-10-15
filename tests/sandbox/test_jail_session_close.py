@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from agent6.sandbox import jail
+from agent6.sandbox import jail, jail_jobs, jail_session
 
 
 class _FakeProc:
@@ -41,11 +41,11 @@ class _FakeProc:
         return None if self._alive_after else 0
 
 
-def _session(proc: Any, *, pid_namespaced: bool = True) -> jail.JailSession:
+def _session(proc: Any, *, pid_namespaced: bool = True) -> jail_session.JailSession:
     # A real pipe end for the interrupt channel: close() closes it, and a
     # bogus number would make that the failure under test instead of the flush.
     _, interrupt_w = os.pipe()
-    return jail.JailSession(
+    return jail_session.JailSession(
         _proc=proc,
         _binary=pathlib.Path("/nonexistent"),
         _pid_namespaced=pid_namespaced,
@@ -96,39 +96,47 @@ def test_a_survivor_of_the_sweep_is_named_by_every_stop(
     def no_children() -> dict[int, int]:
         return {}
 
-    monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
-    monkeypatch.setattr("agent6.sandbox.jail._own_children", no_children)
+    monkeypatch.setattr("agent6.sandbox.jail.kill_escapees", sweep)
+    monkeypatch.setattr("agent6.sandbox.jail.own_children", no_children)
 
     def sleeper() -> subprocess.Popen[bytes]:
         return subprocess.Popen(["sleep", "60"], start_new_session=True)
 
     proc = sleeper()
-    assert "4321" in jail.LocalJob(proc, tmp_path / "local").stop() and proc.poll() is not None
+    assert "4321" in jail_jobs.LocalJob(proc, tmp_path / "local").stop() and proc.poll() is not None
     proc = sleeper()
     (tmp_path / "bg").mkdir()  # the outcome dir the shell registry creates
-    assert "4321" in jail.BackgroundJob(proc, tmp_path / "bg").stop() and proc.poll() is not None
+    assert (
+        "4321" in jail_jobs.BackgroundJob(proc, tmp_path / "bg").stop() and proc.poll() is not None
+    )
     # The launcher is gone, so its ending is recorded even though the sweep failed.
     assert json.loads((tmp_path / "bg" / "result.json").read_text())["stopped"] is True
     proc = sleeper()
     assert jail.JailedProcess(proc).close() == frozenset({4321}) and proc.poll() is not None
 
     def stopped(
-        self: jail.JailSession, request: dict[str, object], *, interrupted: object = None
+        self: jail_session.JailSession, request: dict[str, object], *, interrupted: object = None
     ) -> dict[str, object]:
         return {"stopped": True, "returncode": 0}
 
-    monkeypatch.setattr(jail.JailSession, "_request", stopped)
+    monkeypatch.setattr(jail_session.JailSession, "_request", stopped)
     session = _session(_FakeProc(communicate_raises=None, alive_after=False), pid_namespaced=False)
     assert (
         "4321"
-        in jail.SessionJob(session, 7, tmp_path / "job", before=session.child_snapshot()).stop()
+        in jail_jobs.SessionJob(
+            session, 7, tmp_path / "job", before=session.child_snapshot()
+        ).stop()
     )
     # A job the registry already settled (its command exited) still sweeps on stop.
-    settled = jail.SessionJob(session, 8, tmp_path / "job-settled", before=session.child_snapshot())
-    settled._final = jail.BackgroundStatus(running=False, returncode=0, error="")  # pyright: ignore[reportPrivateUsage]
+    settled = jail_jobs.SessionJob(
+        session, 8, tmp_path / "job-settled", before=session.child_snapshot()
+    )
+    settled._final = jail_session.BackgroundStatus(running=False, returncode=0, error="")  # pyright: ignore[reportPrivateUsage]
     assert "4321" in settled.stop()
     namespaced = _session(_FakeProc(communicate_raises=None, alive_after=False))
-    job2 = jail.SessionJob(namespaced, 7, tmp_path / "job2", before=namespaced.child_snapshot())
+    job2 = jail_jobs.SessionJob(
+        namespaced, 7, tmp_path / "job2", before=namespaced.child_snapshot()
+    )
     assert job2.stop() == ""  # the namespace bounds them
 
 
@@ -147,13 +155,13 @@ def test_a_survivor_of_the_sweep_fails_the_command_and_comes_back_from_close(
         return {}
 
     def answered(
-        self: jail.JailSession, request: dict[str, object], *, interrupted: object = None
+        self: jail_session.JailSession, request: dict[str, object], *, interrupted: object = None
     ) -> dict[str, object]:
         return {"returncode": 0, "stdout": "", "stderr": ""}
 
-    monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
-    monkeypatch.setattr("agent6.sandbox.jail._own_children", no_children)
-    monkeypatch.setattr(jail.JailSession, "_request", answered)
+    monkeypatch.setattr("agent6.sandbox.jail.kill_escapees", sweep)
+    monkeypatch.setattr("agent6.sandbox.jail.own_children", no_children)
+    monkeypatch.setattr(jail_session.JailSession, "_request", answered)
     session = _session(_FakeProc(communicate_raises=None, alive_after=False), pid_namespaced=False)
     with pytest.raises(jail.JailUnavailableError, match="4321"):
         session.run(("true",))

@@ -15,7 +15,7 @@ from typing import Any, cast
 import pytest
 
 from agent6 import kinds
-from agent6.sandbox import jail
+from agent6.sandbox import jail, jail_session
 
 
 def _fake_binary(tmp_path: pathlib.Path, script: str) -> pathlib.Path:
@@ -41,10 +41,10 @@ def _recording_popen(monkeypatch: pytest.MonkeyPatch) -> list[subprocess.Popen[b
 def test_a_launcher_dead_at_setup_is_reaped_with_its_pipes_closed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(jail, "_require_jail_binary", lambda: _fake_binary(tmp_path, "exit 7"))
+    monkeypatch.setattr(jail, "require_jail_binary", lambda: _fake_binary(tmp_path, "exit 7"))
     seen = _recording_popen(monkeypatch)
     with pytest.raises(jail.JailUnavailableError, match="died during setup"):
-        jail.JailSession.open(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
+        jail_session.JailSession.open(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
     (proc,) = seen
     assert proc.returncode is not None  # reaped: no zombie outlives the failure
     assert proc.stdin is not None and proc.stdin.closed
@@ -56,7 +56,7 @@ def test_a_spec_write_failure_is_the_same_setup_death(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """EPIPE at the spec write is JailUnavailableError like the EOF case; the child is reaped."""
-    monkeypatch.setattr(jail, "_require_jail_binary", lambda: _fake_binary(tmp_path, "exit 7"))
+    monkeypatch.setattr(jail, "require_jail_binary", lambda: _fake_binary(tmp_path, "exit 7"))
     seen = _recording_popen(monkeypatch)
 
     class BoomWriter:
@@ -82,7 +82,7 @@ def test_a_spec_write_failure_is_the_same_setup_death(
 
     monkeypatch.setattr(jail.subprocess, "Popen", boom)
     with pytest.raises(jail.JailUnavailableError, match="died during setup"):
-        jail.JailSession.open(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
+        jail_session.JailSession.open(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
     (proc,) = seen
     assert proc.returncode is not None
 
@@ -97,11 +97,11 @@ def test_the_launchers_setup_error_is_the_error_both_transports_raise(
     """
     said = "agent6-jail: rootfs setup failed: write grant /data: bind: ENOENT"
     fake = _fake_binary(tmp_path, f'echo "{said}" >&2; exit 2')
-    monkeypatch.setattr(jail, "_require_jail_binary", lambda: fake)
+    monkeypatch.setattr(jail, "require_jail_binary", lambda: fake)
     policy = kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",), isolation="hardened")
     with pytest.raises(jail.JailUnavailableError) as one_shot:
         jail.run_in_jail(policy)
     with pytest.raises(jail.JailUnavailableError) as served:
-        jail.JailSession.open(policy)
+        jail_session.JailSession.open(policy)
     assert str(one_shot.value) == f"agent6-jail launcher exited 2: {said}"
     assert str(served.value) == f"jail session died during setup: {said}"

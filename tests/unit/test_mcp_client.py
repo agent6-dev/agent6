@@ -573,10 +573,10 @@ def test_manager_close_kills_setsid_escapee(tmp_path: pathlib.Path) -> None:
     kill of the launcher pid alone. close() must run the escapee sweep, not just signal the
     launcher.
     """
-    from agent6.sandbox import jail  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox import jail
 
     # So the escapee reparents onto THIS process, where the sweep looks.
-    jail._become_subreaper()
+    jail.become_subreaper()
     marker = tmp_path / "escapee.pid"
     script = (
         "import json, os, sys, time\n"
@@ -698,7 +698,7 @@ def test_unconfined_server_ties_to_the_agent(monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr(jail_mod.subprocess, "Popen", fake_popen)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-secret")
-    live = jail_mod._live_launchers  # pyright: ignore[reportPrivateUsage]
+    live = jail_mod.live_launchers
     try:
         mcp_client._spawn_server(  # pyright: ignore[reportPrivateUsage]
             ("fake-server",), pass_env=(), policy=None
@@ -724,7 +724,7 @@ def test_a_failed_starts_survivors_reach_the_managers_close(
     def sweep(exclude: frozenset[int]) -> frozenset[int]:
         return frozenset({4321})
 
-    monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
+    monkeypatch.setattr("agent6.sandbox.jail.kill_escapees", sweep)
     mgr = tools_mcp_client.MCPManager.start(
         [
             tools_mcp_client.MCPServerSpec(
@@ -752,7 +752,7 @@ def test_a_restarted_servers_survivors_accumulate(monkeypatch: pytest.MonkeyPatc
     def sweep(exclude: frozenset[int]) -> frozenset[int]:
         return frozenset({next(pids)})
 
-    monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
+    monkeypatch.setattr("agent6.sandbox.jail.kill_escapees", sweep)
     srv = tools_mcp_client._MCPServer(
         name="a", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0
     )
@@ -828,7 +828,7 @@ def test_the_manager_hands_back_every_survivor_of_its_servers(
     def sweep(exclude: frozenset[int]) -> frozenset[int]:
         return frozenset({4321})
 
-    monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
+    monkeypatch.setattr("agent6.sandbox.jail.kill_escapees", sweep)
     escapee = subprocess.Popen(["sleep", "60"], start_new_session=True)
     survived = tools_mcp_client._MCPServer(
         name="a", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0

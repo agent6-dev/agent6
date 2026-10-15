@@ -15,7 +15,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.config import Config
-from agent6.sandbox import jail
+from agent6.sandbox import jail, jail_session
 from agent6.tools import dispatch
 from agent6.tools import policy as tools_policy
 
@@ -51,7 +51,7 @@ def _launch_errors(policy: kinds.JailPolicy) -> tuple[str, str]:
     with pytest.raises(jail.JailUnavailableError) as one_shot:
         jail.run_in_jail(policy)
     with pytest.raises(jail.JailUnavailableError) as served:
-        jail.JailSession.open(policy)
+        jail_session.JailSession.open(policy)
     return str(one_shot.value), str(served.value)
 
 

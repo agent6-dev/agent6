@@ -12,18 +12,20 @@ import time
 import pytest
 
 from agent6 import kinds
-from agent6.sandbox import jail
+from agent6.sandbox import jail, jail_session
 
 pytestmark = pytest.mark.needs_namespaces
 
 
-def _session(cwd: pathlib.Path) -> jail.JailSession:
-    return jail.JailSession.open(
+def _session(cwd: pathlib.Path) -> jail_session.JailSession:
+    return jail_session.JailSession.open(
         kinds.JailPolicy(cwd=cwd, argv=("true",), isolation="strict", timeout_s=30.0)
     )
 
 
-def _run(session: jail.JailSession, argv: tuple[str, ...], **kw: object) -> kinds.CommandResult:
+def _run(
+    session: jail_session.JailSession, argv: tuple[str, ...], **kw: object
+) -> kinds.CommandResult:
     """A run with no check-in always completes, so it is a CommandResult.
 
     The hand-off shape is exercised in test_jail_session_levels.py.
@@ -205,7 +207,7 @@ def test_a_session_command_gets_the_configured_memory_cap(tmp_path: pathlib.Path
     Sending only argv would leave every command on the launcher's own default, silently
     ignoring `[sandbox] memory_limit_mb`.
     """
-    session = jail.JailSession.open(
+    session = jail_session.JailSession.open(
         kinds.JailPolicy(
             cwd=tmp_path, argv=("true",), isolation="strict", timeout_s=30.0, memory_limit_mb=256
         )
@@ -224,7 +226,7 @@ def test_a_backgrounded_command_gets_the_same_memory_cap(tmp_path: pathlib.Path)
     The detached spawn shares the capture transport's child setup, so the cap does not
     depend on the transport.
     """
-    session = jail.JailSession.open(
+    session = jail_session.JailSession.open(
         kinds.JailPolicy(
             cwd=tmp_path, argv=("true",), isolation="strict", timeout_s=30.0, memory_limit_mb=256
         )

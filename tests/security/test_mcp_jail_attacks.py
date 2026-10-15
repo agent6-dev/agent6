@@ -242,7 +242,7 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: pathli
 
 
 def test_a_finished_launcher_stops_shielding_its_pid(tmp_path: pathlib.Path) -> None:
-    """`_live_launchers` is pruned against the real children; a dead server's pid is not shielded.
+    """`live_launchers` is pruned against the real children; a dead server's pid is not shielded.
 
     The escapee sweep skips pids in the set; a transport that forgot to remove one would let
     the next process handed that pid survive a sweep.
@@ -258,8 +258,8 @@ def test_a_finished_launcher_stops_shielding_its_pid(tmp_path: pathlib.Path) -> 
         stderr=subprocess.DEVNULL,
     ).popen
     pid = proc.pid
-    live = jail_mod._live_launchers  # pyright: ignore[reportPrivateUsage]
+    live = jail_mod.live_launchers
     assert pid in live
     proc.wait(timeout=20)
-    jail_mod._kill_escapees(frozenset())  # pyright: ignore[reportPrivateUsage]
+    jail_mod.kill_escapees(frozenset())
     assert pid not in live, "a dead launcher still shields its pid from the sweep"

@@ -88,7 +88,7 @@ def test_a_launcher_without_cap_setpcap_still_strips_the_child(tmp_path: pathlib
     cwd.mkdir(mode=0o777)
     try:
         policy = json.dumps(
-            jail._policy_spec(
+            jail.policy_spec(
                 tools_policy.jail_policy(
                     cwd, Config(), "hardened", ("python3", "-c", _CAPGET), network="none"
                 )

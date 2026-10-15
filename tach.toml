@@ -382,7 +382,7 @@ path = "agent6.tools"
 # has one owner, and the dispatcher is where it is enforced. All leaf modules
 # over the filesystem, so the dependency runs downward.
 # agent6 (root): the MCP handshake sends the canonical __version__.
-depends_on = ["agent6", "agent6.child_env", "agent6.config", "agent6.event_log", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.kinds", "agent6.memory", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sandbox.detect", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.skills", "agent6.terminal", "agent6.tools.schema"]
+depends_on = ["agent6", "agent6.child_env", "agent6.config", "agent6.event_log", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.kinds", "agent6.memory", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sandbox.detect", "agent6.sandbox.jail_jobs", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.skills", "agent6.terminal", "agent6.tools.schema"]
 
 [[modules]]
 path = "agent6.terminal"
@@ -710,3 +710,11 @@ depends_on = ["agent6.kinds", "agent6.machine.engine", "agent6.machine.journal",
 [[modules]]
 path = "agent6.machine.dryrun"
 depends_on = ["agent6.machine._semantics", "agent6.machine.engine", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template"]
+
+[[modules]]
+path = "agent6.sandbox.jail_jobs"
+depends_on = ["agent6.child_env", "agent6.kinds", "agent6.paths", "agent6.sandbox", "agent6.sandbox.jail_session"]
+
+[[modules]]
+path = "agent6.sandbox.jail_session"
+depends_on = ["agent6.kinds", "agent6.sandbox"]

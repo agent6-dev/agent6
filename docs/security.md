@@ -532,6 +532,8 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `isolation = "none"`.
   An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` level.
+- `sandbox/jail_jobs.py`: detached jail commands and the plain background spawn under `isolation = "none"`.
+- `sandbox/jail_session.py`: persistent jail launcher sessions and their teardown.
 - `providers/token_command.py`: the `[providers.*].token_command` that mints a provider bearer.
 - `providers/claude_code.py`: the `api_format = "claude_code"` provider runs the operator-installed Claude Code binary with fixed argv (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory).
   Prompts, tool results, and notices travel on stdin, so model- or repo-derived text never becomes an argv element.

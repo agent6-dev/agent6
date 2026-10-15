@@ -27,7 +27,7 @@ from agent6 import kinds
 from agent6.config import Config, load_config
 from agent6.graph import curator, models
 from agent6.harness import _compaction, _nudges
-from agent6.sandbox import jail
+from agent6.sandbox import jail_session
 from agent6.sessions import layout
 from agent6.tools import _result_format, dispatch, errors, operator_prompts
 
@@ -359,12 +359,14 @@ def test_a_handed_back_command_is_scrubbed(tmp_path: pathlib.Path) -> None:
         duration_s=900.0,
         before=kinds.ChildSnapshot(1, frozenset()),
     )
-    session = mock.Mock(spec=jail.JailSession)
+    session = mock.Mock(spec=jail_session.JailSession)
     session.run.return_value = handoff
-    session.status_background.return_value = jail.BackgroundStatus(
+    session.status_background.return_value = jail_session.BackgroundStatus(
         running=True, returncode=None, error=""
     )
-    session.stop_background.return_value = jail.Stopped(returncode=-9, survivors=frozenset())
+    session.stop_background.return_value = jail_session.Stopped(
+        returncode=-9, survivors=frozenset()
+    )
     session.sweep_for.return_value = frozenset()
     d = dispatch.ToolDispatcher(
         root=tmp_path, config=_config(tmp_path), session_dir=tmp_path / "run"

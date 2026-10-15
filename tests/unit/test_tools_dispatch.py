@@ -1661,7 +1661,7 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
     from collections.abc import Callable
 
     from agent6 import event_log
-    from agent6.sandbox import jail
+    from agent6.sandbox import jail_session
     from agent6.sessions import ipc
 
     root = tmp_path / "repo"
@@ -1674,11 +1674,13 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
     d = dispatch.ToolDispatcher(
         root=root, config=cfg, session_dir=session_dir, events=event_log.EventSink(logs)
     )
-    session = mock.Mock(spec=jail.JailSession)
-    session.status_background.return_value = jail.BackgroundStatus(
+    session = mock.Mock(spec=jail_session.JailSession)
+    session.status_background.return_value = jail_session.BackgroundStatus(
         running=True, returncode=None, error=""
     )
-    session.stop_background.return_value = jail.Stopped(returncode=-15, survivors=frozenset())
+    session.stop_background.return_value = jail_session.Stopped(
+        returncode=-15, survivors=frozenset()
+    )
     session.sweep_for.return_value = frozenset()
     stopped = reason in ("stop now", "abort")
     duration = 8.0 if stopped else 10.0
@@ -1757,7 +1759,7 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
 
 def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: pathlib.Path) -> None:
     """A failed stop must not claim the command ended, and teardown must retry its cleanup."""
-    from agent6.sandbox import jail
+    from agent6.sandbox import jail_session
     from agent6.sessions import ipc
 
     session_dir = tmp_path / "session"
@@ -1766,7 +1768,7 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: path
     ipc.request_stop(session_dir, now=True)
     log = session_dir / "shells" / "logs" / "foreground.log"
     log.write_text("starting\n", encoding="utf-8")
-    session = mock.Mock(spec=jail.JailSession)
+    session = mock.Mock(spec=jail_session.JailSession)
     session.run.return_value = kinds.BackgroundHandoff(
         argv=("sleep", "40"),
         pid=42,
@@ -1776,12 +1778,12 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: path
         duration_s=8.0,
         before=kinds.ChildSnapshot(1, frozenset()),
     )
-    session.status_background.return_value = jail.BackgroundStatus(
+    session.status_background.return_value = jail_session.BackgroundStatus(
         running=True, returncode=None, error=""
     )
     session.stop_background.side_effect = [
-        jail.Stopped(returncode=-15, survivors=frozenset({777})),
-        jail.Stopped(returncode=-15, survivors=frozenset()),
+        jail_session.Stopped(returncode=-15, survivors=frozenset({777})),
+        jail_session.Stopped(returncode=-15, survivors=frozenset()),
     ]
     session.sweep_for.return_value = frozenset()
     try:

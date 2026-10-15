@@ -23,7 +23,7 @@ import time
 from collections.abc import Callable
 
 from agent6 import kinds, paths, terminal
-from agent6.sandbox import jail
+from agent6.sandbox import jail, jail_jobs, jail_session
 from agent6.sessions import ipc
 
 # Every log lives under one root the run's jail session grants read-write when it opens, so a
@@ -80,7 +80,7 @@ class _Shell:
     id: str
     command: str
     dir: pathlib.Path
-    job: jail.BackgroundJob | jail.LocalJob | jail.SessionJob
+    job: jail_jobs.BackgroundJob | jail_jobs.LocalJob | jail_jobs.SessionJob
     # Opened before the command could exist: the one handle no jailed process can redirect.
     log_fd: int
     stopped: bool = False
@@ -130,7 +130,7 @@ class BackgroundShells:
         argv: tuple[str, ...],
         policy_for: PolicyFor,
         *,
-        session: jail.JailSession | None = None,
+        session: jail_session.JailSession | None = None,
     ) -> ShellView:
         """Start a command detached.
 
@@ -153,16 +153,16 @@ class BackgroundShells:
         paths.mkdir_for_real_user(shell_dir)
         log_fd = self._open_log(shell_id)
         wrapped = ("/bin/sh", "-c", _REDIRECT, str(log_dir), *argv)
-        job: jail.BackgroundJob | jail.LocalJob | jail.SessionJob
+        job: jail_jobs.BackgroundJob | jail_jobs.LocalJob | jail_jobs.SessionJob
         try:
             policy = policy_for(wrapped, (log_dir,))
             if session is None:
-                job = jail.start_in_jail(policy, outcome_dir=shell_dir)
+                job = jail_jobs.start_in_jail(policy, outcome_dir=shell_dir)
             else:
                 # The session is already confined; only the env comes from the policy.
                 # The baseline precedes the start: a sibling's reparented daemon is not this one's.
                 before = session.child_snapshot()
-                job = jail.SessionJob(
+                job = jail_jobs.SessionJob(
                     session,
                     session.start_background(wrapped, env=policy.env),
                     shell_dir,
@@ -174,7 +174,9 @@ class BackgroundShells:
         shell = _Shell(id=shell_id, command=shlex.join(argv), dir=shell_dir, job=job, log_fd=log_fd)
         return self._register(shell)
 
-    def adopt(self, handoff: kinds.BackgroundHandoff, *, session: jail.JailSession) -> ShellView:
+    def adopt(
+        self, handoff: kinds.BackgroundHandoff, *, session: jail_session.JailSession
+    ) -> ShellView:
         """Register a running command the launcher handed back, log and all.
 
         A run_command that outlived its check-in becomes an ordinary background job here.
@@ -194,7 +196,7 @@ class BackgroundShells:
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
         paths.mkdir_for_real_user(shell_dir)
-        job = jail.SessionJob(session, handoff.pid, shell_dir, before=handoff.before)
+        job = jail_jobs.SessionJob(session, handoff.pid, shell_dir, before=handoff.before)
         command = shlex.join(handoff.argv)
         # The launcher created the log with O_EXCL|O_NOFOLLOW; this side never resolves it again.
         try:
@@ -234,7 +236,7 @@ class BackgroundShells:
             # The host pid serves a stop from another process; a session command has none.
             host = (
                 ipc.process_identity(shell.job.pid)
-                if isinstance(shell.job, (jail.LocalJob, jail.BackgroundJob))
+                if isinstance(shell.job, (jail_jobs.LocalJob, jail_jobs.BackgroundJob))
                 else None
             )
             meta.write_text(

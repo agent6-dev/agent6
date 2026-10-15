@@ -28,7 +28,7 @@ import termios
 import threading
 import time
 from collections.abc import Callable, Sequence
-from typing import IO, Any, NoReturn, cast
+from typing import IO, Any, NoReturn
 
 from agent6 import child_env, kinds, paths
 
@@ -82,9 +82,6 @@ def _tied_to_agent(controlling_terminal: bool) -> Callable[[], None]:
     return _setup
 
 
-# The answer wait's poll interval: an operator Stop reads as immediate at this cost.
-_ANSWER_POLL_S = 0.2
-
 # The launcher is PID 1 of the jail and strict mounts a fresh /proc, so /proc/1/environ is
 # readable by the jailed command: an inherited env would expose the operator's provider key.
 # The launcher reads nothing from its environment; the policy arrives on stdin.
@@ -102,7 +99,7 @@ class JailBinaryError(JailUnavailableError):
     """
 
 
-def _lossy_text(v: object) -> str:
+def lossy_text(v: object) -> str:
     """Return child or launcher output as text, decoding bytes lossily.
 
     Command output is not guaranteed UTF-8; a lossy result beats a dropped stream.
@@ -147,7 +144,7 @@ def locate_jail_binary() -> pathlib.Path | None:
 _HOLDER_READY_TIMEOUT_S = 10.0
 
 
-def _read_available(pipe: IO[bytes] | None, budget_s: float = 0.5) -> bytes:
+def read_available(pipe: IO[bytes] | None, budget_s: float = 0.5) -> bytes:
     """Return whatever the pipe already holds, never waiting for EOF.
 
     Reading a killed launcher's stderr to EOF hangs while a child holds the write end.
@@ -208,8 +205,8 @@ class SessionNetwork:
                 could not be opened.
             JailBinaryError: The kernel refused to execute the launcher.
         """
-        binary = _require_jail_binary()
-        # Not `_spawn_launcher`: nothing sweeps the holder, and `close` ends it through stdin.
+        binary = require_jail_binary()
+        # Not `spawn_launcher`: nothing sweeps the holder, and `close` ends it through stdin.
         try:
             proc = subprocess.Popen(
                 [str(binary), "--hold-netns"],
@@ -228,7 +225,7 @@ class SessionNetwork:
             ready, _, _ = select.select([proc.stdout], [], [], _HOLDER_READY_TIMEOUT_S)
             if not ready or proc.stdout.readline().strip() != b"ready":
                 proc.kill()
-                err = _read_available(proc.stderr)
+                err = read_available(proc.stderr)
                 raise JailUnavailableError(
                     "the session network could not be created: "
                     + (
@@ -285,7 +282,7 @@ class SessionNetwork:
                 os.close(fd)
 
 
-def _join_args(
+def network_join_args(
     policy: kinds.JailPolicy, session_net: SessionNetwork | None
 ) -> tuple[list[str], tuple[int, ...]]:
     """Return the launcher flags and inherited fds for the policy's network.
@@ -310,7 +307,7 @@ def _join_args(
     return session_net.args(), session_net.fds()
 
 
-def _policy_spec(policy: kinds.JailPolicy) -> dict[str, Any]:
+def policy_spec(policy: kinds.JailPolicy) -> dict[str, Any]:
     """Return the launcher's policy spec, JSON-shaped; the caller encodes it.
 
     An absent `mode` is the launcher's "once"; the exec and serve callers add theirs.
@@ -366,16 +363,16 @@ def _run_unsandboxed(policy: kinds.JailPolicy) -> kinds.CommandResult:
         return kinds.CommandResult(
             argv=tuple(policy.argv),
             returncode=124,
-            stdout=_lossy_text(exc.stdout),
-            stderr=_lossy_text(exc.stderr),
+            stdout=lossy_text(exc.stdout),
+            stderr=lossy_text(exc.stderr),
             duration_s=time.monotonic() - start,
         )
     duration = time.monotonic() - start
     return kinds.CommandResult(
         argv=tuple(policy.argv),
         returncode=int(proc.returncode),
-        stdout=_lossy_text(proc.stdout),
-        stderr=_lossy_text(proc.stderr),
+        stdout=lossy_text(proc.stdout),
+        stderr=lossy_text(proc.stderr),
         duration_s=duration,
     )
 
@@ -415,7 +412,7 @@ def strict_namespaces_work() -> bool:
     return res.returncode == 0
 
 
-def _require_jail_binary() -> pathlib.Path:
+def require_jail_binary() -> pathlib.Path:
     """Return the launcher binary.
 
     Raises:
@@ -453,7 +450,7 @@ def _raise_for_exec_failure(binary: pathlib.Path, exc: OSError) -> NoReturn:
     ) from exc
 
 
-def _spawn_launcher(
+def spawn_launcher(
     binary: pathlib.Path,
     args: Sequence[str],
     *,
@@ -486,7 +483,7 @@ def _spawn_launcher(
         JailBinaryError: The kernel refused to execute the binary.
     """
     try:
-        with _sweep_lock:
+        with sweep_lock:
             proc = subprocess.Popen(
                 [str(binary), *args],
                 stdin=stdin,
@@ -499,7 +496,7 @@ def _spawn_launcher(
                 ),
                 env=_LAUNCHER_ENV,
             )
-            _live_launchers.add(proc.pid)
+            live_launchers.add(proc.pid)
     except OSError as exc:
         _raise_for_exec_failure(binary, exc)
     return proc
@@ -513,15 +510,15 @@ def _spawn_launcher(
 # agent's session; the launcher runs in its own, so a same-session child (git) is never swept.
 _PR_SET_CHILD_SUBREAPER = 36
 _SWEEP_DEADLINE_S = 5.0
-_sweep_lock = threading.Lock()
-_live_launchers: set[int] = set()
+sweep_lock = threading.Lock()
+live_launchers: set[int] = set()
 # Children started on purpose in their own session (a `/btw` ask, a lane, the claude_code
 # provider's child): they look exactly like an escapee, so every such spawn registers here.
 _own_detached: set[int] = set()
 
 
 @functools.cache
-def _become_subreaper() -> None:
+def become_subreaper() -> None:
     """Make this process a subreaper, once.
 
     Raises:
@@ -546,7 +543,7 @@ def keep_out_of_the_sweep(pid: int) -> None:
     _own_detached.add(pid)
 
 
-def _own_children() -> dict[int, int]:
+def own_children() -> dict[int, int]:
     """Return this process's children as `{pid: session id}`, right now.
 
     Read as bytes: comm is whatever a process named itself, so one hostile name
@@ -573,10 +570,10 @@ def _own_children() -> dict[int, int]:
     return found
 
 
-def _forget_launcher(pid: int) -> None:
+def forget_launcher(pid: int) -> None:
     """Drop a finished launcher from the set the sweep spares."""
-    with _sweep_lock:
-        _live_launchers.discard(pid)
+    with sweep_lock:
+        live_launchers.discard(pid)
 
 
 def signal_group(pid: int, sig: int = signal.SIGKILL) -> None:
@@ -601,7 +598,7 @@ def signal_group(pid: int, sig: int = signal.SIGKILL) -> None:
             os.kill(pid, sig)
 
 
-def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
+def kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
     """Kill what the command left behind.
 
     Args:
@@ -612,18 +609,18 @@ def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
     """
     our_session = os.getsid(0)
     deadline = time.monotonic() + _SWEEP_DEADLINE_S
-    with _sweep_lock:
+    with sweep_lock:
         while True:
-            children = _own_children()
+            children = own_children()
             # A spared pid that is no longer a child would spare the next process to get it.
-            _live_launchers.intersection_update(children)
+            live_launchers.intersection_update(children)
             _own_detached.intersection_update(children)
             escapees = {
                 pid
                 for pid, session in children.items()
                 if session != our_session
                 and pid not in exclude
-                and pid not in _live_launchers
+                and pid not in live_launchers
                 and pid not in _own_detached
             }
             if not escapees:
@@ -658,7 +655,7 @@ class JailedProcess:
         self.stdout = proc.stdout
         self.stderr = proc.stderr
         # The own-children snapshot from before the launcher; construction time for a direct caller.
-        self._before = frozenset(_own_children()) if before is None else before
+        self._before = frozenset(own_children()) if before is None else before
 
     def close(self) -> frozenset[int]:
         """End the child, its group and its escapees; best-effort and idempotent.
@@ -681,8 +678,8 @@ class JailedProcess:
                     os.killpg(proc.pid, signal.SIGKILL)
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     proc.wait(timeout=1.0)
-        _forget_launcher(proc.pid)
-        return _kill_escapees(self._before | {proc.pid})
+        forget_launcher(proc.pid)
+        return kill_escapees(self._before | {proc.pid})
 
 
 def spawn_in_jail(
@@ -720,9 +717,9 @@ def spawn_in_jail(
     """
     argv = list(policy.argv)
     # Any later child of this process not in the snapshot escaped the server; close sweeps it.
-    before = frozenset(_own_children())
+    before = frozenset(own_children())
     if policy.isolation == "none":
-        with _sweep_lock:
+        with sweep_lock:
             proc = subprocess.Popen(
                 argv,
                 stdin=stdin,
@@ -734,17 +731,17 @@ def spawn_in_jail(
                 preexec_fn=_tied_to_agent(controlling_terminal),  # noqa: PLW1509
             )
             # In its own session, so unregistered a sibling handle's close would sweep it.
-            _live_launchers.add(proc.pid)
+            live_launchers.add(proc.pid)
         return JailedProcess(proc, before)
-    binary = _require_jail_binary()
-    spec = _policy_spec(policy)
+    binary = require_jail_binary()
+    spec = policy_spec(policy)
     spec["mode"] = "exec"
-    _become_subreaper()
+    become_subreaper()
     # pass_fds keeps the descriptor's number in the child, so the launcher is told the real one.
-    join_args, join_fds = _join_args(policy, session_net)
+    join_args, join_fds = network_join_args(policy, session_net)
     policy_r, policy_w = os.pipe()
     try:
-        proc = _spawn_launcher(
+        proc = spawn_launcher(
             binary,
             ["--policy-fd", str(policy_r), *join_args],
             stdin=stdin,
@@ -790,14 +787,14 @@ def run_in_jail(
     """
     if policy.isolation == "none":
         return _run_unsandboxed(policy)
-    binary = _require_jail_binary()
-    join_args, join_fds = _join_args(policy, session_net)
-    spec = json.dumps(_policy_spec(policy))
+    binary = require_jail_binary()
+    join_args, join_fds = network_join_args(policy, session_net)
+    spec = json.dumps(policy_spec(policy))
     start = time.monotonic()
-    _become_subreaper()
+    become_subreaper()
     # Any later child of this process not in the snapshot escaped the command.
-    before = frozenset(_own_children())
-    launcher = _spawn_launcher(
+    before = frozenset(own_children())
+    launcher = spawn_launcher(
         binary,
         join_args,
         stdin=subprocess.PIPE,
@@ -817,8 +814,8 @@ def run_in_jail(
                 launcher.kill()
             with contextlib.suppress(subprocess.TimeoutExpired):
                 launcher.communicate(timeout=5.0)
-        _forget_launcher(launcher.pid)
-        survivors = _kill_escapees(before | {launcher.pid})
+        forget_launcher(launcher.pid)
+        survivors = kill_escapees(before | {launcher.pid})
     if survivors:
         raise JailUnavailableError(survivors_message(survivors))
     return result
@@ -870,15 +867,15 @@ def _launcher_result(
         return kinds.CommandResult(
             argv=tuple(policy.argv),
             returncode=124,
-            stdout=_lossy_text(raw_out) or _lossy_text(exc.stdout),
-            stderr=_lossy_text(raw_err) or _lossy_text(exc.stderr),
+            stdout=lossy_text(raw_out) or lossy_text(exc.stdout),
+            stderr=lossy_text(raw_err) or lossy_text(exc.stderr),
             duration_s=time.monotonic() - start,
         )
     proc = subprocess.CompletedProcess(
         args=[str(binary)],
         returncode=launcher.returncode,
-        stdout=_lossy_text(raw_out),
-        stderr=_lossy_text(raw_err),
+        stdout=lossy_text(raw_out),
+        stderr=lossy_text(raw_err),
     )
     duration = time.monotonic() - start
     # A non-zero launcher is a setup failure, except a child that could not be executed: that
@@ -902,7 +899,7 @@ def _launcher_result(
             f"agent6-jail produced unparseable output: {proc.stdout!r}"
         ) from exc
     return _with_launcher_warnings(
-        _result_from_json(result_json, tuple(policy.argv), duration), proc.stderr
+        result_from_json(result_json, tuple(policy.argv), duration), proc.stderr
     )
 
 
@@ -921,7 +918,7 @@ def _with_launcher_warnings(
     return dataclasses.replace(result, stderr=f"{result.stderr}\n{warnings}".strip())
 
 
-def _result_from_json(
+def result_from_json(
     result_json: dict[str, object], argv: tuple[str, ...], duration: float
 ) -> kinds.CommandResult:
     """Return the launcher's result object as a CommandResult.
@@ -941,703 +938,3 @@ def _result_from_json(
         duration_s=duration,
         exec_failed=failed_exec,
     )
-
-
-# Detached commands. A background command's launcher stays registered live until `stop`, so
-# the sweep spares it; only the launcher's result JSON is captured, so the exit code survives
-# the turn that started the command.
-_RESULT_NAME = "result.json"
-_LAUNCHER_ERR_NAME = "launcher.err"
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class BackgroundStatus:
-    """What a detached command is doing, right now.
-
-    Attributes:
-        running: The process is alive; never an inference from output or age.
-        returncode: The exit code once observed.
-        error: Why the fate is unknown (a launcher that exited without a result);
-            such a command is never reported as still running.
-    """
-
-    running: bool
-    returncode: int | None
-    error: str
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class Stopped:
-    """A stop request's answer.
-
-    Attributes:
-        returncode: The exit code, when this stop reaped the command.
-        survivors: Under a PID namespace, the pids the launcher's sweep could not kill.
-    """
-
-    returncode: int | None
-    survivors: frozenset[int]
-
-
-def _write_outcome(outcome_dir: pathlib.Path, returncode: int) -> None:
-    """Record a command's exit code where a surface in another process reads it."""
-    with contextlib.suppress(OSError):
-        (outcome_dir / _RESULT_NAME).write_text(
-            json.dumps({"returncode": returncode}), encoding="utf-8"
-        )
-
-
-def _write_stopped(outcome_dir: pathlib.Path) -> None:
-    """Record that the command was stopped, when its launcher died before reporting a code.
-
-    No code is invented: nobody observed one. Written only over an empty result; a
-    command that exited just before the kill keeps the code its launcher wrote, and
-    a failed read is no grounds to overwrite.
-    """
-    result = outcome_dir / _RESULT_NAME
-    try:
-        existing = result.read_text(errors="replace").strip()
-    except FileNotFoundError:
-        existing = ""
-    except OSError:
-        return
-    if existing:
-        return
-    with contextlib.suppress(OSError):
-        result.write_text(json.dumps({"stopped": True}), encoding="utf-8")
-
-
-def _stop_detached(proc: subprocess.Popen[bytes], descendants: frozenset[int], what: str) -> str:
-    """Kill a detached process's group and sweep what it left behind.
-
-    Unregistering before the sweep makes this the moment its escapees stop being
-    spared; `run_in_jail`'s later sweeps would never catch them, since by then they
-    are not new.
-
-    Args:
-        proc: The process.
-        descendants: The children snapshot taken before it started.
-        what: What the process is called in the answer.
-
-    Returns:
-        "" when the process and everything it started are gone, else why not.
-    """
-    if proc.poll() is None:
-        with contextlib.suppress(OSError):
-            os.killpg(proc.pid, signal.SIGKILL)
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            proc.wait(timeout=5.0)
-    _forget_launcher(proc.pid)
-    survivors = _kill_escapees(descendants)
-    stuck = f"{what} {proc.pid} did not exit after SIGKILL" if proc.poll() is None else ""
-    left = survivors_message(survivors) if survivors else ""
-    return "; ".join(part for part in (stuck, left) if part)
-
-
-class LocalJob:
-    """A detached command running with no confinement (`none` isolation).
-
-    With no launcher to write the exit code, this persists it on the first observed
-    exit and on stop; otherwise `/shells` in another process reads the command as
-    maybe still running for the run's life and after it.
-    """
-
-    def __init__(self, proc: subprocess.Popen[bytes], outcome_dir: pathlib.Path) -> None:
-        self._proc = proc
-        self._outcome_dir = outcome_dir
-        self._descendants = frozenset(_own_children())
-        self._final: BackgroundStatus | None = None
-
-    @property
-    def pid(self) -> int:
-        """The command's pid."""
-        return self._proc.pid
-
-    def status(self) -> BackgroundStatus:
-        """Return what the command is doing, persisting its exit code the first time."""
-        if self._final is not None:
-            return self._final
-        if self._proc.poll() is None:
-            return BackgroundStatus(running=True, returncode=None, error="")
-        return self._settle(int(self._proc.returncode))
-
-    def stop(self) -> str:
-        """Kill the command and everything it started; idempotent.
-
-        Returns:
-            "" when the command is gone, else why it might not be.
-        """
-        answer = _stop_detached(self._proc, self._descendants, "the command")
-        if self._proc.poll() is not None:
-            self._settle(int(self._proc.returncode))
-        return answer
-
-    def _settle(self, returncode: int) -> BackgroundStatus:
-        """Return the final status, recording the observed exit code."""
-        self._final = BackgroundStatus(running=False, returncode=returncode, error="")
-        _write_outcome(self._outcome_dir, returncode)
-        return self._final
-
-
-class BackgroundJob:
-    """A jailed command detached from the call that started it.
-
-    Its launcher writes the exit code to the outcome dir when the command ends.
-    """
-
-    def __init__(self, proc: subprocess.Popen[bytes], outcome_dir: pathlib.Path) -> None:
-        self._proc = proc
-        self._outcome_dir = outcome_dir
-        self._descendants = frozenset(_own_children())
-
-    @property
-    def pid(self) -> int:
-        """The launcher's pid."""
-        return self._proc.pid
-
-    def status(self) -> BackgroundStatus:
-        """Return what the command is doing, from the live launcher or its written result."""
-        if self._proc.poll() is None:
-            return BackgroundStatus(running=True, returncode=None, error="")
-        self._unregister()
-        raw = ""
-        with contextlib.suppress(OSError):
-            raw = (self._outcome_dir / _RESULT_NAME).read_text(errors="replace")
-        with contextlib.suppress(ValueError, IndexError, KeyError):
-            return BackgroundStatus(
-                running=False,
-                returncode=int(json.loads(raw.strip().splitlines()[-1])["returncode"]),
-                error="",
-            )
-        err = ""
-        with contextlib.suppress(OSError):
-            err = (self._outcome_dir / _LAUNCHER_ERR_NAME).read_text(errors="replace").strip()
-        return BackgroundStatus(
-            running=False,
-            returncode=None,
-            error=err or f"the sandbox launcher exited {self._proc.returncode} without a result",
-        )
-
-    def stop(self) -> str:
-        """Kill the command and everything it started; idempotent.
-
-        The kill takes the launcher down before it can write the exit code, so the
-        ending is recorded here.
-
-        Returns:
-            "" when the command is gone, else why it might not be.
-        """
-        answer = _stop_detached(self._proc, self._descendants, "the sandbox launcher")
-        if self._proc.poll() is not None:
-            _write_stopped(self._outcome_dir)
-        return answer
-
-    def _unregister(self) -> None:
-        """Drop the finished launcher from the set the sweep spares."""
-        _forget_launcher(self._proc.pid)
-
-
-class SessionJob:
-    """A command left running inside a `JailSession`.
-
-    Its pid is namespace-local, so every question goes through the session. The
-    terminal answer is kept: once the launcher has reaped the command, asking again
-    gets ECHILD, which is not an unknown exit code.
-    """
-
-    def __init__(
-        self,
-        session: JailSession,
-        pid: int,
-        outcome_dir: pathlib.Path,
-        *,
-        before: kinds.ChildSnapshot,
-    ) -> None:
-        self._session = session
-        self._pid = pid
-        self._outcome_dir = outcome_dir
-        # Taken before the command started: its own reparented daemon is not in it, a sibling's is.
-        self._before = before
-        self._final: BackgroundStatus | None = None
-        session.open_job(pid, before)
-
-    def status(self) -> BackgroundStatus:
-        """Return what the command is doing, asking the session until it has ended."""
-        if self._final is not None:
-            return self._final
-        try:
-            status = self._session.status_background(self._pid)
-        except JailUnavailableError as exc:
-            self._final = BackgroundStatus(running=False, returncode=None, error=str(exc))
-            return self._final
-        if not status.running:
-            self._settle(status)
-        return status
-
-    def stop(self) -> str:
-        """Kill the command's group and sweep what it left outside it, on every stop.
-
-        A command that exited on its own can have left a daemon too.
-
-        Returns:
-            "" when everything is gone, else the launcher's refusal or the pids no
-            sweep could kill.
-        """
-        try:
-            stopped = self._session.stop_background(self._pid)
-        except JailUnavailableError as exc:
-            if self._final is None:
-                self._settle(BackgroundStatus(running=False, returncode=None, error=str(exc)))
-            return str(exc)
-        if self._final is None:
-            self._settle(BackgroundStatus(running=False, returncode=stopped.returncode, error=""))
-        survivors = stopped.survivors | self._session.sweep_for(self._pid, self._before)
-        return survivors_message(survivors) if survivors else ""
-
-    def _settle(self, status: BackgroundStatus) -> None:
-        """Keep the terminal status and persist its exit code."""
-        self._final = status
-        if status.returncode is not None:
-            _write_outcome(self._outcome_dir, status.returncode)
-
-
-def start_in_jail(
-    policy: kinds.JailPolicy, *, outcome_dir: pathlib.Path
-) -> BackgroundJob | LocalJob:
-    """Spawn the policy's argv in the sandbox and return without waiting.
-
-    The same policy, launcher and confinement as `run_in_jail`. Nothing of the
-    command's own output is captured, so its argv must redirect it; only the
-    launcher's result JSON and stderr land in the outcome dir, which lets the exit
-    code outlive the turn. The sweep spares the job while it lives and `stop`
-    takes its whole group down.
-
-    Args:
-        policy: The jail policy.
-        outcome_dir: Where the exit code is written.
-
-    Returns:
-        The job; a `LocalJob` under the `none` isolation.
-
-    Raises:
-        JailBinaryError: The launcher is missing or cannot be executed.
-    """
-    paths.mkdir_for_real_user(outcome_dir)
-    if policy.isolation == "none":
-        with _sweep_lock:
-            proc = subprocess.Popen(
-                list(policy.argv),
-                cwd=str(policy.cwd),
-                env=child_env.without_provider_keys({**os.environ, **dict(policy.env)}),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-            # Unregistered, one stop sweeps every sibling, whose next status then reads as rc 0.
-            _live_launchers.add(proc.pid)
-        return LocalJob(proc, outcome_dir)
-    binary = _require_jail_binary()
-    spec = json.dumps(_policy_spec(policy))
-    _become_subreaper()
-    result = (outcome_dir / _RESULT_NAME).open("wb")
-    errors = (outcome_dir / _LAUNCHER_ERR_NAME).open("wb")
-    try:
-        launcher = _spawn_launcher(
-            binary, (), stdin=subprocess.PIPE, stdout=result, stderr=errors, die_with_agent=False
-        )
-    finally:
-        result.close()
-        errors.close()
-    assert launcher.stdin is not None
-    with contextlib.suppress(OSError):
-        launcher.stdin.write(spec.encode())
-    launcher.stdin.close()
-    return BackgroundJob(launcher, outcome_dir)
-
-
-def _abandon_launcher(proc: subprocess.Popen[bytes], interrupt_w: int) -> None:
-    """Unregister, close and reap a launcher that failed setup.
-
-    Closing stdin here swallows the EPIPE the dead peer forces on the buffered spec
-    write; left to garbage collection it surfaces as unraisable noise, and the
-    unreaped child is a zombie for the rest of the process.
-    """
-    _forget_launcher(proc.pid)
-    with contextlib.suppress(OSError):
-        os.close(interrupt_w)
-    for pipe in (proc.stdin, proc.stdout, proc.stderr):
-        if pipe is not None:
-            with contextlib.suppress(OSError, ValueError):
-                pipe.close()
-    if proc.poll() is None:
-        with contextlib.suppress(OSError):
-            os.killpg(proc.pid, signal.SIGKILL)
-    with contextlib.suppress(subprocess.TimeoutExpired, OSError):
-        proc.wait(timeout=5.0)
-
-
-@dataclasses.dataclass(slots=True)
-class JailSession:
-    """One long-lived launcher, serving every command of one run.
-
-    The launcher sets up its namespaces, rootfs, Landlock and seccomp once, then
-    reads one request per line, so the run's commands share a netns, a PID
-    namespace and a /tmp: a server one command starts is reachable by the next.
-    Every isolation level serves, `none` included, so the capture and background
-    lifecycle are one implementation. Only `strict` has the PID namespace, so
-    elsewhere the launcher sweeps what it backgrounded at EOF and this side sweeps
-    each command's escapees. Not thread-safe: one loop drives it, one command at a
-    time.
-
-    Attributes:
-        startup_stderr: What the launcher wrote to stderr during setup (a refused
-            /proc mount, a skipped grant): the jail came up degraded but runs. The
-            caller surfaces it once; "" when setup was clean.
-    """
-
-    _proc: subprocess.Popen[bytes]
-    _binary: pathlib.Path
-    # Without a PID namespace a `setsid` escapee reparents here, so each command's sweep runs here.
-    _pid_namespaced: bool
-    # One byte on the interrupt pipe asks the launcher to hand the running command back now; the
-    # request pipe is in lockstep and this side is blocked reading that request's answer.
-    _interrupt_w: int
-    # Carried on every request: the launcher's own default would ignore the operator's cap.
-    _memory_limit_mb: int
-    startup_stderr: str = ""
-    # What was already ours at open; without a PID namespace, anything beyond it at close is
-    # this session's escapee.
-    _opened_with: frozenset[int] = frozenset()
-    # The start snapshot of every background command not yet stopped, by pid: what a stop sweeps
-    # ends where the next of these began.
-    _live_jobs: dict[int, kinds.ChildSnapshot] = dataclasses.field(default_factory=dict)
-    _snapshots: int = 0
-
-    @classmethod
-    def open(
-        cls, policy: kinds.JailPolicy, *, session_net: SessionNetwork | None = None
-    ) -> JailSession:
-        """Start a serving launcher confined by the policy; its argv is ignored.
-
-        Args:
-            policy: The confinement every request runs under.
-            session_net: The run's session network, when one exists.
-
-        Returns:
-            The session, ready for its first request.
-
-        Raises:
-            JailUnavailableError: The launcher died during setup.
-            JailBinaryError: The launcher is missing or cannot be executed.
-        """
-        binary = _require_jail_binary()
-        join_args, join_fds = _join_args(policy, session_net)
-        _become_subreaper()
-        interrupt_r, interrupt_w = os.pipe()
-        try:
-            proc = _spawn_launcher(
-                binary,
-                ["--interrupt-fd", str(interrupt_r), *join_args],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                pass_fds=(interrupt_r, *join_fds),
-            )
-        except BaseException:
-            os.close(interrupt_w)
-            raise
-        finally:
-            os.close(interrupt_r)
-        spec = _policy_spec(policy)
-        spec["mode"] = "serve"
-        assert proc.stdin is not None and proc.stdout is not None
-        try:
-            proc.stdin.write((json.dumps(spec) + "\n").encode())
-            proc.stdin.flush()
-            # The ready line keeps the lockstep and marks where a setup warning is on stderr.
-            ready = proc.stdout.readline()
-        except OSError as exc:
-            # EPIPE: the launcher died before consuming the spec.
-            err = _lossy_text(_read_available(proc.stderr)).strip()
-            _abandon_launcher(proc, interrupt_w)
-            raise JailUnavailableError(f"jail session died during setup: {err or exc}") from exc
-        if not ready:
-            err = _lossy_text(_read_available(proc.stderr)).strip()
-            _abandon_launcher(proc, interrupt_w)
-            raise JailUnavailableError(f"jail session died during setup: {err or 'no output'}")
-        startup_stderr = _lossy_text(_read_available(proc.stderr, budget_s=0.1)).strip()
-        pid_namespaced = policy.isolation == "strict"
-        return cls(
-            _proc=proc,
-            _binary=binary,
-            _pid_namespaced=pid_namespaced,
-            _interrupt_w=interrupt_w,
-            _memory_limit_mb=policy.memory_limit_mb,
-            startup_stderr=startup_stderr,
-            _opened_with=frozenset() if pid_namespaced else frozenset(_own_children()),
-        )
-
-    def run(
-        self,
-        argv: tuple[str, ...],
-        *,
-        env: tuple[tuple[str, str], ...] = (),
-        timeout_s: float = 600.0,
-        checkin_s: float = 0.0,
-        log_dir: str = "",
-        interrupted: Callable[[], bool] | None = None,
-    ) -> kinds.CommandResult | kinds.BackgroundHandoff:
-        """Run one command to completion in this session's namespaces.
-
-        Without a PID namespace the command's escapees reparent to this process
-        and are swept here; the sweep bounds a command's process lifetime.
-
-        Args:
-            argv: The command.
-            env: Its environment entries.
-            timeout_s: The command's deadline.
-            checkin_s: When the launcher hands a still-running command back.
-            log_dir: Where a handed-back command's output goes.
-            interrupted: Polled while waiting; once true the launcher hands the
-                command back at once, as the check-in would, and teardown stops it.
-
-        Returns:
-            The result, or the handoff of a command still running.
-
-        Raises:
-            JailUnavailableError: The launcher is gone, answered without a pid, or a
-                process the command left behind could not be killed.
-        """
-        start = time.monotonic()
-        before = self.child_snapshot()
-        answer: dict[str, object] = {}
-        survivors: frozenset[int] = frozenset()
-        try:
-            answer = self._request(
-                {
-                    "kind": "run",
-                    "argv": list(argv),
-                    "env": [list(p) for p in env],
-                    "timeout_s": timeout_s,
-                    "checkin_s": checkin_s,
-                    "log_dir": log_dir,
-                    "memory_limit_mb": self._memory_limit_mb,
-                },
-                interrupted=interrupted,
-            )
-        finally:
-            # A handed-back command is still running; its children are not escapees yet.
-            if not answer.get("backgrounded"):
-                survivors = self._sweep(before.pids)
-        if survivors:
-            raise JailUnavailableError(survivors_message(survivors))
-        elapsed = time.monotonic() - start
-        if answer.get("backgrounded"):
-            pid = answer.get("pid")
-            if not isinstance(pid, int):
-                raise JailUnavailableError(f"jail session handed back no pid: {answer}")
-            return kinds.BackgroundHandoff(
-                argv=argv,
-                pid=pid,
-                log=str(answer.get("log", "")),
-                stdout=str(answer.get("stdout", "")),
-                stderr=str(answer.get("stderr", "")),
-                duration_s=elapsed,
-                before=before,
-            )
-        return _result_from_json(answer, argv, elapsed)
-
-    def start_background(
-        self, argv: tuple[str, ...], *, env: tuple[tuple[str, str], ...] = ()
-    ) -> int:
-        """Start a command and leave it running for later commands to reach.
-
-        Args:
-            argv: The command.
-            env: Its environment entries.
-
-        Returns:
-            Its pid, namespace-local: only this session can report on it or stop it.
-
-        Raises:
-            JailUnavailableError: The launcher started no command.
-        """
-        answer = self._request(
-            {
-                "kind": "background",
-                "argv": list(argv),
-                "env": [list(p) for p in env],
-                "memory_limit_mb": self._memory_limit_mb,
-            }
-        )
-        pid = answer.get("pid")
-        if not isinstance(pid, int):
-            raise JailUnavailableError(f"jail session started no command: {answer}")
-        return pid
-
-    def status_background(self, pid: int) -> BackgroundStatus:
-        """Return what a backgrounded command is doing.
-
-        Raises:
-            JailUnavailableError: The launcher is gone.
-        """
-        answer = self._request({"kind": "status", "pid": pid})
-        code = answer.get("returncode")
-        return BackgroundStatus(
-            running=bool(answer.get("running")),
-            returncode=code if isinstance(code, int) else None,
-            error=str(answer.get("error", "")),
-        )
-
-    def stop_background(self, pid: int) -> Stopped:
-        """Kill a backgrounded command's group and, under a PID namespace, its escapees.
-
-        Idempotent.
-
-        Args:
-            pid: The command's namespace-local pid.
-
-        Returns:
-            The stop's answer.
-
-        Raises:
-            JailUnavailableError: The launcher refused or is gone.
-        """
-        answer = self._request({"kind": "stop", "pid": pid})
-        if not answer.get("stopped"):
-            raise JailUnavailableError(f"jail session could not stop {pid}: {answer}")
-        code = answer.get("returncode")
-        listed = answer.get("survivors")
-        survivors = cast(list[object], listed) if isinstance(listed, list) else []
-        return Stopped(
-            returncode=code if isinstance(code, int) else None,
-            survivors=frozenset(p for p in survivors if isinstance(p, int)),
-        )
-
-    def _request(
-        self, request: dict[str, object], *, interrupted: Callable[[], bool] | None = None
-    ) -> dict[str, object]:
-        """Send one request and read its one answer line.
-
-        The channel is in lockstep: every request gets exactly one answer, or the
-        next request reads this one's.
-
-        Args:
-            request: The request object.
-            interrupted: Polled while waiting for the answer.
-
-        Returns:
-            The answer object.
-
-        Raises:
-            JailUnavailableError: The launcher is gone or answered badly; never the
-                raw pipe error, which no handler in the run catches.
-        """
-        assert self._proc.stdin is not None and self._proc.stdout is not None
-        try:
-            self._proc.stdin.write((json.dumps(request) + "\n").encode())
-            self._proc.stdin.flush()
-            line = self._await_answer(interrupted)
-        except (OSError, ValueError) as exc:  # ValueError: a closed pipe
-            raise JailUnavailableError(f"jail session is gone: {exc}") from exc
-        if not line:
-            raise JailUnavailableError("jail session ended before answering")
-        try:
-            parsed = json.loads(line.decode(errors="replace"))
-        except ValueError as exc:
-            raise JailUnavailableError(
-                f"jail session produced unparseable output: {line!r}"
-            ) from exc
-        if not isinstance(parsed, dict):
-            raise JailUnavailableError(f"jail session answered with {type(parsed).__name__}")
-        return parsed  # pyright: ignore[reportUnknownVariableType]
-
-    def _await_answer(self, interrupted: Callable[[], bool] | None) -> bytes:
-        """Return the launcher's answer line, waiting in a way an operator Stop can cut short.
-
-        Selecting on the raw descriptor is safe because the channel is in lockstep:
-        a complete answer can never sit in the reader's buffer while select says
-        there is nothing to read. EOF selects ready and reads empty.
-        """
-        assert self._proc.stdout is not None
-        if interrupted is None:
-            return self._proc.stdout.readline()
-        asked = False
-        while not select.select([self._proc.stdout], [], [], _ANSWER_POLL_S)[0]:
-            if not asked and interrupted():
-                # Once: a second byte would hand back whatever command runs next.
-                with contextlib.suppress(OSError):
-                    os.write(self._interrupt_w, b"\x01")
-                asked = True
-        return self._proc.stdout.readline()
-
-    def close(self) -> frozenset[int]:
-        """Shut the request channel; the launcher exits on the EOF.
-
-        `communicate()` closes stdin itself; a manual `stdin.close()` before it
-        makes Python 3.12 and 3.13 raise `ValueError: flush of closed file`.
-
-        Returns:
-            The pids the sweep could not kill; empty under a PID namespace, which
-            takes everything with it.
-        """
-        with contextlib.suppress(OSError):
-            os.close(self._interrupt_w)
-        with contextlib.suppress(subprocess.TimeoutExpired, ValueError, OSError):
-            self._proc.communicate(timeout=10.0)
-        if self._proc.poll() is None:
-            with contextlib.suppress(OSError):
-                os.killpg(self._proc.pid, signal.SIGKILL)
-        _forget_launcher(self._proc.pid)
-        return self._sweep(frozenset())
-
-    def child_snapshot(self) -> kinds.ChildSnapshot:
-        """Return the agent's children before a command starts.
-
-        What reparents onto the agent after this is that command's own until the
-        next command starts.
-
-        Returns:
-            The snapshot; empty under a PID namespace, which bounds them.
-        """
-        self._snapshots += 1
-        pids = frozenset() if self._pid_namespaced else frozenset(_own_children())
-        return kinds.ChildSnapshot(self._snapshots, pids)
-
-    def open_job(self, pid: int, before: kinds.ChildSnapshot) -> None:
-        """Record a background command's start snapshot until its stop."""
-        self._live_jobs[pid] = before
-
-    def sweep_for(self, pid: int, before: kinds.ChildSnapshot) -> frozenset[int]:
-        """Kill what a stopped command left outside its process group.
-
-        What appeared after it started and before the next still-running command
-        did, whichever order the two stop in; the close sweeps whatever is left.
-
-        Args:
-            pid: The command's pid.
-            before: The snapshot taken before it started.
-
-        Returns:
-            The pids the sweep could not kill.
-        """
-        self._live_jobs.pop(pid, None)
-        younger = [b for b in self._live_jobs.values() if b.seq > before.seq]
-        spare = before.pids
-        if younger:
-            spare |= frozenset(_own_children()) - min(younger, key=lambda b: b.seq).pids
-        return self._sweep(spare)
-
-    def _sweep(self, spare: frozenset[int]) -> frozenset[int]:
-        """Kill what the session's commands left outside their process groups.
-
-        Args:
-            spare: Pids that are not escapees.
-
-        Returns:
-            The pids it could not kill; none under a PID namespace.
-        """
-        if self._pid_namespaced:
-            return frozenset()
-        return _kill_escapees(self._opened_with | spare | {self._proc.pid})

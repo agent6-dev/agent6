@@ -30,7 +30,7 @@ def _patch_open(monkeypatch: pytest.MonkeyPatch, stub: _StubSession) -> None:
     def fake_open(cls: object, policy: object, *, session_net: object = None) -> _StubSession:
         return stub
 
-    monkeypatch.setattr("agent6.sandbox.jail.JailSession.open", classmethod(fake_open))
+    monkeypatch.setattr("agent6.sandbox.jail_session.JailSession.open", classmethod(fake_open))
 
 
 def _events(path: pathlib.Path, kind: str) -> list[dict[str, object]]:
@@ -109,7 +109,7 @@ def test_concurrent_callers_open_exactly_one_session(
         opened.append(stub)
         return stub
 
-    monkeypatch.setattr("agent6.sandbox.jail.JailSession.open", classmethod(slow_open))
+    monkeypatch.setattr("agent6.sandbox.jail_session.JailSession.open", classmethod(slow_open))
     d = _dispatcher(tmp_path, event_log.EventSink(tmp_path / "e.jsonl"), _StubSession(""))
     seen: list[object] = []
     try:

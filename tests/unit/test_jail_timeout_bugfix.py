@@ -38,10 +38,10 @@ def test_jail_timeout_returns_124_and_kills_group(
     fake = _write_fake_launcher(tmp_path)
     monkeypatch.setattr(jail, "locate_jail_binary", lambda: fake)
 
-    def _policy_spec(policy: kinds.JailPolicy) -> dict[str, object]:
+    def policy_spec(policy: kinds.JailPolicy) -> dict[str, object]:
         return {}
 
-    monkeypatch.setattr(jail, "_policy_spec", _policy_spec)
+    monkeypatch.setattr(jail, "policy_spec", policy_spec)
 
     policy = kinds.JailPolicy(
         cwd=tmp_path,

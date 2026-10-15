@@ -12,7 +12,7 @@ from typing import Any, cast
 import pytest
 
 from agent6 import kinds
-from agent6.sandbox import jail
+from agent6.sandbox import jail_jobs, jail_session
 from agent6.tools import background
 
 
@@ -22,8 +22,8 @@ class _Job:
         self.running = True
         self.stop_error = stop_error
 
-    def status(self) -> jail.BackgroundStatus:
-        return jail.BackgroundStatus(
+    def status(self) -> jail_session.BackgroundStatus:
+        return jail_session.BackgroundStatus(
             running=self.running, returncode=None if self.running else -9, error=""
         )
 
@@ -42,12 +42,12 @@ class _Session:
     def open_job(self, _pid: int, _before: kinds.ChildSnapshot) -> None:
         pass
 
-    def status_background(self, _pid: int) -> jail.BackgroundStatus:
-        return jail.BackgroundStatus(running=True, returncode=None, error="")
+    def status_background(self, _pid: int) -> jail_session.BackgroundStatus:
+        return jail_session.BackgroundStatus(running=True, returncode=None, error="")
 
-    def stop_background(self, pid: int) -> jail.Stopped:
+    def stop_background(self, pid: int) -> jail_session.Stopped:
         self.stopped.append(pid)
-        return jail.Stopped(returncode=-9, survivors=self.survivors)
+        return jail_session.Stopped(returncode=-9, survivors=self.survivors)
 
     def sweep_for(self, _pid: int, _before: kinds.ChildSnapshot) -> frozenset[int]:
         return frozenset()
@@ -73,7 +73,7 @@ def test_start_stops_a_command_when_its_metadata_cannot_be_recorded(
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
         return job
 
-    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
+    monkeypatch.setattr(jail_jobs, "start_in_jail", start_in_jail)
     _fail_metadata(monkeypatch)
     shells = background.BackgroundShells(tmp_path / "shells")
 
@@ -93,7 +93,7 @@ def test_a_command_is_still_reachable_when_registration_and_its_stop_fail(
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
         return job
 
-    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
+    monkeypatch.setattr(jail_jobs, "start_in_jail", start_in_jail)
     _fail_metadata(monkeypatch)
     shells = background.BackgroundShells(tmp_path / "shells")
 
@@ -114,7 +114,7 @@ def test_stop_all_closes_every_log_descriptor(
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
         return job
 
-    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
+    monkeypatch.setattr(jail_jobs, "start_in_jail", start_in_jail)
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
     log_fd = shells._get(view.id).log_fd  # pyright: ignore[reportPrivateUsage]
@@ -136,7 +136,7 @@ def test_read_background_output_is_scrubbed(
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
         return job
 
-    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
+    monkeypatch.setattr(jail_jobs, "start_in_jail", start_in_jail)
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
     log = shells.log_root / view.id / "out.log"
@@ -158,7 +158,7 @@ def test_read_names_the_size_when_the_byte_cap_cuts_the_output(
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
         return job
 
-    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
+    monkeypatch.setattr(jail_jobs, "start_in_jail", start_in_jail)
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
     log = tmp_path / "shells" / "logs" / view.id / "out.log"
@@ -179,7 +179,7 @@ def test_read_drops_the_line_the_byte_cap_cut_through(
     def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
         return job
 
-    monkeypatch.setattr(jail, "start_in_jail", start_in_jail)
+    monkeypatch.setattr(jail_jobs, "start_in_jail", start_in_jail)
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
     log = tmp_path / "shells" / "logs" / view.id / "out.log"

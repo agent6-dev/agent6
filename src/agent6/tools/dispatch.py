@@ -25,7 +25,7 @@ import pydantic
 from agent6 import event_log, kinds, memory, paths, skills
 from agent6.config import Config
 from agent6.graph import curator as graph_curator
-from agent6.sandbox import jail, tool_paths
+from agent6.sandbox import jail, jail_session, tool_paths
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import (
@@ -166,7 +166,7 @@ class ToolDispatcher:
         self._use_session = use_jail_session
         self._session_net = session_net
         self._own_session_net: jail.SessionNetwork | None = None
-        self._session: jail.JailSession | None = None
+        self._session: jail_session.JailSession | None = None
         self._session_failed = False
         # Two threads racing the lazy open would leak a jail process and its namespaces.
         self._session_lock = threading.Lock()
@@ -955,7 +955,7 @@ class ToolDispatcher:
             self._own_session_net = jail.SessionNetwork.open()
         return self._own_session_net
 
-    def _run_session(self) -> jail.JailSession | None:
+    def _run_session(self) -> jail_session.JailSession | None:
         """Return the run's jail process, or None to give each command its own.
 
         Every isolation level uses it, `none` included: the launcher owns output capture and the
@@ -972,7 +972,7 @@ class ToolDispatcher:
                 try:
                     policy = self._jail_policy(("true",), extra_rw_paths=rw)
                     net = self._net() if policy.network == "session" else None
-                    self._session = jail.JailSession.open(policy, session_net=net)
+                    self._session = jail_session.JailSession.open(policy, session_net=net)
                     if self._session.startup_stderr:
                         # A degraded jail (rootless podman refusing /proc) is said once, here.
                         self._emit("jail.degraded", detail=self._session.startup_stderr)

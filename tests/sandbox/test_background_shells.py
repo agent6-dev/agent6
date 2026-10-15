@@ -22,7 +22,7 @@ from typing import Any, cast
 import pytest
 
 from agent6 import kinds
-from agent6.sandbox import jail
+from agent6.sandbox import jail, jail_jobs, jail_session
 from agent6.tools import background
 
 pytestmark = pytest.mark.needs_namespaces
@@ -247,7 +247,7 @@ def test_a_command_started_mid_sweep_window_is_spared(
 
 def _launcher_pids(shells: background.BackgroundShells, shell_id: str) -> set[int]:
     shell = shells._get(shell_id)  # pyright: ignore[reportPrivateUsage]
-    assert isinstance(shell.job, jail.BackgroundJob), "these pin the per-command launcher"
+    assert isinstance(shell.job, jail_jobs.BackgroundJob), "these pin the per-command launcher"
     return {shell.job.pid}
 
 
@@ -431,7 +431,7 @@ def test_the_sweep_spares_a_session_the_agent_opened_on_purpose() -> None:
     stranger = subprocess.Popen(["sleep", "30"], start_new_session=True)
     try:
         jail.keep_out_of_the_sweep(ours.pid)
-        jail._kill_escapees(frozenset())
+        jail.kill_escapees(frozenset())
         assert ours.poll() is None, "the sweep killed a session the agent opened"
         assert stranger.poll() is not None, "a real escapee must still be swept"
     finally:
@@ -470,8 +470,8 @@ def test_a_stop_that_did_not_stop_says_so(tmp_path: pathlib.Path) -> None:
     class _Unconfirmed:
         """A job whose stop the launcher could not confirm."""
 
-        def status(self) -> jail.BackgroundStatus:
-            return jail.BackgroundStatus(running=True, returncode=None, error="")
+        def status(self) -> jail_session.BackgroundStatus:
+            return jail_session.BackgroundStatus(running=True, returncode=None, error="")
 
         def stop(self) -> str:
             return "pid 7 did not exit within 5s of SIGKILL"
@@ -479,7 +479,7 @@ def test_a_stop_that_did_not_stop_says_so(tmp_path: pathlib.Path) -> None:
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     shell = shells._get(view.id)  # pyright: ignore[reportPrivateUsage]
-    shell.job = cast("jail.BackgroundJob", _Unconfirmed())
+    shell.job = cast("jail_jobs.BackgroundJob", _Unconfirmed())
 
     got = shells.stop(view.id)
     assert got.state != "stopped", f"a stop that failed rendered as {got.state!r}"
@@ -496,10 +496,10 @@ def test_a_command_that_failed_to_start_is_not_listed_as_running(
     """
     from agent6.tools import background as bg
 
-    def refuses(*_a: object, **_k: object) -> jail.BackgroundJob:
+    def refuses(*_a: object, **_k: object) -> jail_jobs.BackgroundJob:
         raise jail.JailUnavailableError("no launcher today")
 
-    monkeypatch.setattr(jail, "start_in_jail", refuses)
+    monkeypatch.setattr(jail_jobs, "start_in_jail", refuses)
     root = tmp_path / "shells"
     shells = background.BackgroundShells(root)
 
@@ -527,7 +527,7 @@ def test_a_platform_without_proc_still_starts_a_background_command(
         return real_iterdir(self)
 
     monkeypatch.setattr(pathlib.Path, "iterdir", no_proc)
-    assert jail_mod._own_children() == {}  # pyright: ignore[reportPrivateUsage]
+    assert jail_mod.own_children() == {}
 
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("/bin/sh", "-c", "echo up; sleep 300"), _policy_for(tmp_path, "none"))
@@ -605,8 +605,6 @@ def test_an_unreadable_result_is_never_clobbered_by_a_stop(
     A failed read says nothing about what is on disk, so writing anyway would replace a real
     exit code with "stopped" on the strength of that failure.
     """
-    from agent6.sandbox import jail as jail_mod
-
     outcome = tmp_path / "bg"
     outcome.mkdir()
     result = outcome / "result.json"
@@ -620,7 +618,7 @@ def test_an_unreadable_result_is_never_clobbered_by_a_stop(
         return real_read(self, *a, **k)  # pyright: ignore[reportArgumentType]
 
     monkeypatch.setattr(pathlib.Path, "read_text", _unreadable)
-    jail_mod._write_stopped(outcome)  # pyright: ignore[reportPrivateUsage]
+    jail_jobs.write_stopped(outcome)
     monkeypatch.undo()
     assert result.read_text(encoding="utf-8") == '{"returncode": 42}'
 
@@ -710,12 +708,12 @@ class _HostSession:
     def open_job(self, pid: int, before: kinds.ChildSnapshot) -> None:
         pass
 
-    def status_background(self, pid: int) -> jail.BackgroundStatus:
-        return jail.BackgroundStatus(running=True, returncode=None, error="")
+    def status_background(self, pid: int) -> jail_session.BackgroundStatus:
+        return jail_session.BackgroundStatus(running=True, returncode=None, error="")
 
-    def stop_background(self, pid: int) -> jail.Stopped:
+    def stop_background(self, pid: int) -> jail_session.Stopped:
         os.kill(pid, signal.SIGKILL)
-        return jail.Stopped(returncode=-9, survivors=frozenset())
+        return jail_session.Stopped(returncode=-9, survivors=frozenset())
 
     def sweep_for(self, pid: int, before: kinds.ChildSnapshot) -> frozenset[int]:
         return frozenset()
