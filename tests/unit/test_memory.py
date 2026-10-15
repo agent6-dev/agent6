@@ -581,13 +581,13 @@ def test_carry_back_lands_a_lanes_use_record(tmp_path: pathlib.Path) -> None:
 
     Otherwise it goes with the lane's state dir.
     """
-    from agent6.app import parallel, reporter
+    from agent6.app import _parallel_results, reporter
 
     origin, lane, dest = tmp_path / "origin", tmp_path / "lane", tmp_path / "dest"
     memory.add(lane, "lane-fact", "A fact the lane found.")
     memory.record_use(lane, session="lane-1", wrote=("lane-fact",), read={"lane-fact": 2})
     said: list[str] = []
-    parallel.carry_back(
+    _parallel_results.carry_back(
         lane, origin, dest, lane=1, reporter=reporter.Reporter(out=said.append, err=said.append)
     )
     use = memory.read_use(origin)

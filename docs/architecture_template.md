@@ -236,7 +236,9 @@ The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent
 - `import_run(origin, lane_repo, branch, lane_session_dir, origin_state)`: fetches the lane's branch into the origin and moves its session dir under `<origin_state>/sessions/runs/`, refusing to overwrite an existing branch or session dir.
 - `LaneSpawner` / `GroupLaneSpawner`: the Protocols for dispatching one lane, or a sibling group, and awaiting completion.
 
-[app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) implements those Protocols and is the only module that knows how to run a lane.
+[app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) implements those Protocols: it holds the front-end's `LaneRuntime`, plans the lanes, clones, spawns, awaits and imports one lane, and builds the coordinator's `/parallel` dispatcher.
+[app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) drives the fan-out session: spawn, await, import, rank, report.
+[app/_parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_parallel_results.py) imports the finished lanes, carries memory and decisions back, and stamps and prints the ranking.
 [app/_workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_workdirs.py) resolves `[parallel].workdir` for clones and linked worktrees, writes lane configs, recovers orphaned lanes and removes imported or safely swept clones.
 The detached spawn it drives (`ui.spawn`'s `spawn_and_locate`, the path the web and TUI hubs start a run with) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`, and liveness probes use `sessions.process` and stop requests use the run-dir bridge (`sessions.ipc`).
 
@@ -490,7 +492,7 @@ A `run_command` approval publishes as `approval.prompt`.
 | Subordinate-run primitive | [harness/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/subrun.py) |
 | Run-dir single-writer lock | [sessions/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lock.py) |
 | Compare judge | [harness/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py) |
-| Fan-out orchestrator | [app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) (pipeline), [app/_workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_workdirs.py) (working directories), [ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
+| Fan-out orchestrator | [app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) (pipeline), [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) (lanes), [app/_parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_parallel_results.py) (import and comparison reporting), [app/_workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_workdirs.py) (working directories), [ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
 | Provider clients | [providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers) |
 | Task graph | [graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph) |
 | Event log and fold | [event_log.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/event_log.py) (writer), [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (fold) |

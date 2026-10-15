@@ -14,6 +14,7 @@ from collections.abc import Callable, Sequence
 
 from agent6 import directive, errors, git_ops, paths, terminal
 from agent6.app import _setup, confine, parallel, preflight
+from agent6.app import lanes as app_lanes
 from agent6.config import Config, ConfigError
 from agent6.models import validate
 from agent6.sandbox import detect, jail
@@ -23,7 +24,7 @@ from agent6.ui import steer
 from agent6.ui.cli import _common, _compare, _interact
 
 
-def lane_runtime() -> parallel.LaneRuntime:
+def lane_runtime() -> app_lanes.LaneRuntime:
     """Return the front-end primitives the parallel pipeline drives.
 
     Injected so `agent6.app` never imports `agent6.ui`. Lane liveness and stop are the
@@ -47,7 +48,7 @@ def lane_runtime() -> parallel.LaneRuntime:
             [ui_spawn.agent6_exe(), *argv], cwd, before=before, list_dirs=list_dirs, env=env
         )
 
-    return parallel.LaneRuntime(
+    return app_lanes.LaneRuntime(
         spawn=spawn,
         build_provider=_compare._reviewer_provider,
         judging_status=_compare._judging_status,
@@ -151,8 +152,8 @@ def dispatch_parallel(
 
     fanout_id = id.friendly_token()
     try:
-        lanes = parallel.build_lane_specs(spec, cfg=cfg, origin=origin, fanout_id=fanout_id)
-    except (ConfigError, directive.DirectiveError, parallel.ParallelError) as exc:
+        lanes = app_lanes.build_lane_specs(spec, cfg=cfg, origin=origin, fanout_id=fanout_id)
+    except (ConfigError, directive.DirectiveError, app_lanes.ParallelError) as exc:
         _common.refuse(f"{exc}")
         return 2
     # Before any clone or spawn: a typo refuses when a cache can check it, else warn and proceed.

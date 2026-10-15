@@ -27,7 +27,16 @@ import pytest
 
 from agent6 import directive, git_ops, kinds, memory, paths, portable
 from agent6.app import _lane_watch as lane_watch
-from agent6.app import _workdirs, compare, parallel, providers, reporter, stamps
+from agent6.app import (
+    _parallel_results,
+    _workdirs,
+    compare,
+    parallel,
+    providers,
+    reporter,
+    stamps,
+)
+from agent6.app import lanes as app_lanes
 from agent6.config import Config, ConfigError
 from agent6.harness import subrun
 from agent6.providers import ProviderResponse
@@ -210,7 +219,7 @@ def origin(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
 
 
 @pytest.fixture
-def runtime() -> parallel.LaneRuntime:
+def runtime() -> app_lanes.LaneRuntime:
     """The real front-end LaneRuntime the pipeline drives: detached spawn, reviewer and judging.
 
     A test faking one primitive uses `dataclasses.replace` on it (a fake `spawn`), or monkeypatches
@@ -220,7 +229,7 @@ def runtime() -> parallel.LaneRuntime:
 
 
 def _specs(tmp_path: pathlib.Path, cfg: Config, fanout_id: str, spec: str) -> list[subrun.LaneSpec]:
-    return parallel.build_lane_specs(
+    return app_lanes.build_lane_specs(
         spec,
         cfg=cfg,
         origin=tmp_path,
@@ -463,7 +472,7 @@ def test_coordinator_dispatch_refuses_unknown_model(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """The ui-built group dispatcher validates before cloning.
 
@@ -488,7 +497,7 @@ def test_coordinator_dispatch_refuses_unknown_model(
         raise AssertionError("clone must not happen before validation")
 
     monkeypatch.setattr(subrun, "clone_workspace", _boom)
-    dispatch = parallel.build_lane_spawner(
+    dispatch = app_lanes.build_lane_spawner(
         _provider_cfg(),
         origin,
         origin_state,
@@ -496,7 +505,7 @@ def test_coordinator_dispatch_refuses_unknown_model(
         coordinator_session_id="coord",
         runtime=runtime,
     )
-    with pytest.raises(parallel.ParallelError, match=r"unknown model 'o/moonshotai/kimi-k2\.7'"):
+    with pytest.raises(app_lanes.ParallelError, match=r"unknown model 'o/moonshotai/kimi-k2\.7'"):
         dispatch([subrun.LaneTask(task="do it", model="moonshotai/kimi-k2.7")], "p1")
 
 
@@ -504,7 +513,7 @@ def test_coordinator_dispatch_wait_honors_a_stop_request(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """The in-run coordinator's lane wait honours a stop request.
 
@@ -527,8 +536,8 @@ def test_coordinator_dispatch_wait_honors_a_stop_request(
         observed.append(stopped)
         return subrun.LaneResult(spec, spec.workdir, f"agent6/{spec.session_id}", False, "stopped")
 
-    monkeypatch.setattr(parallel, "run_lane_to_completion", fake_lane)
-    dispatch = parallel.build_lane_spawner(
+    monkeypatch.setattr(app_lanes, "run_lane_to_completion", fake_lane)
+    dispatch = app_lanes.build_lane_spawner(
         _provider_cfg(),
         origin,
         origin_state,
@@ -545,7 +554,7 @@ def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """A lane thread that raises aborts the group at once.
 
@@ -571,8 +580,8 @@ def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
             )
         raise RuntimeError("lane thread blew up")
 
-    monkeypatch.setattr(parallel, "run_lane_to_completion", fake_lane)
-    dispatch = parallel.build_lane_spawner(
+    monkeypatch.setattr(app_lanes, "run_lane_to_completion", fake_lane)
+    dispatch = app_lanes.build_lane_spawner(
         _provider_cfg(),
         origin,
         origin_state,
@@ -596,7 +605,7 @@ def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
 
 
 def test_bridge_spawner_argv_ends_options_before_task(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """The lane spawner puts every flag before `--` and the task after it.
 
@@ -616,7 +625,7 @@ def test_bridge_spawner_argv_ends_options_before_task(
     spec = subrun.LaneSpec(
         lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
     )
-    parallel.bridge_spawner(
+    app_lanes.bridge_spawner(
         spec, "--allow-root pwn", explicit_leaves=frozenset(), cfg=cfg, origin=origin, max_usd=2.0,
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         coordinator="co",
@@ -630,7 +639,7 @@ def test_bridge_spawner_argv_ends_options_before_task(
 
 
 def test_a_lane_is_seeded_with_the_repos_memory(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """A lane clones the repo, so its state dir is new and its memory empty.
 
@@ -651,7 +660,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
     spec = subrun.LaneSpec(
         lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
     )
-    parallel.bridge_spawner(
+    app_lanes.bridge_spawner(
         spec, "task", explicit_leaves=frozenset(), cfg=cfg, origin=origin, max_usd=None,
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         coordinator="co",
@@ -664,7 +673,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
 
 
 def test_bridge_spawner_argv_includes_auto_approve_when_set(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """A coordinator or fan-out started with `--auto-approve` forwards it to the lane.
 
@@ -682,7 +691,7 @@ def test_bridge_spawner_argv_includes_auto_approve_when_set(
     spec = subrun.LaneSpec(
         lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
     )
-    parallel.bridge_spawner(
+    app_lanes.bridge_spawner(
         spec, "do it", cfg=cfg, origin=origin, max_usd=None, auto_approve=True,
         explicit_leaves=frozenset(),
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
@@ -695,7 +704,7 @@ def test_bridge_spawner_argv_includes_auto_approve_when_set(
 
 
 def test_bridge_spawner_argv_omits_auto_approve_by_default(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     captured: list[list[str]] = []
 
@@ -709,7 +718,7 @@ def test_bridge_spawner_argv_omits_auto_approve_by_default(
     spec = subrun.LaneSpec(
         lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
     )
-    parallel.bridge_spawner(
+    app_lanes.bridge_spawner(
         spec, "do it", explicit_leaves=frozenset(), cfg=cfg, origin=origin, max_usd=None,
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         coordinator="co",
@@ -722,7 +731,7 @@ def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """`run_lane_to_completion` forwards auto_approve to the default spawner it builds.
 
@@ -737,13 +746,13 @@ def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
             spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=False, error="stub"
         )
 
-    monkeypatch.setattr(parallel, "bridge_spawner", fake_bridge)
+    monkeypatch.setattr(app_lanes, "bridge_spawner", fake_bridge)
     cfg = Config()
     spec = subrun.LaneSpec(
         lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
     )
 
-    parallel.run_lane_to_completion(
+    app_lanes.run_lane_to_completion(
         spec,
         "do it",
         explicit_leaves=frozenset(),
@@ -763,7 +772,7 @@ def test_run_parallel_forwards_pins_to_the_default_spawner(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """`run_parallel` carries `--pin` into every lane's bridge spawner.
 
@@ -780,7 +789,7 @@ def test_run_parallel_forwards_pins_to_the_default_spawner(
             spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=False, error="s"
         )
 
-    monkeypatch.setattr(parallel, "bridge_spawner", fake_bridge)
+    monkeypatch.setattr(app_lanes, "bridge_spawner", fake_bridge)
     parallel.run_parallel(
         "t", lanes, explicit_leaves=frozenset(), cfg=cfg, origin=origin, origin_state=origin_state,
         runtime=runtime, fanout_id="fan", pins=("keep it",),
@@ -828,7 +837,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """The await's status line flags a lane blocked on a prompt by its real word, "waiting".
 
@@ -879,7 +888,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
 def test_run_parallel_refuses_a_gate_on_an_untracked_path_before_any_clone(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Every lane cloned, ran, and ended red: its clone had no `.venv` for the gate."""
@@ -918,7 +927,7 @@ def test_run_parallel_refuses_a_gate_on_an_untracked_path_before_any_clone(
 def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     exit_code: int,
@@ -1048,7 +1057,7 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
 def test_run_parallel_settles_the_gate_and_the_setup_command_in_the_origin(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Each lane inferred its own gate in a clone with no `.venv`, and got `python3 -m pytest`."""
@@ -1071,7 +1080,7 @@ def test_run_parallel_settles_the_gate_and_the_setup_command_in_the_origin(
             spec=spec, session_dir=spec.workdir, branch="b", ok=False, error=task
         )
 
-    monkeypatch.setattr(parallel, "bridge_spawner", _spawn)
+    monkeypatch.setattr(app_lanes, "bridge_spawner", _spawn)
 
     parallel.run_parallel(
         "do the task",
@@ -1093,7 +1102,7 @@ def test_run_parallel_settles_the_gate_and_the_setup_command_in_the_origin(
 def test_fanout_setup_is_inferred_from_its_commit_not_the_dirty_agents_md(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     monkeypatch: pytest.MonkeyPatch,
     committed: bool,
 ) -> None:
@@ -1113,7 +1122,7 @@ def test_fanout_setup_is_inferred_from_its_commit_not_the_dirty_agents_md(
         carried.append(kw["cfg"])
         return subrun.LaneResult(spec, spec.workdir, "b", False, task)
 
-    monkeypatch.setattr(parallel, "bridge_spawner", spawn)
+    monkeypatch.setattr(app_lanes, "bridge_spawner", spawn)
     cfg = Config.model_validate({"harness": {"verify_infer": False}})
     assert (
         parallel.run_parallel(
@@ -1135,7 +1144,7 @@ def test_fanout_setup_is_inferred_from_its_commit_not_the_dirty_agents_md(
 
 
 def test_run_parallel_imports_branches_and_stamps_lineage(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1177,7 +1186,7 @@ def test_run_parallel_imports_branches_and_stamps_lineage(
 def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A lane's memory files are carried into the origin at import.
@@ -1229,7 +1238,7 @@ def test_run_parallel_forwards_auto_approve_to_the_default_spawner(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """`run --parallel --auto-approve` reaches the lane's own default bridge spawner.
 
@@ -1246,7 +1255,7 @@ def test_run_parallel_forwards_auto_approve_to_the_default_spawner(
             spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=False, error="s"
         )
 
-    monkeypatch.setattr(parallel, "bridge_spawner", fake_bridge)
+    monkeypatch.setattr(app_lanes, "bridge_spawner", fake_bridge)
 
     parallel.run_parallel(
         "t", lanes, explicit_leaves=frozenset(), cfg=cfg, origin=origin, origin_state=origin_state,
@@ -1257,7 +1266,7 @@ def test_run_parallel_forwards_auto_approve_to_the_default_spawner(
 
 
 def test_compare_outcome_stamped_into_each_lane_manifest(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """The fan-out's auto-compare stamps a `compare` block into every imported lane's manifest.
 
@@ -1303,7 +1312,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """When the judge ranks, every lane records the same truncated rationale and judge cost.
 
@@ -1342,7 +1351,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
 
 
 def test_run_parallel_removes_its_emptied_workdir_levels(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """`run --parallel` clones sit at `<base>/<repo>/<fan-out>/lane-N`.
 
@@ -1351,7 +1360,7 @@ def test_run_parallel_removes_its_emptied_workdir_levels(
     origin_state = paths.state_dir(origin)
     cfg = Config()
     per_repo = _workdirs.workdir_base(cfg, origin)
-    lanes = parallel.build_lane_specs(
+    lanes = app_lanes.build_lane_specs(
         "2", cfg=cfg, origin=origin, fanout_id="fan", workdir_root=per_repo / "fan"
     )
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
@@ -1375,7 +1384,7 @@ def test_run_parallel_removes_its_emptied_workdir_levels(
 
 
 def test_run_parallel_symlink_appears_before_import(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1403,7 +1412,7 @@ def test_run_parallel_symlink_appears_before_import(
 
 
 def test_failed_lane_does_not_stop_others(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1446,7 +1455,7 @@ def test_report_ranks_passing_lane_first(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     origin_state = paths.state_dir(origin)
     cfg = Config()  # no reviewer model -> mechanical ranking
@@ -1482,7 +1491,7 @@ def test_report_ranks_passing_lane_first(
 def test_the_report_spells_a_lanes_cost_and_outcome_as_the_listing_does(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The fan-out report prints each lane's cost cell and status label, the listing's own.
@@ -1529,7 +1538,7 @@ def test_the_report_spells_a_lanes_cost_and_outcome_as_the_listing_does(
 def test_a_lane_with_no_commit_does_not_claim_a_branch_was_imported(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     capsys: pytest.CaptureFixture[str],
     coordinator: bool,
 ) -> None:
@@ -1545,7 +1554,7 @@ def test_a_lane_with_no_commit_does_not_claim_a_branch_was_imported(
         no_commit={1},
     )
     if coordinator:
-        result = parallel.run_lane_to_completion(
+        result = app_lanes.run_lane_to_completion(
             spec,
             "task",
             cfg=cfg,
@@ -1594,7 +1603,7 @@ def test_a_lane_with_no_commit_does_not_claim_a_branch_was_imported(
 def test_budget_only_fanout_exits_three_and_names_how_to_continue_a_lane(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     capsys: pytest.CaptureFixture[str],
     other_status: str,
     spawn_failed: bool,
@@ -1640,7 +1649,7 @@ def test_budget_only_fanout_exits_three_and_names_how_to_continue_a_lane(
 
 
 def test_run_parallel_all_failed_returns_1(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1666,7 +1675,7 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """An OSError while stamping lineage does not abort the import loop.
 
@@ -1682,12 +1691,8 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
         raise OSError("disk full")
 
     # The stamp is the fan-out's own manifest write; the lane imports keep the real writer.
-    stand_in = types.SimpleNamespace(
-        write_manifest=boom,
-        write_session_manifest=stamps.write_session_manifest,
-        stamp_verify_gate=stamps.stamp_verify_gate,
-    )
-    monkeypatch.setattr(parallel, "stamps", stand_in)
+    stand_in = types.SimpleNamespace(write_manifest=boom)
+    monkeypatch.setattr(_parallel_results, "stamps", stand_in)
 
     rc = parallel.run_parallel(
         "t",
@@ -1715,7 +1720,7 @@ def test_ctrl_c_during_spawn_loop_stops_imports_and_reports(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """A KeyboardInterrupt during the spawn loop stops, imports what exists and reports.
 
@@ -1765,7 +1770,7 @@ def test_await_waits_for_worker_pid_to_clear(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """session.end lands in logs.jsonl BEFORE the lane's teardown clears worker.pid.
 
@@ -1780,7 +1785,7 @@ def test_await_waits_for_worker_pid_to_clear(
 
     # Clear the live pid only on the SECOND status poll of the lane's run dir,
     # so poll 1 exercises the race window deterministically.
-    real_summarize = parallel.summarize_session_dir
+    real_summarize = _parallel_results.summarize_session_dir
     polls = {"n": 0}
 
     def summarize_then_clear_pid(session_dir: pathlib.Path) -> object:
@@ -1791,7 +1796,7 @@ def test_await_waits_for_worker_pid_to_clear(
                 (session_dir / "worker.pid").unlink(missing_ok=True)
         return summary
 
-    monkeypatch.setattr(parallel, "summarize_session_dir", summarize_then_clear_pid)
+    monkeypatch.setattr(_parallel_results, "summarize_session_dir", summarize_then_clear_pid)
     monkeypatch.setattr(lane_watch, "summarize_session_dir", summarize_then_clear_pid)
     monkeypatch.setattr(lane_watch, "POLL_INTERVAL_S", 0.01)
 
@@ -1819,7 +1824,7 @@ def test_cleanup_preserves_unimported_lane(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """A lane whose import is refused keeps its clone, run state and live symlink.
 
@@ -1872,7 +1877,7 @@ def test_await_uses_real_run_dir_not_symlink(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """The symlink is a view for the hub, not the source of truth.
 
@@ -1917,7 +1922,7 @@ def test_run_lane_to_completion_imports_and_stamps(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """One lane runs end to end: spawn, live symlink, await, import and the lineage stamp.
@@ -1936,17 +1941,17 @@ def test_run_lane_to_completion_imports_and_stamps(
     # The await polls summarize_session_dir; observe the origin link state then -- it
     # must be a live symlink while the lane is still running.
     link = origin_state / "sessions" / "runs" / "co-p1-l1"
-    real_summarize = parallel.summarize_session_dir
+    real_summarize = app_lanes.summarize_session_dir
     seen: dict[str, bool] = {}
 
     def observe(session_dir: pathlib.Path) -> object:
         seen.setdefault("symlink_during_life", link.is_symlink())
         return real_summarize(session_dir)
 
-    monkeypatch.setattr(parallel, "summarize_session_dir", observe)
+    monkeypatch.setattr(app_lanes, "summarize_session_dir", observe)
     monkeypatch.setattr(lane_watch, "summarize_session_dir", observe)
 
-    res = parallel.run_lane_to_completion(
+    res = app_lanes.run_lane_to_completion(
         spec,
         "do it",
         explicit_leaves=frozenset(),
@@ -1975,7 +1980,7 @@ def test_run_lane_to_completion_imports_and_stamps(
 
 
 def test_run_lane_to_completion_failed_spawn_imports_nothing(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1984,7 +1989,7 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
         lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
     )
 
-    res = parallel.run_lane_to_completion(
+    res = app_lanes.run_lane_to_completion(
         spec,
         "do it",
         explicit_leaves=frozenset(),
@@ -2002,7 +2007,7 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
 
 
 def test_a_failed_lane_never_joins_the_coordinator(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """A failed lane never joins the coordinator.
 
@@ -2019,7 +2024,7 @@ def test_a_failed_lane_never_joins_the_coordinator(
         lane=1, session_id="co-pf-l1", workdir=tmp_path / "work" / "co-pf-l1", route=None
     )
 
-    res = parallel.run_lane_to_completion(
+    res = app_lanes.run_lane_to_completion(
         spec,
         "do it",
         explicit_leaves=frozenset(),
@@ -2041,7 +2046,7 @@ def test_a_failed_lane_never_joins_the_coordinator(
 
 
 def test_a_crashed_lane_never_joins_the_coordinator(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """The died-without-end half of the same gate (a lane with no session.end folds "stale").
 
@@ -2056,7 +2061,7 @@ def test_a_crashed_lane_never_joins_the_coordinator(
         lane=1, session_id="co-ps-l1", workdir=tmp_path / "work" / "co-ps-l1", route=None
     )
 
-    res = parallel.run_lane_to_completion(
+    res = app_lanes.run_lane_to_completion(
         spec,
         "do it",
         explicit_leaves=frozenset(),
@@ -2076,7 +2081,7 @@ def test_a_crashed_lane_never_joins_the_coordinator(
 
 
 def test_build_lane_spawner_over_cap_refused(
-    origin: pathlib.Path, monkeypatch: pytest.MonkeyPatch, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, monkeypatch: pytest.MonkeyPatch, runtime: app_lanes.LaneRuntime
 ) -> None:
     """A `/parallel` steer over `[parallel].max_lanes` is refused before any clone or spawn.
 
@@ -2090,8 +2095,8 @@ def test_build_lane_spawner_over_cap_refused(
         called.append(spec.session_id)
         return subrun.LaneResult(spec=spec, session_dir=spec.workdir, branch="b", ok=True, error="")
 
-    monkeypatch.setattr(parallel, "run_lane_to_completion", fake_rltc)
-    dispatch = parallel.build_lane_spawner(
+    monkeypatch.setattr(app_lanes, "run_lane_to_completion", fake_rltc)
+    dispatch = app_lanes.build_lane_spawner(
         cfg,
         origin,
         paths.state_dir(origin),
@@ -2099,7 +2104,7 @@ def test_build_lane_spawner_over_cap_refused(
         coordinator_session_id="co",
         runtime=runtime,
     )
-    with pytest.raises(parallel.ParallelError, match="max_lanes"):
+    with pytest.raises(app_lanes.ParallelError, match="max_lanes"):
         dispatch([subrun.LaneTask(task="t", model=None)] * 3, "p1")
     assert called == []  # nothing cloned or spawned
 
@@ -2107,7 +2112,7 @@ def test_build_lane_spawner_over_cap_refused(
 def test_run_lane_to_completion_imports_under_the_group_lock(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The group's *import_lock* is held ACROSS import_run.
@@ -2133,7 +2138,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
     spec = subrun.LaneSpec(
         lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
     )
-    res = parallel.run_lane_to_completion(
+    res = app_lanes.run_lane_to_completion(
         spec,
         "do it",
         explicit_leaves=frozenset(),
@@ -2152,7 +2157,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
 
 
 def test_run_lane_to_completion_cleans_up_imported_clone(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """The coordinator path tears down an imported lane's clone and state.
 
@@ -2168,7 +2173,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     spec = subrun.LaneSpec(
         lane=1, session_id="co-p9-l1", workdir=per_repo / "co" / "grp" / "lane-1", route=None
     )
-    res = parallel.run_lane_to_completion(
+    res = app_lanes.run_lane_to_completion(
         spec,
         "do it",
         explicit_leaves=frozenset(),
@@ -2195,7 +2200,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     spec2 = subrun.LaneSpec(
         lane=1, session_id="co-p8-l1", workdir=tmp_path / "work" / "grp8" / "lane-1", route=None
     )
-    res2 = parallel.run_lane_to_completion(
+    res2 = app_lanes.run_lane_to_completion(
         spec2,
         "do it",
         explicit_leaves=frozenset(),
@@ -2217,7 +2222,7 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """The group dispatcher names lanes `<coord>-<group>-l<i>` and returns results in order.
 
@@ -2237,8 +2242,8 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
             error="",
         )
 
-    monkeypatch.setattr(parallel, "run_lane_to_completion", fake_rltc)
-    dispatch = parallel.build_lane_spawner(
+    monkeypatch.setattr(app_lanes, "run_lane_to_completion", fake_rltc)
+    dispatch = app_lanes.build_lane_spawner(
         cfg,
         origin,
         origin_state,
@@ -2270,7 +2275,7 @@ def test_build_lane_spawner_forwards_auto_approve(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -2282,8 +2287,8 @@ def test_build_lane_spawner_forwards_auto_approve(
             spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=True, error=""
         )
 
-    monkeypatch.setattr(parallel, "run_lane_to_completion", fake_rltc)
-    dispatch = parallel.build_lane_spawner(
+    monkeypatch.setattr(app_lanes, "run_lane_to_completion", fake_rltc)
+    dispatch = app_lanes.build_lane_spawner(
         cfg,
         origin,
         origin_state,
@@ -2301,7 +2306,7 @@ def test_build_coordinator_spawner_forwards_auto_approve(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
 ) -> None:
     """A coordinator started with `--auto-approve` dispatches lanes that inherit it.
 
@@ -2317,9 +2322,9 @@ def test_build_coordinator_spawner_forwards_auto_approve(
         captured.append(kw.get("auto_approve"))
         return "dispatcher"
 
-    monkeypatch.setattr(parallel, "build_lane_spawner", fake_build_lane_spawner)
+    monkeypatch.setattr(app_lanes, "build_lane_spawner", fake_build_lane_spawner)
 
-    parallel.build_coordinator_spawner(
+    app_lanes.build_coordinator_spawner(
         cfg,
         origin,
         origin_state,
@@ -2329,7 +2334,7 @@ def test_build_coordinator_spawner_forwards_auto_approve(
         runtime=runtime,
         auto_approve=True,
     )
-    parallel.build_coordinator_spawner(
+    app_lanes.build_coordinator_spawner(
         cfg,
         origin,
         origin_state,
@@ -2348,7 +2353,7 @@ def test_build_coordinator_spawner_forwards_auto_approve(
 
 
 def test_await_lane_returns_when_should_stop_fires(
-    tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """The single-lane await honors should_stop.
 
@@ -2378,7 +2383,7 @@ def test_await_lane_returns_when_should_stop_fires(
 
 
 def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """An interrupted await asks the lane to stop and returns ok=False without importing.
 
@@ -2401,7 +2406,7 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
 
     hard_stop = _threading.Event()
     hard_stop.set()
-    res = parallel.run_lane_to_completion(
+    res = app_lanes.run_lane_to_completion(
         spec,
         "do it",
         explicit_leaves=frozenset(),
@@ -2425,7 +2430,7 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
 def test_crashed_lane_is_not_a_rankable_candidate(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A crashed lane is not a rankable candidate.
@@ -2538,7 +2543,7 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
 def test_a_fanout_where_every_lane_failed_crowns_nobody(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A failed lane is imported but never ranked.
@@ -2602,7 +2607,7 @@ def test_a_fanout_where_every_lane_failed_crowns_nobody(
 
 
 def test_a_compare_where_every_candidate_failed_its_own_gate_crowns_nobody(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """A compare where every candidate failed its own gate crowns nobody.
 
@@ -2644,7 +2649,7 @@ def test_a_compare_where_every_candidate_failed_its_own_gate_crowns_nobody(
 def test_a_judge_that_misranks_a_failed_gate_lane_first_crowns_nobody(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The judge is untrusted LLM output.
@@ -2706,11 +2711,11 @@ def test_fanout_exit_reflects_the_gate_verdicts() -> None:
             session_id="s", task="t", diff="", verify_ok=verify_ok, cost_usd=0.0
         )
 
-    assert parallel.fanout_exit_code([]) == 1
-    assert parallel.fanout_exit_code([_cand(True), _cand(False)]) == 0
-    assert parallel.fanout_exit_code([_cand(None), _cand(None)]) == 0  # gateless fan-out
-    assert parallel.fanout_exit_code([_cand(False), _cand(False)]) == 4
-    assert parallel.fanout_exit_code([_cand(False), _cand(None)]) == 4
+    assert _parallel_results.fanout_exit_code([]) == 1
+    assert _parallel_results.fanout_exit_code([_cand(True), _cand(False)]) == 0
+    assert _parallel_results.fanout_exit_code([_cand(None), _cand(None)]) == 0  # gateless fan-out
+    assert _parallel_results.fanout_exit_code([_cand(False), _cand(False)]) == 4
+    assert _parallel_results.fanout_exit_code([_cand(False), _cand(None)]) == 4
 
 
 def test_the_judge_is_capped_like_a_lane(tmp_path: pathlib.Path) -> None:
@@ -2763,7 +2768,7 @@ def test_the_judge_is_capped_like_a_lane(tmp_path: pathlib.Path) -> None:
 
 
 def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """An unattended fan-out does not park its lanes on a question.
 
@@ -2787,7 +2792,7 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
             workdir=tmp_path / "work" / f"lane-{lane}",
             route=None,
         )
-        result = parallel.bridge_spawner(
+        result = app_lanes.bridge_spawner(
             spec, "do it", cfg=Config(), origin=origin, max_usd=None, lane_away=away,
             explicit_leaves=frozenset(),
             fanout_id="fan", coordinator="co",
@@ -2800,7 +2805,7 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
 def test_lane_is_self_describing_from_birth(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A lane is self-describing from birth.
@@ -2809,7 +2814,6 @@ def test_lane_is_self_describing_from_birth(
     grouping survives a coordinator death; a stamp written only after import leaves orphaned lanes
     listed as unrelated runs.
     """
-    from agent6.app import stamps
     from agent6.sessions import layout as sessions_layout
 
     captured: list[dict[str, str]] = []
@@ -2825,7 +2829,7 @@ def test_lane_is_self_describing_from_birth(
     spec = subrun.LaneSpec(
         lane=2, session_id="fan-l2", workdir=tmp_path / "work" / "lane-2", route=None
     )
-    parallel.bridge_spawner(
+    app_lanes.bridge_spawner(
         spec, "do it", explicit_leaves=frozenset(), cfg=Config(), origin=origin, max_usd=None,
         fanout_id="fan", coordinator="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         verify_origin="inferred",
@@ -2912,13 +2916,13 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
 def test_prune_names_a_failed_start_clones_missing_record_and_removal(
     origin: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Prune names a failed spawn's missing lane record and manual cleanup, not a live lane."""
     monkeypatch.chdir(origin)
     cfg = Config()
-    lanes = parallel.build_lane_specs("1", cfg=cfg, origin=origin, fanout_id="failed11")
+    lanes = app_lanes.build_lane_specs("1", cfg=cfg, origin=origin, fanout_id="failed11")
 
     def fail_spawn(
         _argv: list[str],
@@ -2937,7 +2941,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
     failed_runtime = dataclasses.replace(runtime, spawn=fail_spawn)
 
     def spawn_lane(spec: subrun.LaneSpec, task: str) -> subrun.LaneResult:
-        return parallel.bridge_spawner(
+        return app_lanes.bridge_spawner(
             spec,
             task,
             cfg=cfg,
@@ -3089,14 +3093,16 @@ def test_carry_back_names_the_kept_dir_only_when_it_holds_something(
     memory.remove(lane_state, "d-fact")
     (memory.memory_dir(origin_state) / "d-fact.md").write_text("D per the origin.\n")
     dest = tmp_path / "dest"
-    parallel.carry_back(lane_state, origin_state, dest, lane=2, reporter=reporter.STDIO_REPORTER)
+    _parallel_results.carry_back(
+        lane_state, origin_state, dest, lane=2, reporter=reporter.STDIO_REPORTER
+    )
     err = capsys.readouterr().err
     assert "lane 2: memory held back (changed here too, or the name is taken): d-fact" in err
     assert "kept at" not in err and not (dest / "memory-held").exists()
 
 
 def test_run_parallel_is_a_session_of_its_own(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """The fan-out has a session record under the origin's runs.
 
@@ -3174,7 +3180,7 @@ def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
 
 
 def test_a_stop_during_spawn_prevents_more_lanes(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """A stopped fan-out must not keep cloning and launching unneeded lanes."""
     origin_state = paths.state_dir(origin)
@@ -3206,7 +3212,7 @@ def test_a_stop_during_spawn_prevents_more_lanes(
 def test_the_coordinator_journals_a_crash_and_an_interrupt(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
-    runtime: parallel.LaneRuntime,
+    runtime: app_lanes.LaneRuntime,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The coordinator journals a crash and an interrupt.
@@ -3262,7 +3268,7 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
 
 
 def test_a_fan_out_leaves_no_stop_marker_behind(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: parallel.LaneRuntime
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """A fan-out leaves no stop marker behind.
 

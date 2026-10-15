@@ -15,7 +15,8 @@ import time
 
 from agent6 import errors, event_log, kinds, paths, portable
 from agent6 import skills as agent6_skills
-from agent6.app import _setup, frontend, parallel, preflight, reporter, run
+from agent6.app import _setup, frontend, preflight, reporter, run
+from agent6.app import lanes as app_lanes
 from agent6.config import (
     Config,
 )
@@ -175,7 +176,7 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
         ),
         build_coordinator_spawner=(
             lambda cfg, explicit_leaves, cwd, state_dir, mode, session_id, max_usd, auto_approve: (
-                parallel.build_coordinator_spawner(
+                app_lanes.build_coordinator_spawner(
                     cfg,
                     cwd,
                     state_dir,

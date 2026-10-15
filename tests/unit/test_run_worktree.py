@@ -22,7 +22,15 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import errors, git_ops, kinds, paths
-from agent6.app import _session, fork_worktrees, parallel, preflight, providers, workspace_setup
+from agent6.app import (
+    _session,
+    fork_worktrees,
+    parallel,
+    preflight,
+    providers,
+    workspace_setup,
+)
+from agent6.app import lanes as app_lanes
 from agent6.app import reporter as app_reporter
 from agent6.app import run as run_lifecycle
 from agent6.config import Config, layer
@@ -476,7 +484,7 @@ def test_a_budget_stopped_lane_continues_with_the_reports_fork_command(
     monkeypatch.setattr(providers, "build_role_provider", provider)
     cfg = layer.load_effective(repo).config
     state = paths.state_dir(repo)
-    lanes = parallel.build_lane_specs(
+    lanes = app_lanes.build_lane_specs(
         "1",
         cfg=cfg,
         origin=repo,

@@ -19,7 +19,7 @@ from unittest import mock
 import pytest
 
 from agent6 import git_ops
-from agent6.app import parallel
+from agent6.app import lanes
 from agent6.config import Config
 from agent6.graph import curator, models
 from agent6.harness import _chain as chain_mod
@@ -759,7 +759,7 @@ def test_coordinator_spawner_gate_under_subrun(
     monkeypatch.delenv("AGENT6_SUBRUN", raising=False)
     # A write run outside a lane gets a real dispatcher.
     assert callable(
-        parallel.build_coordinator_spawner(
+        lanes.build_coordinator_spawner(
             cfg,
             tmp_path,
             tmp_path,
@@ -771,7 +771,7 @@ def test_coordinator_spawner_gate_under_subrun(
     )
     # plan/ask make no commits to clone -> no dispatcher.
     assert (
-        parallel.build_coordinator_spawner(
+        lanes.build_coordinator_spawner(
             cfg,
             tmp_path,
             tmp_path,
@@ -785,7 +785,7 @@ def test_coordinator_spawner_gate_under_subrun(
     # Inside a subordinate lane -> no dispatcher (depth 1).
     monkeypatch.setenv("AGENT6_SUBRUN", "1")
     assert (
-        parallel.build_coordinator_spawner(
+        lanes.build_coordinator_spawner(
             cfg,
             tmp_path,
             tmp_path,

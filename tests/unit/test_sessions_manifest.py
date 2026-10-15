@@ -257,10 +257,7 @@ def test_rewriting_an_older_manifest_upgrades_it(tmp_path: pathlib.Path) -> None
 
 def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: pathlib.Path) -> None:
     """Both rewrite paths degrade on a manifest they may not rewrite, and the lane reports it."""
-    from agent6.app import (
-        merge,
-        parallel,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.app import _parallel_results, merge
     from agent6.sessions import layout as sessions_layout
 
     session_dir = tmp_path / "sessions" / "runs" / "r-newer"
@@ -276,7 +273,7 @@ def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: pathlib.Path) 
     merge.record_merge_in_manifest(layout, merged_into="main", merged_sha="abc123")
     assert json.loads((session_dir / "manifest.json").read_text(encoding="utf-8")) == payload
 
-    err = parallel._stamp(session_dir, lane=2)
+    err = _parallel_results.stamp(session_dir, lane=2)
     assert err is not None and f"version {sessions_manifest.MANIFEST_VERSION + 1}" in err
     assert json.loads((session_dir / "manifest.json").read_text(encoding="utf-8")) == payload
 
