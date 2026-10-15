@@ -321,6 +321,20 @@ def test_the_root_task_is_titled_by_the_headline_every_listing_shows(
     assert [n.title for n in graph.nodes().values()] == ["Fix the parser", "(run)"]
 
 
+def test_a_root_title_cut_at_the_cap_ends_in_an_ellipsis(tmp_path: pathlib.Path) -> None:
+    """A headline past 200 characters is stored as 200 characters ending in `…`."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    graph = _FakeGraph()
+    wf = _build_wf(repo, mock.MagicMock(), steer_text="", graph=graph)
+    headline = ("fix the parser " * 17)[:250]
+    root_id = wf.operator_tasks.seed_root(headline)
+    assert root_id is not None
+    title = graph.nodes()[root_id].title
+    assert len(title) == 200
+    assert title == headline[:199] + "…"
+
+
 def test_none_spawner_answers_with_feedback_and_continues(tmp_path: pathlib.Path) -> None:
     """Without a lane spawner the directive is answered with a notice and the run continues."""
     repo = tmp_path / "repo"

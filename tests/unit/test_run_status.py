@@ -342,6 +342,52 @@ def test_show_words_the_end_instead_of_the_reason_token(
     assert obj["end_summary"] == summary and obj["end_reason"] == reason
 
 
+@pytest.mark.parametrize("with_output", [True, False])
+def test_show_prints_a_setup_failure_once(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    with_output: bool,
+) -> None:
+    """A failed setup's diagnostic prints once: the sentence on `ended:`, its output on `setup:`."""
+    sentence = "the setup command failed (exit 1): uv sync --offline"
+    output = (
+        "    no cached package\n"
+        "  the command ran with no route off this machine (sandbox.network), so it has to"
+        " work offline. See docs/security.md."
+    )
+    problem = f"{sentence}\n{output}" if with_output else sentence
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"type": "session.start", "mode": "run"},
+            {"type": "workspace.setup", "cmd": ["uv", "sync", "--offline"], "exit_code": 1},
+            {
+                "type": "session.end",
+                "reason": "setup_command_failed",
+                "all_passed": False,
+                "summary": problem,
+            },
+        ],
+    )
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
+    out = capsys.readouterr().out
+    assert out.count(sentence) == 1
+    assert f"ended:      {sentence}\n" in out
+    if with_output:
+        assert (
+            "setup:      no cached package\n"
+            "            the command ran with no route off this machine (sandbox.network),"
+            " so it has to work offline. See docs/security.md.\n"
+        ) in out
+    else:
+        assert "setup:" not in out
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    obj = json.loads(capsys.readouterr().out)
+    assert obj["end_summary"] == problem and obj["setup_output"] == problem
+
+
 def test_status_leads_with_the_listing_word_then_the_raw_reason(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

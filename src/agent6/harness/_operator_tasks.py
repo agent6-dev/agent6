@@ -98,7 +98,7 @@ class OperatorTasks:
         if self.curator is None:
             return None
         # TaskNodeDraft.title has min_length=1: "(run)" when the task is blank.
-        title = task_text.task_headline(user_task)[:200] or "(run)"
+        title = task_text.clip_title(task_text.task_headline(user_task)) or "(run)"
         try:
             draft = models.TaskNodeDraft(
                 title=title,
@@ -140,7 +140,7 @@ class OperatorTasks:
             root_id: The run's root task.
             text: The task as the operator typed it.
         """
-        title = task_text.task_headline(text)[:200] or text.strip()[:200]
+        title = task_text.clip_title(task_text.task_headline(text) or text.strip())
         spec = self._revised(text)
         node = self._graph.add_subtask(
             models.AddSubtaskIntent(

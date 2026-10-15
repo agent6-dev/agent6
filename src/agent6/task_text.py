@@ -22,6 +22,13 @@ def task_display_text(text: str) -> str:
     return operator_task_text(text)[:TASK_DISPLAY_CHARS]
 
 
+def clip_title(text: str) -> str:
+    """Return the text as a task-graph title: at most TASK_DISPLAY_CHARS, `…` marking a cut."""
+    if len(text) <= TASK_DISPLAY_CHARS:
+        return text
+    return text[: TASK_DISPLAY_CHARS - 1] + "…"
+
+
 _BLOCK_RE = re.compile(r"<(prior-run|file|skill|plan)\b[^>]*>.*?</\1>\s*", re.DOTALL)
 _OPEN_BLOCK_RE = re.compile(r"<(prior-run|file|skill|plan)\b[^>]*>.*\Z", re.DOTALL)
 SKILLS_PREAMBLE = "Apply the operator-installed skill(s) below to this task."

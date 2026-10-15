@@ -166,7 +166,9 @@ def test_show_keeps_a_failed_setups_output_and_network_diagnostic(
 
     assert main(["sessions", "show", "fan-l1"]) == 0
     shown = capsys.readouterr().out
-    assert "failed · setup command failed" in shown and problem in shown
+    assert "failed · setup command failed" in shown
+    assert "ended:      the setup command failed (exit 1): uv sync --offline\n" in shown
+    assert "setup:      no cached package\n" in shown and "(sandbox.network)" in shown
     assert main(["sessions", "show", "fan-l1", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["setup_output"] == problem
 

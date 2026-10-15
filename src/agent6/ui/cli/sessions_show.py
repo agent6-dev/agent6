@@ -224,14 +224,19 @@ def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resume: str
             why a resume would refuse when it stopped short but cannot, None for an end that
             needs no resume.
     """
+    failed = scan.end_reason == "setup_command_failed"
+    setup = scan.setup_output
     if scan.finished and scan.end_summary:
+        ended = terminal.scrub_terminal_controls(scan.end_summary)
+        if failed:
+            # The diagnostic is the sentence, then the output: each prints once.
+            ended, _, setup = ended.partition("\n")
         # The run's own end sentence, on one clean line.
-        ended = " ".join(terminal.scrub_terminal_controls(scan.end_summary).split())
-        print(f"ended:      {ended}")
-    if scan.setup_output:
+        print(f"ended:      {' '.join(ended.split())}")
+    if setup:
         # A setup that worked is one line; a failed one keeps its output, the diagnostic.
-        failed = scan.end_reason == "setup_command_failed"
-        shown = scan.setup_output if failed else scan.setup_output.splitlines()[0]
+        lines = [line.strip() for line in setup.splitlines()] if failed else [setup.splitlines()[0]]
+        shown = "\n            ".join(lines)
         print(f"setup:      {shown.removeprefix('setup command: ')}")
     if n := scan.unattended_questions:
         # Answered empty by the harness in this execution; a resume starts the count again.
