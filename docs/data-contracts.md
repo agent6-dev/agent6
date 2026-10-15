@@ -138,7 +138,7 @@ The task-graph nodes and the intents that mutate them.
 
 ## Run/machine wire snapshot
 
-[`agent6.viewmodel._state_view`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/_state_view.py) &middot; plain class
+[`agent6.viewmodel._state_view`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/_state_view.py) &middot; 
 
 Render session status, context usage, and the wire snapshot.
 

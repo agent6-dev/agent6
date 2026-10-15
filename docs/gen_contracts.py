@@ -331,7 +331,7 @@ def _kind(facts: ModuleFacts, primary: str) -> str:
         return "frozen dataclass"
     if facts.frozen:
         return f"mutable container + {len(facts.frozen)} frozen turn types"
-    return "plain class"
+    return "plain class" if primary in facts.class_fields else ""
 
 
 def _imported_dotted(tree: ast.Module) -> set[str]:
