@@ -211,10 +211,12 @@ Over a red gate it returns under the same cap, counted apart from the model's ow
 - `/compact [focus]` compacts on demand
 - `/pin <text>` survives every restart verbatim and persists in the snapshot; over the 4000-char total cap the pinning is refused loudly and the text still lands as an ordinary steer
 
-**Repo memory**: one fact per markdown file under `<state-dir>/memory/`, plus a one-line-per-entry `MEMORY.md` index.
-Beside it, `DECISIONS.md` holds the operator's rulings.
+**Repo memory**: one fact per markdown file under `<state-dir>/memory/`, with an index rendered from each file's first non-empty line.
+A fact file is `<name>.md` under the name rule, a regular file; any other entry in the store is ignored, and `agent6 memory list` names it.
+Outside the store, `<state-dir>/decisions.md` holds the operator's rulings beside `memory-use.json`.
 The harness appends every `ask_user` answer and every steer that answered a question, verbatim with its question, session and time; an identical ruling already on file is recorded once.
-The model reads it first (a `<decisions>` block, re-shown after a compaction restart) and never writes it; `agent6 memory decisions` prints it.
+The model sees it first (a `<decisions>` block, re-shown after a compaction restart) and never opens or writes the file; `agent6 memory decisions` prints it.
+A `memory/DECISIONS.md` with no `decisions.md` beside the store is renamed once, by the next run start or `agent6 memory` command, which says so; a run start creates an empty `decisions.md`, and a `memory/DECISIONS.md` beside one is reported and ignored, never merged.
 A finish-time check reports any ruling missing from the file.
 
 - the index injects into every run's prompt as a capped `<memory>` block; depth is a file read
@@ -222,7 +224,7 @@ A finish-time check reports any ruling missing from the file.
 - run mode writes; plan and ask read; machine modes see none
 - models never write unprompted, so the loop sends one advisory per run, when verify first recovers green with nothing recorded; `[harness].memory_advisory = false` turns it off
 - `agent6 memory add/list/show/rm` is the operator surface over the same files
-- `<state-dir>/memory-use.json`, harness-written at each execution's end: per fact, the write that created it (when the record saw it), every write as a (session, when) touch in order, and its reads (count, last reader), the entry gone once the fact is deleted (by the model or `memory rm`); `memory list` prints it under each entry, and names the files the index does not list, so a stale, never-read or orphaned fact is visible where it is pruned
+- `<state-dir>/memory-use.json`, harness-written at each execution's end: per fact, the write that created it (when the record saw it), every write as a (session, when) touch in order, and its reads (count, last reader), the entry gone once the fact is deleted (by the model or `memory rm`); `memory list` prints it under each entry, so a stale or never-read fact is visible where it is pruned
 
 **Skills** resolve at run start from `<data-dir>/skills/` plus `[skills].extra_dirs`, through one resolution: the `<skills>` index and what `use_skill` serves cannot diverge.
 
@@ -487,7 +489,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.resume.interrupted` | the resumed execution found a turn its predecessor died in: `iteration`, and `tools`, the calls that never returned and are not re-run |
 | `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail`; a `run_command` ended by an immediate operator stop carries `stopped_by_operator: true` |
 | `verify.start` / `.end` | `cmd`, `exit_code`, `duration_s`, `*_tail` |
-| `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `memory/DECISIONS.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
+| `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `decisions.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
 | `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`resumed`: an adopted gate carried into a new execution; `agents_md`; a repo signal: `verify.sh`, `package.json`, `Makefile:<target>`, `pyproject`, `Cargo.toml`, `go.mod` or `test_*.py`; `llm`; `none`; `disabled`; `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
 | `role.call` | `role`, `model`, `provider` |
 | `role.result` | `role`, `ok`, `text`, `tokens_in`, `tokens_out`, `cache_read`, `cache_creation`, `stop_reason`; a failure carries `error` (the reason, clipped) instead |
