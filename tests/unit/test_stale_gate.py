@@ -14,7 +14,15 @@ import pytest
 
 from agent6.app import reporter
 from agent6.config import Config
-from agent6.harness import _chain, _conversation, _loop_state, _operator, _snapshot, loop
+from agent6.harness import (
+    _chain,
+    _conversation,
+    _loop_state,
+    _loop_steer,
+    _operator,
+    _snapshot,
+    loop,
+)
 from agent6.tools import results
 from agent6.viewmodel import listing
 
@@ -310,6 +318,6 @@ def test_the_latest_proposal_is_the_one_reported_at_any_end(tmp_path: pathlib.Pa
     wf, state = _red_gated_run(tmp_path)
     _finish_call(wf, state, {"summary": "done", "stale_gate": "pytest tests/unit"})
     _finish_call(wf, state, {"summary": "done", "stale_gate": "pytest tests/fast"})
-    stopped = wf._operator_boundary(_conversation.Conversation(), 4, state)  # pyright: ignore[reportPrivateUsage]
+    stopped = _loop_steer.operator_boundary(wf, _conversation.Conversation(), 4, state)
     assert stopped is not None and stopped.reason == "steer_abort"
     assert stopped.stale_gate == "pytest tests/fast"

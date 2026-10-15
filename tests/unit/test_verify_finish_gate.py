@@ -14,7 +14,15 @@ from unittest import mock
 import pytest
 
 from agent6.config import Config
-from agent6.harness import _chain, _finish_gates, _loop_state, _snapshot, _verify_verdict, loop
+from agent6.harness import (
+    _chain,
+    _finish_gates,
+    _loop_resume,
+    _loop_state,
+    _snapshot,
+    _verify_verdict,
+    loop,
+)
 from agent6.prompts import loop as prompts_loop
 from agent6.viewmodel import listing
 
@@ -129,7 +137,7 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
         wf.events.emit = _capture  # type: ignore[method-assign]
         state = _loop_state.LoopState(original_task="t", tool_calls=0, verify=verify_verdict)
         emitted.clear()
-        wf._finish(  # pyright: ignore[reportPrivateUsage]
+        wf.finish(
             state,
             _snapshot.End(
                 "finish_session", "", completed=True, verdict="grounded", checkpoint=False
@@ -164,7 +172,7 @@ def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
             tool_calls=0,
             verify=_verify_verdict.VerifyVerdict(last_ok=True, scoped=scoped),
         )
-        wf._finish(  # pyright: ignore[reportPrivateUsage]
+        wf.finish(
             state,
             _snapshot.End(
                 "finish_session", "", completed=True, verdict="grounded", checkpoint=False
@@ -290,7 +298,7 @@ def _resumed_state(wf: loop.Harness, snap: Any) -> _loop_state.LoopState:
     from agent6.harness import _conversation
 
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
-    wf._seed_carryover(state, _conversation.Conversation.from_wire([]), snap)  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.seed_carryover(wf, state, _conversation.Conversation.from_wire([]), snap)
     return state
 
 

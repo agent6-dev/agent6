@@ -27,7 +27,7 @@ from agent6.app import _execution, _session, _setup
 from agent6.app import fork as app_fork
 from agent6.app import resume as app_resume
 from agent6.graph import storage
-from agent6.harness import _chain, _loop_state, _snapshot, loop
+from agent6.harness import _chain, _loop_resume, _loop_state, _snapshot, loop
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import (
     fork,  # pyright: ignore[reportPrivateUsage]
@@ -98,7 +98,7 @@ def _wf(
 
 
 def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path) -> None:
-    """`_save_resume_snapshot` writes loop_state.json and a per-turn checkpoint with the sha."""
+    """`save_resume_snapshot` writes loop_state.json and a per-turn checkpoint with the sha."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     session_dir = tmp_path / "run"
@@ -128,7 +128,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path) -> Non
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
 
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    wf._save_resume_snapshot(state, [], next_iteration=3, write_checkpoint=True)  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=3, write_checkpoint=True)
 
     # checkpoints live next to loop_state.json (the run dir).
     cp = session_dir / "checkpoints" / "0003.json"
@@ -171,7 +171,8 @@ def test_checkpoints_are_append_only(tmp_path: pathlib.Path) -> None:
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     for turn in (1, 2, 3):
         state.system, state.tool_calls, state.root_task_id = "s", 0, None
-        wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+        _loop_resume.save_resume_snapshot(
+            wf,
             state,
             [{"role": "user", "content": f"turn {turn}"}],
             next_iteration=turn,
@@ -215,7 +216,8 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: pathlib
 
     def save(content: str, turn: int, *, checkpoint: bool) -> None:
         state.system, state.tool_calls, state.root_task_id = "s", 0, None
-        wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+        _loop_resume.save_resume_snapshot(
+            wf,
             state,
             [{"role": "user", "content": content}],
             next_iteration=turn,

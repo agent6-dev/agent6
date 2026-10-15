@@ -125,7 +125,7 @@ class SessionResult:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class End:
-    """Record a decision to end the run, as `Harness._finish` applies it.
+    """Record a decision to end the run, as `Harness.finish` applies it.
 
     The finish checkpoints a dirty worktree first, writes the `session.end` event, then returns
     the result.

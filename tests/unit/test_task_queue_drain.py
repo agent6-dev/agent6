@@ -19,7 +19,15 @@ from unittest import mock
 from agent6 import event_log
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
-from agent6.harness import _chain, _dag_focus, _loop_state, _operator, _prompt_revision, loop
+from agent6.harness import (
+    _chain,
+    _dag_focus,
+    _loop_state,
+    _loop_steer,
+    _operator,
+    _prompt_revision,
+    loop,
+)
 from agent6.providers import types as providers_types
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
@@ -196,8 +204,12 @@ def test_a_parked_run_takes_a_queued_task_and_continues(tmp_path: pathlib.Path) 
 
     wf.bridge = _operator.OperatorBridge(take_requests=_take)
 
-    result = wf._park_for_steer(  # pyright: ignore[reportPrivateUsage]
-        mock.MagicMock(), _state(root), iteration=2, reason="quiet"
+    result = _loop_steer.park_for_steer(
+        wf,
+        mock.MagicMock(),
+        _state(root),
+        iteration=2,
+        reason="quiet",
     )
 
     assert result is None

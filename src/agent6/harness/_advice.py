@@ -47,7 +47,7 @@ class Stop:
     (`Harness._turn_stop_checks`); the event is emitted when the stop is decided.
 
     Attributes:
-        end: Composes what `_finish` records, called at the stop so it reads the run
+        end: Composes what `finish` records, called at the stop so it reads the run
             as the end gates left it.
         soft: The reason a standing task's re-entry nudge carries when it absorbs the
             stop; "" is a hard stop nothing converts.

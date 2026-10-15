@@ -16,14 +16,13 @@ import functools
 import itertools
 import json
 import pathlib
-import time
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import git_ops, paths, portable, skills, task_text
+from agent6 import git_ops, paths, skills, task_text
 from agent6 import memory as agent6_memory
 from agent6.config import Config
 from agent6.graph import curator as graph_curator
@@ -39,9 +38,10 @@ from agent6.harness import (
     _dag_focus,
     _finish_gates,
     _guards,
+    _loop_resume,
     _loop_state,
+    _loop_steer,
     _memory_touch,
-    _metric,
     _metric_sampler,
     _nudges,
     _operator,
@@ -59,7 +59,6 @@ from agent6.harness import (
     _verify_gate,
     _verify_verdict,
 )
-from agent6.prompts import revision as prompts_revision
 from agent6.providers import (
     Provider,
     ProviderAborted,
@@ -150,12 +149,12 @@ class Harness:
     resume_state_path: pathlib.Path | None = None
     standing_goal: str = ""
     # The gate a resumed execution carried from the last one, set before the state is built.
-    _adopted_on_resume: tuple[str, ...] = ()
+    adopted_on_resume: tuple[str, ...] = ()
     interactive: bool = False
     mode: Literal["run", "plan", "ask", "agent"] = "run"
     plan_output_path: pathlib.Path | None = None
     # A snapshot write fault warns once, not every turn; it disables resume, never the run.
-    _snapshot_write_failed: bool = dataclasses.field(default=False, init=False)
+    snapshot_write_failed: bool = dataclasses.field(default=False, init=False)
     iterations_reached: int = dataclasses.field(default=0, init=False)
 
     # ---- run / resume entry --------------------------------------------------
@@ -182,7 +181,7 @@ class Harness:
             user_task=task_text.operator_task_text(user_task)[:200],
             mode=self.mode,
         )
-        self._log("LOOP: LOAD_CONTEXT")
+        self.log("LOOP: LOAD_CONTEXT")
         repo = _context.load_repo_summary(self.chain.root, self.config.sandbox.hide_paths)
         system = _prompt_blocks.build_system_prompt(
             config=self.config,
@@ -205,15 +204,15 @@ class Harness:
 
         try:
             effective_task = _prompt_revision.revise_prompt(
-                self.revision, user_task, repo, log=self._log, emit=self._emit
+                self.revision, user_task, repo, log=self.log, emit=self.emit
             )
         except _prompt_revision.PromptRevisionError as exc:
             declined = isinstance(exc, _prompt_revision.PromptRevisionDeclined)
             end_reason: _snapshot.SessionEndReason = (
                 "steer_abort" if declined else "prompt_revision_failed"
             )
-            self._log(f"LOOP: prompt revision {'declined' if declined else 'failed'}: {exc}")
-            self._emit(
+            self.log(f"LOOP: prompt revision {'declined' if declined else 'failed'}: {exc}")
+            self.emit(
                 "session.end", reason=end_reason, summary=str(exc), iterations=0, all_passed=False
             )
             return _snapshot.SessionResult(
@@ -224,11 +223,11 @@ class Harness:
         root_id = self.operator_tasks.seed_root(effective_task)
         if root_id is not None:
             self.dispatcher.set_run_root_node_id(root_id)
-            self._log(f"LOOP: DAG root task seeded: {root_id}")
+            self.log(f"LOOP: DAG root task seeded: {root_id}")
             self.operator_tasks.seed_standing(root_id, self.standing_goal)
             self._emit_graph_snapshot()  # show the root in the live task view
 
-        self._log(
+        self.log(
             f"LOOP: mode={self.mode} system={len(system)} chars, task={len(effective_task)} chars"
         )
 
@@ -274,7 +273,7 @@ class Harness:
             raise _snapshot.ResumeError("resume() called but resume_state_path is None")
         try:
             snapshot = _snapshot.load_session_snapshot(self.resume_state_path)
-            snapshot, interrupted = self._fold_interrupted_turn(snapshot)
+            snapshot, interrupted = _loop_resume.fold_interrupted_turn(self, snapshot)
             conversation = _conversation.Conversation.from_wire(snapshot.messages)
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise _snapshot.ResumeError(
@@ -289,17 +288,17 @@ class Harness:
             iteration=snapshot.next_iteration,
             messages=len(snapshot.messages),
         )
-        self._log(
+        self.log(
             f"LOOP: RESUME from {self.resume_state_path} "
             f"(iter={snapshot.next_iteration}, messages={len(snapshot.messages)}, "
             f"tool_calls={snapshot.tool_calls})"
         )
         if interrupted:
-            self._log(
+            self.log(
                 f"LOOP: the last execution died in turn {snapshot.next_iteration - 1};"
                 f" not re-run: {', '.join(interrupted)}"
             )
-            self._emit(
+            self.emit(
                 "loop.resume.interrupted",
                 iteration=snapshot.next_iteration - 1,
                 tools=list(interrupted),
@@ -307,11 +306,11 @@ class Harness:
 
         if snapshot.root_task_id is not None:
             self.dispatcher.set_run_root_node_id(snapshot.root_task_id)
-            self._log(f"LOOP: DAG root task restored: {snapshot.root_task_id}")
+            self.log(f"LOOP: DAG root task restored: {snapshot.root_task_id}")
 
         # The system prompt is frozen, so a gate that changed between executions is announced.
-        self._adopted_on_resume = self._carry_adopted_gate(snapshot)
-        gate = self.gate.configured or self._adopted_on_resume
+        self.adopted_on_resume = _loop_resume.carry_adopted_gate(self, snapshot)
+        gate = self.gate.configured or self.adopted_on_resume
         withheld = (
             not gate and bool(snapshot.verify_command) and self.dispatcher.command_policy() == "no"
         )
@@ -322,8 +321,8 @@ class Harness:
                 f"[harness] This run's verify gate changed between executions: it was `{was}`,"
                 f" it is now `{now}`. The instructions above still name the old one."
             )
-            self._log(f"LOOP: verify gate swapped on resume: {was} -> {now}")
-            self._emit("loop.verify_swapped", was=list(snapshot.verify_command), now=list(gate))
+            self.log(f"LOOP: verify gate swapped on resume: {was} -> {now}")
+            self.emit("loop.verify_swapped", was=list(snapshot.verify_command), now=list(gate))
 
         if snapshot.verify_withheld and gate and self.dispatcher.command_policy() != "no":
             # Denial resets per execution; its notice can survive even in a compacted summary.
@@ -343,207 +342,6 @@ class Harness:
             operator_task=snapshot.operator_task,
             resume_from=snapshot,
         )
-
-    def _fold_interrupted_turn(
-        self, snapshot: _snapshot.SessionSnapshot
-    ) -> tuple[_snapshot.SessionSnapshot, tuple[str, ...]]:
-        """Advance the snapshot past a turn the last execution died in, and drop the marker.
-
-        The advanced snapshot is on disk before the marker goes, so no later death re-runs
-        the turn's calls.
-
-        Args:
-            snapshot: The snapshot the execution resumes from.
-
-        Returns:
-            The snapshot to resume from, and the names of the calls that never returned.
-
-        Raises:
-            OSError: The advanced snapshot could not be written.
-        """
-        assert self.resume_state_path is not None
-        marker = self.resume_state_path.parent / _snapshot.TURN_IN_FLIGHT_NAME
-        flight = _snapshot.read_turn_marker(marker)
-        interrupted: tuple[str, ...] = ()
-        if flight is not None and flight.iteration == snapshot.next_iteration:
-            try:
-                snapshot, interrupted = _snapshot.fold_interrupted_turn(snapshot, flight)
-            except ValueError as exc:
-                self._log(
-                    f"LOOP: dropped an in-flight turn record the snapshot does not lead to: {exc}"
-                )
-            else:
-                portable.atomic_write(self.resume_state_path, snapshot.model_dump_json())
-        _snapshot.clear_turn_marker(marker)
-        return snapshot, interrupted
-
-    # ---- snapshots and carryover ---------------------------------------------
-
-    def _seed_carryover(
-        self,
-        state: _loop_state.LoopState,
-        conversation: _conversation.Conversation,
-        resume_from: _snapshot.SessionSnapshot | None,
-    ) -> None:
-        """Seed the execution's carried state and announce it for the read model.
-
-        A resumed or forked execution re-announces its restored pins and elision counters,
-        even when empty: the fold replaces on these events, so the surfaces never list a pin no
-        restart will re-inject. A fresh run seeded with pins takes the same path.
-
-        Args:
-            state: The execution's state.
-            conversation: The conversation the pins are announced into.
-            resume_from: The snapshot a resumed execution restores; None for a fresh run.
-        """
-        if resume_from is not None:
-            _loop_state.restore_completion_state(state, resume_from)
-            state.verify.adopted = self._adopted_on_resume
-            self._carry_verify_verdict(state, resume_from)
-            self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
-            elided, gists = _compaction.count_elisions(conversation)
-            self._emit("loop.compact.restored", elided=elided, gists=gists)
-        elif self.initial_pins:
-            # The pin owner applies the cap and the non-empty check; a refused pin is logged.
-            for pin in self.initial_pins:
-                if not _operator.try_pin(state.pins, pin):
-                    self._log(
-                        f"  --pin refused (empty or over the {_operator.PINS_MAX_CHARS}-char cap)"
-                    )
-                    self._emit("loop.pin.refused", chars=len(pin), limit=_operator.PINS_MAX_CHARS)
-            self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
-            if state.pins:
-                conversation.notice(prompts_revision.pinned_block(state.pins))
-
-    def _carry_adopted_gate(self, snapshot: _snapshot.SessionSnapshot) -> tuple[str, ...]:
-        """Carry the gate a gateless run adopted in an earlier execution.
-
-        Args:
-            snapshot: The snapshot the execution resumes from.
-
-        Returns:
-            The snapshot's command when the config names none and the jail can run it; `()`
-            otherwise, and the execution-start notice reads the gate as swapped.
-        """
-        argv = tuple(snapshot.verify_command)
-        if self.gate.configured or not argv or not self.dispatcher.adopt_verify_command(argv):
-            return ()
-        self._log(f"LOOP: verify gate carried from the last execution: {' '.join(argv)}")
-        self._emit(
-            "loop.verify_inferred",
-            command=list(argv),
-            source="resumed",
-            adopted_at=snapshot.next_iteration,
-        )
-        return argv
-
-    def _carry_verify_verdict(
-        self, state: _loop_state.LoopState, snap: _snapshot.SessionSnapshot
-    ) -> None:
-        """Carry the prior execution's verify observation when it still describes this tree.
-
-        The chain tip must be the snapshot's and the worktree clean; an operator commit or edit
-        in between fails closed, so the execution starts unobserved rather than wrongly green
-        or red. `baseline_ok` is about the base commit, so a resume that moved the base (its
-        earlier work landed) carries none.
-
-        Args:
-            state: The execution's state.
-            snap: The snapshot the execution resumes from.
-        """
-        if snap.base_sha == self.chain.base_sha:
-            state.verify.baseline_ok = snap.baseline_ok
-        state.standing.tools_mark = snap.standing_tools_mark
-        state.standing.fruitless = snap.standing_fruitless
-        state.ok_tool_calls = snap.ok_tool_calls
-        if snap.last_verify_ok is None or not snap.head_sha:
-            return
-        try:
-            if snap.head_sha != self.chain.checkpoint_head_sha():
-                return
-            dirty = self.chain.is_dirty()
-        except (git_ops.GitError, OSError):
-            return
-        if not dirty:
-            state.verify.last_ok = snap.last_verify_ok
-            state.verify.edited_since = snap.edited_since_verify
-
-    def _save_resume_snapshot(
-        self,
-        state: _loop_state.LoopState,
-        messages: list[dict[str, Any]],
-        *,
-        next_iteration: int,
-        write_checkpoint: bool = False,
-    ) -> None:
-        """Write the resume snapshot, and the turn's checkpoint when asked.
-
-        Written before each model call and again after the turn's tool results land, so a
-        crash after a non-idempotent tool resumes from after it. Every write advances the
-        latest pointer; only the pre-call write owns `checkpoints/<next_iteration>.json`, so
-        `fork --at-turn N` has one meaning. Atomic, so a crash mid-write keeps the prior
-        snapshot. A None `resume_state_path` writes nothing.
-
-        Args:
-            state: The execution's state.
-            messages: The conversation in wire form.
-            next_iteration: The iteration the snapshot resumes at.
-            write_checkpoint: Also write the turn's checkpoint file.
-        """
-        if self.resume_state_path is None:
-            return
-        goal = self.metrics.goal
-        best = (
-            _metric.best_metric_sample(state.metric.history, goal=goal)
-            if goal is not None
-            else None
-        )
-        snapshot = _snapshot.SessionSnapshot(
-            system=state.system,
-            messages=messages,
-            tool_calls=state.tool_calls,
-            next_iteration=next_iteration,
-            root_task_id=state.root_task_id,
-            original_task=state.original_task,
-            operator_task=state.operator_task,
-            base_sha=self.chain.base_sha,
-            verify_command=self.gate.command(state.verify),
-            review_rejections_total=state.gates.review_total,
-            verify_ever_passed=state.verify.ever_passed,
-            verify_ever_failed=state.verify.ever_failed,
-            gateless_ever_edited=state.settled.gateless_ever_edited,
-            parallel_groups_dispatched=state.parallel_groups_dispatched,
-            pins=tuple(state.pins),
-            metric_best_score=best.score if best is not None else None,
-            metric_at_ceiling=state.metric.at_ceiling(),
-            last_verify_ok=state.verify.last_ok,
-            edited_since_verify=state.verify.edited_since,
-            baseline_ok=state.verify.baseline_ok,
-            verify_scoped=state.verify.scoped,
-            verify_withheld=state.verify.withheld,
-            memory_written=state.memory.written,
-            memory_flip_nudged=state.memory.flip_nudged,
-            standing_tools_mark=state.standing.tools_mark,
-            standing_fruitless=state.standing.fruitless,
-            ok_tool_calls=state.ok_tool_calls,
-            head_sha=self.chain.checkpoint_head_sha(),
-            graph_version=self._checkpoint_graph_version(),
-        )
-        blob = snapshot.model_dump_json()
-        # Recovery state, not run output: an unwritable state dir warns once and never aborts.
-        try:
-            # The checkpoint first, then the latest pointer, so a fork keeps a durable target.
-            if write_checkpoint:
-                cp_dir = self.resume_state_path.parent / "checkpoints"
-                portable.atomic_write(cp_dir / f"{next_iteration:04d}.json", blob)
-            portable.atomic_write(self.resume_state_path, blob)
-        except OSError as exc:
-            if not self._snapshot_write_failed:
-                self._snapshot_write_failed = True
-                self._log(
-                    f"LOOP: WARNING could not persist resume snapshot ({exc}); "
-                    "resume/fork are unavailable for this run, continuing anyway"
-                )
 
     # ---- the turn pipeline ---------------------------------------------------
 
@@ -584,7 +382,7 @@ class Harness:
             root_task_id=root_task_id,
             system=system,
         )
-        self._seed_carryover(state, conversation, resume_from)
+        _loop_resume.seed_carryover(self, state, conversation, resume_from)
         if resume_from is None:
             try:
                 for notice in self.gate.start_baseline(state):
@@ -599,7 +397,7 @@ class Harness:
         ):
             self.iterations_reached = iteration
             if resume_from is not None and iteration == start_iteration:
-                seeded = self._seeded_steer(conversation, iteration, state)
+                seeded = _loop_steer.seeded_steer(self, conversation, iteration, state)
                 if seeded is not None:
                     return seeded
             # Rebuilt per turn: a gate adopted or a policy denied mid-run changes the tool list.
@@ -632,16 +430,16 @@ class Harness:
                 if result is not None:
                     return result
                 # A prose turn is a completed iteration: snapshotted, then the operator boundary.
-                self._save_resume_snapshot(
-                    state, conversation.to_wire(), next_iteration=iteration + 1
+                _loop_resume.save_resume_snapshot(
+                    self, state, conversation.to_wire(), next_iteration=iteration + 1
                 )
-                outcome = self._operator_boundary(conversation, iteration, state)
+                outcome = _loop_steer.operator_boundary(self, conversation, iteration, state)
                 if outcome is not None:
                     return outcome
                 continue
             turn = _loop_state.TurnState(iteration=iteration, resp=got, assistant=assistant)
             # The marker outlives a death mid-dispatch, so a resume never runs these calls again.
-            self._mark_turn(turn)
+            _loop_resume.mark_turn(self, turn)
             result = self._turn_dispatch_tools(state, turn, ctx)
             if result is not None:
                 return result
@@ -658,7 +456,9 @@ class Harness:
                 return result
             conversation.results(turn.tool_results)
             # Snapshot, then clear the marker: a stale marker is cleared, never missed.
-            self._save_resume_snapshot(state, conversation.to_wire(), next_iteration=iteration + 1)
+            _loop_resume.save_resume_snapshot(
+                self, state, conversation.to_wire(), next_iteration=iteration + 1
+            )
             if self.resume_state_path is not None:
                 _snapshot.clear_turn_marker(
                     self.resume_state_path.parent / _snapshot.TURN_IN_FLIGHT_NAME
@@ -666,49 +466,18 @@ class Harness:
             result = self._turn_stop_checks(state, turn, conversation)
             if result is not None:
                 return result
-            outcome = self._operator_boundary(conversation, iteration, state)
+            outcome = _loop_steer.operator_boundary(self, conversation, iteration, state)
             if outcome is not None:
                 return outcome
 
-        self._log(f"LOOP: max_iterations={self.max_iterations} reached")
-        return self._finish(
+        self.log(f"LOOP: max_iterations={self.max_iterations} reached")
+        return self.finish(
             state,
             _snapshot.End(
                 "max_iterations",
                 f"max_iterations={self.max_iterations} reached without finish_session",
             ),
             iteration=self.iterations_reached,
-        )
-
-    def _seeded_steer(
-        self, conversation: _conversation.Conversation, iteration: int, state: _loop_state.LoopState
-    ) -> _snapshot.SessionResult | None:
-        """Consume the follow-up a `resume --steer` queued before the loop started.
-
-        It enters the conversation ahead of the first model call, since a resumed conversation
-        that was already finished ends on iteration 1 before the end-of-iteration poll runs.
-
-        Args:
-            conversation: The conversation the steer enters.
-            iteration: The first iteration of the execution.
-            state: The execution's state.
-
-        Returns:
-            The end the steer asked for, or None when the execution goes on.
-        """
-        # This resume path handles both finished and interrupted runs.
-        return self._steer_outcome(
-            self.steering.handle(
-                conversation,
-                iteration,
-                state,
-                heading=(
-                    "OPERATOR STEERING: This execution continues the run even if it previously"
-                    " finished, and the steer below is its task."
-                ),
-            ),
-            iteration,
-            state,
         )
 
     def _turn_pre_call(
@@ -745,7 +514,9 @@ class Harness:
         conversation.roll_cache_marks()
         wire = conversation.to_wire()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
-        self._save_resume_snapshot(state, wire, next_iteration=ctx.iteration, write_checkpoint=True)
+        _loop_resume.save_resume_snapshot(
+            self, state, wire, next_iteration=ctx.iteration, write_checkpoint=True
+        )
         return wire
 
     def _maybe_inject_plan(
@@ -777,9 +548,9 @@ class Harness:
         except (OSError, UnicodeDecodeError) as exc:
             session_id = self.session_id or "<session-id>"
             remedy = f"plan.md unreadable: {exc}; fix it and `agent6 resume {session_id}`"
-            self._log(f"LOOP: {remedy}")
-            self._emit("loop.plan_read.failed", path=str(self.plan_output_path), error=str(exc))
-            return self._finish(
+            self.log(f"LOOP: {remedy}")
+            self.emit("loop.plan_read.failed", path=str(self.plan_output_path), error=str(exc))
+            return self.finish(
                 state,
                 _snapshot.End("plan_unreadable", remedy, checkpoint=False),
                 iteration=iteration,
@@ -788,8 +559,8 @@ class Harness:
             return None
         state.plan_injected = text
         conversation.notice(f"{_nudges.PLAN_ON_DISK_HEADER}\n\n{text}")
-        self._log(f"  plan re-read from disk: {len(text)} chars")
-        self._emit(
+        self.log(f"  plan re-read from disk: {len(text)} chars")
+        self.emit(
             "loop.plan_reread",
             path=str(self.plan_output_path),
             bytes=len(text.encode("utf-8")),
@@ -845,7 +616,7 @@ class Harness:
                 OSError,
                 pydantic.ValidationError,
             ) as exc:  # advisory; never fatal
-                self._log(f"LOOP: cursor advance skipped: {exc}")
+                self.log(f"LOOP: cursor advance skipped: {exc}")
         self._tell(conversation, _guards.stuck_on_task(state, current_id, nodes[current_id], nodes))
         if current_id == state.focus.surfaced_task_id:
             return  # already surfaced; the banner survives tier-1 elision
@@ -857,14 +628,14 @@ class Harness:
                     models.UpdateStatusIntent(id=current_id, new_status="in_progress")
                 )
             except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
-                self._log(f"LOOP: mark in_progress skipped: {exc}")
+                self.log(f"LOOP: mark in_progress skipped: {exc}")
         banner = _dag_focus.current_task_banner(
             current_id, node, decompose=self.config.prompt.decompose == "on"
         )
         conversation.notice(banner)
         state.focus.surfaced_task_id = current_id
-        self._log(f"LOOP: surfaced current task {current_id}")
-        self._emit("loop.task.surfaced", task_id=current_id)
+        self.log(f"LOOP: surfaced current task {current_id}")
+        self.emit("loop.task.surfaced", task_id=current_id)
         # The cursor and status writes above bypass dispatch, which emits graph.update.
         self._emit_graph_snapshot()
 
@@ -895,30 +666,30 @@ class Harness:
         try:
             return self.caller.call(system, wire, tools, self._worker_max_tokens(state))
         except agent6_budget.BudgetExceededError as exc:
-            self._log(f"LOOP: budget exhausted at iter {iteration}")
-            return self._finish(
+            self.log(f"LOOP: budget exhausted at iter {iteration}")
+            return self.finish(
                 state,
                 _snapshot.End("budget_exhausted", f"{exc} (at iter {iteration})"),
                 iteration=iteration,
             )
         except ProviderAborted:
             self.bridge.steer_clear()  # consume the stop; don't leave it on disk to re-read
-            self._log(f"LOOP: operator stop during step {iteration}; model call was cut short")
-            return self._finish(
+            self.log(f"LOOP: operator stop during step {iteration}; model call was cut short")
+            return self.finish(
                 state,
                 _snapshot.End(
                     "steer_abort",
                     f"operator stopped the run during step {iteration}; model call was cut short"
-                    f"{self._dirty_tree_note()}",
+                    f"{self.dirty_tree_note()}",
                     checkpoint=False,
                 ),
                 iteration=iteration,
             )
         except ProviderInterrupted:
             # The watchdog ended the turn for a steer; the partial turn is discarded.
-            self._log(f"LOOP: steer requested mid-turn at iter {iteration}")
-            outcome = self._steer_outcome(
-                self.steering.handle(conversation, iteration, state), iteration, state
+            self.log(f"LOOP: steer requested mid-turn at iter {iteration}")
+            outcome = _loop_steer.steer_outcome(
+                self, self.steering.handle(conversation, iteration, state), iteration, state
             )
             if outcome is not None:
                 return outcome
@@ -927,11 +698,11 @@ class Harness:
             hint = _provider_call.provider_error_hint(exc.status_code, exc.provider)
             attempts = f" after {exc.attempts} attempts" if exc.attempts > 1 else ""
             # The upstream body lands in this one log line; the summary below stays short.
-            self._log(f"LOOP: provider error{attempts} at iter {iteration}: {exc}{hint}")
+            self.log(f"LOOP: provider error{attempts} at iter {iteration}: {exc}{hint}")
             status = f" (HTTP {exc.status_code})" if exc.status_code else ""
             # A fatal error or a transport failure has no other reason to name.
             detail = f": {exc}" if exc.fatal or exc.status_code is None else ""
-            return self._finish(
+            return self.finish(
                 state,
                 _snapshot.End(
                     "provider_error",
@@ -992,7 +763,7 @@ class Harness:
                         for_call=tu,
                     )
                 )
-                self._mark_turn(turn)
+                _loop_resume.mark_turn(self, turn)
                 continue
             state.tool_calls += 1
             # The call's signature for the spiral guard; stable JSON so key order cannot differ.
@@ -1001,7 +772,7 @@ class Harness:
             except (TypeError, ValueError):
                 sig = f"{name}:<unhashable>"
             state.spiral.note_call(sig, polling=name == schema.ReadBackgroundInput.TOOL_NAME)
-            self._emit("loop.tool.call", name=name, iteration=turn.iteration)
+            self.emit("loop.tool.call", name=name, iteration=turn.iteration)
             served = None
             try:
                 refusal = turn.resp.refused.get(tu.id)
@@ -1055,7 +826,7 @@ class Harness:
                     for_call=tu,
                 )
             )
-            self._mark_turn(turn)
+            _loop_resume.mark_turn(self, turn)
         # The gate run the harness adds to the turn, after the model's calls.
         try:
             self.gate.harness_verify(state, turn)
@@ -1092,7 +863,7 @@ class Harness:
         ignored, untracked = self.chain.left_out(paths)
         if not (ignored or untracked):
             return ""
-        self._emit(
+        self.emit(
             "loop.edit.left_out",
             iteration=turn.iteration,
             ignored=list(ignored),
@@ -1102,27 +873,6 @@ class Harness:
         return " ".join(
             [f"{p} is ignored by git{tail}" for p in ignored]
             + [f"{p} was untracked when the run started{tail}" for p in untracked]
-        )
-
-    def _mark_turn(self, turn: _loop_state.TurnState) -> None:
-        """Write the in-flight marker: the turn's calls and the results that returned so far.
-
-        Args:
-            turn: This turn's state.
-        """
-        if self.resume_state_path is None:
-            return
-        _snapshot.write_turn_marker(
-            self.resume_state_path.parent / _snapshot.TURN_IN_FLIGHT_NAME,
-            _snapshot.TurnInFlight(
-                iteration=turn.iteration,
-                assistant=turn.assistant.raw_content,
-                results=tuple(
-                    item.content
-                    for item in turn.tool_results
-                    if isinstance(item, _conversation.ToolResultItem)
-                ),
-            ),
         )
 
     def _tree_before_command(self, name: str) -> str:
@@ -1282,7 +1032,7 @@ class Harness:
         if finish.kind != "finish_planning":
             return
         if finish.plan_salvaged:
-            self._log("  plan salvaged: folded summary into a title-only plan_markdown")
+            self.log("  plan salvaged: folded summary into a title-only plan_markdown")
         if self.plan_output_path is None or not finish.plan_markdown:
             return
         plan_md = _finish_gates.with_original_task(
@@ -1292,15 +1042,15 @@ class Harness:
         try:
             paths.mkdir_for_real_user(self.plan_output_path.parent)
             self.plan_output_path.write_text(plan_md, encoding="utf-8")
-            self._log(f"  plan written: {self.plan_output_path} ({len(plan_md)} chars)")
-            self._emit(
+            self.log(f"  plan written: {self.plan_output_path} ({len(plan_md)} chars)")
+            self.emit(
                 "loop.plan_written",
                 path=str(self.plan_output_path),
                 bytes=len(plan_md.encode("utf-8")),
             )
         except OSError as exc:
-            self._log(f"  plan write failed: {exc}")
-            self._emit("loop.plan_write.failed", path=str(self.plan_output_path), error=str(exc))
+            self.log(f"  plan write failed: {exc}")
+            self.emit("loop.plan_write.failed", path=str(self.plan_output_path), error=str(exc))
 
     def _note_tool_error(
         self,
@@ -1321,7 +1071,7 @@ class Harness:
             The error content served as the tool result.
         """
         content = json.dumps({"error": str(exc)})
-        self._log(f"  tool_error: {name}: {exc}")
+        self.log(f"  tool_error: {name}: {exc}")
         state.spiral.note_error(
             _nudges.tool_error_signature(name, str(exc)),
             denial=isinstance(exc, errors.ToolDeniedError),
@@ -1381,18 +1131,18 @@ class Harness:
         if sha:
             directive = self.bridge.after_auto_commit(turn.iteration, sha)
             if directive in ("undo", "exit"):
-                ended = self._steer_outcome(directive, turn.iteration, state)
+                ended = _loop_steer.steer_outcome(self, directive, turn.iteration, state)
                 if ended is not None:
                     return ended
             if directive == "stop":
-                self._log(f"LOOP: interactive stop at iter {turn.iteration}")
+                self.log(f"LOOP: interactive stop at iter {turn.iteration}")
                 # An operator stop reads "stopped", never "passed".
-                return self._finish(
+                return self.finish(
                     state,
                     _snapshot.End(
                         "interactive_stop",
                         f"stopped interactively after iter {turn.iteration}"
-                        f"{self._dirty_tree_note()}",
+                        f"{self.dirty_tree_note()}",
                         completed=True,
                         checkpoint=False,
                         roots=True,
@@ -1628,7 +1378,7 @@ class Harness:
             self._record(outcome)
             return None
         if outcome.event:
-            self._emit(outcome.event, **outcome.fields)
+            self.emit(outcome.event, **outcome.fields)
         if outcome.declared and turn.finish is None:
             aborted = self._end_gates(
                 state, turn, ctx, ending=outcome.declared, gates=_finish_gates.END_GATES
@@ -1659,9 +1409,9 @@ class Harness:
             answer: The advisor's or gate's answer.
         """
         if answer.event:
-            self._emit(answer.event, **answer.fields)
+            self.emit(answer.event, **answer.fields)
         if answer.log:
-            self._log(answer.log)
+            self.log(answer.log)
 
     # ---- stop checks, silent finish, went-quiet ------------------------------
 
@@ -1686,11 +1436,11 @@ class Harness:
         self.standing.absorb_soft_stop(state, turn, conversation)
         for stop in turn.stops:
             if stop.log:
-                self._log(stop.log)
-            return self._finish(state, stop.end(), iteration=turn.iteration)
+                self.log(stop.log)
+            return self.finish(state, stop.end(), iteration=turn.iteration)
         finish = turn.finish
         if finish is not None:
-            self._log(f"LOOP: {finish.kind} called at iter {turn.iteration}")
+            self.log(f"LOOP: {finish.kind} called at iter {turn.iteration}")
             self.checkpoints.final(iteration=turn.iteration)
             # A finish_session over a red or stale verify reads "finished", not "passed".
             reason = _finish_gates.finish_reason(
@@ -1700,7 +1450,7 @@ class Harness:
                 verify=state.verify,
             )
             self._check_decisions_recorded(state)
-            return self._finish(
+            return self.finish(
                 state,
                 _snapshot.End(
                     reason,
@@ -1782,21 +1532,21 @@ class Harness:
             self._tell(conversation, asked)
             return None
         # A standing goal re-enters, else an interactive run parks for a steer; ask mode ends.
-        cont = self._quiet_continuation(
-            conversation, state, iteration=iteration, reason="silent_finish"
+        cont = _loop_steer.quiet_continuation(
+            self, conversation, state, iteration=iteration, reason="silent_finish"
         )
         if cont is not None:
             return None if isinstance(cont, _loop_state.NextTurn) else cont
         # In ask mode the prose is the answer, so the end reads "answered".
         reason: _snapshot.SessionEndReason = "answered" if self.mode == "ask" else "silent_finish"
         if self.mode == "ask":
-            self._log(f"  ask answered at iter {iteration}")
+            self.log(f"  ask answered at iter {iteration}")
         else:
-            self._log(
+            self.log(
                 f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"
             )
         # Run and plan ground on the verify state as finish_session does; ask keeps the answer.
-        return self._finish(
+        return self.finish(
             state,
             _snapshot.End(
                 reason,
@@ -1834,7 +1584,7 @@ class Harness:
         reasoning_chars = _provider_call.reasoning_starvation(resp)
         starved = reasoning_chars > 0
         if starved:
-            self._log(
+            self.log(
                 f"LOOP: reasoning_starvation at iter {iteration}"
                 f" - stop_reason=length, reasoning_chars={reasoning_chars},"
                 f" output_tokens={resp.output_tokens}; the model spent"
@@ -1842,7 +1592,7 @@ class Harness:
                 f" Add this model to _REASONING_MODEL_HINTS in"
                 f" providers/openai.py if it isn't already."
             )
-            self._emit(
+            self.emit(
                 "loop.reasoning_starvation",
                 iteration=iteration,
                 reasoning_chars=reasoning_chars,
@@ -1858,7 +1608,7 @@ class Harness:
             if resp.output_tokens > 0 and not starved
             else ""
         )
-        self._log(
+        self.log(
             f"LOOP: went_quiet at iter {iteration} - agent emitted no text and no tool_use{billed}"
         )
         # Every path below calls again or snapshots, and a provider rejects the empty turn.
@@ -1866,12 +1616,12 @@ class Harness:
         if (nudge := _quiet_turns.went_quiet(state, ctx, resp)) is not None:
             self._tell(conversation, nudge)
             return None
-        cont = self._quiet_continuation(
-            conversation, state, iteration=iteration, reason="went_quiet"
+        cont = _loop_steer.quiet_continuation(
+            self, conversation, state, iteration=iteration, reason="went_quiet"
         )
         if cont is not None:
             return None if isinstance(cont, _loop_state.NextTurn) else cont
-        return self._finish(
+        return self.finish(
             state,
             _snapshot.End("went_quiet", "(agent emitted no text and no tool_use)"),
             iteration=iteration,
@@ -1879,7 +1629,7 @@ class Harness:
 
     # ---- the end -------------------------------------------------------------
 
-    def _finish(
+    def finish(
         self, state: _loop_state.LoopState, end: _snapshot.End, *, iteration: int
     ) -> _snapshot.SessionResult:
         """Record the end and return the execution's result.
@@ -1912,7 +1662,7 @@ class Harness:
         tree = self.chain.tree_sha() if end.event and self.mode == "run" else ""
         left = {"tree": tree} if tree else {}
         if end.event and end.verdict == "failed":
-            self._emit(
+            self.emit(
                 "session.end",
                 reason=end.reason,
                 summary=end.summary,
@@ -1924,7 +1674,7 @@ class Harness:
             )
         elif end.event:
             grounded = end.verdict == "grounded"
-            self._emit(
+            self.emit(
                 "session.end",
                 reason=end.reason,
                 summary=end.summary,
@@ -1963,12 +1713,12 @@ class Harness:
                     )
                     changed = True
                 except graph_curator.CuratorError as exc:  # this root refused; the next may not
-                    self._log(f"LOOP: auto-pass root {nid} refused: {exc}")
+                    self.log(f"LOOP: auto-pass root {nid} refused: {exc}")
                 except (
                     OSError,
                     pydantic.ValidationError,
                 ) as exc:  # a write fault must not break finish
-                    self._log(f"LOOP: auto-pass root {nid} failed: {exc}")
+                    self.log(f"LOOP: auto-pass root {nid} failed: {exc}")
                     break  # a curator write failure fails for every remaining node too
         if changed:
             self._emit_graph_snapshot()
@@ -1992,7 +1742,7 @@ class Harness:
                 read=dict(state.memory.read),
             )
         except OSError as exc:
-            self._log(f"LOOP: memory use record failed: {exc}")
+            self.log(f"LOOP: memory use record failed: {exc}")
 
     def _unexecutable_abort(
         self,
@@ -2014,13 +1764,13 @@ class Harness:
         Returns:
             The execution's result.
         """
-        self._log(f"LOOP: aborting -- {exc}")
+        self.log(f"LOOP: aborting -- {exc}")
         # Verify never went green, so the edits may exist only in the worktree.
-        return self._finish(
+        return self.finish(
             state, _snapshot.End("verify_command_unexecutable", str(exc)), iteration=iteration
         )
 
-    def _dirty_tree_note(self) -> str:
+    def dirty_tree_note(self) -> str:
         """Return the summary suffix naming an uncommitted worktree, or "" outside run mode."""
         return self.chain.dirty_note() if self.mode == "run" else ""
 
@@ -2047,7 +1797,7 @@ class Harness:
             }
             for nid, n in self.curator.nodes().items()
         }
-        self._emit("graph.update", nodes=nodes, cursor=cursor)
+        self.emit("graph.update", nodes=nodes, cursor=cursor)
 
     def _open_subtasks(self) -> list[tuple[str, str]]:
         """List the worker's open subtasks as (id, title) pairs, in run mode.
@@ -2062,7 +1812,7 @@ class Harness:
             return []
         return _advice.open_subtasks(self.curator.nodes())
 
-    def _checkpoint_graph_version(self) -> int:
+    def checkpoint_graph_version(self) -> int:
         """Return the graph version for the per-turn checkpoint, 0 without a curator."""
         if self.curator is None:
             return 0
@@ -2099,12 +1849,12 @@ class Harness:
                 self.state_dir, question=question, answer=answer, session=self.session_id
             )
         except OSError as exc:
-            self._log(f"LOOP: decision not recorded: {exc}")
-            self._emit("loop.decision.unrecorded", error=str(exc))
+            self.log(f"LOOP: decision not recorded: {exc}")
+            self.emit("loop.decision.unrecorded", error=str(exc))
             return
         state.decisions_recorded.append(entry)
-        self._log(f"LOOP: decision recorded ({len(answer)} chars)")
-        self._emit("loop.decision.recorded", question=question[:200], answer=answer[:200])
+        self.log(f"LOOP: decision recorded ({len(answer)} chars)")
+        self.emit("loop.decision.recorded", question=question[:200], answer=answer[:200])
 
     def _check_decisions_recorded(self, state: _loop_state.LoopState) -> None:
         """Report a recorded ruling missing from DECISIONS.md at the finish; never a block.
@@ -2120,8 +1870,8 @@ class Harness:
             text = ""
         missing = [e for e in state.decisions_recorded if e.strip() not in text]
         if missing:
-            self._log(f"LOOP: {len(missing)} recorded decision(s) missing from DECISIONS.md")
-            self._emit("loop.decision.unrecorded", missing=len(missing))
+            self.log(f"LOOP: {len(missing)} recorded decision(s) missing from DECISIONS.md")
+            self.emit("loop.decision.unrecorded", missing=len(missing))
 
     def _load_skills(self) -> skills.ResolvedSkills | None:
         """Return the installed skills for the system prompt, in run mode.
@@ -2136,10 +1886,10 @@ class Harness:
             return None
         resolved = self.dispatcher.resolved_skills()
         for w in resolved.warnings:
-            self._log(f"LOOP: skills: WARNING: {w}")
-            self._emit("loop.skills.warning", warning=str(w))
+            self.log(f"LOOP: skills: WARNING: {w}")
+            self.emit("loop.skills.warning", warning=str(w))
         if resolved.enabled or resolved.always:
-            self._log(
+            self.log(
                 f"LOOP: skills: {len(resolved.enabled)} indexed, {len(resolved.always)} always-on"
             )
             return resolved
@@ -2162,8 +1912,8 @@ class Harness:
             mode=self.mode,
             chain=self.chain,
             dispatcher=self.dispatcher,
-            log=self._log,
-            emit=self._emit,
+            log=self.log,
+            emit=self.emit,
         )
 
     @functools.cached_property
@@ -2174,8 +1924,8 @@ class Harness:
             style=self.config.git.commit.checkpoint.message,
             enabled=self.mode == "run",
             provider=self.provider,
-            log=self._log,
-            emit=self._emit,
+            log=self.log,
+            emit=self.emit,
         )
 
     @functools.cached_property
@@ -2190,8 +1940,8 @@ class Harness:
             decisions=self._load_decisions,
             compact_requested=self.bridge.compact_requested,
             compact_clear=self.bridge.compact_clear,
-            log=self._log,
-            emit=self._emit,
+            log=self.log,
+            emit=self.emit,
             emit_graph_snapshot=self._emit_graph_snapshot,
         )
 
@@ -2202,8 +1952,8 @@ class Harness:
             curator=self.curator,
             patience=self.config.harness.standing_patience,
             budget_remaining=self._budget_fraction_remaining,
-            log=self._log,
-            emit=self._emit,
+            log=self.log,
+            emit=self.emit,
         )
 
     @functools.cached_property
@@ -2213,8 +1963,8 @@ class Harness:
             settings=self.config.harness.metric,
             enabled=self.mode == "run",
             dispatcher=self.dispatcher,
-            log=self._log,
-            emit=self._emit,
+            log=self.log,
+            emit=self.emit,
         )
 
     @functools.cached_property
@@ -2226,8 +1976,8 @@ class Harness:
             revision=self.revision,
             root=self.chain.root,
             hide=self.config.sandbox.hide_paths,
-            log=self._log,
-            emit=self._emit,
+            log=self.log,
+            emit=self.emit,
             emit_graph_snapshot=self._emit_graph_snapshot,
         )
 
@@ -2239,9 +1989,11 @@ class Harness:
             curator=self.curator,
             max_lanes=self.config.parallel.max_lanes,
             lane_spawner=self.bridge.lane_spawner,
-            save_snapshot=self._save_resume_snapshot,
-            log=self._log,
-            emit=self._emit,
+            save_snapshot=lambda *args, **kwargs: _loop_resume.save_resume_snapshot(
+                self, *args, **kwargs
+            ),
+            log=self.log,
+            emit=self.emit,
             emit_graph_snapshot=self._emit_graph_snapshot,
         )
 
@@ -2253,8 +2005,8 @@ class Harness:
             parallel=lambda: self.parallel,
             dispatcher=self.dispatcher,
             record_decision=self._record_decision,
-            log=self._log,
-            emit=self._emit,
+            log=self.log,
+            emit=self.emit,
         )
 
     @functools.cached_property
@@ -2266,8 +2018,8 @@ class Harness:
             hide=self.config.sandbox.hide_paths,
             review_tools=lambda: _toolset.build_readonly_review_tools(self.dispatcher),
             budget_remaining=self._budget_fraction_remaining,
-            log=self._log,
-            emit=self._emit,
+            log=self.log,
+            emit=self.emit,
         )
 
     @functools.cached_property
@@ -2281,194 +2033,9 @@ class Harness:
             temperature=self.call.temperature,
             should_abort=self.bridge.should_abort,
             should_interrupt=self.bridge.should_interrupt,
-            log=self._log,
-            emit=self._emit,
+            log=self.log,
+            emit=self.emit,
         )
-
-    # ---- steering and operator boundaries ------------------------------------
-
-    def _operator_boundary(
-        self, conversation: _conversation.Conversation, iteration: int, state: _loop_state.LoopState
-    ) -> _snapshot.SessionResult | None:
-        """Honour a pending stop, then poll the steer flag, after every completed iteration.
-
-        A stop or an injected instruction never splits a tool call from its result.
-
-        Args:
-            conversation: The conversation a steer enters.
-            iteration: The iteration just completed.
-            state: The execution's state.
-
-        Returns:
-            The end the operator asked for, or None when the execution goes on.
-        """
-        # A background command's ending reaches disk only when observed; `/shells` reads it.
-        self.dispatcher.settle_background()
-        if self.bridge.stop_requested() or self.bridge.should_abort():
-            immediate = self.bridge.stop_is_now() or self.bridge.should_abort()
-            self.bridge.stop_clear()
-            when = f"during step {iteration}" if immediate else f"after step {iteration}"
-            cut = "; running command was cut short" if immediate and state.command_cut else ""
-            if immediate:
-                self.bridge.steer_clear()
-                self._log(f"LOOP: operator stop {when}{cut}")
-            else:
-                self._log(f"LOOP: operator stop at the step boundary (iter {iteration})")
-            return self._finish(
-                state,
-                _snapshot.End(
-                    "steer_abort",
-                    f"operator stopped the run {when}{cut}{self._dirty_tree_note()}",
-                    checkpoint=False,
-                ),
-                iteration=iteration,
-            )
-        return self._steer_outcome(
-            self.steering.handle(conversation, iteration, state), iteration, state
-        )
-
-    def _quiet_continuation(
-        self,
-        conversation: _conversation.Conversation,
-        state: _loop_state.LoopState,
-        *,
-        iteration: int,
-        reason: str,
-    ) -> _snapshot.SessionResult | _loop_state.NextTurn | None:
-        """Continue a quiet turn in run mode: a standing goal re-enters, else a park.
-
-        Args:
-            conversation: The conversation the re-entry enters.
-            state: The execution's state.
-            iteration: The current iteration.
-            reason: The quiet end being continued.
-
-        Returns:
-            `NEXT_TURN` to go on, the end a park chose, or None when neither applies.
-        """
-        if self.mode != "run":
-            return None
-        nudge = self.standing.absorb(state, reason=reason, iteration=iteration)
-        if nudge is not None:
-            conversation.notice(nudge)
-            return _loop_state.NEXT_TURN
-        if self.interactive:
-            parked = self._park_for_steer(conversation, state, iteration=iteration, reason=reason)
-            return _loop_state.NEXT_TURN if parked is None else parked
-        return None
-
-    def _park_for_steer(
-        self,
-        conversation: _conversation.Conversation,
-        state: _loop_state.LoopState,
-        *,
-        iteration: int,
-        reason: str,
-    ) -> _snapshot.SessionResult | None:
-        """Park a quiet interactive execution until the operator steers it.
-
-        The conversation stays in memory with its snapshot on disk; there is no timeout.
-
-        Args:
-            conversation: The conversation a steer enters.
-            state: The execution's state.
-            iteration: The current iteration.
-            reason: The quiet end being parked.
-
-        Returns:
-            The end a steer verb chose, or None when the execution continues.
-        """
-        self._log(
-            f"LOOP: parked at iter {iteration} ({reason}) - waiting for your steer"
-            " (any composer or the pause menu; abort ends the run)"
-        )
-        self._emit("loop.parked", iteration=iteration, reason=reason)
-        while True:
-            if self.bridge.stop_requested():
-                self.bridge.stop_clear()
-                return self._finish(
-                    state,
-                    _snapshot.End(
-                        "steer_abort",
-                        f"operator stopped the parked run{self._dirty_tree_note()}",
-                        checkpoint=False,
-                    ),
-                    iteration=iteration,
-                )
-            if self.bridge.should_abort():
-                return self._steer_outcome("abort", iteration, state)
-            if self.bridge.steer_requested():
-                verb = self.steering.handle(conversation, iteration, state)
-                if verb is not None:
-                    return self._steer_outcome(verb, iteration, state)
-                # Injected (or a bare poke): the run continues where it parked.
-                self._emit("loop.parked.resumed", iteration=iteration)
-                return None
-            if self.operator_tasks.take(state.root_task_id):
-                # A queued task, goal or retirement is work; the next focus banner names it.
-                self._emit("loop.parked.resumed", iteration=iteration)
-                return None
-            time.sleep(0.5)
-
-    def _steer_outcome(
-        self, steer_result: str | None, iteration: int, state: _loop_state.LoopState
-    ) -> _snapshot.SessionResult | None:
-        """Map a steer verb to the execution's end.
-
-        Args:
-            steer_result: The verb `Steering.handle` returned; None for an injected instruction.
-            iteration: The current iteration.
-            state: The execution's state.
-
-        Returns:
-            The end, or None when the execution goes on.
-        """
-        if steer_result in ("abort", "exit"):
-            # "exit" is the same stop; its reason tells the CLI to skip the follow-up prompt.
-            reason: _snapshot.SessionEndReason = (
-                "steer_exit" if steer_result == "exit" else "steer_abort"
-            )
-            return self._finish(
-                state,
-                _snapshot.End(
-                    reason,
-                    f"operator {'exited' if steer_result == 'exit' else 'aborted'}"
-                    f" at iter {iteration} via steering prompt{self._dirty_tree_note()}",
-                    checkpoint=False,
-                ),
-                iteration=iteration,
-            )
-        if steer_result == "undo":
-            forked = self.bridge.undo_forker() if self.bridge.undo_forker is not None else None
-            if forked is None:
-                # The forker printed why, or none is wired.
-                self._log("  /undo: nothing to undo; continuing")
-                return None
-            new_id, undone_text = forked
-            self._emit("session.undone", new_session_id=new_id, undone_text=undone_text)
-            # An undo is the operator's own end; without a session.end the run reads stale.
-            return self._finish(
-                state,
-                _snapshot.End(
-                    "undone",
-                    f"operator undid the last message at iter {iteration}; forked to {new_id}",
-                    checkpoint=False,
-                ),
-                iteration=iteration,
-            )
-        if steer_result == "detach":
-            # No session.end: the caller respawns a detached `resume` that appends to this log.
-            return self._finish(
-                state,
-                _snapshot.End(
-                    "detached",
-                    f"operator detached at iter {iteration}; resuming in the background",
-                    checkpoint=False,
-                    event=False,
-                ),
-                iteration=iteration,
-            )
-        return None
 
     # ---- the log and the events ----------------------------------------------
 
@@ -2477,11 +2044,11 @@ class Harness:
         """Return the session id, the run dir's name; "" without a log."""
         return self.events.path.parent.name if self.events is not None else ""
 
-    def _log(self, msg: str) -> None:
+    def log(self, msg: str) -> None:
         """Write one line to the run log."""
         self.logger(f"[agent6] {msg}")
 
-    def _emit(self, event_type: str, **fields: Any) -> None:
+    def emit(self, event_type: str, **fields: Any) -> None:
         """Emit one event when a log is wired."""
         if self.events is not None:
             self.events.emit(event_type, **fields)
@@ -2501,7 +2068,7 @@ class Harness:
             return
         snap = self.budget.snapshot()
         cost, _ = self.budget.estimate_usd()
-        self._emit(
+        self.emit(
             "loop.budget",
             iteration=iteration,
             input_tokens=snap.input_total,

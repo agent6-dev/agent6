@@ -275,14 +275,14 @@ def test_a_resumed_execution_starts_its_own_count_with_the_nudge_flags_carried()
 def test_finish_records_the_use(tmp_path: pathlib.Path) -> None:
     """Finish records the use.
 
-    Every end goes through `_finish`, so the record lands whichever way an execution ends; a write
+    Every end goes through `finish`, so the record lands whichever way an execution ends; a write
     fault there must not break the end.
     """
     wf = _wf(tmp_path)
     state = _state()
     state.memory = _guards.MemoryState(read={"quirk": 1})
     end = _snapshot.End(reason="finish_session", summary="done", completed=True, verdict="passed")
-    result = wf._finish(state, end, iteration=3)  # pyright: ignore[reportPrivateUsage]
+    result = wf.finish(state, end, iteration=3)
     assert result.completed is True
     assert memory.read_use(tmp_path)["quirk"].reads == 1
 
@@ -320,7 +320,7 @@ def test_a_record_that_cannot_be_written_logs_and_lets_the_end_stand(
         end = _snapshot.End(
             reason="finish_session", summary="done", completed=True, verdict="passed"
         )
-        result = wf._finish(state, end, iteration=1)  # pyright: ignore[reportPrivateUsage]
+        result = wf.finish(state, end, iteration=1)
     finally:
         tmp_path.chmod(stat.S_IRWXU)
     assert result.completed is True

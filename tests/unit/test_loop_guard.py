@@ -15,7 +15,7 @@ import types
 from typing import Any
 from unittest import mock
 
-from agent6.harness import _chain, _provider_call, loop
+from agent6.harness import _chain, _loop_resume, _provider_call, loop
 from agent6.providers import ProviderResponse
 from agent6.tools import results
 
@@ -710,9 +710,9 @@ def test_resume_execution_rearms_the_iteration_allowance(tmp_path: pathlib.Path)
         _loop_state.LoopState(original_task="t", tool_calls=0).tool_calls,
         _loop_state.LoopState(original_task="t", tool_calls=0).root_task_id,
     ) = "s", 0, None
-    wf._save_resume_snapshot(
-        _loop_state.LoopState(original_task="t", tool_calls=0), [], next_iteration=6
-    )  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.save_resume_snapshot(
+        wf, _loop_state.LoopState(original_task="t", tool_calls=0), [], next_iteration=6
+    )
     result = wf.resume()
 
     assert result.completed is True

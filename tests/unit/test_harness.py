@@ -27,7 +27,9 @@ from agent6.harness import (
     _conversation,
     _finish_gates,
     _guards,
+    _loop_resume,
     _loop_state,
+    _loop_steer,
     _metric,
     _operator,
     _provider_call,
@@ -155,7 +157,7 @@ def _wf(
 
 
 def _state(**kw: Any) -> Any:
-    """Minimal LoopState for _save_resume_snapshot call sites."""
+    """Minimal LoopState for save_resume_snapshot call sites."""
     defaults: dict[str, Any] = {"original_task": "t", "tool_calls": 0}
     defaults.update(kw)
     return _loop_state.LoopState(**defaults)
@@ -2530,7 +2532,7 @@ def test_session_end_journals_its_summary() -> None:
     ):
         ev = _EventCapture()
         wf = _wf(mode="run", events=ev)
-        result = wf._finish(_state(), end, iteration=4)  # pyright: ignore[reportPrivateUsage]
+        result = wf.finish(_state(), end, iteration=4)
         (recorded,) = [e for e in ev.events if e["type"] == "session.end"]
         assert recorded.get("summary") == result.summary == end.summary
 
@@ -2551,13 +2553,13 @@ def test_session_end_carries_the_gates_word_for_the_final_tree() -> None:
     for word, verdict in verdicts.items():
         ev = _EventCapture()
         wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
-        result = wf._finish(_state(verify=verdict), stop, iteration=4)  # pyright: ignore[reportPrivateUsage]
+        result = wf.finish(_state(verify=verdict), stop, iteration=4)
         (end,) = [e for e in ev.events if e["type"] == "session.end"]
         assert (end["all_passed"], end["verified"], result.verified) == (False, word, word)
     ev = _EventCapture()
     gateless = _wf(mode="run", events=ev)
     done = _snapshot.End("finish_session", "done", completed=True, verdict="grounded")
-    gateless._finish(_state(), done, iteration=2)  # pyright: ignore[reportPrivateUsage]
+    gateless.finish(_state(), done, iteration=2)
     (end,) = [e for e in ev.events if e["type"] == "session.end"]
     assert (end["all_passed"], end["verified"]) == (None, "not_applicable")
 
@@ -2568,7 +2570,7 @@ def test_settle_after_a_failed_reverify_reports_the_red_gate() -> None:
     state = _state(verify=_verify_verdict.VerifyVerdict(ever_passed=True, last_ok=False))
 
     with mock.patch.object(_chain.RunChain, "dirty", return_value=False):
-        result = wf._finish(state, _guards.settled_end(state, _ctx(wf, state)), iteration=8)  # pyright: ignore[reportPrivateUsage]
+        result = wf.finish(state, _guards.settled_end(state, _ctx(wf, state)), iteration=8)
 
     assert result is not None and result.reason == "settled"
     assert result.verified == "failed"
@@ -4738,22 +4740,26 @@ def test_steer_clear_called_even_when_prompt_raises() -> None:
 def test_save_resume_snapshot_noop_when_path_unset(tmp_path: pathlib.Path) -> None:
     """resume_state_path=None -> no file written, no exception."""
     wf = _wf()
-    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        _state(system="s", tool_calls=0, root_task_id=None), [], next_iteration=1
+    _loop_resume.save_resume_snapshot(
+        wf,
+        _state(system="s", tool_calls=0, root_task_id=None),
+        [],
+        next_iteration=1,
     )
     # tmp_path should still be empty.
     assert list(tmp_path.iterdir()) == []
 
 
 def test_save_and_load_run_snapshot_round_trip(tmp_path: pathlib.Path) -> None:
-    """Snapshot written by _save_resume_snapshot loads back identically."""
+    """Snapshot written by save_resume_snapshot loads back identically."""
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
     msgs: list[dict[str, Any]] = [
         {"role": "user", "content": [{"type": "text", "text": "hello"}]},
         {"role": "assistant", "content": [{"type": "text", "text": "hi back"}]},
     ]
-    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.save_resume_snapshot(
+        wf,
         _state(tool_calls=3, system="SYSTEM PROMPT", root_task_id="task-abc"),
         msgs,
         next_iteration=7,
@@ -4771,7 +4777,8 @@ def test_save_resume_snapshot_atomic_no_partial_tmp(tmp_path: pathlib.Path) -> N
     """After save, no .tmp file remains: the snapshot and its checkpoint are written atomically."""
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
-    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.save_resume_snapshot(
+        wf,
         _state(system="s", tool_calls=0, root_task_id=None),
         [],
         next_iteration=1,
@@ -4804,7 +4811,8 @@ def test_save_resume_snapshot_uses_durable_atomic_writer(
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
 
-    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.save_resume_snapshot(
+        wf,
         _state(system="s", tool_calls=0, root_task_id=None),
         [],
         next_iteration=9,
@@ -5277,15 +5285,21 @@ def test_resume_snapshot_carries_verify_command(tmp_path: pathlib.Path) -> None:
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        _state(system="s", tool_calls=0, root_task_id=None), [], next_iteration=1
+    _loop_resume.save_resume_snapshot(
+        wf,
+        _state(system="s", tool_calls=0, root_task_id=None),
+        [],
+        next_iteration=1,
     )
     assert _snapshot.load_session_snapshot(snap).verify_command == ("pytest", "-q")
 
     config.harness.verify_command = ()  # gateless run -> stored as [] -> loads as ()
     wf = _wf(resume_state_path=snap, config=config)
-    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        _state(system="s", tool_calls=0, root_task_id=None), [], next_iteration=1
+    _loop_resume.save_resume_snapshot(
+        wf,
+        _state(system="s", tool_calls=0, root_task_id=None),
+        [],
+        next_iteration=1,
     )
     assert _snapshot.load_session_snapshot(snap).verify_command == ()
 
@@ -5333,8 +5347,11 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: pathlib
     wf = _wf(resume_state_path=snap, config=config, logger=logs.append)
     # Must not raise, twice (the second call must not re-warn).
     for _ in range(2):
-        wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-            _state(system="s", tool_calls=0, root_task_id=None), [], next_iteration=1
+        _loop_resume.save_resume_snapshot(
+            wf,
+            _state(system="s", tool_calls=0, root_task_id=None),
+            [],
+            next_iteration=1,
         )
     warnings = [m for m in logs if "could not persist resume snapshot" in m]
     assert len(warnings) == 1, "warn exactly once, then stay quiet"
@@ -7234,9 +7251,9 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
     state.verify.last_ok = False  # red tree: all_passed must stay False
     state.verify.edited_since = True
     events: list[dict[str, Any]] = []
-    wf._emit = lambda event_type, **fields: events.append({"type": event_type, **fields})  # pyright: ignore[reportPrivateUsage]
+    wf.emit = lambda event_type, **fields: events.append({"type": event_type, **fields})
 
-    wf._finish(  # pyright: ignore[reportPrivateUsage]
+    wf.finish(
         state,
         _snapshot.End("finish_session", "", completed=True, verdict="grounded", checkpoint=False),
         iteration=3,
@@ -7259,11 +7276,11 @@ def test_an_operator_stop_names_the_worktree_it_leaves_dirty(tmp_path: pathlib.P
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "init"], check=True)
 
     wf = _wf(root=tmp_path, mode="run")
-    assert wf._dirty_tree_note() == ""  # pyright: ignore[reportPrivateUsage]
+    assert wf.dirty_tree_note() == ""
 
     (tmp_path / "a.txt").write_text("edited\n", encoding="utf-8")
     (tmp_path / "new.txt").write_text("untracked\n", encoding="utf-8")
-    note = wf._dirty_tree_note()  # pyright: ignore[reportPrivateUsage]
+    note = wf.dirty_tree_note()
     assert "worktree left dirty" in note
     assert "2 file" in note  # the real count, not a capped one
 
@@ -7305,9 +7322,14 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: pat
     conversation = _conversation.Conversation.from_wire(
         [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
     )
-    wf.parallel.dispatch(
-        conversation, 3, _state(), [directive.Segment(spec="", task="do the thing")]
-    )
+    parallel = wf.parallel
+    with mock.patch.object(
+        _loop_resume, "save_resume_snapshot", wraps=_loop_resume.save_resume_snapshot
+    ) as save_snapshot:
+        parallel.dispatch(
+            conversation, 3, _state(), [directive.Segment(spec="", task="do the thing")]
+        )
+    save_snapshot.assert_called_once()
     assert at_spawn["group"] == "p1"
     assert at_spawn["persisted"] == 1, "the bump must be on disk before the group blocks"
 
@@ -7325,7 +7347,7 @@ def test_steer_abort_names_the_dirty_worktree_like_its_siblings(tmp_path: pathli
     (tmp_path / "a.txt").write_text("edited after the last checkpoint\n", encoding="utf-8")
 
     wf = _wf(root=tmp_path, mode="run")
-    res = wf._steer_outcome("abort", 4, _state())  # pyright: ignore[reportPrivateUsage]
+    res = _loop_steer.steer_outcome(wf, "abort", 4, _state())
     assert res is not None
     assert res.reason == "steer_abort"
     assert "worktree left dirty" in res.summary
@@ -7490,7 +7512,7 @@ def test_standing_task_gates_finish_session_and_soft_stops() -> None:
     turn2.stops.append(_advice.Stop(lambda: _guards.settled_end(state, ctx), soft="verify_settled"))
     state.settled.idle = 9
     conv = _conversation.Conversation()
-    wf.standing.absorb_soft_stop(state, turn2, conv)  # pyright: ignore[reportPrivateUsage]
+    wf.standing.absorb_soft_stop(state, turn2, conv)
     assert turn2.stops == []
     assert state.settled.idle == 0
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
@@ -7500,7 +7522,7 @@ def test_standing_absorb_refuses_without_a_ready_standing_task() -> None:
     curator = mock.MagicMock()
     curator.nodes.return_value = _typed({"a": {}})  # no standing node
     wf = _wf(mode="run", curator=curator, budget=None)
-    assert wf.standing.absorb(_state(), reason="silent_finish", iteration=1) is None  # pyright: ignore[reportPrivateUsage]
+    assert wf.standing.absorb(_state(), reason="silent_finish", iteration=1) is None
 
 
 def test_standing_goal_seeds_a_standing_child_under_the_root() -> None:
@@ -8001,7 +8023,7 @@ def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
     )
     result = wf.steering.handle(_conversation.Conversation(), 3, _state())
     assert result == "exit"
-    out = wf._steer_outcome("exit", 3, _state())  # pyright: ignore[reportPrivateUsage]
+    out = _loop_steer.steer_outcome(wf, "exit", 3, _state())
     assert out is not None and out.reason == "steer_exit" and out.completed is False
     ends = [e for e in ev.events if e["type"] == "session.end"]
     assert ends and ends[-1]["reason"] == "steer_exit"

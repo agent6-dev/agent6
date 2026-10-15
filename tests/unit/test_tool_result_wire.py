@@ -542,4 +542,4 @@ def test_the_tool_error_log_line_names_the_tool_once() -> None:
     loop.Harness._note_tool_error(  # pyright: ignore[reportPrivateUsage]
         wf, state, "use_skill", {}, exc.value
     )
-    wf._log.assert_called_with(f"  tool_error: use_skill: {exc.value}")
+    wf.log.assert_called_with(f"  tool_error: use_skill: {exc.value}")

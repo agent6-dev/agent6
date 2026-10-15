@@ -27,7 +27,7 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
     object.__setattr__(
         wf, "_git_status", lambda: types.SimpleNamespace(is_clean=clean, head_sha=head)
     )
-    object.__setattr__(wf, "_emit", _quiet)
+    object.__setattr__(wf, "emit", _quiet)
     wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
@@ -118,9 +118,9 @@ def test_the_gate_runs_before_the_first_turn_and_records_the_baseline(
         events.append((kind, fields))
 
     state, (wf, _) = _state(), _start_wf(rc)
-    object.__setattr__(wf, "_emit", _record)
+    object.__setattr__(wf, "emit", _record)
     lines: list[str] = []
-    object.__setattr__(wf, "_log", lines.append)
+    object.__setattr__(wf, "log", lines.append)
     _patch_git(monkeypatch, wf)
     texts = [n.text for n in wf.gate.start_baseline(state)]
     assert state.verify.baseline_ok is (rc == 0)

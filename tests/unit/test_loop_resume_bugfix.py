@@ -23,7 +23,9 @@ from agent6.harness import (
     _chain,
     _compactor,
     _conversation,
+    _loop_resume,
     _loop_state,
+    _loop_steer,
     _metric,
     _provider_call,
     _snapshot,
@@ -137,7 +139,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: pathlib.Path) -> None:
         _metric.MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True)
     )
     state.system, state.tool_calls, state.root_task_id = "s", 2, None
-    wf._save_resume_snapshot(state, [], next_iteration=4)  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=4)
     loaded = _snapshot.load_session_snapshot(snap)
     assert loaded.verify_ever_passed is True
     assert loaded.verify_scoped is True
@@ -174,7 +176,7 @@ def test_snapshot_preserves_run_lifetime_memory_state(tmp_path: pathlib.Path) ->
     state.memory.written = True
     state.memory.flip_nudged = True
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    wf._save_resume_snapshot(state, [], next_iteration=3)  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=3)
 
     loaded = _snapshot.load_session_snapshot(snap)
     fresh = _loop_state.LoopState(original_task="t", tool_calls=0)
@@ -236,7 +238,7 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: pathl
     def stop_at_boundary(*_a: object, **_k: object) -> _snapshot.SessionResult:
         return stopped
 
-    with mock.patch.object(loop.Harness, "_operator_boundary", stop_at_boundary):
+    with mock.patch.object(_loop_steer, "operator_boundary", stop_at_boundary):
         result = wf.run("do the task")
     assert result.reason == "interactive_stop"
     loaded = _snapshot.load_session_snapshot(snap_path)
@@ -275,7 +277,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: pathlib
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.parallel_groups_dispatched = 2
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    wf._save_resume_snapshot(state, [], next_iteration=4)  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=4)
     loaded = _snapshot.load_session_snapshot(snap)
     assert loaded.parallel_groups_dispatched == 2
 
@@ -310,7 +312,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: pathlib.Path) -> None:
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.pins.extend(["never touch schema files", "goal:\nship X"])
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    wf._save_resume_snapshot(state, [], next_iteration=4)  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=4)
     loaded = _snapshot.load_session_snapshot(snap)
     assert loaded.pins == ("never touch schema files", "goal:\nship X")
 
@@ -770,12 +772,14 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: pathl
         mode="run",
         resume_state_path=snap,
     )
-    orig_save = wf._save_resume_snapshot  # pyright: ignore[reportPrivateUsage]
+    orig_save = _loop_resume.save_resume_snapshot
     orig_call = provider.call
     orig_compact = _compactor.Compactor.compact
 
-    def _spy_save(state: Any, messages: list[dict[str, Any]], **kw: Any) -> None:
-        orig_save(state, messages, **kw)
+    def _spy_save(
+        harness: loop.Harness, state: Any, messages: list[dict[str, Any]], **kw: Any
+    ) -> None:
+        orig_save(harness, state, messages, **kw)
         events.append(
             {
                 "kind": "save",
@@ -792,7 +796,8 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: pathl
         events.append({"kind": "compact"})
         return orig_compact(compactor, msgs, state, **kw)
 
-    wf._save_resume_snapshot = _spy_save  # type: ignore[method-assign]
+    save_spy = mock.patch.object(_loop_resume, "save_resume_snapshot", _spy_save)
+    save_spy.start()
     provider.call = _spy_call
     compact_spy = mock.patch.object(_compactor.Compactor, "compact", _spy_compact)
     compact_spy.start()
@@ -807,6 +812,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: pathl
         original_task="go",
     )
     compact_spy.stop()
+    save_spy.stop()
 
     # The snapshot advancing to next_iteration=2 is written at the end of iter 1: no crash window.
     kinds = [ev["kind"] for ev in events]
@@ -1411,7 +1417,7 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pat
     assert snap.head_sha == git_ops.chain_tip(repo, chain) != git_ops.status(repo).head_sha
 
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
-    wf._carry_verify_verdict(state, snap)  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.carry_verify_verdict(wf, state, snap)
 
     assert state.verify.last_ok is True
     assert state.verify.green_and_untouched is True
@@ -1444,13 +1450,13 @@ def test_a_baseline_verdict_carries_only_onto_the_base_it_describes(
     older = _snapshot.SessionSnapshot.model_validate(fields)  # written before the base was kept
 
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
-    wf._carry_verify_verdict(state, same)  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.carry_verify_verdict(wf, state, same)
     assert state.verify.baseline_ok is False
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
-    wf._carry_verify_verdict(state, moved)  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.carry_verify_verdict(wf, state, moved)
     assert state.verify.baseline_ok is None
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
-    wf._carry_verify_verdict(state, older)  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.carry_verify_verdict(wf, state, older)
     assert state.verify.baseline_ok is None
 
 
@@ -1631,7 +1637,7 @@ def test_baseline_denial_is_saved_as_execution_local_withholding(tmp_path: pathl
     notices = wf.gate.start_baseline(state)
     assert len(notices) == 1
     assert state.verify.withheld is True
-    wf._save_resume_snapshot(state, [], next_iteration=1)  # pyright: ignore[reportPrivateUsage]
+    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=1)
     saved = _snapshot.load_session_snapshot(path)
     assert saved.verify_withheld is True
     restored = _loop_state.LoopState(original_task="tidy", tool_calls=0)
