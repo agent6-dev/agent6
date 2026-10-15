@@ -137,6 +137,8 @@ State is snapshotted before each model call and checkpointed per turn.
 - a `--parallel` lane continues through `agent6 fork <lane-id>`, in a worktree at the lane's last commit; `resume` refuses a lane from your checkout, whose tree is not the lane's
 - a fan-out stopped only by lane caps reads `failed · budget exhausted` and exits `3`; its report says to raise the budget cap and fork each stopped lane
 - a `--steer` on a fork, or on resuming a run the agent finished, becomes the new run's task and names its row and its merge subject
+- a gate withheld after denied or interrupted approval stays withheld only for that execution.
+  When the snapshot records that withholding, a resume with the gate and commands allowed tells the model once that the gate is available again, without claiming it passed
 - a resume after the run's work landed continues from the checkout's HEAD when HEAD holds the merge: the run's next commits, `sessions diff` and its next merge then hold only the new work, so nothing lands twice
 - a run whose workspace does not hold the merge (a `--worktree` run, a fork) continues on its own chain: after a resume, `sessions diff`, `sessions commits` and its next merge start from the landed tip
 - a run merged `--into` a branch other than the one it started on keeps its base, and merges into that branch again from its landed tip

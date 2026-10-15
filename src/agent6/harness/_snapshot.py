@@ -199,6 +199,7 @@ class SessionSnapshot(pydantic.BaseModel):
         last_verify_ok: The last verify's result, carried only onto a clean tree at `head_sha`.
         edited_since_verify: Whether the tree changed after the last verify.
         baseline_ok: Whether the gate passed on the base commit `base_sha`.
+        verify_withheld: Whether approval withheld the gate in the saved execution.
         verify_scoped: Whether the full gate overran its timeout; a fact about the suite, so it
             carries unconditionally.
         memory_written: Whether the worker wrote a memory fact; the flip advisory is once per run.
@@ -234,6 +235,7 @@ class SessionSnapshot(pydantic.BaseModel):
     edited_since_verify: bool = False
     baseline_ok: bool | None = None
     verify_scoped: bool = False
+    verify_withheld: bool = False
     memory_written: bool = False
     memory_flip_nudged: bool = False
     ok_tool_calls: int = 0

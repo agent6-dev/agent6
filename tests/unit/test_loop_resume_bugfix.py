@@ -29,7 +29,7 @@ from agent6.harness import (
     _snapshot,
     loop,
 )
-from agent6.tools import results
+from agent6.tools import errors, results
 
 # The `[git]` surface the loop reads, empty as a real Config carries it unset.
 _GIT_STUB = types.SimpleNamespace(
@@ -1531,3 +1531,109 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
     assert not [e for e in ev.events if e["type"] == "loop.verify_swapped"]
     told = json.dumps(provider.call.call_args.kwargs["messages"])
     assert "changed between executions" not in told
+
+
+@pytest.mark.parametrize("policy", ["yes", "ask", "no"])
+@pytest.mark.parametrize("withheld", [False, True])
+def test_resume_restates_execution_local_gate_availability(
+    tmp_path: pathlib.Path, policy: str, withheld: bool
+) -> None:
+    """Only a recorded withholding gets a correction, once, on a runnable resume."""
+    notice = (
+        "[harness verify] start: not run: run_verify_command not run: the run was asked"
+        " to stop while awaiting approval. The gate is withheld for the rest of the run;"
+        " the run ends unverified."
+    )
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "TASK: tidy"}]},
+        {"role": "user", "content": [{"type": "text", "text": notice}]},
+    ]
+    path = tmp_path / "loop_state.json"
+    path.write_text(
+        _snapshot.SessionSnapshot(
+            system="s",
+            messages=messages,
+            tool_calls=0,
+            next_iteration=1,
+            root_task_id=None,
+            original_task="tidy",
+            verify_command=("true",),
+            verify_withheld=withheld,
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    config = Config.model_validate(
+        {
+            "sandbox": {"run_commands": policy},
+            "harness": {"verify_command": ["true"]},
+        }
+    )
+    provider = mock.MagicMock()
+    provider.call.return_value = types.SimpleNamespace(
+        text="",
+        refused={},
+        stop_reason="tool_use",
+        input_tokens=1,
+        output_tokens=1,
+        tool_uses=({"id": "end", "name": "finish_session", "input": {"summary": "done"}},),
+        raw={
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "end",
+                    "name": "finish_session",
+                    "input": {"summary": "done"},
+                }
+            ]
+        },
+    )
+    dispatcher = mock.MagicMock()
+    dispatcher.command_policy.return_value = policy
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
+    dispatcher.run_verify.return_value = results.ExecResult(
+        returncode=0, stdout="passed", stderr="", duration_s=0.1, exec_failed=False
+    )
+    wf = _wf(config=config, provider=provider, dispatcher=dispatcher, resume_state_path=path)
+    wf.resume()
+
+    told = json.dumps(provider.call.call_args.kwargs["messages"])
+    assert notice in told
+    correction = "Any earlier notice withholding the gate applied only to that execution."
+    if policy == "no" or not withheld:
+        assert correction not in told
+    else:
+        assert correction in told
+        assert told.index(correction) > told.index(notice)
+        assert "run_verify_command is available in this execution" in told
+        dispatcher.run_verify.assert_called_once()
+    saved = _snapshot.load_session_snapshot(path)
+    assert saved.verify_withheld is False
+    provider.reset_mock()
+    wf.resume()
+    told_again = json.dumps(provider.call.call_args.kwargs["messages"])
+    assert told_again.count(correction) == told.count(correction)
+
+
+def test_baseline_denial_is_saved_as_execution_local_withholding(tmp_path: pathlib.Path) -> None:
+    """The baseline denial reaches the snapshot, but not the resumed execution's verdict."""
+    path = tmp_path / "loop_state.json"
+    dispatcher = mock.MagicMock()
+    dispatcher.command_policy.return_value = "ask"
+    dispatcher.run_verify.side_effect = errors.ToolDeniedError(
+        "run_verify_command not run: the run was asked to stop while awaiting approval."
+    )
+    wf = _wf(
+        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
+        dispatcher=dispatcher,
+        resume_state_path=path,
+    )
+    state = _loop_state.LoopState(original_task="tidy", tool_calls=0)
+    notices = wf.gate.start_baseline(state)
+    assert len(notices) == 1
+    assert state.verify.withheld is True
+    wf._save_resume_snapshot(state, [], next_iteration=1)  # pyright: ignore[reportPrivateUsage]
+    saved = _snapshot.load_session_snapshot(path)
+    assert saved.verify_withheld is True
+    restored = _loop_state.LoopState(original_task="tidy", tool_calls=0)
+    _loop_state.restore_completion_state(restored, saved)
+    assert restored.verify.withheld is False

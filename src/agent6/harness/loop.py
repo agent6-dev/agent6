@@ -325,6 +325,14 @@ class Harness:
             self._log(f"LOOP: verify gate swapped on resume: {was} -> {now}")
             self._emit("loop.verify_swapped", was=list(snapshot.verify_command), now=list(gate))
 
+        if snapshot.verify_withheld and gate and self.dispatcher.command_policy() != "no":
+            # Denial resets per execution; its notice can survive even in a compacted summary.
+            conversation.notice(
+                "[harness verify] Resumed: run_verify_command is available in this execution."
+                " Any earlier notice withholding the gate"
+                " applied only to that execution. This is not a verify verdict."
+            )
+
         return self._drive_loop(
             system=snapshot.system,
             conversation=conversation,
@@ -512,6 +520,7 @@ class Harness:
             edited_since_verify=state.verify.edited_since,
             baseline_ok=state.verify.baseline_ok,
             verify_scoped=state.verify.scoped,
+            verify_withheld=state.verify.withheld,
             memory_written=state.memory.written,
             memory_flip_nudged=state.memory.flip_nudged,
             standing_tools_mark=state.standing.tools_mark,
@@ -1352,7 +1361,7 @@ class Harness:
             if (
                 sha
                 and not self.gate.command(state.verify)
-                and self.gate.may_run(denied=state.verify.denied)
+                and self.gate.may_run(withheld=state.verify.withheld)
             ):
                 self.gate.maybe_adopt(state, turn)
         except (git_ops.GitError, OSError) as exc:

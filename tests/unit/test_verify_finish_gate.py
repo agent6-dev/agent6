@@ -791,7 +791,7 @@ def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
-    assert state.verify.denied is True
+    assert state.verify.withheld is True
     assert (
         "[verify] scoped re-run: not run: run_verify_command not approved."
         " The gate is withheld for the rest of the run; the run ends unverified."
@@ -845,9 +845,9 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     assert state.gates.verify_retries_used == 1
 
 
-@pytest.mark.parametrize(("policy", "denied"), [("no", False), ("ask", True)])
+@pytest.mark.parametrize(("policy", "withheld"), [("no", False), ("ask", True)])
 def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
-    policy: str, denied: bool
+    policy: str, withheld: bool
 ) -> None:
     """The standing red decides the hand-back, with finish_session's own guards.
 
@@ -868,7 +868,7 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_edit()
     state.verify.note_fail("sig")
-    state.verify.denied = denied
+    state.verify.withheld = withheld
     state.verify.note_edit()
     turn = _loop_state.TurnState(iteration=7, resp=mock.MagicMock(), assistant=mock.MagicMock())
 

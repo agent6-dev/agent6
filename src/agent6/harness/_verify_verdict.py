@@ -17,7 +17,7 @@ class VerifyVerdict:
 
     Attributes:
         last_ok: The last verify's result; None before any verify.
-        denied: Whether an approval denied the gate; it is withheld for the rest of the run.
+        withheld: Whether approval withheld the gate for this execution.
         scoped: Whether the full gate overran its timeout, so gates run scoped until a full pass.
         red_tree: The tree sha at the last red verify, "" when git could not say.
         baseline_ok: Whether the gate passed on the unmodified tree; None when no such verify ran.
@@ -34,7 +34,7 @@ class VerifyVerdict:
     """
 
     last_ok: bool | None = None
-    denied: bool = False
+    withheld: bool = False
     scoped: bool = False
     red_tree: str = ""
     baseline_ok: bool | None = None
