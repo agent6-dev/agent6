@@ -48,21 +48,21 @@ def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
 
 
 def test_graph_help_names_its_artifact_aware_default() -> None:
-    """Graph selection skips sessions without a graph directory."""
+    """Graph help states the artifact-aware default."""
     command = _find(_find(cli_parser.build_parser(), "sessions"), "graph")
     text = " ".join(command.format_help().split())
     assert "omit for the newest session with a graph directory" in text
 
 
 def test_transcript_help_names_its_artifact_aware_default() -> None:
-    """Transcript selection skips sessions without a transcripts directory."""
+    """Transcript help states the artifact-aware default."""
     command = _find(_find(cli_parser.build_parser(), "sessions"), "transcript")
     text = " ".join(command.format_help().split())
     assert "omit for the newest session with a transcripts directory" in text
 
 
 def test_prompt_show_help_names_pending_mcp_tools() -> None:
-    """Prompt inspection does not promise tools it has not discovered."""
+    """Prompt show help names the pending MCP tools."""
     command = _find(_find(cli_parser.build_parser(), "prompt"), "show")
     text = " ".join(command.format_help().split())
     assert "Preview" in text
