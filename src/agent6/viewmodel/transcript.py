@@ -30,9 +30,6 @@ THINK = "·"
 DONE = "●"
 OPERATOR = "❯"  # noqa: RUF001  # a prompt glyph, not a mistyped >
 
-# Literals, so the viewmodel needs no tools import.
-_FINISH_TOOLS = frozenset({"finish_session", "finish_planning"})
-
 ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done", "operator", "task"]
 
 
@@ -661,7 +658,7 @@ class TranscriptFold:
         name = str(event.get("name", ""))
         raw_args = event.get("args")
         args = raw_args if isinstance(raw_args, dict) else {}
-        if name in _FINISH_TOOLS:
+        if name in viewmodel_events.FINISH_TOOLS:
             self._finish = str(args.get("summary", "")).strip()
             return []
         self._tools += 1

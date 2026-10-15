@@ -50,7 +50,7 @@ Before the first model call, the header names the role and model from the manife
 - the diff pane opens on the latest commit; its selector walks the per-step commits, `cumulative` shows the chain up to one, and the task tree and cost line follow it; a run whose model owns git has no chain and the pane says so
 - the composer bar steers a live run or resumes a finished one, under the preset and model picked in the row above it (the first entries name what a resume without flags runs under); `/` completes the directives, Ctrl-R searches past messages
 - `/shells` lists the run's background commands; `/restate` replays the conversation since your last message
-- the View menu maximizes the focused pane; under 28 rows the dashboard shows one pane row at a time and Tab unfolds the rest
+- the View menu maximizes the focused pane; under 28 rows the dashboard shows one pane row at a time under a summary line (the execution's tool calls, the count the conversation's end line shows, and the last one), and Tab unfolds the rest
 - on a finished plan, Run > Run this plan starts `agent6 run --from` on it and opens the new run; the plan session stays as it was
 - on a finished run, Run > Review this run… runs `agent6 sessions review` on it (a model call that can take minutes) and opens the markdown in a modal; a live run is refused until it ends
 

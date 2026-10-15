@@ -853,6 +853,24 @@ def test_interleaved_result_for_an_earlier_call_pairs_by_call_id() -> None:
     assert b.ok is None  # still in flight
 
 
+def test_tool_count_is_the_executions_dispatched_calls() -> None:
+    """`tool_count` exceeds the `tool_calls` window, excludes finish calls, resets on a resume."""
+    s = viewmodel_state.apply_event(
+        viewmodel_state.initial_state(), {"type": "session.start", "user_task": "t"}
+    )
+    for i in range(60):
+        s = viewmodel_state.apply_event(
+            s, {"type": "tool.call", "name": "read_file", "args": {"path": f"{i}.py"}}
+        )
+    s = viewmodel_state.apply_event(
+        s, {"type": "tool.call", "name": "finish_session", "args": {"summary": "done"}}
+    )
+    assert (s.tool_count, len(s.tool_calls)) == (60, 50)
+    s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
+    s = viewmodel_state.apply_event(s, {"type": "tool.call", "name": "grep", "args": {}})
+    assert s.tool_count == 1
+
+
 def test_compaction_events_fold_into_elision_counters() -> None:
     """/status counts elided markers and live gists in the current context."""
     s = viewmodel_state.initial_state()

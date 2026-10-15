@@ -435,7 +435,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             s, ds, as_of, active=active
         )
         if self.has_class("-compact"):
-            calls = f"{len(s.tool_calls)} tool call{'' if len(s.tool_calls) == 1 else 's'}"
+            calls = f"{s.tool_count} tool call{'' if s.tool_count == 1 else 's'}"
             if s.tool_calls:
                 last = s.tool_calls[-1]
                 ok = "…" if last.ok is None else ("✓" if last.ok else "✗")

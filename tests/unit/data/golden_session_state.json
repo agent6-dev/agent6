@@ -159,6 +159,7 @@
     "10:00:18.500  session.end        finish_session all_passed=True"
   ],
   "log_count": 36,
+  "tool_count": 0,
   "recent_diffs": [
     {
       "patch": "diff --git a/src/x.py b/src/x.py\n@@ -1 +1,2 @@\n+added\n",

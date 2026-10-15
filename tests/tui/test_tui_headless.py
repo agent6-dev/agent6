@@ -1960,3 +1960,45 @@ def test_a_short_terminal_dashboard_shows_one_pane_row_at_a_time(tmp_path: pathl
             assert dash.query_one("#log").region.height > 3
 
     asyncio.run(scenario())
+
+
+def test_the_compact_summary_counts_the_runs_tool_calls_not_the_window(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The compact summary counts the run's calls past the bounded window, finish call excluded."""
+    events: list[dict[str, object]] = [
+        _ev(type="session.start", session_id=tmp_path.name, mode="run", user_task="t"),
+        _ev(type="role.call", role="worker", model="m", provider="p"),
+        _ev(type="role.result", role="worker", ok=True),
+    ]
+    for i in range(60):
+        events.append(_ev(type="tool.call", name="read_file", args={"path": f"f{i}.py"}))
+        events.append(_ev(type="tool.result", name="read_file", ok=True, summary="12 bytes"))
+    events += [
+        _ev(type="tool.call", name="finish_session", args={"summary": "Read it all."}),
+        _ev(type="tool.result", name="finish_session", ok=True, summary="finish_session"),
+        _ev(type="session.end", all_passed=True, reason="finish_session"),
+    ]
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
+    )
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(tmp_path)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            await pilot.pause()
+            body = "\n".join(
+                str(w.content) for w in app._conv.query(".conv-chunk").results(widgets.Static)
+            )
+            assert "60 tools" in body
+            await pilot.press("ctrl+d")
+            await wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
+            app._tick()
+            await pilot.pause()
+            dash = app._dash
+            assert dash.has_class("-compact")
+            summary = str(dash.query_one("#summary", widgets.Static).render())
+            assert "60 tool calls · last finish_session ✓" in summary
+
+    asyncio.run(scenario())

@@ -318,6 +318,8 @@ class SessionState:
         log_tail: The bounded window of log lines, most recent last.
         log_count: The monotonic count of log lines ever; a live viewer diffs on it,
             since `len(log_tail)` freezes once the window saturates.
+        tool_count: The calls this execution dispatched, a finish tool apart, as the
+            conversation's end line counts them; `len(tool_calls)` is a bounded window.
         recent_diffs: The bounded auto-commit diffs, for task filtering.
         started: An execution has begun; a parked or created run has none.
         finished: A session.end was folded and no later execution began.
@@ -356,6 +358,7 @@ class SessionState:
     pending_questions: tuple[QuestionPrompt, ...] = ()
     log_tail: tuple[LogLine, ...] = ()
     log_count: int = 0
+    tool_count: int = 0
     recent_diffs: tuple[DiffView, ...] = ()
     started: bool = False
     finished: bool = False
@@ -457,6 +460,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 pending_approvals=_answered_only(state.pending_approvals),
                 pending_questions=_answered_only(state.pending_questions),
                 unattended_questions=0,
+                tool_count=0,
             )
 
         case events.ResumeStart():
@@ -475,6 +479,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 pending_approvals=_answered_only(state.pending_approvals),
                 pending_questions=_answered_only(state.pending_questions),
                 unattended_questions=0,
+                tool_count=0,
                 budget=dataclasses.replace(
                     state.budget,
                     usd_prior_executions=state.budget.usd_total,
@@ -570,11 +575,13 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 call_id=cid,
             )
             finish_summary = state.finish_summary
-            if name in ("finish_session", "finish_planning") and isinstance(raw_args, dict):
+            finish = name in events.FINISH_TOOLS
+            if finish and isinstance(raw_args, dict):
                 finish_summary = str(raw_args.get("summary", "")).strip() or finish_summary
             return dataclasses.replace(
                 state,
                 tool_calls=_push_bounded(state.tool_calls, tc, _MAX_TOOL_HISTORY),
+                tool_count=state.tool_count + (0 if finish else 1),
                 finish_summary=finish_summary,
             )
 

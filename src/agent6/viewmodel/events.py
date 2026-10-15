@@ -22,6 +22,8 @@ from typing import Any
 
 # A fresh run emits session.start; a resumed execution emits only loop.resume.start.
 SESSION_START_EVENTS = frozenset({"session.start", "loop.resume.start"})
+# The calls that end a session rather than work on it; literals, so no tools import.
+FINISH_TOOLS = frozenset({"finish_session", "finish_planning"})
 
 
 def event_epoch(value: object) -> float | None:
