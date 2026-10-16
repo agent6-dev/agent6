@@ -144,7 +144,7 @@ def test_select_profile_explicit_none_is_self_authorizing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # An explicit `isolation = "none"` is the operator's consent; the startup warning is the net.
-    monkeypatch.delenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", raising=False)
+    monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
     assert detect.resolve_isolation("none", _env_c(userns=True, in_container=False)) == "none"
     assert detect.resolve_isolation("none", _env_c(userns=False, in_container=True)) == "none"
 
@@ -153,22 +153,22 @@ def test_select_profile_auto_reaches_none_only_without_any_mechanism(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # `auto` resolves to none only on a host with no confinement mechanism, and loudly.
-    monkeypatch.delenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", raising=False)
+    monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
     assert detect.resolve_isolation("auto", _env_c(userns=True, in_container=False)) == "strict"
     assert detect.resolve_isolation("auto", _env_c(userns=False, in_container=False)) == "hardened"
     assert detect.resolve_isolation("auto", _env(userns=False, landlock_abi=0)) == "none"
 
 
 def test_env_setter_forces_none_over_any_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    # AGENT6_DANGEROUSLY_DISABLE_SANDBOX forces the unsandboxed isolation whatever the config asked.
-    monkeypatch.setenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", "1")
+    # AGENT6_DISABLE_SANDBOX forces the unsandboxed isolation whatever the config asked.
+    monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
     assert detect.resolve_isolation("auto", _env_c(userns=True, in_container=False)) == "none"
     assert detect.resolve_isolation("strict", _env_c(userns=True, in_container=False)) == "none"
     assert detect.resolve_isolation("hardened", _env_c(userns=False, in_container=False)) == "none"
 
 
 def test_env_setter_forces_none_on_non_linux(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", "1")
+    monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
     env = detect.Environment(
         in_container=False,
         container_signals=(),
@@ -198,11 +198,11 @@ def test_probe_landlock_abi_fails_closed(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_sandbox_disabled_by_env_helper(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", raising=False)
+    monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
     assert detect.sandbox_disabled_by_env() is False
-    monkeypatch.setenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", "1")
+    monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
     assert detect.sandbox_disabled_by_env() is True
-    monkeypatch.setenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", "yes")  # only "1" counts
+    monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "yes")  # only "1" counts
     assert detect.sandbox_disabled_by_env() is False
 
 

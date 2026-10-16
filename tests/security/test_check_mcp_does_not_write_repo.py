@@ -147,7 +147,7 @@ def test_mcp_connect_with_no_jail_writes_the_entry_unproved(
     in the repository.
     """
     repo = _repo_with_server(tmp_path, monkeypatch)
-    monkeypatch.setenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", "1")
+    monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
     _never_started(monkeypatch)
     rc = mcp_connect.cmd_mcp_connect(
         "notes",
@@ -160,7 +160,7 @@ def test_mcp_connect_with_no_jail_writes_the_entry_unproved(
     assert rc == 0
     out, err = capsys.readouterr()
     assert (
-        "WARNING: notes not probed: no jail (AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1 is set);"
+        "WARNING: notes not probed: no jail (AGENT6_DISABLE_SANDBOX=1 is set);"
         " a run starts it unconfined." in err
     )
     assert "written to the global config" in out and "mcp__notes__" not in out
@@ -259,8 +259,8 @@ def test_a_server_a_run_would_refuse_fails_the_check_unstarted(
     ("how", "cause"),
     [
         (
-            {"env": "AGENT6_DANGEROUSLY_DISABLE_SANDBOX"},
-            "AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1 is set",
+            {"env": "AGENT6_DISABLE_SANDBOX"},
+            "AGENT6_DISABLE_SANDBOX=1 is set",
         ),
         ({"leaf": "none"}, "sandbox.isolation = none"),
     ],

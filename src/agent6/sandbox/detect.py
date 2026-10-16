@@ -115,14 +115,14 @@ def detect_container_signals() -> tuple[str, ...]:
 
 
 def sandbox_disabled_by_env() -> bool:
-    """Return whether `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` is set.
+    """Return whether `AGENT6_DISABLE_SANDBOX=1` is set.
 
-    The env form of `--dangerously-disable-sandbox`, read by `resolve_isolation`.
+    The env form of `--disable-sandbox`, read by `resolve_isolation`.
     A `machine run` supervisor resolves once and passes `none` to each agent
     subprocess in its request, which does not re-resolve. The LLM cannot set the
     launcher's environment.
     """
-    return os.environ.get("AGENT6_DANGEROUSLY_DISABLE_SANDBOX") == "1"
+    return os.environ.get("AGENT6_DISABLE_SANDBOX") == "1"
 
 
 @functools.lru_cache(maxsize=1)

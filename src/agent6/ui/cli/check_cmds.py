@@ -61,7 +61,7 @@ def _isolation_means(isolation: kinds.IsolationLevel) -> str:
 def _unprobeable(requested: str) -> str:
     """Return why there is no jail to probe: the three ways isolation resolves to `none`."""
     if detect.sandbox_disabled_by_env():
-        return "AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1: commands run unconfined; skipped"
+        return "AGENT6_DISABLE_SANDBOX=1: commands run unconfined; skipped"
     if requested == "none":
         return "sandbox.isolation = 'none': commands run unconfined; skipped"
     return "no kernel sandbox on this host; skipped"

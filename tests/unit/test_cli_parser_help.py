@@ -235,7 +235,7 @@ def test_run_family_help_explains_actions_in_user_terms() -> None:
     assert (_option(run, "--max-percent").help or "").startswith(
         "The plan percentage points this run may use"
     )
-    assert (_option(run, "--dangerously-disable-sandbox").help or "").startswith(
+    assert (_option(run, "--disable-sandbox").help or "").startswith(
         "Run the agent's commands directly on the host"
     )
     assert (_option(run, "--no-commands").help or "").startswith(

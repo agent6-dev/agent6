@@ -1564,14 +1564,14 @@ def test_run_flags_never_land_in_the_supervisors_environment(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The flags travel in the resolved configs; the process spawns nothing under them."""
-    keys = ("AGENT6_NO_COMMANDS", "AGENT6_DANGEROUSLY_DISABLE_SANDBOX")
+    keys = ("AGENT6_NO_COMMANDS", "AGENT6_DISABLE_SANDBOX")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     for key in keys:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "nocmd.asm.toml"
     f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
-    main(["machine", "run", str(f), "--no-commands", "--dangerously-disable-sandbox"])
+    main(["machine", "run", str(f), "--no-commands", "--disable-sandbox"])
     assert not any(key in os.environ for key in keys)
 
 

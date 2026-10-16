@@ -187,7 +187,7 @@ class SandboxOverrides:
     subprocesses, so `from_args` reads only the flags. Flags and env are LLM-unreachable.
 
     Attributes:
-        disable_sandbox: `--dangerously-disable-sandbox`, run unconfined.
+        disable_sandbox: `--disable-sandbox`, run unconfined.
         auto_approve: `--auto-approve`, approve every jailed command.
         no_commands: `--no-commands`, withhold the command tools.
     """
@@ -200,7 +200,7 @@ class SandboxOverrides:
     def from_args(cls, args: argparse.Namespace) -> SandboxOverrides:
         """Return the overrides a parsed argv sets."""
         return cls(
-            disable_sandbox=bool(getattr(args, "dangerously_disable_sandbox", False)),
+            disable_sandbox=bool(getattr(args, "disable_sandbox", False)),
             auto_approve=bool(getattr(args, "auto_approve", False)),
             no_commands=bool(getattr(args, "no_commands", False)),
         )
@@ -208,7 +208,7 @@ class SandboxOverrides:
     def argv(self) -> list[str]:
         """Return these overrides as the flags that set them."""
         flags = (
-            ("--dangerously-disable-sandbox", self.disable_sandbox),
+            ("--disable-sandbox", self.disable_sandbox),
             ("--auto-approve", self.auto_approve),
             ("--no-commands", self.no_commands),
         )
@@ -491,7 +491,7 @@ def mcp_server_spec(
 def no_jail_cause(cfg: Config, env: detect.Environment) -> str:
     """Return why this host resolved to isolation `none`."""
     if detect.sandbox_disabled_by_env():
-        return "AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1 is set"
+        return "AGENT6_DISABLE_SANDBOX=1 is set"
     if cfg.sandbox.isolation == "none":
         return "sandbox.isolation = none"
     return detect.degrade_reason(env) or "this host has no jail"

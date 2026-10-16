@@ -123,13 +123,13 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
 def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
     """Add the per-invocation sandbox and approval override flags every paid command carries.
 
-    `--dangerously-disable-sandbox` is a one-off `sandbox.isolation = "none"`;
+    `--disable-sandbox` is a one-off `sandbox.isolation = "none"`;
     `--auto-approve` upgrades `sandbox.run_commands` from ask to yes and never
     resurrects a withheld no.
     """
     group = parser.add_argument_group("sandbox")
     group.add_argument(
-        "--dangerously-disable-sandbox",
+        "--disable-sandbox",
         action="store_true",
         help=(
             "Run the agent's commands directly on the host with no sandbox. This disables"
@@ -144,7 +144,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
         help=(
             "Approve every sandboxed command for this session without prompting. Changes"
             " sandbox.run_commands from `ask` to `yes`, but never overrides `no` or changes"
-            " sandbox.isolation. With --dangerously-disable-sandbox, this gives the agent"
+            " sandbox.isolation. With --disable-sandbox, this gives the agent"
             " unprompted host access."
         ),
     )

@@ -770,8 +770,8 @@ def run_in_jail(
     The `none` isolation runs the command as a plain subprocess: the one place an
     LLM-influenced argv runs without the jail, so agent6 works where the kernel
     sandbox does not exist. `auto` reaches it only on a host with no confinement
-    mechanism; an explicit `none`, `--dangerously-disable-sandbox` or
-    `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` selects it anywhere, and the CLI warns
+    mechanism; an explicit `none`, `--disable-sandbox` or
+    `AGENT6_DISABLE_SANDBOX=1` selects it anywhere, and the CLI warns
     before any such run. Both real levels go through the Rust launcher.
 
     Args:

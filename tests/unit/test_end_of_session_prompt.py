@@ -40,7 +40,7 @@ def _run_args(**overrides: object) -> argparse.Namespace:
         "config": None,
         "max_usd": None,
         "max_tokens_fallback": None,
-        "dangerously_disable_sandbox": False,
+        "disable_sandbox": False,
         "auto_approve": False,
         "no_commands": False,
     }

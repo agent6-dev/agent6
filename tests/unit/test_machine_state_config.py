@@ -555,9 +555,9 @@ def test_the_operator_flags_apply_after_the_overlays(
 def test_no_commands_and_disable_sandbox_reach_every_resolved_config(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--no-commands` and `--dangerously-disable-sandbox` land in the configs, not the env."""
+    """`--no-commands` and `--disable-sandbox` land in the configs, not the env."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", raising=False)
+    monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
     _operator(OPERATOR + 'run_commands = "yes"\nisolation = "strict"\n')
     spec = load_machine(_write(tmp_path, MACHINE))
     configs = resolve_configs(
@@ -567,7 +567,7 @@ def test_no_commands_and_disable_sandbox_reach_every_resolved_config(
         assert resolved.isolation == "none"
         assert resolved.config.sandbox.isolation == "none"
         assert resolved.config.sandbox.run_commands == "no"
-    assert "AGENT6_DANGEROUSLY_DISABLE_SANDBOX" not in os.environ
+    assert "AGENT6_DISABLE_SANDBOX" not in os.environ
 
 
 # --- the two enforcement sites read the state's own config ------------------------------------
@@ -630,14 +630,14 @@ def test_each_agent_state_gets_its_own_overlay(
 def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--no-commands` and `--dangerously-disable-sandbox` ride the dispatched overlay only."""
+    """`--no-commands` and `--disable-sandbox` ride the dispatched overlay only."""
     from agent6.app import providers
     from agent6.harness import _snapshot
     from agent6.harness import loop as harness_loop
     from agent6.machine import AgentRequest
     from agent6.tools import dispatch
 
-    keys = ("AGENT6_NO_COMMANDS", "AGENT6_DANGEROUSLY_DISABLE_SANDBOX")
+    keys = ("AGENT6_NO_COMMANDS", "AGENT6_DISABLE_SANDBOX")
     for key in keys:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.chdir(tmp_path)

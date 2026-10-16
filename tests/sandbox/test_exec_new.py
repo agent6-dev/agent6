@@ -113,7 +113,7 @@ def _on_a_pty(
     return proc, master
 
 
-_UNSANDBOXED = {"AGENT6_DANGEROUSLY_DISABLE_SANDBOX": "1"}
+_UNSANDBOXED = {"AGENT6_DISABLE_SANDBOX": "1"}
 
 
 @pytest.mark.parametrize(

@@ -208,7 +208,7 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 
 | Field | Default | Meaning |
 |---|---|---|
-| `isolation` | `"auto"` | How jailed commands are confined: `strict` (user + mount namespaces, Landlock, seccomp), `hardened` (Landlock + seccomp, no namespaces), or `none` (unconfined). `auto` picks the strongest the host supports and says so when that is `none`. An explicit `strict` or `hardened` refuses to start where the host cannot honor it. `none` also via `--dangerously-disable-sandbox` or `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`. |
+| `isolation` | `"auto"` | How jailed commands are confined: `strict` (user + mount namespaces, Landlock, seccomp), `hardened` (Landlock + seccomp, no namespaces), or `none` (unconfined). `auto` picks the strongest the host supports and says so when that is `none`. An explicit `strict` or `hardened` refuses to start where the host cannot honor it. `none` also via `--disable-sandbox` or `AGENT6_DISABLE_SANDBOX=1`. |
 | `network` | `"auto"` | Which network jailed commands join. `session`: the run's private network (commands reach each other, nothing off the box, nothing outside reaches in), refused where it cannot be enforced. `host`: the machine's network. `auto`: `session` under `strict`, degraded to the host's network with a warning under `hardened` or `none`. A run's commands share one launcher, so there is no per-command `none`; a machine state sets its own value in its `config` table, never wider than this one. |
 | `run_commands` | `"ask"` | Whether the model may run commands (`run_command`, `run_verify_command`, `run_metric_command`, `stop_background`, one decision for all four): `yes` runs them, `no` withholds the tools (and the verify gate with them), `ask` prompts per call with allow-for-this-session answers. `ask` and `plan` clamp `yes` to `ask`. Per invocation: `--auto-approve` (never over a configured `no`), `--no-commands`. A run set to `ask` with nobody to answer refuses to start. |
 | `fetch_hosts` | `[]` | Hosts the `fetch` tool reads without asking; any other host prompts, and an absent operator is a no. Empty: every fetch prompts. `["*"]`: any host. A leading dot allows subdomains (`.readthedocs.io`). Each entry is a host, never a URL prefix; the rest of fetch is fixed (https only, 1 MiB cap, redirects returned, not followed). Hidden when a jailed command already has the host network (`network = "host"`, or any isolation but `strict`); withheld from machine and agent states. |
@@ -529,7 +529,7 @@ None of them is reachable by the model.
 | `AGENT6_AUTO_APPROVE` | `1` grants every command approval to a machine's agent states, as `--auto-approve` does (a configured `no` stays no). |
 | `AGENT6_NO_COMMANDS` | `1` withholds every command tool from a machine's agent states, as `--no-commands` does. |
 | `AGENT6_JAIL_BIN` | Path to a specific `agent6-jail` binary (else bundled). |
-| `AGENT6_DANGEROUSLY_DISABLE_SANDBOX` | `1` forces `sandbox.isolation = "none"` for one invocation (same as `--dangerously-disable-sandbox`). |
+| `AGENT6_DISABLE_SANDBOX` | `1` forces `sandbox.isolation = "none"` for one invocation (same as `--disable-sandbox`). |
 | `AGENT6_ALLOW_ROOT` | `1` permits running as root (same as `--allow-root`). |
 | `AGENT6_WEB_SECRET` | The secret a browser signs in to `agent6 web` with, at least 12 characters after lowercasing and joining words with single hyphens (same as `--secret`, which wins). Unset: each launch mints one and prints it. |
 

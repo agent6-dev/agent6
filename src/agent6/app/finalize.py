@@ -363,7 +363,7 @@ def print_session_end(
         reporter.out("    - run them from a clean shell (a system-wide install)")
         reporter.out("    - install them into a standard bin dir (~/.local/bin, /usr/local/bin)")
         reporter.out("    - grant their real directories via [sandbox].extra_read_paths")
-        reporter.out("    - run with --dangerously-disable-sandbox")
+        reporter.out("    - run with --disable-sandbox")
     _print_next_session(layout, completed=result.completed, reporter=reporter)
     _print_red_gate(result, layout=layout, reporter=reporter)
     _print_unverified(result, layout=layout, cwd=cwd, reporter=reporter)

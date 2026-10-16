@@ -146,7 +146,7 @@ Probed per host: `unshare` for namespaces, the Landlock ABI syscall, the seccomp
 | `strict`, `hardened` | non-Linux, or no seccomp filter for the arch | refused |
 | `none` | any | `none`, warned |
 
-`--dangerously-disable-sandbox` and `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` force `none` for one invocation.
+`--disable-sandbox` and `AGENT6_DISABLE_SANDBOX=1` force `none` for one invocation.
 Config, flag, and env var are operator-only; the model reaches neither argv nor env.
 
 **Inside the jail**

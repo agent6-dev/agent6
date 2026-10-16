@@ -1299,7 +1299,7 @@ def test_the_sandbox_warning_states_its_remedy_once(
     out = capsys.readouterr().out
 
     assert out.count("WARNING:") == 1
-    assert out.count("- run with --dangerously-disable-sandbox") == 1
+    assert out.count("- run with --disable-sandbox") == 1
     for binary in ("cargo", "node", "pyenv"):
         assert f"`{binary}`" in out
 

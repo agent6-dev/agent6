@@ -144,7 +144,7 @@ def host(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         seen["nets"].append(net)
         return net
 
-    monkeypatch.delenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", raising=False)
+    monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
     monkeypatch.setattr(_setup, "detect_env", _env)
     monkeypatch.setattr(exec_cmds, "run_attached", _run)
     monkeypatch.setattr(jail.SessionNetwork, "open", staticmethod(_open))

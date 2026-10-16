@@ -32,8 +32,8 @@ class SandboxConfig(pydantic.BaseModel):
             "seccomp), `hardened` (Landlock + seccomp, no namespaces), or `none` (unconfined). "
             "`auto` picks the strongest the host supports and says so when that is `none`. An "
             "explicit `strict` or `hardened` refuses to start where the host cannot honor it. "
-            "`none` also via `--dangerously-disable-sandbox` or "
-            "`AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`."
+            "`none` also via `--disable-sandbox` or "
+            "`AGENT6_DISABLE_SANDBOX=1`."
         ),
     )
     # A jailed child never out-reaches the process that launches it.

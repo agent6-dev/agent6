@@ -24,9 +24,7 @@ def _args(**kw: bool) -> argparse.Namespace:
 
 
 def test_from_args_reads_both_flags() -> None:
-    o = _setup.SandboxOverrides.from_args(
-        _args(dangerously_disable_sandbox=True, auto_approve=True)
-    )
+    o = _setup.SandboxOverrides.from_args(_args(disable_sandbox=True, auto_approve=True))
     assert o.disable_sandbox is True
     assert o.auto_approve is True
 
@@ -64,11 +62,11 @@ def _linux_env() -> detect.Environment:
 
 
 def test_machine_env_mechanism_forces_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    # `machine run --dangerously-disable-sandbox` sets this env var; the machine
+    # `machine run --disable-sandbox` sets this env var; the machine
     # supervisor's resolve_isolation (the same function) must then resolve to none
     # regardless of the machine's configured isolation, and it passes that to each
     # agent subprocess in the request.
-    monkeypatch.setenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", "1")
+    monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
     assert detect.resolve_isolation("strict", _linux_env()) == "none"
     assert detect.resolve_isolation("auto", _linux_env()) == "none"
 
@@ -82,7 +80,7 @@ def test_overrides_render_as_the_flags_that_set_them() -> None:
     """
     sandbox = _setup.SandboxOverrides(disable_sandbox=True, auto_approve=True)
     budget = _setup.BudgetOverrides(max_usd=0.25, max_tokens_fallback=1000)
-    assert sandbox.argv() == ["--dangerously-disable-sandbox", "--auto-approve"]
+    assert sandbox.argv() == ["--disable-sandbox", "--auto-approve"]
     assert budget.argv() == ["--max-usd", "0.25", "--max-tokens-fallback", "1000"]
     assert _setup.override_flags(budget, sandbox, None) == [*budget.argv(), *sandbox.argv()]
     assert _setup.override_flags(None, None, None) == []

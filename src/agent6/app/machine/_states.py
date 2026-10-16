@@ -221,7 +221,7 @@ def resolve_configs(
         cwd: The repository whose config layers apply.
         env: The detected host environment.
         config_paths: The `--config FILE` layers, part of the operator's ceiling.
-        disable_sandbox: The invocation's `--dangerously-disable-sandbox`.
+        disable_sandbox: The invocation's `--disable-sandbox`.
         auto_approve: The invocation's `--auto-approve`.
         no_commands: The invocation's `--no-commands`.
 
