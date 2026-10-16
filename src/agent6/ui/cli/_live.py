@@ -10,8 +10,10 @@ import pathlib
 import signal
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Generator
 
+from agent6.sessions import process
 from agent6.ui.cli import _console_view
 
 
@@ -168,6 +170,15 @@ def tui_session(session_dir: pathlib.Path, *, enabled: bool) -> Generator[None]:
         print(f"[agent6] could not start TUI ({exc}); continuing without it.", file=sys.stderr)
         yield
         return
+    # The run proceeds once the dashboard holds the terminal: an approval asked before it
+    # registered fell to the terminal prompt, which raced the dashboard for every key.
+    deadline = time.monotonic() + 5.0
+    while (
+        proc.poll() is None
+        and not process.frontend_is_live(session_dir)
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.05)
     orig_out, orig_err = sys.stdout, sys.stderr
     sys.stdout = log_fh
     sys.stderr = log_fh
