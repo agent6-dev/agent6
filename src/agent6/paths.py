@@ -138,7 +138,7 @@ def cache_dir(user: RealUser | None = None) -> pathlib.Path:
 def jail_cache_home(repo_root: pathlib.Path, user: RealUser | None = None) -> pathlib.Path:
     """Return the persistent HOME one repository's jailed commands get, `<cache>/homes/<repo-id>`.
 
-    Used under `hardened` and `none`, which have no private /tmp, and under `strict`
+    Used under `partial` and `none`, which have no private /tmp, and under `full`
     with `[sandbox].home = "cache"`. Model-writable across that repository's runs, 0700,
     never the operator's own home and never another repository's;
     `app.confine.check_jail_home` creates it and refuses a symlink or another user's
@@ -300,7 +300,7 @@ def linked_worktree_git_dir(root: pathlib.Path) -> pathlib.Path | None:
     """Return the repository git dir a linked worktree points into, or None for a plain checkout.
 
     Resolved as git does, from the `.git` file and the entry's `commondir`. Both files
-    are writable by a jailed command under hardened, so the pointer keys state and
+    are writable by a jailed command under partial, so the pointer keys state and
     verifies a recorded grant, and never makes one.
     """
     pointer = root / ".git"

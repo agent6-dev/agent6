@@ -32,13 +32,13 @@ from agent6.config import (
 )
 from agent6.models import cache
 from agent6.providers import claude_code
-from agent6.sandbox import detect, jail, strict_namespaces_work
+from agent6.sandbox import detect, jail, namespaces_work
 from agent6.sessions import manifest
 from agent6.tools import mcp_client, mcp_http, policy
 
 
 def detect_env() -> detect.Environment:
-    """Detect the host environment, with the jail binary settling whether strict works.
+    """Detect the host environment, with the jail binary settling whether full works.
 
     The `unshare -U -r true` probe is wrong in both directions: an AppArmor profile can grant
     the jail binary userns but not `unshare`, and Docker with a relaxed seccomp profile lets
@@ -54,7 +54,7 @@ def detect_env() -> detect.Environment:
     env = detect.environment()
     if not env.sandbox_available:
         return env
-    works = strict_namespaces_work()
+    works = namespaces_work()
     if works != env.userns_supported:
         return dataclasses.replace(env, userns_supported=works)
     return env
@@ -370,9 +370,9 @@ def wants_session_network(cfg: Config, isolation: kinds.IsolationLevel) -> bool:
     """Return whether the run needs its own network: any child would join one.
 
     Asked once before anything spawns, since the network exists before its first member. Only
-    strict can provide one.
+    full can provide one.
     """
-    if isolation != "strict":
+    if isolation != "full":
         return False
     if cfg.sandbox.network != "host":
         return True
@@ -544,13 +544,13 @@ def _warn_servers_that_keep_the_network(
 
     An explicit `none` or `session` refused before this.
     """
-    if isolation == "strict":
+    if isolation == "full":
         return
     for name, srv in sorted(cfg.mcp.servers.items()):
         if srv.enabled and srv.effective_network == "auto":
             reporter.warn(
                 f"MCP server {name!r} keeps this host's network:"
-                f" taking it away needs the network namespace only 'strict' has, and"
-                f" this host resolved to {isolation!r}. On 'hardened', setting its"
+                f" taking it away needs the network namespace only 'full' has, and"
+                f" this host resolved to {isolation!r}. On 'partial', setting its"
                 " sandbox.network = 'none' refuses the run instead of connecting it."
             )

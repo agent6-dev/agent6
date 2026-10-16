@@ -18,7 +18,7 @@ import pytest
 from agent6 import kinds
 from agent6.sandbox import jail
 
-_LEVELS = [pytest.param("strict", marks=pytest.mark.needs_namespaces), "hardened"]
+_LEVELS = [pytest.param("full", marks=pytest.mark.needs_namespaces), "partial"]
 
 
 def _policy(cwd: pathlib.Path, isolation: kinds.IsolationLevel, script: str) -> kinds.JailPolicy:

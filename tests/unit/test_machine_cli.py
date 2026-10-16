@@ -1784,14 +1784,14 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
     monkeypatch.chdir(workspace)
 
     class _Env:
-        detected_isolation = "hardened"
+        detected_isolation = "partial"
 
     monkeypatch.setattr(_setup, "detect_env", _Env)
 
-    def _hardened(_req: str, _env: object) -> str:
-        return "hardened"
+    def _partial(_req: str, _env: object) -> str:
+        return "partial"
 
-    monkeypatch.setattr(detect, "resolve_isolation", _hardened)
+    monkeypatch.setattr(detect, "resolve_isolation", _partial)
     f = workspace / "probe.asm.toml"
     f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 2
@@ -1808,14 +1808,14 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
     monkeypatch.chdir(tmp_path)
 
     class _Env:
-        detected_isolation = "strict"
+        detected_isolation = "full"
 
     monkeypatch.setattr(_setup, "detect_env", _Env)
 
-    def _strict(_req: str, _env: object) -> str:
-        return "strict"
+    def _full(_req: str, _env: object) -> str:
+        return "full"
 
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     f = tmp_path / "probe.asm.toml"
     f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 2

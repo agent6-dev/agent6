@@ -46,7 +46,7 @@ def test_a_pipe_passes_through_and_the_exit_code_is_the_commands(tmp_path: pathl
 
 @pytest.fixture
 def granted_config_home(monkeypatch: pytest.MonkeyPatch) -> Iterator[pathlib.Path]:
-    """An `XDG_CONFIG_HOME` outside /tmp, which strict replaces whole: only the mask can hide it."""
+    """An `XDG_CONFIG_HOME` outside /tmp, which full replaces whole: only the mask can hide it."""
     base = pathlib.Path("/var/tmp")
     if not (base.is_dir() and os.access(base, os.W_OK)):
         pytest.skip("/var/tmp is not writable here")
@@ -69,7 +69,7 @@ def test_the_config_dir_is_masked_under_a_grant_that_holds_it(
     (granted_config_home / "beside.txt").write_text("", encoding="utf-8")
     config = tmp_path / "grant.toml"
     config.write_text(
-        f'[sandbox]\nisolation = "strict"\nextra_read_paths = ["{granted_config_home}"]\n',
+        f'[sandbox]\nisolation = "full"\nextra_read_paths = ["{granted_config_home}"]\n',
         encoding="utf-8",
     )
     done = subprocess.run(
@@ -120,7 +120,7 @@ _UNSANDBOXED = {"AGENT6_DISABLE_SANDBOX": "1"}
     ("level", "isolation"),
     [
         pytest.param(_UNSANDBOXED, None, id="none"),
-        pytest.param({}, "hardened", id="hardened"),
+        pytest.param({}, "partial", id="partial"),
         pytest.param({}, None, id="default", marks=pytest.mark.needs_namespaces),
     ],
 )

@@ -67,7 +67,7 @@ def test_machine_env_mechanism_forces_none(monkeypatch: pytest.MonkeyPatch) -> N
     # regardless of the machine's configured isolation, and it passes that to each
     # agent subprocess in the request.
     monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
-    assert detect.resolve_isolation("strict", _linux_env()) == "none"
+    assert detect.resolve_isolation("full", _linux_env()) == "none"
     assert detect.resolve_isolation("auto", _linux_env()) == "none"
 
 

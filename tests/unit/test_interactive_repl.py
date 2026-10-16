@@ -335,7 +335,7 @@ def test_mcp_lists_a_running_server_that_exposes_no_tools(
 ) -> None:
     from agent6.tools import mcp_client
 
-    _repl.repl_list_mcp(mcp_client.MCPManager(networks={"empty-server": "strict"}))
+    _repl.repl_list_mcp(mcp_client.MCPManager(networks={"empty-server": "full"}))
 
     out = capsys.readouterr()
     assert "1 server(s)" in out.out

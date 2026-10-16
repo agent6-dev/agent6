@@ -132,11 +132,11 @@ def test_enum_value_completion_is_derived_from_the_schema(
         "", argparse.Namespace(key="sandbox.isolation")
     )
     schema = next(
-        s.choices
+        s.choices or ()
         for s in config_view.build_config_view(layer.load_effective(tmp_path)).settings
         if s.key == "sandbox.isolation"
     )
-    assert "none" in iso and set(iso) == set(schema)
+    assert "none" in iso and set(iso) == set(schema) == {"auto", "full", "partial", "none"}
     assert Config()  # the schema loaded
 
 

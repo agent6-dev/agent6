@@ -29,7 +29,7 @@ _PROMPT_CONSTANTS = (
     prompts.GIT_PROTECT_RULE,
     prompts.NETWORK_RULE,
     prompts.NO_AUTO_COMMIT_RULE,
-    prompts.HARDENED_FS_RULE,
+    prompts.PARTIAL_FS_RULE,
     prompts.DAG_RULES_OPTIONAL,
     prompts.DAG_RULES_DECOMPOSE,
     prompts.APPLY_EDIT_RULE,

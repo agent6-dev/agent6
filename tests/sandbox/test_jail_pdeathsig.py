@@ -45,7 +45,7 @@ def test_sigkilled_agent_takes_its_jailed_command_down(tmp_path: pathlib.Path) -
             jail_policy(
                 Path({str(tmp_path)!r}),
                 Config(),
-                "strict",
+                "full",
                 ("sleep", {token!r}),
                 network="none",
             )

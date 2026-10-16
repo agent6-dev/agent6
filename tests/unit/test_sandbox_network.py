@@ -31,17 +31,17 @@ def _cfg(network: str = "session") -> Config:
 # --- check_network_support (isolation compatibility) ------------------------
 
 
-@pytest.mark.parametrize("isolation", ["strict", "none"])
-def test_check_network_support_allows_off_hardened(isolation: kinds.IsolationLevel) -> None:
-    # `session` is only refused on hardened; strict supports it and none is unsandboxed
+@pytest.mark.parametrize("isolation", ["full", "none"])
+def test_check_network_support_allows_off_partial(isolation: kinds.IsolationLevel) -> None:
+    # `session` is only refused on partial; full supports it and none is unsandboxed
     # (warned elsewhere), so neither refuses here.
     assert confine.check_network_support(_cfg("session"), isolation) is None
 
 
-def test_check_network_support_refuses_an_explicit_session_on_hardened() -> None:
-    msg = confine.check_network_support(_cfg("session"), "hardened")
+def test_check_network_support_refuses_an_explicit_session_on_partial() -> None:
+    msg = confine.check_network_support(_cfg("session"), "partial")
     assert msg is not None and "'session'" in msg
-    assert confine.check_network_support(_cfg("auto"), "hardened") is None
+    assert confine.check_network_support(_cfg("auto"), "partial") is None
 
 
 def test_only_explicit_states_fails_naming_sandbox_network() -> None:

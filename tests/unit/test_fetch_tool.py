@@ -248,11 +248,11 @@ def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: pathlib.Path) -> No
         d.dispatch("fetch", {"url": "https://example.com/x"})
 
 
-@pytest.mark.parametrize("isolation", ["hardened", "none"])
+@pytest.mark.parametrize("isolation", ["partial", "none"])
 def test_fetch_is_hidden_wherever_a_command_reaches_the_network(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    """The rule reads the resolved isolation: only strict has network namespaces."""
+    """The rule reads the resolved isolation: only full has network namespaces."""
     d = dispatch.ToolDispatcher(
         root=tmp_path,
         config=Config.model_validate({"sandbox": {"network": "auto"}}),

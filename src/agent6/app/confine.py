@@ -49,8 +49,8 @@ def warn_sandbox_gaps(
     if cfg.sandbox.isolation == "auto":
         reason = detect.degrade_reason(env)
         if reason is not None:
-            # 'auto' landing under strict is never silent; the same line `check sandbox` prints.
-            reporter.warn(f"'auto' selected '{isolation}', not 'strict': {reason}.")
+            # 'auto' landing under full is never silent; the same line `check sandbox` prints.
+            reporter.warn(f"'auto' selected '{isolation}', not 'full': {reason}.")
     if isolation == "none":
         origin = (
             "sandbox.isolation = 'none'"
@@ -64,7 +64,7 @@ def warn_sandbox_gaps(
             "any spawned MCP server. sandbox.memory_limit_mb still applies: the "
             "launcher enforces it with confinement off. Only the "
             "surrounding environment, a container for instance, bounds what a command "
-            "can reach. Use 'auto', 'strict', or 'hardened' for kernel-enforced "
+            "can reach. Use 'auto', 'full', or 'partial' for kernel-enforced "
             "isolation."
             + (
                 " git control is not enforced without the sandbox; "
@@ -73,29 +73,29 @@ def warn_sandbox_gaps(
                 else ""
             )
         )
-    elif isolation == "strict" and env.landlock_abi < 1:
+    elif isolation == "full" and env.landlock_abi < 1:
         reporter.warn(
-            "'strict' is running WITHOUT its Landlock layer: "
+            "'full' is running WITHOUT its Landlock layer: "
             "this kernel offers no Landlock (needs Linux >= 5.13 with the "
             "Landlock LSM enabled). Namespaces, the pivoted read-only rootfs, "
             "and seccomp still confine commands; the in-jail Landlock "
             "defense-in-depth is absent."
         )
-    if isolation == "hardened" and paths.is_root():
+    if isolation == "partial" and paths.is_root():
         # The root banner names running as root; this names what it costs at this level.
         reporter.warn(
-            "running as root under 'hardened': file permissions "
+            "running as root under 'partial': file permissions "
             "no longer narrow what a jailed command reads, so it can read the "
             "root-only files in the granted system set (/etc/shadow, /etc/sudoers, "
-            "the host's ssh private keys). 'strict' pivots into a minimal rootfs "
+            "the host's ssh private keys). 'full' pivots into a minimal rootfs "
             "where they are absent. Run as your normal user."
         )
-    if isolation == "hardened" and cfg.sandbox.protect_git:
+    if isolation == "partial" and cfg.sandbox.protect_git:
         reporter.warn(
-            "'hardened' cannot protect .git: the read-only bind "
-            "needs a mount namespace, which only 'strict' has. A jailed command can "
+            "'partial' cannot protect .git: the read-only bind "
+            "needs a mount namespace, which only 'full' has. A jailed command can "
             "write .git; the in-process edit tools still refuse. For the same "
-            "reason /tmp is the host's shared /tmp. Use 'strict' for a private /tmp "
+            "reason /tmp is the host's shared /tmp. Use 'full' for a private /tmp "
             "and a protected .git."
         )
     persistent = tools_policy.persistent_jail_home(cfg, isolation, root, worktree_git_dir)
@@ -105,10 +105,10 @@ def warn_sandbox_gaps(
                 "sandbox.home = 'cache'",
                 "Set sandbox.home = 'tmp' for a HOME that goes with the run.",
             )
-            if isolation == "strict"
+            if isolation == "full"
             else (
-                "'hardened' has no private /tmp",
-                "Use 'strict' for a HOME that goes with the run.",
+                "'partial' has no private /tmp",
+                "Use 'full' for a HOME that goes with the run.",
             )
         )
         reporter.warn(
@@ -116,34 +116,34 @@ def warn_sandbox_gaps(
             "cache poisoned by one run, or a ~/.gitconfig alias, reaches the next jailed "
             f"run (never your own tools). {fix}"
         )
-    if isolation == "hardened" and cfg.sandbox.network == "auto":
+    if isolation == "partial" and cfg.sandbox.network == "auto":
         reporter.warn(
-            "'hardened' has no network namespace, so "
+            "'partial' has no network namespace, so "
             "sandbox.network = 'auto' cannot give the run its own session "
             "network: jailed commands share this process's host network, which "
-            "hardened does not confine. Run on 'strict' for a session "
+            "partial does not confine. Run on 'full' for a session "
             "network, or set sandbox.network = 'session' to refuse the run "
             "instead."
         )
-    if isolation == "hardened" and env.landlock_abi < 3:
+    if isolation == "partial" and env.landlock_abi < 3:
         reporter.warn(
-            f"'hardened' on Landlock ABI {env.landlock_abi} (< 3) "
+            f"'partial' on Landlock ABI {env.landlock_abi} (< 3) "
             "does not confine file truncation: a jailed command can truncate "
             "(truncate/ftruncate) files outside its write grants, discarding their "
             "contents. Its other writes stay confined. Full write-confinement needs "
-            "Landlock ABI 3 (Linux 6.2): upgrade the kernel, or run on 'strict', "
+            "Landlock ABI 3 (Linux 6.2): upgrade the kernel, or run on 'full', "
             "whose mount namespace confines truncation on any ABI."
         )
     _warn_grants(cfg, root, reporter)
     for hidden, region, source in unmaskable_exposures(cfg, isolation, root, worktree_git_dir):
         reporter.warn(
             f"jailed commands can read {hidden}: it sits inside"
-            f" {region} ({source}), which they are granted, and 'hardened' has no"
+            f" {region} ({source}), which they are granted, and 'partial' has no"
             " mount namespace to mask it out. Every command this run starts can"
             " read the provider keys, transcripts, notes, and run history in there."
-            " Use 'strict' to keep them masked under the same grant."
+            " Use 'full' to keep them masked under the same grant."
         )
-    if isolation in ("strict", "hardened"):
+    if isolation in ("full", "partial"):
         notes = tool_paths.tool_mount_notes()
         for tool in notes.unreachable:
             reporter.warn(
@@ -215,7 +215,7 @@ def home_grant_warnings(cfg: Config) -> tuple[str, ...]:
         out.append(
             f"sandbox.{key} grants {grant!r}, {which}: the run's commands and file tools can"
             f" {access} what is under it, the credentials other tools keep there included."
-            " sandbox.hide_paths hides the paths you list, under 'strict'."
+            " sandbox.hide_paths hides the paths you list, under 'full'."
         )
     return tuple(out)
 
@@ -270,18 +270,18 @@ def check_protect_git_support(
 ) -> str | None:
     """Return the refusal when an explicit `protect_git` cannot be honored here, else None.
 
-    The read-only bind of `.git` needs a mount namespace, which only strict has. Landlock has
-    no deny rules and its grants are recursive, so carving `.git` out under hardened would cost
+    The read-only bind of `.git` needs a mount namespace, which only full has. Landlock has
+    no deny rules and its grants are recursive, so carving `.git` out under partial would cost
     every write at the workspace root. The default degrades with a warning; the in-process
     edit tools refuse writes into `.git` at every level.
     """
-    if isolation != "hardened" or not (cfg.sandbox.protect_git and explicitly_set):
+    if isolation != "partial" or not (cfg.sandbox.protect_git and explicitly_set):
         return None
     return (
-        "sandbox.protect_git = true requires the strict isolation (a read-only"
-        " bind of .git), but this run resolved to 'hardened', where Landlock"
+        "sandbox.protect_git = true requires the full isolation (a read-only"
+        " bind of .git), but this run resolved to 'partial', where Landlock"
         " could only provide it by refusing every write at the workspace root."
-        " Set sandbox.protect_git = false to run here, or use strict."
+        " Set sandbox.protect_git = false to run here, or use full."
     )
 
 
@@ -295,37 +295,37 @@ def check_jail_home(
 ) -> str | None:
     """Return the refusal when the jail's HOME cannot be what the config says, else None.
 
-    `home = "tmp"` is a private tmpfs, which only strict has: the default degrades to the
+    `home = "tmp"` is a private tmpfs, which only full has: the default degrades to the
     repository's cache dir with a warning, an explicit one refuses. A persistent dir the policy
     builder could not make agent6's own refuses too, without creating anything.
     """
     persistent = tools_policy.persistent_jail_home(cfg, isolation, workspace, worktree_git_dir)
     if persistent is None:
         return None
-    if isolation != "strict" and explicitly_set and cfg.sandbox.home == "tmp":
+    if isolation != "full" and explicitly_set and cfg.sandbox.home == "tmp":
         return (
-            "sandbox.home = 'tmp' requires the strict isolation (a private /tmp tmpfs),"
+            "sandbox.home = 'tmp' requires the full isolation (a private /tmp tmpfs),"
             f" but this run resolved to {isolation!r}, where HOME is the persistent"
             f" cache dir {str(persistent)!r}. Set sandbox.home = 'cache' to"
-            " run here, or use strict."
+            " run here, or use full."
         )
     return tools_policy.jail_home_refusal(persistent)
 
 
-def _hardened_grant_regions(
+def _partial_grant_regions(
     cfg: Config, root: pathlib.Path, worktree_git_dir: pathlib.Path | None = None
 ) -> tuple[tuple[pathlib.Path, str], ...]:
-    """Return every region the hardened launcher grants a command, labeled by its source.
+    """Return every region the partial launcher grants a command, labeled by its source.
 
     Derived from the builders the run uses, so preflight and enforcement cannot drift; the
-    fixed sets mirror the launcher's hardened ruleset in jail/src/main.rs.
+    fixed sets mirror the launcher's partial ruleset in jail/src/main.rs.
     """
     policy = tools_policy.jail_policy(
-        root, cfg, "hardened", ("true",), worktree_git_dir=worktree_git_dir
+        root, cfg, "partial", ("true",), worktree_git_dir=worktree_git_dir
     )
     regions: list[tuple[pathlib.Path, str]] = [
         (root, "the workspace"),
-        (pathlib.Path("/tmp"), "the host's shared /tmp (hardened has no private tmpfs)"),  # noqa: S108
+        (pathlib.Path("/tmp"), "the host's shared /tmp (partial has no private tmpfs)"),  # noqa: S108
     ]
     for sysdir in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"):
         regions.append((pathlib.Path(sysdir), "a system dir every command is granted"))
@@ -339,7 +339,7 @@ def _hardened_grant_regions(
             regions.append((p, "what name resolution and TLS verification read"))
         else:
             regions.append((pathlib.Path(p), "sandbox.extra_read_paths"))
-    home = tools_policy.persistent_jail_home(cfg, "hardened", root, worktree_git_dir)
+    home = tools_policy.persistent_jail_home(cfg, "partial", root, worktree_git_dir)
     regions += [
         (pathlib.Path(p), "the jail's HOME" if p == home else "sandbox.extra_write_paths")
         for p in policy.extra_rw_paths
@@ -349,7 +349,7 @@ def _hardened_grant_regions(
         for name, srv in cfg.mcp.servers.items():
             if not srv.enabled:
                 continue
-            spol = _setup.mcp_server_policy(cfg, root, "hardened", srv)
+            spol = _setup.mcp_server_policy(cfg, root, "partial", srv)
             if spol is None:
                 continue  # unconfined by explicit opt-out; its own loud path
             regions += [
@@ -370,13 +370,13 @@ def unmaskable_exposures(
 ) -> tuple[tuple[pathlib.Path, pathlib.Path, str], ...]:
     """Return the (hidden path, granted region, region source) triples the isolation cannot mask.
 
-    Empty on strict, which masks, and on `none`, which has no jail. Under hardened a hidden
+    Empty on full, which masks, and on `none`, which has no jail. Under partial a hidden
     path overlapping a granted region is exposed in both directions. Paths are resolved
     before containment so a `..` spelling cannot dodge the check.
     """
-    if isolation != "hardened":
+    if isolation != "partial":
         return ()
-    regions = _hardened_grant_regions(cfg, root, worktree_git_dir)
+    regions = _partial_grant_regions(cfg, root, worktree_git_dir)
     out: list[tuple[pathlib.Path, pathlib.Path, str]] = []
     for h in paths.hidden_paths(pathlib.Path(p) for p in cfg.sandbox.hide_paths):
         hr = h.resolve()
@@ -396,10 +396,10 @@ def check_hide_paths_support(
 ) -> str | None:
     """Return the refusal when a `[sandbox].hide_paths` entry cannot be masked here, else None.
 
-    `hide_paths` is only ever explicit, so an entry hardened cannot mask refuses. The
+    `hide_paths` is only ever explicit, so an entry partial cannot mask refuses. The
     always-hidden private dirs warn instead: granting a region holding them may be meant.
     """
-    if isolation != "hardened":
+    if isolation != "partial":
         return None  # before reading config: every other level masks
     listed = {pathlib.Path(p) for p in cfg.sandbox.hide_paths}
     for hidden, region, source in unmaskable_exposures(cfg, isolation, root, worktree_git_dir):
@@ -407,8 +407,8 @@ def check_hide_paths_support(
             return (
                 f"sandbox.hide_paths lists {str(hidden)!r}, which sits inside"
                 f" {str(region)!r} ({source}), granted to jailed commands."
-                " Masking it needs the mount namespace only 'strict' has:"
-                " use strict, drop the entry, or move one of the two."
+                " Masking it needs the mount namespace only 'full' has:"
+                " use full, drop the entry, or move one of the two."
             )
     return None
 
@@ -419,16 +419,16 @@ def mcp_network_refusal(
     """Return the refusal when the server named a network this host cannot give it, else None.
 
     The `[sandbox].network` rule: `none` and `session` need a network namespace, which only
-    strict has, so they refuse on hardened while `auto` degrades with a warning. The run's
+    full has, so they refuse on partial while `auto` degrades with a warning. The run's
     preflight and `agent6 check` both ask here.
     """
-    if isolation != "hardened" or not srv.enabled:
+    if isolation != "partial" or not srv.enabled:
         return None
     if srv.effective_network not in ("none", "session"):
         return None
     return (
         f"MCP server {name!r} sets sandbox.network = {srv.effective_network!r},"
-        " which needs a network namespace and so the strict isolation; this"
+        " which needs a network namespace and so the full isolation; this"
         f" host resolved to {isolation!r}. Use 'auto' to run with a warning,"
         " or 'host' to accept the machine's network."
     )
@@ -480,7 +480,7 @@ def config_refusal(
             explicitly_set="sandbox.home" in explicit_leaves,
         ),
         lambda: check_mcp_network_support(cfg, isolation),
-        # Before the hardened check, which reads the same overlap as an entry inside a grant.
+        # Before the partial check, which reads the same overlap as an entry inside a grant.
         lambda: check_workspace_outside_hidden_paths(cfg, workspace),
         lambda: check_hide_paths_support(cfg, isolation, workspace, worktree_git_dir),
         lambda: check_workspace_outside_private_dirs(workspace),
@@ -501,16 +501,16 @@ def config_refusal(
 def check_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str | None:
     """Return the refusal when the network config needs what the isolation cannot give, else None.
 
-    `session` needs a network namespace, which only strict has; `auto` degrades with a
+    `session` needs a network namespace, which only full has; `auto` degrades with a
     warning instead.
     """
-    if isolation != "hardened":
+    if isolation != "partial":
         return None
     sb = cfg.sandbox
     if sb.network == "session":
         return (
-            "sandbox.network = 'session' requires the strict isolation (a"
-            " network namespace), but this run resolved to 'hardened', where"
+            "sandbox.network = 'session' requires the full isolation (a"
+            " network namespace), but this run resolved to 'partial', where"
             " a jailed command shares this process's network. Use 'auto' to run"
             " with a warning, or 'host' to accept it."
         )

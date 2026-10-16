@@ -397,14 +397,14 @@ def test_attach_prints_the_runs_policy_line_like_the_run_did(
             {
                 "mode": "run",
                 "models": {"driver": {"model": "m-1"}},
-                "policy": {"run_commands": "ask", "isolation": "strict"},
+                "policy": {"run_commands": "ask", "isolation": "full"},
             }
         ),
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
     assert main(["attach", "done-run"]) == 0
-    assert "  m-1 · strict · commands ask · " in capsys.readouterr().out
+    assert "  m-1 · full · commands ask · " in capsys.readouterr().out
 
 
 def test_watch_json_checks_the_merged_claim_against_the_repo(

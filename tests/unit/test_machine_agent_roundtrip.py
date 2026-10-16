@@ -39,14 +39,14 @@ def _round_trip(
 
 
 def test_network_refusal_writes_a_valid_error_result(tmp_path: pathlib.Path) -> None:
-    # network='session' on 'hardened' is unenforceable: refused before any provider call.
+    # network='session' on 'partial' is unenforceable: refused before any provider call.
     cwd = tmp_path / "repo"
     cwd.mkdir()
     req = machine_agent.MachineAgentRequest(
         cwd=cwd,
         root=cwd,
         overlay={"sandbox": {"network": "session"}},
-        isolation="hardened",
+        isolation="partial",
         transcript_dir=cwd / "transcripts",
         request=AgentRequest(prompt="hi", timeout_s=30.0, mode="agent"),
     )

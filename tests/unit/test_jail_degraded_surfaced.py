@@ -46,12 +46,12 @@ def _events(path: pathlib.Path, kind: str) -> list[dict[str, object]]:
 def _dispatcher(
     tmp_path: pathlib.Path, events: event_log.EventSink, stub: _StubSession
 ) -> dispatch.ToolDispatcher:
-    # network = "host" needs no session netns; isolation must be strict for a session to open.
+    # network = "host" needs no session netns; isolation must be full for a session to open.
     (tmp_path / "s").mkdir(exist_ok=True)
     return dispatch.ToolDispatcher(
         root=tmp_path,
         config=Config.model_validate({"sandbox": {"network": "host"}}),
-        isolation="strict",
+        isolation="full",
         events=events,
         session_dir=tmp_path / "s",
         use_jail_session=True,

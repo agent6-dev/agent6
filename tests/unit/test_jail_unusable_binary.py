@@ -23,7 +23,7 @@ def test_an_unusable_launcher_binary_is_refused_with_the_remedy(
     fake.write_text("#!/bin/sh\n", encoding="utf-8")
     fake.chmod(0o644)
     monkeypatch.setenv("AGENT6_JAIL_BIN", str(fake))
-    policy = kinds.JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="strict", timeout_s=5.0)
+    policy = kinds.JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="full", timeout_s=5.0)
     with pytest.raises(jail.JailUnavailableError, match=re.escape(str(fake))) as info:
         jail.run_in_jail(policy)
     said = str(info.value)
@@ -36,7 +36,7 @@ def test_a_fork_or_descriptor_failure_is_not_blamed_on_the_binary(
 ) -> None:
     """Only ENOEXEC and EACCES speak about the binary; EAGAIN, EMFILE and ENOMEM pass through.
 
-    Through the cached strict probe, a transient fork failure at startup would resolve `auto` for
+    Through the cached full probe, a transient fork failure at startup would resolve `auto` for
     the whole run.
     """
     fake = tmp_path / "agent6-jail"
@@ -48,7 +48,7 @@ def test_a_fork_or_descriptor_failure_is_not_blamed_on_the_binary(
         raise OSError(errno.EAGAIN, os.strerror(errno.EAGAIN))
 
     monkeypatch.setattr(jail.subprocess, "Popen", _fork_fails)
-    policy = kinds.JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="strict", timeout_s=5.0)
+    policy = kinds.JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="full", timeout_s=5.0)
     with pytest.raises(OSError) as info:
         jail.run_in_jail(policy)
     assert not isinstance(info.value, jail.JailUnavailableError)

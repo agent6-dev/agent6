@@ -12,7 +12,7 @@ import pytest
 pytestmark = pytest.mark.needs_namespaces
 
 
-@pytest.mark.parametrize("level", ["hardened", "strict"])
+@pytest.mark.parametrize("level", ["partial", "full"])
 def test_a_jailed_command_cannot_create_a_device_node(tmp_path: pathlib.Path, level: str) -> None:
     """A jailed command cannot mknod a block device for the host disk.
 
@@ -42,12 +42,12 @@ def test_a_jailed_command_cannot_create_a_device_node(tmp_path: pathlib.Path, le
 def test_a_fifo_is_still_a_thing_a_build_can_make(tmp_path: pathlib.Path) -> None:
     """Device nodes are blocked by mode, not by denying mknodat: a fifo still works.
 
-    `mkfifo` and socket nodes go through mknodat too, and builds use them. `strict` only: on
-    `hardened` with protect_git no new top-level entry in cwd can be created at all (the
+    `mkfifo` and socket nodes go through mknodat too, and builds use them. `full` only: on
+    `partial` with protect_git no new top-level entry in cwd can be created at all (the
     carve-out grants RW on cwd's existing children, never cwd itself), so a fifo there fails
     for an unrelated reason.
     """
-    level = "strict"
+    level = "full"
     from agent6.config import Config
     from agent6.sandbox import jail
     from agent6.tools import policy
@@ -93,7 +93,7 @@ def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: pathlib.Path) -> N
         kinds.JailPolicy(
             cwd=tmp_path,
             argv=("python3", "-c", probe),
-            isolation="strict",
+            isolation="full",
             tool_paths=(tool_dir,),
             extra_ro_paths=(ro_dir,),
             timeout_s=20.0,
@@ -155,7 +155,7 @@ def test_a_submount_inside_a_grant_carries_the_floor_too(tmp_path: pathlib.Path)
             JailPolicy(
                 cwd=ws,
                 argv=("python3", "-c", probe),
-                isolation="strict",
+                isolation="full",
                 tool_paths=(tools,),
                 extra_ro_paths=(ro,),
                 timeout_s=20.0,
@@ -246,7 +246,7 @@ def test_a_protect_path_with_its_own_submount_still_jails(tmp_path: pathlib.Path
                 JailPolicy(
                     cwd=ws,
                     argv=("sh", "-c", {probe!r}),
-                    isolation="strict",
+                    isolation="full",
                     extra_protect_paths=(ws / ".git",),
                     timeout_s=20.0,
                 )
@@ -289,9 +289,9 @@ def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(
 ) -> None:
     """A system bind whose source carries a locked flag is remounted read-only with those flags.
 
-    /etc/alternatives on a noexec tmpfs is a hardened host's shape; clearing a locked flag
+    /etc/alternatives on a noexec tmpfs is a partial host's shape; clearing a locked flag
     in a user namespace is refused EPERM, so the jail would fail closed on exactly the hosts
-    hardened the way its own floor recommends.
+    partial the way its own floor recommends.
     """
     import shutil
     import subprocess
@@ -324,7 +324,7 @@ def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(
                 JailPolicy(
                     cwd=Path(sys.argv[1]),
                     argv=("sh", "-c", "echo probe-ok"),
-                    isolation="strict",
+                    isolation="full",
                     timeout_s=20.0,
                 )
             )
@@ -354,7 +354,7 @@ def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(
     out = proc.stdout
     if "MOUNT_FAILED" in out or proc.returncode != 0:
         pytest.skip(f"could not overmount: {out[:200]} {proc.stderr[:200]}")
-    assert "probe-ok" in out, f"the jail refused on a hardened system mount: {out[:400]}"
+    assert "probe-ok" in out, f"the jail refused on a partial system mount: {out[:400]}"
 
 
 def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: pathlib.Path) -> None:
@@ -392,7 +392,7 @@ def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: pathlib.Path) -> 
     )
     res = jail.run_in_jail(
         kinds.JailPolicy(
-            cwd=tmp_path, argv=("python3", "-c", probe), isolation="strict", timeout_s=20.0
+            cwd=tmp_path, argv=("python3", "-c", probe), isolation="full", timeout_s=20.0
         )
     )
     out = res.stdout or ""
@@ -411,7 +411,7 @@ def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
 ) -> None:
     """A jailed command cannot read the operator's provider key.
 
-    The launcher is PID 1 of the jail's own PID namespace and strict mounts a fresh /proc,
+    The launcher is PID 1 of the jail's own PID namespace and full mounts a fresh /proc,
     so /proc/1/environ is the launcher's environment; spawned with the agent's, a jailed
     command could read `OPENROUTER_API_KEY=...` straight out of it. docs/security.md says
     secrets never reach the jail: the launcher reads nothing from its environment (the policy
@@ -430,7 +430,7 @@ def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
     )
     res = jail.run_in_jail(
         kinds.JailPolicy(
-            cwd=tmp_path, argv=("python3", "-c", probe), isolation="strict", timeout_s=20.0
+            cwd=tmp_path, argv=("python3", "-c", probe), isolation="full", timeout_s=20.0
         )
     )
     assert "LEAK" not in (res.stdout or ""), f"the agent's env reached the jail: {res.stdout}"
@@ -485,7 +485,7 @@ def test_a_fully_populated_policy_holds_every_invariant(
         kinds.JailPolicy(
             cwd=ws,
             argv=("python3", "-c", probe),
-            isolation="strict",
+            isolation="full",
             env=(("CHILD_VAR", "child-only"),),
             extra_ro_paths=(ro,),
             extra_rw_paths=(rw,),
@@ -526,7 +526,7 @@ def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: pathlib.Pat
         kinds.JailPolicy(
             cwd=tmp_path,
             argv=("sh", "-c", "pwd; ls /tmp | head -5"),
-            isolation="strict",
+            isolation="full",
             timeout_s=20.0,
         )
     )
@@ -566,7 +566,7 @@ def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: pathl
                 kinds.JailPolicy(
                     cwd=tmp_path,
                     argv=("/usr/bin/python3", "-c", probe),
-                    isolation="strict",
+                    isolation="full",
                     timeout_s=30.0,
                 )
             )
@@ -602,7 +602,7 @@ def test_dev_shm_is_the_jails_own_and_writable(tmp_path: pathlib.Path) -> None:
         policy.jail_policy(
             tmp_path,
             Config(),
-            "strict",
+            "full",
             (
                 "sh",
                 "-c",
@@ -617,13 +617,13 @@ def test_dev_shm_is_the_jails_own_and_writable(tmp_path: pathlib.Path) -> None:
     assert not pathlib.Path(f"/dev/shm/{marker}").exists(), "the jail wrote the HOST's /dev/shm"
 
 
-@pytest.mark.parametrize("level", ["hardened", "strict"])
+@pytest.mark.parametrize("level", ["partial", "full"])
 def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: pathlib.Path, level: str) -> None:
     """pidfd_getfd is EPERM at both levels; pidfd_open, the harmless handle, is not denied.
 
     pidfd_getfd steals an open fd out of another process's table, gated only by
     ptrace_may_access, the same check that gates the denied process_vm_readv/writev/kcmp;
-    under `hardened` (no user namespace) that check plus the host's yama tunable is the only
+    under `partial` (no user namespace) that check plus the host's yama tunable is the only
     barrier to lifting a live fd out of the agent. Probed by number so a wrapper's own
     failure cannot read as a deny: 438 must be EPERM; 434 fails EINVAL/ESRCH on a bogus pid,
     never EPERM from the filter.
@@ -668,7 +668,7 @@ def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: pathlib.Path, lev
     )
 
 
-@pytest.mark.parametrize("level", ["hardened", "strict"])
+@pytest.mark.parametrize("level", ["partial", "full"])
 def test_io_uring_and_userfaultfd_are_denied(tmp_path: pathlib.Path, level: str) -> None:
     """io_uring_setup and userfaultfd are EPERM at both levels; memfd_create stays allowed.
 
@@ -730,7 +730,7 @@ def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: pathli
     from agent6.tools import policy
 
     spec = jail.policy_spec(
-        policy.jail_policy(tmp_path, Config(), "strict", ("/bin/true",), network="none")
+        policy.jail_policy(tmp_path, Config(), "full", ("/bin/true",), network="none")
     )
     spec["mode"] = "serve"
     req = {"kind": "background", "argv": ["/bin/true"], "a_field_from_a_newer_agent6": 1}
@@ -746,8 +746,8 @@ def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: pathli
     assert "a_field_from_a_newer_agent6" in combined
 
 
-def test_hardened_reads_the_device_nodes_but_not_the_hosts_dev_shm(tmp_path: pathlib.Path) -> None:
-    """Hardened grants the device nodes one by one; a rule on `/dev` covered the host's `/dev/shm`.
+def test_partial_reads_the_device_nodes_but_not_the_hosts_dev_shm(tmp_path: pathlib.Path) -> None:
+    """Partial grants the device nodes one by one; a rule on `/dev` covered the host's `/dev/shm`.
 
     The host's `/dev/shm` holds every process of this user's shared memory, readable to a
     jailed command through the directory rule.
@@ -759,14 +759,14 @@ def test_hardened_reads_the_device_nodes_but_not_the_hosts_dev_shm(tmp_path: pat
     shm = pathlib.Path("/dev/shm")
     if not (shm.is_dir() and os.access(shm, os.W_OK)):
         pytest.skip("/dev/shm not usable as a probe target")
-    probe = shm / "agent6-hardened-shm-probe"
+    probe = shm / "agent6-partial-shm-probe"
     probe.write_text("secret\n", encoding="utf-8")
     try:
         res = jail.run_in_jail(
             policy.jail_policy(
                 tmp_path,
                 Config(),
-                "hardened",
+                "partial",
                 (
                     "sh",
                     "-c",

@@ -217,8 +217,8 @@ def run_offline_tests(
 ) -> OfflineTestOutcome:
     """Execute every `scripts/**/*_test.py` in a no-network jail.
 
-    Only the strict isolation has the network namespace that enforces the no-network contract
-    on model-authored code; on `none` and `hardened` the tests count as skipped. Each test gets
+    Only the full isolation has the network namespace that enforces the no-network contract
+    on model-authored code; on `none` and `partial` the tests count as skipped. Each test gets
     a fresh writable `$AGENT6_MACHINE_DATA_DIR`, under the default `JailPolicy` memory cap.
 
     Args:
@@ -253,9 +253,9 @@ def _run_offline_tests_in(
     """Return the outcome of the tests of a bundle copy, one jail each."""
     scripts_dir = bundle_dir / "scripts"
     tests = sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}"))
-    if isolation != "strict":
-        # hardened has no network namespace: model-authored code would reach the host network.
-        reason = "no sandbox" if isolation == "none" else "no network isolation (hardened)"
+    if isolation != "full":
+        # partial has no network namespace: model-authored code would reach the host network.
+        reason = "no sandbox" if isolation == "none" else "no network isolation (partial)"
         return OfflineTestOutcome(skipped=len(tests), skip_reason=reason)
     data_dir = bundle_dir / ".scriptcheck_data"
     problems: list[str] = []

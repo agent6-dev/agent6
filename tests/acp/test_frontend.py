@@ -168,7 +168,7 @@ def test_the_unsandboxed_prompt_fires_only_when_it_is_true() -> None:
     from agent6.config import Config
 
     front, asked = _frontend(reply="allow once")  # the option this gate offers
-    assert front.confirm_unconfined_autorun("strict", Config()) is True
+    assert front.confirm_unconfined_autorun("full", Config()) is True
     assert asked == [], "a confined run is not dangerous and must not prompt"
 
     dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "yes"}})

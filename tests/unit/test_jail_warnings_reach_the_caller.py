@@ -44,7 +44,7 @@ def test_a_real_jailed_command_carries_no_launcher_noise() -> None:
         policy.jail_policy(
             pathlib.Path(tempfile.mkdtemp()),
             Config(),
-            "strict",
+            "full",
             ("/bin/echo", "hi"),
             network="none",
         )

@@ -71,12 +71,12 @@ def _env(*, userns: bool, landlock_abi: int = 4) -> detect.Environment:
     )
 
 
-def test_detected_profile_strict_when_userns_supported() -> None:
-    assert _env(userns=True).detected_isolation == "strict"
+def test_detected_profile_full_when_userns_supported() -> None:
+    assert _env(userns=True).detected_isolation == "full"
 
 
-def test_detected_profile_hardened_when_userns_blocked() -> None:
-    assert _env(userns=False, landlock_abi=1).detected_isolation == "hardened"
+def test_detected_profile_partial_when_userns_blocked() -> None:
+    assert _env(userns=False, landlock_abi=1).detected_isolation == "partial"
 
 
 def test_detected_profile_none_without_userns_or_landlock() -> None:
@@ -84,48 +84,48 @@ def test_detected_profile_none_without_userns_or_landlock() -> None:
     assert _env(userns=False, landlock_abi=0).detected_isolation == "none"
 
 
-def test_select_profile_strict_refuses_silent_downgrade() -> None:
+def test_select_profile_full_refuses_silent_downgrade() -> None:
     with pytest.raises(detect.IsolationUnavailableError, match="user namespaces"):
-        detect.resolve_isolation("strict", _env(userns=False))
+        detect.resolve_isolation("full", _env(userns=False))
 
 
-def test_select_profile_strict_passes_when_supported() -> None:
-    assert detect.resolve_isolation("strict", _env(userns=True)) == "strict"
+def test_select_profile_full_passes_when_supported() -> None:
+    assert detect.resolve_isolation("full", _env(userns=True)) == "full"
 
 
-def test_select_profile_hardened_ok_at_abi3_plus() -> None:
-    """ABI 3 (Linux 6.2) is the floor for explicit hardened, where Landlock confines truncate."""
-    assert detect.resolve_isolation("hardened", _env(userns=True)) == "hardened"  # abi 4
-    assert detect.resolve_isolation("hardened", _env(userns=False, landlock_abi=3)) == "hardened"
+def test_select_profile_partial_ok_at_abi3_plus() -> None:
+    """ABI 3 (Linux 6.2) is the floor for explicit partial, where Landlock confines truncate."""
+    assert detect.resolve_isolation("partial", _env(userns=True)) == "partial"  # abi 4
+    assert detect.resolve_isolation("partial", _env(userns=False, landlock_abi=3)) == "partial"
 
 
-def test_select_profile_hardened_refuses_without_landlock() -> None:
+def test_select_profile_partial_refuses_without_landlock() -> None:
     # An explicit request the kernel cannot back is refused with a remedy, never under-delivered.
     with pytest.raises(detect.IsolationUnavailableError, match="Landlock"):
-        detect.resolve_isolation("hardened", _env(userns=False, landlock_abi=0))
+        detect.resolve_isolation("partial", _env(userns=False, landlock_abi=0))
 
 
 @pytest.mark.parametrize("abi", [1, 2])
-def test_select_profile_hardened_refuses_below_abi3(abi: int) -> None:
-    """An explicit `hardened` on Landlock ABI 1 or 2 refuses, naming the floor and the fix.
+def test_select_profile_partial_refuses_below_abi3(abi: int) -> None:
+    """An explicit `partial` on Landlock ABI 1 or 2 refuses, naming the floor and the fix.
 
     Those ABIs confine path writes but not truncation, so the label would over-promise.
     """
     with pytest.raises(detect.IsolationUnavailableError, match="truncat") as exc:
-        detect.resolve_isolation("hardened", _env(userns=False, landlock_abi=abi))
+        detect.resolve_isolation("partial", _env(userns=False, landlock_abi=abi))
     msg = str(exc.value)
     assert "ABI 3" in msg and "6.2" in msg and "auto" in msg
 
 
 @pytest.mark.parametrize("abi", [1, 2, 3])
-def test_select_profile_auto_stays_hardened_below_abi3(abi: int) -> None:
-    """`auto` on ABI 1 or 2 still resolves to hardened; partial truncate confinement is a warning.
+def test_select_profile_auto_stays_partial_below_abi3(abi: int) -> None:
+    """`auto` on ABI 1 or 2 still resolves to partial; partial truncate confinement is a warning.
 
     Dropping to none would leave common hosts (Debian 12, kernel 6.1) unconfined.
     """
     env = _env(userns=False, landlock_abi=abi)
-    assert env.detected_isolation == "hardened"
-    assert detect.resolve_isolation("auto", env) == "hardened"
+    assert env.detected_isolation == "partial"
+    assert detect.resolve_isolation("auto", env) == "partial"
 
 
 def _env_c(*, userns: bool, in_container: bool) -> detect.Environment:
@@ -154,8 +154,8 @@ def test_select_profile_auto_reaches_none_only_without_any_mechanism(
 ) -> None:
     # `auto` resolves to none only on a host with no confinement mechanism, and loudly.
     monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
-    assert detect.resolve_isolation("auto", _env_c(userns=True, in_container=False)) == "strict"
-    assert detect.resolve_isolation("auto", _env_c(userns=False, in_container=False)) == "hardened"
+    assert detect.resolve_isolation("auto", _env_c(userns=True, in_container=False)) == "full"
+    assert detect.resolve_isolation("auto", _env_c(userns=False, in_container=False)) == "partial"
     assert detect.resolve_isolation("auto", _env(userns=False, landlock_abi=0)) == "none"
 
 
@@ -163,8 +163,8 @@ def test_env_setter_forces_none_over_any_config(monkeypatch: pytest.MonkeyPatch)
     # AGENT6_DISABLE_SANDBOX forces the unsandboxed isolation whatever the config asked.
     monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
     assert detect.resolve_isolation("auto", _env_c(userns=True, in_container=False)) == "none"
-    assert detect.resolve_isolation("strict", _env_c(userns=True, in_container=False)) == "none"
-    assert detect.resolve_isolation("hardened", _env_c(userns=False, in_container=False)) == "none"
+    assert detect.resolve_isolation("full", _env_c(userns=True, in_container=False)) == "none"
+    assert detect.resolve_isolation("partial", _env_c(userns=False, in_container=False)) == "none"
 
 
 def test_env_setter_forces_none_on_non_linux(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -178,7 +178,7 @@ def test_env_setter_forces_none_on_non_linux(monkeypatch: pytest.MonkeyPatch) ->
         seccomp_arch_supported=True,
         sandbox_available=False,
     )
-    assert detect.resolve_isolation("strict", env) == "none"
+    assert detect.resolve_isolation("full", env) == "none"
 
 
 def test_probe_landlock_abi_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -210,7 +210,7 @@ def test_select_profile_auto_never_unsandboxes_while_a_mechanism_exists() -> Non
     # auto never resolves to none while the host offers userns or Landlock.
     assert detect.resolve_isolation("auto", _env_c(userns=True, in_container=True)) != "none"
     assert detect.resolve_isolation("auto", _env_c(userns=False, in_container=True)) != "none"
-    assert detect.resolve_isolation("hardened", _env(userns=False)) == "hardened"
+    assert detect.resolve_isolation("partial", _env(userns=False)) == "partial"
 
 
 def test_select_profile_unknown_raises() -> None:
@@ -239,14 +239,14 @@ def test_select_profile_auto_is_none_without_sandbox() -> None:
     assert detect.resolve_isolation("auto", _no_sandbox_env()) == "none"
 
 
-def test_select_profile_strict_refused_without_sandbox() -> None:
+def test_select_profile_full_refused_without_sandbox() -> None:
     with pytest.raises(detect.IsolationUnavailableError, match="Linux kernel sandbox"):
-        detect.resolve_isolation("strict", _no_sandbox_env())
+        detect.resolve_isolation("full", _no_sandbox_env())
 
 
-def test_select_profile_hardened_refused_without_sandbox() -> None:
+def test_select_profile_partial_refused_without_sandbox() -> None:
     with pytest.raises(detect.IsolationUnavailableError, match="Linux kernel sandbox"):
-        detect.resolve_isolation("hardened", _no_sandbox_env())
+        detect.resolve_isolation("partial", _no_sandbox_env())
 
 
 def test_sandbox_available_matches_platform(monkeypatch: pytest.MonkeyPatch) -> None:

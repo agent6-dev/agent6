@@ -343,14 +343,14 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     def _effective(*_a: object, **_k: object) -> layer.EffectiveConfig:
         return effective
 
-    def _strict(*_a: object, **_k: object) -> str:
-        return "strict"
+    def _full(*_a: object, **_k: object) -> str:
+        return "full"
 
     def _none(*_a: object, **_k: object) -> None:
         return None
 
     monkeypatch.setattr(layer, "load_effective", _effective)
-    monkeypatch.setattr(app__session, "select_isolation", _strict)
+    monkeypatch.setattr(app__session, "select_isolation", _full)
     monkeypatch.setattr(app__setup, "check_provider_keys", _none)
     monkeypatch.setattr(git_ops, "verify_git_identity", _none)
     used: list[tuple[str, ...]] = []
@@ -425,8 +425,8 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     def _load(*_a: object, **_k: object) -> layer.EffectiveConfig:
         return layer.EffectiveConfig(config=cfg, sources={}, layers=())
 
-    def _strict(*_a: object, **_k: object) -> str:
-        return "strict"
+    def _full(*_a: object, **_k: object) -> str:
+        return "full"
 
     def _provider(*_a: object, **_k: object) -> mock.MagicMock:
         return mock.MagicMock()
@@ -437,7 +437,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     pinned: list[tuple[tuple[str, ...], str]] = []
     monkeypatch.setattr(layer, "load_effective", _load)
     monkeypatch.setattr(app__setup, "detect_env", object)
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(confine, "check_network_support", _none)
     monkeypatch.setattr(preflight, "budget_preflight", _none)
@@ -489,15 +489,15 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
     def _none(*_a: object, **_k: object) -> None:
         return None
 
-    def _strict(*_a: object, **_k: object) -> str:
-        return "strict"
+    def _full(*_a: object, **_k: object) -> str:
+        return "full"
 
     def _provider(*_a: object, **_k: object) -> mock.MagicMock:
         return mock.MagicMock()
 
     pinned: list[tuple[tuple[str, ...], str]] = []
     monkeypatch.setattr(app__setup, "detect_env", object)
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(confine, "check_network_support", _none)
     monkeypatch.setattr(preflight, "budget_preflight", _none)
@@ -522,19 +522,19 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
     assert any("running gateless" in line for line in said)
 
 
-def test_hardened_fs_rule_renders_only_under_hardened(tmp_path: pathlib.Path) -> None:
-    """The hardened create-a-top-level-entry workaround renders only under hardened."""
+def test_partial_fs_rule_renders_only_under_partial(tmp_path: pathlib.Path) -> None:
+    """The partial create-a-top-level-entry workaround renders only under partial."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=True)
-    strict = _prompt_blocks.build_system_prompt(
-        config=cfg, repo=repo, mode="run", skills=None, isolation="strict", protected_paths=True
+    full = _prompt_blocks.build_system_prompt(
+        config=cfg, repo=repo, mode="run", skills=None, isolation="full", protected_paths=True
     )
-    hardened = _prompt_blocks.build_system_prompt(
-        config=cfg, repo=repo, mode="run", skills=None, isolation="hardened", protected_paths=True
+    partial = _prompt_blocks.build_system_prompt(
+        config=cfg, repo=repo, mode="run", skills=None, isolation="partial", protected_paths=True
     )
-    assert "Under hardened isolation" not in strict
-    assert "__HARDENED_FS_RULE__" not in strict
-    assert "Under hardened isolation" in hardened
+    assert "Under partial isolation" not in full
+    assert "__PARTIAL_FS_RULE__" not in full
+    assert "Under partial isolation" in partial
 
 
 def test_patch_only_prompt_names_only_the_offered_edit_tool(
@@ -558,7 +558,7 @@ def test_patch_only_prompt_names_only_the_offered_edit_tool(
 
 
 def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: pathlib.Path) -> None:
-    """The '.git/ is protected' line renders only under strict with protect_git on.
+    """The '.git/ is protected' line renders only under full with protect_git on.
 
     Every unjailed run was told it while nothing protected it.
     """
@@ -569,9 +569,9 @@ def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: pathlib.Pa
     )
     marker = ".git/` is read-only inside the jail"
     for isolation, cfg, expect in (
-        ("strict", on, True),
-        ("strict", off, False),
-        ("hardened", on, False),
+        ("full", on, True),
+        ("full", off, False),
+        ("partial", on, False),
         ("none", on, False),
     ):
         out = _prompt_blocks.build_system_prompt(
@@ -786,21 +786,21 @@ def test_prompt_says_nothing_commits_under_commit_per_step_off(tmp_path: pathlib
     assert "The harness commits" not in out and "You own git" not in out
 
 
-def test_hardened_rule_renders_only_where_the_jail_carries_protect_paths(
+def test_partial_rule_renders_only_where_the_jail_carries_protect_paths(
     tmp_path: pathlib.Path,
 ) -> None:
     """The placeholder rule renders only when Landlock carves around protect paths.
 
-    An ordinary hardened run has none and was told to `apply_edit` placeholders it never needed.
+    An ordinary partial run has none and was told to `apply_edit` placeholders it never needed.
     """
     repo = _repo(tmp_path)
     cfg = Config.model_validate({"harness": {"verify_command": ["true"]}})
     plain = _prompt_blocks.build_system_prompt(
-        config=cfg, repo=repo, mode="run", skills=None, isolation="hardened"
+        config=cfg, repo=repo, mode="run", skills=None, isolation="partial"
     )
     assert "cannot CREATE new" not in plain
     carved = _prompt_blocks.build_system_prompt(
-        config=cfg, repo=repo, mode="run", skills=None, isolation="hardened", protected_paths=True
+        config=cfg, repo=repo, mode="run", skills=None, isolation="partial", protected_paths=True
     )
     assert "cannot CREATE new" in carved
 
@@ -959,14 +959,14 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     def _effective(*_a: object, **_k: object) -> layer.EffectiveConfig:
         return effective
 
-    def _strict(*_a: object, **_k: object) -> str:
-        return "strict"
+    def _full(*_a: object, **_k: object) -> str:
+        return "full"
 
     def _none(*_a: object, **_k: object) -> None:
         return None
 
     monkeypatch.setattr(layer, "load_effective", _effective)
-    monkeypatch.setattr(app__session, "select_isolation", _strict)
+    monkeypatch.setattr(app__session, "select_isolation", _full)
     monkeypatch.setattr(app__setup, "check_provider_keys", _none)
     monkeypatch.setattr(git_ops, "verify_git_identity", _none)
 

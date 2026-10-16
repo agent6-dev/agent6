@@ -61,9 +61,9 @@ def test_explicit_block_refuses_where_there_is_no_namespace() -> None:
     namespace refuses rather than running the server connected.
     """
     cfg = _server({"network": "none"})
-    err = confine.check_mcp_network_support(cfg, "hardened")
-    assert err is not None and "'s'" in err and "strict" in err
-    assert confine.check_mcp_network_support(cfg, "strict") is None
+    err = confine.check_mcp_network_support(cfg, "partial")
+    assert err is not None and "'s'" in err and "full" in err
+    assert confine.check_mcp_network_support(cfg, "full") is None
 
 
 def test_auto_degrades_with_a_warning_naming_the_server(
@@ -78,8 +78,8 @@ def test_auto_degrades_with_a_warning_naming_the_server(
     from agent6.app import _setup
 
     cfg = _server({})
-    assert confine.check_mcp_network_support(cfg, "hardened") is None  # never a refusal
-    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "hardened")
+    assert confine.check_mcp_network_support(cfg, "partial") is None  # never a refusal
+    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "partial")
     err = capsys.readouterr().err
     assert "MCP server 's'" in err and "network" in err
 
@@ -91,16 +91,16 @@ def test_a_table_less_server_degrades_with_the_same_warning(
 
     A server with no `[sandbox]` table has effective network `auto`, exactly like one that wrote
     `network = "auto"`: the spawn policy gives it a network of its own (degrading to the host's on
-    hardened), and the degrade warning reads the same effective value, or a table-less server keeps
-    the host's network on hardened with nothing said.
+    partial), and the degrade warning reads the same effective value, or a table-less server keeps
+    the host's network on partial with nothing said.
     """
     from agent6.app import _setup
 
     cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"s": {"command": ["x"]}}}})
     assert cfg.mcp.servers["s"].sandbox is None
     assert cfg.mcp.servers["s"].effective_network == "auto"
-    assert confine.check_mcp_network_support(cfg, "hardened") is None  # auto never refuses
-    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "hardened")
+    assert confine.check_mcp_network_support(cfg, "partial") is None  # auto never refuses
+    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "partial")
     err = capsys.readouterr().err
     assert "MCP server 's'" in err and "network" in err
 
@@ -110,18 +110,18 @@ def test_host_is_silent(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Pa
     from agent6.app import _setup
 
     cfg = _server({"network": "host"})
-    assert confine.check_mcp_network_support(cfg, "hardened") is None
-    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "hardened")
+    assert confine.check_mcp_network_support(cfg, "partial") is None
+    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "partial")
     assert "MCP server" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("value", ["auto", "session", "host"])  # the shared words
-@pytest.mark.parametrize("isolation", ["strict", "hardened", "none"])
+@pytest.mark.parametrize("isolation", ["full", "partial", "none"])
 def test_the_per_server_knob_answers_exactly_like_tool_network(value: str, isolation: str) -> None:
     """One axis, one vocabulary, one set of rules.
 
-    They drifted: the per-server guard read `if isolation == "strict"` where the sibling reads `if
-    isolation != "hardened"`, so the enforce value refused under `none`, where nothing is confined
+    They drifted: the per-server guard read `if isolation == "full"` where the sibling reads `if
+    isolation != "partial"`, so the enforce value refused under `none`, where nothing is confined
     anyway and the blanket unsandboxed warning covers it. A table of the two side by side is what
     caught it, so here is the table.
     """

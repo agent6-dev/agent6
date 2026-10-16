@@ -103,15 +103,15 @@ def test_a_startup_write_never_lands_in_the_repo(
 
 
 @pytest.mark.needs_namespaces
-def test_the_workspace_is_read_only_under_hardened_too(
+def test_the_workspace_is_read_only_under_partial_too(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Hardened has no mount namespace to re-bind with; the Landlock carve-out holds the same line.
+    """Partial has no mount namespace to re-bind with; the Landlock carve-out holds the same line.
 
     Read on cwd, no write grant beneath it.
     """
     repo = _repo_with_server(tmp_path, monkeypatch)
-    _force(monkeypatch, "hardened")
+    _force(monkeypatch, "partial")
     checks = _check_mcp(
         {"notes": {"command": [_JAIL_PYTHON, "server.py"]}}, sandbox={"network": "host"}
     )
@@ -181,7 +181,7 @@ def test_a_server_it_cannot_hold_read_only_is_reported_not_started(
     The row says a run starts it as configured.
     """
     repo = _repo_with_server(tmp_path, monkeypatch)
-    _force(monkeypatch, "strict")
+    _force(monkeypatch, "full")
     _never_started(monkeypatch)
     checks = _check_mcp(
         {
@@ -223,7 +223,7 @@ def test_an_operator_write_grant_holds_the_probe_off_too(
     A grant stays writable under the read-only root.
     """
     _repo_with_server(tmp_path, monkeypatch)
-    _force(monkeypatch, "strict")
+    _force(monkeypatch, "full")
     _never_started(monkeypatch)
     checks = _check_mcp(
         {"notes": {"command": [_JAIL_PYTHON, "server.py"]}},
@@ -238,12 +238,12 @@ def test_an_operator_write_grant_holds_the_probe_off_too(
 def test_a_server_a_run_would_refuse_fails_the_check_unstarted(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`network = "none"` on a hardened host is a run refusal, applied before any server starts.
+    """`network = "none"` on a partial host is a run refusal, applied before any server starts.
 
     Never a PASS from a server started on the host network.
     """
     _repo_with_server(tmp_path, monkeypatch)
-    _force(monkeypatch, "hardened")
+    _force(monkeypatch, "partial")
     _never_started(monkeypatch)
     checks = _check_mcp(
         {"quiet": {"command": [_JAIL_PYTHON, "server.py"], "sandbox": {"network": "none"}}},

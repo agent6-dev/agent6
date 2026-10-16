@@ -103,7 +103,7 @@ def _spelled_under(path: str, trees: Iterable[str]) -> bool:
     return any(spelled.is_relative_to(os.path.normpath(tree)) for tree in trees)
 
 
-_ISOLATION_RANK = {"none": 0, "hardened": 1, "strict": 2}
+_ISOLATION_RANK = {"none": 0, "partial": 1, "full": 2}
 _RUN_COMMANDS_RANK = {"no": 0, "ask": 1, "yes": 2}
 
 # Per scalar sandbox key: whether the overlay's value is no wider than the operator's. A key

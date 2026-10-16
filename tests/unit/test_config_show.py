@@ -240,7 +240,7 @@ def test_the_auto_sandbox_leaves_show_what_this_host_resolves_them_to(
     )
     rows = {s.key: s for s in view.settings}
     assert rows["sandbox.isolation"].is_adaptive
-    assert rows["sandbox.isolation"].effective_value in ("strict", "hardened", "none")
+    assert rows["sandbox.isolation"].effective_value in ("full", "partial", "none")
     assert rows["sandbox.network"].is_adaptive
     assert "(adaptive)" in config_view.render_show(
         eff, resolved=app_confine.resolved_config_values(eff.config)

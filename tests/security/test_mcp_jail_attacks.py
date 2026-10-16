@@ -24,7 +24,7 @@ pytestmark = pytest.mark.needs_namespaces
 
 def _attack(script: str, cwd: pathlib.Path, **policy_kw: object) -> str:
     argv = ("/usr/bin/python3", "-c", script)
-    policy = tools_policy.jail_policy(cwd, Config(), "strict", argv, network="none", **policy_kw)  # pyright: ignore[reportArgumentType]
+    policy = tools_policy.jail_policy(cwd, Config(), "full", argv, network="none", **policy_kw)  # pyright: ignore[reportArgumentType]
     proc = jail.spawn_in_jail(
         policy, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     ).popen
@@ -167,7 +167,7 @@ def test_killing_agent6_takes_the_server_with_it(tmp_path: pathlib.Path) -> None
     """
     script = "import time\nprint('UP', flush=True)\ntime.sleep(300)\n"
     argv = ("/usr/bin/python3", "-c", script)
-    policy = tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="none")
+    policy = tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="none")
     proc = jail.spawn_in_jail(
         policy, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
     ).popen
@@ -225,7 +225,7 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: pathli
     )
     argv = ("/usr/bin/python3", "-c", flood)
     proc = mcp_client._spawn_server(
-        argv, tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="none"), ()
+        argv, tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="none"), ()
     ).popen
     keep: list[bytes] = []
     assert proc.stderr is not None
@@ -250,7 +250,7 @@ def test_a_finished_launcher_stops_shielding_its_pid(tmp_path: pathlib.Path) -> 
     from agent6.sandbox import jail as jail_mod
 
     argv = ("/usr/bin/python3", "-c", "pass")
-    policy = tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="none")
+    policy = tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="none")
     proc = jail.spawn_in_jail(
         policy,
         stdin=subprocess.DEVNULL,

@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`protect_git` is a read-only bind, so it is strict-only.
+"""`protect_git` is a read-only bind, so it is full-only.
 
-Landlock has no deny rules: protecting `.git` on hardened meant not granting
+Landlock has no deny rules: protecting `.git` on partial meant not granting
 the workspace ROOT, because a grant is recursive and granting the root its own
 create/remove rights grants them over `.git` too. That cost every top-level
 write, which is more than the protection is worth when the operator can have
-the real thing by using strict.
+the real thing by using full.
 """
 
 from __future__ import annotations
@@ -42,48 +42,46 @@ def test_a_default_degrades_with_a_warning(tmp_path: pathlib.Path) -> None:
         seccomp_arch_supported=True,
         sandbox_available=True,
     )
-    confine.warn_sandbox_gaps("hardened", env, Config(), reporter=reporter, root=tmp_path)
+    confine.warn_sandbox_gaps("partial", env, Config(), reporter=reporter, root=tmp_path)
     assert any("cannot protect .git" in line for line in lines)
-    assert confine.check_protect_git_support(Config(), "hardened", explicitly_set=False) is None
+    assert confine.check_protect_git_support(Config(), "partial", explicitly_set=False) is None
 
 
 def test_a_value_the_operator_wrote_down_refuses(tmp_path: pathlib.Path) -> None:
     """They asked for something specific; running without it would be a lie."""
-    message = confine.check_protect_git_support(Config(), "hardened", explicitly_set=True)
+    message = confine.check_protect_git_support(Config(), "partial", explicitly_set=True)
     assert message is not None
-    assert "requires the strict isolation" in message
+    assert "requires the full isolation" in message
     assert "sandbox.protect_git = false" in message  # names the fix
 
 
-def test_strict_provides_it_either_way(tmp_path: pathlib.Path) -> None:
+def test_full_provides_it_either_way(tmp_path: pathlib.Path) -> None:
     for explicit in (True, False):
-        assert (
-            confine.check_protect_git_support(Config(), "strict", explicitly_set=explicit) is None
-        )
+        assert confine.check_protect_git_support(Config(), "full", explicitly_set=explicit) is None
 
 
 def test_opting_out_never_refuses(tmp_path: pathlib.Path) -> None:
     off = Config.model_validate({"sandbox": {"protect_git": False}})
-    assert confine.check_protect_git_support(off, "hardened", explicitly_set=True) is None
+    assert confine.check_protect_git_support(off, "partial", explicitly_set=True) is None
 
 
-def test_only_strict_carves_git_out_of_the_jail(tmp_path: pathlib.Path) -> None:
-    """Top-level writes work on hardened because there is no carve-out.
+def test_only_full_carves_git_out_of_the_jail(tmp_path: pathlib.Path) -> None:
+    """Top-level writes work on partial because there is no carve-out.
 
     A carve-out at the workspace root is what would cost them; `touch newfile` there works.
     """
     from agent6.tools import policy
 
     (tmp_path / ".git").mkdir()
-    strict = policy.jail_policy(tmp_path, Config(), "strict", ("true",))
-    hardened = policy.jail_policy(tmp_path, Config(), "hardened", ("true",))
-    assert (tmp_path / ".git").resolve() in strict.extra_protect_paths
-    assert hardened.extra_protect_paths == ()
+    full = policy.jail_policy(tmp_path, Config(), "full", ("true",))
+    partial = policy.jail_policy(tmp_path, Config(), "partial", ("true",))
+    assert (tmp_path / ".git").resolve() in full.extra_protect_paths
+    assert partial.extra_protect_paths == ()
 
 
 @pytest.mark.needs_namespaces
-def test_a_new_top_level_entry_can_be_created_on_hardened(tmp_path: pathlib.Path) -> None:
-    """A new top-level entry can be created on hardened.
+def test_a_new_top_level_entry_can_be_created_on_partial(tmp_path: pathlib.Path) -> None:
+    """A new top-level entry can be created on partial.
 
     `mkfifo`, `touch` and `mkdir` at the workspace root must not fail with a misleading "File
     exists" while the carve-out is there.
@@ -96,7 +94,7 @@ def test_a_new_top_level_entry_can_be_created_on_hardened(tmp_path: pathlib.Path
         policy.jail_policy(
             tmp_path,
             Config(),
-            "hardened",
+            "partial",
             ("sh", "-c", "touch newfile && mkdir build && mkfifo pipe && echo made-them"),
         )
     )
@@ -107,7 +105,7 @@ def test_the_default_reaches_the_check_as_a_default(tmp_path: pathlib.Path) -> N
     """The default reaches the check as a default.
 
     `effective.sources` holds every leaf with its layer, so reading it for the explicit leaves makes
-    a default read as operator intent: on a host without user namespaces (auto -> hardened) `agent6
+    a default read as operator intent: on a host without user namespaces (auto -> partial) `agent6
     run` and `ask` would refuse to start at all, against a config nobody had written.
     """
     from agent6.config import layer
@@ -119,7 +117,7 @@ def test_the_default_reaches_the_check_as_a_default(tmp_path: pathlib.Path) -> N
     assert (
         confine.check_protect_git_support(
             effective.config,
-            "hardened",
+            "partial",
             explicitly_set="sandbox.protect_git" in effective.explicit_leaves,
         )
         is None

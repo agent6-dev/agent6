@@ -105,13 +105,13 @@ def test_exec_refuses_a_workspace_under_a_hidden_path(
     from agent6.config import Config
     from agent6.ui.cli import exec_cmds, net_cmds
 
-    def _strict(req: str, env: Any) -> str:
-        return "strict"
+    def _full(req: str, env: Any) -> str:
+        return "full"
 
     def _ran(policy: Any, session_net: Any = None) -> int:
         return 0
 
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(exec_cmds, "run_attached", _ran)
     (tmp_path / "run").mkdir()
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
@@ -128,16 +128,16 @@ def test_exec_refuses_a_session_network_nobody_holds(
 ) -> None:
     """`exec` joins a live session's network only; an ended run is refused by name.
 
-    The isolation seam is pinned to strict so the policy derives "session" on every host this suite
+    The isolation seam is pinned to full so the policy derives "session" on every host this suite
     runs on.
     """
     from agent6.config import Config
     from agent6.ui.cli import net_cmds
 
-    def _strict(req: str, env: Any) -> str:
-        return "strict"
+    def _full(req: str, env: Any) -> str:
+        return "full"
 
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     (tmp_path / "run").mkdir()
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
     # live, but holding no network
@@ -216,7 +216,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
     monkeypatch.setattr(_setup, "detect_env", _env)
     monkeypatch.setattr(detect, "resolve_isolation", _resolve)
 
-    cfg = Config.model_validate({"sandbox": {"isolation": "strict"}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "full"}})
     with pytest.raises(RuntimeError, match="stop before"):
         net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
     assert captured["isolation"] == "none"  # the stamp, not the config
@@ -228,7 +228,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
     )
     with pytest.raises(RuntimeError, match="stop before"):
         net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
-    assert captured["isolation"] == "strict"
+    assert captured["isolation"] == "full"
     assert "recorded no launch policy" in capsys.readouterr().err
 
 
@@ -286,7 +286,7 @@ def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: pa
     assert "done-run-AAAAAA is passed; a session network exists only while its run does" in (
         out.getvalue()
     )
-    assert "strict isolation" not in out.getvalue()
+    assert "full isolation" not in out.getvalue()
 
     # Live (a worker holds it) but without a network of its own: the config explanation.
     (run / "logs.jsonl").write_text(
@@ -296,7 +296,7 @@ def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: pa
     process.write_worker_pid(run, os.getpid())
     out = io.StringIO()
     assert net_cmds.forward(layout, 8765, 0, out=out) == 2
-    assert "strict isolation" in out.getvalue()
+    assert "full isolation" in out.getvalue()
 
 
 def test_exec_refuses_a_run_that_is_over(
@@ -372,7 +372,7 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
                 "version": 3,
                 "session_id": layout.session_id,
                 "mode": "run",
-                "policy": {"run_commands": "yes", "isolation": "strict", "network": "host"},
+                "policy": {"run_commands": "yes", "isolation": "full", "network": "host"},
             }
         )
         + "\n",
@@ -385,16 +385,16 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
         seen["borrowed"] = session_net is not None
         return 0
 
-    def _strict(_req: str, _env: Any) -> str:
-        return "strict"
+    def _full(_req: str, _env: Any) -> str:
+        return "full"
 
     monkeypatch.setattr(_setup, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True))
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(exec_cmds, "run_attached", fake_run)
 
     cfg = Config.model_validate(
         {
-            "sandbox": {"isolation": "strict", "network": "host"},
+            "sandbox": {"isolation": "full", "network": "host"},
             "mcp": {
                 "enabled": True,
                 "servers": {"docs": {"command": ["true"], "sandbox": {"network": "session"}}},
@@ -440,7 +440,7 @@ def test_exec_runs_in_the_sessions_worktree_with_its_recorded_git_dir(
                 "version": 3,
                 "session_id": layout.session_id,
                 "mode": "run",
-                "policy": {"run_commands": "yes", "isolation": "strict", "network": "host"},
+                "policy": {"run_commands": "yes", "isolation": "full", "network": "host"},
                 "worktree": str(worktree),
                 "worktree_git_dir": str(git_dir),
             }
@@ -455,14 +455,14 @@ def test_exec_runs_in_the_sessions_worktree_with_its_recorded_git_dir(
         seen["ro"] = policy.extra_ro_paths
         return 0
 
-    def _strict(_req: str, _env: Any) -> str:
-        return "strict"
+    def _full(_req: str, _env: Any) -> str:
+        return "full"
 
     monkeypatch.setattr(_setup, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True))
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(exec_cmds, "run_attached", fake_run)
 
-    cfg = Config.model_validate({"sandbox": {"isolation": "strict", "network": "host"}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "full", "network": "host"}})
     assert net_cmds.exec_in_session(layout, cfg, checkout, ("pwd",)) == 0
     assert seen["cwd"] == worktree
     assert git_dir in seen["ro"]
@@ -480,10 +480,10 @@ def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
     from agent6.config import Config
     from agent6.ui.cli import net_cmds
 
-    def _strict(req: str, env: Any) -> str:
-        return "strict"
+    def _full(req: str, env: Any) -> str:
+        return "full"
 
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     (tmp_path / "run").mkdir()
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
     process.write_worker_pid(layout.session_dir, os.getpid())

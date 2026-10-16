@@ -14,7 +14,7 @@ from typing import Literal
 
 TernaryMode = Literal["no", "ask", "yes"]
 # `none` runs commands as plain subprocesses: a host with no confinement, or an operator opt-out.
-IsolationLevel = Literal["strict", "hardened", "none"]
+IsolationLevel = Literal["full", "partial", "none"]
 NetworkMode = Literal["host", "session", "none"]
 RoleName = Literal["worker", "reviewer", "planner"]
 # The modes `agent6 resume` accepts; `session_kind` answers the wider "is this a known mode".
@@ -242,7 +242,7 @@ class JailPolicy:
 
     cwd: pathlib.Path
     argv: tuple[str, ...]
-    isolation: IsolationLevel = "strict"
+    isolation: IsolationLevel = "full"
     env: tuple[tuple[str, str], ...] = ()
     network: NetworkMode = "none"
     extra_ro_paths: tuple[pathlib.Path, ...] = ()

@@ -25,13 +25,13 @@ class SandboxConfig(pydantic.BaseModel):
 
     # `none` is operator-only and LLM-unreachable, so writing it is the consent; the resolution
     # lives in detect.resolve_isolation.
-    isolation: Literal["auto", "strict", "hardened", "none"] = pydantic.Field(
+    isolation: Literal["auto", "full", "partial", "none"] = pydantic.Field(
         default="auto",
         description=(
-            "How jailed commands are confined: `strict` (user + mount namespaces, Landlock, "
-            "seccomp), `hardened` (Landlock + seccomp, no namespaces), or `none` (unconfined). "
+            "How jailed commands are confined: `full` (user + mount namespaces, Landlock, "
+            "seccomp), `partial` (Landlock + seccomp, no namespaces), or `none` (unconfined). "
             "`auto` picks the strongest the host supports and says so when that is `none`. An "
-            "explicit `strict` or `hardened` refuses to start where the host cannot honor it. "
+            "explicit `full` or `partial` refuses to start where the host cannot honor it. "
             "`none` also via `--disable-sandbox` or "
             "`AGENT6_DISABLE_SANDBOX=1`."
         ),
@@ -44,8 +44,8 @@ class SandboxConfig(pydantic.BaseModel):
         description=(
             "Which network jailed commands join. `session`: the run's private network (commands "
             "reach each other, nothing off the box, nothing outside reaches in), refused where it "
-            "cannot be enforced. `host`: the machine's network. `auto`: `session` under `strict`, "
-            "degraded to the host's network with a warning under `hardened` or `none`. A run's "
+            "cannot be enforced. `host`: the machine's network. `auto`: `session` under `full`, "
+            "degraded to the host's network with a warning under `partial` or `none`. A run's "
             "commands share one launcher, so there is no per-command `none`; a machine state sets "
             "its own value in its `config` table, never wider than this one."
         ),
@@ -72,17 +72,17 @@ class SandboxConfig(pydantic.BaseModel):
             "subdomains (`.readthedocs.io`). Each entry is a host, never a URL prefix; the rest of "
             "fetch is fixed (https only, 1 MiB cap, redirects returned, not followed). Hidden when "
             'a jailed command already has the host network (`network = "host"`, or any isolation '
-            "but `strict`); withheld from machine and agent states."
+            "but `full`); withheld from machine and agent states."
         ),
     )
     # A read-only bind-remount; the harness's own commits run outside the jail and are unaffected.
-    # Under hardened the cwd is blanket read-write: carving .git out would deny new top-level names.
+    # Under partial the cwd is blanket read-write: carving .git out would deny new top-level names.
     protect_git: bool = pydantic.Field(
         default=True,
         description=(
             "Keep `.git/` unwritable by jailed commands, so a command cannot plant a git filter "
-            "that agent6's host-side commits would execute. Needs a mount namespace: `strict` "
-            "only. Under `hardened` the default `true` degrades with a warning; an explicit `true` "
+            "that agent6's host-side commits would execute. Needs a mount namespace: `full` "
+            "only. Under `partial` the default `true` degrades with a warning; an explicit `true` "
             "refuses to start. The in-process edit tools refuse `.git` writes at every level "
             "regardless."
         ),
@@ -91,10 +91,10 @@ class SandboxConfig(pydantic.BaseModel):
     home: Literal["tmp", "cache"] = pydantic.Field(
         default="tmp",
         description=(
-            "The HOME jailed commands get under `strict`: `tmp` is `/tmp/agent6-home` inside the "
+            "The HOME jailed commands get under `full`: `tmp` is `/tmp/agent6-home` inside the "
             "run's private tmpfs, gone with the run; `cache` is the persistent "
             "`$XDG_CACHE_HOME/agent6/homes/<repo-id>`, one directory per repository (created "
-            "`0700`, refused once loosened), bind-mounted read-write at its real path. `hardened` "
+            "`0700`, refused once loosened), bind-mounted read-write at its real path. `partial` "
             "and `none` have no private tmpfs and always use that directory; an explicit `tmp` "
             "refuses to start there. Persistence is a cross-run channel inside the jail's world: "
             "a poisoned cache or a `~/.gitconfig` alias written by one run reaches the next "
@@ -182,7 +182,7 @@ class SandboxConfig(pydantic.BaseModel):
         default=(),
         description=(
             "Device nodes under /dev the jail exposes read-write (GPU compute: /dev/nvidiactl, "
-            "/dev/nvidia0, /dev/nvidia-uvm). Empty (the default) keeps the device wall: strict's "
+            "/dev/nvidia0, /dev/nvidia-uvm). Empty (the default) keeps the device wall: full's "
             "/dev holds only null/zero/urandom/random/full. Each path must be an existing "
             "character or block device at run start, or the run refuses. Widens the sandbox: a "
             "device node is direct hardware access."
@@ -217,7 +217,7 @@ class SandboxConfig(pydantic.BaseModel):
             "`$HOME` never exposes `secrets.toml` or run history (the data dir and cache stay "
             "readable: installed skills work). Enforced twice: the in-process tools refuse them at "
             "every isolation level, and jailed commands see them masked (a dir reads empty, a file "
-            "reads empty). Masking needs the mount namespace: under `hardened` an entry it cannot "
+            "reads empty). Masking needs the mount namespace: under `partial` an entry it cannot "
             "mask refuses the run, and a grant exposing the always-hidden dirs warns loudly "
             "instead."
         ),
@@ -248,7 +248,7 @@ class SandboxConfig(pydantic.BaseModel):
     def _extra_paths_never_target_private_dirs(self) -> SandboxConfig:
         """Refuse an extra grant at or inside an agent6-private dir.
 
-        A grant containing one (`$HOME`) is allowed on strict, where the private dirs are
+        A grant containing one (`$HOME`) is allowed on full, where the private dirs are
         masked out of it.
 
         Returns:

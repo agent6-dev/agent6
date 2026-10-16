@@ -33,14 +33,14 @@ from agent6.tools import _path_safety, mcp_client
 from agent6.tools import policy as tools_policy
 
 # Mirrors SYSTEM_BINDS in the jail's main.rs; tests/security pins the two against each other.
-_STRICT_SYSTEM_BINDS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/alternatives")
-# What hardened's Landlock grants read-only (main.rs ro_paths base set).
-_HARDENED_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc")
+_FULL_SYSTEM_BINDS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/alternatives")
+# What partial's Landlock grants read-only (main.rs ro_paths base set).
+_PARTIAL_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc")
 
 
 def _isolation_means(isolation: kinds.IsolationLevel) -> str:
     """Return one line on what the level bounds, in the words the docs use."""
-    if isolation == "strict":
+    if isolation == "full":
         # Hedged: no config is loaded here, and `sandbox.network = "host"` declines the netns.
         return (
             "the run's commands share one jail: their own filesystem view (only"
@@ -48,7 +48,7 @@ def _isolation_means(isolation: kinds.IsolationLevel) -> str:
             " filtered syscall set, and the run's own network unless"
             " sandbox.network says otherwise. See docs/security.md."
         )
-    if isolation == "hardened":
+    if isolation == "partial":
         return (
             "commands work in the host's own filesystem, /tmp, /proc and"
             " network, shared with everything else on it. Landlock path rules"
@@ -108,7 +108,7 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:  # noqa: PLR0915  # on
     reason = detect.degrade_reason(env)
     if requested == "auto" and reason is not None:
         # A degraded `auto` never appears without its why; an explicit level is no degrade.
-        print(f"  not strict: {reason}")
+        print(f"  not full: {reason}")
     print(f"  {_isolation_means(isolation)}")
     notes = tool_paths.tool_mount_notes()
     # Under `none` nothing is confined, so the block would describe a boundary that is not there.
@@ -116,7 +116,7 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:  # noqa: PLR0915  # on
         # Not a per-run warning: every uv-installed tool links into ~/.local/share.
         how = (
             "mounted read-only into the jail and readable by"
-            if isolation == "strict"
+            if isolation == "full"
             else "granted read-only (Landlock path rules) and readable by"
         )
         print(
@@ -153,8 +153,8 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:  # noqa: PLR0915  # on
     except JailUnavailableError as exc:
         reports.append(kinds.SandboxReport(name="jail_true", ok=False, detail=str(exc)))
 
-    # Only `strict` has a network namespace to probe; `hardened` shares this process's network.
-    if isolation == "strict":
+    # Only `full` has a network namespace to probe; `partial` shares this process's network.
+    if isolation == "full":
         try:
             res = _jail("/usr/bin/getent", "hosts", "example.com")
             ok = res.returncode != 0
@@ -189,7 +189,7 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:  # noqa: PLR0915  # on
                 name="jail_blocks_network",
                 ok=True,
                 detail=(
-                    "n/a under hardened: no per-command network namespace; jailed"
+                    "n/a under partial: no per-command network namespace; jailed"
                     " commands share the host network (sandbox.network degrades with"
                     " a warning)"
                 ),
@@ -364,7 +364,7 @@ def _check_config_section(
         )
         reason = detect.degrade_reason(env)
         if cfg.sandbox.isolation == "auto" and reason is not None:
-            print(f"  -> not strict: {reason}")
+            print(f"  -> not full: {reason}")
         # The tools' file boundary follows the config values at every level.
         ws = tools_policy.workspace_for(cfg, pathlib.Path.cwd())
         grants = len({*ws.read_roots, *ws.write_roots})
@@ -437,11 +437,11 @@ def _home_line(
     root: pathlib.Path,
     git_grant: pathlib.Path | None,
 ) -> str:
-    """Return the jail's HOME line: strict's tmpfs, or the repository's cache dir and why."""
+    """Return the jail's HOME line: full's tmpfs, or the repository's cache dir and why."""
     persistent = tools_policy.persistent_jail_home(cfg, selected, root, git_grant)
     if persistent is None:
         return f"    rw  {tools_policy.JAIL_TMP_HOME}  (HOME, inside the private /tmp)"
-    why = "sandbox.home = cache" if selected == "strict" else f"{selected} has no private /tmp"
+    why = "sandbox.home = cache" if selected == "full" else f"{selected} has no private /tmp"
     return f"    rw  {persistent}  (HOME, persists across runs: {why})"
 
 
@@ -490,7 +490,7 @@ def _boundaries_commands(
         print("    UNCONFINED: no jail on this host; commands run as you.")
         print(_home_line(cfg, selected, ws.root, git_grant))
         return
-    if selected != "strict":
+    if selected != "full":
         git_note = f"; .git writable: {selected} has no mount to re-bind it"
     else:
         git_note = "; .git re-bound read-only" if cfg.sandbox.protect_git else ""
@@ -500,13 +500,13 @@ def _boundaries_commands(
             f"    ro  {git_grant}  (the repository's .git, which this linked worktree points into)"
         )
     net = tools_policy.resolve_network(cfg, selected)
-    if selected == "strict":
+    if selected == "full":
         print("    rw  /tmp  (a tmpfs the run's commands share, gone at teardown)")
         rest = "" if net == "host" else " (the rest of /etc is empty)"
-        print(f"    ro  system: {' '.join(_STRICT_SYSTEM_BINDS)}{rest}")
+        print(f"    ro  system: {' '.join(_FULL_SYSTEM_BINDS)}{rest}")
     else:
         print("    rw  /tmp  (the host's /tmp, shared with every process of yours)")
-        print(f"    ro  system (Landlock): {' '.join(_HARDENED_SYSTEM_RO)}")
+        print(f"    ro  system (Landlock): {' '.join(_PARTIAL_SYSTEM_RO)}")
         print(f"    --  /proc  (not granted under {selected}: `ps` fails there)")
         print(
             "    --  /dev/shm  (the host's, not granted: Python multiprocessing cannot use it;"
@@ -527,7 +527,7 @@ def _boundaries_commands(
     for line in _device_lines(cfg):
         print(line)
     masked = {*agent6_paths.private_dirs(), *(pathlib.Path(p) for p in cfg.sandbox.hide_paths)}
-    verb = "masked out of the jail's view" if selected == "strict" else "denied by Landlock"
+    verb = "masked out of the jail's view" if selected == "full" else "denied by Landlock"
     for p in sorted(masked):
         print(f"    --  {p}  ({verb})")
     net_line = {
@@ -602,7 +602,7 @@ def _check_boundaries_section(
     print(f"  isolation: {selected}  (sandbox.isolation = {cfg.sandbox.isolation})")
     reason = detect.degrade_reason(env)
     if cfg.sandbox.isolation == "auto" and reason is not None:
-        print(f"  not strict: {reason}")
+        print(f"  not full: {reason}")
 
     root = pathlib.Path.cwd()
     grants = tools_policy.resolve_grants(cfg, root)
@@ -733,7 +733,7 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
         try:
             session_net = (
                 stack.enter_context(contextlib.closing(jail.SessionNetwork.open()))
-                if isolation == "strict"
+                if isolation == "full"
                 and any(srv.effective_network == "session" for srv in probed.values())
                 else None
             )

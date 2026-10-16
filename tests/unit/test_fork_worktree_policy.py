@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The jail grants a fork's git dir from the manifest, never from the worktree's pointer file.
 
-Under hardened the pointer sits in the writable workspace, so a jailed command could rewrite it to
+Under partial the pointer sits in the writable workspace, so a jailed command could rewrite it to
 name any host directory.
 """
 
@@ -32,7 +32,7 @@ def _repo_and_worktree(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Pa
 
 
 def _rewrite_pointer(worktree: pathlib.Path, target: str) -> None:
-    """What a jailed command can do under hardened: point `.git` at any host dir via `commondir`."""
+    """What a jailed command can do under partial: point `.git` at any host dir via `commondir`."""
     evil = worktree / "evil"
     evil.mkdir()
     (evil / "commondir").write_text(f"{target}\n", encoding="utf-8")
@@ -42,15 +42,15 @@ def _rewrite_pointer(worktree: pathlib.Path, target: str) -> None:
 def test_the_recorded_git_dir_is_granted_read_only(tmp_path: pathlib.Path) -> None:
     """With the recorded dir matching the pointer, the policy grants that dir read-only.
 
-    The hardened exposure scan lists it under the same name.
+    The partial exposure scan lists it under the same name.
     """
     repo, worktree = _repo_and_worktree(tmp_path)
     git_dir = (repo / ".git").resolve()
     policy = tools_policy.jail_policy(
-        worktree, Config(), "strict", ("true",), worktree_git_dir=git_dir
+        worktree, Config(), "full", ("true",), worktree_git_dir=git_dir
     )
     assert git_dir in policy.extra_ro_paths and git_dir not in policy.extra_rw_paths
-    regions = dict(confine._hardened_grant_regions(Config(), worktree, git_dir))
+    regions = dict(confine._partial_grant_regions(Config(), worktree, git_dir))
     assert regions[git_dir].startswith("the repository's .git")
 
 
@@ -60,20 +60,18 @@ def test_a_rewritten_pointer_refuses_instead_of_granting(tmp_path: pathlib.Path)
     git_dir = (repo / ".git").resolve()
     _rewrite_pointer(worktree, "/etc")
     with pytest.raises(jail.JailUnavailableError, match="/etc") as refused:
-        tools_policy.jail_policy(
-            worktree, Config(), "hardened", ("true",), worktree_git_dir=git_dir
-        )
+        tools_policy.jail_policy(worktree, Config(), "partial", ("true",), worktree_git_dir=git_dir)
     assert str(git_dir) in str(refused.value)
     with pytest.raises(jail.JailUnavailableError):
-        confine._hardened_grant_regions(Config(), worktree, git_dir)
+        confine._partial_grant_regions(Config(), worktree, git_dir)
 
 
 def test_a_linked_worktree_agent6_did_not_record_gets_no_grant(tmp_path: pathlib.Path) -> None:
     """Without a record there is nothing to grant: a foreign worktree gets only the workspace."""
     repo, worktree = _repo_and_worktree(tmp_path)
-    assert tools_policy.jail_policy(worktree, Config(), "strict", ("true",)).extra_ro_paths == ()
+    assert tools_policy.jail_policy(worktree, Config(), "full", ("true",)).extra_ro_paths == ()
     _rewrite_pointer(worktree, "/etc")
-    # Hardened shares the host network, whose resolver and CA store reads are the only grants.
-    hardened = tools_policy.jail_policy(worktree, Config(), "hardened", ("true",))
-    assert hardened.extra_ro_paths == tools_policy.host_network_reads()
-    assert (repo / ".git").resolve() not in dict(confine._hardened_grant_regions(Config(), repo))
+    # Partial shares the host network, whose resolver and CA store reads are the only grants.
+    partial = tools_policy.jail_policy(worktree, Config(), "partial", ("true",))
+    assert partial.extra_ro_paths == tools_policy.host_network_reads()
+    assert (repo / ".git").resolve() not in dict(confine._partial_grant_regions(Config(), repo))

@@ -106,7 +106,7 @@ class ToolDispatcher:
         *,
         root: pathlib.Path,
         config: Config,
-        isolation: kinds.IsolationLevel = "strict",
+        isolation: kinds.IsolationLevel = "full",
         prompts: operator_prompts.OperatorPrompts | None = None,
         events: event_log.EventSink | None = None,
         curator: graph_curator.GraphCurator | None = None,

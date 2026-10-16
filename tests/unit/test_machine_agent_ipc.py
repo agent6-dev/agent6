@@ -18,7 +18,7 @@ _REQUEST = machine_agent.MachineAgentRequest(
     cwd=pathlib.Path("/work/repo"),
     root=pathlib.Path("/work/repo"),
     overlay={"budget": {"max_tokens_fallback": 9000}},
-    isolation="strict",
+    isolation="full",
     transcript_dir=pathlib.Path("/state/machines/m/i/transcripts"),
     events_log=pathlib.Path("/state/machines/m/i/states/0002-review/logs.jsonl"),
     protect_paths=(pathlib.Path("/work/repo/m.asm.toml"),),
@@ -43,7 +43,7 @@ _REQUEST = machine_agent.MachineAgentRequest(
 
 _REQUEST_BYTES = (
     '{"cwd":"/work/repo","root":"/work/repo",'
-    '"overlay":{"budget":{"max_tokens_fallback":9000}},"isolation":"strict",'
+    '"overlay":{"budget":{"max_tokens_fallback":9000}},"isolation":"full",'
     '"transcript_dir":"/state/machines/m/i/transcripts",'
     '"events_log":"/state/machines/m/i/states/0002-review/logs.jsonl",'
     '"protect_paths":["/work/repo/m.asm.toml"],'

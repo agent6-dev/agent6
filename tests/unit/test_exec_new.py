@@ -121,7 +121,7 @@ class _FakeNet:
 
 @pytest.fixture
 def host(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """A host where strict works, with the spawn and the session network recorded."""
+    """A host where full works, with the spawn and the session network recorded."""
     seen: dict[str, Any] = {"nets": []}
     env = dataclasses.replace(
         detect.environment(),
@@ -158,7 +158,7 @@ def test_new_builds_the_policy_a_runs_command_gets(
     cfg = Config.model_validate(
         {
             "sandbox": {
-                "isolation": "strict",
+                "isolation": "full",
                 "hide_paths": [str(tmp_path / "private")],
                 "extra_read_paths": [str(tmp_path / "ro")],
                 "memory_limit_mb": 512,
@@ -167,9 +167,9 @@ def test_new_builds_the_policy_a_runs_command_gets(
     )
     argv = ("ls", "-la")
     assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, argv) == 5
-    want = tools_policy.jail_policy(tmp_path, cfg, "strict", argv, timeout_s=0.0)
+    want = tools_policy.jail_policy(tmp_path, cfg, "full", argv, timeout_s=0.0)
     assert host["policy"] == want
-    assert (want.isolation, want.network, want.timeout_s) == ("strict", "session", 0.0)
+    assert (want.isolation, want.network, want.timeout_s) == ("full", "session", 0.0)
     assert want.hide_paths == (tmp_path / "private",)
     (net,) = host["nets"]
     assert host["session_net"] is net and host["open_during_run"] and net.closed
@@ -178,7 +178,7 @@ def test_new_builds_the_policy_a_runs_command_gets(
 def test_new_on_the_host_network_opens_no_session_network(
     tmp_path: pathlib.Path, host: dict[str, Any]
 ) -> None:
-    cfg = Config.model_validate({"sandbox": {"isolation": "strict", "network": "host"}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "full", "network": "host"}})
     assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ("true",)) == 5
     assert host["policy"].network == "host"
     assert host["session_net"] is None and host["nets"] == []
@@ -192,20 +192,20 @@ def test_new_names_the_shell_and_the_isolation(
 ) -> None:
     shell = _shell_on_path(tmp_path, monkeypatch, "zsh")
     monkeypatch.setenv("SHELL", shell)
-    cfg = Config.model_validate({"sandbox": {"isolation": "strict", "network": "host"}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "full", "network": "host"}})
     assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ()) == 5
     assert host["policy"].argv == (shell,)
-    assert f"[agent6] {shell} in a fresh sandbox, isolation strict." in capsys.readouterr().err
+    assert f"[agent6] {shell} in a fresh sandbox, isolation full." in capsys.readouterr().err
 
 
 def test_new_refuses_what_a_run_refuses(
     tmp_path: pathlib.Path, host: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An explicit network the level cannot give refuses as a run does, before any spawn."""
-    cfg = Config.model_validate({"sandbox": {"isolation": "hardened", "network": "session"}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "partial", "network": "session"}})
     assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ("true",)) == 2
     err = capsys.readouterr().err
-    assert "REFUSING: sandbox.network = 'session' requires the strict isolation" in err
+    assert "REFUSING: sandbox.network = 'session' requires the full isolation" in err
     assert "policy" not in host
 
 
@@ -215,7 +215,7 @@ def test_new_refuses_a_workspace_under_a_hidden_path(
     """`exec --new` built a jail for a workspace under a `sandbox.hide_paths` entry."""
     workspace = tmp_path / "repo"
     workspace.mkdir()
-    cfg = Config.model_validate({"sandbox": {"isolation": "strict", "hide_paths": [str(tmp_path)]}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "full", "hide_paths": [str(tmp_path)]}})
     assert exec_cmds.exec_new(cfg, frozenset(), workspace, ("true",)) == 2
     err = capsys.readouterr().err
     assert f"REFUSING: the workspace {str(workspace)!r} is under {str(tmp_path)!r}" in err
@@ -233,7 +233,7 @@ def test_new_warns_about_a_grant_of_the_home_directory(
     workspace = tmp_path / "repo"
     workspace.mkdir()
     cfg = Config.model_validate(
-        {"sandbox": {"isolation": "strict", "extra_write_paths": [str(tmp_path)]}}
+        {"sandbox": {"isolation": "full", "extra_write_paths": [str(tmp_path)]}}
     )
     assert exec_cmds.exec_new(cfg, frozenset(), workspace, ("true",)) == 5
     err = capsys.readouterr().err
@@ -248,12 +248,12 @@ def test_new_refuses_a_level_the_host_lacks(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     def _unavailable(_requested: str, _env: detect.Environment) -> kinds.IsolationLevel:
-        raise detect.IsolationUnavailableError("strict is not available here")
+        raise detect.IsolationUnavailableError("full is not available here")
 
     monkeypatch.setattr(detect, "resolve_isolation", _unavailable)
-    cfg = Config.model_validate({"sandbox": {"isolation": "strict"}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "full"}})
     assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ("true",)) == 2
-    assert "REFUSING: strict is not available here" in capsys.readouterr().err
+    assert "REFUSING: full is not available here" in capsys.readouterr().err
     assert "policy" not in host
 
 

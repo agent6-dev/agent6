@@ -16,7 +16,7 @@ def _manifest(session_dir: pathlib.Path, **over: object) -> None:
         "mode": "run",
         "session_id": "r",
         "models": {"driver": {"provider": "anthropic", "model": "claude-x"}},
-        "policy": {"run_commands": "ask", "isolation": "strict"},
+        "policy": {"run_commands": "ask", "isolation": "full"},
         "harness": {"verify_command": ["uv", "run", "pytest"], "verify_origin": "configured"},
     }
     data.update(over)
@@ -27,7 +27,7 @@ def test_the_line_carries_what_an_operator_needs(tmp_path: pathlib.Path) -> None
     """Model, sandbox, command setting and the gate, without an interrupt or a config read."""
     _manifest(tmp_path)
     line = session_policy(tmp_path).line()
-    assert line == "claude-x · strict · commands ask · uv run pytest (configured)"
+    assert line == "claude-x · full · commands ask · uv run pytest (configured)"
 
 
 def test_the_gate_says_whose_it_is(tmp_path: pathlib.Path) -> None:
@@ -57,4 +57,4 @@ def test_an_unreadable_dir_reports_nothing_rather_than_guessing(tmp_path: pathli
 def test_an_asks_line_names_no_gate(tmp_path: pathlib.Path) -> None:
     """An ask's policy line carries no gate; a configured gate still rides its manifest."""
     _manifest(tmp_path, mode="ask")
-    assert session_policy(tmp_path).line() == "claude-x · strict · commands ask"
+    assert session_policy(tmp_path).line() == "claude-x · full · commands ask"

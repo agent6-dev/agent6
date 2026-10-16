@@ -143,13 +143,13 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
     _repo(repo)
     monkeypatch.chdir(repo)
 
-    def _strict(*_args: object, **_kwargs: object) -> str:
-        return "strict"
+    def _full(*_args: object, **_kwargs: object) -> str:
+        return "full"
 
     def _finished(*_args: object, **_kwargs: object) -> app__execution.ExecutionEnd:
         return app__execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(_session, "select_isolation", _strict)
+    monkeypatch.setattr(_session, "select_isolation", _full)
     monkeypatch.setattr(app__execution, "run_execution", _finished)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
@@ -184,13 +184,13 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     monkeypatch.chdir(repo)
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
 
-    def _strict(*_args: object, **_kwargs: object) -> str:
-        return "strict"
+    def _full(*_args: object, **_kwargs: object) -> str:
+        return "full"
 
     def _finished(*_args: object, **_kwargs: object) -> app__execution.ExecutionEnd:
         return app__execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(_session, "select_isolation", _strict)
+    monkeypatch.setattr(_session, "select_isolation", _full)
     monkeypatch.setattr(app__execution, "run_execution", _finished)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")

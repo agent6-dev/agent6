@@ -398,8 +398,8 @@ def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: pa
     """The parked manifest records the config preset, not the sandbox one.
 
     `harness.preset` is what resume feeds back to load_effective; the sandbox preset stamped there
-    ('strict', 'hardened', 'none') makes `agent6 resume <parked-id>` die with "CONFIG ERROR: unknown
-    preset 'strict'" on every sandboxed host.
+    ('full', 'partial', 'none') makes `agent6 resume <parked-id>` die with "CONFIG ERROR: unknown
+    preset 'full'" on every sandboxed host.
     """
     from agent6.app import run
     from agent6.config import layer
@@ -584,14 +584,14 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     def _none(*_a: object, **_k: object) -> None:
         return None
 
-    def _strict(*_a: object, **_k: object) -> str:
-        return "strict"
+    def _full(*_a: object, **_k: object) -> str:
+        return "full"
 
     def _execution(*_a: object, **_k: object) -> app__execution.ExecutionEnd:
         return app__execution.ExecutionEnd(0)
 
     monkeypatch.setattr(_setup, "check_provider_keys", _none)
-    monkeypatch.setattr(_session, "select_isolation", _strict)
+    monkeypatch.setattr(_session, "select_isolation", _full)
     monkeypatch.setattr(app__execution, "run_execution", _execution)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("resume teardown raise")

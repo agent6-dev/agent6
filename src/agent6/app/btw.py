@@ -7,7 +7,7 @@ prints into the conversation view between a header and a footer, never into the 
 transcript. It has no follow-up thread: the operator resumes it like any other ask.
 
 It is not in-process (two loops sharing one dispatcher would race on tools) and not a plain
-subprocess under `strict` (it would inherit the run's empty netns). It spawns the way a
+subprocess under `full` (it would inherit the run's empty netns). It spawns the way a
 `/parallel` lane does: through the host launcher when the run is netns-isolated, else directly.
 """
 

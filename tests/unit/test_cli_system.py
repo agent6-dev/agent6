@@ -81,7 +81,7 @@ def test_install_writes_profile_and_reloads(
 def test_bundled_profile_parses_as_apparmor() -> None:
     """apparmor_parser accepts the bundled profile.
 
-    A text assertion would let a rename of AppArmor's own keyword ship, leaving strict silently
+    A text assertion would let a rename of AppArmor's own keyword ship, leaving full silently
     unavailable on the hosts that need it most.
     """
     parser = shutil.which("apparmor_parser")

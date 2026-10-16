@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """One serving launcher at every isolation level, `none` included.
 
-Only strict has the PID namespace, so the two bounds it provides for free are explicit
+Only full has the PID namespace, so the two bounds it provides for free are explicit
 elsewhere: the launcher sweeps what it backgrounded when its request channel closes, and
 the Python side sweeps each command's escapees.
 """
@@ -21,8 +21,8 @@ import pytest
 from agent6 import kinds
 from agent6.sandbox import jail, jail_jobs, jail_session
 
-# hardened and none need no namespaces; the strict case is marked per-test.
-_NO_NAMESPACE_LEVELS: tuple[kinds.IsolationLevel, ...] = ("hardened", "none")
+# partial and none need no namespaces; the full case is marked per-test.
+_NO_NAMESPACE_LEVELS: tuple[kinds.IsolationLevel, ...] = ("partial", "none")
 
 
 def _session(cwd: pathlib.Path, isolation: kinds.IsolationLevel) -> jail_session.JailSession:
@@ -65,7 +65,7 @@ def test_a_session_serves_commands_without_namespaces(
 def test_backgrounding_works_without_a_pid_namespace(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    """The launcher accepts a background request outside strict."""
+    """The launcher accepts a background request outside full."""
     session = _session(tmp_path, isolation)
     try:
         pid = session.start_background(("/bin/sh", "-c", "sleep 60"))
@@ -82,7 +82,7 @@ def test_a_backgrounded_command_dies_with_the_session(
 ) -> None:
     """Without a PID namespace the launcher sweeps the pids it started when its channel closes.
 
-    Strict's PID namespace does this by construction; otherwise a server would outlive the
+    Full's PID namespace does this by construction; otherwise a server would outlive the
     run that started it.
     """
     session = _session(tmp_path, isolation)
@@ -122,10 +122,10 @@ def test_a_setsid_escapee_does_not_outlive_its_command(
 def test_a_backgrounded_setsid_daemon_dies_with_the_session(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    """A background command's `setsid` child does not survive the run on hardened.
+    """A background command's `setsid` child does not survive the run on partial.
 
     It leaves the group the launcher tracks and outlives every per-command sweep; with no
-    PID namespace nothing else bounds it, and hardened has the host's network.
+    PID namespace nothing else bounds it, and partial has the host's network.
     """
     session = _session(tmp_path, isolation)
     marker = tmp_path / "daemon.pid"
@@ -196,10 +196,10 @@ def _alive_in_jail(session: jail_session.JailSession, pid: int) -> bool:
 
 @pytest.mark.needs_namespaces
 @pytest.mark.parametrize("older_first", [False, True])
-def test_a_strict_stop_sweeps_its_daemon_inside_the_namespace(
+def test_a_full_stop_sweeps_its_daemon_inside_the_namespace(
     tmp_path: pathlib.Path, older_first: bool
 ) -> None:
-    """Under `strict` a stop sweeps the `setsid` daemon reparented onto the launcher.
+    """Under `full` a stop sweeps the `setsid` daemon reparented onto the launcher.
 
     The launcher is the namespace's init, so the daemon sits outside every group; the sweep
     uses the window rule the agent applies outside a namespace: what appeared after the
@@ -211,7 +211,7 @@ def test_a_strict_stop_sweeps_its_daemon_inside_the_namespace(
         inner = f'setsid sh -c "echo \\$\\$ > {marker}; sleep 60" &'
         return ("/bin/sh", "-c", f"sh -c '{inner}'; sleep 60")
 
-    session = _session(tmp_path, "strict")
+    session = _session(tmp_path, "full")
     m1, m2 = tmp_path / "d1.pid", tmp_path / "d2.pid"
     try:
         b1 = session.child_snapshot()
@@ -239,13 +239,13 @@ def test_a_strict_stop_sweeps_its_daemon_inside_the_namespace(
 
 
 @pytest.mark.needs_namespaces
-def test_a_strict_stop_leaves_an_older_commands_late_child_alone(tmp_path: pathlib.Path) -> None:
+def test_a_full_stop_leaves_an_older_commands_late_child_alone(tmp_path: pathlib.Path) -> None:
     """The sweep takes only what reparented onto the launcher, signalling a group via its leader.
 
     An older command's own late child stays under it; a group kill on that child's pgid
     would take the older command down with it.
     """
-    session = _session(tmp_path, "strict")
+    session = _session(tmp_path, "full")
     late = tmp_path / "late.pid"
     try:
         b1 = session.child_snapshot()
@@ -276,13 +276,13 @@ def test_a_strict_stop_leaves_an_older_commands_late_child_alone(tmp_path: pathl
 
 
 @pytest.mark.needs_namespaces
-def test_a_strict_stop_sweeps_past_a_sibling_that_exited(tmp_path: pathlib.Path) -> None:
+def test_a_full_stop_sweeps_past_a_sibling_that_exited(tmp_path: pathlib.Path) -> None:
     """Only a running command ends a sweep window; an exited one, reaped or a zombie, is no edge.
 
     An exited background command in the window list would bound an older command's sweep and
     spare a daemon the older one started after it.
     """
-    session = _session(tmp_path, "strict")
+    session = _session(tmp_path, "full")
     marker = tmp_path / "d.pid"
     inner = f'setsid sh -c "echo \\$\\$ > {marker}; sleep 60" &'
     try:
@@ -309,13 +309,13 @@ def test_a_strict_stop_sweeps_past_a_sibling_that_exited(tmp_path: pathlib.Path)
 
 
 @pytest.mark.needs_namespaces
-def test_a_strict_stop_sweeps_a_daemons_own_setsid_child(tmp_path: pathlib.Path) -> None:
+def test_a_full_stop_sweeps_a_daemons_own_setsid_child(tmp_path: pathlib.Path) -> None:
     """Sweep passes repeat until one finds nothing.
 
     A daemon's own `setsid` child is still under the daemon at the first pass and reparents
     only once the daemon is dead.
     """
-    session = _session(tmp_path, "strict")
+    session = _session(tmp_path, "full")
     d, g = tmp_path / "d.pid", tmp_path / "g.pid"
     script = tmp_path / "daemon.sh"
     script.write_text(f"setsid sh -c 'echo $$ > {g}; sleep 60' &\necho $$ > {d}\nsleep 60\n")
@@ -428,7 +428,7 @@ def test_the_unconfined_level_says_so_on_startup(tmp_path: pathlib.Path) -> None
 
 def test_a_confined_level_stays_silent_on_startup(tmp_path: pathlib.Path) -> None:
     """The unconfined warning must not fire for a level that does confine."""
-    session = _session(tmp_path, "hardened")
+    session = _session(tmp_path, "partial")
     try:
         assert "UNCONFINED" not in session.startup_stderr
     finally:

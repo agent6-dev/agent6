@@ -23,20 +23,20 @@ _PROBE = (
 
 
 def _probe(root: pathlib.Path, network: kinds.NetworkMode) -> str:
-    built = policy.jail_policy(root, Config(), "strict", ("sh", "-c", _PROBE), network=network)
+    built = policy.jail_policy(root, Config(), "full", ("sh", "-c", _PROBE), network=network)
     res = jail.run_in_jail(built)
     return res.stdout + res.stderr
 
 
-def test_strict_on_the_host_network_reads_the_resolver_files(tmp_path: pathlib.Path) -> None:
-    """Under strict the host network came with an empty /etc, so every lookup by name failed."""
+def test_full_on_the_host_network_reads_the_resolver_files(tmp_path: pathlib.Path) -> None:
+    """Under full the host network came with an empty /etc, so every lookup by name failed."""
     out = _probe(tmp_path, "host")
     for name in ("/etc/hosts", "/etc/resolv.conf", "/etc/nsswitch.conf"):
         if pathlib.Path(name).exists():
             assert f"READ {name}" in out, out
 
 
-def test_strict_off_the_host_network_keeps_etc_empty(tmp_path: pathlib.Path) -> None:
+def test_full_off_the_host_network_keeps_etc_empty(tmp_path: pathlib.Path) -> None:
     """The resolver files reach the jail with the host network only."""
     out = _probe(tmp_path, "none")
     assert "READ" not in out, out

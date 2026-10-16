@@ -58,7 +58,7 @@ def join_session_network(session_dir: pathlib.Path) -> None:
     if pid is None:
         raise SessionNetworkUnavailableError(
             "this session has no network of its own to join. A run only makes one"
-            " under the strict isolation with sandbox.network = auto|session;"
+            " under the full isolation with sandbox.network = auto|session;"
             " with network = host its commands are already on this machine's."
         )
     setns = getattr(os, "setns", None)
@@ -104,14 +104,14 @@ def no_session_network_reason(layout: sessions_layout.SessionLayout) -> str:
     """Return why `forward` finds no session network to reach into.
 
     The run is not live (its network lives only while it does), or a live run made none
-    (host network, or an isolation short of strict).
+    (host network, or an isolation short of full).
     """
     if not session_is_live(layout.session_dir):
         word = summarize_session_dir(layout.session_dir).status
         return f"{layout.session_id} is {word}; a session network exists only while its run does."
     return (
         f"{layout.session_id} has no network of its own to reach into. A run only makes one"
-        " under strict isolation, for commands with sandbox.network other than host or for"
+        " under full isolation, for commands with sandbox.network other than host or for"
         " an MCP server scoped to the session; otherwise its commands are already on this"
         " machine's."
     )
@@ -218,7 +218,7 @@ def _stamped_policy(
         stamp = manifest.read_manifest(layout.session_dir).policy
     except manifest.ManifestError:
         return None
-    if stamp.isolation not in ("strict", "hardened", "none"):
+    if stamp.isolation not in ("full", "partial", "none"):
         return None
     # "auto" and "" (unstamped) read as None: jail_policy applies its own auto semantics.
     network: kinds.NetworkMode | None = (
@@ -294,7 +294,7 @@ def exec_in_session(
         _common.error(f"{exc}")
         return 2
     if policy.network == "session" and pid is None:
-        # Recorded as session but holding none (an isolation short of strict): refuse.
+        # Recorded as session but holding none (an isolation short of full): refuse.
         _common.refuse(f"{no_session_network_reason(layout)}")
         return 2
     if policy.network == "session":

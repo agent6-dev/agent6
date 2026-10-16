@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The jail's HOME is a directory of agent6's own.
 
-`/tmp/agent6-home` inside strict's private tmpfs, or the persistent cache dir where there is no
+`/tmp/agent6-home` inside full's private tmpfs, or the persistent cache dir where there is no
 private /tmp or where `[sandbox].home = "cache"` asks for it. The policy builder creates the
 persistent one; the preflight refuses one that cannot be agent6's own.
 """
@@ -40,8 +40,8 @@ def _warned(isolation: str, cfg: Config, root: pathlib.Path) -> list[str]:
     return lines
 
 
-def test_strict_defaults_to_the_private_tmpfs_home(tmp_path: pathlib.Path) -> None:
-    policy = policy_module.jail_policy(tmp_path, Config(), "strict", ("true",))
+def test_full_defaults_to_the_private_tmpfs_home(tmp_path: pathlib.Path) -> None:
+    policy = policy_module.jail_policy(tmp_path, Config(), "full", ("true",))
     assert dict(policy.env)["HOME"] == str(policy_module.JAIL_TMP_HOME) == "/tmp/agent6-home"
     assert paths.jail_cache_home(tmp_path) not in policy.extra_rw_paths
     assert not paths.jail_cache_home(tmp_path).exists()
@@ -50,9 +50,9 @@ def test_strict_defaults_to_the_private_tmpfs_home(tmp_path: pathlib.Path) -> No
 @pytest.mark.parametrize(
     ("isolation", "cfg"),
     [
-        ("hardened", Config()),
+        ("partial", Config()),
         ("none", Config()),
-        ("strict", Config(sandbox=SandboxConfig(home="cache"))),
+        ("full", Config(sandbox=SandboxConfig(home="cache"))),
     ],
 )
 def test_the_builder_creates_and_grants_the_persistent_home(
@@ -74,8 +74,8 @@ def test_the_builder_creates_and_grants_the_persistent_home(
 
 def test_the_preflight_check_inspects_without_creating(tmp_path: pathlib.Path) -> None:
     """The refusal check itself writes nothing; creation is the builder's."""
-    assert confine.check_jail_home(Config(), "hardened", tmp_path, explicitly_set=False) is None
-    assert confine.config_refusal(Config(), "strict", tmp_path) is None
+    assert confine.check_jail_home(Config(), "partial", tmp_path, explicitly_set=False) is None
+    assert confine.config_refusal(Config(), "full", tmp_path) is None
     assert not paths.jail_cache_home(tmp_path).exists()
 
 
@@ -87,11 +87,11 @@ def test_a_symlink_at_the_cache_home_refuses(tmp_path: pathlib.Path) -> None:
     home = paths.jail_cache_home(tmp_path)
     home.parent.mkdir(parents=True, exist_ok=True)
     home.symlink_to(tmp_path)
-    msg = confine.config_refusal(Config(), "hardened", tmp_path)
+    msg = confine.config_refusal(Config(), "partial", tmp_path)
     assert msg is not None
     assert str(home) in msg and "symlink" in msg
     with pytest.raises(jail.JailUnavailableError, match="symlink"):
-        policy_module.jail_policy(tmp_path, Config(), "hardened", ("true",))
+        policy_module.jail_policy(tmp_path, Config(), "partial", ("true",))
 
 
 def test_a_dir_owned_by_someone_else_refuses(
@@ -105,11 +105,11 @@ def test_a_dir_owned_by_someone_else_refuses(
     home.mkdir(parents=True)
     me = paths.effective_user()
     monkeypatch.setattr(paths, "effective_user", lambda: dataclasses.replace(me, uid=me.uid + 1))
-    msg = confine.config_refusal(Config(), "hardened", tmp_path)
+    msg = confine.config_refusal(Config(), "partial", tmp_path)
     assert msg is not None
     assert str(home) in msg and f"uid {me.uid}" in msg
     with pytest.raises(jail.JailUnavailableError, match="owned by"):
-        policy_module.jail_policy(tmp_path, Config(), "hardened", ("true",))
+        policy_module.jail_policy(tmp_path, Config(), "partial", ("true",))
 
 
 def test_a_cache_home_open_to_others_refuses(tmp_path: pathlib.Path) -> None:
@@ -120,17 +120,17 @@ def test_a_cache_home_open_to_others_refuses(tmp_path: pathlib.Path) -> None:
     home = paths.jail_cache_home(tmp_path)
     home.mkdir(parents=True, mode=0o700)
     home.chmod(0o777)
-    msg = confine.config_refusal(Config(), "hardened", tmp_path)
+    msg = confine.config_refusal(Config(), "partial", tmp_path)
     assert msg is not None
     assert str(home) in msg and "0777" in msg and f"chmod 700 {home}" in msg
     with pytest.raises(jail.JailUnavailableError, match="chmod 700"):
-        policy_module.jail_policy(tmp_path, Config(), "hardened", ("true",))
+        policy_module.jail_policy(tmp_path, Config(), "partial", ("true",))
     assert stat.S_IMODE(home.lstat().st_mode) == 0o777  # the operator sees it, nothing rewrites it
     home.chmod(0o700)
-    assert confine.config_refusal(Config(), "hardened", tmp_path) is None
+    assert confine.config_refusal(Config(), "partial", tmp_path) is None
     assert (
         paths.jail_cache_home(tmp_path)
-        in policy_module.jail_policy(tmp_path, Config(), "hardened", ("true",)).extra_rw_paths
+        in policy_module.jail_policy(tmp_path, Config(), "partial", ("true",)).extra_rw_paths
     )
 
 
@@ -140,11 +140,11 @@ def test_a_cache_home_inside_a_private_dir_refuses(
     """`XDG_CACHE_HOME` under the state base is refused: a writable grant inside the hidden tree."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "state" / "agent6" / "cache"))
-    msg = confine.config_refusal(Config(), "hardened", tmp_path / "ws")
+    msg = confine.config_refusal(Config(), "partial", tmp_path / "ws")
     assert msg is not None
     assert "private dir" in msg and str(tmp_path / "state") in msg
     with pytest.raises(jail.JailUnavailableError, match="private dir"):
-        policy_module.jail_policy(tmp_path / "ws", Config(), "hardened", ("true",))
+        policy_module.jail_policy(tmp_path / "ws", Config(), "partial", ("true",))
 
 
 def test_a_symlinked_ancestor_into_a_private_dir_refuses(
@@ -159,51 +159,51 @@ def test_a_symlinked_ancestor_into_a_private_dir_refuses(
     monkeypatch.setenv("XDG_STATE_HOME", str(state))
     (tmp_path / "link").symlink_to(state)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "link" / "agent6" / "cache"))
-    msg = confine.config_refusal(Config(), "hardened", tmp_path / "ws")
+    msg = confine.config_refusal(Config(), "partial", tmp_path / "ws")
     assert msg is not None
     assert "private dir" in msg and str(state) in msg
     with pytest.raises(jail.JailUnavailableError, match="private dir"):
-        policy_module.jail_policy(tmp_path / "ws", Config(), "hardened", ("true",))
+        policy_module.jail_policy(tmp_path / "ws", Config(), "partial", ("true",))
     assert not (state / "agent6" / "cache").exists()
     real = tmp_path / "real"
     real.mkdir()
     (tmp_path / "elsewhere").symlink_to(real)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "elsewhere" / "cache"))
-    assert confine.config_refusal(Config(), "hardened", tmp_path / "ws") is None
-    policy = policy_module.jail_policy(tmp_path / "ws", Config(), "hardened", ("true",))
+    assert confine.config_refusal(Config(), "partial", tmp_path / "ws") is None
+    policy = policy_module.jail_policy(tmp_path / "ws", Config(), "partial", ("true",))
     homes = tmp_path / "elsewhere" / "cache" / "agent6" / "homes"
     assert homes / paths.repo_id(tmp_path / "ws") in policy.extra_rw_paths
     assert (real / "cache" / "agent6" / "homes" / paths.repo_id(tmp_path / "ws")).is_dir()
 
 
-@pytest.mark.parametrize("isolation", ["hardened", "none"])
+@pytest.mark.parametrize("isolation", ["partial", "none"])
 def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
     tmp_path: pathlib.Path, isolation: str
 ) -> None:
-    """`home = "tmp"` needs strict's private tmpfs: written down it refuses, as default degrades."""
+    """`home = "tmp"` needs full's private tmpfs: written down it refuses, as default degrades."""
     msg = confine.check_jail_home(Config(), isolation, tmp_path, explicitly_set=True)  # pyright: ignore[reportArgumentType]
     assert msg is not None
-    assert "requires the strict isolation" in msg
+    assert "requires the full isolation" in msg
     assert f"resolved to '{isolation}'" in msg
     assert "sandbox.home = 'cache'" in msg
     explicit = frozenset({"sandbox.home"})
     assert confine.config_refusal(Config(), isolation, tmp_path, explicit_leaves=explicit) == msg  # pyright: ignore[reportArgumentType]
     assert confine.config_refusal(Config(), isolation, tmp_path) is None  # pyright: ignore[reportArgumentType]
-    assert confine.config_refusal(Config(), "strict", tmp_path, explicit_leaves=explicit) is None
+    assert confine.config_refusal(Config(), "full", tmp_path, explicit_leaves=explicit) is None
 
 
 def test_the_default_degrades_with_a_warning_naming_the_home(tmp_path: pathlib.Path) -> None:
-    """Hardened's start-of-run warning names the persistent HOME whatever `protect_git` says."""
-    assert confine.check_jail_home(Config(), "hardened", tmp_path, explicitly_set=False) is None
+    """Partial's start-of-run warning names the persistent HOME whatever `protect_git` says."""
+    assert confine.check_jail_home(Config(), "partial", tmp_path, explicitly_set=False) is None
     for cfg in (Config(), Config(sandbox=SandboxConfig(protect_git=False))):
         home = str(paths.jail_cache_home(tmp_path))
-        lines = [line for line in _warned("hardened", cfg, tmp_path) if home in line]
+        lines = [line for line in _warned("partial", cfg, tmp_path) if home in line]
         assert len(lines) == 1, lines
         assert "persists across runs" in lines[0] and "executable" in lines[0]
 
 
-def test_strict_cache_is_an_explicit_widening_that_warns(tmp_path: pathlib.Path) -> None:
-    lines = _warned("strict", Config(sandbox=SandboxConfig(home="cache")), tmp_path)
+def test_full_cache_is_an_explicit_widening_that_warns(tmp_path: pathlib.Path) -> None:
+    lines = _warned("full", Config(sandbox=SandboxConfig(home="cache")), tmp_path)
     assert any(
         "sandbox.home = 'cache'" in line
         and str(paths.jail_cache_home(tmp_path)) in line
@@ -211,8 +211,7 @@ def test_strict_cache_is_an_explicit_widening_that_warns(tmp_path: pathlib.Path)
         for line in lines
     ), lines
     assert not any(
-        str(paths.jail_cache_home(tmp_path)) in line
-        for line in _warned("strict", Config(), tmp_path)
+        str(paths.jail_cache_home(tmp_path)) in line for line in _warned("full", Config(), tmp_path)
     )
 
 
@@ -221,7 +220,7 @@ def _persistent_home(
 ) -> pathlib.Path:
     cfg = Config(sandbox=SandboxConfig(home="cache"))
     policy = policy_module.jail_policy(
-        root, cfg, "strict", ("true",), worktree_git_dir=worktree_git_dir
+        root, cfg, "full", ("true",), worktree_git_dir=worktree_git_dir
     )
     return pathlib.Path(dict(policy.env)["HOME"])
 
@@ -279,7 +278,7 @@ def test_a_lanes_clone_and_a_machine_clone_share_the_repositorys_home(
     cfg = Config.model_validate({"sandbox": {"home": "cache"}, "parallel": {"workdir": str(base)}})
 
     def home(root: pathlib.Path) -> pathlib.Path | None:
-        return policy_module.persistent_jail_home(cfg, "strict", root)
+        return policy_module.persistent_jail_home(cfg, "full", root)
 
     assert home(lane) == home(state_clone) == home(repo) == paths.jail_cache_home(repo)
     assert home(stranger) == paths.jail_cache_home(stranger)

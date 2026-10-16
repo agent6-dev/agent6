@@ -35,7 +35,7 @@ def shells(tmp_path: pathlib.Path) -> background.BackgroundShells:
     return background.BackgroundShells(tmp_path / "shells")
 
 
-def _policy_for(cwd: pathlib.Path, isolation: kinds.IsolationLevel = "hardened"):
+def _policy_for(cwd: pathlib.Path, isolation: kinds.IsolationLevel = "partial"):
     def build(argv: tuple[str, ...], rw: tuple[pathlib.Path, ...]) -> kinds.JailPolicy:
         return kinds.JailPolicy(
             cwd=cwd, argv=argv, isolation=isolation, extra_rw_paths=rw, timeout_s=60.0
@@ -181,13 +181,13 @@ def test_output_survives_the_command(
     assert "first" in output and "second" in output
 
 
-@pytest.mark.skipif(shutil.which("unshare") is None, reason="needs userns for strict")
-def test_strict_confines_a_background_command_too(
+@pytest.mark.skipif(shutil.which("unshare") is None, reason="needs userns for full")
+def test_full_confines_a_background_command_too(
     shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
     """A detached command runs in the same jail as a foreground one."""
     view = shells.start(
-        ("/bin/sh", "-c", "echo escaped > /etc/agent6-bg-escape"), _policy_for(tmp_path, "strict")
+        ("/bin/sh", "-c", "echo escaped > /etc/agent6-bg-escape"), _policy_for(tmp_path, "full")
     )
     assert _wait_state(shells, view.id, "exited") == "exited"
     assert not pathlib.Path("/etc/agent6-bg-escape").exists()
@@ -209,9 +209,7 @@ def test_a_foreground_commands_sweep_spares_a_background_one(
         time.sleep(0.05)
     for _ in range(3):
         res = jail.run_in_jail(
-            kinds.JailPolicy(
-                cwd=tmp_path, argv=("/bin/true",), isolation="hardened", timeout_s=10.0
-            )
+            kinds.JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="partial", timeout_s=10.0)
         )
         assert res.returncode == 0
     assert next(v for v in shells.roster() if v.id == view.id).state == "running"
@@ -236,7 +234,7 @@ def test_a_command_started_mid_sweep_window_is_spared(
     thread.start()
     res = jail.run_in_jail(
         kinds.JailPolicy(
-            cwd=tmp_path, argv=("/bin/sh", "-c", "sleep 2"), isolation="hardened", timeout_s=20.0
+            cwd=tmp_path, argv=("/bin/sh", "-c", "sleep 2"), isolation="partial", timeout_s=20.0
         )
     )
     thread.join()
@@ -281,11 +279,11 @@ def test_an_empty_or_missing_dir_is_not_an_error(tmp_path: pathlib.Path) -> None
     assert background.roster_from_dir(tmp_path / "empty") == []
 
 
-@pytest.mark.parametrize("isolation", ["strict", "hardened"])
+@pytest.mark.parametrize("isolation", ["full", "partial"])
 def test_a_detached_child_of_a_background_command_dies_with_the_run(
     shells: background.BackgroundShells, tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    """`stop` sweeps the `setsid` child a background command left, on hardened too.
+    """`stop` sweeps the `setsid` child a background command left, on partial too.
 
     `stop` kills the launcher's group, which by definition misses a child that left it, and
     `run_in_jail`'s sweep can never catch it either: by then it is not new.
@@ -323,7 +321,7 @@ def test_a_command_cannot_forge_its_own_exit_code_or_name(
     import shlex
 
     argv = ("/bin/sh", "-c", forge)
-    view = shells.start(argv, _policy_for(tmp_path, "strict"))
+    view = shells.start(argv, _policy_for(tmp_path, "full"))
     assert _wait_state(shells, view.id, "exited") == "exited"
     after = next(v for v in shells.roster() if v.id == view.id)
     assert after.returncode == 42  # not the 0 it wrote
@@ -384,7 +382,7 @@ def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: pathlib.P
     """A command that symlinks its log at the operator's secrets gets nothing back.
 
     The jail holds RW (MakeSym included) on the log dir and `read` runs outside the jail as
-    the operator, so the log is never opened by name. Proved under strict and hardened.
+    the operator, so the log is never opened by name. Proved under full and partial.
     """
     import os
 

@@ -1148,7 +1148,7 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
     monkeypatch.setattr(machine_agent.os, "killpg", _killpg)
 
     runner = machine_agent.build_machine_agent_runner(
-        {"": machine_agent.StateOverlay({}, "strict")}, tmp_path, tmp_path / "tr"
+        {"": machine_agent.StateOverlay({}, "full")}, tmp_path, tmp_path / "tr"
     )
     res = runner(AgentRequest(prompt="p", timeout_s=1.0, mode="agent"), events_log)
     assert res.reason == "timeout"
@@ -1235,13 +1235,13 @@ def test_create_runs_the_shared_isolation_preflight(
             sandbox_available=True,
         )
 
-    def _strict(_req: object, _env: object) -> str:
-        return "strict"
+    def _full(_req: object, _env: object) -> str:
+        return "full"
 
     monkeypatch.setattr(layer, "load_effective", _load)
     monkeypatch.setattr(_setup, "check_provider_keys", _keys_ok)
     monkeypatch.setattr(_setup, "detect_env", _env)
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     assert main(["machine", "create", "a nightly loop"]) == 2
     err = capsys.readouterr().err
     assert "REFUSING" in err and "private directory" in err

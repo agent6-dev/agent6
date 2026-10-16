@@ -50,8 +50,8 @@ def test_an_http_only_mcp_check_does_not_create_a_command_network(
         def close(self) -> None:
             return None
 
-    def _strict(_requested: str, _env: object) -> str:
-        return "strict"
+    def _full(_requested: str, _env: object) -> str:
+        return "full"
 
     def _start(
         _specs: list[mcp_client.MCPServerSpec], *, session_net: jail.SessionNetwork | None = None
@@ -63,7 +63,7 @@ def test_an_http_only_mcp_check_does_not_create_a_command_network(
         raise AssertionError("HTTP-only check created a command session network")
 
     monkeypatch.setattr(_setup, "detect_env", object)
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(mcp_client.MCPManager, "start", staticmethod(_start))
     monkeypatch.setattr(jail.SessionNetwork, "open", staticmethod(_unexpected_network))
     cfg = Config.model_validate(
@@ -80,14 +80,14 @@ def test_mcp_check_reports_a_session_network_refusal(
 ) -> None:
     """A network holder failure is a failed preflight row, not a traceback."""
 
-    def _strict(_requested: str, _env: object) -> str:
-        return "strict"
+    def _full(_requested: str, _env: object) -> str:
+        return "full"
 
     def _refuse_network() -> jail.SessionNetwork:
         raise jail.JailUnavailableError("the session network could not be created: denied")
 
     monkeypatch.setattr(_setup, "detect_env", object)
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(jail.SessionNetwork, "open", staticmethod(_refuse_network))
     cfg = Config.model_validate(
         {

@@ -841,12 +841,12 @@ def test_plan_resume_builds_the_planner_provider(
     def _none(*_a: object, **_k: object) -> None:
         return None
 
-    def _strict(*_a: object, **_k: object) -> str:
-        return "strict"
+    def _full(*_a: object, **_k: object) -> str:
+        return "full"
 
     monkeypatch.setattr(cli_run, "session_frontend", _frontend)
     monkeypatch.setattr(_setup, "detect_env", object)
-    monkeypatch.setattr(detect, "resolve_isolation", _strict)
+    monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(confine, "check_network_support", _none)
     monkeypatch.setattr(_setup, "check_provider_keys", _none)

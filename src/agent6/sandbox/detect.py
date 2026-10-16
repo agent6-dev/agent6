@@ -44,7 +44,7 @@ class Environment:
             compiled out or disabled via `lsm=`.
         seccomp_arch_supported: The jail's seccomp filter exists for this CPU; mirrors
             the arch set in `jail/src/main.rs` `apply_seccomp`, which fails closed, and
-            both strict and hardened promise that filter.
+            both full and partial promise that filter.
         sandbox_available: The host is Linux.
     """
 
@@ -60,17 +60,17 @@ class Environment:
     def detected_isolation(self) -> kinds.IsolationLevel:
         """The strongest jail isolation this environment can run.
 
-        `strict` needs user namespaces; without them `hardened` keeps Landlock,
+        `full` needs user namespaces; without them `partial` keeps Landlock,
         seccomp and NO_NEW_PRIVS, and since Landlock is its only filesystem boundary
         it needs the Landlock probe to succeed. A host with neither, or no Linux
         kernel, resolves to `none`: unsandboxed and loudly warned by the caller,
-        never a hardened label that confines nothing.
+        never a partial label that confines nothing.
         """
         if not self.sandbox_available or not self.seccomp_arch_supported:
             return "none"
         if self.userns_supported:
-            return "strict"
-        return "hardened" if self.landlock_abi >= 1 else "none"
+            return "full"
+        return "partial" if self.landlock_abi >= 1 else "none"
 
 
 _KERNEL_VERSION_RE = re.compile(r"^(\d+)\.(\d+)")
@@ -129,7 +129,7 @@ def sandbox_disabled_by_env() -> bool:
 def probe_userns_supported() -> bool:
     """Return whether this process can create an unprivileged user namespace.
 
-    `unshare -U -r true` is the side-effect-free probe; `strict` needs it to succeed.
+    `unshare -U -r true` is the side-effect-free probe; `full` needs it to succeed.
     Cached for the process lifetime.
     """
     unshare = "/usr/bin/unshare"
@@ -152,7 +152,7 @@ def probe_landlock_abi() -> int:
     """Return the kernel's Landlock ABI version, 0 when unavailable.
 
     Fails closed: a probe error reads as no Landlock, so resolution refuses
-    `hardened` and takes `auto` to the warned `none`. Cached for the process lifetime.
+    `partial` and takes `auto` to the warned `none`. Cached for the process lifetime.
     """
     if not sandbox_available():
         return 0
@@ -166,7 +166,7 @@ def apparmor_userns_restricted() -> bool:
     """Return whether AppArmor restricts unprivileged user namespaces.
 
     Ubuntu 23.10+ ships `kernel.apparmor_restrict_unprivileged_userns=1`, so
-    `strict` can be unavailable with `unprivileged_userns_clone = 1`; the fix is
+    `full` can be unavailable with `unprivileged_userns_clone = 1`; the fix is
     `agent6 system apparmor install` or the sysctl at 0. The proc file is absent
     on non-AppArmor kernels.
     """
@@ -205,7 +205,7 @@ def _userns_block_cause(env: Environment) -> str:
     if _read_max_userns() == "0":
         return (
             "unprivileged user namespaces are disabled (user.max_user_namespaces = 0); "
-            "raise it for strict"
+            "raise it for full"
         )
     if env.in_container:
         return (
@@ -216,9 +216,9 @@ def _userns_block_cause(env: Environment) -> str:
 
 
 def degrade_reason(env: Environment) -> str | None:
-    """Return why `auto` resolves below `strict` here, or None at full strength.
+    """Return why `auto` resolves below `full` here, or None at full strength.
 
-    Every surface reporting an auto-selected level below strict prints this, so a
+    Every surface reporting an auto-selected level below full prints this, so a
     degraded level never appears without its cause.
     """
     if not env.sandbox_available:
@@ -267,7 +267,7 @@ def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
     host cannot honor is refused, never downgraded.
 
     Args:
-        requested: "auto", "strict", "hardened" or "none".
+        requested: "auto", "full", "partial" or "none".
         env: The detected environment.
 
     Returns:
@@ -295,37 +295,37 @@ def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
     if requested == "none":
         # Self-authorizing: the config key, the flag and the env var are all operator-only.
         return "none"
-    if requested in ("strict", "hardened") and not env.seccomp_arch_supported:
+    if requested in ("full", "partial") and not env.seccomp_arch_supported:
         raise IsolationUnavailableError(
             f"sandbox.isolation = {requested!r} requires the jail's seccomp filter, "
             f"which does not exist for {platform.machine()!r} (filters exist for "
             "x86_64 and aarch64). Set isolation = 'auto' to run unsandboxed on "
             "this machine, or 'none' to opt out explicitly."
         )
-    if requested == "strict":
+    if requested == "full":
         if not env.userns_supported:
             raise IsolationUnavailableError(
-                "sandbox.isolation = 'strict' requires unprivileged user namespaces "
+                "sandbox.isolation = 'full' requires unprivileged user namespaces "
                 "(`unshare -U -r true`) to succeed, but this host blocks them. "
-                "Set isolation = 'hardened' (or 'auto') to run without namespaces "
+                "Set isolation = 'partial' (or 'auto') to run without namespaces "
                 "while keeping Landlock + seccomp + NO_NEW_PRIVS."
             )
-        return "strict"
-    if requested == "hardened":
+        return "full"
+    if requested == "partial":
         if env.landlock_abi < 1:
             raise IsolationUnavailableError(
-                "sandbox.isolation = 'hardened' requires Landlock (Linux >= 5.13 "
+                "sandbox.isolation = 'partial' requires Landlock (Linux >= 5.13 "
                 "with the Landlock LSM enabled), which this kernel does not provide. "
-                "Hardened without it applies no filesystem confinement at all. Set "
+                "Partial without it applies no filesystem confinement at all. Set "
                 "isolation = 'auto', or 'none' to run unsandboxed."
             )
         if env.landlock_abi < 3:
             raise IsolationUnavailableError(
-                "sandbox.isolation = 'hardened' requires Landlock ABI 3 (Linux 6.2) "
+                "sandbox.isolation = 'partial' requires Landlock ABI 3 (Linux 6.2) "
                 "to confine file truncation, but this kernel's Landlock is ABI "
                 f"{env.landlock_abi}: a jailed command could truncate "
                 "(truncate/ftruncate) files outside its write grants. Set isolation "
                 "= 'auto' to run with a warning, or upgrade the kernel."
             )
-        return "hardened"
+        return "partial"
     raise IsolationUnavailableError(f"unknown sandbox.isolation: {requested!r}")

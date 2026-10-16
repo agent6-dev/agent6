@@ -11,7 +11,7 @@ needs no privilege and must still run.
 The scaffold builds that profile with user-namespace tooling: an outer userns
 (self mapped to 0, a subuid range for other uids), then `setpriv` to become a
 NON-root uid carrying one ambient capability and no CAP_SETPCAP. The launcher
-runs `hardened` (no inner user namespace, so nothing re-grants what the drop
+runs `partial` (no inner user namespace, so nothing re-grants what the drop
 must remove) and the jailed command reports its own sets via capget(2) --
 /proc may be out of Landlock's grant, the syscall always answers.
 """
@@ -90,7 +90,7 @@ def test_a_launcher_without_cap_setpcap_still_strips_the_child(tmp_path: pathlib
         policy = json.dumps(
             jail.policy_spec(
                 tools_policy.jail_policy(
-                    cwd, Config(), "hardened", ("python3", "-c", _CAPGET), network="none"
+                    cwd, Config(), "partial", ("python3", "-c", _CAPGET), network="none"
                 )
             )
         )

@@ -214,9 +214,9 @@ def _granted(
     from agent6.config import Config
     from agent6.tools import policy
 
-    # Pinned strict: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    # Pinned full: pytest's tmp_path sits in /tmp, where a link counts under auto.
     grants = {
-        "isolation": "strict",
+        "isolation": "full",
         "extra_read_paths": [str(read)],
         "extra_write_paths": [str(write)],
     }
@@ -283,6 +283,6 @@ def test_a_repointed_grant_never_reaches_the_jail_launcher(
         "extra_write_paths": [str(shared), str(repo / "out")],
     }
     config = Config.model_validate({"sandbox": grants})
-    jail = policy.jail_policy(repo, config, "hardened", ("true",))
+    jail = policy.jail_policy(repo, config, "partial", ("true",))
     assert shared / "inbox" not in jail.extra_ro_paths
     assert shared in jail.extra_rw_paths and repo / "out" not in jail.extra_rw_paths

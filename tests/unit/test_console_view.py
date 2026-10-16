@@ -359,9 +359,9 @@ def test_streamed_model_text_cannot_reach_the_terminal_with_controls() -> None:
 def test_the_policy_line_is_read_when_the_task_prints() -> None:
     """The policy line is read when the task prints, after the gate is inferred and pinned."""
     buf = io.StringIO()
-    facts = ["kimi · strict · commands ask · no verify gate"]
+    facts = ["kimi · full · commands ask · no verify gate"]
     view = _console_view.ConsoleView(buf, color=False, policy=lambda: facts[0])
-    facts[0] = "kimi · strict · commands ask · ./verify.sh (inferred)"
+    facts[0] = "kimi · full · commands ask · ./verify.sh (inferred)"
     view.feed({"type": "session.start", "user_task": "add mul"})
     view.close()
     assert "./verify.sh (inferred)" in buf.getvalue()

@@ -81,7 +81,7 @@ class JailSession:
     reads one request per line, so the run's commands share a netns, a PID
     namespace and a /tmp: a server one command starts is reachable by the next.
     Every isolation level serves, `none` included, so the capture and background
-    lifecycle are one implementation. Only `strict` has the PID namespace, so
+    lifecycle are one implementation. Only `full` has the PID namespace, so
     elsewhere the launcher sweeps what it backgrounded at EOF and this side sweeps
     each command's escapees. Not thread-safe: one loop drives it, one command at a
     time.
@@ -165,7 +165,7 @@ class JailSession:
             _abandon_launcher(proc, interrupt_w)
             raise jail.JailUnavailableError(f"jail session died during setup: {err or 'no output'}")
         startup_stderr = jail.lossy_text(jail.read_available(proc.stderr, budget_s=0.1)).strip()
-        pid_namespaced = policy.isolation == "strict"
+        pid_namespaced = policy.isolation == "full"
         return cls(
             _proc=proc,
             _binary=binary,

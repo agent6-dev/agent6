@@ -59,7 +59,7 @@ struct Policy {
     #[serde(default = "default_network")]
     network: String,
     /// Operator-granted extra paths, bind-mounted at their own paths in
-    /// strict (like tool_paths and hardened), so a granted
+    /// full (like tool_paths and partial), so a granted
     /// toolchain works via its own absolute paths and shebangs. ro is
     /// read+execute, rw is read+write. A ro grant under a system mount is
     /// redundant (already visible read+exec) and skipped; an rw grant under
@@ -98,8 +98,8 @@ struct Policy {
     #[serde(default)]
     hide_paths: Vec<PathBuf>,
     /// Paths inside `cwd` to make READ-ONLY from the child's view. In
-    /// strict, these are re-bound RO on top of the workspace and every grant. In
-    /// hardened (no mount namespace), the Landlock ruleset switches from
+    /// full, these are re-bound RO on top of the workspace and every grant. In
+    /// partial (no mount namespace), the Landlock ruleset switches from
     /// "RW on cwd" to "R on cwd + RW on each top-level entry except
     /// these" — same end result for files that exist at jail-launch time,
     /// at the cost of denying writes to new top-level entries created
@@ -172,7 +172,7 @@ enum Request {
     Run(ChildRequest),
     /// Start the command and answer at once, leaving it running in this
     /// session's namespaces. STRICT only: the PID namespace is what bounds it,
-    /// and hardened has none, so there a backgrounded process would outlive
+    /// and partial has none, so there a backgrounded process would outlive
     /// the run.
     Background(ChildRequest),
     /// Report whether a backgrounded command is still running, reaping it and
@@ -188,7 +188,7 @@ fn default_mode() -> String {
 }
 
 fn default_isolation() -> String {
-    "strict".to_string()
+    "full".to_string()
 }
 
 fn default_network() -> String {
@@ -332,8 +332,8 @@ fn main() {
         _ => None,
     };
     match policy.isolation.as_str() {
-        "strict" => run_strict(&policy, join, interrupt_fd),
-        "hardened" => run_hardened(&policy, interrupt_fd),
+        "full" => run_full(&policy, join, interrupt_fd),
+        "partial" => run_partial(&policy, interrupt_fd),
         "none" => run_unconfined(&policy, interrupt_fd),
         other => die(format!("unknown sandbox isolation: {other}")),
     }
@@ -370,7 +370,7 @@ fn interrupt_requested(fd: Option<RawFd>) -> bool {
     }
 }
 
-fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>, interrupt_fd: Option<RawFd>) -> ! {
+fn run_full(policy: &Policy, join: Option<(RawFd, RawFd)>, interrupt_fd: Option<RawFd>) -> ! {
     let real_uid = getuid().as_raw();
     if let Err(e) = setup_namespaces(&policy.network, join) {
         die(format!("namespace setup failed: {e}"));
@@ -413,7 +413,7 @@ fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>, interrupt_fd: Optio
             if let Err(e) = setup_rootfs(policy, real_uid) {
                 die(format!("rootfs setup failed: {e}"));
             }
-            if let Err(e) = apply_landlock_strict(policy) {
+            if let Err(e) = apply_landlock_full(policy) {
                 die(format!("landlock failed: {e}"));
             }
             if let Err(e) = apply_seccomp() {
@@ -481,13 +481,13 @@ fn run_unconfined(policy: &Policy, interrupt_fd: Option<RawFd>) -> ! {
     std::process::exit(0);
 }
 
-fn run_hardened(policy: &Policy, interrupt_fd: Option<RawFd>) -> ! {
+fn run_partial(policy: &Policy, interrupt_fd: Option<RawFd>) -> ! {
     // No namespaces, no pivot_root. Landlock confines the FS; seccomp +
     // NO_NEW_PRIVS bound the syscall surface; we still operate on the real cwd
     // and inherit the original /proc, /tmp, network namespace from the parent.
     // This is the isolation level that runs under default-seccomp Docker where
     // CLONE_NEWUSER is blocked.
-    if let Err(e) = apply_landlock_hardened(policy) {
+    if let Err(e) = apply_landlock_partial(policy) {
         die(format!("landlock failed: {e}"));
     }
     if let Err(e) = apply_seccomp() {
@@ -729,7 +729,7 @@ fn make_mounts_private() -> io::Result<()> {
     Ok(())
 }
 
-/// The host dirs strict bind-mounts read-only into the rootfs. Extra-path
+/// The host dirs full bind-mounts read-only into the rootfs. Extra-path
 /// grants check against this: a ro grant under one is already visible, and an
 /// rw grant under one cannot be honored (the covering bind is read-only).
 const SYSTEM_BINDS: [&str; 6] = [
@@ -854,7 +854,7 @@ fn live_submounts(raw: &[u8], dir: &Path) -> Vec<PathBuf> {
 /// that was still on the host afterwards.
 ///
 /// Hand-written on purpose, not a missing mount_setattr(AT_RECURSIVE) call:
-/// mount_setattr is Linux 5.12+, and `strict` admits Landlock-less kernels
+/// mount_setattr is Linux 5.12+, and `full` admits Landlock-less kernels
 /// older than that, where these binds are the ONLY filesystem boundary. The
 /// loop must work exactly on the kernels the syscall is absent from.
 fn floor_submounts(dst: &Path, flags: MsFlags) -> io::Result<()> {
@@ -888,7 +888,7 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     // Per-uid: a shared path in a sticky /tmp is a cross-user denial of
     // service, since whoever creates it first owns it and every other user's
     // jail then fails closed forever. *real_uid* is the caller's, captured
-    // before entering the user namespace (strict maps it to itself).
+    // before entering the user namespace (full maps it to itself).
     //
     // Shared by every launcher this user runs: each mounts its own tmpfs over
     // it in its own mount namespace, so they see different roots through the
@@ -946,7 +946,7 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
             floor_submounts(&dst, RO_FLOOR)?;
         }
     }
-    // /tmp -> tmpfs. strict's default HOME lives here (/tmp/agent6-home, so
+    // /tmp -> tmpfs. full's default HOME lives here (/tmp/agent6-home, so
     // toolchain caches have a writable root), and go's build cache alone needs
     // several hundred MB for stdlib artifacts -- at 64m `go test` died ENOSPC
     // and models burned budgets fighting the sandbox. 1g is a hard ceiling on
@@ -1190,7 +1190,7 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
             // a user namespace the copied source mount's flags are locked, and a
             // remount that tries to CLEAR one is refused EPERM — so a workspace on
             // a noexec filesystem (a common CIS hardening for /home) failed every
-            // jailed command under the default strict + protect_git config. Its
+            // jailed command under the default full + protect_git config. Its
             // two sibling remounts (tool_paths, extra_ro_paths) already carry it;
             // this one was missed.
             MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RO_FLOOR | carried_mount_flags(&target),
@@ -1504,8 +1504,8 @@ fn landlock_sets() -> LandlockSets {
     }
 }
 
-fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
-    // Strict runs inside the pivoted rootfs; the cwd bind (at its real path)
+fn apply_landlock_full(policy: &Policy) -> io::Result<()> {
+    // Full runs inside the pivoted rootfs; the cwd bind (at its real path)
     // and /tmp (a fresh private tmpfs, see setup_rootfs) are writable, and
     // /usr /bin /lib /lib64 /etc /dev are read-only bind mounts.
     // ABI::V3 (not V1/V2): V2 added LANDLOCK_ACCESS_FS_REFER, without which
@@ -1540,7 +1540,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // /tmp is a fresh private tmpfs in this jail's own mount namespace (mounted
     // in setup_rootfs), discarded when the jail exits. Grant it RW so toolchain
     // caches that key off $HOME or TMPDIR work (go-build, cargo, pip/uv); the
-    // tmpfs is isolated, so RW here cannot reach the host. Mirrors the hardened
+    // tmpfs is isolated, so RW here cannot reach the host. Mirrors the partial
     // isolation level, which already grants /tmp RW.
     // /dev/shm is the same deal: this jail's own tmpfs, and POSIX shared memory
     // is ordinary for real toolchains (a headless chromium aborts without it).
@@ -1625,10 +1625,10 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
                 .map_err(|e| io::Error::other(format!("rule rw {}: {e}", rw.display())))?;
         }
     }
-    // Deliberately no NotEnforced check (contrast apply_landlock_hardened):
-    // strict's boundary is namespaces + the pivoted rootfs with MS_RDONLY
+    // Deliberately no NotEnforced check (contrast apply_landlock_partial):
+    // full's boundary is namespaces + the pivoted rootfs with MS_RDONLY
     // binds + seccomp; Landlock is defense-in-depth, and the isolation contract
-    // (docs/security.md) admits strict on Landlock-less kernels. The gap is
+    // (docs/security.md) admits full on Landlock-less kernels. The gap is
     // not silent: `warn_sandbox_gaps` says so once at run entry. Warning here
     // instead would land on every spawn's stderr, inside model-visible tool
     // output.
@@ -1648,7 +1648,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
 /// rules combine permissively, so an ancestor grant always wins -- the sibling
 /// `rw_paths` loop refuses such an ancestor outright for this reason. Here the
 /// carve-out is kept precise instead: descending grants the siblings normally
-/// and leaves only the protected leaf ungranted, which matches `strict`, where
+/// and leaves only the protected leaf ungranted, which matches `full`, where
 /// each protect path is re-bound read-only at its real nested location.
 fn grant_rw_carved(
     mut ruleset: RulesetCreated,
@@ -1666,7 +1666,7 @@ fn grant_rw_carved(
             // below. Propagating the error made one unreadable directory
             // anywhere below cwd abort every jailed command.
             eprintln!(
-                "agent6-jail: hardened: no rw grants under {} (read_dir: {e})",
+                "agent6-jail: partial: no rw grants under {} (read_dir: {e})",
                 dir.display()
             );
             return Ok(ruleset);
@@ -1691,11 +1691,11 @@ fn grant_rw_carved(
         // get a recursive RW rule on that outside inode (PathFd::new follows
         // symlinks; Landlock attaches to the resolved inode), letting the
         // child write outside the workspace and defeating cwd confinement
-        // under hardened. Skip any entry that does not resolve
+        // under partial. Skip any entry that does not resolve
         // inside cwd. Mirrors the strip_prefix(cwd) check in setup_rootfs.
         if !canon.starts_with(canon_cwd) {
             eprintln!(
-                "agent6-jail: hardened: skipping rw grant on {} (resolves outside cwd to {})",
+                "agent6-jail: partial: skipping rw grant on {} (resolves outside cwd to {})",
                 p.display(),
                 canon.display()
             );
@@ -1717,18 +1717,18 @@ fn grant_rw_carved(
     Ok(ruleset)
 }
 
-fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
-    // Hardened runs in the real filesystem. We protect the host by
+fn apply_landlock_partial(policy: &Policy) -> io::Result<()> {
+    // Partial runs in the real filesystem. We protect the host by
     // listing exactly the paths the child may read or write — its own cwd
     // (read+write), the extra_rw_paths, /tmp (write), and the system dirs
     // (read+execute only).
-    // V3 handled set (TRUNCATE included): see apply_landlock_strict for why
-    // handling truncate matters. It matters more here -- hardened has no
+    // V3 handled set (TRUNCATE included): see apply_landlock_full for why
+    // handling truncate matters. It matters more here -- partial has no
     // mount-namespace RO binds to fall back on, so Landlock is the only thing
     // standing between a jailed child and truncating files outside its grants.
     // Device nodes: MakeChar/MakeBlock handled and granted nowhere, so Landlock
-    // denies their creation (see apply_landlock_strict). It matters most HERE:
-    // hardened has no user namespace, so under sudo the child is real root
+    // denies their creation (see apply_landlock_full). It matters most HERE:
+    // partial has no user namespace, so under sudo the child is real root
     // with CAP_MKNOD and no MS_NODEV bind, and this and the seccomp mode rule
     // below are the two locks left.
     let sets = landlock_sets();
@@ -1739,7 +1739,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         .map_err(|e| io::Error::other(format!("create ruleset: {e}")))?;
     let mut ruleset = ruleset;
 
-    // protect_paths: in hardened we cannot do a bind-remount-RO (no mount
+    // protect_paths: in partial we cannot do a bind-remount-RO (no mount
     // namespace). Instead, we DON'T grant RW on cwd as a whole. We grant R
     // on cwd recursively (so .git etc. stay readable), then enumerate
     // cwd's top-level entries and grant RW only to the ones that are not
@@ -1755,7 +1755,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     // rights would, under Landlock's recursive rules, also grant them over the
     // protected subtree -- reopening a delete-then-recreate bypass of the
     // protected file -- so we keep it denied. A machine writing an output
-    // beside its bundle therefore fails on hardened but works on strict (which
+    // beside its bundle therefore fails on partial but works on full (which
     // re-binds each protect path RO instead of carving). Same for new
     // top-level entries at the root of cwd.
     let has_protect = !policy.extra_protect_paths.is_empty();
@@ -1788,8 +1788,8 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     }
 
     // Read+write: /tmp and any explicitly granted rw paths. NOT /dev/shm, which
-    // strict grants: there it is the jail's own tmpfs, here it would be the
-    // HOST's, shared with every other process of this user. A hardened jail
+    // full grants: there it is the jail's own tmpfs, here it would be the
+    // HOST's, shared with every other process of this user. A partial jail
     // cannot run a browser regardless (no /proc grant, and granting that would
     // hand a command the agent's own environ), so the compatibility it would
     // buy is not there to buy.
@@ -1797,10 +1797,10 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     for p in &policy.extra_rw_paths {
         rw_paths.push(policy.grant_source(p).to_path_buf());
     }
-    // Operator-granted device nodes: hardened has no mount namespace, so the
+    // Operator-granted device nodes: partial has no mount namespace, so the
     // grant IS this Landlock rule -- read+write on the host node (open O_RDWR;
     // ioctl on the opened fd is outside Landlock's file scope). The same
-    // char/block check strict's rootfs applies: anything else refuses loudly.
+    // char/block check full's rootfs applies: anything else refuses loudly.
     for dev in &policy.extra_device_paths {
         let meta = fs::symlink_metadata(dev).map_err(|e| {
             io::Error::other(format!(
@@ -1830,7 +1830,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         let canon_p = p.canonicalize().unwrap_or_else(|_| p.clone());
         if has_protect && protect_set.iter().any(|prot| prot.starts_with(&canon_p)) {
             eprintln!(
-                "agent6-jail: hardened: skipping rw grant on {} (would shadow a protect_path)",
+                "agent6-jail: partial: skipping rw grant on {} (would shadow a protect_path)",
                 p.display()
             );
             continue;
@@ -1856,7 +1856,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     for p in &policy.extra_ro_paths {
         ro_paths.push(policy.grant_source(p).to_path_buf());
     }
-    // Operator tool dirs (uv etc.): read+exec at their real host paths (hardened
+    // Operator tool dirs (uv etc.): read+exec at their real host paths (partial
     // runs in the real filesystem, so no bind mount is needed, only the grant).
     for p in &policy.tool_paths {
         ro_paths.push(p.clone());
@@ -1868,7 +1868,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
                 .map_err(|e| io::Error::other(format!("rule ro {}: {e}", p.display())))?;
         }
     }
-    // The device nodes a command reads: the set strict's /dev holds, one rule each.
+    // The device nodes a command reads: the set full's /dev holds, one rule each.
     for dev in ["null", "zero", "urandom", "random", "full"] {
         let p = format!("/dev/{dev}");
         if let Ok(fd) = PathFd::new(&p) {
@@ -1877,7 +1877,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
                 .map_err(|e| io::Error::other(format!("rule {p}: {e}")))?;
         }
     }
-    // Same sink-device carve-out as strict; see comment there.
+    // Same sink-device carve-out as full; see comment there.
     for dev in ["null", "zero", "full"] {
         let p = format!("/dev/{dev}");
         if let Ok(fd) = PathFd::new(&p) {
@@ -1887,20 +1887,20 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         }
     }
 
-    // Fail CLOSED. Hardened has no mount namespace, so Landlock is the ONLY
+    // Fail CLOSED. Partial has no mount namespace, so Landlock is the ONLY
     // filesystem boundary. The landlock crate defaults to BestEffort, so on a
     // kernel without Landlock restrict_self() returns Ok(NotEnforced) rather
     // than erroring — enforcing nothing. Refuse instead of running a child
-    // with zero confinement behind the "hardened" label. (PartiallyEnforced on
+    // with zero confinement behind the "partial" label. (PartiallyEnforced on
     // an older ABI is real, if reduced, confinement and is accepted.) The
-    // Python isolation resolution already refuses hardened without Landlock; this
+    // Python isolation resolution already refuses partial without Landlock; this
     // is the launcher's own boundary check, not a substitute for it.
     let status = ruleset
         .restrict_self()
         .map_err(|e| io::Error::other(format!("restrict_self: {e}")))?;
     if status.ruleset == RulesetStatus::NotEnforced {
         return Err(io::Error::other(
-            "hardened isolation requires Landlock, but the kernel enforced no \
+            "partial isolation requires Landlock, but the kernel enforced no \
              ruleset (Landlock unavailable); refusing to run unconfined",
         ));
     }
@@ -1918,7 +1918,7 @@ fn apply_seccomp() -> io::Result<()> {
     } else if cfg!(target_arch = "aarch64") {
         TargetArch::aarch64
     } else {
-        // Fail closed: strict and hardened promise a seccomp filter, and a
+        // Fail closed: full and partial promise a seccomp filter, and a
         // silent no-op would report isolation that was never installed. The
         // supported set is mirrored by sandbox/detect.py (auto degrades,
         // explicit refuses, both before this point on agent6's own path).
@@ -1948,7 +1948,7 @@ fn apply_seccomp() -> io::Result<()> {
         // that gates process_vm_readv/writev and kcmp above; those are denied
         // regardless, so this belongs beside them. Left off, a jailed command's
         // one barrier to lifting a live fd (a provider socket, a secrets or
-        // transcript fd) out of the agent under `hardened` -- no user namespace
+        // transcript fd) out of the agent under `partial` -- no user namespace
         // there -- is that check plus the host's yama tunable, which is 0 on
         // many distros and in many containers. seccomp is the layer that must
         // not depend on either. pidfd_open (the handle) is harmless alone and
@@ -1980,7 +1980,7 @@ fn apply_seccomp() -> io::Result<()> {
         // the i386 table either -- seccompiler's prologue kills on arch mismatch.
         libc::SYS_umount2,
         libc::SYS_pivot_root,
-        // Modern mount API (new_mount_api, Linux 5.2+). A strict jailed child
+        // Modern mount API (new_mount_api, Linux 5.2+). A full jailed child
         // is userns-root with CAP_SYS_ADMIN over its own mount namespace and
         // never drops caps, so without these it could mount_setattr(2) away the
         // MOUNT_ATTR_RDONLY on the .git protect bind (or open_tree+move_mount to
@@ -2110,7 +2110,7 @@ fn apply_seccomp() -> io::Result<()> {
     // with CAP_MKNOD and no MS_NODEV bind, so a block device for the host disk
     // in its own workspace reads and writes raw sectors past every path rule.
     // Landlock denies it too (MakeChar/MakeBlock handled and granted nowhere),
-    // so hardened has two locks and strict three (the user namespace as well).
+    // so partial has two locks and full three (the user namespace as well).
     // One rule per type: rules are OR-ed, conditions
     // AND-ed, so testing both types in one rule would match neither.
     // arm64 has no bare mknod(2); its mknodat carries the mode one arg later.
@@ -2293,7 +2293,7 @@ fn apply_child_limits(cmd: &mut Command, memory_limit_mb: u64) {
 /// (pipes drained into a JSON result) cannot provide.
 ///
 /// No timeout: the pipe closing is the lifetime. We stay alive as the child's
-/// parent (PID 1 of its namespace under strict) so it is reaped and so the
+/// parent (PID 1 of its namespace under full) so it is reaped and so the
 /// namespace outlives no one.
 ///
 /// A command a signal ended exits 128 plus the signal, as a shell reports it.
@@ -2485,7 +2485,7 @@ fn run_child(
     // that inherited the stdout/stderr write-end, so read_to_end() gets EOF
     // and the reader joins finish; it also means a command's process group
     // does not outlive the command (a backgrounded daemon is torn down, not
-    // leaked — strict's PID namespace already enforces this; hardened now
+    // leaked — full's PID namespace already enforces this; partial now
     // matches).
     unsafe {
         libc::killpg(child_pid, libc::SIGKILL);
@@ -2568,7 +2568,7 @@ struct CapData {
 
 /// Make this process's /proc entry unreadable to the commands it runs.
 ///
-/// The launcher answers every request on its stdout and, under strict, is PID 1
+/// The launcher answers every request on its stdout and, under full, is PID 1
 /// of the jail's own PID namespace. A command that opens `/proc/1/fd/1` writes
 /// the line the agent reads as a command result: it can hand itself an exit
 /// code, and the real answer then serves the NEXT request, so a verify gate
@@ -2838,7 +2838,7 @@ fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<i32> {
 /// Kill the groups of commands still running when the request channel closed.
 ///
 /// A PID namespace does this by construction: the launcher is its init, and
-/// tearing the namespace down takes everything in it. Without one -- hardened,
+/// tearing the namespace down takes everything in it. Without one -- partial,
 /// or unconfined -- a backgrounded command would outlive the run, so the pids
 /// are tracked and swept here.
 ///

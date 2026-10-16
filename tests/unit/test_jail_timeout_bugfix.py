@@ -46,7 +46,7 @@ def test_jail_timeout_returns_124_and_kills_group(
     policy = kinds.JailPolicy(
         cwd=tmp_path,
         argv=("/bin/true",),
-        isolation="strict",
+        isolation="full",
         network="none",
         # launcher sleeps 600s; timeout is timeout_s + 5.0, so keep it tiny.
         timeout_s=0.5,

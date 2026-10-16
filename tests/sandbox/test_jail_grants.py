@@ -24,7 +24,7 @@ pytestmark = pytest.mark.needs_namespaces
 
 @pytest.fixture
 def scratch() -> Iterator[pathlib.Path]:
-    """A directory no isolation level grants: hardened grants the host's /tmp wholesale."""
+    """A directory no isolation level grants: partial grants the host's /tmp wholesale."""
     base = pathlib.Path("/var/tmp")
     if not (base.is_dir() and os.access(base, os.W_OK)):
         pytest.skip("/var/tmp is not writable here")
@@ -39,7 +39,7 @@ def _granted(cwd: pathlib.Path, grant: pathlib.Path, *, write: bool) -> kinds.Ja
     return kinds.JailPolicy(
         cwd=cwd,
         argv=("true",),
-        isolation="strict",
+        isolation="full",
         extra_ro_paths=() if write else (grant,),
         extra_rw_paths=(grant,) if write else (),
         timeout_s=10.0,
@@ -105,7 +105,7 @@ def test_a_write_grant_holding_a_read_only_mount_names_the_grant_and_the_mount(
         assert f"write grant {grant}: remount of submount {nested.name}: EPERM" in error
 
 
-@pytest.mark.parametrize("isolation", ["strict", "hardened"])
+@pytest.mark.parametrize("isolation", ["full", "partial"])
 def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_with(
     scratch: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
@@ -144,7 +144,7 @@ def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_w
         run.close()
     assert "secret" not in str(after["stdout"]), after
     assert direct["returncode"] != 0 and "secret" not in str(direct["stdout"]), direct
-    if isolation == "strict":
+    if isolation == "full":
         # The mount at the grant's name still holds the first tree.
         assert after["returncode"] == 0 and after["stdout"] == "first\n", after
     else:
@@ -152,7 +152,7 @@ def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_w
         assert after["returncode"] != 0, after
 
 
-@pytest.mark.parametrize("isolation", ["strict", "hardened"])
+@pytest.mark.parametrize("isolation", ["full", "partial"])
 def test_a_symlinked_grant_is_readable_at_its_spelled_name(
     scratch: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
@@ -195,7 +195,7 @@ def test_a_file_grant_binds_over_a_mount_point_an_earlier_grant_made(
         kinds.JailPolicy(
             cwd=ws,
             argv=("sh", "-c", probe),
-            isolation="strict",
+            isolation="full",
             extra_ro_paths=(granted if shape == "duplicate" else held, granted),
             timeout_s=10.0,
         )
@@ -218,7 +218,7 @@ def test_a_grant_is_never_mounted_through_a_link_an_earlier_grant_shows(
     target.write_text("host content\n", encoding="utf-8")
     link = held / "link.txt"
     link.symlink_to(target)
-    base = kinds.JailPolicy(cwd=ws, argv=("readlink", str(link)), isolation="strict")
+    base = kinds.JailPolicy(cwd=ws, argv=("readlink", str(link)), isolation="full")
     res = jail.run_in_jail(dataclasses.replace(base, extra_ro_paths=(held, link)))
     assert res.returncode == 0 and res.stdout.strip() == str(target), res
     assert target.read_text(encoding="utf-8") == "host content\n"
@@ -249,7 +249,7 @@ def test_a_hidden_path_is_masked_under_a_grants_spelled_name_too(scratch: pathli
     )
     script = f"cat {link}/VERSION; cat {link}/secret/key; ls {link}/secret | wc -l"
     built = tools_policy.jail_policy(
-        repo, cfg, "strict", ("sh", "-c", script), network="none", timeout_s=10.0
+        repo, cfg, "full", ("sh", "-c", script), network="none", timeout_s=10.0
     )
     res = jail.run_in_jail(built)
     assert "HIDDEN" not in res.stdout + res.stderr, res

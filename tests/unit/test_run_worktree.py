@@ -1297,7 +1297,7 @@ class _FailingSetup:
 
 @pytest.mark.parametrize(
     ("isolation", "network", "told"),
-    [("strict", "auto", True), ("strict", "host", False), ("hardened", "auto", False)],
+    [("full", "auto", True), ("full", "host", False), ("partial", "auto", False)],
 )
 def test_a_failed_setup_command_says_when_it_ran_with_no_route_out(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel, network: str, told: bool
@@ -1335,7 +1335,7 @@ def test_the_no_setup_refusal_says_the_command_runs_in_the_sandbox(
     cfg = Config.model_validate(
         {"harness": {"verify_command": [".venv/bin/python", "-m", "pytest"]}}
     )
-    dispatcher = _FailingSetup("strict")
+    dispatcher = _FailingSetup("full")
 
     text = workspace_setup.prepare(
         cfg,

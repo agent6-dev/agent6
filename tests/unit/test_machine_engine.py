@@ -1030,7 +1030,7 @@ def test_data_dir_env_matches_jail_mount(
 
     monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
 
-    levels: tuple[kinds.IsolationLevel, ...] = ("strict", "hardened")
+    levels: tuple[kinds.IsolationLevel, ...] = ("full", "partial")
     for isolation in levels:
         world = live_world.LiveWorld(
             cwd=tmp_path,
@@ -1065,7 +1065,7 @@ def test_tool_jails_carry_the_operator_hide_paths(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
         tool_policy=run.machine_tool_policy_factory(
-            _one_state(cfg, "strict"), tmp_path, protect_paths=(), data_dir=None
+            _one_state(cfg, "full"), tmp_path, protect_paths=(), data_dir=None
         ),
     )
     world.run_tool(("python3", "x.py"), 5.0)
@@ -1088,7 +1088,7 @@ def test_live_world_run_tool_maps_rc124_to_timed_out(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
         tool_policy=run.machine_tool_policy_factory(
-            _one_state(Config(), "strict"), tmp_path, protect_paths=(), data_dir=None
+            _one_state(Config(), "full"), tmp_path, protect_paths=(), data_dir=None
         ),
     )
     res = world.run_tool(("sleep", "99"), 1.0)
@@ -1708,7 +1708,7 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path),
         tool_policy=run.machine_tool_policy_factory(
-            _one_state(Config(), "strict"), tmp_path, protect_paths=(), data_dir=None
+            _one_state(Config(), "full"), tmp_path, protect_paths=(), data_dir=None
         ),
     )
     world.run_tool(("sometool", "arg"), timeout_s=5.0)

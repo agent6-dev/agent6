@@ -4,7 +4,7 @@
 
 Operator-driven: every command shells out with fixed argv, directly when already root,
 else through `sudo`, never with model-supplied input. `apparmor` installs the bundled
-profile that lets the strict sandbox use unprivileged user namespaces on Ubuntu 24.04+.
+profile that lets the full sandbox use unprivileged user namespaces on Ubuntu 24.04+.
 
 Security review note: `apparmor` writes `/etc/apparmor.d/agent6-jail` and runs
 `apparmor_parser` via sudo. The profile is a fixed constant and the argv is fixed. The
@@ -31,11 +31,11 @@ _APPARMOR_PROFILE_PATH = "/etc/apparmor.d/agent6-jail"
 _APPARMOR_PROFILE = """\
 # AppArmor profile for the agent6-jail sandbox launcher (managed by
 # `agent6 system apparmor`). It lifts the unprivileged user-namespace
-# restriction for the launcher binary ONLY, so the strict sandbox isolation works
+# restriction for the launcher binary ONLY, so the full sandbox isolation works
 # on kernels with kernel.apparmor_restrict_unprivileged_userns=1 (Ubuntu 24.04+).
 # The launcher does its own sandboxing (userns/pivot_root/Landlock/seccomp/
 # NO_NEW_PRIVS), so this adds no AppArmor confinement on top --
-# flags=(unconfined). Without it, agent6 falls back to the hardened isolation.
+# flags=(unconfined). Without it, agent6 falls back to the partial isolation.
 abi <abi/4.0>,
 include <tunables/global>
 
@@ -134,14 +134,14 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         if pathlib.Path(_APPARMOR_PROFILE_PATH).is_file():
             _common.error(f"{_APPARMOR_PROFILE_PATH} is still present after removal.")
             return 1
-        print("Removed the agent6-jail AppArmor profile. The sandbox falls back to hardened.")
+        print("Removed the agent6-jail AppArmor profile. The sandbox falls back to partial.")
         return 0
 
     if not _apparmor_present():
         print(
             "This host does not use AppArmor (LSM: "
             f"{_host_lsm() or 'unknown'}), so the agent6-jail AppArmor profile is not"
-            " applicable. On Ubuntu 24.04+ it lets the strict sandbox use user"
+            " applicable. On Ubuntu 24.04+ it lets the full sandbox use user"
             " namespaces; other distros (e.g. Fedora/SELinux) allow them already.",
             file=sys.stderr,
         )
@@ -155,7 +155,7 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         print(
             f"NOTE: your jail binary is at {jail_bin}, which the bundled profile's glob"
             " (/**/agent6/sandbox/_bin/agent6-jail) may not match. If `agent6 check"
-            " sandbox` still reports hardened, add that path to the profile header.",
+            " sandbox` still reports partial, add that path to the profile header.",
             file=sys.stderr,
         )
     with tempfile.NamedTemporaryFile("w", suffix=".apparmor", delete=False) as fh:
@@ -175,6 +175,6 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         print(
             f"Installed {_APPARMOR_PROFILE_PATH}. The profile grants the launcher the"
             " user namespaces this kernel withholds; run `agent6 check sandbox` to see"
-            " whether strict is now available."
+            " whether full is now available."
         )
     return 0 if ok else 1

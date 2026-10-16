@@ -73,7 +73,7 @@ def test_conversation_opens_with_the_task_and_policy_line(tmp_path: pathlib.Path
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", _EVENTS)
         (app.session_dir / "manifest.json").write_text(
-            json.dumps({"mode": "run", "policy": {"isolation": "strict", "run_commands": "ask"}}),
+            json.dumps({"mode": "run", "policy": {"isolation": "full", "run_commands": "ask"}}),
             encoding="utf-8",
         )
         assert policy.session_policy(app.session_dir).line()

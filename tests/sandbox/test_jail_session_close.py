@@ -87,7 +87,7 @@ def test_a_survivor_of_the_sweep_is_named_by_every_stop(
 
     `JailedProcess.close`, `LocalJob.stop`, `BackgroundJob.stop` and `SessionJob.stop` report
     the sweep's survivors, so the MCP-server path and `stop_background` under `none` and
-    `hardened` never answer "stopped" over a process the sweep could not kill.
+    `partial` never answer "stopped" over a process the sweep could not kill.
     """
 
     def sweep(exclude: frozenset[int]) -> frozenset[int]:

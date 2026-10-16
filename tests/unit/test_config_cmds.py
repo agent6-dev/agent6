@@ -32,8 +32,9 @@ def test_extra_body_value_completer_offers_routing_presets() -> None:
     enum_args = argparse.Namespace(key="sandbox.isolation")
     assert cli_completers._complete_config_values("", enum_args) == [  # pyright: ignore[reportPrivateUsage]
         "auto",
-        "strict",
-        "hardened",
+        "full",
+        "partial",
+        "none",
     ]
 
 

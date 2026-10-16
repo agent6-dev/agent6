@@ -93,7 +93,7 @@ def _policy(
     return policy.jail_policy(
         cwd,
         Config(),
-        "strict",
+        "full",
         argv,
         extra_ro_paths=read,
         network=net,

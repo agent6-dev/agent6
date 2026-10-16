@@ -27,7 +27,7 @@ user message is the task.
     + """- apply_patch: standard unified diff; multi-hunk, and multi-file when each
   file's section starts with a `diff --git` line.
 """
-    "__HARDENED_FS_RULE__"
+    "__PARTIAL_FS_RULE__"
     "__GIT_PROTECT_RULE__"
     "__NETWORK_RULE__"
     "__AUTO_COMMIT_RULE__"
@@ -77,7 +77,7 @@ MODEL_GIT_RULE_NO_COMMANDS = """- Nothing commits automatically in this run. Com
   withheld, so your work stays in the worktree, uncommitted, for the operator.
 """
 
-# Fills __GIT_PROTECT_RULE__ only where `.git` is read-only: strict protect_git, a linked worktree.
+# Fills __GIT_PROTECT_RULE__ only where `.git` is read-only: full protect_git, a linked worktree.
 GIT_PROTECT_RULE = """- `.git/` is read-only inside the jail: history-mutating git commands
   (`git checkout`, `git reset`) fail there. Prior content is readable
   (`git show HEAD:path`) and restorable with the edit tools.
@@ -88,9 +88,9 @@ NETWORK_RULE = """- Commands run with no route off this machine: a download or a
   install fails.
 """
 
-# Fills __HARDENED_FS_RULE__ only under hardened isolation with protect paths (Landlock denies new
+# Fills __PARTIAL_FS_RULE__ only under partial isolation with protect paths (Landlock denies new
 # top-level entries there).
-HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE new
+PARTIAL_FS_RULE = """- Under partial isolation, jailed commands cannot CREATE new
   top-level files or directories in the workspace root (existing entries
   are writable as normal). If a build tool needs a new top-level entry
   (e.g. `Cargo.lock`, `target/`, `go.sum`), create it first with

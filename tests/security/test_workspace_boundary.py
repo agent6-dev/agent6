@@ -104,7 +104,7 @@ def test_a_hidden_file_never_reaches_the_symbol_index(tmp_path: pathlib.Path) ->
     assert [d["path"] for d in ok["definitions"]] == ["main.py"]
 
 
-@pytest.mark.parametrize("isolation", ["strict", "hardened", "none"])
+@pytest.mark.parametrize("isolation", ["full", "partial", "none"])
 def test_the_boundary_holds_at_every_isolation_level(
     tmp_path: pathlib.Path, isolation: str
 ) -> None:
@@ -156,7 +156,7 @@ def test_the_config_a_later_run_loads_cannot_be_written(
     cfg_dir = root / ".config" / "agent6"
     cfg_dir.mkdir(parents=True)
     conf = cfg_dir / "config.toml"
-    conf.write_text('[sandbox]\nisolation = "strict"\n', encoding="utf-8")
+    conf.write_text('[sandbox]\nisolation = "full"\n', encoding="utf-8")
 
     with pytest.raises(errors.ToolError, match="hidden from this run"):
         _dispatch(
@@ -165,10 +165,10 @@ def test_the_config_a_later_run_loads_cannot_be_written(
             "apply_edit",
             {
                 "path": ".config/agent6/config.toml",
-                "edits": [{"old_string": '"strict"', "new_string": '"none"'}],
+                "edits": [{"old_string": '"full"', "new_string": '"none"'}],
             },
         )
-    assert 'isolation = "strict"' in conf.read_text(encoding="utf-8")
+    assert 'isolation = "full"' in conf.read_text(encoding="utf-8")
 
 
 def test_a_workspace_inside_a_private_dir_refuses_at_preflight(
@@ -210,7 +210,7 @@ def test_a_state_dir_inside_the_workspace_refuses_at_preflight(
     assert refusal is not None and "inside the workspace" in refusal
 
 
-@pytest.mark.parametrize("isolation", ["strict", "hardened", "none"])
+@pytest.mark.parametrize("isolation", ["full", "partial", "none"])
 def test_a_workspace_under_a_hidden_path_refuses_at_preflight(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
@@ -336,13 +336,13 @@ def test_denied_beats_a_grant(tmp_path: pathlib.Path) -> None:
         _dispatch(root, cfg, "read_file", {"path": str(granted / "keys" / "id_rsa")})
 
 
-def _hide_on_hardened(
+def _hide_on_partial(
     root: pathlib.Path, path: str, extra: dict[str, object] | None = None
 ) -> str | None:
     from agent6.app import confine
 
     data: dict[str, object] = {"sandbox": {"hide_paths": [path], **(extra or {})}}
-    return confine.check_hide_paths_support(Config.model_validate(data), "hardened", root)
+    return confine.check_hide_paths_support(Config.model_validate(data), "partial", root)
 
 
 def test_hide_paths_refuses_the_launcher_grant_regions(
@@ -359,13 +359,13 @@ def test_hide_paths_refuses_the_launcher_grant_regions(
     monkeypatch.setattr(
         "agent6.sandbox.tool_paths.operator_tool_paths", lambda: ("/usr/bin:/bin", (tool_dir,))
     )
-    r = _hide_on_hardened(tmp_path, "/tmp/secret-cache")
+    r = _hide_on_partial(tmp_path, "/tmp/secret-cache")
     assert r is not None and "/tmp" in r
-    r = _hide_on_hardened(tmp_path, "/etc/agent6-private")
+    r = _hide_on_partial(tmp_path, "/etc/agent6-private")
     assert r is not None and "system dir" in r
-    r = _hide_on_hardened(tmp_path, str(tool_dir / "sub"))
+    r = _hide_on_partial(tmp_path, str(tool_dir / "sub"))
     assert r is not None and "tool dir" in r
-    assert _hide_on_hardened(tmp_path, "/nonexistent-elsewhere/private") is None
+    assert _hide_on_partial(tmp_path, "/nonexistent-elsewhere/private") is None
 
 
 def test_hide_paths_resolves_aliases_and_refuses_inner_grants(
@@ -377,12 +377,12 @@ def test_hide_paths_resolves_aliases_and_refuses_inner_grants(
     """
     monkeypatch.chdir(tmp_path)
     with pytest.raises(Exception, match="'\\.\\.'"):
-        _hide_on_hardened(tmp_path, "/opt/../etc/shadow-file")
+        _hide_on_partial(tmp_path, "/opt/../etc/shadow-file")
     link = tmp_path / "alias"
     link.symlink_to("/etc")
-    assert _hide_on_hardened(tmp_path, str(link / "agent6-private")) is not None
+    assert _hide_on_partial(tmp_path, str(link / "agent6-private")) is not None
     hidden_tree = pathlib.Path("/nonexistent-vault")
-    r = _hide_on_hardened(
+    r = _hide_on_partial(
         tmp_path, str(hidden_tree), {"extra_read_paths": [str(hidden_tree / "inner")]}
     )
     assert r is not None and "extra_read_paths" in r
@@ -410,5 +410,5 @@ def test_hide_paths_refuses_an_mcp_server_grant(
             },
         }
     )
-    r = confine.check_hide_paths_support(cfg, "hardened", tmp_path)
+    r = confine.check_hide_paths_support(cfg, "partial", tmp_path)
     assert r is not None and "mcp.servers.srv" in r

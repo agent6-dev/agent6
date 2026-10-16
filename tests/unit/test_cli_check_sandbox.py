@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 check sandbox` runs its probes under the host's effective isolation.
 
-The jail is stubbed out, so these run on any host. On a host that can only run `hardened` the check
-passes rather than failing against a `strict` jail the agent would never use.
+The jail is stubbed out, so these run on any host. On a host that can only run `partial` the check
+passes rather than failing against a `full` jail the agent would never use.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ def test_check_sandbox_reports_a_landlock_probe_error(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A host policy denying the Landlock syscall is a failed probe, not a traceback."""
-    _force_profile(monkeypatch, "hardened")
+    _force_profile(monkeypatch, "partial")
 
     def _denied() -> int:
         raise landlock.LandlockError(
@@ -113,7 +113,7 @@ def test_check_sandbox_names_the_network_its_probe_ran_on(
     The probe's jail has no network whatever the config says, so the line says that and what
     the config gives the run's commands.
     """
-    _force_profile(monkeypatch, "strict")
+    _force_profile(monkeypatch, "full")
     cfg = Config.model_validate({"sandbox": {"network": network}})
     rc = check_cmds._cmd_check_sandbox(cfg)  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
@@ -125,36 +125,36 @@ def test_check_sandbox_names_the_network_its_probe_ran_on(
     assert stub_jail
 
 
-def test_check_sandbox_hardened_passes_and_skips_network(
+def test_check_sandbox_partial_passes_and_skips_network(
     monkeypatch: pytest.MonkeyPatch,
     stub_jail: list[kinds.JailPolicy],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _force_profile(monkeypatch, "hardened")
+    _force_profile(monkeypatch, "partial")
     rc = check_cmds._cmd_check_sandbox()  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert rc == 0, out
-    assert "effective isolation (auto): hardened" in out
-    # Network probe is reported n/a, not run, under hardened.
-    assert "jail_blocks_network: n/a under hardened" in out
-    assert all(p.isolation == "hardened" for p in stub_jail)
+    assert "effective isolation (auto): partial" in out
+    # Network probe is reported n/a, not run, under partial.
+    assert "jail_blocks_network: n/a under partial" in out
+    assert all(p.isolation == "partial" for p in stub_jail)
     assert not any(p.argv[0].endswith("getent") for p in stub_jail)
 
 
-def test_check_sandbox_strict_runs_network_probe(
+def test_check_sandbox_full_runs_network_probe(
     monkeypatch: pytest.MonkeyPatch,
     stub_jail: list[kinds.JailPolicy],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _force_profile(monkeypatch, "strict")
+    _force_profile(monkeypatch, "full")
     rc = check_cmds._cmd_check_sandbox()  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert rc == 0, out
-    assert "effective isolation (auto): strict" in out
-    # The network probe actually runs under strict, with isolation=strict.
+    assert "effective isolation (auto): full" in out
+    # The network probe actually runs under full, with isolation=full.
     getent = [p for p in stub_jail if p.argv[0].endswith("getent")]
     assert len(getent) == 1
-    assert getent[0].isolation == "strict"
+    assert getent[0].isolation == "full"
     assert getent[0].network == "none"
 
 
@@ -189,12 +189,12 @@ def test_check_sandbox_degraded_names_why(
 ) -> None:
     """A degraded level never appears without its cause.
 
-    On a userns-blocked host the line reads `effective isolation (auto): hardened` and why.
+    On a userns-blocked host the line reads `effective isolation (auto): partial` and why.
     """
     from agent6.sandbox import tool_paths
 
     why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"
-    _force_profile(monkeypatch, "hardened", reason=why)
+    _force_profile(monkeypatch, "partial", reason=why)
     monkeypatch.setattr(
         sandbox_tool_paths,
         "tool_mount_notes",
@@ -203,8 +203,8 @@ def test_check_sandbox_degraded_names_why(
     rc = check_cmds._cmd_check_sandbox()  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert rc == 0, out
-    assert f"not strict: {why}" in out
-    # Under hardened nothing is mounted: the tool-dir exposure is a Landlock read grant.
+    assert f"not full: {why}" in out
+    # Under partial nothing is mounted: the tool-dir exposure is a Landlock read grant.
     assert "granted read-only (Landlock path rules)" in out
     assert "mounted read-only into the jail" not in out
     assert "1 tool on the PATH" in out
@@ -217,16 +217,16 @@ def test_check_sandbox_probes_the_isolation_the_config_selects(
 ) -> None:
     """The probes exercise the jail a run here would use.
 
-    With `sandbox.isolation = "hardened"` on a strict-capable host, the section agrees with `check
+    With `sandbox.isolation = "partial"` on a full-capable host, the section agrees with `check
     config`.
     """
     _honour_request(monkeypatch)
-    cfg = Config(sandbox=SandboxConfig(isolation="hardened"))
+    cfg = Config(sandbox=SandboxConfig(isolation="partial"))
     rc = check_cmds._cmd_check_sandbox(cfg)  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert rc == 0, out
-    assert "effective isolation (hardened): hardened" in out
-    assert stub_jail and all(p.isolation == "hardened" for p in stub_jail)
+    assert "effective isolation (partial): partial" in out
+    assert stub_jail and all(p.isolation == "partial" for p in stub_jail)
 
 
 def test_check_sandbox_names_the_degrade_reason_only_for_auto(
@@ -236,17 +236,17 @@ def test_check_sandbox_names_the_degrade_reason_only_for_auto(
 ) -> None:
     """The degrade reason prints only for `auto`.
 
-    `degrade_reason` answers why `auto` does not reach `strict`; `check config` and the run's
+    `degrade_reason` answers why `auto` does not reach `full`; `check config` and the run's
     `warn_sandbox_gaps` gate the line on `isolation == "auto"`, and `check sandbox` agrees.
     """
     why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"
-    _force_profile(monkeypatch, "hardened", reason=why)
-    cfg = Config(sandbox=SandboxConfig(isolation="hardened"))
+    _force_profile(monkeypatch, "partial", reason=why)
+    cfg = Config(sandbox=SandboxConfig(isolation="partial"))
     rc = check_cmds._cmd_check_sandbox(cfg)  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert rc == 0, out
-    assert "effective isolation (hardened): hardened" in out
-    assert "not strict" not in out
+    assert "effective isolation (partial): partial" in out
+    assert "not full" not in out
 
 
 def test_check_names_a_jail_binary_it_cannot_run(
@@ -297,7 +297,7 @@ def test_check_sandbox_fails_on_an_isolation_this_host_refuses(
 
     monkeypatch.setattr(detect, "resolve_isolation", _refuse)
     rc = check_cmds._cmd_check_sandbox(  # pyright: ignore[reportPrivateUsage]
-        Config(sandbox=SandboxConfig(isolation="strict"))
+        Config(sandbox=SandboxConfig(isolation="full"))
     )
     out = capsys.readouterr().out
     assert rc == 1, out
@@ -349,7 +349,7 @@ def test_check_config_runs_the_refusal_ladder_a_run_applies(
 ) -> None:
     """`check config` fails on an explicit knob the isolation cannot honour, with the run's refusal.
 
-    The case: hardened plus network = session.
+    The case: partial plus network = session.
     """
     env = types.SimpleNamespace(
         kernel=types.SimpleNamespace(raw="6.8"),
@@ -367,14 +367,14 @@ def test_check_config_runs_the_refusal_ladder_a_run_applies(
     monkeypatch.setattr(_setup, "detect_env", lambda: env)
     monkeypatch.setattr(detect, "degrade_reason", _no_reason)
     monkeypatch.setattr(detect, "resolve_isolation", _as_requested)
-    cfg = Config.model_validate({"sandbox": {"isolation": "hardened", "network": "session"}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "partial", "network": "session"}})
     checks = check_cmds._check_config_section(cfg)  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     refusal = next(c for c in checks if c.name == "config.refusal")
     assert refusal.status == "FAIL"
-    assert "sandbox.network = 'session' requires the strict isolation" in refusal.detail
+    assert "sandbox.network = 'session' requires the full isolation" in refusal.detail
     assert "[FAIL] a run would refuse" in out
-    ok = Config.model_validate({"sandbox": {"isolation": "hardened"}})
+    ok = Config.model_validate({"sandbox": {"isolation": "partial"}})
     checks = check_cmds._check_config_section(ok)  # pyright: ignore[reportPrivateUsage]
     assert next(c for c in checks if c.name == "config.refusal").status == "PASS"
 

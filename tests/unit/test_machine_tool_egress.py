@@ -218,7 +218,7 @@ def test_machine_tool_jail_carries_operator_grants_and_protect_git(
             }
         }
     )
-    world = _world(tmp_path, "strict", cfg=cfg)
+    world = _world(tmp_path, "full", cfg=cfg)
     world.run_tool(("true",), 5.0)
     policy = seen[-1]
     assert pathlib.Path("/srv/ro") in policy.extra_ro_paths
@@ -231,7 +231,7 @@ def test_liveworld_non_network_tool_is_isolated(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = _world(tmp_path, "strict")
+    world = _world(tmp_path, "full")
     world.run_tool(("true",), 5.0)
     assert seen[-1].network == "none"
 
@@ -240,7 +240,7 @@ def test_liveworld_tool_joins_the_host_network_when_its_config_says_host(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = _world(tmp_path, "strict", cfg=Config.model_validate({"sandbox": {"network": "host"}}))
+    world = _world(tmp_path, "full", cfg=Config.model_validate({"sandbox": {"network": "host"}}))
     world.run_tool(("true",), 5.0)
     assert seen[-1].network == "host"
 
@@ -250,7 +250,7 @@ def test_liveworld_refuses_a_state_with_no_resolved_config(
 ) -> None:
     """A tool call never runs under another state's config, or the machine's, by fallback."""
     seen = _patch_jail(monkeypatch)
-    world = _world(tmp_path, "strict")
+    world = _world(tmp_path, "full")
     with pytest.raises(_contracts.EngineError, match="no config was resolved for state 'ghost'"):
         world.run_tool(("true",), 5.0, state="ghost")
     assert seen == []
@@ -262,11 +262,11 @@ def test_liveworld_grants_data_dir_rw_and_env(
     # The data dir is RW in every tool jail and exported as $AGENT6_MACHINE_DATA_DIR.
     seen = _patch_jail(monkeypatch)
     data = tmp_path / "i" / "data"
-    world = _world(tmp_path, "hardened", data_dir=data)
+    world = _world(tmp_path, "partial", data_dir=data)
     world.run_tool(("true",), 5.0)
     policy = seen[-1]
     assert data in policy.extra_rw_paths
-    # Exported as the real host abspath on hardened; strict maps it to /rw<abspath>.
+    # Exported as the real host abspath on partial; full maps it to /rw<abspath>.
     assert ("AGENT6_MACHINE_DATA_DIR", str(data)) in policy.env
 
 
@@ -274,9 +274,9 @@ def test_liveworld_no_data_dir_grants_only_the_home(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = _world(tmp_path, "hardened")
+    world = _world(tmp_path, "partial")
     world.run_tool(("true",), 5.0)
-    # hardened's persistent HOME is the only extra grant: no data dir, no data grant.
+    # partial's persistent HOME is the only extra grant: no data dir, no data grant.
     assert seen[-1].extra_rw_paths == (paths.jail_cache_home(tmp_path),)
     assert all(k != "AGENT6_MACHINE_DATA_DIR" for k, _ in seen[-1].env)
 
@@ -285,7 +285,7 @@ def test_liveworld_disables_python_bytecode(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = _world(tmp_path, "hardened")
+    world = _world(tmp_path, "partial")
     world.run_tool(("python3", "-m", "unittest"), 5.0)
     assert ("PYTHONDONTWRITEBYTECODE", "1") in seen[-1].env
 
@@ -295,7 +295,7 @@ def test_liveworld_passes_protect_paths_to_jail(
 ) -> None:
     seen = _patch_jail(monkeypatch)
     guarded = (tmp_path / "m.asm.toml", tmp_path / "scripts")
-    world = _world(tmp_path, "strict", protect_paths=guarded)
+    world = _world(tmp_path, "full", protect_paths=guarded)
     world.run_tool(("true",), 5.0)
     assert guarded[0] in seen[-1].extra_protect_paths
     assert guarded[1] in seen[-1].extra_protect_paths
@@ -313,7 +313,7 @@ def test_a_bundle_in_a_subdirectory_runs_its_own_scripts(
     bundle = tmp_path / "machines"
     (bundle / "scripts").mkdir(parents=True)
     factory = run.machine_tool_policy_factory(
-        {"": StateConfig(Config(), frozenset(), "strict")},
+        {"": StateConfig(Config(), frozenset(), "full")},
         tmp_path,
         protect_paths=(),
         data_dir=None,

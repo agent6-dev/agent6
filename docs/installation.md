@@ -64,16 +64,16 @@ agent6 check                # sandbox, config (provider keys), boundaries, MCP, 
 - git 2.40 or newer (`merge-tree --merge-base`)
 - One provider: Anthropic, any OpenAI-compatible endpoint (a local one needs no key), a ChatGPT subscription, or a Claude Code login (`agent6 connect claude`)
 - Linux on x86_64 or aarch64 for the sandbox
-- Unprivileged user namespaces for `strict` isolation
+- Unprivileged user namespaces for `full` isolation
 - A Rust toolchain to build from source (the PyPI wheels bundle `agent6-jail`)
 
 The jail uses Landlock, seccomp, and user namespaces, and its seccomp filter exists for x86_64 and aarch64.
 
-- On other architectures and on macOS, `isolation = "auto"` resolves to `none`: commands run as ordinary subprocesses behind a startup warning, and an explicit `strict` or `hardened` refuses.
+- On other architectures and on macOS, `isolation = "auto"` resolves to `none`: commands run as ordinary subprocesses behind a startup warning, and an explicit `full` or `partial` refuses.
 - On Windows, use WSL.
 - Unprivileged user namespaces are on by default on Ubuntu, Debian, and most cloud images
     - Ubuntu 24.04+ blocks them (`kernel.apparmor_restrict_unprivileged_userns = 1`): set it to 0, or `agent6 system apparmor install` (remove reverts)
-- Without user namespaces `auto` falls back to `hardened` (Landlock, seccomp, `NO_NEW_PRIVS`), and to `none` on a kernel with no Landlock.
+- Without user namespaces `auto` falls back to `partial` (Landlock, seccomp, `NO_NEW_PRIVS`), and to `none` on a kernel with no Landlock.
 
 The [security model](security.md) describes what each isolation level enforces.
 

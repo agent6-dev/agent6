@@ -239,7 +239,7 @@ def _policy_for(body: dict[str, object] | None, tmp_path: pathlib.Path):
     if body is not None:
         spec["sandbox"] = body
     cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"s": spec}}})
-    return _setup.mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["s"])
+    return _setup.mcp_server_policy(cfg, tmp_path, "full", cfg.mcp.servers["s"])
 
 
 def test_a_server_block_names_only_what_is_extra(tmp_path: pathlib.Path) -> None:
@@ -279,8 +279,8 @@ def test_one_servers_grants_do_not_reach_its_sibling(tmp_path: pathlib.Path) -> 
             }
         }
     )
-    browser = _setup.mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["browser"])
-    memory = _setup.mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["memory"])
+    browser = _setup.mcp_server_policy(cfg, tmp_path, "full", cfg.mcp.servers["browser"])
+    memory = _setup.mcp_server_policy(cfg, tmp_path, "full", cfg.mcp.servers["memory"])
     assert browser is not None and memory is not None
     assert pathlib.Path("/srv/profile") in browser.extra_ro_paths and browser.network == "host"
     assert pathlib.Path("/srv/profile") not in memory.extra_ro_paths
@@ -294,7 +294,7 @@ def test_no_block_still_confines(tmp_path: pathlib.Path) -> None:
     """
     policy = _policy_for(None, tmp_path)
     assert policy is not None
-    assert policy.isolation == "strict"
+    assert policy.isolation == "full"
     assert policy.network == "none"
 
 
@@ -375,12 +375,12 @@ def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
     into = tmp_path / "into"
     into.symlink_to(repo / "data", target_is_directory=True)
     spec = {"command": ["npx", "server"], "sandbox": {"read_paths": [str(tool), str(into)]}}
-    # Pinned strict: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    # Pinned full: pytest's tmp_path sits in /tmp, where a link counts under auto.
     cfg = Config.model_validate(
-        {"sandbox": {"isolation": "strict"}, "mcp": {"enabled": True, "servers": {"fs": spec}}}
+        {"sandbox": {"isolation": "full"}, "mcp": {"enabled": True, "servers": {"fs": spec}}}
     )
 
-    built = _setup.mcp_server_policy(cfg, repo, "strict", cfg.mcp.servers["fs"])
+    built = _setup.mcp_server_policy(cfg, repo, "full", cfg.mcp.servers["fs"])
 
     assert built is not None
     assert tool in built.extra_ro_paths and (tool, real) in built.grant_sources
@@ -394,6 +394,6 @@ def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
         seccomp_arch_supported=True,
         sandbox_available=True,
     )
-    confine.warn_sandbox_gaps("strict", env, cfg, root=repo)
+    confine.warn_sandbox_gaps("full", env, cfg, root=repo)
     err = capsys.readouterr().err
     assert f"mcp.servers.fs.sandbox.read_paths entry {into} (it resolves to {repo / 'data'})" in err

@@ -242,7 +242,7 @@ def build_system_prompt(
     memory_dir_path: str = "",
     decisions: str = "",
     skills: agent6_skills.ResolvedSkills | None,
-    isolation: kinds.IsolationLevel = "strict",
+    isolation: kinds.IsolationLevel = "full",
     commands_allowed: bool | None = None,
     protected_paths: bool = False,
     dag_available: bool = True,
@@ -263,7 +263,7 @@ def build_system_prompt(
         skills: The resolved skills, or None.
         isolation: The jail level.
         commands_allowed: Whether the model may run commands; None reads the config.
-        protected_paths: Whether hardened isolation carves protect paths.
+        protected_paths: Whether partial isolation carves protect paths.
         dag_available: Whether the run has a curator.
 
     Returns:
@@ -290,15 +290,15 @@ def build_system_prompt(
     patch_only = mode == "run" and os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1"
     if patch_only:
         base = base.replace(loop.APPLY_EDIT_RULE, "")
-    # The hardened filesystem caveat is real only under hardened with protect paths carved around.
-    carved = isolation == "hardened" and protected_paths
-    hardened_rule = loop.HARDENED_FS_RULE.replace(
+    # The partial filesystem caveat is real only under partial with protect paths carved around.
+    carved = isolation == "partial" and protected_paths
+    partial_rule = loop.PARTIAL_FS_RULE.replace(
         "__CREATE_HINT__", loop.CREATE_HINT_PATCH_ONLY if patch_only else loop.CREATE_HINT
     )
-    base = base.replace("__HARDENED_FS_RULE__", hardened_rule if carved else "")
-    # `.git` is read-only under strict with protect_git, and in a fork's worktree under any jail.
-    # Elsewhere (hardened, none) the claim would be false.
-    git_read_only = (isolation == "strict" and config.sandbox.protect_git) or (
+    base = base.replace("__PARTIAL_FS_RULE__", partial_rule if carved else "")
+    # `.git` is read-only under full with protect_git, and in a fork's worktree under any jail.
+    # Elsewhere (partial, none) the claim would be false.
+    git_read_only = (isolation == "full" and config.sandbox.protect_git) or (
         isolation != "none" and (repo.root / ".git").is_file()
     )
     base = base.replace("__GIT_PROTECT_RULE__", loop.GIT_PROTECT_RULE if git_read_only else "")

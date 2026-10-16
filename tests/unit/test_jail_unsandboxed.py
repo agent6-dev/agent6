@@ -157,7 +157,7 @@ def test_child_exec_failure_is_command_error_not_jail_unavailable(
 
     monkeypatch.setattr(subprocess, "Popen", FakePopen)
     res = jail.run_in_jail(
-        kinds.JailPolicy(cwd=tmp_path, argv=("/usr/local/go/bin/go", "test"), isolation="hardened")
+        kinds.JailPolicy(cwd=tmp_path, argv=("/usr/local/go/bin/go", "test"), isolation="partial")
     )
     assert res.returncode == 127
     assert "not found or not executable" in res.stderr

@@ -45,7 +45,7 @@ def _serving(
     dispatcher = dispatch.ToolDispatcher(
         root=tmp_path,
         config=Config.model_validate({"sandbox": {"run_commands": "yes"}}),
-        isolation="strict",
+        isolation="full",
         session_dir=session_dir,
         use_jail_session=True,
         session_net=net,

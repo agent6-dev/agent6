@@ -25,7 +25,7 @@ TaskId = Annotated[str, pydantic.StringConstraints(min_length=1, max_length=26)]
 
 
 class _ToolInput(pydantic.BaseModel):
-    """The base of every tool's arguments: strict, frozen, and named for the tool list."""
+    """The base of every tool's arguments: full, frozen, and named for the tool list."""
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
@@ -259,7 +259,7 @@ class RunCommandInput(_ToolInput):
         " stop_background, or continue working; output printed so far comes"
         " with the hand-back. background=true returns the handle at once."
         " Commands in one run share a network, so a server started here answers"
-        " later commands; under strict isolation that network is the run's own,"
+        " later commands; under full isolation that network is the run's own,"
         " elsewhere it is the host's. All background commands die when the run"
         " ends."
     )

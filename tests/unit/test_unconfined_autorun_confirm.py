@@ -16,8 +16,8 @@ def _cfg(run_commands: str) -> Config:
 
 def test_no_gate_when_sandboxed() -> None:
     # Auto-approve while jailed is normal, safe operation: no confirm.
-    assert _preflight.confirm_unconfined_autorun("strict", _cfg("yes")) is True
-    assert _preflight.confirm_unconfined_autorun("hardened", _cfg("yes")) is True
+    assert _preflight.confirm_unconfined_autorun("full", _cfg("yes")) is True
+    assert _preflight.confirm_unconfined_autorun("partial", _cfg("yes")) is True
 
 
 def test_no_gate_when_unconfined_but_still_prompting() -> None:

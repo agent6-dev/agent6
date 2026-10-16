@@ -56,8 +56,8 @@ def test_parallel_override_via_repo_config(repo: pathlib.Path) -> None:
 def test_lane_config_preserves_protect_git_provenance(
     repo: pathlib.Path, explicit_protect_git: bool
 ) -> None:
-    """A hardened lane degrades default protect_git but refuses an explicit demand."""
-    toml = '[sandbox]\nisolation = "hardened"\n'
+    """A partial lane degrades default protect_git but refuses an explicit demand."""
+    toml = '[sandbox]\nisolation = "partial"\n'
     if explicit_protect_git:
         toml += "protect_git = true\n"
     _write_repo_config(repo, toml)
@@ -71,15 +71,15 @@ def test_lane_config_preserves_protect_git_provenance(
     )
     lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
 
-    assert lane.config.sandbox.isolation == "hardened"
+    assert lane.config.sandbox.isolation == "partial"
     assert lane.config.sandbox.protect_git is True
     assert ("sandbox.protect_git" in lane.explicit_leaves) is explicit_protect_git
     assert "sandbox.home" not in lane.explicit_leaves
     refusal = confine.check_protect_git_support(
-        lane.config, "hardened", explicitly_set="sandbox.protect_git" in lane.explicit_leaves
+        lane.config, "partial", explicitly_set="sandbox.protect_git" in lane.explicit_leaves
     )
     if explicit_protect_git:
-        assert refusal is not None and "requires the strict isolation" in refusal
+        assert refusal is not None and "requires the full isolation" in refusal
     else:
         assert refusal is None
 

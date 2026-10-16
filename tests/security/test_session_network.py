@@ -78,7 +78,7 @@ def _net_of(
 ) -> str:
     """The network namespace a child with this policy lands in."""
     argv = ("/usr/bin/python3", "-c", "import os;print(os.readlink('/proc/self/ns/net'))")
-    policy = tools_policy.jail_policy(cwd, Config(), "strict", argv, network=network)
+    policy = tools_policy.jail_policy(cwd, Config(), "full", argv, network=network)
     proc = jail.spawn_in_jail(
         policy,
         stdin=subprocess.DEVNULL,
@@ -122,7 +122,7 @@ def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: path
         )
         argv = ("/usr/bin/python3", "-u", "-c", script)
         listener = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -145,7 +145,7 @@ def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: path
         )
         argv = ("/usr/bin/python3", "-c", probe)
         client = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -177,7 +177,7 @@ def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: pathlib.Pa
         )
         argv = ("/usr/bin/python3", "-u", "-c", script)
         listener = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -189,7 +189,7 @@ def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: pathlib.Pa
         probe = _connect_probe(_PORT + 1, "REACHED")
         argv = ("/usr/bin/python3", "-c", probe)
         outsider = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="none"),
+            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="none"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -226,7 +226,7 @@ def test_a_private_child_cannot_re_enter_a_network_after_the_run_drops_it(
         )
         argv = ("/usr/bin/python3", "-c", probe)
         proc = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -260,7 +260,7 @@ def test_a_private_policy_without_a_network_refuses_rather_than_running_alone(
     That failure would be invisible: the child would look confined and be isolated.
     """
     policy = tools_policy.jail_policy(
-        tmp_path, Config(), "strict", ("/usr/bin/true",), network="session"
+        tmp_path, Config(), "full", ("/usr/bin/true",), network="session"
     )
     with pytest.raises(jail.JailUnavailableError, match="session"):
         jail.run_in_jail(policy)
@@ -271,9 +271,9 @@ def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: path
     from agent6.app import _setup
 
     host_only = Config.model_validate({"sandbox": {"network": "host"}})
-    assert not _setup.wants_session_network(host_only, "strict")
-    assert not _setup.wants_session_network(Config(), "hardened"), "hardened has none to give"
-    assert _setup.wants_session_network(Config(), "strict"), "the default puts commands on one"
+    assert not _setup.wants_session_network(host_only, "full")
+    assert not _setup.wants_session_network(Config(), "partial"), "partial has none to give"
+    assert _setup.wants_session_network(Config(), "full"), "the default puts commands on one"
 
     with_server = Config.model_validate(
         {
@@ -284,7 +284,7 @@ def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: path
             },
         }
     )
-    assert _setup.wants_session_network(with_server, "strict"), "a private server needs one too"
+    assert _setup.wants_session_network(with_server, "full"), "a private server needs one too"
 
 
 def test_the_dev_server_case_end_to_end(tmp_path: pathlib.Path) -> None:
@@ -295,7 +295,7 @@ def test_the_dev_server_case_end_to_end(tmp_path: pathlib.Path) -> None:
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
     sess = pathlib.Path(tempfile.mkdtemp(prefix="privnet-", dir=tmp_path))
     d = dispatch.ToolDispatcher(
-        root=tmp_path, config=cfg, isolation="strict", session_dir=sess, use_jail_session=True
+        root=tmp_path, config=cfg, isolation="full", session_dir=sess, use_jail_session=True
     )
     try:
         serve = (
@@ -374,10 +374,10 @@ def test_a_private_server_gets_one_even_when_the_commands_are_on_the_host(
             },
         }
     )
-    assert _setup.wants_session_network(cfg, "strict")
-    server = _setup.mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["b"])
+    assert _setup.wants_session_network(cfg, "full")
+    server = _setup.mcp_server_policy(cfg, tmp_path, "full", cfg.mcp.servers["b"])
     assert server is not None and server.network == "session"
-    command = tools_policy.jail_policy(tmp_path, cfg, "strict", ("true",))
+    command = tools_policy.jail_policy(tmp_path, cfg, "full", ("true",))
     assert command.network == "host", "the operator put the commands on the host network"
 
 
@@ -453,7 +453,7 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
     host_port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
-    net = jail.SessionNetwork.open() if _setup.wants_session_network(cfg, "strict") else None
+    net = jail.SessionNetwork.open() if _setup.wants_session_network(cfg, "full") else None
     srv = cfg.mcp.servers["browser"]
     mgr = mcp_client.MCPManager.start(
         [
@@ -462,7 +462,7 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
                 command=srv.command,
                 startup_timeout_s=15.0,
                 call_timeout_s=20.0,
-                policy=_setup.mcp_server_policy(cfg, tmp_path, "strict", srv),
+                policy=_setup.mcp_server_policy(cfg, tmp_path, "full", srv),
             )
         ],
         session_net=net,
@@ -471,7 +471,7 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
     d = dispatch.ToolDispatcher(
         root=tmp_path,
         config=cfg,
-        isolation="strict",
+        isolation="full",
         session_dir=sess,
         use_jail_session=True,
         mcp_manager=mgr,
@@ -514,7 +514,7 @@ def test_members_of_the_private_network_cannot_see_or_signal_each_other(
     try:
         argv = ("/usr/bin/python3", "-u", "-c", "import time;print('UP',flush=True);time.sleep(60)")
         victim = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -537,7 +537,7 @@ def test_members_of_the_private_network_cannot_see_or_signal_each_other(
         )
         argv = ("/usr/bin/python3", "-c", probe)
         attacker = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -576,7 +576,7 @@ def test_two_runs_can_each_hold_the_same_port(tmp_path: pathlib.Path) -> None:
         dispatch.ToolDispatcher(
             root=tmp_path,
             config=cfg,
-            isolation="strict",
+            isolation="full",
             session_dir=pathlib.Path(tempfile.mkdtemp(prefix=f"run{i}-", dir=tmp_path)),
             use_jail_session=True,
         )
@@ -618,7 +618,7 @@ def test_a_member_cannot_retune_the_network_everyone_shares(tmp_path: pathlib.Pa
         )
         argv = ("/usr/bin/python3", "-c", probe)
         proc = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -657,7 +657,7 @@ def test_joining_a_network_costs_no_other_layer(tmp_path: pathlib.Path) -> None:
         )
         argv = ("/usr/bin/python3", "-c", probe)
         proc = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "strict", argv, network="session"),
+            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -715,7 +715,7 @@ def test_one_runs_network_cannot_reach_another_runs(tmp_path: pathlib.Path) -> N
             tools_policy.jail_policy(
                 tmp_path,
                 Config(),
-                "strict",
+                "full",
                 ("/usr/bin/python3", "-u", "-c", script),
                 network="session",
             ),
@@ -730,7 +730,7 @@ def test_one_runs_network_cannot_reach_another_runs(tmp_path: pathlib.Path) -> N
         probe = _connect_probe(port, "REACHED")
         intruder = jail.spawn_in_jail(
             tools_policy.jail_policy(
-                tmp_path, Config(), "strict", ("/usr/bin/python3", "-c", probe), network="session"
+                tmp_path, Config(), "full", ("/usr/bin/python3", "-c", probe), network="session"
             ),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,

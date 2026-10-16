@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""What `strict` mounts on top when an operator grant contains the workspace."""
+"""What `full` mounts on top when an operator grant contains the workspace."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def test_a_write_grant_containing_the_workspace_keeps_protect_paths_read_only(
         kinds.JailPolicy(
             cwd=ws,
             argv=("sh", "-c", probe),
-            isolation="strict",
+            isolation="full",
             extra_rw_paths=(outer,),
             extra_protect_paths=(ws / protect,),
             timeout_s=20.0,
@@ -80,7 +80,7 @@ def test_a_read_grant_containing_the_workspace_leaves_it_writable(tmp_path: path
         kinds.JailPolicy(
             cwd=ws,
             argv=("sh", "-c", probe),
-            isolation="strict",
+            isolation="full",
             extra_ro_paths=(outer,),
             extra_protect_paths=(ws / ".git",),
             timeout_s=20.0,
@@ -117,7 +117,7 @@ def test_a_read_grant_inside_the_workspace_holds_under_a_containing_write_grant(
         kinds.JailPolicy(
             cwd=ws,
             argv=("sh", "-c", probe),
-            isolation="strict",
+            isolation="full",
             extra_ro_paths=(ws / "vendor",),
             extra_rw_paths=(outer,),
             timeout_s=20.0,
@@ -155,7 +155,7 @@ def test_a_workspace_named_through_a_symlink_is_mounted_at_its_real_path(
         kinds.JailPolicy(
             cwd=link,
             argv=("sh", "-c", probe),
-            isolation="strict",
+            isolation="full",
             extra_rw_paths=(outer,),
             extra_protect_paths=(link / ".git",),
             timeout_s=20.0,
@@ -189,7 +189,7 @@ def test_a_hidden_path_named_through_a_symlink_is_masked_at_its_real_path(
             kinds.JailPolicy(
                 cwd=cwd,
                 argv=("sh", "-c", "ls -A secret | wc -l"),
-                isolation="strict",
+                isolation="full",
                 hide_paths=(link / "secret",),
                 timeout_s=20.0,
             )

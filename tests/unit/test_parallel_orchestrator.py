@@ -1838,7 +1838,7 @@ def test_cleanup_preserves_unimported_lane(
     git_ops.create_branch(origin, "agent6/fan-l1")
     _git(origin, "checkout", "main")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-    # Each clone's persistent jail home, as a hardened lane's first command leaves it.
+    # Each clone's persistent jail home, as a partial lane's first command leaves it.
     homes = [paths.jail_cache_home(lane.workdir) for lane in lanes]
     for home in homes:
         home.mkdir(parents=True)

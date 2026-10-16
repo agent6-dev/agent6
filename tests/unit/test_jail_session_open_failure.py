@@ -98,7 +98,7 @@ def test_the_launchers_setup_error_is_the_error_both_transports_raise(
     said = "agent6-jail: rootfs setup failed: write grant /data: bind: ENOENT"
     fake = _fake_binary(tmp_path, f'echo "{said}" >&2; exit 2')
     monkeypatch.setattr(jail, "require_jail_binary", lambda: fake)
-    policy = kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",), isolation="hardened")
+    policy = kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",), isolation="partial")
     with pytest.raises(jail.JailUnavailableError) as one_shot:
         jail.run_in_jail(policy)
     with pytest.raises(jail.JailUnavailableError) as served:

@@ -478,7 +478,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 reporter=_labelled(reporter, label.removesuffix(": ")),
             )
     except jail.JailUnavailableError as exc:
-        # The hardened exposure scan builds the run's policy, which creates the jail's HOME.
+        # The partial exposure scan builds the run's policy, which creates the jail's HOME.
         reporter.refuse(str(exc))
         return 2
     confine.warn_cleartext_credential_endpoints(cfg, reporter=reporter)

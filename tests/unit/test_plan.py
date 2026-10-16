@@ -293,7 +293,7 @@ def test_the_run_prompt_states_no_route_off_the_box_under_the_session_network(
     tmp_path: pathlib.Path,
 ) -> None:
     """A run whose commands join the session network is told a download or an install fails."""
-    text = _run_prompt(tmp_path, Config(), "strict")
+    text = _run_prompt(tmp_path, Config(), "full")
     assert "- Commands run with no route off this machine" in text
     assert "__NETWORK_RULE__" not in text
 
@@ -303,14 +303,14 @@ def test_the_run_prompt_has_no_network_rule_when_the_run_has_no_commands(
 ) -> None:
     """A run with `run_commands = "no"` has no command to describe: the rule would speak of none."""
     cfg = Config.model_validate({"sandbox": {"run_commands": "no"}})
-    text = _run_prompt(tmp_path, cfg, "strict")
+    text = _run_prompt(tmp_path, cfg, "full")
     assert "no route off this machine" not in text
     assert "__NETWORK_RULE__" not in text
 
 
 @pytest.mark.parametrize(
     ("isolation", "network"),
-    [("hardened", "auto"), ("none", "auto"), ("strict", "host")],
+    [("partial", "auto"), ("none", "auto"), ("full", "host")],
 )
 def test_the_run_prompt_has_no_network_rule_under_the_host_network(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel, network: str

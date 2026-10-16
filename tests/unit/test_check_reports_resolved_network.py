@@ -18,11 +18,11 @@ from agent6.ui.cli import check_cmds  # pyright: ignore[reportPrivateUsage]
 @pytest.mark.parametrize(
     ("configured", "isolation", "expected"),
     [
-        ("auto", "strict", "session"),  # the default: the run's own network
-        ("session", "strict", "session"),
-        ("host", "strict", "host"),  # asked for the host's, and gets it
-        ("auto", "hardened", "host"),  # no namespaces to give: degraded
-        ("session", "hardened", "host"),  # preflight refuses this; the policy never lies
+        ("auto", "full", "session"),  # the default: the run's own network
+        ("session", "full", "session"),
+        ("host", "full", "host"),  # asked for the host's, and gets it
+        ("auto", "partial", "host"),  # no namespaces to give: degraded
+        ("session", "partial", "host"),  # preflight refuses this; the policy never lies
         ("auto", "none", "host"),
     ],
 )
@@ -40,8 +40,8 @@ def test_a_callers_own_answer_wins_but_still_cannot_outrun_the_level() -> None:
     it is still the host's network.
     """
     cfg = Config()
-    assert policy.resolve_network(cfg, "strict", override="none") == "none"
-    assert policy.resolve_network(cfg, "hardened", override="none") == "host"
+    assert policy.resolve_network(cfg, "full", override="none") == "none"
+    assert policy.resolve_network(cfg, "partial", override="none") == "host"
 
 
 def test_the_level_line_does_not_promise_a_network_the_config_can_decline() -> None:
@@ -49,7 +49,7 @@ def test_the_level_line_does_not_promise_a_network_the_config_can_decline() -> N
 
     `check sandbox` runs before any config is loaded.
     """
-    strict = check_cmds._isolation_means("strict")
-    assert "sandbox.network" in strict, strict
-    for level in ("hardened", "none"):
+    full = check_cmds._isolation_means("full")
+    assert "sandbox.network" in full, full
+    for level in ("partial", "none"):
         assert "the run's own network" not in check_cmds._isolation_means(level)  # type: ignore[arg-type]

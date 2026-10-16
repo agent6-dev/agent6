@@ -29,7 +29,7 @@ def _model_control(**commit: str) -> config.Config:
     )
 
 
-@pytest.mark.parametrize("isolation", ["strict", "hardened", "none"])
+@pytest.mark.parametrize("isolation", ["full", "partial", "none"])
 def test_the_configured_identity_reaches_the_jail(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
@@ -47,7 +47,7 @@ def test_the_configured_identity_reaches_the_jail(
 def test_a_server_and_a_verify_get_the_same_identity(tmp_path: pathlib.Path) -> None:
     """One owner: a caller's own env base is widened the same way as the passthrough set."""
     cfg = _model_control(name="Eric Lesiuta", email="eric@example.com")
-    env = dict(policy.jail_policy(tmp_path, cfg, "strict", ("srv",), env_base={"X": "1"}).env)
+    env = dict(policy.jail_policy(tmp_path, cfg, "full", ("srv",), env_base={"X": "1"}).env)
     assert env["X"] == "1"
     assert {k: env.get(k) for k in _IDENTITY} == _IDENTITY
 
@@ -58,12 +58,12 @@ def test_an_unset_identity_passes_nothing(
     """Unset leaves git its identity (a repo-local user.name serves); the shell's never leaks."""
     for key in _IDENTITY:
         monkeypatch.setenv(key, "leaked")
-    env = dict(policy.jail_policy(tmp_path, _model_control(), "strict", ("git", "commit")).env)
+    env = dict(policy.jail_policy(tmp_path, _model_control(), "full", ("git", "commit")).env)
     assert not set(env) & set(_IDENTITY)
 
 
 def test_each_half_rides_alone(tmp_path: pathlib.Path) -> None:
     """A name without an email sets the two name variables only, as agent6's own commits do."""
-    env = dict(policy.jail_policy(tmp_path, _model_control(name="Eric"), "strict", ("git",)).env)
+    env = dict(policy.jail_policy(tmp_path, _model_control(name="Eric"), "full", ("git",)).env)
     assert env["GIT_AUTHOR_NAME"] == env["GIT_COMMITTER_NAME"] == "Eric"
     assert "GIT_AUTHOR_EMAIL" not in env and "GIT_COMMITTER_EMAIL" not in env

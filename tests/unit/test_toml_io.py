@@ -359,13 +359,13 @@ def test_upsert_toml_leaf_replaces_a_whole_multiline_value(tmp_path: pathlib.Pat
     """
     path = tmp_path / "config.toml"
     path.write_text(
-        '[sandbox]\nallow_urls = [\n  "https://a.example",\n]\nprofile = "strict"\n',
+        '[sandbox]\nallow_urls = [\n  "https://a.example",\n]\nprofile = "full"\n',
         encoding="utf-8",
     )
     io.upsert_toml_leaf(path, "sandbox.allow_urls", ["https://a.example", "https://b.example"])
     data = tomllib.loads(path.read_text(encoding="utf-8"))  # parses at all
     assert data["sandbox"]["allow_urls"] == ["https://a.example", "https://b.example"]
-    assert data["sandbox"]["profile"] == "strict"  # the sibling key survived
+    assert data["sandbox"]["profile"] == "full"  # the sibling key survived
 
 
 def test_upsert_toml_leaf_replaces_a_whole_multiline_string(tmp_path: pathlib.Path) -> None:

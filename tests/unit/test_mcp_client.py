@@ -568,7 +568,7 @@ def _pid_alive(pid: int) -> bool:
 def test_manager_close_kills_setsid_escapee(tmp_path: pathlib.Path) -> None:
     """Closing an MCP server must not leave a process behind.
 
-    A server with no PID namespace (`hardened`, or `none` here) that forks a `setsid` child puts
+    A server with no PID namespace (`partial`, or `none` here) that forks a `setsid` child puts
     that child outside the launcher's process group, so it reparents onto the agent and survives a
     kill of the launcher pid alone. close() must run the escapee sweep, not just signal the
     launcher.

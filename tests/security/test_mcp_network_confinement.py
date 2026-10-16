@@ -35,7 +35,7 @@ def _probe(script: str, cwd: pathlib.Path, *, network: kinds.NetworkMode = "none
     stdout pipe.
     """
     argv = ("/usr/bin/python3", "-c", script)
-    policy = tools_policy.jail_policy(cwd, Config(), "strict", argv, network=network)
+    policy = tools_policy.jail_policy(cwd, Config(), "full", argv, network=network)
     proc = jail.spawn_in_jail(
         policy,
         stdin=subprocess.DEVNULL,

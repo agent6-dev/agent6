@@ -467,7 +467,7 @@ def test_a_execution_restamps_a_config_selected_preset(tmp_path: pathlib.Path) -
         },
     )
 
-    stamps.stamp_execution(tmp_path, Config(preset="new-config"), "run", "strict")
+    stamps.stamp_execution(tmp_path, Config(preset="new-config"), "run", "full")
 
     harness = sessions_manifest.read_manifest(tmp_path).harness
     assert harness.preset == "new-config"
@@ -502,10 +502,10 @@ def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: path
         }
     )
 
-    stamps.stamp_execution(tmp_path, cfg, "run", "strict")
+    stamps.stamp_execution(tmp_path, cfg, "run", "full")
 
     m = sessions_manifest.read_manifest(tmp_path)
-    assert m.policy.isolation == "strict"
+    assert m.policy.isolation == "full"
     assert m.policy.run_commands == "ask"
     assert m.policy.commit_per_step is False
     assert m.models.driver is not None and m.models.driver.model == "new-model"

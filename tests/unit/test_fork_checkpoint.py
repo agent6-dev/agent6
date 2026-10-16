@@ -1230,16 +1230,16 @@ def test_fork_manifest_stamps_the_resolved_isolation(
     state = paths.state_dir(repo)
     _seed_source_run(state, "iso-src-AAAA11", head_sha=head, turns=(1, 2))
 
-    def _hardened(_knob: str, _env: object) -> str:
-        return "hardened"
+    def _partial(_knob: str, _env: object) -> str:
+        return "partial"
 
-    monkeypatch.setattr("agent6.sandbox.detect.resolve_isolation", _hardened)
+    monkeypatch.setattr("agent6.sandbox.detect.resolve_isolation", _partial)
     assert fork._cmd_fork((), "iso-src", new_session_id="iso-fork-BBBB22", no_run=True) == 0
     dst = sessions_layout.SessionLayout(
         state_dir=state, session_id="iso-fork-BBBB22", subdir="runs"
     )
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["policy"]["isolation"] == "hardened"
+    assert manifest["policy"]["isolation"] == "partial"
 
 
 # --- a fork's own worktree ------------------------------------------------------
@@ -1348,12 +1348,12 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
     def _no_missing(_cfg: object) -> None:
         return None
 
-    def _strict(*_a: object, **_k: object) -> str:
-        return "strict"
+    def _full(*_a: object, **_k: object) -> str:
+        return "full"
 
     monkeypatch.setattr(_execution, "run_execution", _fake_execution)
     monkeypatch.setattr(_setup, "check_provider_keys", _no_missing)
-    monkeypatch.setattr(_session, "select_isolation", _strict)
+    monkeypatch.setattr(_session, "select_isolation", _full)
     rc = resume_mod.resume_task(
         (), "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )

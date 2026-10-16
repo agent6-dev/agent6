@@ -19,7 +19,7 @@ pytestmark = pytest.mark.needs_namespaces
 
 def _session(cwd: pathlib.Path) -> jail_session.JailSession:
     return jail_session.JailSession.open(
-        kinds.JailPolicy(cwd=cwd, argv=("true",), isolation="strict", timeout_s=30.0)
+        kinds.JailPolicy(cwd=cwd, argv=("true",), isolation="full", timeout_s=30.0)
     )
 
 
@@ -181,7 +181,7 @@ def test_a_dead_session_refuses_with_its_own_error(tmp_path: pathlib.Path) -> No
 
     Every caller is written against JailUnavailableError; a raw OSError would escape the
     dispatcher's jail handler, SessionJob's status and ToolDispatcher.close() before teardown
-    stopped the shells. Under strict the request-serving process is a namespaced child the
+    stopped the shells. Under full the request-serving process is a namespaced child the
     launcher forked, and it keeps the pipes if only its parent dies; normal teardown kills
     neither, since `close()` shuts stdin and the serve loop exits on EOF.
     """
@@ -209,7 +209,7 @@ def test_a_session_command_gets_the_configured_memory_cap(tmp_path: pathlib.Path
     """
     session = jail_session.JailSession.open(
         kinds.JailPolicy(
-            cwd=tmp_path, argv=("true",), isolation="strict", timeout_s=30.0, memory_limit_mb=256
+            cwd=tmp_path, argv=("true",), isolation="full", timeout_s=30.0, memory_limit_mb=256
         )
     )
     try:
@@ -228,7 +228,7 @@ def test_a_backgrounded_command_gets_the_same_memory_cap(tmp_path: pathlib.Path)
     """
     session = jail_session.JailSession.open(
         kinds.JailPolicy(
-            cwd=tmp_path, argv=("true",), isolation="strict", timeout_s=30.0, memory_limit_mb=256
+            cwd=tmp_path, argv=("true",), isolation="full", timeout_s=30.0, memory_limit_mb=256
         )
     )
     try:
@@ -309,9 +309,9 @@ def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(
     from agent6.config import Config
     from agent6.tools import dispatch
 
-    cfg = Config.model_validate({"sandbox": {"isolation": "strict", "run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "full", "run_commands": "yes"}})
     scoped = dispatch.ToolDispatcher(
-        root=tmp_path, config=cfg, isolation="strict", use_jail_session=True
+        root=tmp_path, config=cfg, isolation="full", use_jail_session=True
     )
     try:
         first = scoped.dispatch(
@@ -324,7 +324,7 @@ def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(
     finally:
         scoped.close()
 
-    bare = dispatch.ToolDispatcher(root=tmp_path, config=cfg, isolation="strict")
+    bare = dispatch.ToolDispatcher(root=tmp_path, config=cfg, isolation="full")
     try:
         wrote = bare.dispatch(
             "run_command", {"argv": ["sh", "-c", "echo two > /tmp/marker2; echo ok"]}
@@ -347,11 +347,11 @@ def test_a_backgrounded_server_is_reachable_by_the_run_s_next_command(
     from agent6.config import Config
     from agent6.tools import dispatch
 
-    cfg = Config.model_validate({"sandbox": {"isolation": "strict", "run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "full", "run_commands": "yes"}})
     d = dispatch.ToolDispatcher(
         root=tmp_path,
         config=cfg,
-        isolation="strict",
+        isolation="full",
         use_jail_session=True,
         session_dir=tmp_path / "session",
         state_dir=tmp_path / "state",

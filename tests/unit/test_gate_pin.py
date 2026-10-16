@@ -268,9 +268,9 @@ def test_a_run_records_the_isolation_it_actually_ran_under(tmp_path: pathlib.Pat
         base_branch="main",
         run_branch=None,
         cfg=Config(),  # sandbox.isolation defaults to "auto"
-        isolation="hardened",
+        isolation="partial",
     )
-    assert sessions_manifest.read_manifest(layout.session_dir).policy.isolation == "hardened"
+    assert sessions_manifest.read_manifest(layout.session_dir).policy.isolation == "partial"
 
 
 def test_a_fresh_gateless_manifest_leaves_the_gate_pending(tmp_path: pathlib.Path) -> None:

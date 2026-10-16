@@ -27,7 +27,7 @@ def test_a_jailed_git_var_reads_the_configured_identity(tmp_path: pathlib.Path) 
         }
     )
     policy = tools_policy.jail_policy(
-        tmp_path, cfg, "strict", ("git", "var", "GIT_AUTHOR_IDENT"), network="none"
+        tmp_path, cfg, "full", ("git", "var", "GIT_AUTHOR_IDENT"), network="none"
     )
     res = jail.run_in_jail(policy)
     assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)

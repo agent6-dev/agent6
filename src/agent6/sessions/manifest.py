@@ -291,7 +291,7 @@ class SessionManifest(pydantic.BaseModel):
             source's.
         worktree_git_dir: The repository git dir that worktree points into: the one path its
             execution's jail grants beyond the workspace. Never read back from the
-            worktree's own `.git` pointer, which a jailed command can rewrite under hardened.
+            worktree's own `.git` pointer, which a jailed command can rewrite under partial.
         workspace_set_up: Whether the setup command ran in the session's own worktree or
             clone; a resume runs it only while this is False. A fork's new worktree starts
             False, and an `/undo` fork carries its source's.

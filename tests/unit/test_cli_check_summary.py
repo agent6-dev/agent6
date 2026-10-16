@@ -122,9 +122,9 @@ def test_run_header_prints_the_inferred_gate_as_check_verify_does(
     from agent6.ui.cli import main
 
     (tmp_path / "AGENTS.md").write_text(
-        "## Verify command\n\n```bash\npytest -q &&\n  mypy --strict pkg\n```\n", encoding="utf-8"
+        "## Verify command\n\n```bash\npytest -q &&\n  mypy --full pkg\n```\n", encoding="utf-8"
     )
-    command = "sh -c 'pytest -q && mypy --strict pkg'"
+    command = "sh -c 'pytest -q && mypy --full pkg'"
     monkeypatch.chdir(tmp_path)
     assert main(["check", "verify"]) == 0
     assert f"unset; a run here infers {command} from AGENTS.md\n" in capsys.readouterr().out
@@ -244,18 +244,18 @@ def test_boundaries_fails_when_a_run_would_refuse_the_config(
 
     config_path = tmp_path / "config.toml"
     config_path.write_text(
-        '[sandbox]\nisolation = "hardened"\nnetwork = "session"\n', encoding="utf-8"
+        '[sandbox]\nisolation = "partial"\nnetwork = "session"\n', encoding="utf-8"
     )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(_setup, "detect_env", object)
 
-    def _hardened(_requested: str, _env: object) -> str:
-        return "hardened"
+    def _partial(_requested: str, _env: object) -> str:
+        return "partial"
 
     def _no_degradation(_env: object) -> None:
         return None
 
-    monkeypatch.setattr(detect, "resolve_isolation", _hardened)
+    monkeypatch.setattr(detect, "resolve_isolation", _partial)
     monkeypatch.setattr(detect, "degrade_reason", _no_degradation)
 
     rc = check_cmds._cmd_check(  # pyright: ignore[reportPrivateUsage]
@@ -265,7 +265,7 @@ def test_boundaries_fails_when_a_run_would_refuse_the_config(
     out = capsys.readouterr().out
     assert rc == 1
     assert "[FAIL] boundaries: a run would refuse:" in out.split("== summary ==", 1)[1]
-    assert "sandbox.network = 'session' requires the strict isolation" in out
+    assert "sandbox.network = 'session' requires the full isolation" in out
 
 
 def test_boundaries_alone_prints_no_empty_summary(

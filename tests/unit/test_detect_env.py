@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`detect_env` asks the jail binary itself whether `strict` works.
+"""`detect_env` asks the jail binary itself whether `full` works.
 
 `probe_userns_supported` runs `/usr/bin/unshare`, which is wrong in both directions: an AppArmor
 profile can grant the jail binary userns but not unshare, and inside Docker with a relaxed seccomp
@@ -31,7 +31,7 @@ def _env(userns: bool, *, sandbox: bool = True) -> detect.Environment:
 
 
 def _fail_probe() -> bool:
-    pytest.fail("strict_namespaces_work should not be called here")
+    pytest.fail("namespaces_work should not be called here")
 
 
 def test_detect_env_does_not_probe_where_there_is_no_sandbox(
@@ -39,35 +39,35 @@ def test_detect_env_does_not_probe_where_there_is_no_sandbox(
 ) -> None:
     """A non-Linux host has no jail to ask."""
     monkeypatch.setattr(detect, "environment", lambda: _env(False, sandbox=False))
-    monkeypatch.setattr(_setup, "strict_namespaces_work", _fail_probe)
+    monkeypatch.setattr(_setup, "namespaces_work", _fail_probe)
     assert _setup.detect_env().detected_isolation == "none"
 
 
 def test_detect_env_keeps_userns_when_the_jail_agrees(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(detect, "environment", lambda: _env(True))
-    monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: True)
+    monkeypatch.setattr(_setup, "namespaces_work", lambda: True)
     assert _setup.detect_env().userns_supported is True
 
 
-def test_detect_env_drops_to_hardened_when_the_jail_cannot_do_strict(
+def test_detect_env_drops_to_partial_when_the_jail_cannot_do_full(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A jail that fails its own probe resolves `auto` down, never announces strict and then dies.
+    """A jail that fails its own probe resolves `auto` down, never announces full and then dies.
 
     The Docker case: `unshare` succeeds under a relaxed seccomp profile and AppArmor then denies the
     jail's `mount`.
     """
     monkeypatch.setattr(detect, "environment", lambda: _env(True))
-    monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: False)
+    monkeypatch.setattr(_setup, "namespaces_work", lambda: False)
     env = _setup.detect_env()
     assert env.userns_supported is False
-    assert env.detected_isolation == "hardened"
+    assert env.detected_isolation == "partial"
 
 
-def test_detect_env_upgrades_to_strict_via_jail_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_detect_env_upgrades_to_full_via_jail_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     # The AppArmor-isolation case: unshare blocked, but the jail binary can userns.
     monkeypatch.setattr(detect, "environment", lambda: _env(False))
-    monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: True)
+    monkeypatch.setattr(_setup, "namespaces_work", lambda: True)
     assert _setup.detect_env().userns_supported is True
 
 
@@ -87,7 +87,7 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
     fake.write_text("#!/bin/sh\n", encoding="utf-8")
     fake.chmod(0o644)
     monkeypatch.setenv("AGENT6_JAIL_BIN", str(fake))
-    jail.strict_namespaces_work.cache_clear()
+    jail.namespaces_work.cache_clear()
     try:
         with pytest.raises(jail.JailUnavailableError, match=re.escape(str(fake))):
             _setup.detect_env()
@@ -102,18 +102,18 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
             )
         assert any(str(fake) in line and "uv sync --reinstall-package" in line for line in said)
     finally:
-        jail.strict_namespaces_work.cache_clear()
+        jail.namespaces_work.cache_clear()
 
 
-def test_detect_env_stays_hardened_when_jail_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_detect_env_stays_partial_when_jail_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(detect, "environment", lambda: _env(False))
-    monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: False)
+    monkeypatch.setattr(_setup, "namespaces_work", lambda: False)
     assert _setup.detect_env().userns_supported is False
 
 
 def test_detect_env_skips_probe_off_linux(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(detect, "environment", lambda: _env(False, sandbox=False))
-    monkeypatch.setattr(_setup, "strict_namespaces_work", _fail_probe)  # not consulted
+    monkeypatch.setattr(_setup, "namespaces_work", _fail_probe)  # not consulted
     assert _setup.detect_env().userns_supported is False
 
 
@@ -155,13 +155,13 @@ def test_degrade_reason_covers_the_landlock_less_floor(monkeypatch: pytest.Monke
 
 
 def test_unsupported_seccomp_arch_degrades_auto_and_refuses_explicit() -> None:
-    """With no seccomp filter (off x86_64 and aarch64) `auto` degrades to none, strict refuses."""
+    """With no seccomp filter (off x86_64 and aarch64) `auto` degrades to none, full refuses."""
     import dataclasses
 
     e = dataclasses.replace(_env(True), seccomp_arch_supported=False)
     assert e.detected_isolation == "none"
     assert "seccomp filter" in (detect.degrade_reason(e) or "")
-    for requested in ("strict", "hardened"):
+    for requested in ("full", "partial"):
         with pytest.raises(detect.IsolationUnavailableError, match="seccomp filter"):
             detect.resolve_isolation(requested, e)
     # auto and the explicit opt-out still resolve.

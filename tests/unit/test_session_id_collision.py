@@ -63,8 +63,8 @@ def _load_cfg() -> Config:
     return layer.load_effective(pathlib.Path.cwd(), ()).config
 
 
-def _strict(*_args: object, **_kwargs: object) -> str:
-    return "strict"
+def _full(*_args: object, **_kwargs: object) -> str:
+    return "full"
 
 
 def test_run_refuses_an_explicit_id_held_by_another_bucket(
@@ -132,7 +132,7 @@ def test_an_existing_finished_id_names_a_runnable_resume_command(
         json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True}) + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(_session, "select_isolation", _strict)
+    monkeypatch.setattr(_session, "select_isolation", _full)
 
     rc = run_mod.run_task(
         _load_cfg(),
@@ -156,7 +156,7 @@ def test_a_damaged_existing_id_does_not_name_an_unusable_resume_command(
     session = paths.state_dir(repo) / "sessions" / "runs" / "damaged-run"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text("{not json\n", encoding="utf-8")
-    monkeypatch.setattr(_session, "select_isolation", _strict)
+    monkeypatch.setattr(_session, "select_isolation", _full)
 
     rc = run_mod.run_task(
         _load_cfg(),

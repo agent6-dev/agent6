@@ -17,7 +17,7 @@ def _host_cfg() -> Config:
     return Config.model_validate({"sandbox": {"network": "host"}})
 
 
-@pytest.mark.parametrize("isolation", ["strict", "hardened"])
+@pytest.mark.parametrize("isolation", ["full", "partial"])
 def test_the_host_network_grants_the_resolver_and_trust_store_files(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
@@ -44,7 +44,7 @@ def test_a_session_or_absent_network_grants_no_host_network_file(tmp_path: pathl
     """The resolver and trust-store grants follow the host network only."""
     reads = set(policy.host_network_reads())
     for network in ("session", "none"):
-        built = policy.jail_policy(tmp_path, Config(), "strict", ("true",), network=network)  # pyright: ignore[reportArgumentType]
+        built = policy.jail_policy(tmp_path, Config(), "full", ("true",), network=network)  # pyright: ignore[reportArgumentType]
         assert built.network == network
         assert not reads & set(built.extra_ro_paths)
 
@@ -65,14 +65,14 @@ def test_a_symlinked_grant_reaches_the_launcher_under_both_names(tmp_path: pathl
     real.mkdir()
     plain.mkdir()
     link.symlink_to(real, target_is_directory=True)
-    # Pinned strict: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    # Pinned full: pytest's tmp_path sits in /tmp, where a link counts under auto.
     grants = {
-        "isolation": "strict",
+        "isolation": "full",
         "extra_read_paths": [str(link)],
         "extra_write_paths": [str(plain)],
     }
     cfg = Config.model_validate({"sandbox": grants})
-    built = policy.jail_policy(tmp_path / "repo", cfg, "strict", ("true",))
+    built = policy.jail_policy(tmp_path / "repo", cfg, "full", ("true",))
     assert link in built.extra_ro_paths and plain in built.extra_rw_paths
     assert built.grant_sources == ((link, real),)
 
@@ -89,11 +89,11 @@ def test_a_grant_that_links_through_the_workspace_is_dropped(tmp_path: pathlib.P
     (repo / "current").symlink_to(real, target_is_directory=True)
     (tools / "through").symlink_to(repo / "current", target_is_directory=True)
     (tools / "direct").symlink_to(real, target_is_directory=True)
-    # Pinned strict: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    # Pinned full: pytest's tmp_path sits in /tmp, where a link counts under auto.
     cfg = Config.model_validate(
         {
             "sandbox": {
-                "isolation": "strict",
+                "isolation": "full",
                 "extra_read_paths": [str(tools / "through"), str(tools / "direct")],
             }
         }
@@ -109,10 +109,10 @@ def test_a_grant_that_links_through_the_workspace_is_dropped(tmp_path: pathlib.P
 
 
 def test_a_grant_that_links_through_tmp_is_dropped(tmp_path: pathlib.Path) -> None:
-    """A hardened run's commands write the host's `/tmp`, so a grant there is re-pointable.
+    """A partial run's commands write the host's `/tmp`, so a grant there is re-pointable.
 
     Spelled inside it or reached through a link there, the grant is dropped; what it held stays
-    reachable as part of `/tmp`. Under `strict`, whose `/tmp` is private, both are kept.
+    reachable as part of `/tmp`. Under `full`, whose `/tmp` is private, both are kept.
     """
     import os
 
@@ -125,15 +125,13 @@ def test_a_grant_that_links_through_tmp_is_dropped(tmp_path: pathlib.Path) -> No
     spelled.mkdir()
     try:
         paths = [str(link / "data"), str(spelled)]
-        hardened = Config.model_validate(
-            {"sandbox": {"isolation": "hardened", "extra_read_paths": paths}}
+        partial = Config.model_validate(
+            {"sandbox": {"isolation": "partial", "extra_read_paths": paths}}
         )
         (real / "data").mkdir()
-        grants = policy.resolve_grants(hardened, repo)
-        strict = Config.model_validate(
-            {"sandbox": {"isolation": "strict", "extra_read_paths": paths}}
-        )
-        kept = policy.resolve_grants(strict, repo)
+        grants = policy.resolve_grants(partial, repo)
+        full = Config.model_validate({"sandbox": {"isolation": "full", "extra_read_paths": paths}})
+        kept = policy.resolve_grants(full, repo)
     finally:
         link.unlink()
         spelled.rmdir()
@@ -142,9 +140,7 @@ def test_a_grant_that_links_through_tmp_is_dropped(tmp_path: pathlib.Path) -> No
     tmp = pathlib.Path("/tmp").resolve()
     assert (linked.path, linked.region) == (link / "data", tmp)
     assert (inside.path, inside.region, inside.via_link) == (spelled, tmp, False)
-    assert (
-        "a hardened run's commands write" in inside.line() and "strict to keep it" in inside.line()
-    )
+    assert "a partial run's commands write" in inside.line() and "full to keep it" in inside.line()
     assert kept.read == ((link / "data", real / "data"), (spelled, spelled.resolve()))
     assert not kept.dropped
 
@@ -161,7 +157,7 @@ def test_a_grant_that_is_the_workspace_under_another_name_is_dropped(
     repo.mkdir()
     alias.symlink_to(repo, target_is_directory=True)
     cfg = Config.model_validate(
-        {"sandbox": {"isolation": "strict", "extra_write_paths": [str(alias)]}}
+        {"sandbox": {"isolation": "full", "extra_write_paths": [str(alias)]}}
     )
 
     grants = policy.resolve_grants(cfg, repo)
@@ -181,7 +177,7 @@ def test_a_dropped_link_that_leads_out_of_its_region_names_the_targets_own_path(
     outside.mkdir()
     (repo / "out").symlink_to(outside, target_is_directory=True)
     cfg = Config.model_validate(
-        {"sandbox": {"isolation": "strict", "extra_read_paths": [str(repo / "out")]}}
+        {"sandbox": {"isolation": "full", "extra_read_paths": [str(repo / "out")]}}
     )
     (dropped,) = policy.resolve_grants(cfg, repo).dropped
     assert dropped.real == outside and dropped.region == repo

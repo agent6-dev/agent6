@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The jail's HOME, live.
 
-Strict's private one leaves nothing on the host; the persistent one is bound read-write at
+Full's private one leaves nothing on the host; the persistent one is bound read-write at
 its real path with nothing beside it.
 """
 
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.needs_namespaces
 def cache_home(monkeypatch: pytest.MonkeyPatch) -> Iterator[pathlib.Path]:
     """A cache dir outside every other grant.
 
-    pytest's tmp_path sits under /tmp, which hardened grants wholesale, so a HOME there would
+    pytest's tmp_path sits under /tmp, which partial grants wholesale, so a HOME there would
     be writable with or without its own grant; /var/tmp is granted by nothing.
     """
     base = pathlib.Path("/var/tmp")
@@ -61,14 +61,14 @@ def _operator_home_probe() -> str:
 
 @pytest.mark.parametrize(
     ("isolation", "cfg"),
-    [("strict", Config(sandbox=SandboxConfig(home="cache"))), ("hardened", Config())],
+    [("full", Config(sandbox=SandboxConfig(home="cache"))), ("partial", Config())],
 )
 def test_the_persistent_home_is_writable_and_the_operators_home_is_not(
     tmp_path: pathlib.Path, cache_home: pathlib.Path, isolation: str, cfg: Config
 ) -> None:
     """`touch ~/probe` lands on the host cache dir; the operator's own home stays out of reach.
 
-    Strict: absent from the rootfs; hardened: no Landlock rule covers it. No preflight runs
+    Full: absent from the rootfs; partial: no Landlock rule covers it. No preflight runs
     here: the policy builder alone creates the dir, as it does for `agent6 exec` and an MCP
     probe.
     """
@@ -91,7 +91,7 @@ def test_the_persistent_home_is_writable_and_the_operators_home_is_not(
 
 
 def test_the_tmpfs_home_goes_with_the_run(tmp_path: pathlib.Path, cache_home: pathlib.Path) -> None:
-    """Strict's default HOME is created by the launcher inside the private /tmp.
+    """Full's default HOME is created by the launcher inside the private /tmp.
 
     `cd ~` works, the write never reaches the host, and the cache dir is left alone.
     """
@@ -99,7 +99,7 @@ def test_the_tmpfs_home_goes_with_the_run(tmp_path: pathlib.Path, cache_home: pa
         tools_policy.jail_policy(
             tmp_path,
             Config(),
-            "strict",
+            "full",
             ("/bin/sh", "-c", 'test "$HOME" = /tmp/agent6-home && cd ~ && touch probe && echo ok'),
             network="none",
         )

@@ -145,7 +145,7 @@ def _cfg(**sandbox: Any) -> Config:
     return Config.model_validate({"sandbox": sandbox})
 
 
-def _widening(operator: Config, state: Config, isolation: kinds.IsolationLevel = "strict") -> str:
+def _widening(operator: Config, state: Config, isolation: kinds.IsolationLevel = "full") -> str:
     return "; ".join(sandbox_widening(operator, isolation, state, isolation).values())
 
 
@@ -165,7 +165,7 @@ def working_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
         )
 
     monkeypatch.setattr(jail, "run_in_jail", ok)
-    monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: True)
+    monkeypatch.setattr(_setup, "namespaces_work", lambda: True)
     return ran
 
 
@@ -328,7 +328,7 @@ def test_a_key_with_no_rule_must_equal_the_operators(monkeypatch: pytest.MonkeyP
         ({"home": "cache"}, {"home": "tmp"}),
         ({"fetch_hosts": ["*"]}, {"fetch_hosts": ["docs.python.org"]}),
         ({"fetch_hosts": ["a.example", "b.example"]}, {"fetch_hosts": ["a.example"]}),
-        ({"isolation": "auto"}, {"isolation": "strict"}),
+        ({"isolation": "auto"}, {"isolation": "full"}),
     ],
 )
 def test_an_overlay_may_narrow(operator: dict[str, Any], state: dict[str, Any]) -> None:
@@ -452,16 +452,16 @@ def test_a_path_is_compared_by_where_it_really_is(tmp_path: pathlib.Path) -> Non
 
 
 def test_isolation_is_compared_by_the_level_it_resolves_to() -> None:
-    op, st = _cfg(isolation="strict"), _cfg(isolation="auto")
-    assert sandbox_widening(op, "strict", st, "strict") == {}
-    assert "isolation" in sandbox_widening(op, "strict", st, "hardened")
-    assert "isolation" in sandbox_widening(_cfg(), "strict", _cfg(isolation="none"), "none")
+    op, st = _cfg(isolation="full"), _cfg(isolation="auto")
+    assert sandbox_widening(op, "full", st, "full") == {}
+    assert "isolation" in sandbox_widening(op, "full", st, "partial")
+    assert "isolation" in sandbox_widening(_cfg(), "full", _cfg(isolation="none"), "none")
 
 
 def test_network_is_compared_by_what_it_resolves_to() -> None:
-    """Outside strict every child shares the host network, so `auto` there is not a widening."""
-    assert _widening(_cfg(network="host"), _cfg(network="auto"), "hardened") == ""
-    assert "sandbox.network" in _widening(_cfg(network="auto"), _cfg(network="host"), "strict")
+    """Outside full every child shares the host network, so `auto` there is not a widening."""
+    assert _widening(_cfg(network="host"), _cfg(network="auto"), "partial") == ""
+    assert "sandbox.network" in _widening(_cfg(network="auto"), _cfg(network="host"), "full")
 
 
 # --- one config per state ---------------------------------------------------------------------
@@ -558,7 +558,7 @@ def test_no_commands_and_disable_sandbox_reach_every_resolved_config(
     """`--no-commands` and `--disable-sandbox` land in the configs, not the env."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
-    _operator(OPERATOR + 'run_commands = "yes"\nisolation = "strict"\n')
+    _operator(OPERATOR + 'run_commands = "yes"\nisolation = "full"\n')
     spec = load_machine(_write(tmp_path, MACHINE))
     configs = resolve_configs(
         spec, tmp_path, _setup.detect_env(), disable_sandbox=True, no_commands=True
@@ -592,7 +592,7 @@ def test_each_tool_state_gets_its_own_jail_policy(
     assert pathlib.Path("/srv/inbox") in scan.extra_ro_paths
     assert pathlib.Path("/srv/inbox") not in store.extra_ro_paths
     assert pathlib.Path("/opt/toolchain") not in scan.extra_ro_paths
-    if configs.machine.isolation == "strict":
+    if configs.machine.isolation == "full":
         assert (scan.network, store.network) == ("none", "host")
     with pytest.raises(jail.JailUnavailableError, match="no config was resolved for state 'ghost'"):
         build("ghost", ("true",), 5.0, ())
@@ -730,13 +730,13 @@ def test_a_machine_run_prints_the_home_grant_warning(
 
 @pytest.mark.usefixtures("working_jail")
 def test_a_stubbed_jail_leaves_no_namespace_verdict_in_the_process() -> None:
-    """A stubbed run leaves `jail.strict_namespaces_work`'s process-wide cache empty."""
-    jail.strict_namespaces_work.cache_clear()
+    """A stubbed run leaves `jail.namespaces_work`'s process-wide cache empty."""
+    jail.namespaces_work.cache_clear()
     try:
         assert _setup.detect_env().userns_supported is True
-        assert jail.strict_namespaces_work.cache_info().currsize == 0
+        assert jail.namespaces_work.cache_info().currsize == 0
     finally:
-        jail.strict_namespaces_work.cache_clear()
+        jail.namespaces_work.cache_clear()
 
 
 # --- the refusal reaches the operator at check and at run ------------------------------------
@@ -817,15 +817,15 @@ def test_a_state_this_host_cannot_honor_refuses_by_name(
     """Each state's config passes the host checks a plain run's does, at startup."""
     monkeypatch.chdir(tmp_path)
     _operator()
-    hardened = dataclasses.replace(_setup.detect_env(), userns_supported=False)
-    if hardened.detected_isolation != "hardened":
-        pytest.skip("this host cannot stand in for a hardened one")
-    monkeypatch.setattr(_setup, "detect_env", lambda: hardened)
+    partial = dataclasses.replace(_setup.detect_env(), userns_supported=False)
+    if partial.detected_isolation != "partial":
+        pytest.skip("this host cannot stand in for a partial one")
+    monkeypatch.setattr(_setup, "detect_env", lambda: partial)
     mfile = _write(tmp_path, MACHINE + '\n[states.store.config.sandbox]\nnetwork = "session"\n')
     reporter = mock.MagicMock()
     assert run.run_machine(mfile, reporter) == 2
     said = " ".join(str(c.args[0]) for c in reporter.refuse.call_args_list)
-    assert said.startswith("[states.store.config]: sandbox.network = 'session' requires the strict")
+    assert said.startswith("[states.store.config]: sandbox.network = 'session' requires the full")
 
 
 def test_resolve_configs_keeps_the_resolved_isolation_per_state(
