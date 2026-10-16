@@ -1,19 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `agent6 check` pre-flight: sandbox, config, MCP, boundaries and verify."""
+"""The `agent6 check` pre-flight: sandbox, config, MCP and verify."""
 
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import pathlib
 import shlex
 import shutil
-from typing import Literal
 
-from agent6 import errors, git_ops, kinds, memory, verify_infer
-from agent6 import paths as agent6_paths
-from agent6.app import _setup, confine, fork_worktrees
+from agent6 import kinds, verify_infer
+from agent6.app import _setup, confine
 from agent6.config import (
     Config,
     ConfigError,
@@ -24,222 +21,10 @@ from agent6.sandbox import (
     JailUnavailableError,
     detect,
     jail,
-    landlock,
-    landlock_abi,
-    run_in_jail,
     tool_paths,
 )
-from agent6.tools import _path_safety, mcp_client
-from agent6.tools import policy as tools_policy
-
-# Mirrors SYSTEM_BINDS in the jail's main.rs; tests/security pins the two against each other.
-_FULL_SYSTEM_BINDS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/alternatives")
-# What partial's Landlock grants read-only (main.rs ro_paths base set).
-_PARTIAL_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc")
-
-
-def _isolation_means(isolation: kinds.IsolationLevel) -> str:
-    """Return one line on what the level bounds, in the words the docs use."""
-    if isolation == "full":
-        # Hedged: no config is loaded here, and `sandbox.network = "host"` declines the netns.
-        return (
-            "the run's commands share one jail: their own filesystem view (only"
-            " granted paths exist), a private /proc, PID namespace and /tmp, a"
-            " filtered syscall set, and the run's own network unless"
-            " sandbox.network says otherwise. See docs/security.md."
-        )
-    if isolation == "partial":
-        return (
-            "commands work in the host's own filesystem, /tmp, /proc and"
-            " network, shared with everything else on it. Landlock path rules"
-            " and a filtered syscall set are the whole boundary."
-            " See docs/security.md."
-        )
-    return "Nothing is confined: commands run as you. See docs/security.md."
-
-
-def _unprobeable(requested: str) -> str:
-    """Return why there is no jail to probe: the three ways isolation resolves to `none`."""
-    if detect.sandbox_disabled_by_env():
-        return "AGENT6_DISABLE_SANDBOX=1: commands run unconfined; skipped"
-    if requested == "none":
-        return "sandbox.isolation = 'none': commands run unconfined; skipped"
-    return "no kernel sandbox on this host; skipped"
-
-
-def _cmd_check_sandbox(cfg: Config | None = None) -> int:  # noqa: PLR0915  # one probe per boundary
-    """Run the sandbox boundary probes under the isolation a run here would use.
-
-    An explicit level this host cannot give is a FAIL naming the refusal.
-
-    Args:
-        cfg: The config; None applies the built-in `auto`.
-
-    Returns:
-        0 when every probe passes, 1 otherwise.
-    """
-    reports: list[kinds.SandboxReport] = []
-
-    try:
-        abi = landlock_abi()
-        reports.append(
-            kinds.SandboxReport(
-                name="landlock_abi",
-                ok=abi > 0,
-                detail=f"ABI {abi}",
-            )
-        )
-    except landlock.LandlockError as exc:
-        reports.append(kinds.SandboxReport(name="landlock_abi", ok=False, detail=str(exc)))
-
-    try:
-        env = _setup.detect_env()
-    except JailUnavailableError as exc:
-        reports.append(kinds.SandboxReport(name="jail_binary", ok=False, detail=str(exc)))
-        return _print_sandbox_reports(reports)
-    requested = cfg.sandbox.isolation if cfg is not None else "auto"
-    try:
-        isolation = detect.resolve_isolation(requested, env)
-    except detect.IsolationUnavailableError as exc:
-        print(f"  sandbox.isolation = {requested!r} cannot run on this host")
-        reports.append(kinds.SandboxReport(name="isolation", ok=False, detail=str(exc)))
-        return _print_sandbox_reports(reports)
-    print(f"  effective isolation ({requested}): {isolation}")
-    reason = detect.degrade_reason(env)
-    if requested == "auto" and reason is not None:
-        # A degraded `auto` never appears without its why; an explicit level is no degrade.
-        print(f"  not full: {reason}")
-    print(f"  {_isolation_means(isolation)}")
-    notes = tool_paths.tool_mount_notes()
-    # Under `none` nothing is confined, so the block would describe a boundary that is not there.
-    if notes.exposes_home_dir and isolation != "none":
-        # Not a per-run warning: every uv-installed tool links into ~/.local/share.
-        how = (
-            "mounted read-only into the jail and readable by"
-            if isolation == "full"
-            else "granted read-only (Landlock path rules) and readable by"
-        )
-        print(
-            f"  {len(notes.exposes_home_dir)}"
-            f" tool{'s' if len(notes.exposes_home_dir) != 1 else ''} on the PATH link into"
-            f" other directories, which are {how} jailed commands:"
-        )
-        for tool in notes.exposes_home_dir:
-            print(f"    {tool}")
-    if isolation == "none":
-        # Unconfined, the /etc-write probe would escape onto the host.
-        reports.append(kinds.SandboxReport(name="jail", ok=False, detail=_unprobeable(requested)))
-        return _print_sandbox_reports(reports)
-
-    def _jail(*argv: str) -> kinds.CommandResult:
-        """Return the result of argv in the selected jail with no network."""
-        return run_in_jail(
-            kinds.JailPolicy(
-                cwd=pathlib.Path.cwd(),
-                argv=argv,
-                isolation=isolation,
-                network="none",
-                timeout_s=10.0,
-            )
-        )
-
-    try:
-        res = _jail("/usr/bin/true")
-        reports.append(
-            kinds.SandboxReport(
-                name="jail_true", ok=res.ok, detail=f"/usr/bin/true exited {res.returncode}"
-            )
-        )
-    except JailUnavailableError as exc:
-        reports.append(kinds.SandboxReport(name="jail_true", ok=False, detail=str(exc)))
-
-    # Only `full` has a network namespace to probe; `partial` shares this process's network.
-    if isolation == "full":
-        try:
-            res = _jail("/usr/bin/getent", "hosts", "example.com")
-            ok = res.returncode != 0
-            # The probe's jail has no network whatever the config says.
-            net = tools_policy.resolve_network(cfg if cfg is not None else Config(), isolation)
-            gives = (
-                "the host's network (sandbox.network)"
-                if net == "host"
-                else "their own network, with no route off this machine"
-            )
-            reports.append(
-                kinds.SandboxReport(
-                    name="jail_blocks_network",
-                    ok=ok,
-                    detail=(
-                        f"a DNS lookup failed (exit {res.returncode}) in a probe jail with no"
-                        " network: the jail can block it; this config gives the run's commands"
-                        f" {gives}"
-                        if ok
-                        else "a DNS lookup succeeded in a probe jail with no network: the"
-                        " network is reachable"
-                    ),
-                )
-            )
-        except JailUnavailableError as exc:
-            reports.append(
-                kinds.SandboxReport(name="jail_blocks_network", ok=False, detail=str(exc))
-            )
-    else:
-        reports.append(
-            kinds.SandboxReport(
-                name="jail_blocks_network",
-                ok=True,
-                detail=(
-                    "n/a under partial: no per-command network namespace; jailed"
-                    " commands share the host network (sandbox.network degrades with"
-                    " a warning)"
-                ),
-            )
-        )
-
-    try:
-        res = _jail("/bin/sh", "-c", "echo x > /etc/agent6-escape || true")
-        # /etc is read-only at both levels, so the file must not appear on the host.
-        ok = not pathlib.Path("/etc/agent6-escape").exists()
-        reports.append(
-            kinds.SandboxReport(
-                name="jail_blocks_etc_write",
-                ok=ok,
-                detail=(
-                    "/etc/agent6-escape was not created"
-                    if ok
-                    else "/etc/agent6-escape was created on the host"
-                ),
-            )
-        )
-    except JailUnavailableError as exc:
-        reports.append(kinds.SandboxReport(name="jail_blocks_etc_write", ok=False, detail=str(exc)))
-
-    return _print_sandbox_reports(reports)
-
-
-def _print_sandbox_reports(reports: list[kinds.SandboxReport]) -> int:
-    """Return the exit code after printing one PASS or FAIL line per report."""
-    overall_ok = True
-    for r in reports:
-        status = "PASS" if r.ok else "FAIL"
-        print(f"[{status}] {r.name}: {r.detail}")
-        overall_ok = overall_ok and r.ok
-    return 0 if overall_ok else 1
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class _DoctorCheck:
-    """One summary row.
-
-    Attributes:
-        name: The check.
-        status: PASS, FAIL, WARN or INFO, carried to the summary line unchanged.
-        detail: The one-line finding.
-    """
-
-    name: str
-    status: Literal["PASS", "FAIL", "WARN", "INFO"]
-    detail: str
+from agent6.tools import mcp_client
+from agent6.ui.cli import _check_sandbox
 
 
 def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
@@ -259,7 +44,7 @@ def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
     print(f"agent6 check: {'all sections' if section == 'all' else section}")
     print()
 
-    checks: list[_DoctorCheck] = []
+    checks: list[kinds.DoctorCheck] = []
     # Every section needs the config: the sandbox probes run under the isolation it selects.
     cfg: Config | None = None
     explicit_leaves: frozenset[str] = frozenset()
@@ -270,40 +55,18 @@ def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
     except (ConfigError, OSError) as exc:
         load_error = str(exc)
 
-    if section in {"all", "sandbox"}:
-        print("== sandbox ==")
-        if load_error is not None:
-            print(f"  config unreadable ({load_error}); probing the default isolation")
-        rc = _cmd_check_sandbox(cfg)
-        checks.append(
-            _DoctorCheck(
-                name="sandbox",
-                status="PASS" if rc == 0 else "FAIL",
-                detail="all jail probes passed" if rc == 0 else f"check sandbox exit {rc}",
-            )
-        )
-        print()
+    if load_error is not None:
+        print(f"== config ==\n[FAIL] cannot load config: {load_error}\n")
+        checks.append(kinds.DoctorCheck(name="config_load", status="FAIL", detail=load_error))
 
-    if load_error is not None and section in {
-        "all",
-        "sandbox",
-        "mcp",
-        "verify",
-        "config",
-        "boundaries",
-    }:
-        if section != "sandbox":  # that section printed the error itself
-            print(f"== config ==\n[FAIL] cannot load config: {load_error}\n")
-        checks.append(_DoctorCheck(name="config_load", status="FAIL", detail=load_error))
+    if cfg is not None and section in {"all", "sandbox"}:
+        print("== sandbox ==")
+        checks.extend(_check_sandbox.check_sandbox_section(cfg, explicit_leaves))
+        print()
 
     if cfg is not None and section in {"all", "config"}:
         print("== config ==")
-        checks.extend(_check_config_section(cfg, explicit_leaves))
-        print()
-
-    if cfg is not None and section in {"all", "boundaries"}:
-        print("== boundaries ==")
-        checks.extend(_check_boundaries_section(cfg, explicit_leaves))
+        checks.extend(_doctor_check_config(cfg))
         print()
 
     if cfg is not None and section in {"all", "mcp"}:
@@ -316,341 +79,12 @@ def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
         checks.extend(_doctor_check_verify(cfg))
         print()
 
-    # `check boundaries` alone yields a check only for a refusal; an empty summary reads wrong.
-    if checks:
-        print("== summary ==")
+    print("== summary ==")
     failed = False
     for c in checks:
         print(f"[{c.status}] {c.name}: {c.detail}")
         failed = failed or c.status == "FAIL"
     return 1 if failed else 0
-
-
-def _check_config_section(
-    cfg: Config, explicit_leaves: frozenset[str] = frozenset()
-) -> list[_DoctorCheck]:
-    """Print the environment, the selected isolation, the refusal ladder and the static checks.
-
-    Args:
-        cfg: The config.
-        explicit_leaves: The keys the operator set, for the ladder.
-
-    Returns:
-        The section's checks.
-    """
-    try:
-        env = _setup.detect_env()
-    except JailUnavailableError as exc:
-        print(f"  [FAIL] jail binary: {exc}")
-        failed = _DoctorCheck(name="config.isolation", status="FAIL", detail=str(exc))
-        return [failed, *_doctor_check_config(cfg)]
-    print(f"  kernel: {env.kernel.raw}")
-    print(f"  userns supported: {env.userns_supported}")
-    print(f"  sandbox available: {env.sandbox_available}")
-    abi_str = str(env.landlock_abi) if env.sandbox_available else "n/a (no Linux sandbox)"
-    print(f"  Landlock ABI: {abi_str}")
-    print(
-        f"  sandbox.isolation = {cfg.sandbox.isolation}"
-        f"  network = {cfg.sandbox.network}"
-        f"  run_commands = {cfg.sandbox.run_commands}"
-    )
-    out: list[_DoctorCheck] = []
-    try:
-        selected = detect.resolve_isolation(cfg.sandbox.isolation, env)
-        # The resolved values: what `auto` became on this host is the answer.
-        print(
-            f"  -> selected isolation: {selected}"
-            f"  commands' network: {tools_policy.resolve_network(cfg, selected)}"
-        )
-        reason = detect.degrade_reason(env)
-        if cfg.sandbox.isolation == "auto" and reason is not None:
-            print(f"  -> not full: {reason}")
-        # The tools' file boundary follows the config values at every level.
-        ws = tools_policy.workspace_for(cfg, pathlib.Path.cwd())
-        grants = len({*ws.read_roots, *ws.write_roots})
-        print(
-            f"  -> tools' files: {ws.root}  ({grants} extra paths granted, {len(ws.denied)} hidden)"
-        )
-        out.append(
-            _DoctorCheck(name="config.isolation", status="PASS", detail=f"selected {selected}")
-        )
-        # The same ladder every run applies: an explicit knob this host cannot honour refuses.
-        refusal = confine.check_network_support(cfg, selected) or confine.config_refusal(
-            cfg, selected, pathlib.Path.cwd(), explicit_leaves=explicit_leaves
-        )
-        if refusal is not None:
-            print(f"  [FAIL] a run would refuse: {refusal}")
-            out.append(_DoctorCheck(name="config.refusal", status="FAIL", detail=refusal))
-        else:
-            out.append(
-                _DoctorCheck(
-                    name="config.refusal",
-                    status="PASS",
-                    detail=f"every explicit setting works on {selected}",
-                )
-            )
-    except detect.IsolationUnavailableError as exc:
-        print(f"  [FAIL] isolation selection: {exc}")
-        out.append(_DoctorCheck(name="config.isolation", status="FAIL", detail=str(exc)))
-    out.extend(_doctor_check_config(cfg))
-    return out
-
-
-def _grant_lines(grants: tools_policy.Grants) -> list[str]:
-    """Return the operator's extra path grants, shared verbatim by both actors.
-
-    Each line names the resolved path a run binds, with the configured spelling when the two
-    differ, and each grant a run leaves out says why.
-    """
-
-    def line(mode: str, key: str, path: pathlib.Path, real: pathlib.Path) -> str:
-        spelled = "" if path == real else f", configured as {path}"
-        return f"    {mode}  {real}  (sandbox.{key}{spelled})"
-
-    written = {real for _path, real in grants.write}
-    out = [
-        line("ro", "extra_read_paths", path, real)
-        for path, real in sorted(grants.read, key=lambda pair: pair[1])
-        if real not in written
-    ]
-    out += [
-        line("rw", "extra_write_paths", path, real)
-        for path, real in sorted(grants.write, key=lambda pair: pair[1])
-    ]
-    out += [
-        f"    --  {d.path}  ({d.key}: not granted,"
-        f" {'a link on its way sits' if d.via_link else 'it sits'} inside {d.region},"
-        " which jailed commands write)"
-        for d in grants.dropped
-    ]
-    return out
-
-
-def _device_lines(cfg: Config) -> list[str]:
-    """Return the device-node grants, which only the jail reads."""
-    return [f"    dev {p}  (sandbox.extra_device_paths)" for p in cfg.sandbox.extra_device_paths]
-
-
-def _home_line(
-    cfg: Config,
-    selected: kinds.IsolationLevel,
-    root: pathlib.Path,
-    git_grant: pathlib.Path | None,
-) -> str:
-    """Return the jail's HOME line: full's tmpfs, or the repository's cache dir and why."""
-    persistent = tools_policy.persistent_jail_home(cfg, selected, root, git_grant)
-    if persistent is None:
-        return f"    rw  {tools_policy.JAIL_TMP_HOME}  (HOME, inside the private /tmp)"
-    why = "sandbox.home = cache" if selected == "full" else f"{selected} has no private /tmp"
-    return f"    rw  {persistent}  (HOME, persists across runs: {why})"
-
-
-def _fork_git_grant(
-    cfg: Config, ws: _path_safety.Workspace, selected: kinds.IsolationLevel
-) -> pathlib.Path | None:
-    """Return the repository git dir a fork's worktree grants a jailed command, or None.
-
-    Resolved through the execution's own policy builder, so the line matches the grant.
-    """
-    if selected == "none":
-        return None
-    try:
-        repo = git_ops.git_common_dir(ws.root).parent
-    except errors.GitError:
-        return None
-    for worktree, sessions in fork_worktrees.worktree_owners(agent6_paths.state_dir(repo)).items():
-        if worktree.resolve() != ws.root:
-            continue
-        git_dir = next((m.worktree_git_dir for _d, m in sessions if m.worktree_git_dir), None)
-        if git_dir is not None:
-            tools_policy.jail_policy(ws.root, cfg, selected, ("true",), worktree_git_dir=git_dir)
-        return git_dir
-    return None
-
-
-def _boundaries_commands(
-    cfg: Config,
-    ws: _path_safety.Workspace,
-    grants: tools_policy.Grants,
-    selected: kinds.IsolationLevel,
-    git_grant: pathlib.Path | None,
-) -> None:
-    """Print what a jailed command reaches: the gate, the files and the network."""
-    # "no" withholds the command tools; the paths are then an operator-driven command's.
-    gate = {
-        "yes": "auto-approved",
-        "ask": "prompted per call",
-        "no": "withheld from the model",
-    }[cfg.sandbox.run_commands]
-    print(
-        "  jailed commands (run_command, the verify gate, the metric command):"
-        f" {gate} (sandbox.run_commands = {cfg.sandbox.run_commands})"
-    )
-    if selected == "none":
-        print("    UNCONFINED: no jail on this host; commands run as you.")
-        print(_home_line(cfg, selected, ws.root, git_grant))
-        return
-    if selected != "full":
-        git_note = f"; .git writable: {selected} has no mount to re-bind it"
-    else:
-        git_note = "; .git re-bound read-only" if cfg.sandbox.protect_git else ""
-    print(f"    rw  {ws.root}  (the workspace{git_note})")
-    if git_grant is not None:
-        print(
-            f"    ro  {git_grant}  (the repository's .git, which this linked worktree points into)"
-        )
-    net = tools_policy.resolve_network(cfg, selected)
-    if selected == "full":
-        print("    rw  /tmp  (a tmpfs the run's commands share, gone at teardown)")
-        rest = "" if net == "host" else " (the rest of /etc is empty)"
-        print(f"    ro  system: {' '.join(_FULL_SYSTEM_BINDS)}{rest}")
-    else:
-        print("    rw  /tmp  (the host's /tmp, shared with every process of yours)")
-        print(f"    ro  system (Landlock): {' '.join(_PARTIAL_SYSTEM_RO)}")
-        print(f"    --  /proc  (not granted under {selected}: `ps` fails there)")
-        print(
-            "    --  /dev/shm  (the host's, not granted: Python multiprocessing cannot use it;"
-            " /dev/null, zero, urandom, random and full are)"
-        )
-    print(_home_line(cfg, selected, ws.root, git_grant))
-    notes = tool_paths.tool_mount_notes()
-    if notes.exposes_home_dir:
-        print(
-            f"    ro  operator tools: {len(notes.exposes_home_dir)} resolved bin-dir"
-            " targets (`agent6 check sandbox` lists each)"
-        )
-    for line in _grant_lines(grants):
-        print(line)
-    if net == "host":
-        for p in tools_policy.host_network_reads():
-            print(f"    ro  {p}  (name resolution and TLS verification on the host network)")
-    for line in _device_lines(cfg):
-        print(line)
-    masked = {*agent6_paths.private_dirs(), *(pathlib.Path(p) for p in cfg.sandbox.hide_paths)}
-    verb = "masked out of the jail's view" if selected == "full" else "denied by Landlock"
-    for p in sorted(masked):
-        print(f"    --  {p}  ({verb})")
-    net_line = {
-        "session": "the run's own network, no route off this machine"
-        " (reach it: agent6 exec / agent6 forward)",
-        "host": "this machine's network, unconfined",
-        "none": "no network at all",
-    }.get(net, net)
-    print(f"    network  {net}: {net_line}")
-    mem = cfg.sandbox.memory_limit_mb
-    print(
-        f"    memory   {mem} MiB per command (sandbox.memory_limit_mb)"
-        if mem > 0
-        else "    memory   no cap (sandbox.memory_limit_mb = 0)"
-    )
-
-
-def _boundaries_mcp(cfg: Config, root: pathlib.Path, selected: kinds.IsolationLevel) -> None:
-    """Print each MCP server's confinement and network."""
-    if not cfg.mcp.enabled or not cfg.mcp.servers:
-        cause = "[mcp].enabled = false" if not cfg.mcp.enabled else "no servers configured"
-        print(f"  mcp servers: none run ({cause})")
-        return
-    print(f"  mcp servers ({len(cfg.mcp.servers)} configured, approval per server):")
-    for name, srv in sorted(cfg.mcp.servers.items()):
-        if not srv.enabled:
-            print(f"    {name}: DISABLED")
-            continue
-        sb = srv.sandbox
-        if srv.url:
-            where = f"http {srv.url}"
-            confinement = "network client only; no filesystem grant"
-        elif selected == "none":
-            where = "spawned UNCONFINED"
-            confinement = "full host access (sandbox.isolation resolved to none)"
-        elif (refusal := confine.mcp_network_refusal(name, srv, selected)) is not None:
-            # A run refuses a network this level cannot give.
-            print(f"    {name}: a run would refuse: {refusal}")
-            continue
-        elif (policy := _setup.mcp_server_policy(cfg, root, selected, srv)) is None:
-            where = "spawned UNCONFINED"
-            confinement = "full host access (mcp.servers.*.sandbox.unconfined = true)"
-        else:
-            where = "spawned in the jail"
-            ro = len(sb.read_paths) if sb else 0
-            rw = len(sb.write_paths) if sb else 0
-            confinement = f"paths ro+{ro} rw+{rw}, network {policy.network}"
-        print(f"    {name}: {where}  approve={srv.approve}  {confinement}")
-
-
-def _check_boundaries_section(
-    cfg: Config, explicit_leaves: frozenset[str] = frozenset()
-) -> list[_DoctorCheck]:
-    """Print every boundary by actor: who is confined, what files it reaches, which network.
-
-    Resolved values only; the refusal a run would give is the section's one FAIL, and a grant
-    of the home directory its one WARN.
-
-    Args:
-        cfg: The config.
-        explicit_leaves: The keys the operator set, for the ladder.
-
-    Returns:
-        The section's checks.
-    """
-    try:
-        env = _setup.detect_env()
-        selected = detect.resolve_isolation(cfg.sandbox.isolation, env)
-    except (detect.IsolationUnavailableError, JailUnavailableError) as exc:
-        print(f"[FAIL] isolation selection: {exc}")
-        return [_DoctorCheck(name="boundaries", status="FAIL", detail=str(exc))]
-    print(f"  isolation: {selected}  (sandbox.isolation = {cfg.sandbox.isolation})")
-    reason = detect.degrade_reason(env)
-    if cfg.sandbox.isolation == "auto" and reason is not None:
-        print(f"  not full: {reason}")
-
-    root = pathlib.Path.cwd()
-    grants = tools_policy.resolve_grants(cfg, root)
-    ws = tools_policy.workspace_for(
-        cfg, root, memory_dir=memory.memory_dir(agent6_paths.state_dir(root)), grants=grants
-    )
-    out: list[_DoctorCheck] = []
-    refusal = confine.check_network_support(cfg, selected) or confine.config_refusal(
-        cfg, selected, ws.root, explicit_leaves=explicit_leaves
-    )
-    if refusal is not None:
-        detail = f"a run would refuse: {refusal}"
-        print(f"  [FAIL] {detail}")
-        out.append(_DoctorCheck(name="boundaries", status="FAIL", detail=detail))
-    for warning in confine.home_grant_warnings(cfg):
-        print(f"  [WARN] {warning}")
-        out.append(_DoctorCheck(name="boundaries", status="WARN", detail=warning))
-    print()
-    print(
-        "  in-process file tools (read_file, list_dir, outline, find_definition,"
-        " find_references, apply_edit, apply_patch; no approval):"
-    )
-    print(f"    rw  {ws.root}  (the workspace)")
-    for line in _grant_lines(grants):
-        print(line)
-    for p in sorted(ws.exempt):
-        print(f"    rw  {p}  (repo memory, inside the hidden state dir)")
-    for p in sorted(ws.denied):
-        print(f"    --  {p}  (hidden: tools refuse it)")
-
-    print()
-    try:
-        _boundaries_commands(cfg, ws, grants, selected, _fork_git_grant(cfg, ws, selected))
-        print()
-        _boundaries_mcp(cfg, ws.root, selected)
-    except JailUnavailableError as exc:
-        print(f"  [FAIL] a run would refuse: {exc}")
-        return [_DoctorCheck(name="boundaries", status="FAIL", detail=str(exc))]
-    print()
-    print(
-        "  agent process: its own egress is unbounded (documented in"
-        " docs/security.md); the jail bounds commands, not the agent"
-    )
-    print(
-        f"  secrets: {agent6_paths.secrets_path()}  (0600; never mounted into any jail,"
-        " never passed into a child's env)"
-    )
-    return out
 
 
 def _probe_refusal(
@@ -689,7 +123,7 @@ def _probe_refusal(
     return None
 
 
-def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
+def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
     """Start each enabled MCP server as a run would, list its tools, then close it.
 
     A server a run would refuse is a FAIL row; one the diagnostic must not start is a
@@ -704,15 +138,15 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
     if not cfg.mcp.enabled or not cfg.mcp.servers:
         cause = "[mcp].enabled = false" if not cfg.mcp.enabled else "no servers configured"
         print(f"  (no MCP servers to check: {cause})")
-        return [_DoctorCheck(name="mcp", status="PASS", detail=f"not configured ({cause})")]
+        return [kinds.DoctorCheck(name="mcp", status="PASS", detail=f"not configured ({cause})")]
     try:
         env = _setup.detect_env()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
     except (detect.IsolationUnavailableError, JailUnavailableError) as exc:
         print(f"[FAIL] mcp: {exc}")
-        return [_DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
+        return [kinds.DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
     root = pathlib.Path.cwd()
-    out: list[_DoctorCheck] = []
+    out: list[kinds.DoctorCheck] = []
     probed: dict[str, MCPServerEntry] = {}
     for name, srv in sorted(cfg.mcp.servers.items()):
         if not srv.enabled:
@@ -720,14 +154,14 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
         if (refusal := confine.mcp_network_refusal(name, srv, isolation)) is not None:
             detail = f"a run would refuse: {refusal}"
             print(f"  {name}: {detail}")
-            out.append(_DoctorCheck(name=f"mcp.{name}", status="FAIL", detail=detail))
+            out.append(kinds.DoctorCheck(name=f"mcp.{name}", status="FAIL", detail=detail))
         elif (reason := _probe_refusal(cfg, env, name, srv, isolation)) is not None:
             print(f"  {name}: {reason}")
-            out.append(_DoctorCheck(name=f"mcp.{name}", status="WARN", detail=reason))
+            out.append(kinds.DoctorCheck(name=f"mcp.{name}", status="WARN", detail=reason))
         else:
             probed[name] = srv
     if not probed:
-        return out or [_DoctorCheck(name="mcp", status="PASS", detail="no enabled servers")]
+        return out or [kinds.DoctorCheck(name="mcp", status="PASS", detail="no enabled servers")]
     with contextlib.ExitStack() as stack:
         # A server set to `session` joins the run's network, so one is opened for it.
         try:
@@ -739,7 +173,7 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
             )
         except JailUnavailableError as exc:
             print(f"[FAIL] mcp: {exc}")
-            return [*out, _DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
+            return [*out, kinds.DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
         try:
             specs = [
                 _setup.mcp_server_spec(cfg, root, isolation, name, srv, readonly=True)
@@ -748,7 +182,7 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
         except JailUnavailableError as exc:
             # The jail's HOME cannot be made.
             print(f"[FAIL] mcp: {exc}")
-            return [*out, _DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
+            return [*out, kinds.DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
         manager = mcp_client.MCPManager.start(specs, session_net=session_net)
         stack.callback(manager.close)
         by_server: dict[str, list[str]] = {}
@@ -767,12 +201,14 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
             )
             print(f"  {name}: {detail}")
             out.append(
-                _DoctorCheck(name=f"mcp.{name}", status="PASS" if ok else "FAIL", detail=detail)
+                kinds.DoctorCheck(
+                    name=f"mcp.{name}", status="PASS" if ok else "FAIL", detail=detail
+                )
             )
     return out
 
 
-def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
+def _doctor_check_verify(cfg: Config) -> list[kinds.DoctorCheck]:
     """Check the verify command's shape without running it: argv non-empty, head executable found.
 
     Args:
@@ -799,7 +235,7 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
         if passed:
             detail += f"; passed over: {passed}"
         print(f"  {detail}")
-        return [_DoctorCheck(name="verify.argv", status="INFO", detail=detail)]
+        return [kinds.DoctorCheck(name="verify.argv", status="INFO", detail=detail)]
     head = argv[0]
     resolved = shutil.which(head, path=tool_paths.jail_search_path())
     ok = resolved is not None
@@ -807,10 +243,10 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
     print(f"  {head}: {detail}")
     print(f"  argv = {argv}")
     print(f"  timeout = {cfg.harness.verify_timeout_s}s")
-    return [_DoctorCheck(name="verify.head", status="PASS" if ok else "FAIL", detail=detail)]
+    return [kinds.DoctorCheck(name="verify.head", status="PASS" if ok else "FAIL", detail=detail)]
 
 
-def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
+def _doctor_check_config(cfg: Config) -> list[kinds.DoctorCheck]:
     """Check the static config: provider keys and the worktree git policy.
 
     Args:
@@ -819,25 +255,27 @@ def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
     Returns:
         The rows.
     """
-    out: list[_DoctorCheck] = []
+    out: list[kinds.DoctorCheck] = []
     if not cfg.providers:
         # With no provider, "every key resolves" is vacuously true, but a run would reject.
         detail_env = (
             "no providers configured yet; run `agent6 connect` (required before `agent6 run`)"
         )
-        out.append(_DoctorCheck(name="config.provider_keys", status="INFO", detail=detail_env))
+        out.append(kinds.DoctorCheck(name="config.provider_keys", status="INFO", detail=detail_env))
     else:
         env_err = _setup.check_provider_keys(cfg)
         ok_env = env_err is None
         detail_env = "all referenced provider keys resolve" if ok_env else env_err or ""
         out.append(
-            _DoctorCheck(
+            kinds.DoctorCheck(
                 name="config.provider_keys",
                 status="PASS" if ok_env else "FAIL",
                 detail=detail_env,
             )
         )
 
+    print(f"  provider keys: {detail_env}")
     detail_git = "push, --force and history rewrites are always refused; no setting enables them"
-    out.append(_DoctorCheck(name="config.git_policy", status="PASS", detail=detail_git))
+    print(f"  git policy: {detail_git}")
+    out.append(kinds.DoctorCheck(name="config.git_policy", status="PASS", detail=detail_git))
     return out

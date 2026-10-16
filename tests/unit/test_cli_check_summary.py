@@ -122,9 +122,9 @@ def test_run_header_prints_the_inferred_gate_as_check_verify_does(
     from agent6.ui.cli import main
 
     (tmp_path / "AGENTS.md").write_text(
-        "## Verify command\n\n```bash\npytest -q &&\n  mypy --full pkg\n```\n", encoding="utf-8"
+        "## Verify command\n\n```bash\npytest -q &&\n  mypy --strict pkg\n```\n", encoding="utf-8"
     )
-    command = "sh -c 'pytest -q && mypy --full pkg'"
+    command = "sh -c 'pytest -q && mypy --strict pkg'"
     monkeypatch.chdir(tmp_path)
     assert main(["check", "verify"]) == 0
     assert f"unset; a run here infers {command} from AGENTS.md\n" in capsys.readouterr().out
@@ -218,17 +218,17 @@ def test_check_verify_and_the_run_header_name_the_manifests_the_gate_leaves_out(
     assert f"\n         {left_out}\n" in header
 
 
-def test_boundaries_reports_spawned_mcp_as_unconfined_without_a_jail(
+def test_sandbox_reports_spawned_mcp_as_unconfined_without_a_jail(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An isolation-none policy does not enforce the path grants printed for a jailed server."""
-    from agent6.ui.cli import check_cmds
+    from agent6.ui.cli import _check_sandbox
 
     cfg = Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"notes": {"command": ["notes-mcp"]}}}}
     )
 
-    check_cmds._boundaries_mcp(cfg, tmp_path, "none")  # pyright: ignore[reportPrivateUsage]
+    _check_sandbox._mcp_lines(cfg, tmp_path, "none")  # pyright: ignore[reportPrivateUsage]
 
     out = capsys.readouterr().out
     assert "notes: spawned UNCONFINED" in out
@@ -236,48 +236,74 @@ def test_boundaries_reports_spawned_mcp_as_unconfined_without_a_jail(
     assert "paths ro+" not in out
 
 
-def test_boundaries_fails_when_a_run_would_refuse_the_config(
+_ENV = detect.Environment(
+    in_container=False,
+    container_signals=(),
+    kernel=detect.KernelInfo(raw="6.8", major=6, minor=8),
+    userns_supported=True,
+    landlock_abi=5,
+    seccomp_arch_supported=True,
+    sandbox_available=True,
+)
+
+
+def _stub_probes(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
+    """Pin the host at one level and make the jail probes pass without a launcher."""
+    from agent6 import kinds
+    from agent6.ui.cli import _check_sandbox
+
+    monkeypatch.setattr(_setup, "detect_env", lambda: _ENV)
+
+    def _select(_requested: str, _env: object) -> str:
+        return isolation
+
+    def _no_degradation(_env: object) -> None:
+        return None
+
+    def _run(policy: kinds.JailPolicy) -> kinds.CommandResult:
+        rc = 2 if policy.argv[0].endswith("getent") else 0  # the DNS probe reads blocked
+        return kinds.CommandResult(
+            argv=policy.argv, returncode=rc, stdout="", stderr="", duration_s=0.0
+        )
+
+    monkeypatch.setattr(detect, "resolve_isolation", _select)
+    monkeypatch.setattr(detect, "degrade_reason", _no_degradation)
+    monkeypatch.setattr(_check_sandbox, "landlock_abi", lambda: 5)
+    monkeypatch.setattr(_check_sandbox, "run_in_jail", _run)
+
+
+def test_sandbox_fails_when_a_run_would_refuse_the_config(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Resolved host network is not an effective boundary when an explicit session is refused."""
-    from agent6.ui.cli import check_cmds
-
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         '[sandbox]\nisolation = "partial"\nnetwork = "session"\n', encoding="utf-8"
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(_setup, "detect_env", object)
+    _stub_probes(monkeypatch, "partial")
 
-    def _partial(_requested: str, _env: object) -> str:
-        return "partial"
-
-    def _no_degradation(_env: object) -> None:
-        return None
-
-    monkeypatch.setattr(detect, "resolve_isolation", _partial)
-    monkeypatch.setattr(detect, "degrade_reason", _no_degradation)
-
-    rc = check_cmds._cmd_check(  # pyright: ignore[reportPrivateUsage]
-        (config_path,), section="boundaries"
+    rc = cli_check_cmds._cmd_check(  # pyright: ignore[reportPrivateUsage]
+        (config_path,), section="sandbox"
     )
 
     out = capsys.readouterr().out
     assert rc == 1
-    assert "[FAIL] boundaries: a run would refuse:" in out.split("== summary ==", 1)[1]
+    assert "[FAIL] sandbox.refusal: a run would refuse:" in out.split("== summary ==", 1)[1]
     assert "sandbox.network = 'session' requires the full isolation" in out
 
 
-def test_boundaries_alone_prints_no_empty_summary(
+def test_sandbox_alone_prints_its_summary(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The boundaries section reaches no verdict, so its own invocation prints no empty summary."""
+    """`check sandbox` on its own ends with the three rows it owns."""
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    assert main(["check", "boundaries"]) == 0
+    _stub_probes(monkeypatch, "full")
+    assert main(["check", "sandbox"]) == 0
     out = capsys.readouterr().out
-    assert "== boundaries ==" in out
+    assert "== sandbox ==" in out
     file_tools = out.split("in-process file tools (", 1)[1].splitlines()[0]
     for name in (
         "read_file",
@@ -289,4 +315,7 @@ def test_boundaries_alone_prints_no_empty_summary(
         "apply_patch",
     ):
         assert name in file_tools
-    assert "== summary ==" not in out
+    summary = out.split("== summary ==", 1)[1]
+    assert "[PASS] sandbox.isolation: selected full" in summary
+    assert "[PASS] sandbox.refusal: every explicit setting works on full" in summary
+    assert "[PASS] sandbox: all jail probes passed" in summary

@@ -16,6 +16,7 @@ import pathlib
 
 import pytest
 
+from agent6 import kinds
 from agent6.app import _setup
 from agent6.config import Config, layer
 from agent6.sandbox import detect
@@ -71,7 +72,7 @@ def _force(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
 
 def _check_mcp(
     servers: dict[str, object], *, sandbox: dict[str, object] | None = None
-) -> list[check_cmds._DoctorCheck]:  # pyright: ignore[reportPrivateUsage]
+) -> list[kinds.DoctorCheck]:  # pyright: ignore[reportPrivateUsage]
     cfg = Config.model_validate(
         {"sandbox": sandbox or {}, "mcp": {"enabled": True, "servers": servers}}
     )

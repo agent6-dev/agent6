@@ -50,30 +50,42 @@ def _never_mounted(p: pathlib.Path) -> bool:
     return any(p.is_relative_to(d) or d.is_relative_to(p) for d in paths.private_dirs())
 
 
-def operator_tool_paths() -> tuple[str, tuple[pathlib.Path, ...]]:
-    """Return the jail's PATH and the real-location dirs to mount read+exec.
+@dataclasses.dataclass(frozen=True, slots=True)
+class ToolMount:
+    """A real dir the jail mounts read+exec for operator tools.
+
+    Attributes:
+        path: The dir, at its real location.
+        why: Which tool needs it: a bin dir on the jail's PATH, the tool that links into
+            it, or uv's interpreters.
+    """
+
+    path: pathlib.Path
+    why: str
+
+
+_ON_PATH = "on the jail's PATH"
+_UV_PYTHONS = "uv-managed interpreters"
+
+
+def operator_tool_mounts() -> tuple[ToolMount, ...]:
+    """Return the dirs the jail mounts read+exec, each with the tool that needs it, by path.
 
     Recomputed per call, so a tool just installed is picked up. A bin dir under a
     mounted system root only joins PATH; a dir outside one, and the real dir a
     symlink resolves to, also needs the mount.
-
-    Returns:
-        The PATH string and the sorted mount dirs.
     """
-    path_dirs: list[str] = list(_JAIL_BASE_PATH_DIRS)
-    candidates = _tool_bin_dirs()
-    mounts: set[pathlib.Path] = set()
-    for d in candidates:
+    whys: dict[pathlib.Path, list[str]] = {}
+    for d in _tool_bin_dirs():
         if not d.is_dir():
             continue
-        path_dirs.append(str(d))
         if not _under_system_root(d) and not _never_mounted(d):
-            mounts.add(d)
+            whys.setdefault(d, []).append(_ON_PATH)
         try:
             entries = list(d.iterdir())
         except OSError:
             continue
-        for entry in entries:
+        for entry in sorted(entries):
             if not entry.is_symlink():
                 continue
             try:
@@ -81,7 +93,7 @@ def operator_tool_paths() -> tuple[str, tuple[pathlib.Path, ...]]:
             except OSError:
                 continue
             if real.is_file() and not _under_system_root(real) and not _never_mounted(real.parent):
-                mounts.add(real.parent)
+                whys.setdefault(real.parent, []).append(f"{entry} links here")
     # uv-managed CPython lives under XDG data; without this mount an in-jail `uv run` sees the
     # venv's interpreter missing and recreates the operator's .venv. A mount, never a PATH entry.
     data_home = pathlib.Path(
@@ -89,8 +101,27 @@ def operator_tool_paths() -> tuple[str, tuple[pathlib.Path, ...]]:
     )
     uv_pythons = data_home / "uv" / "python"
     if uv_pythons.is_dir():
-        mounts.add(uv_pythons)
-    return ":".join(path_dirs), tuple(sorted(mounts))
+        whys.setdefault(uv_pythons, []).append(_UV_PYTHONS)
+    out: list[ToolMount] = []
+    for path in sorted(whys):
+        reasons = whys[path]
+        if _ON_PATH in reasons or _UV_PYTHONS in reasons:
+            why = _ON_PATH if _ON_PATH in reasons else _UV_PYTHONS
+        else:
+            more = f", {len(reasons) - 1} more" if len(reasons) > 1 else ""
+            why = f"{reasons[0]}{more}"
+        out.append(ToolMount(path, why))
+    return tuple(out)
+
+
+def operator_tool_paths() -> tuple[str, tuple[pathlib.Path, ...]]:
+    """Return the jail's PATH and the real-location dirs to mount read+exec.
+
+    Returns:
+        The PATH string and the sorted mount dirs.
+    """
+    path_dirs = [*_JAIL_BASE_PATH_DIRS, *(str(d) for d in _tool_bin_dirs() if d.is_dir())]
+    return ":".join(path_dirs), tuple(m.path for m in operator_tool_mounts())
 
 
 def _tool_bin_dirs() -> tuple[pathlib.Path, ...]:

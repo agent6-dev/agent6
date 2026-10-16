@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 check boundaries` tells the truth about what the launcher enforces.
+"""`agent6 check sandbox` tells the truth about what the launcher enforces.
 
 The report's system-path lists are Python mirrors of constants the Rust
 launcher owns (SYSTEM_BINDS, the partial ro_paths base). A drift between the
@@ -15,36 +15,47 @@ import re
 
 import pytest
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.app import _setup
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox import detect, tool_paths
 from agent6.tools import policy as tools_policy
-from agent6.ui.cli import check_cmds
+from agent6.ui.cli import _check_sandbox
 
 _MAIN_RS = (
     pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail" / "src" / "main.rs"
 )
+_ENV = detect.Environment(
+    in_container=False,
+    container_signals=(),
+    kernel=detect.KernelInfo(raw="6.8", major=6, minor=8),
+    userns_supported=True,
+    landlock_abi=5,
+    seccomp_arch_supported=True,
+    sandbox_available=True,
+)
+_TOOL_DIR = pathlib.Path("/opt/tools/bin")
 
 
 def test_full_system_binds_mirror_the_launcher() -> None:
     src = _MAIN_RS.read_text(encoding="utf-8")
     m = re.search(r"const SYSTEM_BINDS[^=]*=\s*\[(.*?)\];", src, re.S)
     assert m, "SYSTEM_BINDS not found in main.rs"
-    rust = tuple(re.findall(r'"([^"]+)"', m.group(1)))
-    assert rust == check_cmds._FULL_SYSTEM_BINDS  # pyright: ignore[reportPrivateUsage]
+    launcher = tuple(re.findall(r'"([^"]+)"', m.group(1)))
+    assert launcher == _check_sandbox.FULL_SYSTEM_BINDS
 
 
 def test_partial_ro_base_mirrors_the_launcher() -> None:
     src = _MAIN_RS.read_text(encoding="utf-8")
     m = re.search(r"let mut ro_paths[^=]*=\s*vec!\[(.*?)\];", src, re.S)
     assert m, "partial ro_paths base not found in main.rs"
-    rust = tuple(re.findall(r'PathBuf::from\("([^"]+)"\)', m.group(1)))
-    assert rust == check_cmds._PARTIAL_SYSTEM_RO  # pyright: ignore[reportPrivateUsage]
+    launcher = tuple(re.findall(r'PathBuf::from\("([^"]+)"\)', m.group(1)))
+    assert launcher == _check_sandbox.PARTIAL_SYSTEM_RO
 
 
 def _force(monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None = None) -> None:
-    monkeypatch.setattr(_setup, "detect_env", object)
+    """Pin the host at one level, with passing probes and one operator tool dir."""
+    monkeypatch.setattr(_setup, "detect_env", lambda: _ENV)
 
     def _select(_req: str, _env: object) -> str:
         return isolation
@@ -52,13 +63,26 @@ def _force(monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None =
     def _reason(_env: object) -> str | None:
         return reason
 
+    def _run(policy: kinds.JailPolicy) -> kinds.CommandResult:
+        rc = 2 if policy.argv[0].endswith("getent") else 0  # the DNS probe reads blocked
+        return kinds.CommandResult(
+            argv=policy.argv, returncode=rc, stdout="", stderr="", duration_s=0.0
+        )
+
     monkeypatch.setattr(detect, "resolve_isolation", _select)
     monkeypatch.setattr(detect, "degrade_reason", _reason)
+    monkeypatch.setattr(_check_sandbox, "landlock_abi", lambda: 5)
+    monkeypatch.setattr(_check_sandbox, "run_in_jail", _run)
     monkeypatch.setattr(
         tool_paths,
-        "tool_mount_notes",
-        lambda: tool_paths.ToolMountNotes(exposes_home_dir=("a -> b",)),
+        "operator_tool_mounts",
+        lambda: (tool_paths.ToolMount(_TOOL_DIR, "on the jail's PATH"),),
     )
+
+
+def _verdicts(checks: list[kinds.DoctorCheck]) -> list[tuple[str, str]]:
+    """Return the rows that are not PASS."""
+    return [(c.name, c.status) for c in checks if c.status != "PASS"]
 
 
 def test_both_levels_build_their_landlock_rules_from_the_one_set_owner() -> None:
@@ -87,18 +111,23 @@ def test_boundaries_report_covers_every_actor(
     """One glance answers: who is confined, which files, which network."""
     _force(monkeypatch, "full")
     cfg = Config(sandbox=SandboxConfig(hide_paths=("/work/secrets",)))
-    checks = check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    checks = _check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
-    assert checks == [], "the section reports facts; the summary owns verdicts"
+    assert _verdicts(checks) == []
     assert "in-process file tools" in out
     assert "jailed commands" in out
-    assert "(the workspace; .git re-bound read-only)" in out
-    assert "ro  system: /usr /bin /sbin /lib /lib64 /etc/alternatives" in out
+    assert f"    rw  {pathlib.Path.cwd()}  (the workspace)" in out
+    assert (
+        f"    ro  {pathlib.Path.cwd() / '.git'}  (re-bound read-only: sandbox.protect_git = true)"
+        in out
+    )
+    for p in _check_sandbox.FULL_SYSTEM_BINDS:
+        assert f"    ro  {p}  (system" in out
     assert "rw  /tmp/agent6-home  (HOME" in out
-    assert "operator tools: 1 resolved bin-dir" in out
-    assert "/work/secrets" in out and "masked out of the jail's view" in out
-    assert "network  session" in out
-    assert "memory   no cap (sandbox.memory_limit_mb = 0)" in out
+    assert f"    ro  {_TOOL_DIR}  (operator tools: on the jail's PATH)" in out
+    assert "    --  /work/secrets  (masked out of the jail's view)" in out
+    assert "  network:   session (sandbox.network = auto)" in out
+    assert "  memory:    no cap (sandbox.memory_limit_mb = 0)" in out
     assert "mcp servers: none run" in out
     assert "egress is unbounded" in out
     assert "secrets.toml" in out
@@ -119,10 +148,10 @@ def test_boundaries_report_names_the_memory_dir_for_the_file_tools_only(
     mem = paths.state_dir(repo) / "memory"
     assert mem.is_relative_to(paths.state_base())
 
-    checks = check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    checks = _check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     files, commands = out.split("  jailed commands", 1)
-    assert checks == []
+    assert _verdicts(checks) == []
     assert (f"    rw  {mem}  (repo memory, inside the hidden state dir)") in files
     assert f"    --  {paths.state_base()}  (hidden: tools refuse it)" in files
     assert not any(
@@ -130,19 +159,6 @@ def test_boundaries_report_names_the_memory_dir_for_the_file_tools_only(
     )
     assert f"rw  {mem}" not in commands
     assert not state_home.exists(), "reporting the memory exception must not create the store"
-
-
-def test_boundaries_report_warns_about_a_grant_of_the_home_directory(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """`check boundaries` listed a `$HOME` grant as one more path, the credentials unsaid."""
-    _force(monkeypatch, "full")
-    monkeypatch.setenv("HOME", str(tmp_path))
-    cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(tmp_path),)))
-    (check,) = check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
-    assert check.status == "WARN"
-    assert check.detail.startswith(f"sandbox.extra_read_paths grants {str(tmp_path)!r}")
-    assert f"  [WARN] {check.detail}" in capsys.readouterr().out
 
 
 def test_boundaries_report_is_level_aware(
@@ -153,16 +169,17 @@ def test_boundaries_report_is_level_aware(
     A degraded auto also names its cause here.
     """
     _force(monkeypatch, "partial", reason="userns blocked (test)")
-    checks = check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    checks = _check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
-    assert checks == [], "the section reports facts; the summary owns verdicts"
+    assert _verdicts(checks) == []
     assert "not full: userns blocked (test)" in out
-    assert "ro  system (Landlock): /usr /bin /sbin /lib /lib64 /etc" in out
+    for p in _check_sandbox.PARTIAL_SYSTEM_RO:
+        assert f"    ro  {p}  (system, by Landlock rule)" in out
     assert f"rw  {paths.jail_cache_home(pathlib.Path.cwd())}  (HOME" in out and "persists" in out
     assert "denied by Landlock" in out
     assert "re-bound" not in out
     assert "private to the command" not in out
-    assert "network  host" in out
+    assert "  network:   host (sandbox.network = auto)" in out
 
 
 def test_boundaries_report_says_what_partial_leaves_writable(
@@ -175,12 +192,14 @@ def test_boundaries_report_says_what_partial_leaves_writable(
     the report names beside the device nodes that are.
     """
     _force(monkeypatch, "partial")
-    check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    _check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
-    assert "(the workspace; .git writable: partial has no mount to re-bind it)" in out
-    assert "rw  /tmp  (the host's /tmp, shared with every process of yours)" in out
-    assert "--  /proc  (not granted under partial" in out
-    assert "--  /dev/shm  (the host's, not granted" in out
+    git = pathlib.Path.cwd() / ".git"
+    assert f"    rw  {git}  (writable: partial has no mount to re-bind it)" in out
+    assert "    --  /  (Landlock: denied except the paths below)" in out
+    assert "    rw  /tmp  (the host's /tmp, shared with every process of yours)" in out
+    assert "    --  /proc  (not granted under partial" in out
+    assert "    --  /dev/shm  (the host's, not granted" in out
 
 
 def test_boundaries_report_lists_what_the_host_network_reads(
@@ -193,18 +212,19 @@ def test_boundaries_report_lists_what_the_host_network_reads(
     reason = "(name resolution and TLS verification on the host network)"
     _force(monkeypatch, "full")
     host = Config(sandbox=SandboxConfig(network="host"))
-    check_cmds._check_boundaries_section(host)  # pyright: ignore[reportPrivateUsage]
+    _check_sandbox.check_sandbox_section(host)
     out = capsys.readouterr().out
     reads = tools_policy.host_network_reads()
     assert reads
     for path in reads:
         assert f"    ro  {path}  {reason}" in out
     assert "the rest of /etc is empty" not in out
-    check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    _check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
-    assert reason not in out and "(the rest of /etc is empty)" in out
+    assert reason not in out
+    assert "    ro  /etc/alternatives  (system; the rest of /etc is empty)" in out
     _force(monkeypatch, "partial")
-    check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    _check_sandbox.check_sandbox_section(Config())
     assert reason in capsys.readouterr().out, "partial shares the host network"
 
 
@@ -218,10 +238,8 @@ def test_boundaries_report_shows_each_grant_as_a_run_binds_it(
     link.symlink_to(real, target_is_directory=True)
     inside = pathlib.Path.cwd() / "vendored"
     # Pinned full: pytest's tmp_path sits in /tmp, where a link counts under auto.
-    cfg = Config(
-        sandbox=SandboxConfig(isolation="full", extra_read_paths=(str(link), str(inside)))
-    )
-    check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    cfg = Config(sandbox=SandboxConfig(isolation="full", extra_read_paths=(str(link), str(inside))))
+    _check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     bound = f"    ro  {real}  (sandbox.extra_read_paths, configured as {link})"
     dropped = (
@@ -244,7 +262,7 @@ def test_boundaries_report_says_when_only_a_link_puts_a_grant_in_the_workspace(
     (repo / "hop").symlink_to(real, target_is_directory=True)
     grant.symlink_to(repo / "hop", target_is_directory=True)
     cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(grant),)))
-    check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    _check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     assert (
         f"    --  {grant}  (sandbox.extra_read_paths: not granted, a link on its way sits inside"
@@ -260,9 +278,7 @@ def test_boundaries_report_names_the_opted_in_persistent_home(
     Under `home = "cache"` full's is the persistent cache dir, named as such.
     """
     _force(monkeypatch, "full")
-    check_cmds._check_boundaries_section(  # pyright: ignore[reportPrivateUsage]
-        Config(sandbox=SandboxConfig(home="cache"))
-    )
+    _check_sandbox.check_sandbox_section(Config(sandbox=SandboxConfig(home="cache")))
     out = capsys.readouterr().out
     assert (
         f"rw  {paths.jail_cache_home(pathlib.Path.cwd())}  (HOME" in out
@@ -274,16 +290,21 @@ def test_boundaries_report_names_the_opted_in_persistent_home(
 def test_boundaries_report_names_the_home_under_none(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`none` has no jail and still a HOME of agent6's own, listed after the UNCONFINED line.
+    """`none` has no jail and still a HOME of agent6's own, listed under the root row.
 
-    The HOME grant is listed at every level.
+    The HOME grant is listed at every level; so are the private dirs nothing hides there.
     """
     _force(monkeypatch, "none")
-    check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    _check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
-    assert "UNCONFINED" in out
+    assert "    rw  /  (sandbox disabled: the whole filesystem and network, as " in out
     home = paths.jail_cache_home(pathlib.Path.cwd())
     assert f"rw  {home}  (HOME, persists across runs: none has no private /tmp)" in out
+    assert f"    rw  {paths.global_config_dir()}  (not hidden: secrets.toml is readable)" in out
+    assert (
+        f"    rw  {paths.state_base()}  (not hidden: every session's records are writable)" in out
+    )
+    assert "masked" not in out and "denied by Landlock" not in out
 
 
 def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
@@ -333,13 +354,15 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
     grant = f"ro  {git_dir}  (the repository's .git, which this linked worktree points into)"
 
     monkeypatch.chdir(worktree)
-    checks = check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
-    assert checks == [], "the section reports facts; the summary owns verdicts"
+    checks = _check_sandbox.check_sandbox_section(Config())
+    assert _verdicts(checks) == []
     assert grant in capsys.readouterr().out
 
     monkeypatch.chdir(repo)
-    check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
-    assert str(git_dir) not in capsys.readouterr().out
+    _check_sandbox.check_sandbox_section(Config())
+    out = capsys.readouterr().out
+    assert grant not in out
+    assert f"    ro  {git_dir}  (re-bound read-only: sandbox.protect_git = true)" in out
 
 
 def test_boundaries_report_says_withheld_rather_than_unapproved(
@@ -351,11 +374,9 @@ def test_boundaries_report_says_withheld_rather_than_unapproved(
     model never sees.
     """
     _force(monkeypatch, "full")
-    check_cmds._check_boundaries_section(  # pyright: ignore[reportPrivateUsage]
-        Config(sandbox=SandboxConfig(run_commands="no"))
-    )
+    _check_sandbox.check_sandbox_section(Config(sandbox=SandboxConfig(run_commands="no")))
     out = capsys.readouterr().out
-    assert "withheld from the model (sandbox.run_commands = no)" in out
+    assert "  commands:  withheld from the model (sandbox.run_commands = no)" in out
     assert "approval: sandbox.run_commands" not in out
 
 
@@ -379,7 +400,7 @@ def test_boundaries_report_names_each_mcp_server(
             },
         )
     )
-    check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    _check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     assert "docs: http http://127.0.0.1:9000/mcp" in out
     assert "fs: spawned in the jail" in out and "paths ro+1 rw+0, network none" in out
@@ -410,7 +431,7 @@ def test_boundaries_report_prints_the_refusal_for_a_network_the_level_cannot_giv
             },
         )
     )
-    check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    _check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     assert "quiet: a run would refuse: MCP server 'quiet' sets sandbox.network = 'none'" in out
     assert "network host" not in out
@@ -431,7 +452,7 @@ def test_boundaries_report_gives_an_mcp_server_the_network_the_level_can(
             enabled=True, servers={"plain": _sandbox.MCPServerEntry(command=("y",))}
         )
     )
-    check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    _check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     assert "plain: spawned in the jail" in out and "network host" in out
     assert "network auto" not in out

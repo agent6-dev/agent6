@@ -36,7 +36,7 @@ def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "section",
         nargs="?",
         default="all",
-        choices=("all", "sandbox", "config", "boundaries", "mcp", "verify"),
+        choices=("all", "sandbox", "config", "mcp", "verify"),
         help="One section, or all (the default) with a PASS/FAIL summary at the end.",
     )
     _common._add_config_flag(check_p)

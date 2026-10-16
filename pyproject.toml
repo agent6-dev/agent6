@@ -349,6 +349,7 @@ banned-from = [
     "agent6.ui.acp.updates",
     "agent6.ui.btw",
     "agent6.ui.cli._ask",
+    "agent6.ui.cli._check_sandbox",
     "agent6.ui.cli._common",
     "agent6.ui.cli._compare",
     "agent6.ui.cli._config_args",

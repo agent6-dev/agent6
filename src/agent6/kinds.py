@@ -304,6 +304,21 @@ class RepoSummary:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class DoctorCheck:
+    """One `agent6 check` summary row.
+
+    Attributes:
+        name: The check.
+        status: PASS, FAIL, WARN or INFO, carried to the summary line unchanged.
+        detail: The one-line finding.
+    """
+
+    name: str
+    status: Literal["PASS", "FAIL", "WARN", "INFO"]
+    detail: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class SandboxReport:
     """The result of one sandbox self-test.
 

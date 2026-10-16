@@ -20,12 +20,12 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 
 - No writes outside the workspace
     - `sandbox.extra_write_paths` widens it, visible in `agent6 config show`
-    - the per-repo memory dir (file tools only) and the jail's persistent `HOME` (below) widen it, visible in `agent6 check boundaries`
+    - the per-repo memory dir (file tools only) and the jail's persistent `HOME` (below) widen it, visible in `agent6 check sandbox`
 - No reads outside the workspace and a read-only system set for installed toolchains
     - `full`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, whose `/etc` holds nothing else off the host network, plus a curated `/dev`
     - `partial`: Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc` and the `/dev` nodes `null`, `zero`, `urandom`, `random` and `full`
         - `/proc` and the host's `/dev/shm` are not granted: `ps` and Python `multiprocessing` fail there, and work under `full`
-    - `sandbox.extra_read_paths` adds more; `agent6 check boundaries` prints the resolved set
+    - `sandbox.extra_read_paths` adds more; `agent6 check sandbox` prints the resolved set
     - a child on the host network (`network = "host"`, or any level but `full`) also reads what name resolution and TLS verification need, where the host has them: `/etc/resolv.conf` and the file it points to, `/etc/hosts`, `/etc/nsswitch.conf`, and the CA store (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`).
       File permissions still apply: the root-only private keys beside the certificates stay unreadable to a run that is not root
 - `/tmp` is writable at every level
@@ -72,7 +72,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 
 ## Defense layers
 
-`agent6 check boundaries` prints the resolved picture per actor (in-process tools, jailed commands, each MCP server): reachable paths, network, approval mode, secrets posture, and the cause when `auto` selected less than `full`.
+`agent6 check sandbox` prints the resolved picture per actor (in-process tools, jailed commands, each MCP server): one row per path, sorted so a parent precedes its children, with a root row and a home-directory row per table, then the network, the approval mode, the secrets posture and the cause when `auto` resolved below `full`; the jail probes follow.
 
 ### 1. Trust boundary
 
@@ -161,7 +161,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - a grant on `/` or on `/dev` fails the launch by name: `/` would replace the jail's own root, and `/dev` would cover the jail's device nodes (name a device in `extra_device_paths`)
     - a grant whose path an earlier grant already shows (a file listed twice, a file inside a granted directory) is bound over it.
       Where the earlier grant shows a symlink at that path, nothing is mounted through the link: a read grant leaves the link as it is, and a write grant fails the launch by name
-    - a grant that is the home directory or a directory above it runs with a warning, at run start and in `agent6 check boundaries`: the run's commands and file tools then reach the credentials other tools keep there (`~/.ssh`, `~/.aws`, another agent's login).
+    - a grant that is the home directory or a directory above it runs with a warning, at run start and in `agent6 check sandbox`: the run's commands and file tools then reach the credentials other tools keep there (`~/.ssh`, `~/.aws`, another agent's login).
       agent6 hides only its own config dir and state base; `sandbox.hide_paths` hides the paths you list, under `full`
     - the paths kept read-only inside the workspace (`.git` under `protect_git`, a machine bundle) are bound after every grant: a grant that contains the workspace does not make them writable
     - a tool dir is mounted only when its identity clears a default-deny.
@@ -238,7 +238,7 @@ Every path they take resolves through `Workspace`:
     - a grant reached through a link that sits in one of those regions, or in `/tmp` (the host's, which a `partial` run's commands write), is dropped too, though it ends outside: a command of one run could point the link elsewhere for the next.
       Its line says to grant the target by its own path
     - an MCP server's own `read_paths` and `write_paths` (`[mcp.servers.<name>.sandbox]`) follow the same rule, resolved once when the server is spawned; a dropped one is named at run start under its own key
-    - `agent6 check boundaries` lists each grant by its resolved path, with the configured spelling when the two differ, and each dropped grant with the region it sits in
+    - `agent6 check sandbox` lists each grant by its resolved path, with the configured spelling when the two differ, and each dropped grant with the region it sits in
 - A denied path is refused with the reason
     - `list_dir` drops the entry and reports `hidden: N`
     - the jail masks the path instead (empty dir, empty file; [Sandbox](#2-sandbox))

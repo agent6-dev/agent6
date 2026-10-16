@@ -290,7 +290,7 @@ agent6 ask "how does the task-graph curator work?"
 agent6 tui [target]                                  # the full-screen hub, or one session's view
 agent6 web [target]                                  # the browser UI on 127.0.0.1:7658, behind a secret it prints (see web.md)
 agent6 acp                                           # speak the Agent Client Protocol on stdio (see acp.md)
-agent6 check [section]                               # sandbox, config (provider keys), boundaries, MCP, verify
+agent6 check [section]                               # sandbox (isolation, boundaries, probes), config (provider keys), MCP, verify
 agent6 init [--yes] [--ecosystem E]                  # the setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md
 agent6 memory add|list|show|rm                       # the index renders each fact's first non-empty line
 agent6 memory decisions                              # the operator rulings the harness recorded
