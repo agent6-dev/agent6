@@ -127,11 +127,16 @@ def test_enum_value_completion_is_derived_from_the_schema(
         )
         assert set(offered) == {"true", "false"}, f"{key} offers {offered}"
 
-    # sandbox.isolation keeps its omission: TAB never puts "disable the sandbox" a keystroke away.
+    # Every schema value, `none` included: the CLI offers what the TUI and web choosers offer.
     iso = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
         "", argparse.Namespace(key="sandbox.isolation")
     )
-    assert "none" not in iso and {"auto", "strict", "hardened"} <= set(iso)
+    schema = next(
+        s.choices
+        for s in config_view.build_config_view(layer.load_effective(tmp_path)).settings
+        if s.key == "sandbox.isolation"
+    )
+    assert "none" in iso and set(iso) == set(schema)
     assert Config()  # the schema loaded
 
 

@@ -112,10 +112,6 @@ def _complete_parallel_models(prefix: str, **kw: object) -> list[str]:
     return [lead + r for r in _complete_model_routes(frag, **kw)]
 
 
-# Values Tab must not put one keystroke away, though the schema allows them; typed explicitly.
-_WITHHELD_ENUM_VALUES: dict[str, frozenset[str]] = {"sandbox.isolation": frozenset({"none"})}
-
-
 def _config_enum_choices(
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> dict[str, tuple[str, ...]]:
@@ -144,8 +140,7 @@ def _config_enum_choices(
             continue
         if setting.py_type != "choice" or not setting.choices:
             continue
-        withheld = _WITHHELD_ENUM_VALUES.get(setting.key, frozenset())
-        out[setting.key] = tuple(c for c in setting.choices if c not in withheld)
+        out[setting.key] = tuple(setting.choices)
     return out
 
 
