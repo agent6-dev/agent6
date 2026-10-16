@@ -10,8 +10,9 @@
 # agent6 is, loop clean. Time compression is honest: the UI's own durations
 # and costs stay visible.
 #
-#   tui  conversation streaming -> the approval row on the dashboard (ask) ->
-#        verify ✓ auto-commit + diff pane -> hub receipt -> config: sandbox.
+#   tui  the baseline gate's approval answered from the row, the conversation
+#        streaming -> the approval row on the dashboard (ask) -> verify ✓
+#        auto-commit + diff pane -> hub receipt -> config: sandbox.
 #   cli  the failing suite -> one command, the run streams -> /exit ->
 #        sessions diff (the fix) -> sessions show (the receipt).
 #   web  hub -> session view -> expanded tool detail -> config: sandbox.
@@ -54,12 +55,12 @@ GIF_FPS=14      # every frame of a scrolling transcript is a full redraw, so the
 
 # Segment spec: src : cut-in : window length : target length : hold.
 TUI_SEGMENTS=(
-  "hero-src-tui.webm:5.4:6.8:2.0:0"
+  "hero-src-tui.webm:1.6:8.4:2.4:0"
   "hero-src-tui.webm:13.5:4.0:1.2:0"
-  "hero-src-tui.webm:20.3:2.3:1.5:0"
-  "hero-src-tui.webm:22.80:0.28:0.30:1.3"
-  "hero-src-tui.webm:34.75:2.4:1.3:0"
-  "hero-src-tui.webm:38.2:4.9:2.0:0.9"
+  "hero-src-tui.webm:21.8:2.3:1.5:0"
+  "hero-src-tui.webm:25.0:0.28:0.30:1.3"
+  "hero-src-tui.webm:31.5:2.4:1.3:0"
+  "hero-src-tui.webm:35.0:4.9:2.0:0.9"
 )
 CLI_SEGMENTS=(
   "hero-src-cli.webm:0.3:3.3:1.4:0"

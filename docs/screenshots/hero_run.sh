@@ -4,8 +4,10 @@
 # out/hero-src-tui.webm. Same seed and cassette as cli_demo.sh; only the
 # surface differs (the run TUI instead of the terminal).
 #
-#   bash docs/screenshots/hero_run.sh
+#   bash docs/screenshots/hero_run.sh [TAPE]
 #
+# TAPE defaults to hero_run.tape; another tape (one with Screenshot lines) runs
+# against the same seeded repo and proxy, for checking a beat before re-cutting.
 # Needs vhs, ttyd, ffmpeg, agent6, python3 on PATH.
 set -euo pipefail
 
@@ -89,9 +91,15 @@ AGENT6_PROXY_MODE=replay AGENT6_PROXY_CASSETTE="$CASSETTE" AGENT6_PROXY_PORT="$P
   AGENT6_PROXY_CHUNK_MS=60 python3 "$SS/llm_proxy.py" & PROXY_PID=$!
 sleep 1
 
+TAPE="${1:-$SS/hero_run.tape}"
 mkdir -p "$OUT"
-rm -f "$OUT/hero-src-tui.webm"
-echo "hero_run: recording with vhs (hero_run.tape)"
-vhs "$SS/hero_run.tape"
-[ -s "$OUT/hero-src-tui.webm" ] || { echo "hero_run.sh: failed to build hero-src-tui.webm" >&2; exit 1; }
-echo "hero_run: done -> $OUT/hero-src-tui.webm"
+if [ "$TAPE" = "$SS/hero_run.tape" ]; then
+  rm -f "$OUT/hero-src-tui.webm"
+  echo "hero_run: recording with vhs (hero_run.tape)"
+  vhs "$TAPE"
+  [ -s "$OUT/hero-src-tui.webm" ] || { echo "hero_run.sh: failed to build hero-src-tui.webm" >&2; exit 1; }
+  echo "hero_run: done -> $OUT/hero-src-tui.webm"
+else
+  echo "hero_run: running $TAPE against the seeded repo"
+  vhs "$TAPE"
+fi

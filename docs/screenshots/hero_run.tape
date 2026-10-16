@@ -2,12 +2,14 @@
 # committed CLI cassette by llm_proxy.py (replay, no key). hero_run.sh seeds the
 # buggy stats repo, starts the proxy, and records this; hero.sh cuts it.
 #
-# Arc: conversation with detail on (reasoning streams live) -> dashboard ->
-# the approval row for the verify command (run_commands=ask; Tab, then y allows) -> verify
-# passes, auto-commit, the diff pane fills -> the run ends and the TUI exits ->
-# back in via `agent6 tui`: the hub lists the finished run -> config, filtered
-# to sandbox. The approval pauses the run until the answer, so the beats after it are
-# tape-timed, not race-timed.
+# Arc: the gate's baseline run asks its approval at once (run_commands=ask):
+# Tab, then y allows it from the row -> conversation with detail on (reasoning
+# streams live) -> dashboard -> the model's own verify call docks the approval
+# row again; Tab, y -> verify passes, auto-commit, the diff pane fills -> the run
+# ends and the TUI holds the payoff; Ctrl+Q leaves -> back in via `agent6 tui`:
+# the hub lists the finished run -> config, filtered to sandbox. Each approval
+# pauses the run until its answer, so the beats after it are tape-timed, not
+# race-timed.
 #
 # 1600x900 at FontSize 17: the hero is read at README width, so fewer, larger
 # cells beat the docs tapes' 1280x720/13.
@@ -38,20 +40,27 @@ Enter
 Sleep 1.5s
 Show
 
+# The baseline approval docks within a second; answer it from the row.
 Sleep 2s
+Tab
+Sleep 400ms
+Type "y"
+Sleep 600ms
 Ctrl+T
 Sleep 10.5s
 Ctrl+D
 Sleep 10.5s
-# The approval row for run_verify_command docks ~6s after the dashboard flip
+# The model's verify call docks the row on the dashboard ~9s after the flip
 # and pauses the run; let it rest well settled, then Tab out of the composer
 # (a letter typed there is text) and allow.
 Tab
 Sleep 500ms
 Type "y"
-Sleep 13s
-
-# The run has ended and the TUI has exited. Come back in through the hub.
+Sleep 6s
+# The run has ended and the TUI holds the payoff; leave it and come back in
+# through the hub.
+Ctrl+Q
+Sleep 1s
 Hide
 Type "clear" Enter
 Type "agent6 tui" Enter
