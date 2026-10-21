@@ -477,9 +477,11 @@ def test_a_stop_that_did_not_stop_says_so(tmp_path: pathlib.Path) -> None:
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     shell = shells._get(view.id)  # pyright: ignore[reportPrivateUsage]
-    shell.job = cast("jail_jobs.BackgroundJob", _Unconfirmed())
-
-    got = shells.stop(view.id)
+    real, shell.job = shell.job, cast("jail_jobs.BackgroundJob", _Unconfirmed())
+    try:
+        got = shells.stop(view.id)
+    finally:
+        real.stop()  # The fake stops nothing, so the jailed sleep would outlive the test.
     assert got.state != "stopped", f"a stop that failed rendered as {got.state!r}"
     assert "did not exit" in got.detail, got
 
