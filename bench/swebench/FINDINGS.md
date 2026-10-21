@@ -78,6 +78,7 @@ Wrong patches, not empties, are the frontier on every split.
 | issue-derived literal-contract checks | the 54 rebench misses, three extractors | 0 truthful fires on a failing contract; the oracle ceiling is 4/54 | not built |
 | `chattr +i` over test files in the container | 8 legs | unsupported on the images' overlayfs | dead for this harness |
 | the `ultra` and `paranoid` presets | 5 ids, smoke | 1/5 and 3/5 with every end reviewed by the panel | a settled end passes the same gates as a finish |
+| the stagnation notice (`harness.stagnation_notice_after_s` 300 s; the off arm `AGENT6_SB_STAGNATION_S=0`) | dev-25, gpt-6.1-sol, one run per arm | 23/25 vs 24/25, one flip (sympy-14248, where both arms called the gate before their first edit); the notice fired in 0 of 25 on-arm runs: every run edited (median 24 s after the start gate) or called the gate within 300 s, and a gate call switches the notice off | kept; never reached its condition on this model and slice |
 
 A retry control prices the arms: the same 54 misses on the plain wheel converted 8/54 against the combined pilot's 10/54, 6 ids in both; a 2-conversion spread at n=54 is noise.
 
