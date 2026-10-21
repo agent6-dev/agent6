@@ -107,9 +107,15 @@ def _shared_refusal(
         and not git_ops.tree_diff_paths(cwd, run_branch, end_tree)
     ):
         source = run_branch
-    # Literal pathspecs: a name holding `*`, `?` or `[` would restore other files too.
-    names = (f":(top,literal){terminal.printable_name(p)}" for p in shared)
-    restore = shlex.join(["git", "restore", "--source", source, "--", *names])
+    # Literal pathspecs: a name holding `*`, `?` or `[` would restore other files too. A name
+    # that does not print as it is (a newline in it would forge a line) is left to the operator.
+    if all(terminal.printable_name(p) == p for p in shared):
+        names = (f":(top,literal){p}" for p in shared)
+        restore = shlex.join(["git", "restore", "--source", source, "--", *names])
+    else:
+        restore = (
+            f"git restore --source {source} -- <path>, the path typed as the listing spells it"
+        )
     description = (
         "blocks stashing (the run also changed it)"
         if len(shared) == 1

@@ -608,3 +608,16 @@ def test_a_killed_runs_own_edit_to_a_committed_file_is_not_stashed(
     err = capsys.readouterr().err
     assert "w.txt" in err and "blocks stashing (the run also changed it)" in err
     assert (repo / "w.txt").read_text(encoding="utf-8") == "2\n"
+
+
+def test_the_restore_recipe_names_the_file_as_it_is_not_as_it_prints(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A newline in a name reached the pathspec in its printed spelling, naming another file."""
+    from agent6.app import _resume_tree  # pyright: ignore[reportPrivateUsage]
+
+    text = _resume_tree._shared_refusal(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, ["a\nb.py"], end_tree="abc1234", run_branch=None
+    )
+    assert ":(top,literal)" not in text and "typed as the listing spells it" in text
+    assert not [line for line in text.splitlines() if line.startswith("[agent6]")]
