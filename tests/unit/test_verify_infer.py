@@ -620,6 +620,24 @@ def test_a_shell_line_is_judged_by_its_first_program(
         assert got.argv == () and "no `nosuchtool`" in got.passed_over[0][1], md
 
 
+def test_command_head_stops_at_a_shell_operator() -> None:
+    """`ls|cat` read as a program named `ls|cat`, so an unspaced pipeline was rejected."""
+    assert verify_infer.command_head(("sh", "-c", "ls|cat")) == "ls"
+    assert verify_infer.command_head(("sh", "-c", "ls>out")) == "ls"
+    assert verify_infer.command_head(("sh", "-c", "(cd x && make)")) == "cd"
+    assert verify_infer.command_head(("sh", "-c", "$HOME/run test")) == "$HOME/run"
+    assert verify_infer.command_head(("sh", "-c", "PYTHONPATH=$(pwd) nosuchtool")) == "nosuchtool"
+    assert verify_infer.command_head(("sh", "-c", "|| make")) == "make"
+    assert verify_infer.command_head(("sh", "-c", "'./a|b' test")) == "./a|b"
+    assert verify_infer.command_head(("./test&lint",)) == "./test&lint"
+    assert verify_infer.command_head(("sh", "-c", "TAG=${PWD##*/} make test")) == "make"
+    assert verify_infer.command_head(("sh", "-c", "./verify#ci && echo ok")) == "./verify#ci"
+    assert verify_infer.command_head(("sh", "-c", "ROOT=$(pwd|cat) make test")) == "make"
+    assert verify_infer.command_head(("sh", "-c", "TAIL=${VALUE#*|} make test")) == "make"
+    assert verify_infer.command_head(("sh", "-c", "TAG='(' make test")) == "make"
+    assert verify_infer.command_head(("sh", "-c", "a\\|b x")) == "a|b"
+
+
 def test_an_inline_verify_line_drops_its_comment_before_the_unquote() -> None:
     """A comment after the backticks kept them, and sh ran the command's output as a command."""
     assert verify_infer.verify_from_agents_md("Verify: `make test` # the gate") == (

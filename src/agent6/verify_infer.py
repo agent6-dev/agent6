@@ -31,6 +31,8 @@ from agent6.tools import errors as tools_errors
 # A command line with any of these, or a leading assignment, is shell, wrapped in `sh -c`.
 _SHELL_META = re.compile(r"[|&;<>`$*]")
 _ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
+# A shell operator glued to an unquoted first word (`ls|cat`, `(cd`): the program ends before it.
+_OPERATOR = re.compile(r"[|&;<>]")
 # A prompt is a whole first word, so `$HOME`, `$(...)` and `>>>` stay intact.
 _PROMPT = re.compile(r"^[$>](?:\s+|$)")
 _VERIFY_HEADING = re.compile(r"^#{1,6}\s*(verify|test)\b", re.IGNORECASE)
@@ -89,7 +91,9 @@ def command_head(argv: tuple[str, ...]) -> str:
     """Return the program a command runs first: past a `sh -c` wrap and `NAME=value` words.
 
     A pipeline or an `&&` chain is judged by its first program, the one that must exist for
-    any of it to run; a line whose first word is a shell builtin reads as that builtin.
+    any of it to run, with or without spaces around the operator; a word the line holds only
+    quoted or escaped, and a plain argv, are read as they are. A line whose first word is a
+    shell builtin reads as that builtin.
 
     Args:
         argv: The command, plain or a shell line wrapped as `sh -c LINE`.
@@ -98,15 +102,21 @@ def command_head(argv: tuple[str, ...]) -> str:
         The program's name or path, else the argv's first word (`sh` when the wrapped line
         names no program or does not parse); "" for an empty argv.
     """
-    words = argv
+    words, raw = argv, ""
     if argv[:2] == ("sh", "-c"):
+        raw = argv[2] if len(argv) > 2 else ""
         try:
-            words = tuple(shlex.split(argv[2])) if len(argv) > 2 else ()
+            words = tuple(shlex.split(raw))
         except ValueError:
             words = ()
     for word in words:
-        if not _ASSIGNMENT.match(word):
+        if _ASSIGNMENT.match(word):
+            continue
+        # A word the line holds as is was unquoted: an operator in it ends the program's name.
+        if word not in raw.split():
             return word
+        if head := _OPERATOR.split(word.lstrip("("), maxsplit=1)[0]:
+            return head
     return argv[0] if argv else ""
 
 
