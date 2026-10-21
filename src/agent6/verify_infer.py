@@ -35,6 +35,9 @@ _ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 _OPERATOR = re.compile(r"[|&;<>]")
 # A prompt is a whole first word, so `$HOME`, `$(...)` and `>>>` stay intact.
 _PROMPT = re.compile(r"^[$>](?:\s+|$)")
+# The POSIX builtins a shell line may open with before its program: the jail's own `sh` has
+# them; `source` is bash's, absent from dash.
+_SH_BUILTINS = frozenset({".", ":", "cd", "eval", "exec", "export", "set", "umask", "unset"})
 _VERIFY_HEADING = re.compile(r"^#{1,6}\s*(verify|test)\b", re.IGNORECASE)
 _SETUP_HEADING = re.compile(r"^#{1,6}\s*setup command\b", re.IGNORECASE)
 _INLINE_VERIFY = re.compile(r"^\s*(?:verify|test)\s*:\s*(.+)$", re.IGNORECASE)
@@ -547,7 +550,8 @@ def infer_verify_command(
 ) -> InferredVerify:
     """Infer a verify command: AGENTS.md, then the repo's files, then the LLM.
 
-    A candidate whose first word does not resolve in the jail is passed over for the next.
+    A candidate whose first word does not resolve in the jail is passed over for the next; a
+    shell builtin heading a shell line is the jail's own `sh`.
     When one ecosystem's manifest gives the gate, the other ecosystems' manifests are recorded
     as passed over too.
 
@@ -565,7 +569,7 @@ def infer_verify_command(
 
     def runnable(argv: tuple[str, ...], named_by: str) -> bool:
         head = command_head(argv)
-        if tool_paths.jail_resolves(head):
+        if tool_paths.jail_resolves(head) or (argv[:2] == ("sh", "-c") and head in _SH_BUILTINS):
             return True
         why = f"names `{shlex.join(argv)}`, and the sandbox has no `{head}`"
         passed.append((named_by, why))

@@ -68,6 +68,16 @@ def test_agents_md_inline_marker_written_as_code() -> None:
     assert verify_infer.verify_from_agents_md("Verify: ruff check .") == ("ruff", "check", ".")
 
 
+@pytest.mark.parametrize("line", ["cd tests && ./verify.sh", ". .venv/bin/activate && pytest -q"])
+def test_a_shell_builtin_at_the_head_of_a_fence_is_the_jails_own(
+    tmp_path: pathlib.Path, line: str
+) -> None:
+    """An AGENTS.md fence opening with `cd` or `.` was passed over: "the sandbox has no `cd`"."""
+    text = f"## Verify\n\n```sh\n{line}\n```\n"
+    inferred = verify_infer.infer_verify_command(tmp_path, text, llm_call=None)
+    assert (inferred.argv, inferred.source) == (("sh", "-c", line), "agents_md"), inferred
+
+
 def test_a_fence_line_ending_in_a_semicolon_continues_on_the_next() -> None:
     """`ruff check .;` over `pytest -q` joined as `ruff check .; && pytest -q`, a syntax error."""
     text = "## Verify\n\n```sh\nruff check .;\npytest -q\n```\n"
@@ -93,6 +103,20 @@ def test_an_escaped_semicolon_ends_the_find_not_the_line() -> None:
         "sh",
         "-c",
         "find . -name '*.pyc' -exec rm {} \\; && pytest -q",
+    )
+
+
+def test_source_is_no_builtin_of_the_jails_sh(tmp_path: pathlib.Path) -> None:
+    """`source .venv/bin/activate && pytest -q` was inferred; dash, Debian's sh, has only `.`."""
+    text = "## Verify\n\n```sh\nsource .venv/bin/activate && pytest -q\n```\n"
+    inferred = verify_infer.infer_verify_command(tmp_path, text, llm_call=None)
+    assert inferred.argv == ()
+    assert inferred.passed_over == (
+        (
+            "AGENTS.md",
+            "names `sh -c 'source .venv/bin/activate && pytest -q'`,"
+            " and the sandbox has no `source`",
+        ),
     )
 
 
