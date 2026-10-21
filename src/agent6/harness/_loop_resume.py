@@ -71,6 +71,9 @@ def seed_carryover(
         _loop_state.restore_completion_state(state, resume_from)
         state.verify.adopted = harness.adopted_on_resume
         carry_verify_verdict(harness, state, resume_from)
+        if resume_from.verify_withheld and harness.dispatcher.command_policy() == "no":
+            # The correction waits for an execution with the gate: keep it pending.
+            state.verify.withheld = True
         harness.emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
         elided, gists = _compaction.count_elisions(conversation)
         harness.emit("loop.compact.restored", elided=elided, gists=gists)

@@ -1544,7 +1544,10 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
 def test_resume_restates_execution_local_gate_availability(
     tmp_path: pathlib.Path, policy: str, withheld: bool
 ) -> None:
-    """Only a recorded withholding gets a correction, once, on a runnable resume."""
+    """Only a recorded withholding gets a correction, once, on a runnable resume.
+
+    A resume that cannot run commands keeps the withholding recorded for one that can.
+    """
     notice = (
         "[harness verify] start: not run: run_verify_command not run: the run was asked"
         " to stop while awaiting approval. The gate is withheld for the rest of the run;"
@@ -1613,7 +1616,7 @@ def test_resume_restates_execution_local_gate_availability(
         assert "run_verify_command is available in this execution" in told
         dispatcher.run_verify.assert_called_once()
     saved = _snapshot.load_session_snapshot(path)
-    assert saved.verify_withheld is False
+    assert saved.verify_withheld is (withheld and policy == "no")
     provider.reset_mock()
     wf.resume()
     told_again = json.dumps(provider.call.call_args.kwargs["messages"])

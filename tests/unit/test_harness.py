@@ -4891,6 +4891,34 @@ def test_resume_migrates_the_legacy_rulings_file_as_a_run_start_does(
     assert not legacy.exists()
 
 
+def test_a_commands_disabled_resume_keeps_the_withheld_gate_correction_pending(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Resumed under run_commands = "no", the notice could not go out and the flag was saved off.
+
+    A later resume with commands back never told the model the gate was available again.
+    """
+    import json
+
+    snap_path = tmp_path / "loop_state.json"
+    snap_path.write_text(
+        f'{{"version": {_snapshot.SNAPSHOT_VERSION}, "system": "S", "messages": [{{"role": "user", '
+        '"content": [{"type": "text", "text": "go"}]}], "tool_calls": 2, '
+        '"next_iteration": 5, "root_task_id": null, "original_task": "go", '
+        '"verify_command": ["true"], "verify_withheld": true}',
+        encoding="utf-8",
+    )
+    provider = mock.MagicMock()
+    provider.call.return_value = _resp("all done")
+    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher.set_run_root_node_id = mock.MagicMock()
+    dispatcher.command_policy.return_value = "no"
+    wf = _wf(provider=provider, dispatcher=dispatcher, resume_state_path=snap_path)
+    wf.config.harness.verify_command = ("true",)
+    wf.resume()
+    assert json.loads(snap_path.read_text(encoding="utf-8"))["verify_withheld"] is True
+
+
 @pytest.mark.parametrize("steer", ["", "write docs", "x" * 240])
 def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path, steer: str) -> None:
     """resume() loads snapshot, calls provider once, finishes via silent_finish."""
