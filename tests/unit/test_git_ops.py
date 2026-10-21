@@ -1804,6 +1804,34 @@ def test_a_kept_worktree_names_its_uncommitted_files_on_one_line(tmp_path: pathl
     assert phrase.startswith("holds work no commit has: ") and "\n" not in phrase
 
 
+def test_a_worktree_holding_a_commit_no_ref_has_is_kept(tmp_path: pathlib.Path) -> None:
+    """A hand commit on a detached worktree HEAD was pruned with it, and no ref kept the commit."""
+    from agent6.app import fork_worktrees
+
+    _init_repo(tmp_path)
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    wt = tmp_path.parent / f"{tmp_path.name}-wt"
+    subprocess.run(
+        ["git", "worktree", "add", "--detach", str(wt), "HEAD"], cwd=tmp_path, check=True
+    )
+    (wt / "hand.txt").write_text("x\n")
+    subprocess.run(["git", "add", "hand.txt"], cwd=wt, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "by hand"],
+        cwd=wt,
+        check=True,
+    )
+    assert fork_worktrees.remove_fork_worktree(tmp_path, wt, (base,)) == (
+        False,
+        "holds a commit no branch or chain has",
+    )
+    assert wt.is_dir()
+    subprocess.run(["git", "reset", "-q", "--hard", base], cwd=wt, check=True)
+    assert fork_worktrees.remove_fork_worktree(tmp_path, wt, (base,)) == (True, "")
+
+
 def test_the_dirty_tree_lists_name_each_file_on_one_line() -> None:
     """Names git lists with `-z` printed raw: a newline in one forged a line of agent6's own.
 

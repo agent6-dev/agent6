@@ -60,15 +60,28 @@ def remove_fork_worktree(
 
     The dirt check is git's own rule for `worktree remove`: a merged fork's tree can still
     carry an uncommitted edit or a file never added, which `rmtree` would take with no way back.
+    A commit made by hand on the worktree's detached HEAD has no ref but that HEAD, which the
+    removal deletes: it stays too.
 
     Args:
         repo: The repository the worktree is linked to.
         worktree: The worktree to remove.
-        tips: The commits its sessions landed.
+        tips: The commits its sessions landed, and the ones they started from.
 
     Returns:
         Whether it was removed, and the reason when not ("" on success).
     """
+    try:
+        head = git_ops.status(worktree).head_sha if worktree.is_dir() else ""
+    except (errors.GitError, OSError):
+        head = ""  # a vanished directory, or no git there: nothing of its own to keep
+    if (
+        head
+        and head not in tips
+        and not any(git_ops.is_ancestor(repo, head, tip) for tip in tips)
+        and not git_ops.commit_is_reachable(repo, head)
+    ):
+        return False, "holds a commit no branch or chain has"
     dirt = uncommitted_in_worktree(worktree, tips)
     if dirt:
         return False, dirt
@@ -181,22 +194,26 @@ def _still_needs_worktree(
 def _landed_tips(
     repo: pathlib.Path, sessions: Sequence[tuple[pathlib.Path, sessions_manifest.SessionManifest]]
 ) -> tuple[str, ...]:
-    """Return the commits the sessions landed: each chain tip, else its merge stamp's tip.
+    """Return the commits the sessions landed or started from.
 
-    `--delete-squashed` deletes the ref in the same sweep, and the commit outlives it.
+    Each chain tip, else its merge stamp's tip (`--delete-squashed` deletes the ref in the same
+    sweep, and the commit outlives it), plus each session's base and fork point: a worktree
+    left at one of those holds nothing of its own.
 
     Args:
         repo: The repository.
         sessions: The directory and manifest of each session sharing the worktree.
 
     Returns:
-        The commits, one per session with a chain tip or a merge stamp.
+        The commits, deduplicated, in session order.
     """
-    tips = (
-        git_ops.chain_tip(repo, git_ops.chain_ref_for(d.name)) or (m.merged.tip if m.merged else "")
-        for d, m in sessions
-    )
-    return tuple(tip for tip in tips if tip)
+    tips: list[str] = []
+    for d, m in sessions:
+        landed = git_ops.chain_tip(repo, git_ops.chain_ref_for(d.name)) or (
+            m.merged.tip if m.merged else ""
+        )
+        tips += [tip for tip in (landed, m.base_sha, m.forked_from_sha or "") if tip]
+    return tuple(dict.fromkeys(tips))
 
 
 def sweep_fork_worktrees(
