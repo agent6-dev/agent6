@@ -61,9 +61,10 @@ class RoleModel(pydantic.BaseModel):
         default=None,
         description=(
             "Reasoning effort: `off`, `low`, `medium`, `high`, `xhigh`, or `max` (the top tiers "
-            "where the model offers them; Anthropic collapses them to its highest). Unset: what "
-            "the wire applies, which `agent6 config show` prints resolved (`low` on "
-            "openai-compatible reasoning models, no thinking on Anthropic)."
+            "where the model offers them; Anthropic collapses them to its highest). Unset: `low` "
+            "on openai-compatible reasoning models and no thinking on Anthropic, as "
+            "`agent6 config show` prints. On `chatgpt` and `claude_code`, agent6 sends no "
+            "effort, so the model's own default applies."
         ),
     )
 
