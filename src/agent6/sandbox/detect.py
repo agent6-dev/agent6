@@ -205,7 +205,7 @@ def _userns_block_cause(env: Environment) -> str:
     if _read_max_userns() == "0":
         return (
             "unprivileged user namespaces are disabled (user.max_user_namespaces = 0); "
-            "raise it for full"
+            "raise it to allow sandbox.isolation = 'full'"
         )
     if env.in_container:
         return (
@@ -285,7 +285,7 @@ def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
         raise IsolationUnavailableError(
             f"sandbox.isolation = {requested!r} requires the Linux kernel sandbox "
             f"(Landlock + seccomp + namespaces), which is not available on "
-            f"{sys.platform!r}. Set isolation = 'auto' to run unsandboxed on this "
+            f"{sys.platform!r}. Set sandbox.isolation = 'auto' to run unsandboxed on this "
             f"platform, or run agent6 on Linux for kernel-enforced isolation."
         )
     if requested == "auto":
@@ -299,7 +299,7 @@ def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
         raise IsolationUnavailableError(
             f"sandbox.isolation = {requested!r} requires the jail's seccomp filter, "
             f"which does not exist for {platform.machine()!r} (filters exist for "
-            "x86_64 and aarch64). Set isolation = 'auto' to run unsandboxed on "
+            "x86_64 and aarch64). Set sandbox.isolation = 'auto' to run unsandboxed on "
             "this machine, or 'none' to opt out explicitly."
         )
     if requested == "full":
@@ -307,7 +307,7 @@ def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
             raise IsolationUnavailableError(
                 "sandbox.isolation = 'full' requires unprivileged user namespaces "
                 "(`unshare -U -r true`) to succeed, but this host blocks them. "
-                "Set isolation = 'partial' (or 'auto') to run without namespaces "
+                "Set sandbox.isolation = 'partial' (or 'auto') to run without namespaces "
                 "while keeping Landlock + seccomp + NO_NEW_PRIVS."
             )
         return "full"
@@ -316,16 +316,15 @@ def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
             raise IsolationUnavailableError(
                 "sandbox.isolation = 'partial' requires Landlock (Linux >= 5.13 "
                 "with the Landlock LSM enabled), which this kernel does not provide. "
-                "Partial without it applies no filesystem confinement at all. Set "
-                "isolation = 'auto', or 'none' to run unsandboxed."
+                "Set sandbox.isolation = 'auto', or 'none' to run unsandboxed."
             )
         if env.landlock_abi < 3:
             raise IsolationUnavailableError(
                 "sandbox.isolation = 'partial' requires Landlock ABI 3 (Linux 6.2) "
                 "to confine file truncation, but this kernel's Landlock is ABI "
                 f"{env.landlock_abi}: a jailed command could truncate "
-                "(truncate/ftruncate) files outside its write grants. Set isolation "
-                "= 'auto' to run with a warning, or upgrade the kernel."
+                "(truncate/ftruncate) files outside its write grants. Set "
+                "sandbox.isolation = 'auto' to run with a warning, or upgrade the kernel."
             )
         return "partial"
     raise IsolationUnavailableError(f"unknown sandbox.isolation: {requested!r}")

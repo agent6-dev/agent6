@@ -205,7 +205,7 @@ def test_new_refuses_what_a_run_refuses(
     cfg = Config.model_validate({"sandbox": {"isolation": "partial", "network": "session"}})
     assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ("true",)) == 2
     err = capsys.readouterr().err
-    assert "REFUSING: sandbox.network = 'session' requires the full isolation" in err
+    assert "REFUSING: sandbox.network = 'session' requires sandbox.isolation = 'full'" in err
     assert "policy" not in host
 
 

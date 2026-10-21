@@ -140,7 +140,8 @@ def test_a_grant_that_links_through_tmp_is_dropped(tmp_path: pathlib.Path) -> No
     tmp = pathlib.Path("/tmp").resolve()
     assert (linked.path, linked.region) == (link / "data", tmp)
     assert (inside.path, inside.region, inside.via_link) == (spelled, tmp, False)
-    assert "a partial run's commands write" in inside.line() and "full to keep it" in inside.line()
+    assert "which this run's commands write" in inside.line()
+    assert "'full' to keep it" in inside.line()
     assert kept.read == ((link / "data", real / "data"), (spelled, spelled.resolve()))
     assert not kept.dropped
 

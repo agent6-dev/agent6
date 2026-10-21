@@ -162,8 +162,8 @@ class DroppedGrant:
     def line(self) -> str:
         """Return the sentence a run prints for the grant at its start."""
         where = "" if self.real == self.path else f" (it resolves to {self.real})"
-        who = "a partial run's commands" if self.region == _TMP else "jailed commands"
-        pin = " Pin sandbox.isolation = full to keep it." if self.region == _TMP else ""
+        who = "this run's commands" if self.region == _TMP else "jailed commands"
+        pin = " Set sandbox.isolation = 'full' to keep it." if self.region == _TMP else ""
         if self.via_link:
             return (
                 f"{self.key} entry {self.path}{where} is not granted: a link on its"

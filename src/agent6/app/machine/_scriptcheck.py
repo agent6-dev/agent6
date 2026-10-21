@@ -254,8 +254,8 @@ def _run_offline_tests_in(
     scripts_dir = bundle_dir / "scripts"
     tests = sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}"))
     if isolation != "full":
-        # partial has no network namespace: model-authored code would reach the host network.
-        reason = "no sandbox" if isolation == "none" else "no network isolation (partial)"
+        # Under `partial`, the tests would reach the host network.
+        reason = "no sandbox" if isolation == "none" else "needs sandbox.isolation = 'full'"
         return OfflineTestOutcome(skipped=len(tests), skip_reason=reason)
     data_dir = bundle_dir / ".scriptcheck_data"
     problems: list[str] = []

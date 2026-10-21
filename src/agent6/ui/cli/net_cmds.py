@@ -58,7 +58,7 @@ def join_session_network(session_dir: pathlib.Path) -> None:
     if pid is None:
         raise SessionNetworkUnavailableError(
             "this session has no network of its own to join. A run only makes one"
-            " under the full isolation with sandbox.network = auto|session;"
+            " under sandbox.isolation = 'full' with sandbox.network = auto|session;"
             " with network = host its commands are already on this machine's."
         )
     setns = getattr(os, "setns", None)

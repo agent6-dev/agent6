@@ -286,7 +286,7 @@ def test_offline_tests_skipped_on_partial_profile(
     monkeypatch.setattr(scriptcheck, "run_in_jail", _boom)
     outcome = scriptcheck.run_offline_tests(tmp_path, "partial")
     assert outcome.problems == () and not called
-    assert outcome.skipped == 1 and "partial" in outcome.skip_reason
+    assert outcome.skipped == 1 and "sandbox.isolation = 'full'" in outcome.skip_reason
     assert capsys.readouterr().err == ""  # the caller owns the rendering
 
 

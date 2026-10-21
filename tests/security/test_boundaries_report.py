@@ -172,7 +172,7 @@ def test_boundaries_report_is_level_aware(
     checks = _check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert _verdicts(checks) == []
-    assert "not full: userns blocked (test)" in out
+    assert "'full' is unavailable because userns blocked (test)" in out
     for p in _check_sandbox.PARTIAL_SYSTEM_RO:
         assert f"    ro  {p}  (system, by Landlock rule)" in out
     assert f"rw  {paths.jail_cache_home(pathlib.Path.cwd())}  (HOME" in out and "persists" in out
@@ -195,7 +195,9 @@ def test_boundaries_report_says_what_partial_leaves_writable(
     _check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     git = pathlib.Path.cwd() / ".git"
-    assert f"    rw  {git}  (writable: partial has no mount to re-bind it)" in out
+    assert (
+        f"    rw  {git}  (writable: sandbox.protect_git requires sandbox.isolation = 'full')" in out
+    )
     assert "    --  /  (Landlock: denied except the paths below)" in out
     assert "    rw  /tmp  (the host's /tmp, shared with every process of yours)" in out
     assert "    --  /proc  (not granted under partial" in out
@@ -243,7 +245,7 @@ def test_boundaries_report_shows_each_grant_as_a_run_binds_it(
     out = capsys.readouterr().out
     bound = f"    ro  {real}  (sandbox.extra_read_paths, configured as {link})"
     dropped = (
-        f"    --  {inside}  (sandbox.extra_read_paths: not granted, it sits inside"
+        f"    --  {inside}  (sandbox.extra_read_paths: not granted because it sits inside"
         f" {pathlib.Path.cwd()}, which jailed commands write)"
     )
     assert out.count(bound) == 2 and out.count(dropped) == 2, out
@@ -265,8 +267,8 @@ def test_boundaries_report_says_when_only_a_link_puts_a_grant_in_the_workspace(
     _check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     assert (
-        f"    --  {grant}  (sandbox.extra_read_paths: not granted, a link on its way sits inside"
-        f" {repo}, which jailed commands write)"
+        f"    --  {grant}  (sandbox.extra_read_paths: not granted because a link on its way"
+        f" sits inside {repo}, which jailed commands write)"
     ) in out, out
 
 
@@ -282,7 +284,7 @@ def test_boundaries_report_names_the_opted_in_persistent_home(
     out = capsys.readouterr().out
     assert (
         f"rw  {paths.jail_cache_home(pathlib.Path.cwd())}  (HOME" in out
-        and "sandbox.home = cache" in out
+        and "sandbox.home = 'cache'" in out
     )
     assert "/tmp/agent6-home" not in out
 
@@ -299,7 +301,9 @@ def test_boundaries_report_names_the_home_under_none(
     out = capsys.readouterr().out
     assert "    rw  /  (sandbox disabled: the whole filesystem and network, as " in out
     home = paths.jail_cache_home(pathlib.Path.cwd())
-    assert f"rw  {home}  (HOME, persists across runs: none has no private /tmp)" in out
+    assert (
+        f"rw  {home}  (HOME, persists across runs: sandbox.isolation = 'none' has no private /tmp)"
+    ) in out
     assert f"    rw  {paths.global_config_dir()}  (not hidden: secrets.toml is readable)" in out
     assert (
         f"    rw  {paths.state_base()}  (not hidden: every session's records are writable)" in out

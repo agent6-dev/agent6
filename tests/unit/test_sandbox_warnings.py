@@ -59,7 +59,7 @@ def test_git_control_without_sandbox(
     confine.warn_sandbox_gaps("none", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
     warning = (
-        "git control is not enforced without the sandbox; "
+        "git.control = 'agent6' is not enforced without the sandbox; "
         "a commit the model runs lands on the checkout's branch."
     )
     assert err.count(warning) == (1 if control == "agent6" else 0)
@@ -103,7 +103,7 @@ def test_the_run_entry_refuses_explicit_git_control_before_it_warns(
         cfg, cwd=tmp_path, confirm_unconfined=_confirmed, reporter=reporter
     )
     assert selected == "none"
-    (line,) = (line for line in said if "git control is not enforced without the sandbox" in line)
+    (line,) = (line for line in said if "git.control = 'agent6' is not enforced" in line)
     assert line.startswith("[agent6] WARNING: running UNSANDBOXED")
     assert not any(line.startswith("REFUSING") for line in said)
 
@@ -186,13 +186,13 @@ def test_a_tool_dragging_a_home_dir_into_the_jail_is_not_a_per_run_warning(
 def test_partial_auto_warns_tool_network_degrade(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Partial with network='auto' says it degrades to the host network.
+    """`partial` with network='auto' says it degrades to the host network.
 
-    The secure default cannot be offline on partial (no netns); the degrade is never silent.
+    The secure default cannot be offline on `partial` (no netns); the degrade is never silent.
     """
     confine.warn_sandbox_gaps("partial", _env(4), _cfg("auto"), root=tmp_path)
     err = capsys.readouterr().err
-    assert "WARNING" in err and "network" in err and "network namespace" in err
+    assert "WARNING" in err and "jailed commands share this host's network" in err
 
 
 @pytest.mark.parametrize("abi", [1, 2])
@@ -223,13 +223,13 @@ def test_partial_allow_says_nothing_about_the_network(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # An operator who set network='allow' asked for the tool to have the
+    # An operator who set network='host' asked for the tool to have the
     # network, so no degrade warning for it. `.git` is a separate degrade and
-    # is expected here: partial cannot protect it at all.
+    # is expected here: `partial` cannot protect it at all.
     confine.warn_sandbox_gaps("partial", _env(4), _cfg("host"), root=tmp_path)
     err = capsys.readouterr().err
-    assert "network" not in err.lower().split("cannot protect .git")[-1]
-    assert "cannot protect .git" in err
+    assert "network" not in err.lower().split("jailed commands can write .git")[-1]
+    assert "jailed commands can write .git" in err
 
 
 def test_partial_warning_names_shared_tmp_and_persistent_home(
@@ -249,7 +249,7 @@ def test_partial_warning_names_shared_tmp_and_persistent_home(
         assert str(paths.jail_cache_home(tmp_path)) in err
         assert "/tmp/agent6-home" not in err
         assert "persists across runs" in err and "executable" in err
-        assert ("cannot protect .git" in err) == cfg.sandbox.protect_git
+        assert ("jailed commands can write .git" in err) == cfg.sandbox.protect_git
 
 
 def test_full_cache_home_warns_naming_the_cost(
@@ -513,7 +513,7 @@ def test_auto_degrade_warns_with_the_reason(
     monkeypatch.setattr("agent6.sandbox.detect.degrade_reason", _why)
     confine.warn_sandbox_gaps("partial", _env(4), _cfg(), root=tmp_path)
     err = capsys.readouterr().err
-    assert "'auto' selected 'partial', not 'full': userns blocked (test)" in err
+    assert "'auto' resolved to 'partial', not 'full', because userns blocked (test)" in err
 
 
 def test_explicit_partial_has_no_degrade_line(
@@ -569,7 +569,7 @@ def test_a_grant_of_the_home_directory_or_above_it_warns(
     (line,) = lines(read=(str(home),))
     assert line.startswith(f"sandbox.extra_read_paths grants {str(home)!r}, your home directory:")
     assert "can read what is under it, the credentials other tools keep there included" in line
-    assert "sandbox.hide_paths hides the paths you list, under 'full'" in line
+    assert "Under sandbox.isolation = 'full', sandbox.hide_paths hides the paths you list" in line
     (line,) = lines(write=(str(home.parent),))
     assert line.startswith(
         f"sandbox.extra_write_paths grants {str(home.parent)!r},"

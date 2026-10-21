@@ -48,7 +48,7 @@ def _add_system_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         sub,
         "system",
         help="Host/OS setup that needs privileges, and uses sudo to get them."
-        " Installs or removes the AppArmor profile the full sandbox needs.",
+        " Installs or removes the AppArmor profile that sandbox.isolation = 'full' needs.",
     )
     system_sub = system_p.add_subparsers(
         dest="system_command", required=True, metavar="<subcommand>"
@@ -56,8 +56,8 @@ def _add_system_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     apparmor_p = _common._sub(
         system_sub,
         "apparmor",
-        help="Install/remove the agent6-jail AppArmor profile (Ubuntu 24.04+: lets the"
-        " full sandbox use user namespaces).",
+        help="Install or remove the AppArmor profile that sandbox.isolation = 'full' needs"
+        " on Ubuntu 24.04+.",
     )
     apparmor_p.add_argument(
         "action",

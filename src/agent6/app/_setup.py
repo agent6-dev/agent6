@@ -549,8 +549,7 @@ def _warn_servers_that_keep_the_network(
     for name, srv in sorted(cfg.mcp.servers.items()):
         if srv.enabled and srv.effective_network == "auto":
             reporter.warn(
-                f"MCP server {name!r} keeps this host's network:"
-                f" taking it away needs the network namespace only 'full' has, and"
-                f" this host resolved to {isolation!r}. On 'partial', setting its"
-                " sandbox.network = 'none' refuses the run instead of connecting it."
+                f"MCP server {name!r} uses the host network. Keeping it off the host network"
+                f" requires sandbox.isolation = 'full', but this host resolved to {isolation!r}."
+                " Under 'partial', set its sandbox.network = 'none' to refuse the run instead."
             )

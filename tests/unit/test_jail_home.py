@@ -180,10 +180,10 @@ def test_a_symlinked_ancestor_into_a_private_dir_refuses(
 def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
     tmp_path: pathlib.Path, isolation: str
 ) -> None:
-    """`home = "tmp"` needs full's private tmpfs: written down it refuses, as default degrades."""
+    """`home = "tmp"` needs `full`'s private tmpfs: written down it refuses, as default degrades."""
     msg = confine.check_jail_home(Config(), isolation, tmp_path, explicitly_set=True)  # pyright: ignore[reportArgumentType]
     assert msg is not None
-    assert "requires the full isolation" in msg
+    assert "requires sandbox.isolation = 'full'" in msg
     assert f"resolved to '{isolation}'" in msg
     assert "sandbox.home = 'cache'" in msg
     explicit = frozenset({"sandbox.home"})

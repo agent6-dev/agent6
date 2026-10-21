@@ -49,8 +49,11 @@ def warn_sandbox_gaps(
     if cfg.sandbox.isolation == "auto":
         reason = detect.degrade_reason(env)
         if reason is not None:
-            # 'auto' landing under full is never silent; the same line `check sandbox` prints.
-            reporter.warn(f"'auto' selected '{isolation}', not 'full': {reason}.")
+            # `agent6 check sandbox` prints the same reason.
+            reporter.warn(
+                f"sandbox.isolation = 'auto' resolved to '{isolation}', not 'full',"
+                f" because {reason}."
+            )
     if isolation == "none":
         origin = (
             "sandbox.isolation = 'none'"
@@ -64,10 +67,10 @@ def warn_sandbox_gaps(
             "any spawned MCP server. sandbox.memory_limit_mb still applies: the "
             "launcher enforces it with confinement off. Only the "
             "surrounding environment, a container for instance, bounds what a command "
-            "can reach. Use 'auto', 'full', or 'partial' for kernel-enforced "
-            "isolation."
+            "can reach. Use sandbox.isolation = 'auto', 'full', or 'partial' for "
+            "kernel-enforced isolation."
             + (
-                " git control is not enforced without the sandbox; "
+                " git.control = 'agent6' is not enforced without the sandbox; "
                 "a commit the model runs lands on the checkout's branch."
                 if cfg.git.control == "agent6"
                 else ""
@@ -75,28 +78,22 @@ def warn_sandbox_gaps(
         )
     elif isolation == "full" and env.landlock_abi < 1:
         reporter.warn(
-            "'full' is running WITHOUT its Landlock layer: "
-            "this kernel offers no Landlock (needs Linux >= 5.13 with the "
-            "Landlock LSM enabled). Namespaces, the pivoted read-only rootfs, "
-            "and seccomp still confine commands; the in-jail Landlock "
-            "defense-in-depth is absent."
+            "sandbox.isolation = 'full' runs without Landlock, because this kernel has none."
+            " Namespaces, the read-only root filesystem and seccomp still confine commands."
+            " Landlock needs Linux 5.13+ with the Landlock LSM enabled."
         )
     if isolation == "partial" and paths.is_root():
         # The root banner names running as root; this names what it costs at this level.
         reporter.warn(
-            "running as root under 'partial': file permissions "
-            "no longer narrow what a jailed command reads, so it can read the "
-            "root-only files in the granted system set (/etc/shadow, /etc/sudoers, "
-            "the host's ssh private keys). 'full' pivots into a minimal rootfs "
-            "where they are absent. Run as your normal user."
+            "running as root under sandbox.isolation = 'partial' lets a jailed command read the"
+            " root-only files in the system dirs it is granted (/etc/shadow, /etc/sudoers, the"
+            " host's ssh private keys). Run as your normal user."
         )
     if isolation == "partial" and cfg.sandbox.protect_git:
         reporter.warn(
-            "'partial' cannot protect .git: the read-only bind "
-            "needs a mount namespace, which only 'full' has. A jailed command can "
-            "write .git; the in-process edit tools still refuse. For the same "
-            "reason /tmp is the host's shared /tmp. Use 'full' for a private /tmp "
-            "and a protected .git."
+            "sandbox.protect_git = true requires sandbox.isolation = 'full' to bind-remount .git"
+            " read-only, but this run resolved to 'partial', so jailed commands can write .git."
+            " Set sandbox.protect_git = false to accept that, or sandbox.isolation = 'full'."
         )
     persistent = tools_policy.persistent_jail_home(cfg, isolation, root, worktree_git_dir)
     if persistent is not None and isolation != "none":
@@ -107,8 +104,8 @@ def warn_sandbox_gaps(
             )
             if isolation == "full"
             else (
-                "'partial' has no private /tmp",
-                "Use 'full' for a HOME that goes with the run.",
+                "sandbox.isolation = 'partial' has no private /tmp",
+                "Set sandbox.isolation = 'full' for a HOME that goes with the run.",
             )
         )
         reporter.warn(
@@ -118,30 +115,25 @@ def warn_sandbox_gaps(
         )
     if isolation == "partial" and cfg.sandbox.network == "auto":
         reporter.warn(
-            "'partial' has no network namespace, so "
-            "sandbox.network = 'auto' cannot give the run its own session "
-            "network: jailed commands share this process's host network, which "
-            "partial does not confine. Run on 'full' for a session "
-            "network, or set sandbox.network = 'session' to refuse the run "
-            "instead."
+            "sandbox.network = 'auto' requires sandbox.isolation = 'full' to give the run its own"
+            " network, but this run resolved to 'partial', so jailed commands share this host's"
+            " network. Set sandbox.network = 'session' to refuse the run instead, or"
+            " sandbox.isolation = 'full'."
         )
     if isolation == "partial" and env.landlock_abi < 3:
         reporter.warn(
-            f"'partial' on Landlock ABI {env.landlock_abi} (< 3) "
-            "does not confine file truncation: a jailed command can truncate "
-            "(truncate/ftruncate) files outside its write grants, discarding their "
-            "contents. Its other writes stay confined. Full write-confinement needs "
-            "Landlock ABI 3 (Linux 6.2): upgrade the kernel, or run on 'full', "
-            "whose mount namespace confines truncation on any ABI."
+            f"sandbox.isolation resolved to 'partial' on Landlock ABI {env.landlock_abi}, so a"
+            " jailed command can truncate files outside its write grants; its other writes stay"
+            " confined. Upgrade the kernel to Linux 6.2+ for Landlock ABI 3, or set"
+            " sandbox.isolation = 'full'."
         )
     _warn_grants(cfg, root, reporter)
     for hidden, region, source in unmaskable_exposures(cfg, isolation, root, worktree_git_dir):
         reporter.warn(
-            f"jailed commands can read {hidden}: it sits inside"
-            f" {region} ({source}), which they are granted, and 'partial' has no"
-            " mount namespace to mask it out. Every command this run starts can"
-            " read the provider keys, transcripts, notes, and run history in there."
-            " Use 'full' to keep them masked under the same grant."
+            f"jailed commands can read {hidden}, because it sits inside {region} ({source})."
+            " Every command this run starts can read what agent6 keeps there (provider keys,"
+            " transcripts, notes, run history). Hiding it under that grant requires"
+            " sandbox.isolation = 'full', but this run resolved to 'partial'."
         )
     if isolation in ("full", "partial"):
         notes = tool_paths.tool_mount_notes()
@@ -215,7 +207,7 @@ def home_grant_warnings(cfg: Config) -> tuple[str, ...]:
         out.append(
             f"sandbox.{key} grants {grant!r}, {which}: the run's commands and file tools can"
             f" {access} what is under it, the credentials other tools keep there included."
-            " sandbox.hide_paths hides the paths you list, under 'full'."
+            " Under sandbox.isolation = 'full', sandbox.hide_paths hides the paths you list."
         )
     return tuple(out)
 
@@ -276,10 +268,9 @@ def check_protect_git_support(
     if isolation != "partial" or not (cfg.sandbox.protect_git and explicitly_set):
         return None
     return (
-        "sandbox.protect_git = true requires the full isolation (a read-only"
-        " bind of .git), but this run resolved to 'partial', where Landlock"
-        " could only provide it by refusing every write at the workspace root."
-        " Set sandbox.protect_git = false to run here, or use full."
+        "sandbox.protect_git = true requires sandbox.isolation = 'full' to bind-remount .git"
+        " read-only, but this run resolved to 'partial'. Set sandbox.protect_git = false, or"
+        " sandbox.isolation = 'full'."
     )
 
 
@@ -303,10 +294,9 @@ def check_jail_home(
         return None
     if isolation != "full" and explicitly_set and cfg.sandbox.home == "tmp":
         return (
-            "sandbox.home = 'tmp' requires the full isolation (a private /tmp tmpfs),"
-            f" but this run resolved to {isolation!r}, where HOME is the persistent"
-            f" cache dir {str(persistent)!r}. Set sandbox.home = 'cache' to"
-            " run here, or use full."
+            "sandbox.home = 'tmp' requires sandbox.isolation = 'full' to put HOME on a private"
+            f" /tmp, but this run resolved to {isolation!r}. Set sandbox.home = 'cache' to use"
+            f" the persistent HOME {str(persistent)!r}, or sandbox.isolation = 'full'."
         )
     return tools_policy.jail_home_refusal(persistent)
 
@@ -324,7 +314,7 @@ def _partial_grant_regions(
     )
     regions: list[tuple[pathlib.Path, str]] = [
         (root, "the workspace"),
-        (pathlib.Path("/tmp"), "the host's shared /tmp (partial has no private tmpfs)"),  # noqa: S108
+        (pathlib.Path("/tmp"), "the host's shared /tmp"),  # noqa: S108
     ]
     for sysdir in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"):
         regions.append((pathlib.Path(sysdir), "a system dir every command is granted"))
@@ -404,10 +394,10 @@ def check_hide_paths_support(
     for hidden, region, source in unmaskable_exposures(cfg, isolation, root, worktree_git_dir):
         if hidden in listed:
             return (
-                f"sandbox.hide_paths lists {str(hidden)!r}, which sits inside"
-                f" {str(region)!r} ({source}), granted to jailed commands."
-                " Masking it needs the mount namespace only 'full' has:"
-                " use full, drop the entry, or move one of the two."
+                f"sandbox.hide_paths lists {str(hidden)!r}, which overlaps {str(region)!r}"
+                f" ({source}). Hiding a path that overlaps a grant requires"
+                " sandbox.isolation = 'full', but this run resolved to 'partial'. Set"
+                " sandbox.isolation = 'full', drop the entry, or move one of the two."
             )
     return None
 
@@ -426,10 +416,10 @@ def mcp_network_refusal(
     if srv.effective_network not in ("none", "session"):
         return None
     return (
-        f"MCP server {name!r} sets sandbox.network = {srv.effective_network!r},"
-        " which needs a network namespace and so the full isolation; this"
-        f" host resolved to {isolation!r}. Use 'auto' to run with a warning,"
-        " or 'host' to accept the machine's network."
+        f"MCP server {name!r} sets sandbox.network = {srv.effective_network!r}. Keeping the"
+        " server off the host network requires sandbox.isolation = 'full', but this host"
+        f" resolved to {isolation!r}. Set its sandbox.network = 'auto' to run with a warning,"
+        " or 'host' to accept the host network."
     )
 
 
@@ -507,10 +497,9 @@ def check_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str |
     sb = cfg.sandbox
     if sb.network == "session":
         return (
-            "sandbox.network = 'session' requires the full isolation (a"
-            " network namespace), but this run resolved to 'partial', where"
-            " a jailed command shares this process's network. Use 'auto' to run"
-            " with a warning, or 'host' to accept it."
+            "sandbox.network = 'session' requires sandbox.isolation = 'full' to give the run its"
+            " own network, but this run resolved to 'partial'. Set sandbox.network = 'auto' to"
+            " run with a warning, or 'host' to accept this host's network."
         )
     return None
 

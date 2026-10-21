@@ -43,7 +43,7 @@ def test_a_default_degrades_with_a_warning(tmp_path: pathlib.Path) -> None:
         sandbox_available=True,
     )
     confine.warn_sandbox_gaps("partial", env, Config(), reporter=reporter, root=tmp_path)
-    assert any("cannot protect .git" in line for line in lines)
+    assert any("jailed commands can write .git" in line for line in lines)
     assert confine.check_protect_git_support(Config(), "partial", explicitly_set=False) is None
 
 
@@ -51,7 +51,7 @@ def test_a_value_the_operator_wrote_down_refuses(tmp_path: pathlib.Path) -> None
     """They asked for something specific; running without it would be a lie."""
     message = confine.check_protect_git_support(Config(), "partial", explicitly_set=True)
     assert message is not None
-    assert "requires the full isolation" in message
+    assert "requires sandbox.isolation = 'full'" in message
     assert "sandbox.protect_git = false" in message  # names the fix
 
 

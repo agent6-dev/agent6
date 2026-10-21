@@ -155,7 +155,7 @@ def test_check_sandbox_partial_passes_and_skips_network(
     assert _row(checks, "sandbox").status == "PASS", out
     assert "isolation: partial  (sandbox.isolation = auto;" in out
     # Network probe is reported n/a, not run, under partial.
-    assert "jail_blocks_network: n/a under partial" in out
+    assert "jail_blocks_network: n/a because only sandbox.isolation = 'full'" in out
     assert all(p.isolation == "partial" for p in stub_jail)
     assert not any(p.argv[0].endswith("getent") for p in stub_jail)
 
@@ -216,7 +216,7 @@ def test_check_sandbox_degraded_names_why(
     checks = _check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert _row(checks, "sandbox").status == "PASS", out
-    assert f"not full: {why}" in out
+    assert f"'full' is unavailable because {why}" in out
     # Under partial nothing is mounted: the tool dirs are Landlock read grants, one row each.
     assert "    ro  /opt/tools/bin  (operator tools: on the jail's PATH)" in out
     assert "    ro  /opt/tools/lib/x/bin  (operator tools: /opt/tools/bin/x links here)" in out
@@ -247,11 +247,11 @@ def test_rows_sort_by_path_with_a_root_and_a_home_row(
     out = capsys.readouterr().out
     home = paths.effective_user().home.resolve()
     files = out.split("  in-process file tools", 1)[1].split("\n\n", 1)[0].splitlines()[1:]
-    assert files[0] == "    --  /  (refused: only the paths below)"
+    assert files[0] == "    --  /  (refused except the paths below)"
     assert f"    --  {home}  (refused, except the rows under it below)" in files
     rows = _commands_block(out)
-    assert rows[0] == "    --  /  (an empty root: only the paths below exist)"
-    assert f"    --  {home}  (not mounted: only the rows under it below)" in rows
+    assert rows[0] == "    --  /  (empty except /proc, /dev and the paths below)"
+    assert f"    --  {home}  (not mounted, except the rows under it below)" in rows
     for table in (files, rows):
         found = [pathlib.Path(line.split()[1]) for line in table]
         assert found == sorted(found, key=lambda p: p.parts)
@@ -306,7 +306,7 @@ def test_check_sandbox_names_the_degrade_reason_only_for_auto(
     _check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     assert "isolation: partial  (sandbox.isolation = partial;" in out
-    assert "not full" not in out
+    assert "'full' is unavailable" not in out
 
 
 def test_check_names_a_jail_binary_it_cannot_run(
@@ -403,7 +403,7 @@ def test_check_sandbox_runs_the_refusal_ladder_a_run_applies(
     out = capsys.readouterr().out
     refusal = _row(checks, "sandbox.refusal")
     assert refusal.status == "FAIL"
-    assert "sandbox.network = 'session' requires the full isolation" in refusal.detail
+    assert "sandbox.network = 'session' requires sandbox.isolation = 'full'" in refusal.detail
     assert "[FAIL] a run would refuse" in out
     ok = Config.model_validate({"sandbox": {"isolation": "partial"}})
     checks = _check_sandbox.check_sandbox_section(ok)

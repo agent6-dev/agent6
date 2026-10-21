@@ -31,11 +31,11 @@ _APPARMOR_PROFILE_PATH = "/etc/apparmor.d/agent6-jail"
 _APPARMOR_PROFILE = """\
 # AppArmor profile for the agent6-jail sandbox launcher (managed by
 # `agent6 system apparmor`). It lifts the unprivileged user-namespace
-# restriction for the launcher binary ONLY, so the full sandbox isolation works
+# restriction for the launcher binary ONLY, so sandbox.isolation = 'full' works
 # on kernels with kernel.apparmor_restrict_unprivileged_userns=1 (Ubuntu 24.04+).
 # The launcher does its own sandboxing (userns/pivot_root/Landlock/seccomp/
 # NO_NEW_PRIVS), so this adds no AppArmor confinement on top --
-# flags=(unconfined). Without it, agent6 falls back to the partial isolation.
+# flags=(unconfined). Without it, agent6 falls back to sandbox.isolation = 'partial'.
 abi <abi/4.0>,
 include <tunables/global>
 
@@ -134,14 +134,17 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         if pathlib.Path(_APPARMOR_PROFILE_PATH).is_file():
             _common.error(f"{_APPARMOR_PROFILE_PATH} is still present after removal.")
             return 1
-        print("Removed the agent6-jail AppArmor profile. The sandbox falls back to partial.")
+        print(
+            "Removed the agent6-jail AppArmor profile. Where the kernel restricts user namespaces,"
+            " sandbox.isolation = 'full' is unavailable."
+        )
         return 0
 
     if not _apparmor_present():
         print(
             "This host does not use AppArmor (LSM: "
             f"{_host_lsm() or 'unknown'}), so the agent6-jail AppArmor profile is not"
-            " applicable. On Ubuntu 24.04+ it lets the full sandbox use user"
+            " applicable. On Ubuntu 24.04+ it lets sandbox.isolation = 'full' use user"
             " namespaces; other distros (e.g. Fedora/SELinux) allow them already.",
             file=sys.stderr,
         )
@@ -175,6 +178,6 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         print(
             f"Installed {_APPARMOR_PROFILE_PATH}. The profile grants the launcher the"
             " user namespaces this kernel withholds; run `agent6 check sandbox` to see"
-            " whether full is now available."
+            " whether sandbox.isolation = 'full' is now available."
         )
     return 0 if ok else 1

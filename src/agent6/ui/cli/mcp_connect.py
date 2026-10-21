@@ -150,7 +150,7 @@ def _report_no_answer(
         print(f"       {head}: {what} on this host.", file=sys.stderr)
     elif command and isolation != "none":
         print(
-            f"       (probed under the run's {isolation} sandbox: a server outside the"
+            f"       (probed under sandbox.isolation = '{isolation}': a server outside the"
             f" workspace needs [mcp.servers.{name}.sandbox] read_paths, or"
             " unconfined = true)",
             file=sys.stderr,

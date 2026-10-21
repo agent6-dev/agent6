@@ -290,7 +290,7 @@ def test_sandbox_fails_when_a_run_would_refuse_the_config(
     out = capsys.readouterr().out
     assert rc == 1
     assert "[FAIL] sandbox.refusal: a run would refuse:" in out.split("== summary ==", 1)[1]
-    assert "sandbox.network = 'session' requires the full isolation" in out
+    assert "sandbox.network = 'session' requires sandbox.isolation = 'full'" in out
 
 
 def test_sandbox_alone_prints_its_summary(
@@ -316,6 +316,6 @@ def test_sandbox_alone_prints_its_summary(
     ):
         assert name in file_tools
     summary = out.split("== summary ==", 1)[1]
-    assert "[PASS] sandbox.isolation: selected full" in summary
-    assert "[PASS] sandbox.refusal: every explicit setting works on full" in summary
+    assert "[PASS] sandbox.isolation: selected 'full'" in summary
+    assert "[PASS] sandbox.refusal: every explicit setting works on 'full'" in summary
     assert "[PASS] sandbox: all jail probes passed" in summary

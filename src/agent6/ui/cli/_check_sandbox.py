@@ -87,7 +87,7 @@ def grant_rows(grants: tools_policy.Grants) -> list[Row]:
         Row(
             "--",
             pathlib.Path(d.path),
-            f"{d.key}: not granted,"
+            f"{d.key}: not granted because"
             f" {'a link on its way sits' if d.via_link else 'it sits'} inside {d.region},"
             " which jailed commands write",
         )
@@ -106,7 +106,11 @@ def _home_row(
     persistent = tools_policy.persistent_jail_home(cfg, selected, root, git_grant)
     if persistent is None:
         return Row("rw", tools_policy.JAIL_TMP_HOME, "HOME, inside the private /tmp")
-    why = "sandbox.home = cache" if selected == "full" else f"{selected} has no private /tmp"
+    why = (
+        "sandbox.home = 'cache'"
+        if selected == "full"
+        else f"sandbox.isolation = '{selected}' has no private /tmp"
+    )
     return Row("rw", persistent, f"HOME, persists across runs: {why}")
 
 
@@ -148,7 +152,7 @@ def _file_tool_rows(ws: _path_safety.Workspace, grants: tools_policy.Grants) -> 
     rows += [Row("--", p, "hidden: tools refuse it") for p in sorted(ws.denied)]
     return _with_defaults(
         rows,
-        Row("--", pathlib.Path("/"), "refused: only the paths below"),
+        Row("--", pathlib.Path("/"), "refused except the paths below"),
         Row("--", home, "refused, except the rows under it below"),
     )
 
@@ -189,7 +193,11 @@ def _command_rows(
             )
         elif selected != "full":
             rows.append(
-                Row("rw", ws.root / ".git", f"writable: {selected} has no mount to re-bind it")
+                Row(
+                    "rw",
+                    ws.root / ".git",
+                    "writable: sandbox.protect_git requires sandbox.isolation = 'full'",
+                )
             )
     if git_grant is not None:
         rows.append(
@@ -208,8 +216,8 @@ def _command_rows(
             if p == "/etc/alternatives" and net != "host":
                 note = "system; the rest of /etc is empty"
             rows.append(Row("ro", pathlib.Path(p), note))
-        root_row = Row("--", pathlib.Path("/"), "an empty root: only the paths below exist")
-        home_row = Row("--", home, "not mounted: only the rows under it below")
+        root_row = Row("--", pathlib.Path("/"), "empty except /proc, /dev and the paths below")
+        home_row = Row("--", home, "not mounted, except the rows under it below")
         hidden = "masked out of the jail's view"
     else:
         rows.append(Row("rw", _TMP, "the host's /tmp, shared with every process of yours"))
@@ -222,7 +230,7 @@ def _command_rows(
                 "--",
                 _DEV_SHM,
                 "the host's, not granted: Python multiprocessing cannot use it;"
-                " /dev/null, zero, urandom, random and full are",
+                " /dev/null, /dev/zero, /dev/urandom, /dev/random and /dev/full are granted",
             )
         )
         root_row = Row("--", pathlib.Path("/"), "Landlock: denied except the paths below")
@@ -262,14 +270,16 @@ def _mcp_lines(cfg: Config, root: pathlib.Path, selected: kinds.IsolationLevel) 
             confinement = "network client only; no filesystem grant"
         elif selected == "none":
             where = "spawned UNCONFINED"
-            confinement = "full host access (sandbox.isolation resolved to none)"
+            confinement = "the whole filesystem and network (sandbox.isolation resolved to 'none')"
         elif (refusal := confine.mcp_network_refusal(name, srv, selected)) is not None:
             # A run refuses a network this level cannot give.
             print(f"    {name}: a run would refuse: {refusal}")
             continue
         elif (policy := _setup.mcp_server_policy(cfg, root, selected, srv)) is None:
             where = "spawned UNCONFINED"
-            confinement = "full host access (mcp.servers.*.sandbox.unconfined = true)"
+            confinement = (
+                "the whole filesystem and network (mcp.servers.*.sandbox.unconfined = true)"
+            )
         else:
             where = "spawned in the jail"
             ro = len(sb.read_paths) if sb else 0
@@ -291,7 +301,7 @@ def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel
         )
         reason = detect.degrade_reason(env)
         if cfg.sandbox.isolation == "auto" and reason is not None:
-            print(f"  not full: {reason}")
+            print(f"  'full' is unavailable because {reason}")
     gate = {
         "yes": "auto-approved",
         "ask": "prompted per call",
@@ -386,11 +396,7 @@ def _probe(
             kinds.SandboxReport(
                 name="jail_blocks_network",
                 ok=True,
-                detail=(
-                    "n/a under partial: no per-command network namespace; jailed"
-                    " commands share the host network (sandbox.network degrades with"
-                    " a warning)"
-                ),
+                detail="n/a because only sandbox.isolation = 'full' has a network namespace",
             )
         )
 
@@ -463,7 +469,7 @@ def check_sandbox_section(
         return [kinds.DoctorCheck(name="sandbox.isolation", status="FAIL", detail=str(exc))]
     _header(cfg, env, selected)
     out = [
-        kinds.DoctorCheck(name="sandbox.isolation", status="PASS", detail=f"selected {selected}")
+        kinds.DoctorCheck(name="sandbox.isolation", status="PASS", detail=f"selected '{selected}'")
     ]
     root = pathlib.Path.cwd()
     grants = tools_policy.resolve_grants(cfg, root)
@@ -483,7 +489,7 @@ def check_sandbox_section(
             kinds.DoctorCheck(
                 name="sandbox.refusal",
                 status="PASS",
-                detail=f"every explicit setting works on {selected}",
+                detail=f"every explicit setting works on '{selected}'",
             )
         )
     for warning in confine.home_grant_warnings(cfg):
@@ -511,8 +517,7 @@ def check_sandbox_section(
         " docs/security.md); the jail bounds commands, not the agent"
     )
     print(
-        f"  secrets: {agent6_paths.secrets_path()}  (0600; never mounted into any jail,"
-        " never passed into a child's env)"
+        f"  secrets: {agent6_paths.secrets_path()}  (0600, never passed into a child's environment)"
     )
     print()
     return [*out, *_probe_checks(cfg, env, selected)]

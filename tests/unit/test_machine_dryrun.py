@@ -240,7 +240,7 @@ def test_cli_machine_test_verdict_names_unrun_offline_tests(
     assert main(["machine", "test", str(f)]) == 0
     out = capsys.readouterr().out
     assert "1 offline script test not run" in out
-    assert "partial" in out
+    assert "needs sandbox.isolation = 'full'" in out
 
 
 def test_cli_machine_test_with_blackboard(

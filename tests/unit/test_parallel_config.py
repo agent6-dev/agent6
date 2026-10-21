@@ -79,7 +79,7 @@ def test_lane_config_preserves_protect_git_provenance(
         lane.config, "partial", explicitly_set="sandbox.protect_git" in lane.explicit_leaves
     )
     if explicit_protect_git:
-        assert refusal is not None and "requires the full isolation" in refusal
+        assert refusal is not None and "requires sandbox.isolation = 'full'" in refusal
     else:
         assert refusal is None
 

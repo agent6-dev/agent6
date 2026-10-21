@@ -825,7 +825,9 @@ def test_a_state_this_host_cannot_honor_refuses_by_name(
     reporter = mock.MagicMock()
     assert run.run_machine(mfile, reporter) == 2
     said = " ".join(str(c.args[0]) for c in reporter.refuse.call_args_list)
-    assert said.startswith("[states.store.config]: sandbox.network = 'session' requires the full")
+    assert said.startswith(
+        "[states.store.config]: sandbox.network = 'session' requires sandbox.isolation = 'full'"
+    )
 
 
 def test_resolve_configs_keeps_the_resolved_isolation_per_state(
