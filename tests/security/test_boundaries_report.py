@@ -240,6 +240,22 @@ def test_boundaries_report_prints_one_row_for_a_hidden_dev_shm(
     assert "    --  /dev/shm  (denied by Landlock)" in jailed
 
 
+def test_boundaries_report_drops_the_home_row_under_a_grant_of_its_parent(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
+) -> None:
+    """With `/home` granted, the home row still read "not mounted", contradicting the grant."""
+    home = tmp_path / "users" / "alice"
+    home.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    _force(monkeypatch, "full")
+    _check_sandbox.check_sandbox_section(
+        Config(sandbox=SandboxConfig(extra_read_paths=(str(tmp_path / "users"),)))
+    )
+    out = capsys.readouterr().out
+    assert f"    ro  {tmp_path / 'users'}  (sandbox.extra_read_paths" in out
+    assert f"  {home.resolve()}  (not mounted" not in out
+
+
 def test_boundaries_report_lists_what_the_host_network_reads(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

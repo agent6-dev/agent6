@@ -58,9 +58,19 @@ def _print_rows(rows: list[Row]) -> None:
 
 
 def _with_defaults(rows: list[Row], *defaults: Row) -> list[Row]:
-    """Return the rows plus each default whose path no row already names."""
-    named = {r.path for r in rows}
-    return [*rows, *(d for d in defaults if d.path not in named)]
+    """Return the rows plus each default no row names or covers.
+
+    A grant of `/home` covers the home row; a grant of `/` covers every default.
+
+    Args:
+        rows: The rows the level and the config produced.
+        *defaults: The rows for / and the home dir.
+
+    Returns:
+        The rows, then the defaults left standing.
+    """
+    covering = [r.path for r in rows]
+    return [*rows, *(d for d in defaults if not any(d.path.is_relative_to(c) for c in covering))]
 
 
 def grant_rows(grants: tools_policy.Grants) -> list[Row]:
@@ -210,7 +220,7 @@ def _unconfined_rows(cfg: Config, root: pathlib.Path) -> list[Row]:
         Row("rw", agent6_paths.global_config_dir(), "not hidden: secrets.toml is readable"),
         Row("rw", agent6_paths.state_base(), "not hidden: every session's records are writable"),
     ]
-    return _with_defaults(rows[:3], *rows[3:])
+    return rows
 
 
 def _command_rows(

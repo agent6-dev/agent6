@@ -422,3 +422,14 @@ def test_check_sandbox_runs_its_probes_unstubbed(
     out = capsys.readouterr().out
     assert all(c.status == "PASS" for c in checks), out
     assert "isolation: " in out
+
+
+def test_a_root_grant_covers_the_default_rows() -> None:
+    """`extra_read_paths = ["/"]` listed `ro /` over `-- / (refused ...)` and a refused home."""
+    root = pathlib.Path("/")
+    grant = _check_sandbox.Row("ro", root, "sandbox.extra_read_paths")
+    defaults = (
+        _check_sandbox.Row("--", root, "refused except the paths below"),
+        _check_sandbox.Row("--", pathlib.Path("/home/op"), "refused, except the rows under it"),
+    )
+    assert _check_sandbox._with_defaults([grant], *defaults) == [grant]  # pyright: ignore[reportPrivateUsage]
