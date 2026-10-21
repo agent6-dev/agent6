@@ -389,7 +389,7 @@ def linked_worktree_git_dir(root: pathlib.Path) -> pathlib.Path | None:
         if not common.is_absolute():
             common = admin / common
         return common.resolve()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
 
 

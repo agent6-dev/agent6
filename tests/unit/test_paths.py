@@ -14,6 +14,17 @@ import pytest
 from agent6 import paths
 
 
+def test_a_linked_worktree_pointer_with_an_undecodable_commondir_reads_as_none(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A `commondir` that is not UTF-8 raised UnicodeDecodeError past the OSError handler."""
+    admin = tmp_path / "admin"
+    admin.mkdir()
+    (admin / "commondir").write_bytes(b"\xff\xfe")
+    (tmp_path / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
+    assert paths.linked_worktree_git_dir(tmp_path) is None
+
+
 def test_global_config_dir_follows_xdg_config_home(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
