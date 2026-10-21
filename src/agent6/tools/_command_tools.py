@@ -33,7 +33,7 @@ class JailAccess:
 
     get_policy: JailPolicyFactory
     get_session: Callable[[], jail_session.JailSession | None]
-    get_net: Callable[[], jail.SessionNetwork | None]
+    get_net: Callable[[], jail.SessionNetwork]
 
 
 def _roster(shells: background.BackgroundShells) -> tuple[str, ...]:

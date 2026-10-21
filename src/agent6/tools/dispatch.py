@@ -843,11 +843,12 @@ class ToolDispatcher:
             grants=self._grants,
         )
 
-    def _net(self) -> jail.SessionNetwork | None:
+    def _net(self) -> jail.SessionNetwork:
         """Return the session network this dispatcher's commands join.
 
-        The run owns one when there is a run, shared with its MCP servers. A dispatcher built
-        without one makes its own, so its commands still reach each other.
+        Returns:
+            The run's network when there is a run, shared with its MCP servers; a dispatcher
+            built without one makes its own, so its commands still reach each other.
         """
         if self._session_net is not None:
             return self._session_net

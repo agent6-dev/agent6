@@ -15,6 +15,7 @@ import pathlib
 import subprocess
 import tempfile
 import time
+from typing import assert_type
 
 import pytest
 
@@ -264,6 +265,19 @@ def test_a_private_policy_without_a_network_refuses_rather_than_running_alone(
     )
     with pytest.raises(jail.JailUnavailableError, match="session"):
         jail.run_in_jail(policy)
+
+
+def test_the_network_accessors_never_answer_none(tmp_path: pathlib.Path) -> None:
+    """`ToolDispatcher._net` and `JailAccess.get_net` are typed to return a network, never None.
+
+    `assert_type` does nothing at runtime: strict pyright is the check.
+    """
+    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="full")
+    try:
+        assert_type(d._net(), jail.SessionNetwork)
+        assert_type(d._jail_access.get_net(), jail.SessionNetwork)
+    finally:
+        d.close()
 
 
 def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: pathlib.Path) -> None:
