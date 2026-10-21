@@ -486,17 +486,21 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 budget=budget,
                 reporter=reporter,
             )
+            gate_before = cfg.harness.verify_command
             cfg = preflight.drop_gate_if_unrunnable(
                 cfg, session_dir=layout.session_dir, reporter=reporter
             )
             # The origin follows the resolved gate, never the configured one.
-            gate_origin = ""
+            pinned_gate, gate_origin = cfg.harness.verify_command, ""
             if cfg.harness.verify_command:
                 gate_origin = lane_gate_origin or ("configured" if configured_gate else "inferred")
+            elif gate_before:
+                # Withheld with commands: the execution is gateless, the manifest names the gate.
+                pinned_gate, gate_origin = gate_before, "withheld"
             # From here the run is judged by this gate, whatever its source says later.
             stamps.pin_gate(
                 layout.session_dir,
-                cfg.harness.verify_command,
+                pinned_gate,
                 gate_origin,
                 events=events,
                 reporter=reporter,

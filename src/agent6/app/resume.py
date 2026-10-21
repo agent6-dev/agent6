@@ -176,7 +176,9 @@ def snapshot_head_mismatch(
     return (snap_head, current_head)
 
 
-def execution_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> str:
+def execution_gate_origin(
+    *, configured: bool, has_gate: bool, pinned: str, withheld: bool = False
+) -> str:
     """Name where this execution's gate came from.
 
     Config outranks the run's pin, the pin stands when reused, and a gateless
@@ -186,15 +188,18 @@ def execution_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> s
         configured: Whether config names the gate.
         has_gate: Whether the execution runs a gate at all.
         pinned: The origin the run's manifest pins.
+        withheld: Whether commands withheld the gate for this execution.
 
     Returns:
-        "configured", the pinned origin, "inferred", or "" for no gate.
+        "withheld", "configured", the pinned origin, "inferred", or "" for no gate.
     """
+    if withheld:
+        return "withheld"
     if not has_gate:
         return ""
     if configured:
         return "configured"
-    return "inferred" if pinned in ("", "pending") else pinned
+    return "inferred" if pinned in ("", "pending", "withheld") else pinned
 
 
 def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume is refused, in preflight order
@@ -546,7 +551,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 pinned_origin, pinned_gate = pinned.verify_origin, pinned.verify_command
             replay_gate = (
                 pinned_gate
-                if pinned_origin in ("adopted", "unadopted")
+                if pinned_origin in ("adopted", "unadopted", "withheld")
                 else snapshot.verify_command
             )
             execution_configured = bool(cfg.harness.verify_command)
@@ -574,11 +579,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 )
             stamps.pin_gate(
                 layout.session_dir,
-                cfg.harness.verify_command,
+                gate_before if withheld else cfg.harness.verify_command,
                 execution_gate_origin(
                     configured=execution_configured,
                     has_gate=bool(cfg.harness.verify_command),
                     pinned=pinned_origin,
+                    withheld=withheld,
                 ),
                 events=events,
                 reporter=reporter,

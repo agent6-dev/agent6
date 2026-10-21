@@ -88,8 +88,9 @@ class HarnessStamp(pydantic.BaseModel):
             move it; on a resumed execution only operator config outranks it.
         verify_origin: `configured` (a config file, which the model cannot write), `inferred`
             (repo signals, which it can), `adopted` (gained mid-run by a gateless run),
-            `pending` (a run or plan whose execution has not resolved its gate yet), or ""
-            for no gate.
+            `pending` (a run or plan whose execution has not resolved its gate yet),
+            `withheld` (commands are withheld, so the execution runs gateless and the
+            command is the gate it would run), or "" for no gate.
         preset_from_flag: The preset came from `--preset` rather than a config file.
     """
 

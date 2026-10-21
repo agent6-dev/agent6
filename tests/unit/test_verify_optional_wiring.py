@@ -283,10 +283,11 @@ def _capture_pin(pinned: list[tuple[tuple[str, ...], str]]) -> Callable[..., Non
 
 
 @pytest.mark.parametrize(
-    ("snapshot_gate", "manifest_gate", "origin"),
+    ("snapshot_gate", "manifest_gate", "origin", "expected_origin"),
     [
-        ((), ("true",), "adopted"),
-        (("true",), (), "unadopted"),
+        ((), ("true",), "adopted", "adopted"),
+        (("true",), (), "unadopted", ""),
+        ((), ("true",), "withheld", "inferred"),
     ],
 )
 def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
@@ -295,11 +296,13 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     snapshot_gate: tuple[str, ...],
     manifest_gate: tuple[str, ...],
     origin: str,
+    expected_origin: str,
 ) -> None:
     """Adoption re-pins the manifest before the after-tools snapshot advances.
 
     A crash in that window leaves the snapshot's gate stale in either direction; resume must keep
-    the newer pin rather than undoing adoption or un-adoption.
+    the newer pin rather than undoing adoption or un-adoption. A withheld pin is the gate too: a
+    resume that may run commands re-arms it.
     """
     from agent6.app import _execution as app__execution
     from agent6.app import resume
@@ -371,6 +374,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     assert used == [manifest_gate]
     persisted = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     assert tuple(persisted["harness"]["verify_command"]) == manifest_gate
+    assert persisted["harness"]["verify_origin"] == expected_origin
 
 
 def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
@@ -457,7 +461,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
             force=False,
             reporter=app_reporter.Reporter(out=said.append, err=said.append),
         )
-    assert pinned == [((), "")], f"the withheld execution was re-gated: {pinned}"
+    assert pinned == [(("pytest", "-q"), "withheld")], f"the withheld execution: {pinned}"
     assert any("running gateless" in line for line in said)
 
 
@@ -518,7 +522,7 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
             mode="run",
             reporter=app_reporter.Reporter(out=said.append, err=said.append),
         )
-    assert pinned == [((), "")], f"the withheld execution was re-gated: {pinned}"
+    assert pinned == [(("pytest", "-q"), "withheld")], f"the withheld execution: {pinned}"
     assert any("running gateless" in line for line in said)
 
 

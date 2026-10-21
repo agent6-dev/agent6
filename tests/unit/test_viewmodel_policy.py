@@ -50,6 +50,18 @@ def test_a_run_whose_gate_is_not_resolved_yet_claims_none(tmp_path: pathlib.Path
     assert session_policy(tmp_path).gate() == "verify gate not settled yet"
 
 
+def test_a_withheld_gate_is_named_not_denied(tmp_path: pathlib.Path) -> None:
+    """A run that may not run commands still has a gate.
+
+    "no verify gate" is what a repository with none gets; a withheld one names its command.
+    """
+    _manifest(
+        tmp_path,
+        harness={"verify_command": ["python3", "-m", "pytest", "-q"], "verify_origin": "withheld"},
+    )
+    assert session_policy(tmp_path).gate() == "gate withheld: python3 -m pytest -q"
+
+
 def test_an_unreadable_dir_reports_nothing_rather_than_guessing(tmp_path: pathlib.Path) -> None:
     assert session_policy(tmp_path).line() == ""
 
