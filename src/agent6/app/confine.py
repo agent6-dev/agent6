@@ -134,12 +134,7 @@ def warn_sandbox_gaps(
         )
     _warn_grants(cfg, root, reporter)
     for hidden, region, source in unmaskable_exposures(cfg, isolation, root, worktree_git_dir):
-        reporter.warn(
-            f"jailed commands can read {hidden}, because it sits inside {region} ({source})."
-            " Every command this run starts can read what agent6 keeps there (provider keys,"
-            " transcripts, notes, run history). Hiding it under that grant requires"
-            " sandbox.isolation = 'full', but this run resolved to 'partial'."
-        )
+        reporter.warn(exposure_warning(hidden, region, source))
     if isolation in ("full", "partial"):
         notes = tool_paths.tool_mount_notes()
         for tool in notes.unreachable:
@@ -150,6 +145,36 @@ def warn_sandbox_gaps(
                 " into its own subdirectory."
             )
         # notes.exposes_home_dir is the ordinary state of a dev box; `agent6 check` lists it.
+
+
+def exposure_warning(hidden: pathlib.Path, region: pathlib.Path, source: str) -> str:
+    """Return the warning for a private dir `partial` cannot mask from a granted region.
+
+    Args:
+        hidden: The private dir.
+        region: The granted region that overlaps it.
+        source: The phrase naming where the grant comes from.
+
+    Returns:
+        The warning: what jailed commands can read, which of the two holds the other, and the
+        way out.
+    """
+    kept = "there (provider keys, transcripts, notes, run history)"
+    if region.resolve() == hidden.resolve():
+        exposed, remedy = f"{hidden} itself ({source})", f"Move it outside {hidden}."
+    elif region.resolve().is_relative_to(hidden.resolve()):
+        exposed = f"{region}, which sits inside {hidden} ({source})"
+        kept, remedy = "under it", f"Move it outside {hidden}."
+    else:
+        exposed = f"{hidden}, because it sits inside {region} ({source})"
+        remedy = (
+            "Hiding it under that grant requires sandbox.isolation = 'full', but this run"
+            " resolved to 'partial'."
+        )
+    return (
+        f"jailed commands can read {exposed}. Every command this run starts can read what"
+        f" agent6 keeps {kept}. {remedy}"
+    )
 
 
 def _warn_grants(cfg: Config, root: pathlib.Path, reporter: app_reporter.Reporter) -> None:

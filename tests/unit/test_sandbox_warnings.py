@@ -451,6 +451,29 @@ def test_partial_warns_when_private_state_sits_in_a_granted_region(
     assert "jailed commands can read" in err and "/tmp" in err
 
 
+def test_partial_names_the_workspace_when_it_sits_inside_a_private_dir(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A workspace inside the state dir was told the state dir "sits inside" the workspace.
+
+    Jailed commands read the workspace, the granted part of the private dir, not the dir.
+    """
+    for var in ("CONFIG", "STATE", "DATA", "CACHE"):
+        monkeypatch.setenv(f"XDG_{var}_HOME", str(tmp_path / var.lower()))
+    ws = paths.state_base() / "ws"
+    ws.mkdir(parents=True)
+    monkeypatch.chdir(ws)
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
+    cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
+    confine.warn_sandbox_gaps("partial", _env(4), cfg, root=ws)
+    err = capsys.readouterr().err
+    expected = (
+        f"jailed commands can read {ws}, which sits inside {paths.state_base()} (the workspace)."
+    )
+    assert expected in err, err
+    assert f"can read {paths.state_base()}," not in err
+
+
 def test_root_on_partial_names_what_it_costs(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
