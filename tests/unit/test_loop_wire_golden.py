@@ -35,6 +35,8 @@ class _StubDispatcher:
     The loop rebuilds its tool list every turn; the defaults filter no tools and withhold nothing.
     """
 
+    operator_wait_s: float = 0.0  # the time waited on the operator, which the guards subtract
+
     dag_available = True
 
     def available_tool_names(self) -> tuple[str, ...]:

@@ -190,8 +190,10 @@ class HarnessConfig(pydantic.BaseModel):
         default=300.0,
         ge=0.0,
         description=(
-            "Seconds of wall clock with no edit and no verify before one notice (a recall "
-            "spiral makes few calls with long reasoning between them); 0 disables."
+            "Seconds of wall clock with no edit and no verify of the run's own before one "
+            "notice (a recall spiral makes few calls with long reasoning between them); 0 "
+            "disables. The clock starts at the first turn, after the start gate, and skips time "
+            "spent waiting on the operator."
         ),
     )
     # Measured in bench/longhorizon/FINDINGS.md: most memory writes follow this notice.

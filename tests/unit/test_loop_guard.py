@@ -15,7 +15,9 @@ import types
 from typing import Any
 from unittest import mock
 
-from agent6.harness import _chain, _loop_resume, _provider_call, loop
+import pytest
+
+from agent6.harness import _chain, _guards, _loop_resume, _provider_call, loop
 from agent6.providers import ProviderResponse
 from agent6.tools import results
 
@@ -624,12 +626,73 @@ def test_stagnation_ignores_time_blocked_on_the_operator(tmp_path: pathlib.Path)
         _resp_text("ok"),
         _resp_text("ok"),
     ]
-    dispatcher = mock.MagicMock(operator_wait_s=3600.0)
-    dispatcher.dispatch.return_value = results.RawResult({"content": "x"})
+    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+
+    def dispatch(*_args: object, **_kwargs: object) -> results.RawResult:
+        dispatcher.operator_wait_s = 3600.0  # the approval the model's own call waited on
+        return results.RawResult({"content": "x"})
+
+    dispatcher.dispatch.side_effect = dispatch
     wf = _build_wf(repo, provider, dispatcher)
     wf.config = _knobs(wf.config, stagnation_notice_after_s=1e-9)
     result = wf.run("investigate")
     assert result.completed is True
+    assert _stagnation_blocks(_final_messages(provider)) == []
+
+
+def test_stagnation_counts_from_the_window_not_from_the_start_gates_approval(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The start gate's approval wait, counted before the window opened, was subtracted again."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("read_file", {"path": "a.txt"}, tu_id="t1"),
+        _resp_with_tool("read_file", {"path": "b.txt"}, tu_id="t2"),
+        _resp_text("ok"),
+        _resp_text("ok"),
+    ]
+    dispatcher = mock.MagicMock(operator_wait_s=3600.0)  # waited on before the first turn
+    dispatcher.dispatch.return_value = results.RawResult({"content": "x"})
+    wf = _build_wf(repo, provider, dispatcher)
+    wf.config = _knobs(wf.config, stagnation_notice_after_s=1e-9)
+    assert wf.run("investigate").completed is True
+    assert len(_stagnation_blocks(_final_messages(provider))) == 1
+
+
+def test_stagnation_ignores_the_start_gates_time(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A start gate that outlasted the knob fired the notice at the model's first turn."""
+    clock = [0.0]
+    monkeypatch.setattr(_guards, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = mock.MagicMock()
+    provider.call.side_effect = itertools.chain(
+        [_resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t1")],
+        itertools.repeat(_resp_text("ok")),
+    )
+    gates: list[int] = []
+
+    def run_verify(**_kw: object) -> results.ExecResult:
+        if not gates:
+            clock[0] += 1.0  # past the knob, then timed out: no baseline either
+        gates.append(124 if not gates else 0)
+        return results.ExecResult(
+            returncode=gates[-1], stdout="", stderr="", duration_s=1.0, exec_failed=False
+        )
+
+    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher.dispatch.return_value = results.RawResult({"content": "x"})
+    dispatcher.command_policy.return_value = "yes"
+    dispatcher.run_verify.side_effect = run_verify
+    wf = _build_wf(repo, provider, dispatcher)
+    wf.config.harness.verify_command = ("true",)
+    wf.config = _knobs(wf.config, verify_when="finish", stagnation_notice_after_s=0.9)
+    wf.run("investigate")
+    assert gates[0] == 124
     assert _stagnation_blocks(_final_messages(provider)) == []
 
 

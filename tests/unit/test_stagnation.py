@@ -43,6 +43,15 @@ def test_the_notice_fires_once_and_names_the_gate_only_when_one_can_run() -> Non
     assert "verify" not in gateless.text
 
 
+def test_the_start_gates_baseline_is_no_verify_of_the_runs_own() -> None:
+    """A green or red baseline kept the notice quiet for the rest of the run."""
+    for ok in (True, False):
+        state = _state()
+        state.verify.note_baseline(ok=ok)
+        nudge = _guards.stagnation(_turn(), state, _ctx(gate_present=lambda: True))
+        assert nudge is not None and "no edit and no verify" in nudge.text
+
+
 def test_time_blocked_on_the_operator_is_not_the_models() -> None:
     assert _guards.stagnation(_turn(), _state(), _ctx(operator_wait_s=lambda: 3600.0)) is None
 

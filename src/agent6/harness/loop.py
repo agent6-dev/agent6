@@ -396,6 +396,10 @@ class Harness:
                     conversation.notice(notice.text)
             except tool_errors.OperatorCommandUnexecutableError as exc:
                 return self._unexecutable_abort(exc, iteration=start_iteration, state=state)
+            # The start gate is the harness's time: the stagnation window opens at the first turn.
+            state.stagnation = _guards.StagnationGuard(
+                wait_at_start=self.dispatcher.operator_wait_s
+            )
         # The allowance is this execution's: a resumed one re-arms it (-1 is unbounded).
         for iteration in (
             range(start_iteration, start_iteration + self.max_iterations)

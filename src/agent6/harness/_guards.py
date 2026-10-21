@@ -301,16 +301,24 @@ def verify_settled(
     return None
 
 
+def _now() -> float:
+    """Return the monotonic clock, read through the module so a test can drive it."""
+    return time.monotonic()
+
+
 @dataclasses.dataclass(slots=True)
 class StagnationGuard:
     """The stagnation notice's counters; a resumed run gets a fresh window.
 
     Attributes:
         started_monotonic: The execution's start on the monotonic clock.
+        wait_at_start: The operator time the dispatcher had counted when the window opened,
+            the start gate's approval included; only the time waited since is the model's.
         nudged: The one notice went out.
     """
 
-    started_monotonic: float = dataclasses.field(default_factory=time.monotonic)
+    started_monotonic: float = dataclasses.field(default_factory=_now)
+    wait_at_start: float = 0.0
     nudged: bool = False
 
 
@@ -435,7 +443,7 @@ def stagnation(
     """Notice once when `stagnation_notice_after_s` passed with no edit and no verify.
 
     Time blocked on the operator is not the model's, and a gateless run's
-    notice names no gate.
+    notice names no gate. The start gate's baseline is no verify of the run's own.
 
     Args:
         turn: The turn whose tools ran.
@@ -452,12 +460,12 @@ def stagnation(
         and ctx.mode == "run"
         and not guard.nudged
         and not state.ever_edited
-        and state.verify.last_ok is None
+        and not (state.verify.ever_passed or state.verify.ever_failed)
     ):
         return None
-    elapsed = time.monotonic() - guard.started_monotonic
+    elapsed = _now() - guard.started_monotonic
     if elapsed >= after:
-        elapsed -= ctx.operator_wait_s()
+        elapsed -= ctx.operator_wait_s() - guard.wait_at_start
     if elapsed < after:
         return None
     guard.nudged = True
