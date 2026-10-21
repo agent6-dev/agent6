@@ -34,7 +34,14 @@ def fold_interrupted_turn(
     """
     assert harness.resume_state_path is not None
     marker = harness.resume_state_path.parent / _snapshot.TURN_IN_FLIGHT_NAME
-    flight = _snapshot.read_turn_marker(marker)
+    try:
+        flight = _snapshot.read_turn_marker(marker)
+    except ValueError as exc:
+        harness.log(
+            "LOOP: dropped an in-flight turn record that does not parse:"
+            f" {str(exc).splitlines()[0]}"
+        )
+        flight = None
     interrupted: tuple[str, ...] = ()
     if flight is not None and flight.iteration == snapshot.next_iteration:
         try:

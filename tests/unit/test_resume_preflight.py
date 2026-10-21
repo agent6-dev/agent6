@@ -477,6 +477,70 @@ def test_a_resume_after_a_death_mid_turn_asks_nothing_and_keeps_the_record_for_t
     assert _snapshot.read_turn_marker(marker) == flight
 
 
+def test_a_resume_over_an_in_flight_record_that_does_not_parse_leaves_it_to_the_loop(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A record another agent6 version wrote stops nothing before the loop, which drops it.
+
+    The start read it to tell a death mid-turn; a record that does not parse is no death.
+    """
+    from unittest import mock
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    base = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    session_dir = paths.state_dir(repo) / "sessions" / "runs" / "note-GARBAGE"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "note-GARBAGE",
+                "mode": "run",
+                "user_task": "t",
+                "base_sha": base,
+                "base_branch": "main",
+                "run_branch": "agent6/note-GARBAGE",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "loop_state.json").write_text(
+        json.dumps(
+            {
+                "version": _snapshot.SNAPSHOT_VERSION,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_iteration": 1,
+                "root_task_id": None,
+                "original_task": "t",
+                "verify_command": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    marker = session_dir / _snapshot.TURN_IN_FLIGHT_NAME
+    marker.write_text('{"iteration": "one"}', encoding="utf-8")
+    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    monkeypatch.setattr(_session, "select_isolation", _unconfined)
+    monkeypatch.setattr(_setup, "check_provider_keys", _nothing)
+    monkeypatch.setattr(app__execution, "run_execution", _finished_execution)
+    assert (
+        resume_mod.resume_task(
+            (), "note-GARBAGE", started_at=time.time(), frontend=mock.MagicMock(), force=False
+        )
+        == 0
+    )
+    assert "mid-turn" not in capsys.readouterr().err
+    assert marker.read_text(encoding="utf-8") == '{"iteration": "one"}'
+
+
 def _unconfined(*_a: object, **_k: object) -> str:
     return "none"
 

@@ -600,7 +600,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             # arrived between executions, so it is the operator's; a git failure refuses, since
             # this decides what the run may commit. After a death mid-turn a call of that turn
             # may have written it with no result to say so, and it stays the run's.
-            flight = _snapshot.read_turn_marker(layout.session_dir / _snapshot.TURN_IN_FLIGHT_NAME)
+            try:
+                flight = _snapshot.read_turn_marker(
+                    layout.session_dir / _snapshot.TURN_IN_FLIGHT_NAME
+                )
+            except ValueError:
+                flight = None  # the loop names and drops it when it resumes
             died_in_turn = flight is not None and flight.iteration == snapshot.next_iteration
             chain_ref = git_ops.chain_ref_for(session_id)
             end_tree = scan.end_tree

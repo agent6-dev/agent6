@@ -8085,6 +8085,41 @@ def test_a_resume_clears_a_marker_whose_turn_completed(tmp_path: pathlib.Path) -
     assert not marker.exists()
 
 
+def test_a_resume_names_an_in_flight_record_that_does_not_parse(tmp_path: pathlib.Path) -> None:
+    """A record another agent6 version wrote was dropped without a word; the log names the drop."""
+    snapshot_path = tmp_path / "loop_state.json"
+    snapshot_path.write_text(
+        _snapshot.SessionSnapshot(
+            system="system",
+            messages=_TASK_WIRE,
+            tool_calls=0,
+            next_iteration=5,
+            root_task_id=None,
+            original_task="t",
+            verify_command=(),
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    marker = tmp_path / _snapshot.TURN_IN_FLIGHT_NAME
+    marker.write_text('{"iteration": "five"}', encoding="utf-8")
+    logged: list[str] = []
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            return _resp("done")
+
+    wf = _wf(
+        root=tmp_path,
+        provider=ProviderStub(),
+        resume_state_path=snapshot_path,
+        logger=logged.append,
+    )
+    assert wf.resume().iterations == 5
+    dropped = [ln for ln in logged if "dropped an in-flight turn record that does not parse" in ln]
+    assert dropped, logged
+    assert not marker.exists()
+
+
 def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
     """The pause menu's /exit stops the run with its own end reason, skipping the "next:" prompt."""
     import json

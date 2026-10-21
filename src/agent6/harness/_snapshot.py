@@ -341,11 +341,15 @@ def read_turn_marker(path: pathlib.Path) -> TurnInFlight | None:
 
     Returns:
         The turn whose tools may have run, or None.
+
+    Raises:
+        ValueError: The file holds no marker (another agent6 version wrote it, or it is damaged).
     """
     try:
-        return TurnInFlight.model_validate_json(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        text = path.read_text(encoding="utf-8")
+    except OSError:
         return None
+    return TurnInFlight.model_validate_json(text)
 
 
 def clear_turn_marker(path: pathlib.Path) -> None:
