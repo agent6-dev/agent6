@@ -83,10 +83,13 @@
 - Plain punctuation: commas, colons, parentheses, periods.
   An em dash marks an overstuffed sentence to recast.
 - Concrete over abstract: name the command, the field, the number ("retries twice, then fails the run").
+  A value names its setting: "`protect_git` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only".
 - Statements: a docstring, heading or comment asserts ("X does Y").
 - Prose that names code is a claim to verify: every symbol, default and behaviour matches the source; when the two disagree, decide which side is wrong.
   Prose someone acts on (a tool description, help text, an error, a refusal) is an interface: it states what is accepted and returned, and names the resolved fact ("default: detected zsh").
 - One idea per sentence, one topic per paragraph; short bullets over prose when listing facts.
+  Simple sentences (ASD-STE100) take the active voice and give a long ", which" clause its own sentence.
+  A qualifier comes before the list it governs: "By default, it switches off the repository's hooks, fsmonitor and filter drivers".
 - Comments and docs state the current state: a constraint, an invariant, a measured number, a link to a decision.
   The story of a change belongs to its commit ("now", "no longer", "previously" and "used to" go).
   A comment earns its keep by saying what the code and a grep cannot: the why, an invariant, a gotcha, a measured number.
@@ -97,6 +100,7 @@
   Plain words in place of intensifiers and marketing adjectives.
 - Bench findings are neutral observation: facts and tables.
 - Every fact and every real hedge stays, and none is added: "may have failed" is not "failed".
+- A prose fix rewrites only a wrong, stale or ambiguous sentence, with the fewest words changed.
 - Padding to cut on sight: antithesis, the "N things, one X" appositive, aphorism, cleft, anaphora, transitions, all-caps emphasis.
 - Markdown carries one bullet and one sentence per line, unwrapped, with later sentences on continuation lines.
   A bullet needing several sentences wants sub-bullets.
