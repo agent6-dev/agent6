@@ -16,7 +16,7 @@ from importlib import resources
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "dc9ce675770b9003d2affb0f17ac491b73925fbee1572b73f073396e25d1916a"
+PAGE_SHA256 = "8f20f213f6a9a32034e95bc5c81b1388cd6b7c054c5ff01301cd62c51d222acc"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -146,6 +146,12 @@ def test_parallel_model_completion_handles_each_whole_fragment() -> None:
     ]
     assert "v.matchAll(/(^|\\s)\\/parallel(?=\\s|$)/g)" in suggest
     assert "while (fragEnd < end && v[fragEnd] !== ',') fragEnd++;" in suggest
+
+
+def test_the_provider_forms_deployment_select_opens_on_a_blank_option() -> None:
+    """The deployment select opens on a '' option; it opened on `direct`, read as a blank."""
+    config = resources.files("agent6.ui.web").joinpath("client_config.js")
+    assert "select(['', ...(choices.deployment || [])], " in config.read_text(encoding="utf-8")
 
 
 def test_add_provider_does_not_keep_another_names_autofilled_url() -> None:

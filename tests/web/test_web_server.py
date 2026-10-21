@@ -2493,6 +2493,81 @@ def test_re_adding_a_provider_keeps_its_other_keys(
     assert cfg["providers.openrouter.api_key_env"]["value"] == "OPENROUTER_KEY"
 
 
+def test_the_provider_form_writes_a_chosen_direct_over_an_existing_deployment(
+    server: tuple[web_server.WebServer, int],
+) -> None:
+    """A chosen `direct` replaces `deployment = "azure"`; the form dropped it as a blank."""
+    _srv, port = server
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        '[providers.az]\napi_format = "openai"\ndeployment = "azure"\n'
+        'base_url = "https://res.openai.azure.com"\n'
+        'extra_query = { "api-version" = "2024-10-21" }\n',
+        encoding="utf-8",
+    )
+    status, data = _post(
+        port,
+        "/api/config/provider",
+        {
+            "name": "az",
+            "api_format": "openai",
+            "deployment": "direct",
+            "base_url": "https://api.openai.com/v1",
+        },
+    )
+    assert status == 200 and data["ok"] is True, data
+    status, body, _ = _get(port, "/api/config")
+    assert json.loads(body)["providers.az.deployment"]["value"] == "direct"
+
+
+def test_the_provider_form_keeps_an_existing_deployment_when_left_blank(
+    server: tuple[web_server.WebServer, int],
+) -> None:
+    """A re-add posting a blank deployment keeps `deployment = "azure"`."""
+    _srv, port = server
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        '[providers.az]\napi_format = "openai"\ndeployment = "azure"\n'
+        'base_url = "https://res.openai.azure.com"\n'
+        'extra_query = { "api-version" = "2024-10-21" }\n',
+        encoding="utf-8",
+    )
+    status, data = _post(
+        port, "/api/config/provider", {"name": "az", "api_format": "openai", "deployment": ""}
+    )
+    assert status == 200 and data["ok"] is True, data
+    status, body, _ = _get(port, "/api/config")
+    assert json.loads(body)["providers.az.deployment"]["value"] == "azure"
+
+
+def test_the_provider_form_takes_claude_code_with_a_blank_deployment(
+    server: tuple[web_server.WebServer, int],
+) -> None:
+    """A `claude_code` provider adds with the deployment select left on its blank option."""
+    _srv, port = server
+    status, data = _post(
+        port, "/api/config/provider", {"name": "cc", "api_format": "claude_code", "deployment": ""}
+    )
+    assert status == 200 and data["ok"] is True, data
+    status, body, _ = _get(port, "/api/config")
+    assert json.loads(body)["providers.cc.api_format"]["value"] == "claude_code"
+
+
+def test_the_provider_form_refuses_a_deployment_for_claude_code(
+    server: tuple[web_server.WebServer, int],
+) -> None:
+    """A deployment posted for `claude_code` is refused: the entry has no such field."""
+    _srv, port = server
+    status, data = _post(
+        port,
+        "/api/config/provider",
+        {"name": "cc", "api_format": "claude_code", "deployment": "direct"},
+    )
+    assert status == 422 and data["ok"] is False and "deployment" in str(data["error"]), data
+
+
 def test_routes_payload_lists_every_route_and_the_modes_default(
     server: tuple[web_server.WebServer, int],
     tmp_path: pathlib.Path,

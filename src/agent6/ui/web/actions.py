@@ -595,8 +595,16 @@ def add_provider(
 ) -> tuple[bool, str]:
     """Add or update `[providers.<name>]` through the shared config writer.
 
-    An existing block keeps its other keys; a blank optional field is omitted and
-    defaults from the format and deployment.
+    An existing block keeps its other keys; a blank optional field leaves its key as it is.
+
+    Args:
+        cwd: The repository.
+        name: The provider's name, stripped; blank is refused.
+        api_format: The wire format.
+        deployment: The URL profile.
+        base_url: The endpoint's host and path prefix.
+        api_key_env: The environment variable holding the API key.
+        repo: Write to the per-repo config instead of the global one.
 
     Returns:
         Whether the write landed, and the note or the refusal.
@@ -605,7 +613,7 @@ def add_provider(
     if not name:
         return False, "a provider name is required"
     fields: dict[str, io.ConfigLeafValue] = {"api_format": api_format}
-    if deployment and deployment != "direct":
+    if deployment:
         fields["deployment"] = deployment
     if base_url.strip():
         fields["base_url"] = base_url.strip()

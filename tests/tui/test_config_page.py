@@ -17,7 +17,7 @@ from textual import app as textual_app
 from textual import widgets
 
 from agent6 import paths
-from agent6.config import OpenAIProviderEntry, layer
+from agent6.config import ClaudeCodeProviderEntry, OpenAIProviderEntry, layer
 from agent6.models import cache
 from agent6.models import choices as models_choices
 from agent6.ui.tui import _config_forms, config_page, menubar
@@ -1192,6 +1192,112 @@ def test_add_provider_clears_a_stale_preset_base_url(repo: pathlib.Path) -> None
             assert base_url.value == ""
 
     asyncio.run(scenario())
+
+
+def test_add_provider_writes_a_chosen_direct_over_an_existing_deployment(
+    repo: pathlib.Path,
+) -> None:
+    """A chosen `direct` replaces `deployment = "azure"`; the form dropped it as a blank."""
+    config_path = paths.global_config_dir() / "config.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + '\n[providers.az]\napi_format = "openai"\ndeployment = "azure"\n'
+        'base_url = "https://res.openai.azure.com"\n'
+        'extra_query = { "api-version" = "2024-10-21" }\n',
+        encoding="utf-8",
+    )
+
+    async def scenario() -> None:
+        from agent6.ui.tui import forms
+
+        app = _Host(repo)
+        async with app.run_test(size=(110, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            screen.action_add_provider()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, _config_forms.ProviderModal)
+            modal.query_one("#prov-name", widgets.Input).value = "az"
+            modal.query_one("#prov-format", forms.ChoiceField).select_value("openai")
+            modal.query_one("#prov-deployment", forms.ChoiceField).select_value("direct")
+            modal.query_one("#prov-baseurl", widgets.Input).value = "https://api.openai.com/v1"
+            await pilot.pause()
+            modal.action_add()
+            await pilot.pause()
+            assert isinstance(app.screen, config_page.ConfigScreen)  # closed on success
+
+    asyncio.run(scenario())
+    entry = layer.load_effective(repo).config.providers["az"]
+    assert isinstance(entry, OpenAIProviderEntry)
+    assert entry.deployment == "direct"
+
+
+def _add_provider_by_form(
+    repo: pathlib.Path, name: str, api_format: str, deployment: str | None
+) -> bool:
+    """Fill the add-provider form, leaving the deployment chooser on its blank row when None.
+
+    Returns:
+        Whether the form closed, which it does only after a write that landed.
+    """
+    closed = False
+
+    async def scenario() -> None:
+        nonlocal closed
+        from agent6.ui.tui import forms
+
+        app = _Host(repo)
+        async with app.run_test(size=(110, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            screen.action_add_provider()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, _config_forms.ProviderModal)
+            modal.query_one("#prov-name", widgets.Input).value = name
+            modal.query_one("#prov-format", forms.ChoiceField).select_value(api_format)
+            if deployment is not None:
+                modal.query_one("#prov-deployment", forms.ChoiceField).select_value(deployment)
+            await pilot.pause()
+            modal.action_add()
+            await pilot.pause()
+            closed = isinstance(app.screen, config_page.ConfigScreen)
+
+    asyncio.run(scenario())
+    return closed
+
+
+def test_add_provider_keeps_an_existing_deployment_when_left_blank(repo: pathlib.Path) -> None:
+    """A re-add with the deployment chooser untouched keeps `deployment = "azure"`."""
+    config_path = paths.global_config_dir() / "config.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + '\n[providers.az]\napi_format = "openai"\ndeployment = "azure"\n'
+        'base_url = "https://res.openai.azure.com"\n'
+        'extra_query = { "api-version" = "2024-10-21" }\n',
+        encoding="utf-8",
+    )
+    assert _add_provider_by_form(repo, "az", "openai", None)
+    entry = layer.load_effective(repo).config.providers["az"]
+    assert isinstance(entry, OpenAIProviderEntry)
+    assert entry.deployment == "azure"
+
+
+def test_add_provider_takes_claude_code_with_the_deployment_left_blank(
+    repo: pathlib.Path,
+) -> None:
+    """A `claude_code` provider adds with the deployment chooser on its blank row."""
+    assert _add_provider_by_form(repo, "cc", "claude_code", None)
+    assert isinstance(layer.load_effective(repo).config.providers["cc"], ClaudeCodeProviderEntry)
+
+
+def test_add_provider_refuses_a_deployment_for_claude_code(repo: pathlib.Path) -> None:
+    """A deployment chosen for `claude_code` keeps the form open: the entry has no such field."""
+    assert not _add_provider_by_form(repo, "cc", "claude_code", "direct")
+    assert "cc" not in layer.load_effective(repo).config.providers
 
 
 def test_edit_base_url_prefills_preset_for_known_provider(repo: pathlib.Path) -> None:

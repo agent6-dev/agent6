@@ -229,9 +229,9 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
 class ProviderModal(_FormModal[None]):
     """Add a `[providers.<name>]` entry through a form.
 
-    Choosers for the fixed-choice fields, inputs for the free ones; base_url and
-    auth default from the format and deployment when blank. Add writes and
-    validates, and an error stays in the form to fix.
+    Choosers for the fixed-choice fields, inputs for the free ones; a blank field
+    writes nothing, so an existing entry keeps its value. Add writes and validates,
+    and an error stays in the form to fix.
     """
 
     # No Enter to add: Enter on a chooser selects the highlighted option.
@@ -263,11 +263,11 @@ class ProviderModal(_FormModal[None]):
         choices = write.provider_choices()
         with containers.VerticalScroll(id="prov-box"):
             yield textual_widgets.Static("Add provider", id="prov-title")
-            # Split at the sentence: one line is wider than the box.
+            # Split at the clause: one line is wider than the box.
             yield textual_widgets.Static(
                 text.Text(
-                    "A [providers.<name>] block.\n"
-                    "base_url/auth default from the format + deployment when left blank.",
+                    "A [providers.<name>] block. A blank field keeps an existing value;\n"
+                    "otherwise base_url/auth default from the format + deployment.",
                     style="dim",
                 )
             )
@@ -281,18 +281,17 @@ class ProviderModal(_FormModal[None]):
                 tuple(choices["api_format"]), choices["api_format"][0], id="prov-format"
             )
             yield textual_widgets.Static("deployment", classes="edit-label")
-            yield forms.ChoiceField(
-                tuple(choices["deployment"]), choices["deployment"][0], id="prov-deployment"
-            )
+            deployments = ("blank = unchanged, or direct", *choices["deployment"])
+            yield forms.ChoiceField(deployments, deployments[0], id="prov-deployment")
             yield textual_widgets.Static("base_url", classes="edit-label")
             yield textual_widgets.Input(
-                placeholder="blank = default for the format/deployment",
+                placeholder="blank = unchanged, or the default for the format/deployment",
                 id="prov-baseurl",
                 classes="edit-input",
             )
             yield textual_widgets.Static("api_key_env", classes="edit-label")
             yield textual_widgets.Input(
-                placeholder="blank = secrets.toml by provider name",
+                placeholder="blank = unchanged, or secrets.toml by provider name",
                 id="prov-keyenv",
                 classes="edit-input",
             )
@@ -307,11 +306,6 @@ class ProviderModal(_FormModal[None]):
                 text.Text("↑↓ highlight · Space select · Tab field · Esc cancel", style="dim"),
                 classes="edit-label",
             )
-
-    def _selected(self, widget_id: str, fallback: str) -> str:
-        """Return a chooser's value, or the fallback when it has none."""
-        field = self.query_one(widget_id, forms.ChoiceField)
-        return field.value or fallback
 
     @textual.on(textual_widgets.Input.Submitted)
     def _input_submitted(self, event: textual_widgets.Input.Submitted) -> None:
@@ -342,12 +336,12 @@ class ProviderModal(_FormModal[None]):
         if not name:
             self.notify("Enter a provider name.", severity="warning")
             return
-        fields: dict[str, io.ConfigLeafValue] = {
-            "api_format": self._selected("#prov-format", "anthropic")
-        }
-        dep = self._selected("#prov-deployment", "direct")
-        if dep != "direct":
-            fields["deployment"] = dep
+        api_format = self.query_one("#prov-format", forms.ChoiceField).value
+        fields: dict[str, io.ConfigLeafValue] = {"api_format": api_format}
+        deployment = self.query_one("#prov-deployment", forms.ChoiceField)
+        # Row 0 is the blank row, which writes nothing.
+        if deployment.index > 0:
+            fields["deployment"] = deployment.value
         base = self.query_one("#prov-baseurl", textual_widgets.Input).value.strip()
         if base:
             fields["base_url"] = base

@@ -47,10 +47,8 @@ function descriptionNode(text) {
   return frag;
 }
 
-// The TUI's add-provider form: a [providers.<name>] block in one write, existing keys kept
-// (base_url and auth default from the format and deployment when left blank;
-// the key comes from secrets.toml by provider name). Typing a known name
-// prefills its format and base_url, as `agent6 connect` would.
+// The TUI's add-provider form: a [providers.<name>] block in one write, where a blank field
+// writes nothing. Typing a known name prefills its format and base_url, as `agent6 connect` would.
 async function addProvider() {
   let choices = { api_format: [], deployment: [], defaults: {} };
   try { choices = await getJSON('/api/config/provider_choices'); } catch (e) { toast(e.message, true); return; }
@@ -61,14 +59,14 @@ async function addProvider() {
   box.setAttribute('aria-label', 'add provider');
   const title = el('h2', null, 'Add provider'); title.style.textTransform = 'none';
   box.appendChild(title);
-  box.appendChild(el('div', 'sub muted', 'A [providers.<name>] block. base_url and auth default from the format and deployment when left blank.'));
+  box.appendChild(el('div', 'sub muted', 'A [providers.<name>] block. A blank field keeps an existing value; otherwise base_url and auth default from the format and deployment.'));
   const labelled = (text, field) => { const l = el('label', 'sub muted', text); l.style.display = 'block'; l.style.marginTop = '8px'; box.appendChild(l); box.appendChild(field); return field; };
   const name = labelled('name', el('input', 'field')); name.placeholder = 'e.g. openrouter, my-azure';
-  const select = (values) => { const s = el('select', 'field'); for (const v of values) { const o = el('option', null, v); o.value = v; s.appendChild(o); } return s; };
+  const select = (values, blank) => { const s = el('select', 'field'); for (const v of values) { const o = el('option', null, v || blank); o.value = v; s.appendChild(o); } return s; };
   const format = labelled('api_format', select(choices.api_format || []));
-  const deployment = labelled('deployment', select(choices.deployment || []));
-  const baseUrl = labelled('base_url', el('input', 'field')); baseUrl.placeholder = 'blank = default for the format/deployment';
-  const keyEnv = labelled('api_key_env', el('input', 'field')); keyEnv.placeholder = 'blank = secrets.toml by provider name';
+  const deployment = labelled('deployment', select(['', ...(choices.deployment || [])], 'blank = unchanged, or direct'));
+  const baseUrl = labelled('base_url', el('input', 'field')); baseUrl.placeholder = 'blank = unchanged, or the default for the format/deployment';
+  const keyEnv = labelled('api_key_env', el('input', 'field')); keyEnv.placeholder = 'blank = unchanged, or secrets.toml by provider name';
   let autofilled = '';
   name.oninput = () => {
     const preset = (choices.defaults || {})[name.value.trim()];
