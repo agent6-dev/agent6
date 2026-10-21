@@ -112,7 +112,7 @@ def _post(port: int, path: str, body: dict[str, object]) -> tuple[int, dict[str,
 def _post_raw(
     port: int, path: str, body: bytes, headers: dict[str, str]
 ) -> tuple[int, dict[str, object]]:
-    """POST with caller-controlled headers (for the CSRF checks)."""
+    """POST with caller-controlled headers."""
     conn = signin.SignedIn(port, timeout=10)
     try:
         conn.request("POST", path, body, headers)
@@ -1457,7 +1457,7 @@ def test_prune_body_is_drained_so_keepalive_is_not_poisoned(
     sock = socket.create_connection(("127.0.0.1", port), timeout=10)
     try:
         body = b"{}"
-        cookie = b"Cookie: " + signin.cookie(port).encode() + b"\r\n"
+        cookie = b"Authorization: " + signin.bearer(port).encode() + b"\r\n"
         prune = (
             b"POST /api/sessions/prune HTTP/1.1\r\n"
             b"Host: 127.0.0.1\r\n" + cookie + b"Content-Type: application/json\r\n"
@@ -1586,66 +1586,6 @@ def test_unknown_post_verb_does_not_poison_keepalive(
         assert json.loads(resp2.read())["sessions"]
     finally:
         conn.close()
-
-
-# --- CSRF: cross-site state-changing POSTs are refused -----------------------
-
-
-def test_cross_origin_post_refused(
-    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
-) -> None:
-    _srv, port = server
-    _make_machine_with_state(tmp_path, "csrf1", "0000-review")
-    status, body = _post_raw(
-        port,
-        "/api/machine/csrf1/poke",
-        json.dumps({"message": "x"}).encode(),
-        {
-            "Content-Type": "application/json",
-            "Host": f"127.0.0.1:{port}",
-            "Origin": "https://evil.example",
-        },
-    )
-    assert status == 403
-    assert "cross-origin" in str(body.get("error", ""))
-
-
-def test_non_json_content_type_post_refused(
-    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
-) -> None:
-    _srv, port = server
-    inst, _ = _make_machine_with_state(tmp_path, "csrf2", "0000-review")
-    # A JSON body smuggled as a CORS-simple text/plain request is refused; the file is not written.
-    status, _ = _post_raw(
-        port,
-        "/api/machine/csrf2/poke",
-        json.dumps({"message": "x"}).encode(),
-        {"Content-Type": "text/plain", "Host": f"127.0.0.1:{port}"},
-    )
-    assert status == 403
-    assert not (inst / "signal").exists()
-
-
-def test_same_origin_post_allowed(
-    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
-) -> None:
-    _srv, port = server
-    inst, _ = _make_machine_with_state(tmp_path, "csrf3", "0000-review")
-    machine_journal.MachineJournal(inst).write_pending_wait(
-        machine_journal.PendingWait(state="route", wake_epoch=None)
-    )
-    status, body = _post_raw(
-        port,
-        "/api/machine/csrf3/poke",
-        json.dumps({"message": "ok"}).encode(),
-        {
-            "Content-Type": "application/json",
-            "Host": f"127.0.0.1:{port}",
-            "Origin": f"http://127.0.0.1:{port}",
-        },
-    )
-    assert status == 200 and body["ok"] is True
-    assert (inst / "signal").exists()
 
 
 # --- machine answers route to the rendered state, not the newest -------------

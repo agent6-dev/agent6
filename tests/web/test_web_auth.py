@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 web` requires a secret: every state route needs the cookie a login sets."""
+"""`agent6 web` requires a secret: every state route needs the token a login answers."""
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import pathlib
 import re
@@ -49,16 +51,18 @@ def port(tmp_path: pathlib.Path) -> Iterator[int]:
 
 
 def _request(
-    port: int, method: str, path: str, body: object = None, *, cookie: str = ""
+    port: int, method: str, path: str, body: object = None, *, token: str = "", cookie: str = ""
 ) -> tuple[int, dict[str, str], bytes]:
-    """Send one request with no `Origin`, as a local process would.
+    """Send one request as a local process would, with the token as a bearer header when given.
 
     Returns:
         The status, the response headers, and the body (unread for an event stream).
     """
     conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
-        headers = {"Cookie": cookie} if cookie else {}
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        if cookie:
+            headers["Cookie"] = cookie
         payload = None
         if body is not None:
             payload = json.dumps(body).encode()
@@ -71,13 +75,13 @@ def _request(
         conn.close()
 
 
-def test_a_config_write_with_no_cookie_is_refused_and_changes_nothing(
+def test_a_config_write_with_no_token_is_refused_and_changes_nothing(
     port: int, tmp_path: pathlib.Path
 ) -> None:
-    """A local process could switch the sandbox off: a POST with no `Origin` passed every guard.
+    """A local process could switch the sandbox off.
 
-    The CSRF guard waves a request with no `Origin` through, so `sandbox.isolation = none`
-    landed in the repo config from any process that could reach the port.
+    `sandbox.isolation = none` landed in the repo config from any process that could reach
+    the port.
     """
     status, _headers, body = _request(port, "POST", "/api/config", _ESCAPE)
     assert status == 401
@@ -85,10 +89,10 @@ def test_a_config_write_with_no_cookie_is_refused_and_changes_nothing(
     assert not paths.repo_config_path(tmp_path).exists()
 
 
-def test_the_same_config_write_with_the_cookie_succeeds(port: int, tmp_path: pathlib.Path) -> None:
-    """The 401 answers the missing cookie: signed in, the same write sets the config."""
-    cookie = signin.cookie(port)
-    status, _headers, body = _request(port, "POST", "/api/config", _ESCAPE, cookie=cookie)
+def test_the_same_config_write_with_the_token_succeeds(port: int, tmp_path: pathlib.Path) -> None:
+    """The 401 answers the missing token: signed in, the same write sets the config."""
+    token = signin.token(port)
+    status, _headers, body = _request(port, "POST", "/api/config", _ESCAPE, token=token)
     assert (status, json.loads(body)["ok"]) == (200, True)
     assert 'isolation = "none"' in paths.repo_config_path(tmp_path).read_text(encoding="utf-8")
 
@@ -106,7 +110,7 @@ def test_the_same_config_write_with_the_cookie_succeeds(port: int, tmp_path: pat
         "/api/session/nope",
     ],
 )
-def test_a_state_route_without_the_cookie_answers_401(port: int, path: str) -> None:
+def test_a_state_route_without_the_token_answers_401(port: int, path: str) -> None:
     """Transcripts and state the jail masks were served to any process that asked.
 
     An event stream answers 401 before its stream headers, and an unknown id answers 401 like
@@ -116,86 +120,87 @@ def test_a_state_route_without_the_cookie_answers_401(port: int, path: str) -> N
     assert status == 401
     assert "application/json" in headers["Content-Type"]
     assert json.loads(body)["login"] is True
-    signed_in, _headers, _body = _request(port, "GET", path, cookie=signin.cookie(port))
+    signed_in, _headers, _body = _request(port, "GET", path, token=signin.token(port))
     assert signed_in != 401
 
 
-def test_a_wrong_secret_is_refused_and_sets_no_cookie(port: int) -> None:
-    """A login that does not match answers 403 with the reason and no `Set-Cookie`."""
-    status, body, set_cookie = signin.login(port, "amber-acorn-agile-alder-alert-atlas")
+def test_a_wrong_secret_is_refused_and_answers_no_token(port: int) -> None:
+    """A login that does not match answers 403 with the reason and no token."""
+    status, body, _headers = signin.login(port, "amber-acorn-agile-alder-alert-atlas")
     assert status == 403
     assert body["error"]
-    assert set_cookie == ""
-
-
-def test_a_login_through_a_tls_proxy_gets_a_secure_cookie(port: int) -> None:
-    """Behind a proxy that terminated HTTPS the cookie carries `Secure`; on loopback it does not."""
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
-    try:
-        payload = json.dumps({"secret": signin.SECRET}).encode()
-        headers = {"Content-Type": "application/json", "X-Forwarded-Proto": "https"}
-        conn.request("POST", "/api/login", payload, headers)
-        resp = conn.getresponse()
-        assert resp.status == 200, resp.read()
-        set_cookie = resp.getheader("Set-Cookie", "")
-    finally:
-        conn.close()
-    assert set_cookie.endswith("; Secure")
-    assert not signin.login(port)[2].endswith("Secure")
+    assert "token" not in body
 
 
 def test_the_secret_typed_with_spaces_and_capitals_signs_in(port: int) -> None:
     """A phone keyboard capitalizes and spaces words: both sides normalize before comparing."""
-    status, body, set_cookie = signin.login(port, "  Amber Acorn  agile-alder ALERT - arrow ")
-    assert (status, body) == (200, {"ok": True})
-    name, _, value = set_cookie.split(";", 1)[0].partition("=")
-    assert name == f"agent6_web_{port}"
-    assert re.fullmatch(r"[0-9a-f]{64}", value)
-    assert signin.SECRET not in set_cookie
-    attributes = [part.strip() for part in set_cookie.split(";")[1:]]
-    assert attributes == ["HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=34560000"]
-    assert _request(port, "GET", "/api/hub", cookie=f"{name}={value}")[0] == 200
+    status, body, _headers = signin.login(port, "  Amber Acorn  agile-alder ALERT - arrow ")
+    assert (status, body["ok"]) == (200, True)
+    token = str(body["token"])
+    assert re.fullmatch(r"[0-9a-f]{64}", token)
+    assert signin.SECRET not in token
+    assert _request(port, "GET", "/api/hub", token=token)[0] == 200
 
 
-def test_login_goes_through_the_cross_site_guard(port: int) -> None:
-    """A page on another origin cannot sign a browser in: login keeps the `Origin` check."""
-    conn = client.HTTPConnection("127.0.0.1", port, timeout=10)
-    try:
-        conn.request(
-            "POST",
-            "/api/login",
-            json.dumps({"secret": signin.SECRET}).encode(),
-            {"Content-Type": "application/json", "Origin": "https://evil.example"},
-        )
-        resp = conn.getresponse()
-        resp.read()
-        assert resp.status == 403
-        assert resp.getheader("Set-Cookie") is None
-    finally:
-        conn.close()
+def test_the_token_rides_a_header_and_never_a_cookie(port: int) -> None:
+    """A browser sends a cookie to every port of its host.
+
+    After a sign-in at this port, the first visit to a page a jailed command served on a
+    forwarded port handed that server the session cookie, and a replay of it was accepted.
+    The login sets no cookie, and a cookie carrying the token opens nothing.
+    """
+    status, body, headers = signin.login(port)
+    assert status == 200 and "Set-Cookie" not in headers
+    token = str(body["token"])
+    as_cookie = f"agent6_web_{port}={token}"
+    assert _request(port, "GET", "/api/hub", cookie=as_cookie)[0] == 401
+    assert _request(port, "POST", "/api/config", _ESCAPE, cookie=as_cookie)[0] == 401
+    assert _request(port, "GET", "/api/hub", token=token)[0] == 200
 
 
-def test_a_cookie_from_another_secret_is_refused(port: int, tmp_path: pathlib.Path) -> None:
-    """The cookie is keyed by the secret: one server's cookie opens no server started with another.
+def test_the_page_frames_nowhere(port: int) -> None:
+    """A page another local server serves could frame the signed-in UI and overlay its buttons."""
+    for path, token in (("/", ""), ("/api/hub", signin.token(port))):
+        status, headers, _body = _request(port, "GET", path, token=token)
+        assert status == 200
+        assert headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+        assert headers["X-Frame-Options"] == "DENY"
 
-    A restart with a new secret on the same port meets the old cookie under the same name.
+
+def test_the_page_clears_the_cookie_an_earlier_version_set(port: int) -> None:
+    """A browser kept a 400-day cookie whose value a stable secret made equal to the token.
+
+    The page's response expires it, and the token's derivation changed, so a stale cookie
+    another local server collects opens nothing.
+    """
+    status, headers, _body = _request(port, "GET", "/")
+    assert status == 200
+    assert headers["Set-Cookie"] == f"agent6_web_{port}=; Max-Age=0; Path=/"
+    legacy = hmac.new(signin.SECRET.encode(), b"agent6-web-session-v1", hashlib.sha256).hexdigest()
+    assert legacy != auth.session_token(signin.SECRET)
+    assert _request(port, "GET", "/api/hub", token=legacy)[0] == 401
+
+
+def test_a_token_from_another_secret_is_refused(port: int, tmp_path: pathlib.Path) -> None:
+    """The token is keyed by the secret: one server's token opens no server started with another.
+
+    A restart with a new secret on the same port meets the old token in the browser's storage.
     """
     other_secret = "blue-birch-bold-brook-brave-cedar"
     probe = web_server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=other_secret)
     threading.Thread(target=probe.serve_forever, daemon=True).start()
     try:
         other_port = int(probe.server_address[1])
-        other_value = signin.cookie(other_port, other_secret).partition("=")[2]
+        other = signin.token(other_port, other_secret)
     finally:
         probe.shutdown()
         probe.server_close()
-    mine = signin.cookie(port)
-    assert other_value != mine.partition("=")[2]
-    forged = f"agent6_web_{port}={other_value}"
-    assert _request(port, "GET", "/api/hub", cookie=forged)[0] == 401
-    assert _request(port, "GET", "/api/hub", cookie=mine)[0] == 200
+    mine = signin.token(port)
+    assert other != mine
+    assert _request(port, "GET", "/api/hub", token=other)[0] == 401
+    assert _request(port, "GET", "/api/hub", token=mine)[0] == 200
     # A stable secret keeps a browser signed in: the value depends on the secret alone.
-    assert auth.session_token(signin.SECRET) == mine.partition("=")[2]
+    assert auth.session_token(signin.SECRET) == mine
 
 
 def test_the_minted_secret_is_three_adjective_noun_pairs() -> None:
@@ -325,7 +330,7 @@ def _routed_paths() -> dict[str, set[str]]:
     return found
 
 
-def test_only_the_page_shell_and_login_answer_without_a_cookie(port: int) -> None:
+def test_only_the_page_shell_and_login_answer_without_a_token(port: int) -> None:
     """A new route is gated unless someone adds it to the public list on purpose.
 
     The lists hold the page, the assets a browser fetches to show it, and the login itself;
@@ -353,14 +358,16 @@ def test_the_page_meets_a_401_in_one_place() -> None:
     up on would stay frozen on its last frame.
     """
     js = page.CLIENT_JS
-    assert js.count("fetch(") == js.count("signedOut(await fetch(") == 2
-    assert js.count("new EventSource(") == js.count("es.onerror = () => streamFailed(es, ") == 2
+    assert js.count("fetch(") == js.count("signedOut(await fetch(") == 3
+    assert js.count("headers: authHeaders(") == 3, "every fetch carries the token"
+    assert "EventSource" not in js, "a native stream could not carry the token"
+    assert js.count("openStream(base + '/events'") == 2
     form = js[js.index("function showLogin") : js.index("async function boot")]
     for attribute in ("autocapitalize: 'none'", "autocorrect: 'off'", "spellcheck: 'false'"):
         assert attribute in form
     assert "autocomplete: 'off'" in form and "input.type = 'text'" in form
     assert "`agent6 web` printed in its terminal" in form
-    boot = js[js.index("async function boot") : js.index("function streamFailed")]
-    steps = ("postJSON('/api/login'", "history.replaceState(", "route();")
+    boot = js[js.index("async function boot") : js.index("function openStream")]
+    steps = ("saveToken(await postJSON('/api/login'", "history.replaceState(", "route();")
     assert [boot.index(step) for step in steps] == sorted(boot.index(step) for step in steps)
     assert js.rstrip().endswith("boot();")

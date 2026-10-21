@@ -80,17 +80,14 @@ async function renderMachine(name, gen) {
   const ctx = { notifsHost: notifs, seen: null, lostNotified: false, endedNotified: false };
   paintMachine(structBody, pathBody, cards, ctx, { machine: initial, reasoning: {} });
 
-  live = new EventSource(base + '/events');
-  live.onmessage = ev => {
-    let data; try { data = JSON.parse(ev.data); } catch (_) { return; }
+  live = openStream(base + '/events', raw => {
+    let data; try { data = JSON.parse(raw); } catch (_) { return; }
     if (data.type === 'error') { closeLive(); toast('stream error: ' + data.error, true); return; }
     paintMachine(structBody, pathBody, cards, ctx, data);
     hbState.spin++;
     // A stopped machine is resumable and its stream stays open; a journaled end closes it.
     if (data.machine && data.machine.ended) closeLive();
-  };
-  const es = live;
-  es.onerror = () => streamFailed(es, base);
+  });
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
 }
 

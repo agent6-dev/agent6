@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Hold the secret `agent6 web` requires: mint it, normalize it, and check a session cookie.
+"""Hold the secret `agent6 web` requires: mint it, normalize it, and check a sign-in token.
 
-A browser signs in once with the secret and keeps a cookie holding a keyed digest of it,
-so the server stores and compares the digest, and no cookie carries the secret.
+A browser signs in once with the secret and keeps the keyed digest the login answers, in
+storage scoped to the server's origin (host and port), and sends it as a bearer header. A
+cookie would reach every port of the host, so a page another local server serves would
+receive it. The server stores and compares the digest; nothing carries the secret after
+the sign-in.
 """
 
 from __future__ import annotations
@@ -21,10 +24,9 @@ from agent6._data import words
 SECRET_ENV = child_env.WEB_SECRET_ENV
 MIN_SECRET_CHARS = 12
 _MINTED_PAIRS = 3  # about 44 bits over the wordlist
-_SESSION_MESSAGE = b"agent6-web-session-v1"
-# `Secure` only behind a proxy that terminated TLS: the server speaks plain HTTP on loopback,
-# where a browser would drop a Secure cookie.
-_COOKIE_ATTRIBUTES = "HttpOnly; SameSite=Strict; Path=/; Max-Age=34560000"
+# v2: the v1 digest rode a cookie, which a browser sends to every port of the host; a cookie a
+# browser kept from then must not equal the token.
+_SESSION_MESSAGE = b"agent6-web-token-v2"
 _WORD_BREAKS = re.compile(r"[\s-]+")
 
 
@@ -103,50 +105,29 @@ def resolve(flag: str | None, env: str | None) -> Secret:
 
 
 def session_token(secret: str) -> str:
-    """Return the session cookie's value for a secret: a keyed digest, stable across restarts."""
+    """Return the sign-in token for a secret: a keyed digest, stable across restarts."""
     return hmac.new(normalize(secret).encode(), _SESSION_MESSAGE, hashlib.sha256).hexdigest()
 
 
 def token_matches(candidate: str, token: str) -> bool:
-    """Return whether a presented cookie value or login digest equals the server's token."""
+    """Return whether a presented token or login digest equals the server's token."""
     return hmac.compare_digest(candidate.encode(), token.encode())
 
 
-def cookie_name(port: int) -> str:
-    """Return the cookie's name; cookies ignore ports, so two servers on a host get two names."""
-    return f"agent6_web_{port}"
+def expired_cookie(port: int) -> str:
+    """Return the `Set-Cookie` that clears the cookie an earlier version set for this port."""
+    return f"agent6_web_{port}=; Max-Age=0; Path=/"
 
 
-def set_cookie(port: int, token: str, *, secure: bool = False) -> str:
-    """Return the `Set-Cookie` header a successful login answers with.
-
-    Args:
-        port: The server's port, which names the cookie.
-        token: The session token.
-        secure: Add `Secure`, for a browser that reached the server over HTTPS.
-
-    Returns:
-        The header's value.
-    """
-    attributes = f"{_COOKIE_ATTRIBUTES}; Secure" if secure else _COOKIE_ATTRIBUTES
-    return f"{cookie_name(port)}={token}; {attributes}"
-
-
-def has_session(cookie_headers: list[str], port: int, token: str) -> bool:
-    """Return whether the request's `Cookie` headers carry this server's session token.
+def bearer_matches(authorization: str | None, token: str) -> bool:
+    """Return whether an `Authorization` header carries this server's sign-in token.
 
     Args:
-        cookie_headers: Every `Cookie` header the request sent.
-        port: The server's port, which names its cookie.
-        token: The server's session token.
+        authorization: The request's `Authorization` header, or None.
+        token: The server's token.
 
     Returns:
-        True when the cookie named for `port` holds `token`.
+        True when the header is `Bearer <token>`.
     """
-    name = cookie_name(port)
-    for header in cookie_headers:
-        for part in header.split(";"):
-            key, _, value = part.strip().partition("=")
-            if key == name and token_matches(value, token):
-                return True
-    return False
+    scheme, _, value = (authorization or "").strip().partition(" ")
+    return scheme.lower() == "bearer" and token_matches(value.strip(), token)

@@ -6,7 +6,8 @@ The GET endpoints return the wire form `agent6 attach --json` prints; the SSE st
 push a fresh snapshot on each change. The server binds loopback by default (a
 non-loopback bind is opt-in under `[web]`), renders folded read state, drives the
 `agent6.sessions.ipc` contracts, serves no secret and executes no arbitrary input.
-Every route but the page shell and the sign-in requires the session cookie (`auth`).
+Every route but the page shell and the sign-in requires the sign-in token (`auth`), sent as
+a bearer header.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ from agent6.viewmodel import (
 
 # The typed bodies are a few strings; an uncapped Content-Length would buffer arbitrary bytes.
 _MAX_BODY_BYTES = 1 << 20
-# Every other path needs the session cookie. These hold no state: the page, the assets a
+# Every other path needs the sign-in token. These hold no state: the page, the assets a
 # browser fetches to show it (the manifest without credentials), and the sign-in itself.
 PUBLIC_GET = frozenset({"/", "/favicon.svg", "/icon.svg", "/manifest.webmanifest", "/sw.js"})
 PUBLIC_POST = frozenset({"/api/login"})
@@ -361,12 +362,6 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         if not self._parse_body_length():
             return
         try:
-            csrf_err = self._csrf_refusal()
-            if csrf_err is not None:
-                # Closing beats draining an unread body: a partial read desyncs the framing.
-                self.close_connection = True
-                self._send_json({"error": csrf_err}, status=403)
-                return
             if self.headers.get("Transfer-Encoding"):
                 # Only Content-Length bodies are read; a chunked one would sit unread.
                 self.close_connection = True
@@ -395,40 +390,22 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             self._send_json({"error": str(exc)}, status=500)
 
     def _signed_in(self) -> bool:
-        """Return whether the request carries the cookie a sign-in with the secret set."""
-        cookies = self.headers.get_all("Cookie", [])
-        return auth.has_session(cookies, self.server.server_port, self.server.session_token)
+        """Return whether the request carries the token a sign-in with the secret answered.
+
+        The token rides a header the page adds, never a cookie: a browser sends a cookie to
+        every port of the host, so a page a jailed command serves on another port would get
+        it; a cross-origin page cannot add the header without a preflight this server never
+        answers, which is also why no POST needs a cross-site check.
+
+        Returns:
+            True when the header is `Bearer <token>`.
+        """
+        return auth.bearer_matches(self.headers.get("Authorization"), self.server.session_token)
 
     def _send_sign_in_required(self) -> None:
         """Send 401; `login` tells the page to show its sign-in form."""
         error = "not signed in: this server needs the secret `agent6 web` printed (POST /api/login)"
         self._send_json({"error": error, "login": True}, status=401)
-
-    def _csrf_refusal(self) -> str | None:
-        """Return the reason to refuse this POST as cross-site, or None.
-
-        A browser signed in here sends its cookie on a same-site request, and
-        loopback ports share one site, so a page another local server serves can
-        POST here. Two checks close it: a body must be `application/json` (a
-        cross-site fetch with that type needs a preflight this server never
-        answers), and a present `Origin` must match `Host` (a missing one is not
-        browser-driven, and meets the cookie check).
-        A DNS-rebound page passes both and holds no cookie for its own host name;
-        a Host allow-list would break `tailscale serve`.
-
-        Returns:
-            The reason, or None when the POST passes both checks.
-        """
-        if self._body_length > 0:
-            ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
-            if ctype != "application/json":
-                return f"POST body must be Content-Type: application/json, not {ctype!r}"
-        origin = self.headers.get("Origin")
-        if origin:
-            host = self.headers.get("Host", "")
-            if parse.urlsplit(origin).netloc != host:
-                return f"cross-origin POST refused (Origin {origin!r} != Host {host!r})"
-        return None
 
     def _read_body(self) -> dict[str, Any]:
         """Read the request body as a JSON object.
@@ -523,20 +500,14 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         self._post_not_found(f"not found: {path}")
 
     def _login(self) -> None:
-        """Answer a sign-in: the session cookie for the server's secret, 403 for any other."""
+        """Answer a sign-in: the token for the server's secret, 403 for any other."""
         body = LoginBody.model_validate(self._read_body())
         token = self.server.session_token
         if not auth.token_matches(auth.session_token(body.secret), token):
             refusal = "that is not the secret this `agent6 web` was started with"
             self._send_json({"ok": False, "error": refusal}, status=403)
             return
-        # The proxy that terminated TLS says so; a forged header only narrows where the
-        # cookie is sent.
-        secure = self.headers.get("X-Forwarded-Proto", "").lower() == "https"
-        self._send_json(
-            {"ok": True},
-            set_cookie=auth.set_cookie(self.server.server_port, token, secure=secure),
-        )
+        self._send_json({"ok": True, "token": token})
 
     def _post_not_found(self, message: str) -> None:
         """Send 404 for a POST whose body was never read, closing the connection."""
@@ -649,7 +620,12 @@ class _Handler(http_server.BaseHTTPRequestHandler):
     def _route(self, path: str) -> None:  # noqa: PLR0911, PLR0912
         """Dispatch a GET by path."""
         if path == "/":
-            self._send_bytes(page.PAGE_HTML.encode("utf-8"), "text/html; charset=utf-8")
+            self._send_bytes(
+                page.PAGE_HTML.encode("utf-8"),
+                "text/html; charset=utf-8",
+                # A browser that signed in before the token kept a cookie it sends to every port.
+                headers=(("Set-Cookie", auth.expired_cookie(self.server.server_port)),),
+            )
             return
         if path == "/manifest.webmanifest":
             self._send_bytes(page.MANIFEST_JSON.encode("utf-8"), "application/manifest+json")
@@ -819,25 +795,30 @@ class _Handler(http_server.BaseHTTPRequestHandler):
 
     # -- plain responses ------------------------------------------------------
 
-    def _send_json(self, payload: Any, *, status: int = 200, set_cookie: str = "") -> None:
+    def _send_json(self, payload: Any, *, status: int = 200) -> None:
         """Send a JSON response."""
         self._send_bytes(
-            json.dumps(payload).encode("utf-8"),
-            "application/json; charset=utf-8",
-            status=status,
-            set_cookie=set_cookie,
+            json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8", status=status
         )
 
     def _send_bytes(
-        self, body: bytes, ctype: str, *, status: int = 200, set_cookie: str = ""
+        self,
+        body: bytes,
+        ctype: str,
+        *,
+        status: int = 200,
+        headers: tuple[tuple[str, str], ...] = (),
     ) -> None:
-        """Send one uncached response."""
+        """Send one uncached response that no other page may frame."""
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        if set_cookie:
-            self.send_header("Set-Cookie", set_cookie)
+        for name, value in headers:
+            self.send_header(name, value)
+        # A page another local server serves could otherwise frame the signed-in UI.
+        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        self.send_header("X-Frame-Options", "DENY")
         if self.close_connection:
             # Without the header a keep-alive client reuses the socket about to shut.
             self.send_header("Connection", "close")
@@ -983,7 +964,7 @@ def run_web(
     if not is_loopback_host(bind_host):
         print(
             "agent6 web: WARNING bound to a non-loopback address; the secret and the sign-in"
-            f" cookie cross the network to {bind_host}:{port} in plain HTTP, and anyone who"
+            f" token cross the network to {bind_host}:{port} in plain HTTP, and anyone who"
             " reads them can drive this agent. Prefer `tailscale serve` in front of a loopback"
             " bind.",
             file=sys.stderr,

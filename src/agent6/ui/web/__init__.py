@@ -10,7 +10,7 @@ Layout:
     model.py   the JSON payload builders (hub, run, machine, conversation, config).
     actions.py the write side: answers, steers, spawns, the fixed-argv CLI bridge.
     server.py  the threading server, routing and POST bodies (`run_web`).
-    auth.py    the sign-in secret and the session cookie every `/api` route requires.
+    auth.py    the sign-in secret and the token every `/api` route requires.
     _sse.py    the run and machine server-sent-event streams.
     page.py    the HTML, CSS and JS single-page app.
 

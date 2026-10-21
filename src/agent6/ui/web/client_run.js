@@ -7,8 +7,8 @@ async function stopRun(base, label) {
 // opts: { base, readOnly, title }: a draft (machine-create authoring log) is
 // watched read-only against /api/draft/<name>; a run is driveable at /api/session/<id>.
 // The snapshot fetch up front is the existence probe (without it a bad id
-// leaves a hollow dashboard: the conversation fetch swallows its 404 and the
-// EventSource error is silent) and the first paint, so the view never flashes
+// leaves a hollow dashboard: the conversation fetch swallows its 404 and a
+// stream error is silent) and the first paint, so the view never flashes
 // empty while waiting for the first SSE frame.
 // The details drawer: the run's context widgets combined into one collapsible,
 // drag-resizable panel on the left, so the conversation keeps the focus.
@@ -220,14 +220,13 @@ async function renderRun(id, opts, gen) {
     if (window.innerWidth < 781) window.scrollTo(0, document.body.scrollHeight);
   });
 
-  live = new EventSource(base + '/events');
   // The stream stays open across a finish: a resume from any surface logs into
   // the same file and painting continues (the TUI follows the same way).
   // Closing on finished would freeze this page on "stopped" while the hub says
   // "running". Only stream_dead (transport: nothing more will come) closes.
   let sawEnd = false;
-  live.onmessage = ev => {
-    let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
+  live = openStream(base + '/events', data => {
+    let s; try { s = JSON.parse(data); } catch (_) { return; }
     if (s.type === 'error') { closeLive(); toast('stream error: ' + s.error, true); return; }
     if (s.undone_to) {
       // /undo landed: follow the fork with the undone text back to edit.
@@ -241,10 +240,8 @@ async function renderRun(id, opts, gen) {
     if (s.stream_dead) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); return; }
     if (s.finished && !sawEnd) setTimeout(() => cc.conv.refresh(), 900); // one final fold after last writes flush
     sawEnd = !!s.finished;
-  };
+  });
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
-  const es = live;
-  es.onerror = () => streamFailed(es, base); // while the browser retries, the last paint stays up
 }
 
 function setPromptBusy(box, busy) {

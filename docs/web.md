@@ -37,8 +37,8 @@ agent6 web: secret: amber-acorn-agile-alder-alert-arrow (type it once per browse
 - Open the printed URL: the page signs in with the secret in the address, then removes it from the address bar.
 - On another device, open the server's address and type the six words into the sign-in form.
   Capitals, spaces and hyphens between the words do not matter, so `Amber acorn agile alder alert arrow` from a phone keyboard signs in.
-- A browser signs in once and stays signed in for 400 days.
-  Its cookie holds a keyed digest of the secret, never the secret.
+- A browser signs in once and stays signed in.
+  It keeps a keyed digest of the secret, never the secret, in storage scoped to this server's address and port, so a page another local server serves (a preview a run forwards, say) never receives it, as it would a cookie.
 - Each launch mints a new secret, and every browser signs in again.
 
 Set your own secret, at least 12 characters after lowercasing and joining words with single hyphens, to keep browsers signed in across restarts:
@@ -92,25 +92,27 @@ For a phone not open on the page, point [`[machine.notify].on_event`](config.md#
 ## The HTTP API
 
 The page reads the same wire form as `agent6 attach --json`.
-Sign in once into a cookie jar, then send the jar with every call:
+Sign in once for a token, then send it as a bearer header with every call:
 
 ```bash
-curl -s -c jar -H 'Content-Type: application/json' \
+curl -s -H 'Content-Type: application/json' \
   -d '{"secret": "amber-acorn-agile-alder-alert-arrow"}' localhost:7658/api/login
-curl -s -b jar localhost:7658/api/hub                       # hub state
-curl -s -b jar localhost:7658/api/session/<id>              # a run's state, as JSON
-curl -s -b jar localhost:7658/api/session/<id>/conversation # the folded conversation
-curl -s -b jar localhost:7658/api/machine/<name>            # a machine's state, as JSON
-curl -s -b jar localhost:7658/api/config                    # effective config
-curl -sN -b jar localhost:7658/api/session/<id>/events      # SSE: a snapshot per change
+# {"ok": true, "token": "<64 hex characters>"}
+A='Authorization: Bearer <token>'
+curl -s -H "$A" localhost:7658/api/hub                       # hub state
+curl -s -H "$A" localhost:7658/api/session/<id>              # a run's state, as JSON
+curl -s -H "$A" localhost:7658/api/session/<id>/conversation # the folded conversation
+curl -s -H "$A" localhost:7658/api/machine/<name>            # a machine's state, as JSON
+curl -s -H "$A" localhost:7658/api/config                    # effective config
+curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot per change
 ```
 
-- sign-in: `POST` `/api/login` with `{"secret": "<secret>"}` sets the cookie; a wrong secret answers `403`
-- every other `/api/...` route answers `401` with `{"error": ..., "login": true}` without the cookie
+- sign-in: `POST` `/api/login` with `{"secret": "<secret>"}` answers the token; a wrong secret answers `403`
+- every other `/api/...` route answers `401` with `{"error": ..., "login": true}` without the token
 - reads: `/api/meta`, `/api/hub`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>` and `/provider_choices`, `/api/session/<id>` (what `attach --json` prints; `?step=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
 - writes, small JSON `POST`s: `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,review,stop,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/provider`, `/api/machine/{create,run}`
 - every write goes through the same spawn and answer-file contracts as the CLI; machine names and answer ids validate to one path component
-- the page and its PWA assets, served without the cookie (they hold no state): `/`, `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/favicon.svg`
+- the page and its PWA assets, served without the token (they hold no state): `/`, `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/favicon.svg`
 
 Session snapshots and streams use the hub's status label, including the mode and the `unmerged` mark on ended runs.
 Idle session streams refresh disk-backed state (shell results, the merge mark) on each heartbeat and send a frame when it changed.
@@ -129,5 +131,4 @@ tailscale serve --bg 7658 # HTTPS + WireGuard, reachable on your tailnet
 ```
 
 - the tailnet decides who reaches the server and `tailscale serve` terminates HTTPS; each browser still [signs in](#sign-in) with the secret
-- the session cookie carries `Secure` when the proxy says it terminated HTTPS (`X-Forwarded-Proto: https`), so a browser never sends it over plain HTTP
-- a non-loopback bind sends the secret and the cookie over plain HTTP, where anyone on the network path can read them and then drive the agent, so it refuses without either opt-in: `[web].allow_non_loopback = true` or `--allow-non-loopback`, whether the host comes from [`[web].host`](config.md#web) or `--host`
+- a non-loopback bind sends the secret and the token over plain HTTP, where anyone on the network path can read them and then drive the agent, so it refuses without either opt-in: `[web].allow_non_loopback = true` or `--allow-non-loopback`, whether the host comes from [`[web].host`](config.md#web) or `--host`

@@ -1,7 +1,7 @@
 "use strict";
 const view = document.getElementById('view');
 const crumb = document.getElementById('crumb');
-let live = null; // the active EventSource, closed on navigation
+let live = null; // the active event stream, closed on navigation
 // Live heartbeat for a run that is active but silent (thinking / resuming): a
 // 1s ticker updates "#hb-line" with a spinner + elapsed so it reads as alive,
 // not hung. hbState is refreshed by each paintRun; hbTimer runs while on a run.
@@ -65,11 +65,21 @@ function osNotify(title, body) {
 // --- helpers -----------------------------------------------------------------
 const el = (t, cls, txt) => { const e = document.createElement(t); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 const esc = s => (s == null ? '' : String(s));
+// The sign-in token lives in storage scoped to this origin (host and port), so a page another
+// local server serves never receives it, as it would a cookie; every call sends it as a header.
+const TOKEN_KEY = 'a6-token';
+function authHeaders(extra) {
+  const h = Object.assign({}, extra || {});
+  const t = localStorage.getItem(TOKEN_KEY);
+  if (t) h['Authorization'] = 'Bearer ' + t;
+  return h;
+}
+function saveToken(login) { localStorage.setItem(TOKEN_KEY, login.token); }
 // A 401 is the server asking for its secret: every API call brings up the sign-in form.
-function signedOut(r) { if (r.status === 401) showLogin(); return r; }
-async function getJSON(url) { const r = signedOut(await fetch(url)); if (!r.ok) throw new Error((await r.json().catch(()=>({error:r.statusText}))).error || r.statusText); return r.json(); }
+function signedOut(r) { if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); } return r; }
+async function getJSON(url) { const r = signedOut(await fetch(url, { headers: authHeaders() })); if (!r.ok) throw new Error((await r.json().catch(()=>({error:r.statusText}))).error || r.statusText); return r.json(); }
 async function postJSON(url, body) {
-  const r = signedOut(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }));
+  const r = signedOut(await fetch(url, { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body || {}) }));
   const data = await r.json().catch(() => ({}));
   if (!r.ok || data.ok === false) throw new Error(data.error || r.statusText);
   return data;
@@ -89,7 +99,7 @@ function setCrumb(t) { crumb.textContent = t || ''; }
 
 // --- sign-in -----------------------------------------------------------------
 // The form takes over the view; a sign-in reloads the page, so every view and
-// stream starts again with the cookie. A repeat call (a poll still in flight)
+// stream starts again with the token. A repeat call (a poll still in flight)
 // keeps the form and what is typed in it.
 function showLogin(error) {
   routeGen++; // a render in flight must not paint over the form
@@ -115,7 +125,7 @@ function showLogin(error) {
     form.appendChild(el('div', 'err'));
     form.onsubmit = async (e) => {
       e.preventDefault();
-      try { await postJSON('/api/login', { secret: input.value }); location.reload(); }
+      try { saveToken(await postJSON('/api/login', { secret: input.value })); location.reload(); }
       catch (err) { showLogin(err.message); }
     };
     view.appendChild(form);
@@ -129,17 +139,50 @@ async function boot() {
   const m = /^#secret=(.+)$/.exec(location.hash);
   if (m) {
     let refused = '';
-    try { await postJSON('/api/login', { secret: decodeURIComponent(m[1]) }); }
+    try { saveToken(await postJSON('/api/login', { secret: decodeURIComponent(m[1]) })); }
     catch (e) { refused = e.message; }
     history.replaceState(null, '', location.pathname + location.search);
     if (refused) { showLogin(refused); return; }
   }
   route();
 }
-// EventSource hides why a stream was refused. Once the browser has given up on
-// one, ask the view's state route: a 401 there brings up the sign-in form.
-function streamFailed(es, base) {
-  if (es.readyState === EventSource.CLOSED) getJSON(base).catch(() => {});
+// The live stream: a fetch carrying the token (the browser's own event-stream object
+// sends no header), read as
+// SSE frames. A 401 brings up the sign-in form; a dropped connection is reopened after
+// a pause, so the last paint stays up meanwhile; close() ends it for good.
+function openStream(url, onData) {
+  const stream = {
+    closed: false, ctrl: null, timer: null,
+    close() { stream.closed = true; if (stream.ctrl) stream.ctrl.abort(); if (stream.timer) clearTimeout(stream.timer); },
+  };
+  const connect = async () => {
+    stream.ctrl = new AbortController();
+    let r = null;
+    try { r = signedOut(await fetch(url, { headers: authHeaders(), signal: stream.ctrl.signal })); } catch (_) {}
+    if (stream.closed || (r && r.status === 401)) return;
+    if (r && r.ok && r.body) {
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done || stream.closed) break;
+          buf += dec.decode(value, { stream: true });
+          let cut;
+          while ((cut = buf.indexOf('\n\n')) >= 0) {
+            const frame = buf.slice(0, cut);
+            buf = buf.slice(cut + 2);
+            const data = frame.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trimStart()).join('\n');
+            if (data) onData(data);
+          }
+        }
+      } catch (_) { /* aborted, or the connection dropped */ }
+    }
+    if (!stream.closed) stream.timer = setTimeout(connect, 1500);
+  };
+  connect();
+  return stream;
 }
 function closeLive() {
   if (live) { live.close(); live = null; }
@@ -172,10 +215,10 @@ function setTab(name) {
 let booted = false; // the one-shot deep-link to `agent6 web <target>` ran
 // Navigation generation: route() is an async, directly re-entrant hashchange
 // handler, and every render helper awaits a fetch before its first DOM write /
-// EventSource assignment. A superseded render's continuation must bail at each
+// stream assignment. A superseded render's continuation must bail at each
 // await boundary or it paints the wrong view over the current one, appends a
 // duplicate wmenu button, and overwrites `live`, orphaning the current view's
-// stream (whose stale onmessage could later closeLive() the visible view when
+// stream (whose stale handler could later closeLive() the visible view when
 // the old run finishes).
 let routeGen = 0;
 async function route() {

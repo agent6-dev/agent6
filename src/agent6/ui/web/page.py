@@ -18,7 +18,7 @@ _CLIENT_FILES = ("client.js", "client_run.js", "client_machine.js", "client_conf
 CLIENT_JS = "".join(_ASSETS.joinpath(name).read_text(encoding="utf-8") for name in _CLIENT_FILES)
 STYLES_CSS = _ASSETS.joinpath("styles.css").read_text(encoding="utf-8")
 
-# A hash-routed page: live views open an EventSource, static views fetch a snapshot.
+# A hash-routed page: live views open an event stream, static views fetch a snapshot.
 PAGE_HTML = (
     r"""<!doctype html>
 <html lang="en">

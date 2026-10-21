@@ -374,21 +374,23 @@ Under `none` isolation nothing is enforced or refused.
 
 - It binds loopback (`127.0.0.1`) by default and speaks plain HTTP (for remote access run it behind `tailscale serve`; see [the web UI](web.md)).
   A non-loopback bind needs `[web].allow_non_loopback = true` for `[web].host`, or `--allow-non-loopback` for `--host`.
-- Every `/api` route requires a session cookie, which `POST /api/login` sets for the server's secret ([sign in](web.md#sign-in)).
+- Every `/api` route requires the sign-in token `POST /api/login` answers for the server's secret, sent as `Authorization: Bearer` ([sign in](web.md#sign-in)).
   Without it the answer is 401; the page shell, its static assets and the login are the only public routes.
     - The secret is minted per launch (six words of the session-id wordlist, about 44 bits) and printed on the terminal, or it is the operator's own (`--secret`, `AGENT6_WEB_SECRET`), refused under 12 characters.
     - It keeps out a local process, and a jailed command where the jail shares the host network: without it either could write the config (`sandbox.isolation = none`) or read transcripts the jail masks.
-    - It does not protect the transport: there is no TLS, so on a non-loopback bind the secret and the cookie are readable on the network path.
+    - It does not protect the transport: there is no TLS, so on a non-loopback bind the secret and the token are readable on the network path.
     - It does not keep out whoever can read the terminal `agent6 web` prints to, the operator's environment, or the process list when `--secret` is used.
     - The login has no lockout and no rate limit; the secret's length carries it.
-    - The cookie holds an HMAC-SHA256 keyed by the secret, never the secret: `HttpOnly; SameSite=Strict; Path=/`, 400 days, named for the port.
+    - The token is an HMAC-SHA256 keyed by the secret, never the secret.
+      The page keeps it in storage scoped to its origin (host and port) and sends it in a header, never a cookie: a browser sends a cookie to every port of the host, so a page a jailed command serves on a forwarded port would receive it on the first visit.
+      Every response carries `Content-Security-Policy: frame-ancestors 'none'`, so such a page cannot frame the signed-in UI either.
+      A browser that signed in before the token kept a cookie: the page's response expires it, and the token's derivation changed, so a stale cookie another local server collects opens nothing.
 - The server renders folded state and drives typed contracts.
   New-work spawns fixed argv with the task behind `--`, and machine-run is allow-listed to authored files.
   Answers write only the addressed run's answer files (session id, answer id, and machine target state dir each validated to one path component).
   Merge, prune, and config-set are fixed agent6 subcommands.
-- State-changing POSTs carry a CSRF guard: the body must be `Content-Type: application/json` (a cross-site `fetch` with it triggers a preflight the server never answers) and any `Origin` must match `Host`.
-  It holds on loopback and behind `tailscale serve`, and does not cover DNS rebinding (that needs a Host allow-list incompatible with the tailnet name).
-  A rebound page holds no cookie (a cookie belongs to one host name), so it reaches the public routes and can try secrets at the login; keeping it out is left to the network layer.
+- No request carries an ambient credential, so no POST needs a cross-site guard: a cross-origin page cannot add the header without a preflight the server never answers.
+  DNS rebinding is not covered (that needs a Host allow-list incompatible with the tailnet name): a rebound page holds no token (storage belongs to one origin), so it reaches the public routes and can try secrets at the login; keeping it out is left to the network layer.
 - Request framing is bounded: 1 MiB body cap (413), chunked refused (411), and any unread-body refusal closes the connection.
 - The machine write surface (`POST /api/machine/<name>/{poke,stop,steer,approve,answer}`) uses the same guards.
   `poke` writes the instance's signal file (inert JSON the next `tool` reads) and `stop` its stop marker; `steer`, `approve` and `answer` write only the current agent state's per-state dir.

@@ -89,17 +89,17 @@ def test_the_machine_composer_hint_names_enter() -> None:
 
 
 def test_the_machine_snapshot_gates_controls_before_the_stream_arrives() -> None:
-    """The one-shot wire payload is painted before any EventSource frame."""
+    """The one-shot wire payload is painted before any stream frame."""
     start = page.CLIENT_JS.index("async function renderMachine")
     body = page.CLIENT_JS[start : page.CLIENT_JS.index("function paintMachine(", start)]
     assert "const initial = await getJSON(base)" in body
-    assert body.index("paintMachine(") < body.index("new EventSource(")
+    assert body.index("paintMachine(") < body.index("openStream(")
 
 
 def test_worker_loss_leaves_the_machine_event_source_ready_for_a_resume() -> None:
-    """EOF reconnects to a resumed machine; only a journaled end closes EventSource."""
+    """EOF reconnects to a resumed machine; only a journaled end closes the stream."""
     start = page.CLIENT_JS.index(
-        "live.onmessage = ev =>", page.CLIENT_JS.index("async function renderMachine")
+        "live = openStream(", page.CLIENT_JS.index("async function renderMachine")
     )
     body = page.CLIENT_JS[start : page.CLIENT_JS.index("if (!hbTimer)", start)]
     close_line = next(line for line in body.splitlines() if "data.machine &&" in line)
