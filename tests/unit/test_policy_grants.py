@@ -207,3 +207,58 @@ def test_a_dropped_write_grant_is_no_region_for_the_others(tmp_path: pathlib.Pat
     grants = policy.resolve_grants(cfg, repo)
     assert [str(real) for _p, real in grants.write] == [str(tmp_path / "data" / "subdir")]
     assert [str(d.path) for d in grants.dropped] == [str(tmp_path / "alias")]
+
+
+def test_a_grant_inside_a_region_another_state_writes_is_dropped(tmp_path: pathlib.Path) -> None:
+    """A machine state's grant under a folder another state writes followed that state's link.
+
+    State A writes `shared`; state B reads `shared/inbox`. A's jailed command replaced `inbox`
+    with a link to `private`, and B's bind followed it. A grant below a shared write region is
+    dropped, exists or not; the region itself stays grantable, since replacing it needs a write
+    on its parent.
+    """
+    repo, shared, private = tmp_path / "repo", tmp_path / "shared", tmp_path / "private"
+    for made in (repo, shared, private):
+        made.mkdir()
+    (shared / "inbox").symlink_to(private, target_is_directory=True)
+    cfg = Config.model_validate(
+        {
+            "sandbox": {
+                "isolation": "full",
+                "extra_read_paths": [str(shared / "inbox"), str(shared / "later"), str(shared)],
+            }
+        }
+    )
+
+    grants = policy.resolve_grants(cfg, repo, shared_writes=(shared,))
+
+    assert grants.read == ((shared, shared),)
+    planted, later = grants.dropped
+    assert (planted.path, planted.real, planted.region) == (shared / "inbox", private, shared)
+    assert (later.path, later.region, later.via_link) == (shared / "later", shared, False)
+    assert planted.shared and later.shared
+    assert "which the machine's jailed commands write" in planted.line()
+    assert f"Grant {shared} itself to this state instead." in planted.line()
+    assert "stays reachable" not in planted.line()
+    assert policy.resolve_grants(cfg, repo).dropped == (), "one run alone drops nothing here"
+
+
+def test_a_shared_region_this_run_writes_is_its_own(tmp_path: pathlib.Path) -> None:
+    """State A's own write region, named shared too, reads as the run's own in its drop line."""
+    repo, shared = tmp_path / "repo", tmp_path / "shared"
+    for made in (repo, shared, shared / "inbox"):
+        made.mkdir()
+    cfg = Config.model_validate(
+        {
+            "sandbox": {
+                "isolation": "full",
+                "extra_write_paths": [str(shared)],
+                "extra_read_paths": [str(shared / "inbox")],
+            }
+        }
+    )
+    grants = policy.resolve_grants(cfg, repo, shared_writes=(shared,))
+    assert grants.write == ((shared, shared),)
+    (dropped,) = grants.dropped
+    assert not dropped.shared
+    assert "which jailed commands write" in dropped.line()

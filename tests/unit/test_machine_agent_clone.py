@@ -352,7 +352,7 @@ def test_a_tool_states_setup_runs_without_its_pass_env(
     )
     states = {"check": StateConfig(cfg, frozenset(), "none")}
     factory = machine_run.machine_tool_policy_factory(
-        states, origin, protect_paths=(), data_dir=None
+        states, origin, protect_paths=(), data_dir=None, shared_writes=()
     )
     monkeypatch.setenv("X_TOKEN", "s3cret")
     seen: list[tuple[tuple[str, ...], bool]] = []

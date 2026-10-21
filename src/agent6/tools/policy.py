@@ -22,7 +22,7 @@ from agent6.tools import _path_safety, _result_format
 # `full`'s default HOME: the launcher creates it inside the run's private /tmp tmpfs.
 JAIL_TMP_HOME = pathlib.Path("/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
 # Commands write the host's /tmp at every level but `full`, so a link there can be re-pointed.
-_TMP = pathlib.Path("/tmp").resolve()  # noqa: S108
+HOST_TMP = pathlib.Path("/tmp").resolve()  # noqa: S108
 
 # What a resolver and a TLS client read: the resolver settings and the CA store.
 _HOST_NETWORK_FILES = (
@@ -158,6 +158,7 @@ class DroppedGrant:
         real: The path it resolves to.
         region: The writable region it sits inside, where a jailed command can re-point it.
         via_link: Only a link on the way to it sits in the region; the grant ends outside.
+        shared: The region is one another state of the machine writes, not this run's own.
     """
 
     key: str
@@ -165,12 +166,16 @@ class DroppedGrant:
     real: pathlib.Path
     region: pathlib.Path
     via_link: bool = False
+    shared: bool = False
 
     def line(self) -> str:
         """Return the sentence a run prints for the grant at its start."""
         where = "" if self.real == self.path else f" (it resolves to {self.real})"
-        who = "this run's commands" if self.region == _TMP else "jailed commands"
-        pin = " Set sandbox.isolation = 'full' to keep it." if self.region == _TMP else ""
+        if self.shared:
+            who = "the machine's jailed commands"
+        else:
+            who = "this run's commands" if self.region == HOST_TMP else "jailed commands"
+        pin = " Set sandbox.isolation = 'full' to keep it." if self.region == HOST_TMP else ""
         if self.via_link:
             return (
                 f"{self.key} entry {self.path}{where} is not granted: a link on its"
@@ -189,6 +194,8 @@ class DroppedGrant:
             if _path_safety.path_within(self.real, self.region)
             else f" Grant {self.real} by its own path."
         )
+        if self.shared:
+            still = f" Grant {self.region} itself to this state instead."
         return (
             f"{self.key} entry {self.path}{where} is not granted on its own: it sits"
             f" inside {self.region}, which {who} write, so a command could point it"
@@ -250,6 +257,7 @@ def resolve_grants(
     root: pathlib.Path,
     *,
     server: tuple[str, Sequence[str], Sequence[str]] | None = None,
+    shared_writes: Sequence[pathlib.Path] = (),
 ) -> Grants:
     """Resolve `sandbox.extra_read_paths` and `extra_write_paths`, once for a run.
 
@@ -261,11 +269,16 @@ def resolve_grants(
     What a grant inside `/tmp` held stays reachable as part of it. A grant elsewhere
     resolves as the operator linked it.
 
+    A region another state of the same machine writes counts the same way, since that state's
+    commands plant links there too; the region itself stays grantable, because replacing it
+    needs a write on its parent.
+
     Args:
         config: The run's config.
         root: The workspace root.
         server: An MCP server's own grants, as (name, read paths, write paths), resolved with
             the config's by the same rule; its write paths are writable regions too.
+        shared_writes: The write regions the machine's other states hold.
 
     Returns:
         The grants kept, each with its resolved path, and the grants dropped.
@@ -284,7 +297,7 @@ def resolve_grants(
         ]
     fixed = (root.resolve(),)
     if _resolved_isolation(sb.isolation) != "full":
-        fixed += (_TMP,)
+        fixed += (HOST_TMP,)
     # Two passes: a write grant the fixed regions drop is no region for the others, so a
     # grant of its target's child is not shadowed by a region the run never holds.
     write_grants = [
@@ -293,13 +306,15 @@ def resolve_grants(
     surviving = tuple(
         w.resolve() for w in write_grants if _dropped_by(w, True, fixed, root) is None
     )
-    regions = (*fixed, *surviving)
+    own = (*fixed, *surviving)
+    shared = tuple(s for s in (p.resolve() for p in shared_writes) if s not in own)
+    regions = (*own, *shared)
     kept: dict[bool, list[tuple[pathlib.Path, pathlib.Path]]] = {False: [], True: []}
     dropped: list[DroppedGrant] = []
     for key, writes, listed in groups:
         for grant in listed:
             path = pathlib.Path(grant).expanduser()
-            if (drop := _dropped_by(path, writes, regions, root)) is not None:
+            if (drop := _dropped_by(path, writes, regions, root, shared=shared)) is not None:
                 dropped.append(dataclasses.replace(drop, key=key))
             else:
                 kept[writes].append((path, path.resolve()))
@@ -307,7 +322,12 @@ def resolve_grants(
 
 
 def _dropped_by(
-    path: pathlib.Path, writes: bool, regions: tuple[pathlib.Path, ...], root: pathlib.Path
+    path: pathlib.Path,
+    writes: bool,
+    regions: tuple[pathlib.Path, ...],
+    root: pathlib.Path,
+    *,
+    shared: tuple[pathlib.Path, ...] = (),
 ) -> DroppedGrant | None:
     """Return why a grant is dropped against the writable regions, or None when it is kept.
 
@@ -316,22 +336,27 @@ def _dropped_by(
         writes: The grant is a write grant.
         regions: The resolved writable regions, the workspace root first.
         root: The workspace root, named when a link's region is unknown.
+        shared: The regions among them that other states write, not this run.
 
     Returns:
         The drop with an empty key, which the caller fills; None when the grant stands.
     """
     real = path.resolve()
     # Inside a region by its spelling (an ancestor resolves into one) or by its target, or
-    # the region itself under another name; a write grant is not inside itself.
+    # the region itself under another name; a write grant is not inside itself, and a grant
+    # of a region another state writes is that region.
     inside = (real, *(step.resolve() for step in path.parents))
-    others = tuple(w for w in regions if not (writes and w == real and w != regions[0]))
+    others = tuple(
+        w for w in regions if not (w == real and w != regions[0] and (writes or w in shared))
+    )
     region = next((w for w in others if any(_path_safety.path_within(p, w) for p in inside)), None)
     links = () if region is not None else _link_dirs(path)
     linked = next((w for w in regions if any(_path_safety.path_within(d, w) for d in links)), None)
     if region is None and linked is None:
         return None
+    hit = region or linked or root
     return DroppedGrant(
-        key="", path=path, real=real, region=region or linked or root, via_link=region is None
+        key="", path=path, real=real, region=hit, via_link=region is None, shared=hit in shared
     )
 
 

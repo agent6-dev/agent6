@@ -13,7 +13,7 @@ import dataclasses
 import os
 import pathlib
 import shlex
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 
 from agent6 import kinds
 from agent6.config import Config, ConfigError, SandboxConfig, io, layer
@@ -23,10 +23,13 @@ from agent6.tools import policy as tools_policy
 
 
 class SandboxWidenedError(ConfigError):
-    """An overlay sets a sandbox key wider than the operator's config.
+    """An overlay's sandbox cannot be honoured.
+
+    A key set wider than the operator's config, or a grant the machine cannot bind safely: one
+    below a region another state writes, or reached through a link inside one.
 
     Attributes:
-        problems: One line per key, each naming its table, both values and the remedy.
+        problems: One line per key or grant, each naming its table, the values and the remedy.
     """
 
     def __init__(self, problems: list[str]) -> None:
@@ -301,8 +304,73 @@ def resolve_configs(
         )
     if widened:
         raise SandboxWidenedError(widened)
-    return MachineConfigs(
+    configs = MachineConfigs(
         StateConfig(with_flags(operator), operator_eff.explicit_leaves, operator_isolation),
         machine,
         states,
     )
+    if unsafe := unsafe_grants(configs, cwd):
+        raise SandboxWidenedError(unsafe)
+    return configs
+
+
+def labelled_configs(configs: MachineConfigs) -> Iterator[tuple[str, StateConfig]]:
+    """Yield each distinct config the run uses with the label a refusal names it by.
+
+    Args:
+        configs: The run's resolved configs.
+
+    Yields:
+        The label and the config, in order: the operator's and the machine's with no label,
+        then each state config other than the machine's, labelled `[states.<name>.config]: `.
+    """
+    yield "", configs.operator
+    yield "", configs.machine
+    for name, resolved in configs.states.items():
+        if resolved is not configs.machine:
+            yield f"[states.{name}.config]: ", resolved
+
+
+def shared_write_regions(configs: MachineConfigs, cwd: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    """Return the regions any state of the machine may write.
+
+    Every state's grants sit at or below the operator's, so the ceiling's write grants cover
+    what any state's jailed command can plant a link in. A state off `full` writes the host's
+    `/tmp` too; a `full` state's `/tmp` is private, yet its grants there are bound from the host.
+
+    Args:
+        configs: The run's resolved configs.
+        cwd: The repository.
+
+    Returns:
+        The resolved paths.
+    """
+    ceiling = tools_policy.resolve_grants(configs.operator.config, cwd)
+    regions = tuple(real for _p, real in ceiling.write)
+    if any(sc.isolation != "full" for sc in (configs.machine, *configs.states.values())):
+        regions += (tools_policy.HOST_TMP,)
+    return regions
+
+
+def unsafe_grants(configs: MachineConfigs, cwd: pathlib.Path) -> list[str]:
+    """Return one line per state grant the machine cannot bind safely.
+
+    A run drops such a grant with a warning at its start; a machine runs unattended, so it
+    refuses before any state runs.
+
+    Args:
+        configs: The run's resolved configs.
+        cwd: The repository.
+
+    Returns:
+        The lines, each labelled with the table that holds the grant; empty when every grant stands.
+    """
+    shared = shared_write_regions(configs, cwd)
+    return [
+        f"{label}{dropped.line()}"
+        for label, resolved in labelled_configs(configs)
+        if resolved is not configs.operator
+        for dropped in tools_policy.resolve_grants(
+            resolved.config, cwd, shared_writes=shared
+        ).dropped
+    ]

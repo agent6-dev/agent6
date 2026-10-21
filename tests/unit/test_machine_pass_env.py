@@ -108,6 +108,7 @@ def test_the_jail_gets_only_the_declared_variables_that_are_set(
         tmp_path,
         protect_paths=(),
         data_dir=None,
+        shared_writes=(),
     )
     env = dict(factory("fetch", ("fetch",), 5.0, ("X_TOKEN", "X_REGION")).env)
     assert env.get("X_TOKEN") == "t0k3n"

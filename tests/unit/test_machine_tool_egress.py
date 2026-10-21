@@ -190,6 +190,7 @@ def _world(
         tmp_path,
         protect_paths=protect_paths,
         data_dir=data_dir,
+        shared_writes=(),
     )
     return live_world.LiveWorld(
         cwd=tmp_path,
@@ -318,6 +319,7 @@ def test_a_bundle_in_a_subdirectory_runs_its_own_scripts(
         protect_paths=(),
         data_dir=None,
         bundle_dir=bundle,
+        shared_writes=(),
     )
     world = live_world.LiveWorld(
         cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), tool_policy=factory

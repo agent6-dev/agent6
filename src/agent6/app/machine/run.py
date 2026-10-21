@@ -15,7 +15,7 @@ import pathlib
 import shutil
 import sys
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 
 import pydantic
 
@@ -199,6 +199,7 @@ def machine_tool_policy_factory(
     protect_paths: tuple[pathlib.Path, ...],
     data_dir: pathlib.Path | None,
     bundle_dir: pathlib.Path | None = None,
+    shared_writes: tuple[pathlib.Path, ...],
 ) -> ToolPolicyFactory:
     """Return the per-call tool-jail policy builder for a machine.
 
@@ -214,6 +215,8 @@ def machine_tool_policy_factory(
         data_dir: The machine's writable scratch, when it has one.
         bundle_dir: The directory holding the machine file, which a command's `scripts/`
             path names; None when it is the repository.
+        shared_writes: The regions any state of the machine may write; a state's grant inside
+            one is dropped as inside its own.
 
     Returns:
         The builder.
@@ -225,7 +228,10 @@ def machine_tool_policy_factory(
         env_base["AGENT6_MACHINE_DATA_DIR"] = str(data_dir)
         extra_rw = (data_dir,)
     # Resolved once per state: every tool jail of the run binds the same directories.
-    grants = {name: tools_policy.resolve_grants(sc.config, cwd) for name, sc in states.items()}
+    grants = {
+        name: tools_policy.resolve_grants(sc.config, cwd, shared_writes=shared_writes)
+        for name, sc in states.items()
+    }
 
     def build(
         state: str, argv: tuple[str, ...], timeout_s: float, pass_env: tuple[str, ...]
@@ -307,25 +313,6 @@ def _unrepeated(reporter: app_reporter.Reporter, said: set[str]) -> app_reporter
     return dataclasses.replace(reporter, err=err)
 
 
-def _checked_configs(
-    configs: _states.MachineConfigs,
-) -> Iterator[tuple[str, _states.StateConfig]]:
-    """Yield each distinct config the run uses with the label a refusal names it by.
-
-    Args:
-        configs: The run's resolved configs.
-
-    Yields:
-        The label and the config, in order: the operator's and the machine's with no label,
-        then each state config other than the machine's, labelled `[states.<name>.config]: `.
-    """
-    yield "", configs.operator
-    yield "", configs.machine
-    for name, resolved in configs.states.items():
-        if resolved is not configs.machine:
-            yield f"[states.{name}.config]: ", resolved
-
-
 def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one per surface, in order
     path: pathlib.Path,
     reporter: app_reporter.Reporter,
@@ -395,6 +382,8 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         reporter.error(str(exc))
         return 2
     cfg = configs.machine.config
+    # Every state's grants are judged against the regions any state may write.
+    shared_writes = _states.shared_write_regions(configs, cwd)
     if any(
         state.mode == "run" and configs.states[name].config.sandbox.run_commands == "ask"
         for name, state in agent_states.items()
@@ -489,7 +478,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             reporter.refuse(denied)
             return 2
         # The operator's own config refuses here as it would for a plain run; then each state's.
-        for label, resolved in _checked_configs(configs):
+        for label, resolved in _states.labelled_configs(configs):
             refusal = confine.check_network_support(
                 resolved.config, resolved.isolation
             ) or confine.config_refusal(
@@ -540,12 +529,13 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 # A machine that writes never touches the checkout: each state works a fresh clone.
                 machine_id=spec.machine if has_run_agent else None,
                 clone_root=clone_root if has_run_agent else None,
+                shared_writes=shared_writes,
             )
     try:
         # The machine's warnings print once; a state's own table adds, under its label, the
         # ones it does not inherit.
         inherited: set[str] = set()
-        for label, resolved in _checked_configs(configs):
+        for label, resolved in _states.labelled_configs(configs):
             if resolved is configs.operator:
                 continue  # the ceiling runs nothing itself
             said = inherited if resolved is configs.machine else set(inherited)
@@ -669,6 +659,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 protect_paths=protect_paths,
                 data_dir=data_dir,
                 bundle_dir=path.parent,
+                shared_writes=shared_writes,
             )
             world = LiveWorld(
                 cwd=cwd,

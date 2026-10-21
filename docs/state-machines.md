@@ -580,6 +580,7 @@ extra_read_paths = ["/srv/inbox"]
 - the ceiling is your regular config, so a grant a state needs is a grant a plain run under that config gets too; `agent6 --config ops.toml machine run <file>` keeps it to the machine
 - a machine file that narrows nothing gets your sandbox in every state, as a plain run does
 - a grant bounds what a state touches directly, not what it passes on to later states ([security](security.md#11-state-machines))
+- a state's grant below a folder another state writes is refused, exists or not: that state can replace it with a link; grant the folder itself instead
 - the configs are resolved when `machine run` starts and hold until it exits
 
 ---

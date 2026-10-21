@@ -119,6 +119,7 @@ class ToolDispatcher:
         session_dir: pathlib.Path | None = None,
         use_jail_session: bool = False,
         session_net: jail.SessionNetwork | None = None,
+        shared_writes: tuple[pathlib.Path, ...] = (),
     ) -> None:
         self._root = root.resolve()
         self._config = config
@@ -127,8 +128,9 @@ class ToolDispatcher:
         if mem is not None:
             # The grant's target must exist: the model cannot mkdir outside the jail.
             paths.mkdir_for_real_user(mem)
-        # Resolved once: every jail launch and the file tools hold the same directories.
-        self._grants = tools_policy.resolve_grants(config, self._root)
+        # Resolved once: every jail launch and the file tools hold the same directories. A
+        # machine state's grants are judged against the regions its other states write too.
+        self._grants = tools_policy.resolve_grants(config, self._root, shared_writes=shared_writes)
         self._ws = tools_policy.workspace_for(
             config, self._root, memory_dir=mem, grants=self._grants
         )

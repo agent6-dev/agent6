@@ -63,6 +63,8 @@ class MachineAgentRequest(pydantic.BaseModel):
         transcript_dir: Where the subprocess records transcripts.
         events_log: Where the subprocess writes a watchable event log, when set.
         protect_paths: The bundle paths the state may not rewrite.
+        shared_writes: The regions any state of the machine may write; a grant inside one is
+            dropped as inside the state's own.
         commit_identity: The host-resolved git identity for a `mode="run"` state, since
             the confined subprocess cannot read `~/.gitconfig`; None for read-only states.
         request: The state's request.
@@ -77,6 +79,7 @@ class MachineAgentRequest(pydantic.BaseModel):
     transcript_dir: pathlib.Path
     events_log: pathlib.Path | None = None
     protect_paths: tuple[pathlib.Path, ...] = ()
+    shared_writes: tuple[pathlib.Path, ...] = ()
     commit_identity: git_ops.CommitIdentity | None = None
     request: AgentRequest
 
@@ -421,6 +424,7 @@ def run_one(
         run_root_node_id=None,
         mcp_manager=None,
         extra_protect_paths=protect,
+        shared_writes=req.shared_writes,
         mode="machine" if read_only else "run",
         # The repo's state dir, keyed on the checkout: a clone has no memory of its own.
         state_dir=paths.state_dir(req.cwd),
@@ -524,6 +528,7 @@ def build_machine_agent_runner(
     commit_identity: git_ops.CommitIdentity | None = None,
     machine_id: str | None = None,
     clone_root: pathlib.Path | None = None,
+    shared_writes: tuple[pathlib.Path, ...] = (),
 ) -> Callable[[AgentRequest, pathlib.Path | None], AgentExecResult]:
     """Build the host-side runner an `agent` state fires.
 
@@ -543,6 +548,7 @@ def build_machine_agent_runner(
         commit_identity: The host-resolved git identity for run-mode states.
         machine_id: The machine's id, when its states run in clones.
         clone_root: Where the per-state clones live, when they do.
+        shared_writes: The regions any state of the machine may write.
 
     Returns:
         The runner: given a request and an optional per-call event log, the result.
@@ -596,6 +602,7 @@ def build_machine_agent_runner(
                 workdir / p.relative_to(cwd) if clone is not None and p.is_relative_to(cwd) else p
                 for p in protect_paths
             ),
+            shared_writes=shared_writes,
             commit_identity=commit_identity,
             request=request,
         )

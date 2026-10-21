@@ -546,6 +546,51 @@ def test_a_state_wider_than_the_operator_is_refused_by_name(
     assert "`agent6 config add --repo sandbox.extra_write_paths /srv/outbox`" in said
 
 
+def test_a_state_grant_under_a_region_the_machine_writes_is_refused_by_name(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`scan` reads below `/srv/outbox`, which `judge` writes: a planted link would lead it out."""
+    monkeypatch.chdir(tmp_path)
+    _operator()
+    nested = MACHINE.replace(
+        'extra_read_paths = ["/srv/inbox"]', 'extra_read_paths = ["/srv/outbox/in"]'
+    )
+    with pytest.raises(SandboxWidenedError) as refused:
+        resolve_configs(load_machine(_write(tmp_path, nested)), tmp_path, _setup.detect_env())
+    said = str(refused.value)
+    assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /srv/outbox/in")
+    assert "which the machine's jailed commands write" in said
+    assert "Grant /srv/outbox itself to this state instead." in said
+    # The region itself is grantable: `judge` writes it, `scan` may read it.
+    whole = MACHINE.replace(
+        'extra_read_paths = ["/srv/inbox"]', 'extra_read_paths = ["/srv/outbox"]'
+    )
+    configs = resolve_configs(load_machine(_write(tmp_path, whole)), tmp_path, _setup.detect_env())
+    assert _states.shared_write_regions(configs, tmp_path) == (pathlib.Path("/srv/outbox"),)
+
+
+def test_a_grant_under_the_hosts_tmp_is_refused_when_any_state_writes_it(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state off `full` writes the host's `/tmp`; a `full` state's grant there is bound from it.
+
+    `scan` ran `full` with a private `/tmp` of its own, so its own check held no `/tmp` region,
+    while `store` under `partial` could replace `/tmp/handoff` on the host with a link.
+    """
+    monkeypatch.chdir(tmp_path)
+    reads = 'extra_read_paths = ["/srv/inbox", "/opt/toolchain"]'
+    _operator(OPERATOR.replace(reads, f'isolation = "partial"\n{reads[:-1]}, "/tmp/handoff"]'))
+    mixed = MACHINE.replace(
+        'extra_read_paths = ["/srv/inbox"]',
+        'isolation = "full"\nextra_read_paths = ["/tmp/handoff"]',
+    )
+    with pytest.raises(SandboxWidenedError) as refused:
+        resolve_configs(load_machine(_write(tmp_path, mixed)), tmp_path, _setup.detect_env())
+    said = str(refused.value)
+    assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /tmp/handoff")
+    assert f"it sits inside {pathlib.Path('/tmp').resolve()}, which the machine's" in said
+
+
 def test_the_ceiling_is_the_operators_layers_alone(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -628,7 +673,7 @@ def test_each_tool_state_gets_its_own_jail_policy(
         load_machine(_write(tmp_path, machine)), tmp_path, _setup.detect_env()
     )
     build = run.machine_tool_policy_factory(
-        configs.states, tmp_path, protect_paths=(), data_dir=None
+        configs.states, tmp_path, protect_paths=(), data_dir=None, shared_writes=()
     )
     scan, store = build("scan", ("true",), 5.0, ()), build("store", ("true",), 5.0, ())
     assert pathlib.Path("/srv/inbox") in scan.extra_ro_paths
@@ -647,11 +692,13 @@ def test_each_agent_state_gets_its_own_overlay(
     monkeypatch.chdir(tmp_path)
     _operator()
     seen: dict[str, machine_agent.StateOverlay] = {}
+    built_with: dict[str, object] = {}
 
     def fake_build(
         overlays: dict[str, machine_agent.StateOverlay], *_a: object, **_k: object
     ) -> Any:
         seen.update(overlays)
+        built_with.update(_k)
 
         def run_agent(*_a: object, **_k: object) -> AgentExecResult:
             return AgentExecResult(reason="finish_session", payload={"ok": True})
@@ -663,6 +710,8 @@ def test_each_agent_state_gets_its_own_overlay(
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
     assert run.run_machine(_write(tmp_path, MACHINE), reporter) == 0, said
     assert set(seen) == {"judge"}
+    # The agent subprocess judges its grants against the regions the machine writes.
+    assert built_with["shared_writes"] == (pathlib.Path("/srv/outbox"),)
     sandbox = seen["judge"].overlay["sandbox"]
     assert sandbox["extra_write_paths"] == ["/srv/outbox"] and sandbox["extra_read_paths"] == []
     assert seen["judge"].overlay["harness"]["max_iterations"] == 7
