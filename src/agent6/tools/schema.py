@@ -265,9 +265,7 @@ class RunCommandInput(_ToolInput):
         " stop_background, or continue working; output printed so far comes"
         " with the hand-back. background=true returns the handle at once."
         " Commands in one run share a network, so a server started here answers"
-        " later commands; under full isolation that network is the run's own,"
-        " elsewhere it is the host's. All background commands die when the run"
-        " ends."
+        " later commands. All background commands die when the run ends."
     )
 
     argv: tuple[str, ...] = pydantic.Field(min_length=1)

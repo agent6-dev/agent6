@@ -113,6 +113,14 @@ def test_read_background_does_not_claim_the_default_configured_interval() -> Non
     assert "configured check-in interval" in tools_schema.ReadBackgroundInput.TOOL_DESCRIPTION
 
 
+def test_run_command_does_not_claim_full_isolation_gives_the_run_its_own_network() -> None:
+    """The description never says `sandbox.isolation = "full"` gives the run its own network.
+
+    With `sandbox.network = "host"` its commands get the host's network.
+    """
+    assert "run's own" not in tools_schema.RunCommandInput.TOOL_DESCRIPTION
+
+
 def test_status_pattern_bytes_are_pinned() -> None:
     # The update_task/list_tasks status pattern is DERIVED from the NodeStatus
     # Literal (one owner); this pins the emitted LLM-facing bytes, so growing
