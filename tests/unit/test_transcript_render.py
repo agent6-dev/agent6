@@ -327,6 +327,29 @@ def test_a_tool_result_reads_under_its_calls_seq() -> None:
     ]
 
 
+def test_a_result_a_forks_first_request_inherits_reads_under_that_request() -> None:
+    """A fork's first request carries the parent's calls and results; the results read seq 0.
+
+    `--seq 1` then showed the inherited calls without their results.
+    """
+    second: dict[str, Any] = _OPENAI[1]
+    inherited = [
+        {
+            "seq": 1,
+            "request": {"body": {"messages": second["request"]["body"]["messages"]}},
+            "response": second["response"],
+        }
+    ]
+    turns = transcript_render.fold_conversation(inherited)
+    assert [(t.role, t.seq) for t in turns] == [
+        ("system", 1),
+        ("user", 1),
+        ("assistant", 1),
+        ("tool", 1),
+        ("assistant", 1),
+    ]
+
+
 def test_provider_retry_does_not_duplicate_history() -> None:
     """A retry after a transient 5xx re-sending the identical message list is not a restart.
 

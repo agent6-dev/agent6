@@ -473,8 +473,9 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
                 tt for m in fresh if isinstance(m, dict) for tt in _message_turns(m, shape, names)
             ]
         for tt in new_turns:
-            # A result answers the previous round's call and reads under that round's seq.
-            tt.seq = call_seq if tt.role == "tool" else seq
+            # A result answers the previous round's call and reads under that round's seq; a
+            # result the first request carries (a fork's inherited history) under that request's.
+            tt.seq = (call_seq or seq) if tt.role == "tool" else seq
             turns.append(tt)
         response_turns = _response_turns(resp, shape, names)
         for rt in response_turns:
