@@ -51,7 +51,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - every mount carries `nosuid` and `nodev`, except the bound `/dev` nodes (the builtin five: `null`, `zero`, `urandom`, `random`, `full`, plus any `sandbox.extra_device_paths` grant), which `nodev` would make unusable
     - `/tmp` allows exec (toolchain helpers)
     - children write inside the jail's mount namespace (`full`) or the Landlock write grants (`partial`)
-    - nothing a command starts outlives it
+    - a process a command leaves behind dies with the run at the latest
         - `full`: the PID namespace takes the tree down at close.
           Its launcher, the namespace's init, sweeps what a stopped background command left outside its process group (a `setsid` daemon reparented onto it).
           The sweep covers what appeared after the command started and before the next still-running one did
@@ -433,7 +433,7 @@ Under `none` isolation nothing is enforced or refused.
     - a rewrite fails; `push` has no egress
     - a grant that contains the workspace does not lift it ([Sandbox](#2-sandbox))
 - Under `partial`, `protect_git` left at its default degrades with a warning, and an explicit `true` refuses to run
-    - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`, which agent6's own auto-commit (a temp-index `git add -A` on the host) then runs, reaching `$HOME` and the network
+    - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`; agent6's own auto-commit (a temp-index `git add -A` on the host) blanks every driver the repo defines unless `git.run_repo_filters` is set
     - Landlock cannot express the exclusion: a directory grant is recursive and stacked rulesets intersect, so denying `.git` means not granting the workspace root either
 - `git.control = "agent6"` is enforced by the sandbox; without it, an explicit setting refuses to run and the default warns that a commit the model runs lands on the checkout's branch.
 - The protected scope is the project's own `.git` at every isolation level (the in-process edit tools refuse writes under it; [File access](#3-file-access))
