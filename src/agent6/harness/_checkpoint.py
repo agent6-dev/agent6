@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from agent6 import commit_message, errors, git_ops
 from agent6.harness import _chain
-from agent6.providers import Provider, call_for_text
+from agent6.providers import Provider, ProviderError, call_for_text
 
 if TYPE_CHECKING:
     from agent6.harness import _loop_state
@@ -61,10 +61,17 @@ class Checkpoints:
         changes = self.chain.name_status()
         if self.style == "conventional":
             return commit_message.conventional_commit_subject(changes, summary=summary)
-        msg = self._model_subject(changes, hint=summary)
+        try:
+            msg = self._model_subject(changes, hint=summary)
+        except ProviderError as exc:
+            self.log(f"WARNING: model commit message failed ({exc}); using the agent6 style")
+            return default
         if msg:
             return msg
-        self.log("WARNING: model commit message failed; using the agent6 style")
+        self.log(
+            "WARNING: model commit message failed (the model returned nothing);"
+            " using the agent6 style"
+        )
         return default
 
     def commit(self, subject: str, *, iteration: int, label: str = "auto-commit") -> str:
@@ -148,14 +155,17 @@ class Checkpoints:
             self.log(f"  final checkpoint commit failed: {exc}")
 
     def _model_subject(self, changes: Sequence[tuple[str, str]], *, hint: str) -> str | None:
-        """Return a model-drafted subject from git facts only, or None on any failure.
+        """Return a model-drafted subject from git facts only.
 
         Args:
             changes: The (status, path) pairs of the change set.
             hint: The one-line summary the draft is anchored on.
 
         Returns:
-            The drafted message, or None when the call failed.
+            The drafted message, or None for an empty reply.
+
+        Raises:
+            ProviderError: The call failed, with its reason.
         """
         listing = "\n".join(f"{s}\t{p}" for s, p in changes[:200])
         return call_for_text(

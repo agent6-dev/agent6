@@ -83,4 +83,4 @@ def test_model_style_degrades_to_agent6_with_a_warning(
     wf = _wf(tmp_path, "model", provider=provider, logger=logged.append)
     got = wf.checkpoints.subject(_turn("Fix the thing."), fallback="verify passed")
     assert got == "agent6 iter 3: Fix the thing."
-    assert any("model commit message failed" in m for m in logged)
+    assert any("model commit message failed (RuntimeError: no endpoint)" in m for m in logged)

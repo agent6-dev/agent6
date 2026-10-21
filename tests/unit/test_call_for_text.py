@@ -6,7 +6,9 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from agent6.providers import Provider, call_for_text
+import pytest
+
+from agent6.providers import Provider, ProviderError, call_for_text
 
 
 class _Resp:
@@ -30,9 +32,18 @@ def test_empty_reply_is_none() -> None:
     assert call_for_text(_prov("   \n"), system="s", user="u", max_tokens=10) is None
 
 
-def test_any_failure_is_none() -> None:
+def test_a_failure_keeps_its_reason() -> None:
+    """A failed call read as None, so the caller printed "the model returned nothing"."""
+
     class Boom:
         def call(self, **kw: Any) -> Any:
             raise RuntimeError("provider down")
 
-    assert call_for_text(cast(Provider, Boom()), system="s", user="u", max_tokens=10) is None
+    class Limit:
+        def call(self, **kw: Any) -> Any:
+            raise ProviderError("You've reached your Fable limit.")
+
+    with pytest.raises(ProviderError, match="RuntimeError: provider down"):
+        call_for_text(cast(Provider, Boom()), system="s", user="u", max_tokens=10)
+    with pytest.raises(ProviderError, match=r"^You've reached your Fable limit\.$"):
+        call_for_text(cast(Provider, Limit()), system="s", user="u", max_tokens=10)

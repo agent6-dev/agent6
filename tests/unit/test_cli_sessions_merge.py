@@ -1092,6 +1092,34 @@ def test_merge_squash_model_style_degrades_with_a_warning(
     assert _head_message(tmp_path).splitlines()[0] == "implement the thing"
 
 
+def test_merge_squash_model_style_names_the_providers_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A provider at its plan limit read as "the model returned nothing"."""
+    from agent6.providers import ProviderError
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
+        '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
+    )
+
+    class _AtLimit:
+        def call(self, **_kw: object) -> object:
+            raise ProviderError("You've reached your Fable limit.")
+
+    def at_limit(*_a: object, **_k: object) -> object:
+        return _AtLimit()
+
+    monkeypatch.setattr(app_providers, "build_role_provider", at_limit)
+    _setup_run(tmp_path, "run-LIM111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    assert main(["sessions", "merge", "run-LIM111", "--strategy", "squash"]) == 0
+    err = capsys.readouterr().err
+    assert "model squash message failed (You've reached your Fable limit.)" in err
+    assert "returned nothing" not in err
+
+
 @pytest.mark.parametrize("oversized", [False, True])
 @pytest.mark.parametrize("conventions", ["", "Use Conventional Commits: type(scope): subject.\n"])
 def test_model_squash_uses_the_whole_run(

@@ -80,8 +80,8 @@ class Provider(Protocol):
 def call_for_text(provider: Provider, *, system: str, user: str, max_tokens: int) -> str | None:
     """Make one text-only call for best-effort drafting.
 
-    The broad except is the point: the caller holds a deterministic fallback, and
-    a drafting failure never surfaces as a run error.
+    Every failure is a `ProviderError` that keeps its reason: the caller holds a deterministic
+    fallback, and a drafting failure never surfaces as a run error.
 
     Args:
         provider: The provider to call.
@@ -90,7 +90,10 @@ def call_for_text(provider: Provider, *, system: str, user: str, max_tokens: int
         max_tokens: The output cap.
 
     Returns:
-        The stripped reply, or None on any failure or an empty reply.
+        The stripped reply, or None for an empty reply.
+
+    Raises:
+        ProviderError: The call failed; any other exception is wrapped with its reason.
     """
     try:
         resp = provider.call(
@@ -99,8 +102,10 @@ def call_for_text(provider: Provider, *, system: str, user: str, max_tokens: int
             tools=None,
             max_tokens=max_tokens,
         )
-    except Exception:
-        return None
+    except ProviderError:
+        raise
+    except Exception as exc:
+        raise ProviderError(f"{type(exc).__name__}: {exc}") from exc
     return (resp.text or "").strip() or None
 
 
