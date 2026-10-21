@@ -6,14 +6,19 @@ from __future__ import annotations
 
 import pathlib
 import stat
+import tomllib
 from collections.abc import Callable
 
+import httpx2
 import pytest
 
 from agent6 import paths, secret_store
+from agent6.config import OpenAIProviderEntry
 from agent6.models import cache
 from agent6.ui.cli import _common, main
 from agent6.ui.cli import model as modelmod
+
+_REAL_PROBE = cache.probe_provider_key
 
 
 @pytest.fixture
@@ -82,6 +87,187 @@ def test_connect_preserves_hand_edited_provider_keys(
     assert "http_timeout_s = 120" in text
     assert "extra_body" in text
     assert "# hand-added" in text
+
+
+_AZURE_BLOCK = (
+    "[providers.az]\n"
+    'api_format = "openai"\n'
+    'deployment = "azure"\n'
+    'base_url = "https://res.openai.azure.com"\n'
+    'extra_query = { "api-version" = "2024-10-21" }\n'
+)
+
+
+def _scripted_input(monkeypatch: pytest.MonkeyPatch, *answers: str) -> list[str]:
+    """Answer each `input()` prompt in turn.
+
+    Args:
+        monkeypatch: The test's patcher.
+        *answers: The replies, one per prompt.
+
+    Returns:
+        The prompts as asked, filled in as the run goes.
+    """
+    prompts: list[str] = []
+    replies = iter(answers)
+
+    def answer(prompt: str = "") -> str:
+        prompts.append(prompt)
+        return next(replies)
+
+    monkeypatch.setattr("builtins.input", answer)
+    return prompts
+
+
+@pytest.mark.parametrize(
+    ("block", "host"),
+    [
+        (_AZURE_BLOCK, "https://res.openai.azure.com"),
+        (_AZURE_BLOCK + "[budget]\nbogus_key = 1\n", "https://res.openai.azure.com"),
+        ("", "https://api.openai.com/v1"),
+        (
+            '[providers.az]\napi_format = "anthropic"\nbase_url = "https://proxy.example/v1"\n',
+            "https://api.openai.com/v1",
+        ),
+    ],
+    ids=["existing", "broken-config", "new", "format-change"],
+)
+def test_enter_at_the_base_url_prompt_keeps_the_url_it_shows(
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    block: str,
+    host: str,
+) -> None:
+    """Enter at the base URL prompt keeps the URL the prompt shows, and the key check probes it.
+
+    Over an existing block the prompt showed `https://api.openai.com/v1` while Enter kept the
+    block's own host, and the key check probed the generic host.
+    """
+    if block:
+        gc = iso / "agent6" / "config.toml"
+        gc.parent.mkdir(parents=True)
+        gc.write_text(block, encoding="utf-8")
+    prompts = _scripted_input(monkeypatch, "openai", "")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-az")
+    probed: list[str] = []
+
+    def probe(entry: OpenAIProviderEntry, api_key: str) -> cache.KeyProbeResult:
+        probed.append(entry.base_url)
+        return cache.KeyProbeResult(ok=True, status="ok", detail="provider accepted the key")
+
+    monkeypatch.setattr("agent6.models.cache.probe_provider_key", probe)
+    assert main(["connect", "az"]) == 0
+    saved = tomllib.loads(paths.global_config_path().read_text())["providers"]["az"]
+    assert (prompts[-1], saved.get("base_url", "https://api.openai.com/v1"), probed) == (
+        f"Base URL [{host}]: ",
+        host,
+        [] if "bogus_key" in block else [host],
+    )
+
+
+@pytest.mark.parametrize("broken", [False, True])
+def test_enter_at_the_api_format_prompt_keeps_an_existing_blocks_format(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, broken: bool
+) -> None:
+    """Enter at the API format prompt keeps an existing block's format, which the prompt shows.
+
+    The prompt offered `anthropic`, so Enter refused the azure block.
+    """
+    gc = iso / "agent6" / "config.toml"
+    gc.parent.mkdir(parents=True)
+    gc.write_text(_AZURE_BLOCK + ("[budget]\nbogus_key = 1\n" if broken else ""), encoding="utf-8")
+    prompts = _scripted_input(monkeypatch, "", "")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-az")
+    rc = main(["connect", "az"])
+    api_format = tomllib.loads(gc.read_text())["providers"]["az"]["api_format"]
+    assert (rc, api_format, prompts[0]) == (
+        0,
+        "openai",
+        "API format for 'az' (anthropic/openai/chatgpt/claude_code) [openai]: ",
+    )
+
+
+@pytest.mark.parametrize("to_repo", [False, True])
+@pytest.mark.parametrize("replacement", ["", "https://api.openai.com/v1"])
+def test_connect_checks_effective_host_after_target_layer_edit(
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    to_repo: bool,
+    replacement: str,
+) -> None:
+    """The target layer receives the URL edit; the probe follows the effective override."""
+    global_path = paths.global_config_path()
+    repo_path = paths.repo_config_path(tmp_path)
+    for path, host in ((global_path, "global"), (repo_path, "repo")):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f'[providers.custom]\napi_format = "openai"\nbase_url = "https://{host}.example/v1"\n'
+        )
+    prompts = _scripted_input(monkeypatch, "", replacement)
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-test")
+    monkeypatch.setattr(cache, "probe_provider_key", _REAL_PROBE)
+    requested: list[str] = []
+
+    def get(url: str, **kwargs: object) -> httpx2.Response:
+        requested.append(url)
+        return httpx2.Response(200, json={"data": [{"id": "model"}]})
+
+    monkeypatch.setattr(cache.httpx2, "get", get)
+    assert main(["connect", "custom", *(["--repo"] if to_repo else [])]) == 0
+    assert prompts[-1] == "Base URL [https://repo.example/v1]: "
+    for path, host in ((global_path, "global"), (repo_path, "repo")):
+        expected = (
+            replacement
+            if replacement and (path == repo_path) == to_repo
+            else f"https://{host}.example/v1"
+        )
+        assert tomllib.loads(path.read_text())["providers"]["custom"] == {
+            "api_format": "openai",
+            "base_url": expected,
+        }
+    effective_url = replacement if replacement and to_repo else "https://repo.example/v1"
+    assert requested == [effective_url + "/models"]
+
+
+def test_connect_over_a_non_table_provider_entry_does_not_crash(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `providers.az` that is a string, not a table, crashed the broken-config fallback."""
+    gc = paths.global_config_path()
+    gc.parent.mkdir(parents=True)
+    gc.write_text('[providers]\naz = "bad"\n')
+    _scripted_input(monkeypatch, "openai", "")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-az")
+    rc = main(["connect", "az"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "providers.az" in err and "Traceback" not in err
+
+
+def test_connect_auth_none_skips_key_check(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An auth-none block cannot validate a key it never sends."""
+    gc = paths.global_config_path()
+    gc.parent.mkdir(parents=True)
+    gc.write_text('[providers.local]\napi_format = "openai"\nauth_style = "none"\n')
+    _scripted_input(monkeypatch, "", "")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-test")
+    monkeypatch.setattr(cache, "probe_provider_key", _REAL_PROBE)
+    requested: list[str] = []
+
+    def get(url: str, **kwargs: object) -> httpx2.Response:
+        requested.append(url)
+        return httpx2.Response(200, json={"data": [{"id": "model"}]})
+
+    monkeypatch.setattr(cache.httpx2, "get", get)
+    assert main(["connect", "local"]) == 0
+    out = capsys.readouterr().out
+    assert requested == []
+    assert "Key validated" not in out
+    assert "(key check skipped: auth_style 'none' sends no key)" in out
 
 
 def test_connect_validates_key_and_reports_ok(

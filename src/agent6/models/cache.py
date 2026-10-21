@@ -345,16 +345,19 @@ def probe_provider_key(
         timeout_s: The request timeout.
 
     Returns:
-        The probe's outcome; `unsupported` where the deployment has no `/models` listing.
+        The probe's outcome; `unsupported` when the deployment or auth style cannot check a key.
     """
     if (
         isinstance(entry, (ChatGPTProviderEntry, ClaudeCodeProviderEntry))
         or entry.deployment != "direct"
+        or entry.auth_style == "none"
     ):
         if isinstance(entry, ChatGPTProviderEntry):
             detail = "ChatGPT signs in via OAuth, not a key"
         elif isinstance(entry, ClaudeCodeProviderEntry):
             detail = "Claude Code signs in with its own login, not a key"
+        elif entry.auth_style == "none":
+            detail = "auth_style 'none' sends no key"
         else:
             detail = "no /models listing for this deployment"
         return KeyProbeResult(ok=True, status="unsupported", detail=detail)

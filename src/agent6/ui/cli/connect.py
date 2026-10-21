@@ -18,14 +18,13 @@ import time
 import webbrowser
 from urllib import parse
 
-import pydantic
-
 from agent6 import paths, secret_store
 from agent6.config import (
-    AnthropicProviderEntry,
+    ConfigError,
     OpenAIProviderEntry,
     ProviderEntry,
     io,
+    layer,
     validate_base_url,
     write,
 )
@@ -68,7 +67,42 @@ def _prompt_api_key(name: str) -> str:
     return api_key
 
 
-def _prompt_base_url(default_url: str) -> str:
+def _current_entry(name: str) -> ProviderEntry | None:
+    """Return the effective `[providers.<name>]`; None when absent or the config does not load."""
+    try:
+        return layer.load_effective(pathlib.Path.cwd()).config.providers.get(name)
+    except ConfigError:
+        return None
+
+
+def _provider_defaults(name: str, target: pathlib.Path) -> tuple[str, str]:
+    """Read prompt defaults from the effective config, falling back to the target table.
+
+    Args:
+        name: The provider name.
+        target: The config file connect will edit.
+
+    Returns:
+        The API format and base URL; empty strings for absent values.
+
+    Raises:
+        ConfigError: The target file cannot be read as TOML.
+    """
+    try:
+        current = layer.load_effective(pathlib.Path.cwd()).config.providers.get(name)
+    except ConfigError:
+        providers = io.read_toml_file(target).get("providers")
+        block = providers.get(name) if isinstance(providers, dict) else None
+        if not isinstance(block, dict):
+            return "", ""
+        return str(block.get("api_format", "")), str(block.get("base_url", ""))
+    return (
+        current.api_format if current is not None else "",
+        current.base_url if isinstance(current, OpenAIProviderEntry) else "",
+    )
+
+
+def _prompt_base_url(current_format: str, current_url: str, preset_url: str) -> str | None:
     """Prompt for an OpenAI-compatible base URL and validate it.
 
     Validated before any secret or config write, so a scheme-less value (an API key pasted
@@ -76,20 +110,54 @@ def _prompt_base_url(default_url: str) -> str:
     error.
 
     Args:
-        default_url: The value an empty answer takes.
+        current_format: The existing block's format; "" when absent.
+        current_url: The existing block's URL; "" when absent.
+        preset_url: The preset's URL; "" for a custom name.
 
     Returns:
-        The URL.
+        The URL to write; None when the block already holds it.
 
     Raises:
         ValueError: The URL is invalid, by the `OpenAIProviderEntry.base_url` check.
     """
+    default = OpenAIProviderEntry(api_format="openai").base_url
+    if current_format == "openai":
+        held = offered = current_url or default
+    else:
+        offered = preset_url or default
+        # A block changing format may keep a base_url of its own, which only a write replaces.
+        held = default if not current_format and not current_url else None
     try:
-        url = input(f"Base URL [{default_url}]: ").strip() or default_url
+        url = input(f"Base URL [{offered}]: ").strip() or offered
     except EOFError:
-        url = default_url
+        url = offered
     validate_base_url(url)
-    return url
+    return None if url == held else url
+
+
+def _write_provider_block(
+    name: str, fields: dict[str, io.ConfigLeafValue], *, to_repo: bool
+) -> str | None:
+    """Write the block's leaves, before any credential is stored.
+
+    Leaf surgery keeps hand-added sibling keys and revalidates the file.
+
+    Args:
+        name: The provider name.
+        fields: The leaves to set.
+        to_repo: Write the per-repo config instead of the global one.
+
+    Returns:
+        The refusal, or None once written: a file the write would make invalid, or an entry
+        that is not a plain table.
+    """
+    try:
+        err = write.set_config_leaves(
+            pathlib.Path.cwd(), f"providers.{name}", fields, to_repo=to_repo
+        )
+    except ConfigError as exc:
+        return str(exc)
+    return None if err is None else f"that would make the config invalid:\n{err}"
 
 
 def _resolve_provider_name(provider: str) -> str | None:
@@ -125,27 +193,22 @@ def _resolve_provider_name(provider: str) -> str | None:
     return name
 
 
-def _verify_key(*, api_format: str, base_url: str, api_key: str) -> None:
+def _verify_key(entry: ProviderEntry | None, api_key: str) -> None:
     """Probe the provider's /models endpoint to confirm the key authenticates.
 
     A read-only GET, within connect's no-remote-execution rule. Prints the outcome and never
     raises: the key is already saved, so a probe failure must not fail connect.
 
     Args:
-        api_format: The provider's API format.
-        base_url: The endpoint.
+        entry: The provider as the config holds it after the write, so the probe dials the
+            host a run dials; None when the config does not load.
         api_key: The key to test.
     """
-    try:
-        entry: ProviderEntry = (
-            AnthropicProviderEntry(api_format="anthropic")
-            if api_format == "anthropic"
-            else OpenAIProviderEntry(
-                api_format="openai", base_url=base_url or "https://api.openai.com/v1"
-            )
+    if entry is None:
+        print(
+            "  (key check skipped: the config does not load; `agent6 check config` says why)",
+            file=sys.stderr,
         )
-    except pydantic.ValidationError as exc:
-        print(f"  (skipped key check: {exc})", file=sys.stderr)
         return
     print("Checking the key against the provider...")
     result = cache.probe_provider_key(entry, api_key)
@@ -408,22 +471,26 @@ def _claude_code_check(name: str) -> None:
     _common.warn(f"{err}\n  [providers.{name}] is written but not usable yet.")
 
 
-def _prompt_api_format(name: str, preset_format: str) -> str | None:
+def _prompt_api_format(name: str, preset_format: str, current_format: str) -> str | None:
     """Return the api_format for the provider: the preset's, else the operator's answer.
 
     Args:
         name: The provider name, for the prompt.
         preset_format: The preset's format; "" for a custom name.
+        current_format: The existing block's format, which Enter keeps; "" for a new block.
 
     Returns:
         The format, or None (after printing why) on no input or an unknown value.
     """
     api_format = preset_format
     if not api_format:
+        default = current_format or "anthropic"
         try:
             api_format = (
-                input(f"API format for {name!r} [anthropic/openai/chatgpt/claude_code]: ").strip()
-                or "anthropic"
+                input(
+                    f"API format for {name!r} (anthropic/openai/chatgpt/claude_code) [{default}]: "
+                ).strip()
+                or default
             )
         except EOFError:
             _common.error("no input.")
@@ -484,8 +551,8 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
 
     Nothing a remote supplies is executed. The command prompts locally (the key hidden or
     masked), writes a minimal `[providers.<name>]` block, stores the key in the 0600 secrets
-    file, and unless `verify` is off makes one read-only GET to the provider's `/models`
-    endpoint to confirm the key authenticates.
+    file, and checks the key with a read-only GET when `verify` is on and the provider
+    supports a key check.
 
     Args:
         provider: The provider name or preset.
@@ -504,25 +571,27 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
     if logout:
         return _cmd_logout(name, preset_format)
     print("agent6 connect: set up a model provider.\n")
-    api_format = _prompt_api_format(name, preset_format)
+    target = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
+    try:
+        current_format, current_url = _provider_defaults(name, target)
+    except ConfigError as exc:
+        _common.error(str(exc))
+        return 2
+    api_format = _prompt_api_format(name, preset_format, current_format)
     if api_format is None:
         return 2
-    base_url = (preset or {}).get("base_url", "")
+    fields: dict[str, io.ConfigLeafValue] = {"api_format": api_format}
     if api_format == "openai":
         try:
-            base_url = _prompt_base_url(base_url or "https://api.openai.com/v1")
+            fields["base_url"] = _prompt_base_url(
+                current_format, current_url, (preset or {}).get("base_url", "")
+            )
         except ValueError as exc:
             _common.error(f"{exc}")
             return 2
 
-    target = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
-    fields: dict[str, io.ConfigLeafValue] = {"api_format": api_format}
-    if api_format == "openai" and base_url and base_url != "https://api.openai.com/v1":
-        fields["base_url"] = base_url
-    # Leaf surgery keeps hand-added sibling keys; revalidated before any credential is stored.
-    err = write.set_config_leaves(pathlib.Path.cwd(), f"providers.{name}", fields, to_repo=to_repo)
-    if err is not None:
-        _common.refuse(f"that would make the config invalid:\n{err}")
+    if (refusal := _write_provider_block(name, fields, to_repo=to_repo)) is not None:
+        _common.refuse(refusal)
         return 2
     print(f"Wrote [providers.{name}] to {target}.")
 
@@ -546,7 +615,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
             return 2
         print(f"Saved key to {saved} (0600).")
         if verify:
-            _verify_key(api_format=api_format, base_url=base_url, api_key=api_key)
+            _verify_key(_current_entry(name), api_key)
     elif api_format == "anthropic":
         # The Anthropic api_format always sends a key, so a keyless block fails at the first run.
         _common.warn(
