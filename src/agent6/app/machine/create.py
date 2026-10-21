@@ -370,6 +370,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         usd_total=total_usd,
         input_total=total_in,
         output_total=total_out,
+        plan_consumed=total_plan,
     )
     # session.end reasons are tokens: the listing prints one beside "failed". iterations = attempts.
     if spec is None or valid_path is None:
