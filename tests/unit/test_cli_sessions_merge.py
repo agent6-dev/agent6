@@ -219,6 +219,21 @@ def test_runs_merge_squash_is_one_commit_and_records_manifest(
     assert m["merged"]["sha"]
 
 
+def test_runs_merge_with_no_id_names_the_live_run(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A merge with no id refused "run '' is still live" instead of naming the run it chose."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-LIVE12", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="run-LIVE12"
+    )
+    process.write_worker_pid(layout.session_dir, os.getpid())
+
+    assert main(["sessions", "merge"]) == 2
+    assert "run 'run-LIVE12' is still live" in capsys.readouterr().err
+
+
 def test_runs_merge_refuses_while_the_worker_is_alive(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

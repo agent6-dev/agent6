@@ -110,7 +110,7 @@ def _plan_merge(  # noqa: PLR0911
     if isinstance(res, int):
         return res
     layout, manifest = res
-    if refusal := _not_mergeable_now(layout, session_id):
+    if refusal := _not_mergeable_now(layout, manifest.session_id):
         _common.refuse(refusal)
         return 2
     ref = sessions_cmds._commits_ref(cwd, manifest)
