@@ -437,7 +437,7 @@ class RunBridge:
                 self.server.notify_raw(
                     updates.message_update(
                         session.acp_id,
-                        f"[agent6] run {session.session_id} left no resume point;"
+                        f"run {session.session_id} left no resume point;"
                         " this prompt starts a new run",
                     )
                 )

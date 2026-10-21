@@ -1708,6 +1708,8 @@ def test_a_second_prompt_after_a_recorded_turn_with_no_snapshot_starts_a_new_run
         if m["params"]["update"].get("sessionUpdate") == "agent_message_chunk"
     ]
     assert any("run-AAAA11 left no resume point" in t for t in told)
+    # message_update adds the one marker.
+    assert not any(t.startswith("[agent6] [agent6]") for t in told)
 
 
 def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathlib.Path) -> None:
