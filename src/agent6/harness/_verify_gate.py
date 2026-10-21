@@ -311,8 +311,12 @@ class VerifyGate:
     ) -> None:
         """Record the verdict's flags and streak.
 
-        A verdict on the untouched base is the baseline's, whoever ran it: the settled guard
-        waits for a pass of the run's own, and a red there starts no streak.
+        Args:
+            state: The execution's state.
+            result: The verify's result.
+            judged_base: Whether the verdict is on the untouched base. Such a verdict is the
+                baseline's, whoever ran it. The settled guard waits for a pass of the run's
+                own, and a red base verdict starts no streak.
         """
         verdict = state.verify
         ok = result.returncode == 0
