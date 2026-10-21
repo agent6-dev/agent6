@@ -589,7 +589,7 @@ def left_behind_line(target: str, outcome: MergeOutcome) -> str:
     return (
         f"{kept}\n"
         "  to merge your edits with what landed (a conflict leaves its markers in the file):\n"
-        f"    git diff {outcome.target_before[:12]} -- {paths} > your-edits.patch\n"
+        f"    git diff --binary {outcome.target_before[:12]} -- {paths} > your-edits.patch\n"
         f"    git checkout HEAD -- {paths} && git apply --3way your-edits.patch"
     )
 

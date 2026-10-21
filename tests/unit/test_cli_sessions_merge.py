@@ -12,6 +12,7 @@ import subprocess
 import pytest
 
 from agent6 import git_ops, paths
+from agent6.app import merge
 from agent6.app import providers as app_providers
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
@@ -1576,3 +1577,10 @@ def test_runs_merge_refuses_a_run_undo_took_back(
     err = capsys.readouterr().err
     assert "taken back by /undo" in err and "agent6 resume fork-UNDO22" in err
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "0"
+
+
+def test_the_left_behind_recipe_keeps_a_binary_edit() -> None:
+    """`git diff` without `--binary` saved "Binary files differ", and the checkout lost the edit."""
+    outcome = merge.MergeOutcome(status="merged", left_behind=("logo.png",), target_before="a" * 40)
+    line = merge.left_behind_line("main", outcome)
+    assert "git diff --binary aaaaaaaaaaaa -- logo.png > your-edits.patch" in line
