@@ -282,46 +282,57 @@ def resolve_grants(
             (f"mcp.servers.{name}.sandbox.read_paths", False, reads),
             (f"mcp.servers.{name}.sandbox.write_paths", True, writes),
         ]
-    write_regions = tuple(
-        pathlib.Path(p).expanduser().resolve()
-        for _key, writes, entries in groups
-        if writes
-        for p in entries
-    )
-    regions = (root.resolve(), *write_regions)
+    fixed = (root.resolve(),)
     if _resolved_isolation(sb.isolation) != "full":
-        regions += (_TMP,)
+        fixed += (_TMP,)
+    # Two passes: a write grant the fixed regions drop is no region for the others, so a
+    # grant of its target's child is not shadowed by a region the run never holds.
+    write_grants = [
+        pathlib.Path(p).expanduser() for _key, writes, entries in groups if writes for p in entries
+    ]
+    surviving = tuple(
+        w.resolve() for w in write_grants if _dropped_by(w, True, fixed, root) is None
+    )
+    regions = (*fixed, *surviving)
     kept: dict[bool, list[tuple[pathlib.Path, pathlib.Path]]] = {False: [], True: []}
     dropped: list[DroppedGrant] = []
     for key, writes, listed in groups:
-        entries = kept[writes]
         for grant in listed:
             path = pathlib.Path(grant).expanduser()
-            real = path.resolve()
-            # Inside a region by its spelling (an ancestor resolves into one) or by its target,
-            # or the region itself under another name; a write grant is not inside itself.
-            inside = (real, *(step.resolve() for step in path.parents))
-            others = tuple(w for w in regions if not (writes and w == real and w != regions[0]))
-            region = next(
-                (w for w in others if any(_path_safety.path_within(p, w) for p in inside)), None
-            )
-            links = () if region is not None else _link_dirs(path)
-            linked = next(
-                (w for w in regions if any(_path_safety.path_within(d, w) for d in links)), None
-            )
-            if region is not None or linked is not None:
-                dropped.append(
-                    DroppedGrant(
-                        key=key,
-                        path=path,
-                        real=real,
-                        region=region or linked or root,
-                        via_link=region is None,
-                    )
-                )
+            if (drop := _dropped_by(path, writes, regions, root)) is not None:
+                dropped.append(dataclasses.replace(drop, key=key))
             else:
-                entries.append((path, real))
+                kept[writes].append((path, path.resolve()))
     return Grants(read=tuple(kept[False]), write=tuple(kept[True]), dropped=tuple(dropped))
+
+
+def _dropped_by(
+    path: pathlib.Path, writes: bool, regions: tuple[pathlib.Path, ...], root: pathlib.Path
+) -> DroppedGrant | None:
+    """Return why a grant is dropped against the writable regions, or None when it is kept.
+
+    Args:
+        path: The configured grant, `~` expanded.
+        writes: The grant is a write grant.
+        regions: The resolved writable regions, the workspace root first.
+        root: The workspace root, named when a link's region is unknown.
+
+    Returns:
+        The drop with an empty key, which the caller fills; None when the grant stands.
+    """
+    real = path.resolve()
+    # Inside a region by its spelling (an ancestor resolves into one) or by its target, or
+    # the region itself under another name; a write grant is not inside itself.
+    inside = (real, *(step.resolve() for step in path.parents))
+    others = tuple(w for w in regions if not (writes and w == real and w != regions[0]))
+    region = next((w for w in others if any(_path_safety.path_within(p, w) for p in inside)), None)
+    links = () if region is not None else _link_dirs(path)
+    linked = next((w for w in regions if any(_path_safety.path_within(d, w) for d in links)), None)
+    if region is None and linked is None:
+        return None
+    return DroppedGrant(
+        key="", path=path, real=real, region=region or linked or root, via_link=region is None
+    )
 
 
 def workspace_for(

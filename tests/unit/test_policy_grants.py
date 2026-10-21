@@ -184,3 +184,26 @@ def test_a_dropped_link_that_leads_out_of_its_region_names_the_targets_own_path(
     assert dropped.real == outside and dropped.region == repo
     assert "stays reachable" not in dropped.line()
     assert f"Grant {outside} by its own path" in dropped.line()
+
+
+def test_a_dropped_write_grant_is_no_region_for_the_others(tmp_path: pathlib.Path) -> None:
+    """An alias dropped for a link in the workspace still shadowed a grant of its target's child.
+
+    `/data/subdir` was dropped as "inside /data, which jailed commands write", a region the run
+    never held.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (tmp_path / "data" / "subdir").mkdir(parents=True)
+    (repo / "hop").symlink_to(tmp_path / "data")
+    (tmp_path / "alias").symlink_to(repo / "hop")
+    cfg = Config.model_validate(
+        {
+            "sandbox": {
+                "extra_write_paths": [str(tmp_path / "alias"), str(tmp_path / "data" / "subdir")]
+            }
+        }
+    )
+    grants = policy.resolve_grants(cfg, repo)
+    assert [str(real) for _p, real in grants.write] == [str(tmp_path / "data" / "subdir")]
+    assert [str(d.path) for d in grants.dropped] == [str(tmp_path / "alias")]
