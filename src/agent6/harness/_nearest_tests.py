@@ -3,12 +3,16 @@
 """Find the test files nearest a set of changed paths.
 
 The scoped verify fallback runs these when the full gate overruns its budget. Pure path
-heuristics over the worktree: no git, no config.
+heuristics over the worktree, with no git. A path outside the workspace, under `.git` or in a
+hidden tree is left out.
 """
 
 from __future__ import annotations
 
 import pathlib
+from collections.abc import Iterable
+
+from agent6.tools import _path_safety, errors
 
 _TEST_DIR_NAMES = ("tests", "test")
 # Vendored trees and envs are large and judge nothing.
@@ -85,16 +89,28 @@ def _candidates_for(rel: pathlib.Path) -> list[pathlib.Path]:
     return out
 
 
-def _scan_test_dirs(root: pathlib.Path, sources: list[pathlib.Path]) -> list[pathlib.Path]:
+def _visible(workspace: _path_safety.Workspace, rel: pathlib.Path) -> bool:
+    """Return whether the path passes the host workspace boundary."""
+    try:
+        workspace.resolve_read(rel.as_posix())
+    except errors.ToolError:
+        return False
+    return True
+
+
+def _scan_test_dirs(
+    root: pathlib.Path, sources: list[pathlib.Path], workspace: _path_safety.Workspace
+) -> list[pathlib.Path]:
     """Return the name-matched test files under the test dirs beside the sources or their ancestors.
 
     Catches the layouts the conventions miss, dropped path segments included
     (pandas/tests/indexes for pandas/core/indexes). Scans at most `_SCAN_CAP` entries; a larger
-    tree yields what was seen.
+    tree yields what was seen. The scan does not enter a denied tree or leave the workspace.
 
     Args:
         root: The repository root.
         sources: The changed source files, repo-relative.
+        workspace: The host-side file boundary.
 
     Returns:
         The matching test files, repo-relative.
@@ -108,7 +124,7 @@ def _scan_test_dirs(root: pathlib.Path, sources: list[pathlib.Path]) -> list[pat
         for anc in [src.parent, *src.parent.parents]:
             for n in _TEST_DIR_NAMES:
                 p = root / anc / n if anc != pathlib.Path() else root / n
-                if p.is_dir():
+                if _visible(workspace, p.relative_to(root)) and p.is_dir():
                     scan_roots.setdefault(p, None)
     stack = list(scan_roots)
     while stack and budget > 0:
@@ -121,33 +137,39 @@ def _scan_test_dirs(root: pathlib.Path, sources: list[pathlib.Path]) -> list[pat
             if budget <= 0:
                 break
             budget -= 1
+            if not _visible(workspace, e.relative_to(root)):
+                continue
             if e.is_dir():
                 if e.name not in _SKIP_DIRS:
                     stack.append(e)
-            elif e.name in wanted:
+            elif e.name in wanted and e.is_file():
                 hits.append(e.relative_to(root))
     return hits
 
 
 def nearest_test_paths(
-    root: pathlib.Path, changed: tuple[str, ...], *, cap: int = 20
+    root: pathlib.Path, changed: tuple[str, ...], *, hide: Iterable[str] = (), cap: int = 20
 ) -> tuple[str, ...]:
     """Return the test files most likely to judge the changed paths.
 
     Changed test files themselves, then the conventional siblings and mirrors of each changed
     .py source, then name matches under the repo's test dirs: existing files only, deduplicated
-    in that order. A changed helper or conftest under a tests dir is neither run nor mirrored.
+    in that order. A path outside the workspace, under `.git` or in a hidden tree is left out,
+    as is a link that resolves there. A changed helper or conftest under a tests dir is
+    neither run nor mirrored.
     Name matches only: a test directory named for the module (tests/frame/ for core/frame.py)
     is not found, and a same-stem test elsewhere (plotting/test_frame.py) is picked.
 
     Args:
         root: The repository root.
         changed: The changed paths, repo-relative.
+        hide: `[sandbox].hide_paths`; agent6's private dirs are also excluded.
         cap: The most paths returned.
 
     Returns:
         The repo-relative test paths.
     """
+    workspace = _path_safety.host_workspace(root, hide)
     picked: dict[str, None] = {}
     sources: list[pathlib.Path] = []
     for c in changed:
@@ -155,15 +177,15 @@ def nearest_test_paths(
         if rel.suffix != ".py":
             continue
         if _is_test_file(rel):
-            if (root / rel).is_file():
+            if _visible(workspace, rel) and (root / rel).is_file():
                 picked.setdefault(rel.as_posix(), None)
         elif not any(part in _TEST_DIR_NAMES for part in rel.parts[:-1]):
             sources.append(rel)
     for rel in sources:
         for cand in _candidates_for(rel):
-            if (root / cand).is_file():
+            if _visible(workspace, cand) and (root / cand).is_file():
                 picked.setdefault(cand.as_posix(), None)
     if sources:
-        for hit in _scan_test_dirs(root, sources):
+        for hit in _scan_test_dirs(root, sources, workspace):
             picked.setdefault(hit.as_posix(), None)
     return tuple(picked)[:cap]

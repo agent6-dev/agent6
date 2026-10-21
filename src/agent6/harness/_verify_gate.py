@@ -527,7 +527,9 @@ class VerifyGate:
         if not _nearest_tests.is_bare_pytest(self.command(verdict)):
             return ()
         return _nearest_tests.nearest_test_paths(
-            self.chain.root, _nearest_tests.diff_changed_paths(self.chain.diff_since_base())
+            self.chain.root,
+            _nearest_tests.diff_changed_paths(self.chain.diff_since_base()),
+            hide=self.hide,
         )
 
     def scoped_followup(

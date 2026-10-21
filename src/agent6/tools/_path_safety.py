@@ -170,9 +170,9 @@ class Workspace:
             The path contained against that grant.
 
         Raises:
-            ToolError: No grant holds the path.
+            ToolError: No grant holds the path, or it loops through symlinks.
         """
-        target = pathlib.Path(candidate).resolve()
+        target = resolved(candidate)
         for base in sorted(bases, key=lambda b: len(b.parts), reverse=True):
             if path_within(target, base):
                 return SafePath(base=base, rel_path=target.relative_to(base), abs_path=target)
@@ -222,19 +222,43 @@ def resolve_in_root(root: pathlib.Path, candidate: str) -> SafePath:
         The contained path.
 
     Raises:
-        ToolError: The path is absolute, contains `..`, or resolves outside the root.
+        ToolError: The path is absolute, contains `..`, loops through symlinks, or escapes the root.
     """
     if candidate.startswith("/"):
         raise tools_errors.ToolError(f"Absolute paths not allowed: {candidate!r}")
     parts = pathlib.Path(candidate).parts
     if ".." in parts:
         raise tools_errors.ToolError(f"Path contains '..': {candidate!r}")
-    abs_path = (root / candidate).resolve()
+    abs_path = resolved(root / candidate)
     try:
         rel = abs_path.relative_to(root.resolve())
     except ValueError as exc:
         raise tools_errors.ToolError(f"Path escapes repo root: {candidate!r}") from exc
     return SafePath(base=root, rel_path=rel, abs_path=abs_path)
+
+
+def resolved(candidate: str | pathlib.Path) -> pathlib.Path:
+    """Return the path resolved, refusing a symlink loop on every Python.
+
+    `Path.resolve()` raised RuntimeError on a loop up to 3.12 and resolves past one since 3.13;
+    `os.path.realpath(strict=True)` names a loop as `ELOOP` on both, and an absent path as
+    `ENOENT`, which resolves as far as it exists.
+
+    Args:
+        candidate: The path, absolute or relative to the working directory.
+
+    Returns:
+        The resolved path.
+
+    Raises:
+        ToolError: The path loops through symlinks.
+    """
+    try:
+        return pathlib.Path(os.path.realpath(candidate, strict=True))
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise tools_errors.ToolError(f"Path is a symlink loop: {str(candidate)!r}") from exc
+        return pathlib.Path(candidate).resolve()
 
 
 def _open_dir(dir_fd: int, name: str, *, create: bool) -> int:
@@ -366,7 +390,8 @@ def host_workspace(root: pathlib.Path, hide: Iterable[str] = ()) -> Workspace:
         The workspace, each denied root resolved.
     """
     denied = (root / ".git", *paths.hidden_paths(pathlib.Path(p) for p in hide))
-    return Workspace(root=root, denied=tuple(p.resolve() for p in denied))
+    # realpath, not resolve(): on Python 3.12 resolve() raises RuntimeError on a symlink loop.
+    return Workspace(root=root, denied=tuple(pathlib.Path(os.path.realpath(p)) for p in denied))
 
 
 def read_workspace_text(root: pathlib.Path, name: str, hide: Iterable[str] = ()) -> str:

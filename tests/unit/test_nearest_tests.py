@@ -11,6 +11,8 @@ from __future__ import annotations
 import pathlib
 from typing import Any
 
+import pytest
+
 from agent6.harness import _nearest_tests
 
 DIFF = """\
@@ -132,3 +134,37 @@ def test_package_level_test_dirs_are_scanned(tmp_path: pathlib.Path) -> None:
     _touch(tmp_path, "pkg/core/indexes/base.py", "pkg/tests/indexes/test_base.py")
     got = _nearest_tests.nearest_test_paths(tmp_path, ("pkg/core/indexes/base.py",))
     assert got == ("pkg/tests/indexes/test_base.py",)
+
+
+@pytest.mark.parametrize(
+    "rel", ["tests/pkg/test_mod.py", "tests/deep/unit/test_mod.py", "private/test_mod.py"]
+)
+def test_hidden_tests_are_excluded(tmp_path: pathlib.Path, rel: str) -> None:
+    """A test under a hidden path was picked: a mirror, a scan match or a changed test."""
+    _touch(tmp_path, rel, "pkg/test_mod.py")
+    hide = (str((tmp_path / rel).parent),)
+    changed = (rel,) if rel.startswith("private/") else ("pkg/mod.py",)
+    assert _nearest_tests.nearest_test_paths(
+        tmp_path, (*changed, "pkg/test_mod.py"), hide=hide
+    ) == ("pkg/test_mod.py",)
+
+
+def test_test_symlink_into_hidden_tree_is_excluded(tmp_path: pathlib.Path) -> None:
+    """A test link into a hidden tree was picked."""
+    _touch(tmp_path, "private/test_mod.py")
+    (tmp_path / "test_mod.py").symlink_to(tmp_path / "private/test_mod.py")
+    assert (
+        _nearest_tests.nearest_test_paths(
+            tmp_path, ("mod.py", "test_mod.py"), hide=(str(tmp_path / "private"),)
+        )
+        == ()
+    )
+
+
+def test_scan_refuses_symlink_loop(tmp_path: pathlib.Path) -> None:
+    """On Python 3.12 a looping link under a tests dir raised out of the scan."""
+    _touch(tmp_path, "tests/unit/test_mod.py")
+    (tmp_path / "tests/loop").symlink_to("loop")
+    assert _nearest_tests.nearest_test_paths(tmp_path, ("pkg/mod.py",)) == (
+        "tests/unit/test_mod.py",
+    )

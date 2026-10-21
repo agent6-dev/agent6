@@ -892,3 +892,13 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
 
     assert turn.end_returned is False
     assert dispatcher.run_verify.call_count == 0
+
+
+def test_scope_paths_passes_hide_set(tmp_path: pathlib.Path) -> None:
+    """The scoped gate picked tests under the gate's hidden paths."""
+    wf, _ = _scoped_wf(tmp_path, ["pytest"])
+    wf.gate.hide = (str(tmp_path / "tests"),)
+    with mock.patch.object(
+        _chain.RunChain, "diff_since_base", return_value="diff --git a/pkg/mod.py b/pkg/mod.py\n"
+    ):
+        assert wf.gate.scope_paths(_verify_verdict.VerifyVerdict()) == ()

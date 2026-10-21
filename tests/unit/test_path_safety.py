@@ -286,3 +286,20 @@ def test_a_repointed_grant_never_reaches_the_jail_launcher(
     jail = policy.jail_policy(repo, config, "partial", ("true",))
     assert shared / "inbox" not in jail.extra_ro_paths
     assert shared in jail.extra_rw_paths and repo / "out" not in jail.extra_rw_paths
+
+
+def test_an_absolute_symlink_loop_under_a_grant_is_refused(tmp_path: pathlib.Path) -> None:
+    """A looping link under a read grant raised RuntimeError out of the tool, not a refusal."""
+    grant = tmp_path / "grant"
+    grant.mkdir()
+    (grant / "loop").symlink_to("loop")
+    ws = _path_safety.Workspace(root=tmp_path / "root", read_roots=(grant,))
+    with pytest.raises(errors.ToolError, match="symlink loop"):
+        ws.resolve_read(str(grant / "loop"))
+
+
+def test_host_workspace_takes_a_looping_hidden_path(tmp_path: pathlib.Path) -> None:
+    """A `hide_paths` entry that loops through a symlink raised RuntimeError at run start."""
+    (tmp_path / "loop").symlink_to("loop")
+    ws = _path_safety.host_workspace(tmp_path, hide=(str(tmp_path / "loop"),))
+    assert ws.is_denied(tmp_path / "loop")
