@@ -217,9 +217,9 @@ def run_offline_tests(
 ) -> OfflineTestOutcome:
     """Execute every `scripts/**/*_test.py` in a no-network jail.
 
-    Only the full isolation has the network namespace that enforces the no-network contract
-    on model-authored code; on `none` and `partial` the tests count as skipped. Each test gets
-    a fresh writable `$AGENT6_MACHINE_DATA_DIR`, under the default `JailPolicy` memory cap.
+    Only `full` `sandbox.isolation` can cut the tests off the network, so under `none` and
+    `partial` they count as skipped. Each test gets a fresh writable `$AGENT6_MACHINE_DATA_DIR`,
+    under the default `JailPolicy` memory cap.
 
     Args:
         bundle_dir: The bundle holding `scripts/`.

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 check` reports the network commands get on this host, not the knob.
 
-`auto` is the default on both sandbox knobs, so the configured value answers nothing.
+`sandbox.isolation` and `sandbox.network` both default to `auto`, which names no network.
 """
 
 from __future__ import annotations

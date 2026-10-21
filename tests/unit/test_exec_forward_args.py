@@ -128,7 +128,7 @@ def test_exec_refuses_a_session_network_nobody_holds(
 ) -> None:
     """`exec` joins a live session's network only; an ended run is refused by name.
 
-    The isolation seam is pinned to full so the policy derives "session" on every host this suite
+    The isolation seam is pinned to `full` so the policy derives "session" on every host this suite
     runs on.
     """
     from agent6.config import Config

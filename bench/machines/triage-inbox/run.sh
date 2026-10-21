@@ -3,10 +3,8 @@
 # cycle: scan -> classify (agent) -> route -> file/escalate -> wait. The wait
 # paces the loop with a real (journaled) sleep between cycles.
 #
-# Runs under the default sandbox config (tool states get their own network
-# namespace on strict). On a hardened-only host the default
-# `sandbox.network = "auto"` degrades with a warning; an explicit `session`
-# refuses instead.
+# Runs under the default sandbox config. Under `full` `sandbox.isolation`, each
+# `tool` state gets its own network namespace.
 #
 # Usage:  bash bench/machines/triage-inbox/run.sh [workdir]
 set -euo pipefail

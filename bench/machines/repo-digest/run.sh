@@ -2,10 +2,8 @@
 # Seed a small repo with a few commits, then run repo-digest over it. The digest
 # lands in the machine's persistent data dir (printed at the end).
 #
-# Runs under the default sandbox config: the `tool` states get their own network
-# namespace (strict). On a host that supports only the hardened profile, the
-# default `sandbox.network = "auto"` degrades with a warning; an explicit
-# `session` refuses instead.
+# Runs under the default sandbox config. Under `full` `sandbox.isolation`, each
+# `tool` state gets its own network namespace.
 #
 # Usage:  bash bench/machines/repo-digest/run.sh [workdir]
 set -euo pipefail

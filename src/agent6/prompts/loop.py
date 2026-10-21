@@ -77,7 +77,8 @@ MODEL_GIT_RULE_NO_COMMANDS = """- Nothing commits automatically in this run. Com
   withheld, so your work stays in the worktree, uncommitted, for the operator.
 """
 
-# Fills __GIT_PROTECT_RULE__ only where `.git` is read-only: full protect_git, a linked worktree.
+# Fills __GIT_PROTECT_RULE__ only where `.git` is read-only: under `full` with protect_git,
+# or in a linked worktree.
 GIT_PROTECT_RULE = """- `.git/` is read-only inside the jail: history-mutating git commands
   (`git checkout`, `git reset`) fail there. Prior content is readable
   (`git show HEAD:path`) and restorable with the edit tools.

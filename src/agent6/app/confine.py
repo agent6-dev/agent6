@@ -4,7 +4,7 @@
 
 The agent process itself is never confined: every boundary is the jail's, and the levels
 differ only in which jail features the launcher enables (docs/security.md owns the model).
-A partial block reads as a guarantee it cannot keep, so these checks warn or refuse instead.
+A half-measure reads as a guarantee it cannot keep, so these checks warn or refuse instead.
 """
 
 from __future__ import annotations
@@ -270,10 +270,8 @@ def check_protect_git_support(
 ) -> str | None:
     """Return the refusal when an explicit `protect_git` cannot be honored here, else None.
 
-    The read-only bind of `.git` needs a mount namespace, which only full has. Landlock has
-    no deny rules and its grants are recursive, so carving `.git` out under partial would cost
-    every write at the workspace root. The default degrades with a warning; the in-process
-    edit tools refuse writes into `.git` at every level.
+    `protect_git` requires `full` `sandbox.isolation` to bind-remount `.git` read-only. The
+    default degrades with a warning instead.
     """
     if isolation != "partial" or not (cfg.sandbox.protect_git and explicitly_set):
         return None
@@ -295,9 +293,10 @@ def check_jail_home(
 ) -> str | None:
     """Return the refusal when the jail's HOME cannot be what the config says, else None.
 
-    `home = "tmp"` is a private tmpfs, which only full has: the default degrades to the
-    repository's cache dir with a warning, an explicit one refuses. A persistent dir the policy
-    builder could not make agent6's own refuses too, without creating anything.
+    `home = "tmp"` requires `full` `sandbox.isolation` to put HOME on a private /tmp. Under
+    another level the default degrades to the repository's cache dir with a warning, and an
+    explicit one refuses. A persistent dir the policy builder could not make agent6's own
+    refuses too, without creating anything.
     """
     persistent = tools_policy.persistent_jail_home(cfg, isolation, workspace, worktree_git_dir)
     if persistent is None:
@@ -315,10 +314,10 @@ def check_jail_home(
 def _partial_grant_regions(
     cfg: Config, root: pathlib.Path, worktree_git_dir: pathlib.Path | None = None
 ) -> tuple[tuple[pathlib.Path, str], ...]:
-    """Return every region the partial launcher grants a command, labeled by its source.
+    """Return every region a jailed command is granted under `partial`, labeled by its source.
 
-    Derived from the builders the run uses, so preflight and enforcement cannot drift; the
-    fixed sets mirror the launcher's partial ruleset in jail/src/main.rs.
+    Derived from the builders the run uses, so preflight and enforcement cannot drift. The
+    fixed sets mirror the Landlock rules jail/src/main.rs applies under `partial`.
     """
     policy = tools_policy.jail_policy(
         root, cfg, "partial", ("true",), worktree_git_dir=worktree_git_dir
@@ -370,7 +369,7 @@ def unmaskable_exposures(
 ) -> tuple[tuple[pathlib.Path, pathlib.Path, str], ...]:
     """Return the (hidden path, granted region, region source) triples the isolation cannot mask.
 
-    Empty on full, which masks, and on `none`, which has no jail. Under partial a hidden
+    Empty on `full`, which masks, and on `none`, which has no jail. Under `partial` a hidden
     path overlapping a granted region is exposed in both directions. Paths are resolved
     before containment so a `..` spelling cannot dodge the check.
     """
@@ -396,7 +395,7 @@ def check_hide_paths_support(
 ) -> str | None:
     """Return the refusal when a `[sandbox].hide_paths` entry cannot be masked here, else None.
 
-    `hide_paths` is only ever explicit, so an entry partial cannot mask refuses. The
+    `hide_paths` is only ever explicit, so an entry that `partial` cannot mask refuses. The
     always-hidden private dirs warn instead: granting a region holding them may be meant.
     """
     if isolation != "partial":
@@ -418,9 +417,9 @@ def mcp_network_refusal(
 ) -> str | None:
     """Return the refusal when the server named a network this host cannot give it, else None.
 
-    The `[sandbox].network` rule: `none` and `session` need a network namespace, which only
-    full has, so they refuse on partial while `auto` degrades with a warning. The run's
-    preflight and `agent6 check` both ask here.
+    A server's `none` or `session` network requires `full` `sandbox.isolation` and refuses on
+    `partial`, while `auto` degrades with a warning. The run's preflight and `agent6 check`
+    both ask here.
     """
     if isolation != "partial" or not srv.enabled:
         return None
@@ -480,7 +479,7 @@ def config_refusal(
             explicitly_set="sandbox.home" in explicit_leaves,
         ),
         lambda: check_mcp_network_support(cfg, isolation),
-        # Before the partial check, which reads the same overlap as an entry inside a grant.
+        # Before `check_hide_paths_support`, so a workspace under an entry gets its own refusal.
         lambda: check_workspace_outside_hidden_paths(cfg, workspace),
         lambda: check_hide_paths_support(cfg, isolation, workspace, worktree_git_dir),
         lambda: check_workspace_outside_private_dirs(workspace),
@@ -501,8 +500,7 @@ def config_refusal(
 def check_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str | None:
     """Return the refusal when the network config needs what the isolation cannot give, else None.
 
-    `session` needs a network namespace, which only full has; `auto` degrades with a
-    warning instead.
+    `session` requires `full` `sandbox.isolation`, while `auto` degrades with a warning.
     """
     if isolation != "partial":
         return None

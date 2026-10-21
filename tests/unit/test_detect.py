@@ -94,7 +94,7 @@ def test_select_profile_full_passes_when_supported() -> None:
 
 
 def test_select_profile_partial_ok_at_abi3_plus() -> None:
-    """ABI 3 (Linux 6.2) is the floor for explicit partial, where Landlock confines truncate."""
+    """ABI 3 (Linux 6.2) is the floor for explicit `partial`, where Landlock confines truncate."""
     assert detect.resolve_isolation("partial", _env(userns=True)) == "partial"  # abi 4
     assert detect.resolve_isolation("partial", _env(userns=False, landlock_abi=3)) == "partial"
 
@@ -119,7 +119,7 @@ def test_select_profile_partial_refuses_below_abi3(abi: int) -> None:
 
 @pytest.mark.parametrize("abi", [1, 2, 3])
 def test_select_profile_auto_stays_partial_below_abi3(abi: int) -> None:
-    """`auto` on ABI 1 or 2 still resolves to partial; partial truncate confinement is a warning.
+    """`auto` on ABI 1 or 2 resolves to `partial`, with a warning that truncation is unconfined.
 
     Dropping to none would leave common hosts (Debian 12, kernel 6.1) unconfined.
     """

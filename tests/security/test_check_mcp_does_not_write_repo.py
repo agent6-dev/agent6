@@ -107,7 +107,7 @@ def test_a_startup_write_never_lands_in_the_repo(
 def test_the_workspace_is_read_only_under_partial_too(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Partial has no mount namespace to re-bind with; the Landlock carve-out holds the same line.
+    """`partial` has no mount namespace to re-bind with; the Landlock carve-out holds the same line.
 
     Read on cwd, no write grant beneath it.
     """
@@ -239,7 +239,7 @@ def test_an_operator_write_grant_holds_the_probe_off_too(
 def test_a_server_a_run_would_refuse_fails_the_check_unstarted(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`network = "none"` on a partial host is a run refusal, applied before any server starts.
+    """`network = "none"` under `partial` is a run refusal, applied before any server starts.
 
     Never a PASS from a server started on the host network.
     """

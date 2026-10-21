@@ -33,7 +33,7 @@ def _cfg(network: str = "session") -> Config:
 
 @pytest.mark.parametrize("isolation", ["full", "none"])
 def test_check_network_support_allows_off_partial(isolation: kinds.IsolationLevel) -> None:
-    # `session` is only refused on partial; full supports it and none is unsandboxed
+    # `session` is only refused on `partial`; `full` supports it and `none` is unsandboxed
     # (warned elsewhere), so neither refuses here.
     assert confine.check_network_support(_cfg("session"), isolation) is None
 

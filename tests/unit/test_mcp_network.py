@@ -91,8 +91,8 @@ def test_a_table_less_server_degrades_with_the_same_warning(
 
     A server with no `[sandbox]` table has effective network `auto`, exactly like one that wrote
     `network = "auto"`: the spawn policy gives it a network of its own (degrading to the host's on
-    partial), and the degrade warning reads the same effective value, or a table-less server keeps
-    the host's network on partial with nothing said.
+    `partial`), and the degrade warning reads the same effective value, or a table-less server keeps
+    the host's network on `partial` with nothing said.
     """
     from agent6.app import _setup
 

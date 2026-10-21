@@ -31,9 +31,8 @@ def _policy(tmp_path: pathlib.Path, level: str, argv: tuple[str, ...], devices: 
 def test_a_granted_device_node_is_openable(tmp_path: pathlib.Path, level: str) -> None:
     """A device grant proves the whole path: the node is present and writable.
 
-    /dev/tty is a char device the full /dev omits and partial's rules do not cover, so a
-    granted probe covers the bind without the nodev floor on full and the Landlock
-    read+write rule on both.
+    /dev/tty is a char device neither level grants by default. Granting it exercises the bind
+    without the nodev floor under `full` and the Landlock read+write rule under both.
     """
     from agent6.sandbox import jail
 

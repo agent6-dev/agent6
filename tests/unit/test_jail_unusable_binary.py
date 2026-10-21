@@ -36,8 +36,8 @@ def test_a_fork_or_descriptor_failure_is_not_blamed_on_the_binary(
 ) -> None:
     """Only ENOEXEC and EACCES speak about the binary; EAGAIN, EMFILE and ENOMEM pass through.
 
-    Through the cached full probe, a transient fork failure at startup would resolve `auto` for
-    the whole run.
+    Through the cached `namespaces_work` probe, a transient fork failure at startup would
+    resolve `auto` for the whole run.
     """
     fake = tmp_path / "agent6-jail"
     fake.write_text("#!/bin/sh\n", encoding="utf-8")

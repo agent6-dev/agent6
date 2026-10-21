@@ -121,7 +121,7 @@ class _FakeNet:
 
 @pytest.fixture
 def host(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """A host where full works, with the spawn and the session network recorded."""
+    """A host where `full` works, with the spawn and the session network recorded."""
     seen: dict[str, Any] = {"nets": []}
     env = dataclasses.replace(
         detect.environment(),

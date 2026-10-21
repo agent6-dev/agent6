@@ -523,7 +523,7 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
 
 
 def test_partial_fs_rule_renders_only_under_partial(tmp_path: pathlib.Path) -> None:
-    """The partial create-a-top-level-entry workaround renders only under partial."""
+    """PARTIAL_FS_RULE, the create-a-top-level-entry workaround, renders only under `partial`."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=True)
     full = _prompt_blocks.build_system_prompt(
@@ -558,7 +558,7 @@ def test_patch_only_prompt_names_only_the_offered_edit_tool(
 
 
 def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: pathlib.Path) -> None:
-    """The '.git/ is protected' line renders only under full with protect_git on.
+    """The '.git/ is protected' line renders only under `full` with protect_git on.
 
     Every unjailed run was told it while nothing protected it.
     """
@@ -791,7 +791,8 @@ def test_partial_rule_renders_only_where_the_jail_carries_protect_paths(
 ) -> None:
     """The placeholder rule renders only when Landlock carves around protect paths.
 
-    An ordinary partial run has none and was told to `apply_edit` placeholders it never needed.
+    An ordinary run under `partial` has none and was told to `apply_edit` placeholders it
+    never needed.
     """
     repo = _repo(tmp_path)
     cfg = Config.model_validate({"harness": {"verify_command": ["true"]}})

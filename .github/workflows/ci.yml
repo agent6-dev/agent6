@@ -122,10 +122,10 @@ jobs:
 
       - name: Allow unprivileged user namespaces (Ubuntu 24.04 AppArmor)
         # Since Ubuntu 23.10 the default AppArmor policy blocks unprivileged
-        # userns creation, which makes agent6's `strict` sandbox profile fail
+        # userns creation, which makes agent6's `full` isolation fail
         # with `uid_map: Operation not permitted`. The GitHub Actions
         # ubuntu-24.04 images (amd64 + arm64) carry this; relax it so check
-        # sandbox can exercise the strict path the rest of the world will use.
+        # sandbox can exercise the `full` path the rest of the world will use.
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: agent6 check sandbox

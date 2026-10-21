@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The jail grants a fork's git dir from the manifest, never from the worktree's pointer file.
 
-Under partial the pointer sits in the writable workspace, so a jailed command could rewrite it to
+Under `partial` the pointer sits in the writable workspace, so a jailed command could rewrite it to
 name any host directory.
 """
 
@@ -42,7 +42,7 @@ def _rewrite_pointer(worktree: pathlib.Path, target: str) -> None:
 def test_the_recorded_git_dir_is_granted_read_only(tmp_path: pathlib.Path) -> None:
     """With the recorded dir matching the pointer, the policy grants that dir read-only.
 
-    The partial exposure scan lists it under the same name.
+    The exposure scan under `partial` lists it under the same name.
     """
     repo, worktree = _repo_and_worktree(tmp_path)
     git_dir = (repo / ".git").resolve()
@@ -71,7 +71,7 @@ def test_a_linked_worktree_agent6_did_not_record_gets_no_grant(tmp_path: pathlib
     repo, worktree = _repo_and_worktree(tmp_path)
     assert tools_policy.jail_policy(worktree, Config(), "full", ("true",)).extra_ro_paths == ()
     _rewrite_pointer(worktree, "/etc")
-    # Partial shares the host network, whose resolver and CA store reads are the only grants.
+    # `partial` shares the host network, whose resolver and CA store reads are the only grants.
     partial = tools_policy.jail_policy(worktree, Config(), "partial", ("true",))
     assert partial.extra_ro_paths == tools_policy.host_network_reads()
     assert (repo / ".git").resolve() not in dict(confine._partial_grant_regions(Config(), repo))

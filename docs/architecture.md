@@ -26,7 +26,9 @@ graph TD
 
 Any layer may also use the shared substrate: `_data`, `_git_command`, `budget`, `child_env`, `commit_message`, `config`, `directive`, `errors`, `event_log`, `git_ops`, `git_policy`, `graph`, `init`, `kinds`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secret_store`, `sessions`, `skills`, `task_text`, `terminal`, `verify_infer`, `viewmodel`.
 
-`git_ops.py` alone uses `_git_command.py` for partial execution, timeouts, and output decoding.
+Only `git_ops.py` imports `_git_command.py`.
+It runs each git command with a 120-second timeout.
+By default, it switches off the repository's hooks, fsmonitor, external diff, commit signing, and filter and merge drivers.
 `git_policy.py` shares hardening flags and hook/filter policy; `errors.py` owns `GitError`.
 
 - **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root, over the shared read-model fold (`viewmodel`)
@@ -327,10 +329,7 @@ The detached spawn it drives (`ui.spawn`'s `spawn_and_locate`, the path the web 
 ## Enforcement layering
 
 - `git_ops.py` runs outside the jail, in the agent's own process, so the read-only bind of `.git` stops the worker without stopping the harness's commits.
-- `protect_git` is full-only: full read-only bind-remounts `.git` over the workspace mount
-    - partial has no mount namespace to carve: blanket read-write on the cwd, `.git` writable by jailed commands
-    - carving it there would also deny new top-level entries (`target/`, `.pytest_cache/`)
-    - the writable `.git` is gated by `run_commands` (default `ask`), recoverable via branch-per-run + `git_ops`, bounded by the container
+- `protect_git` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only
 - Run state is out of reach of jailed commands because it lives outside the workspace, at `<state-dir>`, unreachable from the repo cwd.
 
 [security.md](security.md) states which guarantee each layer provides.

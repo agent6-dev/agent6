@@ -56,7 +56,7 @@ class ToolMount:
 
     Attributes:
         path: The dir, at its real location.
-        why: Which tool needs it: a bin dir on the jail's PATH, the tool that links into
+        why: Why the jail mounts it: a bin dir on the jail's PATH, the tool that links into
             it, or uv's interpreters.
     """
 
@@ -69,7 +69,7 @@ _UV_PYTHONS = "uv-managed interpreters"
 
 
 def operator_tool_mounts() -> tuple[ToolMount, ...]:
-    """Return the dirs the jail mounts read+exec, each with the tool that needs it, by path.
+    """Return the dirs the jail mounts read+exec, each with its reason, sorted by path.
 
     Recomputed per call, so a tool just installed is picked up. A bin dir under a
     mounted system root only joins PATH; a dir outside one, and the real dir a

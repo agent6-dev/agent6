@@ -38,7 +38,7 @@ from agent6.tools import mcp_client, mcp_http, policy
 
 
 def detect_env() -> detect.Environment:
-    """Detect the host environment, with the jail binary settling whether full works.
+    """Detect the host environment, with the jail binary settling whether `full` works.
 
     The `unshare -U -r true` probe is wrong in both directions: an AppArmor profile can grant
     the jail binary userns but not `unshare`, and Docker with a relaxed seccomp profile lets
@@ -370,7 +370,7 @@ def wants_session_network(cfg: Config, isolation: kinds.IsolationLevel) -> bool:
     """Return whether the run needs its own network: any child would join one.
 
     Asked once before anything spawns, since the network exists before its first member. Only
-    full can provide one.
+    `full` can provide one.
     """
     if isolation != "full":
         return False

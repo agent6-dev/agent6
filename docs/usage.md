@@ -112,7 +112,7 @@ A `steer` reaches the model at its next step, and `steer --now` interrupts the c
 
 - with stdin and stdout on a terminal the command gets a terminal of its own, with job control; otherwise stdin, stdout and stderr pass through, so pipes and redirects work
 - Ctrl-Z stops a job of the shell you opened; a command you run directly keeps running, since no shell could resume it
-- inside full there is no `/dev/pts` or `/dev/tty`: `tty` prints "not a tty", and a program that opens `/dev/tty` fails
+- under `full` `sandbox.isolation`, the jail has no `/dev/pts` or `/dev/tty`, so `tty` prints "not a tty" and a program that opens `/dev/tty` fails
 - a command a signal ended reports 128 plus the signal, on every level
 - `agent6 exec ID -- COMMAND...` works in the run's workspace: a file your command writes there is in the run's tree, and the run's next commit holds it
 
@@ -298,7 +298,7 @@ agent6 skills install|update|list                    # skills from a repo, a dir
 agent6 skills enable NAME [--always]                 # a skill the model may use, or one it always gets; disable, remove
 agent6 mcp connect NAME [--url URL | -- COMMAND...]  # an MCP server; --pass-env VAR passes an environment variable to a local server; list, remove, serve
 agent6 machine ...                                   # state machines over runs (see state-machines.md)
-agent6 system apparmor install                       # the AppArmor profile the full jail needs on some hosts; status, remove
+agent6 system apparmor install                       # the AppArmor profile that full isolation needs on some hosts; status, remove
 agent6 completions bash|zsh|fish|xonsh [--print]
 agent6 config fill [--force]                         # write the defaults + global layers as one explicit global config
 ```

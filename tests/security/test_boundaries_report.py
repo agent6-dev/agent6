@@ -3,7 +3,7 @@
 """`agent6 check sandbox` tells the truth about what the launcher enforces.
 
 The report's system-path lists are Python mirrors of constants the Rust
-launcher owns (SYSTEM_BINDS, the partial ro_paths base). A drift between the
+launcher owns (SYSTEM_BINDS, the `partial` ro_paths base). A drift between the
 report and the enforcer would make the report lie, so the mirrors are pinned
 against the launcher's source text.
 """
@@ -48,7 +48,7 @@ def test_full_system_binds_mirror_the_launcher() -> None:
 def test_partial_ro_base_mirrors_the_launcher() -> None:
     src = _MAIN_RS.read_text(encoding="utf-8")
     m = re.search(r"let mut ro_paths[^=]*=\s*vec!\[(.*?)\];", src, re.S)
-    assert m, "partial ro_paths base not found in main.rs"
+    assert m, "`partial` ro_paths base not found in main.rs"
     launcher = tuple(re.findall(r'PathBuf::from\("([^"]+)"\)', m.group(1)))
     assert launcher == _check_sandbox.PARTIAL_SYSTEM_RO
 
@@ -164,9 +164,9 @@ def test_boundaries_report_names_the_memory_dir_for_the_file_tools_only(
 def test_boundaries_report_is_level_aware(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Partial's words never borrow full's: no mounts, no private anything.
+    """Under `partial` the report names Landlock rules and none of `full`'s mounts.
 
-    A degraded auto also names its cause here.
+    It also says why `auto` resolved below `full`.
     """
     _force(monkeypatch, "partial", reason="userns blocked (test)")
     checks = _check_sandbox.check_sandbox_section(Config())
@@ -207,7 +207,7 @@ def test_boundaries_report_lists_what_the_host_network_reads(
 ) -> None:
     """The report lists the resolver and CA store grants bound for the host network.
 
-    Off the host network full's /etc is empty, and the report says so only there.
+    Off the host network `full`'s /etc is empty, and the report says so only there.
     """
     reason = "(name resolution and TLS verification on the host network)"
     _force(monkeypatch, "full")
@@ -237,7 +237,7 @@ def test_boundaries_report_shows_each_grant_as_a_run_binds_it(
     real.mkdir()
     link.symlink_to(real, target_is_directory=True)
     inside = pathlib.Path.cwd() / "vendored"
-    # Pinned full: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    # Pinned to `full`: pytest's tmp_path sits in /tmp, where a link counts under auto.
     cfg = Config(sandbox=SandboxConfig(isolation="full", extra_read_paths=(str(link), str(inside))))
     _check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
@@ -275,7 +275,7 @@ def test_boundaries_report_names_the_opted_in_persistent_home(
 ) -> None:
     """The jail's HOME is a write grant, so the report lists it.
 
-    Under `home = "cache"` full's is the persistent cache dir, named as such.
+    Under `home = "cache"` `full`'s is the persistent cache dir, named as such.
     """
     _force(monkeypatch, "full")
     _check_sandbox.check_sandbox_section(Config(sandbox=SandboxConfig(home="cache")))
@@ -406,17 +406,16 @@ def test_boundaries_report_names_each_mcp_server(
     assert "fs: spawned in the jail" in out and "paths ro+1 rw+0, network none" in out
     assert "off: DISABLED" in out
     # The network the server GETS, never the configured word: `auto` is a
-    # namespace of its own under full.
+    # namespace of its own under `full`.
     assert "plain: spawned in the jail" in out and "paths ro+0 rw+0, network none" in out
 
 
 def test_boundaries_report_prints_the_refusal_for_a_network_the_level_cannot_give(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Partial clamps `none` and `session` to the host's network, and the report says so.
+    """Under `partial` the report prints the refusal for a server's `none` or `session` network.
 
-    A run refuses such a server before it starts; the report never names a network the server
-    never gets.
+    A run refuses the server before it starts, so its row never names the host network.
     """
     from agent6.config import _sandbox
 

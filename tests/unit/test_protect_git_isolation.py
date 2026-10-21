@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`protect_git` is a read-only bind, so it is full-only.
+"""`protect_git` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only.
 
-Landlock has no deny rules: protecting `.git` on partial meant not granting
+Landlock has no deny rules: protecting `.git` on `partial` meant not granting
 the workspace ROOT, because a grant is recursive and granting the root its own
 create/remove rights grants them over `.git` too. That cost every top-level
 write, which is more than the protection is worth when the operator can have
-the real thing by using full.
+the real thing by using `full`.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ def test_opting_out_never_refuses(tmp_path: pathlib.Path) -> None:
 
 
 def test_only_full_carves_git_out_of_the_jail(tmp_path: pathlib.Path) -> None:
-    """Top-level writes work on partial because there is no carve-out.
+    """Top-level writes work on `partial` because there is no carve-out.
 
     A carve-out at the workspace root is what would cost them; `touch newfile` there works.
     """
@@ -81,7 +81,7 @@ def test_only_full_carves_git_out_of_the_jail(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.needs_namespaces
 def test_a_new_top_level_entry_can_be_created_on_partial(tmp_path: pathlib.Path) -> None:
-    """A new top-level entry can be created on partial.
+    """A new top-level entry can be created on `partial`.
 
     `mkfifo`, `touch` and `mkdir` at the workspace root must not fail with a misleading "File
     exists" while the carve-out is there.

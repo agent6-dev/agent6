@@ -25,7 +25,7 @@ TaskId = Annotated[str, pydantic.StringConstraints(min_length=1, max_length=26)]
 
 
 class _ToolInput(pydantic.BaseModel):
-    """The base of every tool's arguments: full, frozen, and named for the tool list."""
+    """The base of every tool's arguments: no unknown fields, frozen, named for the tool list."""
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 

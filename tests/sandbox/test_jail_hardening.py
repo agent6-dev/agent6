@@ -289,9 +289,9 @@ def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(
 ) -> None:
     """A system bind whose source carries a locked flag is remounted read-only with those flags.
 
-    /etc/alternatives on a noexec tmpfs is a partial host's shape; clearing a locked flag
+    /etc/alternatives on a noexec tmpfs is a hardened host's shape; clearing a locked flag
     in a user namespace is refused EPERM, so the jail would fail closed on exactly the hosts
-    partial the way its own floor recommends.
+    hardened the way its own floor recommends.
     """
     import shutil
     import subprocess
@@ -354,7 +354,7 @@ def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(
     out = proc.stdout
     if "MOUNT_FAILED" in out or proc.returncode != 0:
         pytest.skip(f"could not overmount: {out[:200]} {proc.stderr[:200]}")
-    assert "probe-ok" in out, f"the jail refused on a partial system mount: {out[:400]}"
+    assert "probe-ok" in out, f"the jail refused on a hardened system mount: {out[:400]}"
 
 
 def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: pathlib.Path) -> None:
@@ -411,11 +411,9 @@ def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
 ) -> None:
     """A jailed command cannot read the operator's provider key.
 
-    The launcher is PID 1 of the jail's own PID namespace and full mounts a fresh /proc,
-    so /proc/1/environ is the launcher's environment; spawned with the agent's, a jailed
-    command could read `OPENROUTER_API_KEY=...` straight out of it. docs/security.md says
-    secrets never reach the jail: the launcher reads nothing from its environment (the policy
-    arrives on stdin), so it gets none.
+    Under `full` the launcher is PID 1 inside the jail, so its environment is at
+    `/proc/1/environ`. docs/security.md says secrets never reach the jail: the launcher reads
+    nothing from its environment (the policy arrives on stdin), so it gets none.
     """
     from agent6 import kinds
     from agent6.sandbox import jail
@@ -747,7 +745,7 @@ def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: pathli
 
 
 def test_partial_reads_the_device_nodes_but_not_the_hosts_dev_shm(tmp_path: pathlib.Path) -> None:
-    """Partial grants the device nodes one by one; a rule on `/dev` covered the host's `/dev/shm`.
+    """`partial` grants the device nodes one by one; a rule on `/dev` covered the host's `/dev/shm`.
 
     The host's `/dev/shm` holds every process of this user's shared memory, readable to a
     jailed command through the directory rule.

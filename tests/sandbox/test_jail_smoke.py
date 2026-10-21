@@ -175,9 +175,9 @@ def test_jail_partial_truncate_denied_outside_grants(
 ) -> None:
     """truncate(2) is refused outside every grant and works inside the workspace.
 
-    TRUNCATE is an ABI-v3 Landlock right; a ruleset through ABI v2 leaves truncate
-    unrestricted, so a partial child could zero any file the operator can write (the state
-    dir, ~/.ssh) with no write grant. Every '>' redirect onto an existing file relies on it.
+    TRUNCATE is an ABI-v3 Landlock right. A ruleset through ABI v2 leaves truncate unrestricted,
+    so a child under `partial` could zero any file the operator can write (the state dir, ~/.ssh)
+    with no write grant. Every '>' redirect onto an existing file relies on it.
     """
     shm = pathlib.Path("/dev/shm")
     if not (shm.is_dir() and os.access(shm, os.W_OK)):
@@ -212,12 +212,10 @@ def test_jail_partial_truncate_denied_outside_grants(
     except jail.JailUnavailableError:
         pytest.skip("jail unavailable")
     # Inside the workspace: truncate must still succeed.
-    assert inside.read_text(encoding="utf-8") == "", (
-        "partial jail wrongly denied truncate inside cwd"
-    )
+    assert inside.read_text(encoding="utf-8") == "", "the jail denied truncate inside cwd"
     # Outside every grant: truncate must be refused, the file left intact.
     assert victim.read_text(encoding="utf-8") == "SECRET-DO-NOT-ZERO\n", (
-        "partial jail truncated a file outside its grants (TRUNCATE unhandled)"
+        "the jail truncated a file outside its grants (TRUNCATE unhandled)"
     )
     victim.unlink(missing_ok=True)
 
@@ -336,7 +334,7 @@ def test_jail_partial_symlink_escaping_cwd_gets_no_rw(
 ) -> None:
     """A top-level symlink whose target escapes cwd receives no RW.
 
-    Under partial the per-top-level-entry RW carve-out must not follow symlinks, or
+    Under `partial` the per-top-level-entry RW carve-out must not follow symlinks, or
     ``./escape -> /outside`` gets a recursive RW Landlock rule on the outside inode. The
     target is placed under ``/dev/shm``: outside cwd and not under ``/tmp`` (which the jail
     grants RW), so /dev (read+exec only) is the governing rule unless the symlink wrongly
@@ -404,7 +402,7 @@ def test_jail_partial_protect_paths_block_writes(
 ) -> None:
     """Partial isolation blocks writes to protect_paths via Landlock carve-out.
 
-    Partial has no mount namespace so it cannot bind-remount RO; instead the
+    `partial` has no mount namespace so it cannot bind-remount RO; instead the
     launcher switches its Landlock rules from `RW on cwd` to `R on cwd + RW
     on every top-level entry except the protect set`. End result for paths
     that exist at jail-launch time is the same: writes are denied.
@@ -533,7 +531,7 @@ def test_jail_backgrounded_pipe_holder_does_not_hang(
     """A command that backgrounds a stdout-inheriting process and exits 0 returns rc=0 promptly.
 
     The process-group teardown runs on the normal-exit path, not only on timeout, so the
-    reader join never waits for the grandchild and reports a false rc=124. Partial has no
+    reader join never waits for the grandchild and reports a false rc=124. `partial` has no
     PID namespace, so it is the exposed isolation.
     """
     import time
@@ -556,10 +554,10 @@ def test_jail_backgrounded_pipe_holder_does_not_hang(
 def test_jail_full_seccomp_blocks_modern_mount_api(
     jail_bin: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
-    """mount_setattr(2) returns EPERM in a full jail.
+    """mount_setattr(2) returns EPERM under `full`.
 
-    A full child is userns-root over its own mount namespace; without the modern mount API
-    in the seccomp deny-list it could clear the RO flag on the .git protect bind. Uses ctypes
+    A child that kept CAP_SYS_ADMIN past the capability drop could clear the read-only flag on
+    the .git protect bind, so seccomp denies the modern mount API. Uses ctypes
     so no extra tooling is needed.
     """
     git_dir = tmp_path / ".git"
@@ -654,7 +652,7 @@ def test_jail_partial_protect_paths_nested_below_a_top_level_entry(
     assert "DENIED ASM" in res.stdout, f"the machine spec was writable: {res.stdout!r}"
     assert "DENIED STEP" in res.stdout, f"the machine scripts were writable: {res.stdout!r}"
     # The carve-out must stay precise: a non-protected sibling under the same
-    # directory keeps its write access (full re-binds only the protect paths).
+    # directory keeps its write access (`full` re-binds only the protect paths).
     assert "WROTE SIBLING" in res.stdout, f"the carve-out over-denied: {res.stdout!r}"
     assert asm.read_text(encoding="utf-8").startswith("machine =")
     assert step.read_text(encoding="utf-8").startswith("print('original')")
@@ -712,11 +710,11 @@ def test_jail_partial_protect_path_symlink_cannot_be_written_through(
 def test_partial_protects_git_from_the_filter_escape(
     jail_bin: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
-    """`.git` is unwritable under partial too, not just full.
+    """`.git` is unwritable under `partial` too, not just `full`.
 
     Writable, a jailed command could plant a `filter.<n>.clean` in .git/config plus a
     .gitattributes, and agent6's own auto-commit would run that command on the host, in the
-    agent's Landlock domain, with $HOME and the network. Partial is the common downgrade
+    agent's Landlock domain, with $HOME and the network. `partial` is the common downgrade
     (userns-blocked Ubuntu, default-seccomp Docker), the default posture for most Linux hosts.
     """
     git_dir = tmp_path / ".git"
@@ -745,8 +743,8 @@ def test_no_command_leaves_a_process_running(
 ) -> None:
     """A command must not outlive its own call ("no persistence after the run").
 
-    full confines the child in a PID namespace, so its whole tree dies with
-    it. partial has no namespace: `setsid` leaves the launcher's process group,
+    `full` confines the child in a PID namespace, so its whole tree dies with
+    it. `partial` has no namespace: `setsid` leaves the launcher's process group,
     so the launcher's killpg misses it and it reparents away. It has to reparent
     to the agent (PR_SET_CHILD_SUBREAPER) and be killed there instead.
 
@@ -756,7 +754,7 @@ def test_no_command_leaves_a_process_running(
     """
     beat = tmp_path / "beat"
     up = tmp_path / "up"
-    # Workspace-relative: full's private /tmp tmpfs has none of the host's dirs.
+    # Workspace-relative: `full`'s private /tmp tmpfs has none of the host's dirs.
     daemon = "echo up > up; for i in 1 2 3 4 5 6; do echo x >> beat; sleep 1; done"
     res = jail.run_in_jail(
         kinds.JailPolicy(
@@ -1074,7 +1072,7 @@ def test_a_hidden_file_refuses_writes_as_a_hidden_directory_does(
 def test_jail_home_exists_in_the_private_tmpfs(
     jail_bin: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
-    # full's default HOME is /tmp/agent6-home; the launcher creates it in the
+    # `full`'s default HOME is /tmp/agent6-home; the launcher creates it in the
     # fresh tmpfs, so `cd ~` and a toolchain's first write under it work.
     try:
         res = jail.run_in_jail(
@@ -1093,7 +1091,7 @@ def test_jail_home_exists_in_the_private_tmpfs(
 def test_jail_fork_worktree_reads_the_repository_git(
     jail_bin: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
-    """A fork's execution can run git in its linked worktree under full, read-only on the git dir.
+    """A fork's execution can run git in its linked worktree under `full`, read-only on the git dir.
 
     The worktree's `.git` is a pointer into the repository's; the policy grants the git dir
     agent6 recorded for the worktree read-only, and a policy without the grant cannot find

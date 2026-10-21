@@ -29,7 +29,7 @@ def _probe(root: pathlib.Path, network: kinds.NetworkMode) -> str:
 
 
 def test_full_on_the_host_network_reads_the_resolver_files(tmp_path: pathlib.Path) -> None:
-    """Under full the host network came with an empty /etc, so every lookup by name failed."""
+    """Under `full` the host network came with an empty /etc, so every lookup by name failed."""
     out = _probe(tmp_path, "host")
     for name in ("/etc/hosts", "/etc/resolv.conf", "/etc/nsswitch.conf"):
         if pathlib.Path(name).exists():

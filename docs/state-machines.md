@@ -270,8 +270,8 @@ A single command, argv-style (never a shell string), through the existing `run_i
 
 - a state's network is `sandbox.network` in its own `config` table ([Machine config overlay](#47-machine-config-overlay-config)), for a `tool` and an `agent` state alike
     - `host`: the host network, honored only when your own `sandbox.network` resolves to it
-    - `session`: a network of its own, required; refuses on `partial`, which cannot isolate one state
-    - `auto` (default): its own where the host can give one, the host's with a warning on `partial`
+    - `session`: a network of its own, refused under `partial` `sandbox.isolation`
+    - `auto` (default): its own where the host can give one, the host's with a warning under `partial`
 - a `tool` state's network is never shared with another state: its processes die with the state
 - the machine's `[config.sandbox] network = "session"` keeps every state offline; one state sets `host` back:
 
@@ -305,14 +305,13 @@ network = "host"                    # except this reviewed tool
     - keep the bundle at or under that directory
 - a bare binary in `command[0]` resolves against the jail PATH (the set `machine check` probes and `run_command` uses), never the host `PATH`; absolute paths for anything elsewhere
 - `machine check` validates the bundle: every `scripts/` entry and static command reference resolves inside it (escaping symlinks rejected)
-- `full`: the bundle is RO-bound in every jail; a tool or agent cannot rewrite its own machine logic mid-run
-- `partial`: Landlock carves the same protection, granting read on the workspace and write on each top-level entry outside the bundle
-    - new top-level entries are denied, so a tool writes to `$AGENT6_MACHINE_DATA_DIR`
+- the bundle is read-only in every jail, so a tool or agent cannot rewrite its own machine logic mid-run
+    - under `partial` `sandbox.isolation`, a jailed command also cannot create a new top-level entry in the workspace, so a tool writes its output to `$AGENT6_MACHINE_DATA_DIR`
 
 Cross-iteration persistence: `$AGENT6_MACHINE_DATA_DIR`.
 
 - a per-machine writable dir under the per-repo state dir (`<state-dir>/<repo-id>/machines/<id>/data/`, out of the workspace), RW in every tool jail
-- under `partial` the workspace's existing entries are writable too, never a new top-level entry; the data dir is the durable home either way, and the journal records every transition
+- the journal records every transition
 
 #### `wait`
 
@@ -702,7 +701,7 @@ Moving the directory preserves its journal and recorded bundle, but does not rem
 |-------------------------------------------|---------------------------------------------------|
 | `agent6 machine create <task> [-o <file>] [--max-attempts N] [--max-usd USD] [--max-percent PCT] [--max-tokens-fallback N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam), written into a drafting workspace of its own; per-draft gate: `machine check`, ruff, ty, mock tests in a no-network jail, dry-run; failures hand the problems back (`--max-attempts`, default 3); output: a draft for operator review + commit ([Security considerations](#9-security-considerations)) |
 | `agent6 machine check <file>`             | validate: the `[config]` overlay and every state's `config` against the config schema, their refusals and the sandbox bound; parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; script health (ruff with its own config discovery, the nearest `.ruff.toml`, `ruff.toml` or `pyproject.toml` `[tool.ruff]` above the bundle; ty on a private temp copy with no config); no execution, no network |
-| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does; the bundle's `scripts/**/*_test.py` mock tests in a no-network jail (`full` only: elsewhere they count as skipped on the verdict line); a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
+| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does; the bundle's `scripts/**/*_test.py` mock tests in a no-network jail (`full` `sandbox.isolation` only: elsewhere they count as not run on the verdict line); a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
 | `agent6 machine run <file> [--exit-on-wait] [--auto-approve\|--no-commands] [--disable-sandbox]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. The approval and sandbox flags are the run flags, for the same reasons and with the same refusals. |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake. Read-only. |
@@ -744,7 +743,7 @@ It is an ordinary agent6 run handed this document's grammar, writing the `.asm.t
 - the workspace is an empty git repo under `[parallel].workdir` (where lane clones and fork worktrees live)
     - each iteration commits, so the draft survives a failure for the operator to read
 - every draft is gated: `machine check`, ruff (the destination's ruff config), ty, the `machine test` dry-run, and mock tests in a no-network jail
-    - the mock tests run under `full` only: elsewhere they are counted as skipped
+    - the mock tests run under `full` `sandbox.isolation` only: elsewhere agent6 reports them as not run
     - agent6 runs those validators itself between attempts (they need agent6, which no jailed command can reach) and hands the problems back
     - up to `--max-attempts` (default 3); the agent patches the files it wrote
 - the result is a draft: `-o <file>` overwrites the file and same-named files in the `scripts/` directory beside it

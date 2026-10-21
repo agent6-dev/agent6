@@ -70,7 +70,7 @@ jobs:
       - name: Allow unprivileged user namespaces (Ubuntu 24.04 AppArmor)
         # vhs renders through a headless Chromium whose sandbox needs unprivileged
         # userns; the default 24.04 AppArmor policy blocks it (same restriction
-        # agent6's strict sandbox hits — see ci.yml).
+        # agent6's `full` isolation hits; see ci.yml).
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Generate screenshots

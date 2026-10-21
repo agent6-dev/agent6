@@ -151,7 +151,7 @@ def _refuse_protected_write(
     """Refuse an in-process edit into the workspace's own top-level directory.
 
     The edit tools write outside the jail, so without this an LLM could rewrite `.git/hooks/*`
-    or `.git/config` and get code executed on the next `git` invocation; the full jail's
+    or `.git/config` and get code executed on the next `git` invocation; the `full` jail's
     read-only bind of `.git` never covers an in-process write. A nested `.git` (a vendored
     repo, a submodule gitlink) is content. Reads stay allowed. Both the raw candidate and the
     post-symlink relative path are checked, so `./decoy -> .git` cannot launder a write.

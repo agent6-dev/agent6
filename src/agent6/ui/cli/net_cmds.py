@@ -294,7 +294,7 @@ def exec_in_session(
         _common.error(f"{exc}")
         return 2
     if policy.network == "session" and pid is None:
-        # Recorded as session but holding none (an isolation short of full): refuse.
+        # A session policy with no live holder has no network to join.
         _common.refuse(f"{no_session_network_reason(layout)}")
         return 2
     if policy.network == "session":

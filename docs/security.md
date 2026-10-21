@@ -22,7 +22,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - `sandbox.extra_write_paths` widens it, visible in `agent6 config show`
     - the per-repo memory dir (file tools only) and the jail's persistent `HOME` (below) widen it, visible in `agent6 check sandbox`
 - No reads outside the workspace and a read-only system set for installed toolchains
-    - `full`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, whose `/etc` holds nothing else off the host network, plus a curated `/dev`
+    - `full`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, plus a curated `/dev`
     - `partial`: Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc` and the `/dev` nodes `null`, `zero`, `urandom`, `random` and `full`
         - `/proc` and the host's `/dev/shm` are not granted: `ps` and Python `multiprocessing` fail there, and work under `full`
     - `sandbox.extra_read_paths` adds more; `agent6 check sandbox` prints the resolved set
@@ -42,7 +42,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 - agent6's own git never pushes, force-pushes, rewrites history, or `reset --hard` ([Git](#7-git))
     - a `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `full`, and push needs egress
 - No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary (one create path stays open, below)
-    - the exception is the jail's persistent `HOME` (`partial`, `none`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run in that repository, and under `partial` it is executable.
+    - the exception is the jail's persistent `HOME` (`partial`, `none`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run in that repository, and stays executable.
       The operator's own shell, tools, and dotfiles never read it
     - chmod-family syscalls (`fchmodat2` included) deny modes carrying `S_ISUID` / `S_ISGID`; ordinary chmod passes
     - so do the create paths that take a mode: `creat`, `mknod`/`mknodat`, and `open`/`openat` with `O_CREAT` or `O_TMPFILE`.
@@ -64,7 +64,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 - The agent process's own egress is unbounded
     - agent6 reaches the configured providers (each `[providers.*].base_url` host, plus the fixed ChatGPT OAuth authority for token grants); nothing stops the process reaching elsewhere
     - a jailed command's egress is bounded ([Network](#5-network))
-- On `partial`, a command can hand work to a user daemon already running (tmux, `systemd --user`): unix sockets have no Landlock hook and stay nameable without a mount namespace
+- Under `partial` `sandbox.isolation`, a command can hand work to a user daemon already running (tmux, `systemd --user`): unix sockets have no Landlock hook and stay nameable without a mount namespace
     - the environment carries no address for one.
       A jailed command gets `LANG`, `LC_ALL`, `TERM` and `CI` from the host, plus `HOME`, `PATH`, `PYTHONDONTWRITEBYTECODE` and `UV_NO_SYNC` set by agent6 (a machine tool also `AGENT6_MACHINE_DATA_DIR`), and the `[git.commit]` name and email as `GIT_AUTHOR_*` and `GIT_COMMITTER_*` when the config sets them, so a `git commit` the model runs under `git.control = "model"` carries the operator's identity.
       A jailed MCP server's base drops `DISPLAY`, `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`, and `XDG_RUNTIME_DIR` (`curated_env(desktop=False)`)
@@ -72,7 +72,8 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 
 ## Defense layers
 
-`agent6 check sandbox` prints the resolved picture per actor (in-process tools, jailed commands, each MCP server): one row per path, sorted so a parent precedes its children, with a root row and a home-directory row per table, then the network, the approval mode, the secrets posture and the cause when `auto` resolved below `full`; the jail probes follow.
+`agent6 check sandbox` prints a table for the file tools and one for the jailed commands: a root row, a home-directory row and a row per path, a parent before its children.
+It also prints a line per MCP server, the network, the approval mode and the secrets posture, then runs the jail probes.
 
 ### 1. Trust boundary
 
@@ -161,8 +162,9 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - a grant on `/` or on `/dev` fails the launch by name: `/` would replace the jail's own root, and `/dev` would cover the jail's device nodes (name a device in `extra_device_paths`)
     - a grant whose path an earlier grant already shows (a file listed twice, a file inside a granted directory) is bound over it.
       Where the earlier grant shows a symlink at that path, nothing is mounted through the link: a read grant leaves the link as it is, and a write grant fails the launch by name
-    - a grant that is the home directory or a directory above it runs with a warning, at run start and in `agent6 check sandbox`: the run's commands and file tools then reach the credentials other tools keep there (`~/.ssh`, `~/.aws`, another agent's login).
-      agent6 hides only its own config dir and state base; `sandbox.hide_paths` hides the paths you list, under `full`
+    - a grant that is the home directory or a directory above it lets the run's commands and file tools reach the credentials other tools keep there (`~/.ssh`, `~/.aws`, another agent's login).
+      agent6 warns about such a grant at run start and in `agent6 check sandbox`.
+      Under `full`, agent6 hides only its own config dir and state base, plus the paths in `sandbox.hide_paths`
     - the paths kept read-only inside the workspace (`.git` under `protect_git`, a machine bundle) are bound after every grant: a grant that contains the workspace does not make them writable
     - a tool dir is mounted only when its identity clears a default-deny.
       Refused: a dir at, inside, or containing an agent6 private dir, and `$HOME` or an ancestor of it
@@ -173,7 +175,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
       The worktree's own `.git` pointer is never the source: a jailed command can rewrite it under `partial`.
       The policy builder refuses when the pointer no longer resolves to the record.
       A linked worktree agent6 did not record gets no grant
-    - the record reaches every policy consumer, the partial exposure scan included: a `hide_paths` entry inside it refuses like any other unmaskable exposure
+    - under `partial`, a `hide_paths` entry inside the recorded dir refuses like any other unmaskable entry
 - Masked last, after every bind (`full`): the config dir, the state base, `[sandbox].hide_paths`
     - each is masked under its given name and under the path it resolves to, so an entry spelled through a symlink covers the real directory
     - a hidden path inside the tree a symlinked grant resolves to is masked under the grant's spelled name too, where the jail shows that tree
@@ -183,15 +185,15 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - a `hide_paths` entry that is the workspace or a directory above it refuses at every level, before anything runs: drop the entry, or work in a directory outside it
     - a `hide_paths` entry hides a path, not content git tracks: a tracked file still reads through git's objects (`git show HEAD:<file>`) and in every clone or worktree a lane, a fork, a `run --worktree` run or a machine state works in
     - `XDG_CONFIG_HOME` and `XDG_STATE_HOME` relocate those two dirs, `XDG_CACHE_HOME` the persistent `HOME`; the mask, the grant validator, and the tool-mount scan all read the relocated path
-- `/dev` (`full`): `null`, `zero`, `urandom`, `random`, `full`, a private `shm`; no `/dev/tty`
+- `/dev` (`full`): `/dev/null`, `/dev/zero`, `/dev/urandom`, `/dev/random`, `/dev/full`, a private `/dev/shm`; no `/dev/tty`
     - `sandbox.extra_device_paths` binds named `/dev` nodes read-write (GPU compute).
       Each must be a char/block device on the host, or the launch refuses.
       On `partial` the same grant is a Landlock read+write rule on the node
     - creating one is denied at both levels: Landlock handles `MakeChar` / `MakeBlock` and grants them nowhere, and seccomp `EPERM`s the `mknod` pair by device type (below).
       `full` also has the user namespace (no `CAP_MKNOD` in the initial one) and `MS_NODEV` on the `/dev` binds
-    - under `partial` with `--allow-root` only Landlock and seccomp stand
+    - under `partial` with `--allow-root`, Landlock, seccomp and the capability drop deny it
 - `/proc` (`full`): fresh and private, empty if that fails; Landlock grants it read without execute
-    - the launcher runs with an empty environment; it is PID 1 there, so the command can read `/proc/1/environ`
+    - the launcher, PID 1 there, hides its `/proc` entry from the command (dumpable 0, capabilities dropped) and runs with an empty environment
 - seccomp: a 36-syscall deny-list returning `EPERM`.
   It covers process inspection (`ptrace`, `pidfd_getfd`, `process_vm_readv`/`writev`, `kcmp`), `io_uring_setup`, `userfaultfd`, the whole mount family (`mount`, `umount2`, `pivot_root`, `mount_setattr`, `open_tree`, `move_mount`, `fsopen`, `fsconfig`, `fsmount`, `fspick`), `setns`, `unshare`, `kexec`, `bpf`, `perf_event_open`, the keyring calls (`keyctl`, `add_key`, `request_key`), module loading, `reboot`, swap, and the clock-setting family
     - the list denies unconditionally.
@@ -209,15 +211,15 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 **Verify**
 
 `agent6 check sandbox` prints the isolation this host resolves to and the reason when it is not `full`.
-It also prints every tool bin symlink resolving out of its bin dir (whose target directory is mounted read-only into the jail).
+It also lists each directory the jail mounts read-only for operator tools, and why.
 It then runs live probes at that isolation.
-Exit 0 when all pass, 1 otherwise.
+It exits 1 when a check fails, 0 otherwise.
 
 | Probe | Passes when |
 |---|---|
 | `landlock_abi` | the kernel reports Landlock ABI >= 1 |
 | `jail_true` | `/usr/bin/true` runs in the jail, rc=0 |
-| `jail_blocks_network` | a jailed `getent hosts example.com` fails. n/a under `partial`, which has no per-command network namespace |
+| `jail_blocks_network` | a jailed `getent hosts example.com` fails. n/a under `partial`, which has no network namespace |
 | `jail_blocks_etc_write` | a jailed write to `/etc/agent6-escape` leaves no file on the host |
 
 ### 3. File access
@@ -235,8 +237,9 @@ Every path they take resolves through `Workspace`:
 - A grant is resolved once per run, and the file tools and every jail launch hold that resolved path
     - a grant spelled inside the workspace root or a write grant, or resolving into one, is dropped: a jailed command can re-point it there.
       The run names each dropped grant in one line at its start, and the region still covers what the grant held
-    - a grant reached through a link that sits in one of those regions, or in `/tmp` (the host's, which a `partial` run's commands write), is dropped too, though it ends outside: a command of one run could point the link elsewhere for the next.
-      Its line says to grant the target by its own path
+    - a grant reached through a link that sits in one of those regions is dropped too, though it ends outside: a command of one run could point the link elsewhere for the next.
+      Its line says to grant the target by its own path.
+      The same holds for a link in `/tmp` under any `sandbox.isolation` but `full`
     - an MCP server's own `read_paths` and `write_paths` (`[mcp.servers.<name>.sandbox]`) follow the same rule, resolved once when the server is spawned; a dropped one is named at run start under its own key
     - `agent6 check sandbox` lists each grant by its resolved path, with the configured spelling when the two differ, and each dropped grant with the region it sits in
 - A denied path is refused with the reason
@@ -296,7 +299,7 @@ The agent works within the environment it is given and cannot expand it:
            `--link-mode=copy` on both steps: the jail binds the cache `HOME` and the working tree as separate mounts, so uv cannot hardlink between them and warns on every install without it
     - the warmed cache serves every working tree agent6 makes for the repository: a `run --worktree` worktree, a fork's, a `--parallel` lane's clone and a machine state's clone all get the repository's `HOME`
 - Running agent6 as root needs `--allow-root` / `AGENT6_ALLOW_ROOT=1` (plus a banner) and weakens the boundary
-    - `full`'s single-uid map is then root to root: jailed children run as real root under Landlock, seccomp, and `NO_NEW_PRIVS` only
+    - jailed children run as real root under Landlock, seccomp and `NO_NEW_PRIVS` only, even under `full` `sandbox.isolation`
     - a setuid bit planted through `openat2` (the one create path seccomp cannot filter) then lands on a root-owned file in the workspace.
       That is local root for whoever runs it outside the jail
     - writes outside the workspace and routes off the box stay closed
@@ -354,7 +357,7 @@ Under `none` isolation nothing is enforced or refused.
 | Configuration | When |
 |---|---|
 | a machine overlay sets `network = host` under your `auto` or `session` | `machine check`, machine start |
-| explicit `network = session`, yours or a machine state's | run or machine start, `partial` |
+| explicit `network = session`, yours or a machine state's | run or machine start under `partial` |
 
 **MCP servers** take their own value per server (`[mcp.servers.<name>.sandbox].network`, default `auto`):
 
@@ -423,10 +426,11 @@ Under `none` isolation nothing is enforced or refused.
 
 **A `git` the model runs through `run_command`** is bounded by the sandbox, and its argv is not screened.
 
-- `protect_git` (default on) keeps `.git` unwritable under `full`: re-bound read-only, recursively (a mount nested under it stays visible and read-only)
+- `protect_git` (default on) requires `full` `sandbox.isolation` to bind-remount `.git` as read-only
+    - a mount nested under `.git` stays visible and read-only
     - a rewrite fails; `push` has no egress
     - a grant that contains the workspace does not lift it ([Sandbox](#2-sandbox))
-- `protect_git` is full-only: on `partial` the default degrades with a warning, an explicit `true` refuses to run
+- Under `partial`, `protect_git` left at its default degrades with a warning, and an explicit `true` refuses to run
     - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`, which agent6's own auto-commit (a temp-index `git add -A` on the host) then runs, reaching `$HOME` and the network
     - Landlock cannot express the exclusion: a directory grant is recursive and stacked rulesets intersect, so denying `.git` means not granting the workspace root either
 - `git.control = "agent6"` is enforced by the sandbox; without it, an explicit setting refuses to run and the default warns that a commit the model runs lands on the checkout's branch.
@@ -508,7 +512,7 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
     - a wider value refuses at `machine check` and at machine start, naming the state and the key
     - the other operator-only tables and leaves are rejected at load ([the list](state-machines.md#47-machine-config-overlay-config))
 - One resolved config per state feeds both enforcement sites: a `tool` state's jail, and an `agent` state's subprocess (its in-process file tools and its jailed commands)
-    - every startup check a plain run makes (masking on `partial`, network support) runs per state and names the state
+    - every startup check a plain run makes (the `hide_paths` check under `partial`, network support) runs per state and names the state
     - a state the supervisor resolved no config for runs nothing
 - A `--config FILE` inside the workspace is read-only in every jail, like the bundle: a state cannot raise its own ceiling
 - A grant bounds what a state touches directly: a granted state can copy what it reads to the blackboard, the data dir, the jail's `HOME` or a commit, where a later state reads it
@@ -588,11 +592,12 @@ It catches prompt regressions; the structural defenses above confine a model tha
 
 ## Known limitations
 
-- User namespaces must be enabled; agent6 refuses `full` on distros that disable them.
+- `full` `sandbox.isolation` requires user namespaces and refuses on distros that disable them.
 - AppArmor userns (Ubuntu 24.04+) blocks unprivileged userns without a profile
-    - agent6 ships one scoped to the launcher (`agent6 system apparmor install`): with it `full`, without it `partial`
+    - `agent6 system apparmor install` adds the profile that `full` `sandbox.isolation` needs, scoped to the launcher
 - seccomp is required; kernels that block it from unprivileged callers make the jail fail closed.
-- Devcontainers get `partial`: the container bounds filesystem damage; jailed commands share the container's network ([Network](#5-network))
+- Devcontainers get `partial` `sandbox.isolation`.
+  The container bounds filesystem damage, and jailed commands share its network ([Network](#5-network))
     - the XDG state base is ephemeral (lost on rebuild): mount a volume at the state dir or point `XDG_STATE_HOME` at one
 - agent6 installed inside the project it works on (pip into the project's own venv) puts the running agent's code in the jail's writable workspace
     - a jailed command can rewrite it; the next tool call runs the rewrite as you, outside the jail

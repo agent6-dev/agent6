@@ -3,7 +3,7 @@
 # buggy stats repo, starts the proxy, and records this; hero.sh cuts it.
 #
 # Arc: the gate's baseline run asks its approval at once (run_commands=ask):
-# Tab, then y allows it from the row -> conversation with detail on (reasoning
+# Tab, then y allows it from the approval row -> conversation with detail on (reasoning
 # streams live) -> dashboard -> the model's own verify call docks the approval
 # row again; Tab, y -> verify passes, auto-commit, the diff pane fills -> the run
 # ends and the TUI holds the payoff; Ctrl+Q leaves -> back in via `agent6 tui`:

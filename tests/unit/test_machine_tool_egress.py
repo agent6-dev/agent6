@@ -266,7 +266,7 @@ def test_liveworld_grants_data_dir_rw_and_env(
     world.run_tool(("true",), 5.0)
     policy = seen[-1]
     assert data in policy.extra_rw_paths
-    # Exported as the real host abspath on partial; full maps it to /rw<abspath>.
+    # The data dir keeps its host path at every level, so $AGENT6_MACHINE_DATA_DIR holds it.
     assert ("AGENT6_MACHINE_DATA_DIR", str(data)) in policy.env
 
 
@@ -276,7 +276,7 @@ def test_liveworld_no_data_dir_grants_only_the_home(
     seen = _patch_jail(monkeypatch)
     world = _world(tmp_path, "partial")
     world.run_tool(("true",), 5.0)
-    # partial's persistent HOME is the only extra grant: no data dir, no data grant.
+    # `partial`'s persistent HOME is the only extra grant: no data dir, no data grant.
     assert seen[-1].extra_rw_paths == (paths.jail_cache_home(tmp_path),)
     assert all(k != "AGENT6_MACHINE_DATA_DIR" for k, _ in seen[-1].env)
 

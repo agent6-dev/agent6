@@ -19,9 +19,9 @@ from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.tools import _path_safety, _result_format
 
-# full's default HOME: the launcher creates it inside the run's private /tmp tmpfs.
+# `full`'s default HOME: the launcher creates it inside the run's private /tmp tmpfs.
 JAIL_TMP_HOME = pathlib.Path("/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
-# The host's /tmp, which a partial run's commands write: a link there is re-pointable.
+# Commands write the host's /tmp at every level but `full`, so a link there can be re-pointed.
 _TMP = pathlib.Path("/tmp").resolve()  # noqa: S108
 
 # What a resolver and a TLS client read: the resolver settings and the CA store.
@@ -39,7 +39,7 @@ def host_network_reads() -> tuple[pathlib.Path, ...]:
     """Return the files a child on the host network reads to resolve names and verify TLS.
 
     Those that exist on this host, each followed by the file it points to when it is a symlink
-    (a resolver file often points into `/run`): full binds the name the resolver opens, and
+    (a resolver file often points into `/run`): `full` binds the name the resolver opens, and
     Landlock needs the real file.
     """
     out: dict[pathlib.Path, None] = {}
@@ -60,7 +60,7 @@ def persistent_jail_home(
     """Return the persistent HOME a jailed command gets, or None where `JAIL_TMP_HOME` applies.
 
     Only `full` has a private /tmp for a throwaway HOME; every other level gets the
-    repository's `agent6.paths.jail_cache_home`, and full opts into it with
+    repository's `agent6.paths.jail_cache_home`, and `full` opts into it with
     `[sandbox].home = "cache"`. `jail_policy` creates it and grants it read-write at its real
     path. A working tree agent6 made for a repository (a worktree, a lane's clone, a machine
     state's clone) gets that repository's HOME, so a warmed tool cache serves all of them.
@@ -71,7 +71,7 @@ def persistent_jail_home(
         root: The workspace.
         worktree_git_dir: The recorded repository git dir of a session in a linked worktree.
             It names the repository; the worktree's own `.git` pointer never does, since a
-            jailed command can rewrite it under partial and aim HOME at another repository's.
+            jailed command can rewrite it under `partial` and aim HOME at another repository's.
 
     Returns:
         The repository's persistent HOME, or None.
@@ -98,7 +98,7 @@ def jail_home_refusal(home: pathlib.Path) -> str | None:
     An absent path is fine (`jail_policy` creates it). Refused: a symlink, a non-directory,
     another user's directory, a mode with any group or other bit (a jailed command may chmod
     the dir, and an open one lets another local user plant what the next run consumes; checked
-    on every build, never restored), or a path inside an agent6-private dir, which the full
+    on every build, never restored), or a path inside an agent6-private dir, which the `full`
     mask would re-bind writable. Checked on resolved paths so a symlinked ancestor cannot dodge
     it; the config validator refuses the same for `extra_write_paths`.
     """
@@ -250,9 +250,9 @@ def resolve_grants(
     grant), or that is one of them under another name, or reached through a link that sits in
     one, is dropped: a jailed command can swap a component there for a symlink out of every
     grant, and an alias of the workspace would be bound without its read-only `.git`. `/tmp`
-    is such a region when the run would not be `full` on this host, whose private `/tmp` no
-    command can re-point: a `partial` run's commands write the host's, and what a grant there
-    held stays reachable as part of it. A grant elsewhere resolves as the operator linked it.
+    is such a region unless the run would be `full` on this host, where `/tmp` is private.
+    What a grant inside `/tmp` held stays reachable as part of it. A grant elsewhere
+    resolves as the operator linked it.
 
     Args:
         config: The run's config.
@@ -364,7 +364,7 @@ def resolve_network(
 ) -> kinds.NetworkMode:
     """Return the network a child gets.
 
-    Clamped to what the level can provide: only full has namespaces, so everywhere else the
+    Clamped to what the level can provide: only `full` has namespaces, so everywhere else the
     child shares this process's network and the policy says so (preflight has refused an
     explicit setting it cannot honour and warned about an automatic one).
 
@@ -375,7 +375,8 @@ def resolve_network(
             per-server choice.
 
     Returns:
-        "host" outside full or under `network = "host"`, else the override or "session".
+        "host" outside `full`, else the override when given, else "host" under
+        `network = "host"`, else "session".
     """
     if isolation != "full":
         return "host"
@@ -434,9 +435,9 @@ def jail_policy(
     network = resolve_network(config, isolation, override=network)
     protect_paths: list[pathlib.Path] = []
     # A writable `.git` lets a jailed command plant a clean filter that the auto-commit runs on
-    # the host. Full re-binds `.git` read-only, which needs a mount namespace; partial has only
+    # the host. `full` re-binds `.git` read-only, which needs a mount namespace; `partial` has only
     # Landlock, whose recursive root grant cannot exclude `.git` without costing every top-level
-    # write. The in-process edit tools refuse `.git` writes on both levels.
+    # write. The in-process edit tools refuse `.git` writes at every level.
     if config.sandbox.protect_git and isolation == "full":
         protect_paths.append((root / ".git").resolve())
     protect_paths.extend(extra_protect_paths)

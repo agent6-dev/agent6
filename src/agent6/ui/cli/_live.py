@@ -170,8 +170,7 @@ def tui_session(session_dir: pathlib.Path, *, enabled: bool) -> Generator[None]:
         print(f"[agent6] could not start TUI ({exc}); continuing without it.", file=sys.stderr)
         yield
         return
-    # The run proceeds once the dashboard holds the terminal: an approval asked before it
-    # registered fell to the terminal prompt, which raced the dashboard for every key.
+    # Wait for the dashboard to register, so no approval prompt races it for the terminal.
     deadline = time.monotonic() + 5.0
     while (
         proc.poll() is None

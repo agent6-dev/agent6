@@ -95,7 +95,7 @@ def select_isolation(
     try:
         env = _setup.detect_env()
     except jail.JailUnavailableError as exc:
-        # The full probe could not run the jail binary; no command will run under it either.
+        # The jail binary cannot run, so no jailed command can either.
         reporter.refuse(str(exc))
         raise preflight.SessionRefusedError(2) from exc
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
@@ -110,7 +110,7 @@ def select_isolation(
             selected, env, cfg, root=cwd, worktree_git_dir=worktree_git_dir, reporter=reporter
         )
     except jail.JailUnavailableError as exc:
-        # The partial exposure scan builds the run's policy, which creates the jail's HOME.
+        # The exposure scan builds the jail policy, which creates the jail's HOME.
         reporter.refuse(str(exc))
         raise preflight.SessionRefusedError(2) from exc
     confine.warn_cleartext_credential_endpoints(cfg, reporter=reporter)

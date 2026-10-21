@@ -38,10 +38,10 @@ Observed (one run each, 2026-06-29):
 ## Sandboxing
 
 All of these run under the **default** sandbox config (`sandbox.isolation = "auto"`, `sandbox.network = "auto"`).
-Under `strict`, each `tool` state gets its own network namespace from the jail launcher.
+Under `full`, each `tool` state gets its own network namespace from the jail launcher.
 The agent process's own egress is unbounded ([security model](../../docs/security.md#5-network)).
 
-On a host that supports **only** `hardened` there is no network namespace.
+On a host that supports **only** `partial` there is no network namespace.
 The default `sandbox.network = "auto"` then runs a `tool` state on the host's network with a warning; an explicit `sandbox.network = "session"` refuses to start.
 The pure-agent machines (hello, council) and the pure-timer machine (wait-clock) have no tool states.
 

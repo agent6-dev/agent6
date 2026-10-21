@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """One serving launcher at every isolation level, `none` included.
 
-Only full has the PID namespace, so the two bounds it provides for free are explicit
+Only `full` has the PID namespace, so the two bounds it provides for free are explicit
 elsewhere: the launcher sweeps what it backgrounded when its request channel closes, and
 the Python side sweeps each command's escapees.
 """
@@ -21,7 +21,7 @@ import pytest
 from agent6 import kinds
 from agent6.sandbox import jail, jail_jobs, jail_session
 
-# partial and none need no namespaces; the full case is marked per-test.
+# `partial` and `none` need no namespaces; the `full` case is marked per-test.
 _NO_NAMESPACE_LEVELS: tuple[kinds.IsolationLevel, ...] = ("partial", "none")
 
 
@@ -65,7 +65,7 @@ def test_a_session_serves_commands_without_namespaces(
 def test_backgrounding_works_without_a_pid_namespace(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    """The launcher accepts a background request outside full."""
+    """The launcher accepts a background request outside `full`."""
     session = _session(tmp_path, isolation)
     try:
         pid = session.start_background(("/bin/sh", "-c", "sleep 60"))
@@ -82,7 +82,7 @@ def test_a_backgrounded_command_dies_with_the_session(
 ) -> None:
     """Without a PID namespace the launcher sweeps the pids it started when its channel closes.
 
-    Full's PID namespace does this by construction; otherwise a server would outlive the
+    `full`'s PID namespace does this by construction; otherwise a server would outlive the
     run that started it.
     """
     session = _session(tmp_path, isolation)
@@ -122,10 +122,10 @@ def test_a_setsid_escapee_does_not_outlive_its_command(
 def test_a_backgrounded_setsid_daemon_dies_with_the_session(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    """A background command's `setsid` child does not survive the run on partial.
+    """A background command's `setsid` child does not survive the run under `partial` or `none`.
 
-    It leaves the group the launcher tracks and outlives every per-command sweep; with no
-    PID namespace nothing else bounds it, and partial has the host's network.
+    It leaves the group the launcher tracks and outlives every per-command sweep. With no PID
+    namespace nothing else bounds it, and it keeps the host's network.
     """
     session = _session(tmp_path, isolation)
     marker = tmp_path / "daemon.pid"

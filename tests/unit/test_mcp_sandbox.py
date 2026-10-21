@@ -375,7 +375,7 @@ def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
     into = tmp_path / "into"
     into.symlink_to(repo / "data", target_is_directory=True)
     spec = {"command": ["npx", "server"], "sandbox": {"read_paths": [str(tool), str(into)]}}
-    # Pinned full: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    # Pinned to `full`: pytest's tmp_path sits in /tmp, where a link counts under auto.
     cfg = Config.model_validate(
         {"sandbox": {"isolation": "full"}, "mcp": {"enabled": True, "servers": {"fs": spec}}}
     )

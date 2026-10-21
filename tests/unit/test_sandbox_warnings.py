@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`warn_sandbox_gaps`: the run-entry warning when the isolation confines less than its name.
 
-`none`, full without Landlock, or partial on Landlock below ABI 3, where truncation is
+`none`, `full` without Landlock, or `partial` on Landlock below ABI 3, where truncation is
 unconfined.
 """
 
@@ -124,7 +124,7 @@ def test_none_warns_unsandboxed(tmp_path: pathlib.Path, capsys: pytest.CaptureFi
 def test_full_without_landlock_warns(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Full on a Landlock-less kernel (ABI 0) silently lost a documented layer.
+    """`full` on a Landlock-less kernel (ABI 0) silently lost a documented layer.
 
     The launcher's best-effort ruleset enforces nothing and no surface said so, breaking the "no
     silent downgrade, always loudly" contract.
@@ -199,10 +199,10 @@ def test_partial_auto_warns_tool_network_degrade(
 def test_partial_below_abi3_warns_truncate_unconfined(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], abi: int
 ) -> None:
-    """Partial below Landlock ABI 3 warns that truncate is unconfined.
+    """`partial` below Landlock ABI 3 warns that truncate is unconfined.
 
     ABI 1 and 2 do not confine truncate, so a jailed command can truncate files outside its write
-    grants; `auto` still resolves to partial there, so the over-promise is said once per run,
+    grants; `auto` still resolves to `partial` there, so the over-promise is said once per run,
     naming ABI 3 and Linux 6.2.
     """
     confine.warn_sandbox_gaps("partial", _env(abi), _cfg("host"), root=tmp_path)
@@ -236,10 +236,10 @@ def test_partial_warning_names_shared_tmp_and_persistent_home(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The partial warnings name the shared /tmp and the persistent HOME.
+    """The `partial` warnings name the shared /tmp and the persistent HOME.
 
-    Full gives each run a private /tmp tmpfs with HOME (/tmp/agent6-home) inside it, gone when the
-    run ends; partial has no mount namespace, so /tmp is the host's and HOME is the persistent
+    `full` gives each run a private /tmp tmpfs with HOME (/tmp/agent6-home) inside it, gone when the
+    run ends; `partial` has no mount namespace, so /tmp is the host's and HOME is the persistent
     cache dir. The HOME warning stands on its own rather than riding the .git warning, which
     `protect_git = false` removes.
     """
@@ -255,10 +255,10 @@ def test_partial_warning_names_shared_tmp_and_persistent_home(
 def test_full_cache_home_warns_naming_the_cost(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`home = "cache"` under full is an explicit widening.
+    """`home = "cache"` under `full` is an explicit widening.
 
-    It runs, with a loud warning naming the persistence and the executable grant. The default full
-    HOME warns nothing.
+    It runs, with a loud warning naming the persistence and the executable grant. The default HOME
+    under `full` warns nothing.
     """
     confine.warn_sandbox_gaps(
         "full", _env(4), Config(sandbox=SandboxConfig(home="cache")), root=tmp_path
@@ -300,7 +300,7 @@ def test_a_cleartext_credential_endpoint_warns_at_run_entry(
 def test_explicit_block_refuses_on_partial(tmp_path: pathlib.Path) -> None:
     """network='session' is an ENFORCE setting.
 
-    It needs a netns only full provides, so on partial we refuse (name what's unsupported + the
+    It needs a netns only `full` provides, so on `partial` we refuse (name what's unsupported + the
     fix) rather than run silently under-confined. 'auto' degrades instead.
     """
     err = confine.check_network_support(_cfg("session"), "partial")
@@ -308,7 +308,7 @@ def test_explicit_block_refuses_on_partial(tmp_path: pathlib.Path) -> None:
     assert "sandbox.network = 'session'" in err and "auto" in err and "full" in err
     # auto is NOT refused (it degrades with a warning) -> None.
     assert confine.check_network_support(_cfg("auto"), "partial") is None
-    # On full, block is enforceable -> no refusal.
+    # On `full`, `session` is enforceable -> no refusal.
     assert confine.check_network_support(_cfg("session"), "full") is None
 
 
@@ -343,8 +343,8 @@ def test_partial_warns_loudly_when_a_grant_exposes_the_private_dirs(
 ) -> None:
     """Granting a region containing the config dir is a choice the operator may mean.
 
-    Real protection remains on partial (writes stay confined, seccomp applies), so refusing would
-    be paternalism. It warns instead and names what becomes readable. Full masks the same grant
+    Real protection remains on `partial` (writes stay confined, seccomp applies), so refusing would
+    be paternalism. It warns instead and names what becomes readable. `full` masks the same grant
     and says nothing.
     """
     home = tmp_path / "home"
@@ -371,7 +371,7 @@ def test_the_workspace_itself_counts_as_a_granted_region(
 ) -> None:
     """Verified live before this existed.
 
-    With the config dir INSIDE the workspace, a jailed `cat` on partial printed secrets.toml. The
+    With the config dir INSIDE the workspace, a jailed `cat` on `partial` printed secrets.toml. The
     workspace is granted implicitly, so it has to be checked like any other region.
     """
     cfg_dir = tmp_path / ".config" / "agent6"
@@ -388,7 +388,7 @@ def test_the_workspace_itself_counts_as_a_granted_region(
 def test_partial_refuses_an_explicit_hide_entry_it_cannot_mask(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Partial refuses an explicit hide_paths entry it cannot mask.
+    """`partial` refuses an explicit hide_paths entry it cannot mask.
 
     An operator who wrote hide_paths down asked explicitly: a default degrades with a warning, an
     explicit value refuses rather than being silently ineffective.
@@ -408,7 +408,7 @@ def test_partial_refuses_an_explicit_hide_entry_it_cannot_mask(
 def test_a_plain_partial_run_neither_warns_nor_refuses(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Private homes OUTSIDE every partial grant region (/tmp is granted RW,
+    # Private homes OUTSIDE every `partial` grant region (/tmp is granted RW,
     # so a tmp-based home is genuinely exposed there -- the twin below pins
     # that as a true positive). The normal ~/.local layout is this case. The
     # cache stays where the suite put it: the jail's HOME lives there, and the
@@ -422,7 +422,7 @@ def test_a_plain_partial_run_neither_warns_nor_refuses(
     cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
     confine.warn_sandbox_gaps("partial", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
-    # partial's persistent HOME is the one notice every such run carries;
+    # `partial`'s persistent HOME is the one notice every such run carries;
     # nothing here is an exposure.
     assert err.count("WARNING") == 1 and str(paths.jail_cache_home(tmp_path)) in err, err
     assert "can read" not in err
@@ -432,10 +432,11 @@ def test_a_plain_partial_run_neither_warns_nor_refuses(
 def test_partial_warns_when_private_state_sits_in_a_granted_region(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Partial warns when private state sits in a granted region.
+    """`partial` warns when private state sits in a granted region.
 
-    The partial launcher grants the host's shared /tmp read-write, so private dirs under it are
-    readable by every command; a preflight that sees only cwd and the extra grants misses them.
+    The launcher under `partial` grants the host's shared /tmp read-write, so private dirs
+    under it are readable by every command; a preflight that sees only cwd and the extra
+    grants misses them.
     """
     for var in ("CONFIG", "STATE", "DATA", "CACHE"):
         monkeypatch.setenv(f"AGENT6_{var}_HOME", str(tmp_path / var.lower()))
@@ -453,10 +454,10 @@ def test_partial_warns_when_private_state_sits_in_a_granted_region(
 def test_root_on_partial_names_what_it_costs(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Root on partial warns and names what it costs.
+    """Root on `partial` warns and names what it costs.
 
     Running as root is the operator's explicit widening, so it warns rather than refuses, and the
-    warning names the cost, not just the choice. Verified as real uid 0: under partial a jailed
+    warning names the cost, not just the choice. Verified as real uid 0: under `partial` a jailed
     command reads /etc/shadow, /etc/sudoers and the host's ssh private keys, because Landlock grants
     the documented read-only system set and root stops file permissions narrowing it. The root
     banner names running as root; it does not name this.
@@ -474,9 +475,9 @@ def test_root_on_partial_names_what_it_costs(
 def test_root_on_full_says_nothing_about_it(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Root on full says nothing about it.
+    """Root on `full` says nothing about it.
 
-    Full pivots into a minimal rootfs: verified as real uid 0, its /etc holds a single entry and
+    `full` pivots into a minimal rootfs: verified as real uid 0, its /etc holds a single entry and
     none of those files exist. A warning there would name a cost the operator is not paying.
     """
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
@@ -501,7 +502,7 @@ def test_auto_degrade_warns_with_the_reason(
 ) -> None:
     """The degrade ITSELF is loud, not only its consequences.
 
-    Auto landing on partial printed the network/protect_git consequences but never why full was
+    Auto landing on `partial` printed the network/protect_git consequences but never why `full` was
     skipped. One owner (detect.degrade_reason) feeds this line, check sandbox, and check config.
     """
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
@@ -518,7 +519,7 @@ def test_auto_degrade_warns_with_the_reason(
 def test_explicit_partial_has_no_degrade_line(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An operator who WROTE partial chose it; nothing degraded."""
+    """An operator who WROTE `partial` chose it; nothing degraded."""
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
 
     def _why(_env: object) -> str:

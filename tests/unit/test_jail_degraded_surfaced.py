@@ -46,7 +46,7 @@ def _events(path: pathlib.Path, kind: str) -> list[dict[str, object]]:
 def _dispatcher(
     tmp_path: pathlib.Path, events: event_log.EventSink, stub: _StubSession
 ) -> dispatch.ToolDispatcher:
-    # network = "host" needs no session netns; isolation must be full for a session to open.
+    # network = "host" needs no session netns.
     (tmp_path / "s").mkdir(exist_ok=True)
     return dispatch.ToolDispatcher(
         root=tmp_path,

@@ -271,7 +271,7 @@ def test_offline_tests_skipped_on_none_profile(
 def test_offline_tests_skipped_on_partial_profile(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # partial has a jail but no network namespace, so network="none" cannot
+    # `partial` has a jail but no network namespace, so network="none" cannot
     # be honored: model-authored scripts would reach the host network. They must
     # NOT run, and the outcome carries the skip for the caller's verdict (a
     # stderr aside beside an OK verdict read as "tests ran green").

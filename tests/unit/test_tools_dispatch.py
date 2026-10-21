@@ -1855,7 +1855,7 @@ def test_run_command_passes_extra_read_paths_to_policy(
 ) -> None:
     # sandbox.extra_read_paths must reach the JailPolicy as extra_ro_paths, so a
     # project whose toolchain/interpreter lives outside the repo (e.g. a conda
-    # env at /opt) is usable under partial/full.
+    # env at /opt) is usable under `partial`/`full`.
     from agent6.config import load_config
 
     body = _VALID_TOML.replace(
@@ -2027,13 +2027,13 @@ def test_git_reaches_the_jail_as_a_protect_path_only_under_full(
 ) -> None:
     """`protect_git` is a read-only bind, so it needs a mount namespace.
 
-    The threat is real on partial too -- a jailed command can plant a
+    The threat is real on `partial` too -- a jailed command can plant a
     `filter.<n>.clean` in .git/config with a matching .gitattributes, and
     agent6's own host-side auto-commit (`git add -A`, run OUTSIDE the jail)
     then executes it. But Landlock cannot express the protection: a grant on a
     directory is recursive and stacked rulesets only intersect, so denying
     `.git` means not granting the workspace root either -- which denied every
-    `touch`/`mkdir` at the root. Partial warns instead, and an explicitly-set
+    `touch`/`mkdir` at the root. `partial` warns instead, and an explicitly-set
     `protect_git = true` refuses to run there.
     """
     (tmp_path / ".git").mkdir()

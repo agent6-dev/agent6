@@ -214,7 +214,7 @@ def _granted(
     from agent6.config import Config
     from agent6.tools import policy
 
-    # Pinned full: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    # Pinned to `full`: pytest's tmp_path sits in /tmp, where a link counts under auto.
     grants = {
         "isolation": "full",
         "extra_read_paths": [str(read)],

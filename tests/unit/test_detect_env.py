@@ -52,7 +52,7 @@ def test_detect_env_keeps_userns_when_the_jail_agrees(monkeypatch: pytest.Monkey
 def test_detect_env_drops_to_partial_when_the_jail_cannot_do_full(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A jail that fails its own probe resolves `auto` down, never announces full and then dies.
+    """A jail that fails its own probe resolves `auto` down, never announces `full` and then dies.
 
     The Docker case: `unshare` succeeds under a relaxed seccomp profile and AppArmor then denies the
     jail's `mount`.
@@ -155,7 +155,7 @@ def test_degrade_reason_covers_the_landlock_less_floor(monkeypatch: pytest.Monke
 
 
 def test_unsupported_seccomp_arch_degrades_auto_and_refuses_explicit() -> None:
-    """With no seccomp filter (off x86_64 and aarch64) `auto` degrades to none, full refuses."""
+    """With no seccomp filter (off x86_64 and aarch64) `auto` degrades to `none`, `full` refuses."""
     import dataclasses
 
     e = dataclasses.replace(_env(True), seccomp_arch_supported=False)

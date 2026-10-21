@@ -5,7 +5,7 @@
 `filter.<n>.clean/smudge/process` and `merge.<n>.driver` in a repo's own `.git/config`
 are host commands: the clean filter fires on the per-step auto-commit's `git add`, the
 merge driver on the chain merge's `merge-tree`. A cloned repo brings them pre-poisoned,
-and under partial a jailed command can write `.git/config` mid-run; either way no model
+and under `partial` a jailed command can write `.git/config` mid-run; either way no model
 action is needed. agent6 neutralizes each by name unless `git.run_repo_filters` opts in
 (the Git-LFS setting, since LFS uses exactly these drivers).
 """

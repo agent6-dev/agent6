@@ -5,11 +5,9 @@
 # (seed/stats.py) are copied into a throwaway git repo so each run starts from
 # the same failing state and the agent's edits never touch this checkout.
 #
-# Runs under the default sandbox config: on strict, every jailed command (the
-# tool states, and whatever the agent runs) gets the run's own network. A host
-# that supports only hardened has no network namespace, so the default
-# `sandbox.network = "auto"` degrades with a warning there; an explicit
-# `session` refuses instead. Nothing here touches your global config.
+# Runs under the default sandbox config. Under `full` `sandbox.isolation`, each
+# state's jailed commands get a network of their own. Nothing here touches your
+# global config.
 #
 # Usage:  bash bench/machines/code-fixer/run.sh [workdir]
 set -euo pipefail

@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `agent6 check sandbox` section: the resolved boundaries per actor, then the jail probes.
+"""List what the file tools, jailed commands and MCP servers can reach, then run the jail probes.
 
-Every path an actor reaches is one row, sorted by path so a parent precedes its children,
-with a root row and a home-directory row per table.
+Each table has one row per path, sorted so a parent precedes its children, with a root row and a
+home-directory row.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from agent6.tools import policy as tools_policy
 
 # Mirrors SYSTEM_BINDS in the jail's main.rs; tests/security pins the two against each other.
 FULL_SYSTEM_BINDS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/alternatives")
-# What partial's Landlock grants read-only (main.rs ro_paths base set).
+# What `partial`'s Landlock grants read-only (main.rs ro_paths base set).
 PARTIAL_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc")
 
 _TMP = pathlib.Path("/tmp")  # noqa: S108 - the jail's own tmpfs, or the host's under partial
@@ -40,7 +40,7 @@ _FILE_TOOLS = (
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Row:
-    """One path an actor reaches, or is refused.
+    """One path in a table, with its access and the reason.
 
     Attributes:
         mode: `rw`, `ro`, `--` (refused or hidden) or `dev` (a device node).
@@ -66,7 +66,7 @@ def _with_defaults(rows: list[Row], *defaults: Row) -> list[Row]:
 
 
 def grant_rows(grants: tools_policy.Grants) -> list[Row]:
-    """Return the operator's extra path grants, shared verbatim by both actors.
+    """Return the rows of the extra path grants the file tools and jailed commands share.
 
     Each row names the resolved path a run binds, with the configured spelling when the two
     differ, and each grant a run leaves out says why.
@@ -102,7 +102,7 @@ def _home_row(
     root: pathlib.Path,
     git_grant: pathlib.Path | None,
 ) -> Row:
-    """Return the jail's HOME row: full's tmpfs, or the repository's cache dir and why."""
+    """Return the jail's HOME row: `full`'s tmpfs, or the repository's cache dir and why."""
     persistent = tools_policy.persistent_jail_home(cfg, selected, root, git_grant)
     if persistent is None:
         return Row("rw", tools_policy.JAIL_TMP_HOME, "HOME, inside the private /tmp")
@@ -279,7 +279,7 @@ def _mcp_lines(cfg: Config, root: pathlib.Path, selected: kinds.IsolationLevel) 
 
 
 def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel) -> None:
-    """Print the resolved isolation with the host facts behind it, then the three knobs."""
+    """Print the resolved isolation and why, then the command, network and memory settings."""
     if selected == "none":
         print(f"  isolation: none  ({_setup.no_jail_cause(cfg, env)})")
     else:
@@ -444,14 +444,13 @@ def _probe_checks(
 def check_sandbox_section(
     cfg: Config, explicit_leaves: frozenset[str] = frozenset()
 ) -> list[kinds.DoctorCheck]:
-    """Print the resolved boundaries by actor, then probe the jail they describe.
+    """Print what the file tools, jailed commands and MCP servers can reach, then probe the jail.
 
-    Resolved values only; the refusal a run would give is a FAIL row, a grant of the home
-    directory a WARN row, and the probes one row.
+    A refusal a run would give is a FAIL row, and a grant of the home directory is a WARN row.
 
     Args:
         cfg: The config.
-        explicit_leaves: The keys the operator set, for the refusal ladder.
+        explicit_leaves: The config leaves the operator wrote, which refuse rather than degrade.
 
     Returns:
         The section's summary rows.

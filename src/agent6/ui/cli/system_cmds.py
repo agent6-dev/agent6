@@ -4,7 +4,7 @@
 
 Operator-driven: every command shells out with fixed argv, directly when already root,
 else through `sudo`, never with model-supplied input. `apparmor` installs the bundled
-profile that lets the full sandbox use unprivileged user namespaces on Ubuntu 24.04+.
+profile that lets `full` `sandbox.isolation` use unprivileged user namespaces on Ubuntu 24.04+.
 
 Security review note: `apparmor` writes `/etc/apparmor.d/agent6-jail` and runs
 `apparmor_parser` via sudo. The profile is a fixed constant and the argv is fixed. The

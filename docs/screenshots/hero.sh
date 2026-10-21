@@ -10,8 +10,8 @@
 # agent6 is, loop clean. Time compression is honest: the UI's own durations
 # and costs stay visible.
 #
-#   tui  the baseline gate's approval answered from the row, the conversation
-#        streaming -> the approval row on the dashboard (ask) -> verify ✓
+#   tui  the gate's baseline run approved -> the conversation streaming ->
+#        the model's verify call approved on the dashboard -> verify ✓
 #        auto-commit + diff pane -> hub receipt -> config: sandbox.
 #   cli  the failing suite -> one command, the run streams -> /exit ->
 #        sessions diff (the fix) -> sessions show (the receipt).
@@ -24,9 +24,8 @@
 #
 # Each segment cuts a window from its source and retimes it onto a target
 # length, so the pace comes from how much happens in the window; a per-segment
-# hold freezes the last frame so payoffs rest (the run TUI exits the moment
-# the run ends, so a rest cannot come from the source). The 8fps TUI/CLI
-# recordings keep ~20 distinct frames/s after a ~2.5x speed-up.
+# hold freezes the last frame so payoffs rest. The 8fps TUI/CLI recordings
+# keep ~20 distinct frames/s after a ~2.5x speed-up.
 #
 # Segment windows are tuned to the committed cassette's replay pacing and the
 # committed web tour script; after re-recording a source, re-check the cuts by

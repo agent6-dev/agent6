@@ -30,7 +30,7 @@ class SandboxConfig(pydantic.BaseModel):
         description=(
             "How jailed commands are confined: `full` (user + mount namespaces, Landlock, "
             "seccomp), `partial` (Landlock + seccomp, no namespaces), or `none` (unconfined). "
-            "`auto` picks the strongest the host supports and says so when that is `none`. An "
+            "`auto` picks the strongest the host supports and warns when that is below `full`. An "
             "explicit `full` or `partial` refuses to start where the host cannot honor it. "
             "`none` also via `--disable-sandbox` or "
             "`AGENT6_DISABLE_SANDBOX=1`."
@@ -76,15 +76,14 @@ class SandboxConfig(pydantic.BaseModel):
         ),
     )
     # A read-only bind-remount; the harness's own commits run outside the jail and are unaffected.
-    # Under partial the cwd is blanket read-write: carving .git out would deny new top-level names.
     protect_git: bool = pydantic.Field(
         default=True,
         description=(
             "Keep `.git/` unwritable by jailed commands, so a command cannot plant a git filter "
-            "that agent6's host-side commits would execute. Needs a mount namespace: `full` "
-            "only. Under `partial` the default `true` degrades with a warning; an explicit `true` "
-            "refuses to start. The in-process edit tools refuse `.git` writes at every level "
-            "regardless."
+            "that agent6's host-side commits would execute. Requires `full` `sandbox.isolation` "
+            "to bind-remount `.git` read-only. Under `partial` the default `true` degrades with "
+            "a warning and an explicit `true` refuses to start. The in-process edit tools "
+            "refuse `.git` writes at every isolation level."
         ),
     )
     # The cache dir is paths.jail_cache_home, keyed on the repository.
@@ -182,10 +181,10 @@ class SandboxConfig(pydantic.BaseModel):
         default=(),
         description=(
             "Device nodes under /dev the jail exposes read-write (GPU compute: /dev/nvidiactl, "
-            "/dev/nvidia0, /dev/nvidia-uvm). Empty (the default) keeps the device wall: full's "
-            "/dev holds only null/zero/urandom/random/full. Each path must be an existing "
-            "character or block device at run start, or the run refuses. Widens the sandbox: a "
-            "device node is direct hardware access."
+            "/dev/nvidia0, /dev/nvidia-uvm). By default a jailed command reaches only the device "
+            "nodes /dev/null, /dev/zero, /dev/urandom, /dev/random and /dev/full. Each path must "
+            "be an existing character or block device at run start, or the run refuses. Widens "
+            "the sandbox: a device node is direct hardware access."
         ),
     )
 
@@ -248,8 +247,8 @@ class SandboxConfig(pydantic.BaseModel):
     def _extra_paths_never_target_private_dirs(self) -> SandboxConfig:
         """Refuse an extra grant at or inside an agent6-private dir.
 
-        A grant containing one (`$HOME`) is allowed on full, where the private dirs are
-        masked out of it.
+        A grant containing one (`$HOME`) is allowed, since `full` `sandbox.isolation` masks
+        the private dirs out of it and a `partial` run warns.
 
         Returns:
             The model unchanged.

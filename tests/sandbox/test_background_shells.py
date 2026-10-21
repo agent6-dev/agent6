@@ -181,7 +181,7 @@ def test_output_survives_the_command(
     assert "first" in output and "second" in output
 
 
-@pytest.mark.skipif(shutil.which("unshare") is None, reason="needs userns for full")
+@pytest.mark.skipif(shutil.which("unshare") is None, reason="needs user namespaces")
 def test_full_confines_a_background_command_too(
     shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
@@ -283,7 +283,7 @@ def test_an_empty_or_missing_dir_is_not_an_error(tmp_path: pathlib.Path) -> None
 def test_a_detached_child_of_a_background_command_dies_with_the_run(
     shells: background.BackgroundShells, tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    """`stop` sweeps the `setsid` child a background command left, on partial too.
+    """`stop` sweeps the `setsid` child a background command left, under `partial` too.
 
     `stop` kills the launcher's group, which by definition misses a child that left it, and
     `run_in_jail`'s sweep can never catch it either: by then it is not new.
@@ -382,7 +382,7 @@ def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: pathlib.P
     """A command that symlinks its log at the operator's secrets gets nothing back.
 
     The jail holds RW (MakeSym included) on the log dir and `read` runs outside the jail as
-    the operator, so the log is never opened by name. Proved under full and partial.
+    the operator, so the log is never opened by name. Proved under `full` and `partial`.
     """
     import os
 

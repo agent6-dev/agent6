@@ -459,7 +459,7 @@ def test_isolation_is_compared_by_the_level_it_resolves_to() -> None:
 
 
 def test_network_is_compared_by_what_it_resolves_to() -> None:
-    """Outside full every child shares the host network, so `auto` there is not a widening."""
+    """Outside `full` every child shares the host network, so `auto` there is not a widening."""
     assert _widening(_cfg(network="host"), _cfg(network="auto"), "partial") == ""
     assert "sandbox.network" in _widening(_cfg(network="auto"), _cfg(network="host"), "full")
 

@@ -65,7 +65,7 @@ def test_a_symlinked_grant_reaches_the_launcher_under_both_names(tmp_path: pathl
     real.mkdir()
     plain.mkdir()
     link.symlink_to(real, target_is_directory=True)
-    # Pinned full: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    # Pinned to `full`: pytest's tmp_path sits in /tmp, where a link counts under auto.
     grants = {
         "isolation": "full",
         "extra_read_paths": [str(link)],
@@ -89,7 +89,7 @@ def test_a_grant_that_links_through_the_workspace_is_dropped(tmp_path: pathlib.P
     (repo / "current").symlink_to(real, target_is_directory=True)
     (tools / "through").symlink_to(repo / "current", target_is_directory=True)
     (tools / "direct").symlink_to(real, target_is_directory=True)
-    # Pinned full: pytest's tmp_path sits in /tmp, where a link counts under auto.
+    # Pinned to `full`: pytest's tmp_path sits in /tmp, where a link counts under auto.
     cfg = Config.model_validate(
         {
             "sandbox": {
@@ -109,7 +109,7 @@ def test_a_grant_that_links_through_the_workspace_is_dropped(tmp_path: pathlib.P
 
 
 def test_a_grant_that_links_through_tmp_is_dropped(tmp_path: pathlib.Path) -> None:
-    """A partial run's commands write the host's `/tmp`, so a grant there is re-pointable.
+    """Commands under `partial` write the host's `/tmp`, so a grant there is re-pointable.
 
     Spelled inside it or reached through a link there, the grant is dropped; what it held stays
     reachable as part of `/tmp`. Under `full`, whose `/tmp` is private, both are kept.

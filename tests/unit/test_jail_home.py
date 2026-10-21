@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The jail's HOME is a directory of agent6's own.
 
-`/tmp/agent6-home` inside full's private tmpfs, or the persistent cache dir where there is no
+`/tmp/agent6-home` inside `full`'s private tmpfs, or the persistent cache dir where there is no
 private /tmp or where `[sandbox].home = "cache"` asks for it. The policy builder creates the
 persistent one; the preflight refuses one that cannot be agent6's own.
 """
@@ -193,7 +193,7 @@ def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
 
 
 def test_the_default_degrades_with_a_warning_naming_the_home(tmp_path: pathlib.Path) -> None:
-    """Partial's start-of-run warning names the persistent HOME whatever `protect_git` says."""
+    """`partial`'s start-of-run warning names the persistent HOME whatever `protect_git` says."""
     assert confine.check_jail_home(Config(), "partial", tmp_path, explicitly_set=False) is None
     for cfg in (Config(), Config(sandbox=SandboxConfig(protect_git=False))):
         home = str(paths.jail_cache_home(tmp_path))

@@ -97,7 +97,7 @@ class AssistantTurn:
         """Return whether the turn carries visible text or a tool call.
 
         An empty or thinking-only turn is dead context: Anthropic rejects empty
-        assistant content and full OpenAI-compatible backends refuse the
+        assistant content and strict OpenAI-compatible backends refuse the
         translation.
 
         Returns:

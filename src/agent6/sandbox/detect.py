@@ -44,7 +44,7 @@ class Environment:
             compiled out or disabled via `lsm=`.
         seccomp_arch_supported: The jail's seccomp filter exists for this CPU; mirrors
             the arch set in `jail/src/main.rs` `apply_seccomp`, which fails closed, and
-            both full and partial promise that filter.
+            both `full` and `partial` promise that filter.
         sandbox_available: The host is Linux.
     """
 
@@ -64,7 +64,7 @@ class Environment:
         seccomp and NO_NEW_PRIVS, and since Landlock is its only filesystem boundary
         it needs the Landlock probe to succeed. A host with neither, or no Linux
         kernel, resolves to `none`: unsandboxed and loudly warned by the caller,
-        never a partial label that confines nothing.
+        never a `partial` label that confines nothing.
         """
         if not self.sandbox_available or not self.seccomp_arch_supported:
             return "none"
@@ -216,9 +216,9 @@ def _userns_block_cause(env: Environment) -> str:
 
 
 def degrade_reason(env: Environment) -> str | None:
-    """Return why `auto` resolves below `full` here, or None at full strength.
+    """Return why `auto` resolves below `full` here, or None when it resolves to `full`.
 
-    Every surface reporting an auto-selected level below full prints this, so a
+    Every surface reporting an auto-selected level below `full` prints this, so a
     degraded level never appears without its cause.
     """
     if not env.sandbox_available:

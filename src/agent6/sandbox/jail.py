@@ -82,8 +82,8 @@ def _tied_to_agent(controlling_terminal: bool) -> Callable[[], None]:
     return _setup
 
 
-# The launcher is PID 1 of the jail and full mounts a fresh /proc, so /proc/1/environ is
-# readable by the jailed command: an inherited env would expose the operator's provider key.
+# The launcher hides its /proc entry from the command and runs with an empty environment, so its
+# environ cannot leak the operator's provider key.
 # The launcher reads nothing from its environment; the policy arrives on stdin.
 _LAUNCHER_ENV: dict[str, str] = {}
 
@@ -379,7 +379,7 @@ def _run_unsandboxed(policy: kinds.JailPolicy) -> kinds.CommandResult:
 
 @functools.lru_cache(maxsize=1)
 def namespaces_work() -> bool:
-    """Return whether the jail binary can set up a `full` namespace.
+    """Return whether the jail binary can run `full` `sandbox.isolation` on this host.
 
     The authoritative probe: `detect.probe_userns_supported` under-reports on an
     AppArmor-restricted host whose profile grants userns to the jail binary but not
@@ -502,7 +502,7 @@ def spawn_launcher(
     return proc
 
 
-# Escapee reaping. `full` has a PID namespace, so nothing outlives the child. `partial` has
+# Escapee reaping. `full` has a PID namespace, so nothing outlives the launcher. `partial` has
 # none: a setsid() child survives the launcher's killpg and reparents to init, so the agent is a
 # subreaper and kills what lands on it once the command returns. The launcher cannot do this:
 # its Landlock ruleset denies /proc, and granting it would hand every jailed child the agent's

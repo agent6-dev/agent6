@@ -181,7 +181,7 @@ def test_a_dead_session_refuses_with_its_own_error(tmp_path: pathlib.Path) -> No
 
     Every caller is written against JailUnavailableError; a raw OSError would escape the
     dispatcher's jail handler, SessionJob's status and ToolDispatcher.close() before teardown
-    stopped the shells. Under full the request-serving process is a namespaced child the
+    stopped the shells. Under `full` the request-serving process is a namespaced child the
     launcher forked, and it keeps the pipes if only its parent dies; normal teardown kills
     neither, since `close()` shuts stdin and the serve loop exits on EOF.
     """

@@ -46,7 +46,7 @@ def test_a_pipe_passes_through_and_the_exit_code_is_the_commands(tmp_path: pathl
 
 @pytest.fixture
 def granted_config_home(monkeypatch: pytest.MonkeyPatch) -> Iterator[pathlib.Path]:
-    """An `XDG_CONFIG_HOME` outside /tmp, which full replaces whole: only the mask can hide it."""
+    """An `XDG_CONFIG_HOME` outside /tmp, which `full` replaces whole: only the mask can hide it."""
     base = pathlib.Path("/var/tmp")
     if not (base.is_dir() and os.access(base, os.W_OK)):
         pytest.skip("/var/tmp is not writable here")

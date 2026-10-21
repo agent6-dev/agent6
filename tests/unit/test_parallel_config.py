@@ -56,7 +56,7 @@ def test_parallel_override_via_repo_config(repo: pathlib.Path) -> None:
 def test_lane_config_preserves_protect_git_provenance(
     repo: pathlib.Path, explicit_protect_git: bool
 ) -> None:
-    """A partial lane degrades default protect_git but refuses an explicit demand."""
+    """A lane under `partial` degrades default protect_git but refuses an explicit demand."""
     toml = '[sandbox]\nisolation = "partial"\n'
     if explicit_protect_git:
         toml += "protect_git = true\n"

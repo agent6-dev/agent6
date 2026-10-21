@@ -123,9 +123,8 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
 def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
     """Add the per-invocation sandbox and approval override flags every paid command carries.
 
-    `--disable-sandbox` is a one-off `sandbox.isolation = "none"`;
-    `--auto-approve` upgrades `sandbox.run_commands` from ask to yes and never
-    resurrects a withheld no.
+    `--disable-sandbox` is a one-off `sandbox.isolation = "none"`.
+    `--auto-approve` changes `sandbox.run_commands` from `ask` to `yes` and leaves `no` as it is.
     """
     group = parser.add_argument_group("sandbox")
     group.add_argument(
