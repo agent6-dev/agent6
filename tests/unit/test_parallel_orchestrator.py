@@ -2978,7 +2978,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
         assert lane.is_dir()
         assert "no lane session record" in out
         assert "a lane may still be starting" in out
-        assert f"rm -r -- {lane.parent}" in out
+        assert f"rm -r -- {lane}" in out and str(lane.parent) + '"' not in out
         assert "fan-out clones: swept 0, kept 1" in out
         assert "holding a live lane" not in out
         assert "merge or archive their lanes" not in out

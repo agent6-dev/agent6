@@ -141,7 +141,7 @@ def lane_keep_reason(clone: pathlib.Path) -> str:
     if not dirs:
         return (
             "no lane session record, so a lane may still be starting; once none is, remove it"
-            f" with: rm -r -- {shlex.quote(str(clone.parent))}"
+            f" with: rm -r -- {shlex.quote(str(clone))}"
         )
     return (
         "live lane; stop it before pruning" if any(process.worker_is_alive(d) for d in dirs) else ""
