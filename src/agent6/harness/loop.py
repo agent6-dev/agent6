@@ -183,10 +183,7 @@ class Harness:
             mode=self.mode,
         )
         self.log("LOOP: LOAD_CONTEXT")
-        if self.state_dir is not None:
-            if note := agent6_memory.migrate_legacy_decisions(self.state_dir):
-                self.log(f"LOOP: {note}")
-            agent6_memory.ensure_decisions_file(self.state_dir)
+        self._prepare_rulings_file()
         repo = _context.load_repo_summary(self.chain.root, self.config.sandbox.hide_paths)
         system = _prompt_blocks.build_system_prompt(
             config=self.config,
@@ -257,6 +254,19 @@ class Harness:
             operator_task=user_task,
         )
 
+    def _prepare_rulings_file(self) -> None:
+        """Move a store's legacy rulings file out of the model's reach and ensure the new one.
+
+        Every execution does this before its first turn: a resumed pre-upgrade session would
+        otherwise leave `memory/DECISIONS.md` writable, and the next start would read what the
+        model wrote there as the operator's rulings.
+        """
+        if self.state_dir is None:
+            return
+        if note := agent6_memory.migrate_legacy_decisions(self.state_dir):
+            self.log(f"LOOP: {note}")
+        agent6_memory.ensure_decisions_file(self.state_dir)
+
     def resume(self, *, steer: str = "") -> _snapshot.SessionResult:
         """Resume a session from its snapshot and drive the new execution to its end.
 
@@ -276,6 +286,7 @@ class Harness:
         self.bridge.steer_reset()  # an execution starts with no armed Ctrl-C
         if self.resume_state_path is None:
             raise _snapshot.ResumeError("resume() called but resume_state_path is None")
+        self._prepare_rulings_file()
         try:
             snapshot = _snapshot.load_session_snapshot(self.resume_state_path)
             snapshot, interrupted = _loop_resume.fold_interrupted_turn(self, snapshot)

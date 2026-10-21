@@ -4861,6 +4861,36 @@ def test_resume_raises_on_missing_snapshot(tmp_path: pathlib.Path) -> None:
         wf.resume()
 
 
+def test_resume_migrates_the_legacy_rulings_file_as_a_run_start_does(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A pre-upgrade session resumed with no decisions.md left memory/DECISIONS.md writable."""
+    from agent6 import memory
+
+    state_dir = tmp_path / "state"
+    legacy = state_dir / "memory" / "DECISIONS.md"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("- an operator ruling\n", encoding="utf-8")
+    snap_path = tmp_path / "loop_state.json"
+    snap_path.write_text(
+        f'{{"version": {_snapshot.SNAPSHOT_VERSION}, "system": "S", "messages": [{{"role": "user", '
+        '"content": [{"type": "text", "text": "go"}]}], "tool_calls": 2, '
+        '"next_iteration": 5, "root_task_id": null, "original_task": "go", '
+        '"verify_command": []}',
+        encoding="utf-8",
+    )
+    provider = mock.MagicMock()
+    provider.call.return_value = _resp("all done")
+    dispatcher = mock.MagicMock()
+    dispatcher.set_run_root_node_id = mock.MagicMock()
+    wf = _wf(
+        provider=provider, dispatcher=dispatcher, resume_state_path=snap_path, state_dir=state_dir
+    )
+    wf.resume()
+    assert memory.decisions_path(state_dir).read_text(encoding="utf-8") == "- an operator ruling\n"
+    assert not legacy.exists()
+
+
 @pytest.mark.parametrize("steer", ["", "write docs", "x" * 240])
 def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path, steer: str) -> None:
     """resume() loads snapshot, calls provider once, finishes via silent_finish."""
