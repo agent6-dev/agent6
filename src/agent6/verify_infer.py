@@ -146,9 +146,9 @@ def _block_to_argv(block: list[str]) -> tuple[str, ...] | None:
     """Return a fenced block as one argv.
 
     A block with a `$` prompt, or opening with a `>` prompt, keeps only prompted lines and
-    their continuations. Prompts and comments are dropped, continued lines join, and commands
-    chain with `&&`. A `>` line after a plain line is a redirect, and a continuation prompt in
-    a transcript.
+    their continuations. Prompts and comments are dropped, a line ending in a shell operator
+    or a backslash continues on the next, and the commands chain with `&&`. A `>` line after
+    a plain line is a redirect, and a continuation prompt in a transcript.
 
     Args:
         block: The lines between the fences.
@@ -167,13 +167,23 @@ def _block_to_argv(block: list[str]) -> tuple[str, ...] | None:
         line = _strip_comment(_PROMPT.sub("", line) if transcript else line)
         if not line:
             continue
-        part = line.removesuffix("\\").rstrip()
+        # A trailing `\` or `;` behind an odd run of backslashes is literal, not an operator.
+        continues = line.endswith(("&&", "||", "|")) or (
+            line.endswith(("\\", ";")) and not _escaped_end(line)
+        )
+        part = (line.removesuffix("\\") if continues else line).rstrip()
         if continued:
             commands[-1] += " " + part
         else:
             commands.append(part)
-        continued = line.endswith(("\\", "&&", "||", "|"))
+        continued = continues
     return line_to_argv(" && ".join(commands))
+
+
+def _escaped_end(line: str) -> bool:
+    """Return whether the line's last character sits behind an odd run of backslashes."""
+    body = line[:-1]
+    return (len(body) - len(body.rstrip("\\"))) % 2 == 1
 
 
 def _has_prompt(block: list[str]) -> bool:

@@ -68,6 +68,34 @@ def test_agents_md_inline_marker_written_as_code() -> None:
     assert verify_infer.verify_from_agents_md("Verify: ruff check .") == ("ruff", "check", ".")
 
 
+def test_a_fence_line_ending_in_a_semicolon_continues_on_the_next() -> None:
+    """`ruff check .;` over `pytest -q` joined as `ruff check .; && pytest -q`, a syntax error."""
+    text = "## Verify\n\n```sh\nruff check .;\npytest -q\n```\n"
+    assert verify_infer.verify_from_agents_md(text) == ("sh", "-c", "ruff check .; pytest -q")
+
+
+def test_a_semicolon_after_an_escaped_backslash_ends_the_line() -> None:
+    r"""`echo \\;` ends in a separator (the backslash is the escaped one), yet read as `\;`."""
+    text = "## Verify\n\n```sh\necho \\\\;\npytest -q\n```\n"
+    assert verify_infer.verify_from_agents_md(text) == ("sh", "-c", "echo \\\\; pytest -q")
+
+
+def test_an_escaped_backslash_at_the_end_of_a_line_continues_nothing() -> None:
+    r"""`echo foo\\` ends in a literal backslash, yet read as a continuation and lost one."""
+    text = "## Verify\n\n```sh\necho foo\\\\\npytest -q\n```\n"
+    assert verify_infer.verify_from_agents_md(text) == ("sh", "-c", "echo foo\\\\ && pytest -q")
+
+
+def test_an_escaped_semicolon_ends_the_find_not_the_line() -> None:
+    r"""`find . -name '*.pyc' -exec rm {} \;` over `pytest -q` glued pytest onto the find."""
+    text = "## Verify\n\n```sh\nfind . -name '*.pyc' -exec rm {} \\;\npytest -q\n```\n"
+    assert verify_infer.verify_from_agents_md(text) == (
+        "sh",
+        "-c",
+        "find . -name '*.pyc' -exec rm {} \\; && pytest -q",
+    )
+
+
 @pytest.mark.parametrize("heading", ["Verify command", "Setup command"])
 @pytest.mark.parametrize(
     ("block", "expected"),
