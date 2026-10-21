@@ -224,17 +224,22 @@ class SessionNetwork:
             # A launcher without --hold-netns reads a policy from stdin and blocks forever.
             ready, _, _ = select.select([proc.stdout], [], [], _HOLDER_READY_TIMEOUT_S)
             if not ready or proc.stdout.readline().strip() != b"ready":
-                proc.kill()
+                try:
+                    code: int | None = proc.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    code = None
+                    proc.kill()
                 err = read_available(proc.stderr)
-                raise JailUnavailableError(
-                    "the session network could not be created: "
-                    + (
-                        err.decode(errors="replace")[-400:]
-                        if err.strip()
-                        else f"the launcher said nothing in {_HOLDER_READY_TIMEOUT_S:.0f}s"
+                if err.strip():
+                    detail = err.decode(errors="replace")[-400:]
+                elif code is not None:
+                    detail = f"the launcher exited with code {code} before reporting ready"
+                else:
+                    detail = (
+                        f"the launcher said nothing in {_HOLDER_READY_TIMEOUT_S:.0f}s"
                         " (a stale AGENT6_JAIL_BIN cannot hold one)"
                     )
-                )
+                raise JailUnavailableError(f"the session network could not be created: {detail}")
             # /proc/<pid> is gone the moment the holder exits.
             for kind in ("user", "net"):
                 fds.append(os.open(f"/proc/{proc.pid}/ns/{kind}", os.O_RDONLY))

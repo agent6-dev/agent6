@@ -369,6 +369,18 @@ def test_a_launcher_that_never_reports_ready_is_refused_not_waited_on(
     assert time.monotonic() - started < 20.0, "the run hung on the handshake"
 
 
+def test_a_launcher_that_exits_at_once_is_named_by_its_code(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A launcher that exited at once with no output read as "said nothing in 10s"."""
+    fake = tmp_path / "dead-jail"
+    fake.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+    fake.chmod(0o755)
+    monkeypatch.setenv("AGENT6_JAIL_BIN", str(fake))
+    with pytest.raises(jail.JailUnavailableError, match="exited with code 3 before reporting"):
+        jail.SessionNetwork.open()
+
+
 def test_a_private_server_gets_one_even_when_the_commands_are_on_the_host(
     tmp_path: pathlib.Path,
 ) -> None:
