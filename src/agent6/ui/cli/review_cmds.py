@@ -33,6 +33,19 @@ from agent6.tools import dispatch as tools_dispatch
 from agent6.ui.cli import _common
 
 
+def _reviewed_head(base: str, head: str) -> str:
+    """Return the rev the review reads as its head: a range's right endpoint, else `head`.
+
+    Args:
+        base: The base rev, or an explicit `A..B` range; `A..` ends at HEAD, as git reads it.
+        head: The `--head` rev.
+
+    Returns:
+        The reviewed head.
+    """
+    return (base.rsplit("..", 1)[-1] or "HEAD") if ".." in base else head
+
+
 def _review_range(base: str, head: str) -> str:
     """Use the merge base for ref pairs and preserve an explicit range.
 
@@ -243,11 +256,12 @@ def _run_review_panel(
     tools = None
     dispatch = None
     if any(s.tier == "explore" for s in seats):
-        if base and not _is_checked_out(git, root, head):
+        reviewed = _reviewed_head(base, head)
+        if base and not _is_checked_out(git, root, reviewed):
             _common.error(
-                "review.tier = 'explore' reads the checkout, but the checkout is not"
-                f" --head {head!r} (another commit, or uncommitted changes on top): a"
-                " seat's read_file would answer from a tree the diff does not describe."
+                "review.tier = 'explore' reads the checkout, but the checkout is not the"
+                f" reviewed head {reviewed!r} (another commit, or uncommitted changes on top):"
+                " a seat's read_file would answer from a tree the diff does not describe."
                 " Check it out clean, or set review.tier = 'diff'."
             )
             return 2

@@ -395,7 +395,7 @@ def test_explore_tier_gates_on_the_head_being_the_checkout(
     err = capsys.readouterr().err
     assert seen == {}, f"an explore seat read the checkout, not --head: {seen}"
     assert rc == 2
-    assert "--head" in err and "explore" in err
+    assert "reviewed head" in err and "explore" in err
 
     subprocess.run(["git", "checkout", "-q", head], cwd=tmp_path, check=True)
     (tmp_path / "scratch.log").write_text("build output\n", encoding="utf-8")  # untracked
@@ -415,7 +415,7 @@ def test_explore_tier_refuses_a_dirty_checkout(
     err = capsys.readouterr().err
     assert seen == {}, f"an explore seat read a dirty tree the diff contradicts: {seen}"
     assert rc == 2
-    assert "--head" in err and "explore" in err
+    assert "reviewed head" in err and "explore" in err
 
 
 def test_a_panel_with_an_unpinned_seat_still_requires_the_reviewer_route(

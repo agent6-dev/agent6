@@ -111,3 +111,13 @@ def test_review_branch_after_base_advanced(
     assert f"(from {start})" in reviewed[3]
     assert ("base_only_a.py" in reviewed[2]) is explicit_range
     assert ("base_only_b.py" in reviewed[2]) is explicit_range
+
+
+def test_an_explicit_range_names_its_right_endpoint_as_the_reviewed_head() -> None:
+    """`review --base main..topic` checked the explore checkout against HEAD, not topic.
+
+    `main..` is `main..HEAD` to git; the helper named "" as its head.
+    """
+    assert review_cmds._reviewed_head("main..topic", "HEAD") == "topic"  # pyright: ignore[reportPrivateUsage]
+    assert review_cmds._reviewed_head("main", "HEAD") == "HEAD"  # pyright: ignore[reportPrivateUsage]
+    assert review_cmds._reviewed_head("main..", "HEAD") == "HEAD"  # pyright: ignore[reportPrivateUsage]
