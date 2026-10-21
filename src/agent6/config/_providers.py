@@ -149,7 +149,7 @@ class _ProviderBase(pydantic.BaseModel):
         description=(
             "How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the "
             "OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local "
-            "endpoint). `agent6 connect` sets it."
+            "endpoint)."
         ),
     )
     # Secrets live here and in token_command, never in base_url, extra_headers or extra_query.
