@@ -311,6 +311,17 @@ def test_a_preset_name_keeps_an_existing_blocks_other_format(
     assert "already holds these values" in capsys.readouterr().out
 
 
+def test_logout_reads_the_blocks_format_not_the_preset_name(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--logout` on a custom-named claude_code block said "No stored credentials"."""
+    gc = paths.global_config_path()
+    gc.parent.mkdir(parents=True)
+    gc.write_text('[providers.cc]\napi_format = "claude_code"\n')
+    assert main(["connect", "cc", "--logout"]) == 2
+    assert "claude auth logout" in capsys.readouterr().err
+
+
 def test_connect_over_a_non_table_provider_entry_does_not_crash(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

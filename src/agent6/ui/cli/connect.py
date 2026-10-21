@@ -586,7 +586,8 @@ def _cmd_logout(name: str, api_format: str) -> int:
         api_format: Its API format.
 
     Returns:
-        The exit code, 0.
+        The exit code: 0, or 2 for a claude_code provider or a secrets file that cannot be
+        written.
     """
     if api_format == "claude_code":
         print(
@@ -694,7 +695,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
             return 2
         current = _Current(_Leaves("", ""), _Leaves("", ""), {})
     if logout:
-        return _cmd_logout(name, preset_format)
+        return _cmd_logout(name, current.effective.api_format or preset_format)
     print("agent6 connect: set up a model provider.\n")
     api_format = _prompt_api_format(name, preset_format, current.effective.api_format)
     if api_format is None:
