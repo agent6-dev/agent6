@@ -29,7 +29,7 @@ def is_valid_skill_name(name: str) -> bool:
     frontmatter could escape the skills dir.
 
     Args:
-        name: A SKILL.md frontmatter name or a `skills remove` argument.
+        name: A SKILL.md frontmatter name, or a `skills remove` or `skills update` argument.
 
     Returns:
         True when the name is valid.

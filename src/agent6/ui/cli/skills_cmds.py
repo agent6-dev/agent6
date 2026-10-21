@@ -508,12 +508,24 @@ def _refetch_skill(name: str, origin: dict[str, str]) -> tuple[str, str]:
 def _cmd_skills_update(name: str) -> int:
     """Re-fetch one skill, or every skill with an origin, and print a row per skill.
 
+    The name becomes a path component under the managed skills dir. When a refetch renames the
+    skill, the name is also an rmtree target. So it must be one safe component, as for
+    `skills remove`.
+
+    Args:
+        name: The skill, or "" for every installed one.
+
     Returns:
         The exit code, 0.
 
     Raises:
-        OperatorError: The named skill is not installed, or a refetch refused.
+        OperatorError: The name is unsafe or not installed, or a refetch refused.
     """
+    if name and not agent6_skills.is_valid_skill_name(name):
+        raise errors.OperatorError(
+            f"invalid skill name {name!r} "
+            "(letters, digits, and hyphens only, starting alphanumeric)"
+        )
     base = _installed_dir()
     if name and not (base / name).is_dir():
         raise errors.OperatorError(f"{name!r} is not installed")

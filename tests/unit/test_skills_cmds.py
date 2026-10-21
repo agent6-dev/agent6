@@ -181,6 +181,16 @@ class TestUpdate:
         with pytest.raises(errors.OperatorError, match="not installed"):
             cli_skills_cmds._cmd_skills_update("ghost")
 
+    def test_update_refuses_a_dot_dot_name(self, env: pathlib.Path) -> None:
+        """`skills update ..` is refused before any path op; a renaming refetch rmtrees the name."""
+        src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
+        data = env / "data" / "agent6"
+        (data / "skills").mkdir(parents=True)
+        (data / ".origin.toml").write_text(f'url = "{src}"\nkind = "skillmd"\n', encoding="utf-8")
+        with pytest.raises(errors.OperatorError, match="invalid skill name"):
+            cli_skills_cmds._cmd_skills_update("..")
+        assert (data / "skills").is_dir()  # never touched
+
     def test_update_skips_when_local_source_gone(
         self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
