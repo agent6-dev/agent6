@@ -169,7 +169,7 @@ def _spawn_server(
 
     Args:
         command: The server's argv from config.
-        policy: The sandbox policy, or None for an unconfined server.
+        policy: The sandbox policy, or None for a `url` or `unconfined` server.
         pass_env: The env vars an unconfined server keeps by name.
         session_net: The run's session network, for a policy that joins it.
 
@@ -245,7 +245,7 @@ class MCPServerSpec:
         pass_env: The env vars the server needs by name; naming each keeps a provider key out.
         http: The transport for a server the operator runs, in place of `command`.
         policy: The sandbox policy, built by the caller from the same `jail_policy` a command
-            uses; None for `[mcp.servers.<n>.sandbox].unconfined`.
+            uses; None for a `url` server or `[mcp.servers.<n>.sandbox].unconfined`.
     """
 
     name: str
@@ -267,7 +267,7 @@ class _MCPServer:
         startup_timeout_s: The handshake's timeout.
         call_timeout_s: Each tool call's timeout.
         pass_env: The env vars the server keeps by name.
-        policy: The sandbox policy; None is the operator's explicit `unconfined = true`.
+        policy: The sandbox policy; None for a `url` server or an explicit `unconfined = true`.
         session_net: The run's session network, for a policy that joins it.
         http: The transport for a server the operator runs; agent6 then owns none of its
             environment, lifetime or confinement.

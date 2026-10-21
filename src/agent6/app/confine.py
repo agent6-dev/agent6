@@ -163,7 +163,7 @@ def _warn_grants(cfg: Config, root: pathlib.Path, reporter: app_reporter.Reporte
     for dropped in tools_policy.resolve_grants(cfg, root).dropped:
         reporter.warn(dropped.line())
     for name, srv in cfg.mcp.enabled_servers.items():
-        if srv.url or (srv.sandbox is not None and srv.sandbox.unconfined):
+        if not srv.jailed:
             continue
         for dropped in _setup.mcp_server_grants(cfg, root, srv, name).dropped:
             if dropped.key.startswith("mcp."):
@@ -357,7 +357,7 @@ def _partial_grant_regions(
     for name, srv in cfg.mcp.enabled_servers.items():
         spol = _setup.mcp_server_policy(cfg, root, "partial", srv)
         if spol is None:
-            continue  # unconfined by explicit opt-out; its own loud path
+            continue  # not jailed: a `url` or `unconfined` server
         regions += [
             (pathlib.Path(p), f"[mcp.servers.{name}] read_paths") for p in spol.extra_ro_paths
         ]

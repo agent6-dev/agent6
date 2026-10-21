@@ -486,6 +486,11 @@ class MCPServerEntry(pydantic.BaseModel):
         """The network this server joins; an absent `[sandbox]` table reads as `auto`."""
         return self.sandbox.network if self.sandbox else "auto"
 
+    @property
+    def jailed(self) -> bool:
+        """Whether agent6 spawns this server in its jail: never a `url` or `unconfined` one."""
+        return not self.url and not (self.sandbox is not None and self.sandbox.unconfined)
+
 
 def is_cleartext_url(url: str) -> bool:
     """Return whether the URL dials plain http.

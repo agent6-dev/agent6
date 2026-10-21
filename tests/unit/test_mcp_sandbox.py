@@ -14,6 +14,7 @@ import sys
 
 import pytest
 
+from agent6.app import confine
 from agent6.config import Config
 
 _SHIM = [sys.executable, "-m", "agent6.sandbox.exec_confined"]
@@ -413,3 +414,12 @@ def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
     confine.warn_sandbox_gaps("full", env, cfg, root=repo)
     err = capsys.readouterr().err
     assert f"mcp.servers.fs.sandbox.read_paths entry {into} (it resolves to {repo / 'data'})" in err
+
+
+def test_a_url_server_adds_no_partial_grant_region(tmp_path: pathlib.Path) -> None:
+    """A `url` server got jail regions under `partial`, labelled with paths it never reads."""
+    cfg = Config.model_validate(
+        {"mcp": {"enabled": True, "servers": {"remote": {"url": "http://127.0.0.1:9/mcp"}}}}
+    )
+    regions = confine._partial_grant_regions(cfg, tmp_path)
+    assert not [source for _, source in regions if "mcp.servers.remote" in source]

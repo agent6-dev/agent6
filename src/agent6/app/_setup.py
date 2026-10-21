@@ -414,7 +414,7 @@ def mcp_server_policy(
     *,
     readonly: bool = False,
 ) -> kinds.JailPolicy | None:
-    """Return the sandbox for one spawned server, or None when it opted out as unconfined.
+    """Return the sandbox for one spawned server, or None when agent6 does not jail it.
 
     The `jail_policy` a command gets plus the server's additive grants. Its env is the curated
     set, never the desktop addresses: the session bus reaches an unconfined `systemd --user`.
@@ -427,10 +427,9 @@ def mcp_server_policy(
         readonly: Bind the workspace read-only, for a probe that must not write it.
 
     Returns:
-        The policy, or None for an unconfined server.
+        The policy, or None for a `url` or `unconfined` server.
     """
-    sandbox = srv.sandbox
-    if sandbox is not None and sandbox.unconfined:
+    if not srv.jailed:
         return None
     # auto and none both mean a network of its own; preflight owns the warn-or-refuse difference.
     configured = srv.effective_network
@@ -476,10 +475,7 @@ def mcp_server_spec(
         startup_timeout_s=srv.startup_timeout_s,
         call_timeout_s=srv.call_timeout_s,
         pass_env=srv.pass_env,
-        # A `url` server is the operator's own process: nothing to confine.
-        policy=(
-            None if srv.url else mcp_server_policy(cfg, root, isolation, srv, readonly=readonly)
-        ),
+        policy=mcp_server_policy(cfg, root, isolation, srv, readonly=readonly),
         http=(
             mcp_http.HttpTransport(
                 name=name,
@@ -542,7 +538,7 @@ def start_mcp_manager_if_enabled(
 def _warn_servers_that_keep_the_network(
     cfg: Config, isolation: kinds.IsolationLevel, *, reporter: app_reporter.Reporter
 ) -> None:
-    """Warn per server whose `network = "auto"` degrades to the host's network.
+    """Warn per jailed server whose `network = "auto"` degrades to the host's network.
 
     An explicit `none` or `session` refused before this.
 
@@ -554,7 +550,7 @@ def _warn_servers_that_keep_the_network(
     if isolation == "full":
         return
     for name, srv in sorted(cfg.mcp.enabled_servers.items()):
-        if srv.effective_network == "auto":
+        if srv.jailed and srv.effective_network == "auto":
             reporter.warn(
                 f"MCP server {name!r} uses the host network. Keeping it off the host network"
                 f" requires sandbox.isolation = 'full', but this host resolved to {isolation!r}."

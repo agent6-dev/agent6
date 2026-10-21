@@ -16,6 +16,7 @@ import pathlib
 
 import pytest
 
+from agent6 import kinds
 from agent6.app import confine
 from agent6.config import Config
 
@@ -137,6 +138,36 @@ def test_host_is_silent(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Pa
     assert confine.check_mcp_network_support(cfg, "partial") is None
     _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "partial")
     assert "MCP server" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("isolation", ["partial", "none"])
+@pytest.mark.parametrize(
+    "server",
+    [{"url": "http://127.0.0.1:9/mcp"}, {"command": ["x"], "sandbox": {"unconfined": True}}],
+    ids=["url", "unconfined"],
+)
+def test_a_server_agent6_does_not_jail_gets_no_network_warning(
+    server: dict[str, object],
+    isolation: kinds.IsolationLevel,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: pathlib.Path,
+) -> None:
+    """A `url` or `unconfined` server got a network degrade warning.
+
+    It said taking the network away needs 'full' and named `sandbox.network = 'none'`. Config
+    refuses that value for both kinds of server, and 'full' gives such a server the same network.
+    """
+    from agent6.app import _setup
+
+    cfg = Config.model_validate(
+        {"mcp": {"enabled": True, "servers": {"jailed": {"command": ["x"]}, "s": server}}}
+    )
+    mgr = _setup.start_mcp_manager_if_enabled(cfg, tmp_path, isolation)
+    assert mgr is not None
+    mgr.close()
+    err = capsys.readouterr().err
+    assert "WARNING: MCP server 'jailed'" in err  # the jailed sibling still degrades
+    assert "WARNING: MCP server 's'" not in err
 
 
 @pytest.mark.parametrize("value", ["auto", "session", "host"])  # the shared words
