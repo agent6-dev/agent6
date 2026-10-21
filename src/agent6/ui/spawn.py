@@ -145,7 +145,14 @@ def _spawn_run(
 ) -> tuple[pathlib.Path | None, str]:
     """Spawn one detached session and locate it by its new session dir.
 
-    `--` ends option parsing, so a task starting with `-` is never read as a flag.
+    Args:
+        cwd: The checkout.
+        mode: The session mode.
+        task: The task text, passed after `--` so it never reads as a flag.
+        preset: The `--preset` value, when any.
+        model: The `--model` value, when any.
+        spec: The `--parallel` spec of a fan-out lane; "" for a plain run.
+        config_paths: The front-end's explicit config, when any.
 
     Returns:
         The session dir and "", or None and why.

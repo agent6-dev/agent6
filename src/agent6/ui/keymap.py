@@ -50,7 +50,13 @@ def answer_entry(answer: str) -> Answer:
 def answer_for(typed: str, *, standing: bool) -> str:
     """Return the answer a typed line means: the letter or an alias, else "no".
 
-    A session answer needs a standing prompt; on any other it denies, as `[y/N]` says.
+    Args:
+        typed: The operator's reply; case and surrounding whitespace are ignored.
+        standing: The operator may answer for the whole session; when False, a session
+            answer denies, as `[y/N]` says.
+
+    Returns:
+        The bridge value: "yes", "session", "no" or "session-deny".
     """
     word = typed.strip().lower()
     for entry in APPROVAL_ANSWERS:

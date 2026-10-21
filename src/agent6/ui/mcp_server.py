@@ -138,6 +138,12 @@ def _no_one_to_ask(config: Config) -> Config:
 
     Nobody answers at the MCP boundary, so `"ask"` cannot be answered: the same
     rule as a detached run with an away mode of "deny".
+
+    Args:
+        config: The server's effective config.
+
+    Returns:
+        The config, with `[sandbox].run_commands` "ask" replaced by "no".
     """
     if config.sandbox.run_commands != "ask":
         return config
@@ -313,6 +319,14 @@ class MCPServer:
     def _route(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """Return the result for one method.
 
+        Args:
+            method: The JSON-RPC method.
+            params: The request's params; only `tools/call` reads them.
+
+        Returns:
+            The handshake for `initialize`, the tools offered for `tools/list`, or the
+            tool's result for `tools/call`.
+
         Raises:
             _RpcError: The method is unknown, or the call is malformed.
         """
@@ -339,6 +353,9 @@ class MCPServer:
 
     def _call_tool(self, params: dict[str, Any]) -> dict[str, Any]:
         """Run one tool call.
+
+        Args:
+            params: The tool's `name` and its `arguments`.
 
         Returns:
             The tool's result, or an isError result for a tool-level failure.
@@ -422,6 +439,9 @@ class MCPServer:
     def _h_query_dag(self, args: dict[str, Any]) -> dict[str, Any]:
         """Load a session's task graph.
 
+        Args:
+            args: An optional `session_id`; missing or empty means the newest session.
+
         Returns:
             The session id and its nodes.
 
@@ -471,6 +491,9 @@ class MCPServer:
 
 def run_server(config_paths: tuple[pathlib.Path, ...]) -> int:
     """Serve from the cwd under the effective config until stdin EOF, for `agent6 mcp serve`.
+
+    Args:
+        config_paths: The `--config FILE` layers, in command-line order.
 
     Returns:
         0 on a clean exit.

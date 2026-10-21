@@ -30,6 +30,11 @@ _GIVE_UP_S = 900.0
 def direct_launch(cwd: pathlib.Path, argv: list[str], env_extra: dict[str, str]) -> str:
     """Spawn `agent6 <argv>` detached, for a run with no namespace to escape.
 
+    Args:
+        cwd: The child's working directory.
+        argv: The arguments after the agent6 executable.
+        env_extra: Environment entries beyond this process's.
+
     Returns:
         "" once spawned, else why not; the session dir appearing is the confirmation.
     """
@@ -95,6 +100,10 @@ def _watch(session: btw.BtwSession, events: event_log.EventSink) -> None:
 
     Runs on a daemon thread, so it never holds the run open. Past the give-up time
     the block says so, where silence would read as an answer still coming.
+
+    Args:
+        session: The side question.
+        events: The run's journal; the block lands there as `btw.answered`.
     """
     deadline = time.monotonic() + _GIVE_UP_S
     while time.monotonic() < deadline:

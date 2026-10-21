@@ -76,7 +76,12 @@ def stop_on_sigterm() -> Callable[[], None]:
 def file_bridge_steer(session_dir: pathlib.Path) -> SteerState:
     """Return the steer hooks for a run with no controlling terminal.
 
-    No SIGINT handler; requests and answers travel over the front-end file bridge.
+    Args:
+        session_dir: The run's session, which holds the bridge files.
+
+    Returns:
+        Hooks with no SIGINT handler; requests and answers travel over the front-end file
+        bridge.
     """
 
     def prompt() -> str | None:

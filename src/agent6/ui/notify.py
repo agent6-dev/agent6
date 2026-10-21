@@ -15,6 +15,10 @@ import subprocess
 def desktop_notify(title: str, body: str = "") -> bool:
     """Send a desktop notification when `notify-send` is on PATH.
 
+    Args:
+        title: The notification's headline.
+        body: The text under the headline.
+
     Returns:
         True when launched, False when unavailable, so a caller can ring a bell instead.
     """

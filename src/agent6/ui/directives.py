@@ -43,6 +43,11 @@ def _btw(
 ) -> tuple[bool, str]:
     """Open a side question beside the run, on the front-end's config.
 
+    Args:
+        session_dir: The live session.
+        question: The text after `/btw`.
+        config_paths: The front-end's `--config` files.
+
     Returns:
         Whether it opened, and what to say.
     """
@@ -54,6 +59,10 @@ def _task(
     session_dir: pathlib.Path, text: str, _config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[bool, str]:
     """Queue work into the task graph.
+
+    Args:
+        session_dir: The live session.
+        text: The work, as typed after `/task`.
 
     Returns:
         True, and what to say.
@@ -67,6 +76,10 @@ def _standing(
 ) -> tuple[bool, str]:
     """Set the run's standing goal.
 
+    Args:
+        session_dir: The live session.
+        goal: The text after `/standing`.
+
     Returns:
         True, and what to say.
     """
@@ -78,6 +91,10 @@ def _retire(
     session_dir: pathlib.Path, named: str, _config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[bool, str]:
     """Retire a task, by the id the task tree prints.
+
+    Args:
+        session_dir: The live session.
+        named: The id as typed after `/retire`, short or in full.
 
     Returns:
         Whether the task was found, and what to say.
@@ -102,6 +119,10 @@ def _compact(
     session_dir: pathlib.Path, focus: str, _config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[bool, str]:
     """Ask for a compaction before the next model call.
+
+    Args:
+        session_dir: The live session.
+        focus: The summary focus, as typed after `/compact`; "" is a plain compact.
 
     Returns:
         Whether the request was written, and what to say.
