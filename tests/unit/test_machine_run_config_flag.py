@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import pathlib
-from unittest import mock
 
 import pytest
 
@@ -79,7 +78,8 @@ def test_machine_run_reads_the_explicit_config_layer(
         return eff
 
     monkeypatch.setattr(layer, "load_effective_with_overlay", spy)
-    machine_run.run_machine(mfile, mock.MagicMock(), config_paths=(explicit,))
+    reporter = app_reporter.Reporter(out=lambda _msg: None, err=lambda _msg: None)
+    machine_run.run_machine(mfile, reporter, config_paths=(explicit,))
     assert seen and seen[0] == 41, "the --config layer never reached machine run"
 
 
@@ -124,10 +124,11 @@ max_iterations = 17
         return run
 
     monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
-    reporter = mock.MagicMock()
+    said: list[str] = []
+    reporter = app_reporter.Reporter(out=said.append, err=said.append)
 
     code = run_mod.run_machine(mfile, reporter, config_paths=(explicit,))
-    assert code == 0, reporter.mock_calls
+    assert code == 0, said
     assert child_overlays[0]["harness"]["max_iterations"] == 17  # type: ignore[index]
 
 

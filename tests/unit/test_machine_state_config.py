@@ -770,6 +770,55 @@ def test_a_machine_run_prints_the_home_grant_warning(
     assert f"grants {str(tmp_path.parent)!r}, your home directory" in warned[0]
 
 
+@pytest.mark.usefixtures("working_jail")
+def test_a_state_with_its_own_table_does_not_repeat_the_machines_warnings(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state's own config table repeated every inherited warning under the state's tag."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path.parent))
+    _operator(f'[sandbox]\nextra_read_paths = ["{tmp_path.parent}"]\n')
+    mfile = _write(
+        tmp_path, ONE_TOOL_STATE + '\n[states.scan.config.sandbox]\nrun_commands = "ask"\n'
+    )
+    said: list[str] = []
+    reporter = app_reporter.Reporter(out=said.append, err=said.append)
+    assert run.run_machine(mfile, reporter) == 0, said
+    warned = [line for line in said if "sandbox.extra_read_paths grants" in line]
+    assert len(warned) == 1 and "[states." not in warned[0], said
+
+
+@pytest.mark.usefixtures("working_jail")
+def test_two_states_with_the_same_own_warning_each_get_it_under_their_label(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two state tables re-adding the operator's home grant drew one warning, under one label.
+
+    The machine table drops the grant, so neither state inherits the warning.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path.parent))
+    _operator(f'[sandbox]\nextra_read_paths = ["{tmp_path.parent}"]\n')
+    two = ONE_TOOL_STATE.replace(
+        'on = { ok = "done", nonzero = "fail", timeout = "fail" }',
+        'on = { ok = "again", nonzero = "fail", timeout = "fail" }\n\n'
+        "[states.again]\n"
+        'kind = "tool"\ncommand = ["true"]\ntimeout_secs = 5\n'
+        'on = { ok = "done", nonzero = "fail", timeout = "fail" }',
+    )
+    two += "\n[config.sandbox]\nextra_read_paths = []\n"
+    for state in ("scan", "again"):
+        two += f'\n[states.{state}.config.sandbox]\nextra_read_paths = ["{tmp_path.parent}"]\n'
+    said: list[str] = []
+    reporter = app_reporter.Reporter(out=said.append, err=said.append)
+    assert run.run_machine(_write(tmp_path, two), reporter) == 0, said
+    warned = [line for line in said if "sandbox.extra_read_paths grants" in line]
+    assert [line[line.rindex("(") :] for line in warned] == [
+        "([states.scan.config])",
+        "([states.again.config])",
+    ], said
+
+
 @pytest.mark.parametrize("agents_md", ["", "## Setup command\n\n```sh\ntrue\n```\n"])
 @pytest.mark.usefixtures("working_jail")
 def test_a_writing_machine_warns_once_for_the_states_without_a_config_table(

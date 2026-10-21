@@ -277,6 +277,25 @@ def _labelled(reporter: app_reporter.Reporter, where: str) -> app_reporter.Repor
     return dataclasses.replace(reporter, err=err)
 
 
+def _unrepeated(reporter: app_reporter.Reporter, said: set[str]) -> app_reporter.Reporter:
+    """Return a reporter that drops a stderr line already in `said`, recording the rest.
+
+    Args:
+        reporter: The reporter to wrap.
+        said: The lines printed so far, shared across the wrapped reporters.
+
+    Returns:
+        A copy whose stderr skips a repeat.
+    """
+
+    def err(msg: str) -> None:
+        if msg not in said:
+            said.add(msg)
+            reporter.err(msg)
+
+    return dataclasses.replace(reporter, err=err)
+
+
 def _checked_configs(
     configs: _states.MachineConfigs,
 ) -> Iterator[tuple[str, _states.StateConfig]]:
@@ -512,15 +531,19 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 clone_root=clone_root if has_run_agent else None,
             )
     try:
+        # The machine's warnings print once; a state's own table adds, under its label, the
+        # ones it does not inherit.
+        inherited: set[str] = set()
         for label, resolved in _checked_configs(configs):
             if resolved is configs.operator:
                 continue  # the ceiling runs nothing itself
+            said = inherited if resolved is configs.machine else set(inherited)
             confine.warn_sandbox_gaps(
                 resolved.isolation,
                 env,
                 resolved.config,
                 root=cwd,
-                reporter=_labelled(reporter, label.removesuffix(": ")),
+                reporter=_unrepeated(_labelled(reporter, label.removesuffix(": ")), said),
             )
     except jail.JailUnavailableError as exc:
         # The exposure scan builds the jail policy, which creates the jail's HOME.
