@@ -450,6 +450,24 @@ def test_agents_md_setup_block_wraps_a_pipeline_and_ignores_other_headings() -> 
     assert verify_infer.setup_from_agents_md("") is None
 
 
+def test_a_prompt_alone_or_before_a_tab_is_dropped() -> None:
+    """A `$` alone on a line or before a tab stayed in the command, and sh ran `$` as a program."""
+    assert verify_infer.verify_from_agents_md(
+        "## Verify command\n\n```console\n$ pytest -q\n$\n```\n"
+    ) == ("pytest", "-q")
+    assert verify_infer.setup_from_agents_md("## Setup command\n```\n$ \n$\tuv sync\n```\n") == (
+        "uv",
+        "sync",
+    )
+    assert verify_infer.verify_from_agents_md("## Verify command\n```\n$\n```\n") is None
+    # A `$` that starts a word is no prompt.
+    assert verify_infer.verify_from_agents_md("## Verify command\n```\n$HOME/bin/t\n```\n") == (
+        "sh",
+        "-c",
+        "$HOME/bin/t",
+    )
+
+
 def test_a_shell_line_is_judged_by_its_first_program(
     tmp_path: pathlib.Path, jail_bin: pathlib.Path
 ) -> None:

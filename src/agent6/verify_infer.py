@@ -32,6 +32,8 @@ from agent6.tools import errors as tools_errors
 # A command line with any of these, or a leading assignment, is shell, wrapped in `sh -c`.
 _SHELL_META = re.compile(r"[|&;<>`$*]")
 _ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
+# A `$` prompt is a whole first word, so `$HOME` and `$(...)` keep their `$`.
+_PROMPT = re.compile(r"^\$(?:\s+|$)")
 _VERIFY_HEADING = re.compile(r"^#{1,6}\s*(verify|test)\b", re.IGNORECASE)
 _SETUP_HEADING = re.compile(r"^#{1,6}\s*setup command\b", re.IGNORECASE)
 _INLINE_VERIFY = re.compile(r"^\s*(?:verify|test)\s*:\s*(.+)$", re.IGNORECASE)
@@ -119,13 +121,20 @@ def line_to_argv(cmd: str) -> tuple[str, ...] | None:
 def _block_to_argv(block: list[str]) -> tuple[str, ...] | None:
     """Return a fenced block as one argv.
 
-    A `$ ` prompt and comments are dropped, a continued line joins the one before,
+    A `$` prompt and comments are dropped, a continued line joins the one before,
     and several commands chain with `&&`.
+
+    Args:
+        block: The lines between the fences.
+
+    Returns:
+        The argv; None when the block holds no command, or a single command that has no shell
+        syntax and does not parse.
     """
     commands: list[str] = []
     continued = False
     for raw in block:
-        line = _strip_comment(raw.strip().removeprefix("$ "))
+        line = _strip_comment(_PROMPT.sub("", raw.strip()))
         if not line:
             continue
         part = line.removesuffix("\\").rstrip()

@@ -90,6 +90,7 @@ def test_check_verify_says_what_this_repo_infers(
         ("go test ./... # all packages", "go test ./..."),
         ("node --test\ngo test ./...", "sh -c 'node --test && go test ./...'"),
         ("$ go test ./...", "go test ./..."),
+        ("$ go test ./...\n$", "go test ./..."),
         ("pytest 'a #b' &&\n  ruff check", "sh -c 'pytest '\"'\"'a #b'\"'\"' && ruff check'"),
     ],
 )
@@ -100,7 +101,7 @@ def test_check_verify_reads_the_agents_md_fence_as_shell(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """An assignment, a comment, a second line or a `$ ` prompt in the fence is not an argument."""
+    """An assignment, a comment, a second line or a `$` prompt in the fence is not an argument."""
     from agent6.ui.cli import main
 
     (tmp_path / "AGENTS.md").write_text(
