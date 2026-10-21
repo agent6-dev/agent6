@@ -268,14 +268,19 @@ def test_a_private_policy_without_a_network_refuses_rather_than_running_alone(
 
 
 def test_the_network_accessors_never_answer_none(tmp_path: pathlib.Path) -> None:
-    """`ToolDispatcher._net` and `JailAccess.get_net` are typed to return a network, never None.
+    """`ToolDispatcher._net` is typed to return a network, never None.
 
+    `net_for` answers None only for a policy off the run's network, and opens nothing for it.
     `assert_type` does nothing at runtime: strict pyright is the check.
     """
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="full")
     try:
+        on_host = tools_policy.jail_policy(tmp_path, Config(), "full", ("true",), network="host")
+        assert d._jail_access.net_for(on_host) is None
+        assert d._own_session_net is None, "a host policy opened a network"
+        shared = tools_policy.jail_policy(tmp_path, Config(), "full", ("true",), network="session")
         assert_type(d._net(), jail.SessionNetwork)
-        assert_type(d._jail_access.get_net(), jail.SessionNetwork)
+        assert d._jail_access.net_for(shared) is d._net()
     finally:
         d.close()
 

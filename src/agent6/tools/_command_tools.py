@@ -33,7 +33,7 @@ class JailAccess:
 
     get_policy: JailPolicyFactory
     get_session: Callable[[], jail_session.JailSession | None]
-    get_net: Callable[[], jail.SessionNetwork]
+    net_for: background.NetFor
 
 
 def _roster(shells: background.BackgroundShells) -> tuple[str, ...]:
@@ -74,6 +74,7 @@ def start_detached(
             argv,
             lambda a, rw: access.get_policy(a, extra_rw_paths=rw),
             session=access.get_session(),
+            net_for=access.net_for,
         )
     except background.BackgroundError as exc:
         raise tools_errors.ToolError(str(exc)) from exc
@@ -259,9 +260,7 @@ def run_argv_raw(
         outcome = (
             session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
             if session is not None
-            else jail.run_in_jail(
-                policy, session_net=access.get_net() if policy.network == "session" else None
-            )
+            else jail.run_in_jail(policy, session_net=access.net_for(policy))
         )
     except jail.JailUnavailableError as exc:
         raise tools_errors.ToolError(f"{label}: jail unavailable: {exc}") from exc

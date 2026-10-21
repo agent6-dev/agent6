@@ -44,6 +44,8 @@ _REDIRECT = f'exec >"$0/{_LOG_NAME}" 2>&1; exec "$@"'
 
 # (argv, extra read-write paths) -> the sandbox policy; the dispatcher owns policy construction.
 PolicyFor = Callable[[tuple[str, ...], tuple[pathlib.Path, ...]], kinds.JailPolicy]
+# The network a policy's command joins: the run's for `session`, None for every other mode.
+NetFor = Callable[[kinds.JailPolicy], jail.SessionNetwork | None]
 
 
 class BackgroundError(Exception):
@@ -137,6 +139,7 @@ class BackgroundShells:
         policy_for: PolicyFor,
         *,
         session: jail_session.JailSession | None = None,
+        net_for: NetFor | None = None,
     ) -> ShellView:
         """Start a command detached.
 
@@ -145,6 +148,8 @@ class BackgroundShells:
             policy_for: Builds the sandbox policy for the wrapped argv and the log dir.
             session: The run's jail session; the command runs inside it, sharing its netns so
                 a later command can reach it. None gives it a launcher of its own.
+            net_for: The network a launcher of its own joins for the built policy; None joins
+                none, which a `session` policy refuses.
 
         Returns:
             The command as registered.
@@ -163,7 +168,11 @@ class BackgroundShells:
         try:
             policy = policy_for(wrapped, (log_dir,))
             if session is None:
-                job = jail_jobs.start_in_jail(policy, outcome_dir=shell_dir)
+                job = jail_jobs.start_in_jail(
+                    policy,
+                    outcome_dir=shell_dir,
+                    session_net=None if net_for is None else net_for(policy),
+                )
             else:
                 # The session is already confined; only the env comes from the policy.
                 # The baseline precedes the start: a sibling's reparented daemon is not this one's.

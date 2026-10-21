@@ -255,12 +255,15 @@ class SessionJob:
 
 
 def start_in_jail(
-    policy: kinds.JailPolicy, *, outcome_dir: pathlib.Path
+    policy: kinds.JailPolicy,
+    *,
+    outcome_dir: pathlib.Path,
+    session_net: jail.SessionNetwork | None = None,
 ) -> BackgroundJob | LocalJob:
     """Spawn the policy's argv in the sandbox and return without waiting.
 
-    The same policy, launcher and confinement as `run_in_jail`. Nothing of the
-    command's own output is captured, so its argv must redirect it; only the
+    The same policy, launcher, confinement and network as `run_in_jail`. Nothing of
+    the command's own output is captured, so its argv must redirect it; only the
     launcher's result JSON and stderr land in the outcome dir, which lets the exit
     code outlive the turn. The sweep spares the job while it lives and `stop`
     takes its whole group down.
@@ -268,12 +271,14 @@ def start_in_jail(
     Args:
         policy: The jail policy.
         outcome_dir: Where the exit code is written.
+        session_net: The run's session network, when one exists.
 
     Returns:
         The job; a `LocalJob` under the `none` isolation.
 
     Raises:
         JailBinaryError: The launcher is missing or cannot be executed.
+        JailUnavailableError: The policy needs a session network and none was wired.
     """
     paths.mkdir_for_real_user(outcome_dir)
     if policy.isolation == "none":
@@ -291,13 +296,20 @@ def start_in_jail(
             jail.live_launchers.add(proc.pid)
         return LocalJob(proc, outcome_dir)
     binary = jail.require_jail_binary()
+    join_args, join_fds = jail.network_join_args(policy, session_net)
     spec = json.dumps(jail.policy_spec(policy))
     jail.become_subreaper()
     result = (outcome_dir / _RESULT_NAME).open("wb")
     errors = (outcome_dir / _LAUNCHER_ERR_NAME).open("wb")
     try:
         launcher = jail.spawn_launcher(
-            binary, (), stdin=subprocess.PIPE, stdout=result, stderr=errors, die_with_agent=False
+            binary,
+            join_args,
+            stdin=subprocess.PIPE,
+            stdout=result,
+            stderr=errors,
+            pass_fds=join_fds,
+            die_with_agent=False,
         )
     finally:
         result.close()

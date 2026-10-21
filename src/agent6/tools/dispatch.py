@@ -168,7 +168,7 @@ class ToolDispatcher:
         self._session_lock = threading.Lock()
         self._session_dir = session_dir
         self._jail_access = _command_tools.JailAccess(
-            get_policy=self._jail_policy, get_session=self._run_session, get_net=self._net
+            get_policy=self._jail_policy, get_session=self._run_session, net_for=self._net_for
         )
         self._handlers: dict[str, Callable[[dict[str, Any]], results.ToolResult]] = {
             schema.Agent6DocsInput.TOOL_NAME: _fs_tools.agent6_docs,
@@ -926,6 +926,18 @@ class ToolDispatcher:
             self._own_session_net = jail.SessionNetwork.open()
         return self._own_session_net
 
+    def _net_for(self, policy: kinds.JailPolicy) -> jail.SessionNetwork | None:
+        """Return the network a command under the policy joins: the one owner of that decision.
+
+        Args:
+            policy: The command's jail policy.
+
+        Returns:
+            The session network for a `session` policy; None for every other network mode,
+            which opens nothing.
+        """
+        return self._net() if policy.network == "session" else None
+
     def _run_session(self) -> jail_session.JailSession | None:
         """Return the run's jail process, or None to give each command its own.
 
@@ -944,7 +956,7 @@ class ToolDispatcher:
                 rw = () if self._shells is None else (self._shells.log_root,)
                 try:
                     policy = self._jail_policy(("true",), extra_rw_paths=rw)
-                    net = self._net() if policy.network == "session" else None
+                    net = self._net_for(policy)
                     self._session = jail_session.JailSession.open(policy, session_net=net)
                     if self._session.startup_stderr:
                         # A degraded jail (rootless podman refusing /proc) is said once, here.

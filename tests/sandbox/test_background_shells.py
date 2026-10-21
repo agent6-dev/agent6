@@ -744,3 +744,38 @@ def test_adopt_stops_the_command_whose_log_it_cannot_open(tmp_path: pathlib.Path
     finally:
         proc.kill()
         proc.wait()
+
+
+def test_a_background_command_without_a_session_joins_the_runs_network(
+    shells: background.BackgroundShells, tmp_path: pathlib.Path
+) -> None:
+    """A detached command with no jail session died: it asked for the run's network, got none.
+
+    Under `full` its launcher refused with "network = session needs --userns-fd and --netns-fd",
+    while the same command in the foreground joined the run's network.
+    """
+    net = jail.SessionNetwork.open()
+    try:
+
+        def build(argv: tuple[str, ...], rw: tuple[pathlib.Path, ...]) -> kinds.JailPolicy:
+            return kinds.JailPolicy(
+                cwd=tmp_path,
+                argv=argv,
+                isolation="full",
+                network="session",
+                extra_rw_paths=rw,
+                timeout_s=60.0,
+            )
+
+        foreground = jail.run_in_jail(
+            build(("/bin/sh", "-c", "readlink /proc/self/ns/net"), ()), session_net=net
+        )
+        assert foreground.returncode == 0 and foreground.stdout.startswith("net:")
+        view = shells.start(
+            ("/bin/sh", "-c", "readlink /proc/self/ns/net"), build, net_for=lambda _policy: net
+        )
+        assert _wait_state(shells, view.id, "exited") == "exited"
+        _view, output = shells.read(view.id, tail_lines=5)
+        assert output.strip() == foreground.stdout.strip()
+    finally:
+        net.close()
