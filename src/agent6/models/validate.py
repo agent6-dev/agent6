@@ -78,6 +78,10 @@ def _fresh_listing(cfg: Config, provider_name: str) -> list[str] | None:
 
     A secrets problem means an unauthenticated attempt, as a keyless provider lists.
 
+    Args:
+        cfg: The effective config.
+        provider_name: The provider's config name.
+
     Returns:
         The ids, or None when the fetch fails or the provider has no listing.
     """

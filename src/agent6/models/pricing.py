@@ -58,6 +58,10 @@ def _cache_state() -> tuple[tuple[str, float], ...]:
 
     A fetch that lands mid-process (the preflight refresh) bumps an mtime and invalidates
     the memo.
+
+    Returns:
+        The pairs for the `*.json` files of the models cache dir, sorted by name; empty when
+        that directory is missing.
     """
     root = _models_cache_dir()
     if root is None or not root.is_dir():

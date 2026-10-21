@@ -42,6 +42,12 @@ def _cache_path(provider_name: str) -> pathlib.Path | None:
     """Return the provider's cache file, or None when the name is not one path component.
 
     Provider names are config table keys; a `/` or `..` would write outside the cache dir.
+
+    Args:
+        provider_name: The provider's config name.
+
+    Returns:
+        `<cache dir>/models/<provider_name>.json`, or None.
     """
     if provider_name in ("", ".", "..") or provider_name != pathlib.Path(provider_name).name:
         return None
@@ -121,6 +127,12 @@ def _parse_pricing(payload: object) -> dict[str, models_pricing.Price]:
 
     A model without a usable prompt and completion pair is absent (unknown beats wrong); the
     cache rates ride along only when both parse.
+
+    Args:
+        payload: The decoded JSON of a `/models` response.
+
+    Returns:
+        The prices in USD per 1M tokens, keyed by model id.
     """
     data = payload.get("data") if isinstance(payload, dict) else None
     out: dict[str, models_pricing.Price] = {}
@@ -151,6 +163,12 @@ def _parse_context(payload: object) -> dict[str, int]:
     """Return per-model context windows in tokens from a `{"data": [...]}` body.
 
     A model without a positive integer `context_length` is absent (unknown beats wrong).
+
+    Args:
+        payload: The decoded JSON of a `/models` response.
+
+    Returns:
+        The windows, keyed by model id.
     """
     data = payload.get("data") if isinstance(payload, dict) else None
     out: dict[str, int] = {}
@@ -180,6 +198,14 @@ def _models_endpoint(
 
     The cache fetch and the `connect` key probe share it, so both authenticate as the
     call path does.
+
+    Args:
+        entry: The provider entry.
+        api_key: The key, or None to send no auth header.
+
+    Returns:
+        The URL `<base_url>/models`, and the headers: the entry's extra headers, the key's
+        auth header, and `anthropic-version` for a direct Anthropic entry.
     """
     url = entry.base_url.rstrip("/") + "/models"
     headers = dict(entry.extra_headers)
@@ -205,6 +231,14 @@ def _chatgpt_models_endpoint(
     An expired access token fails the fetch and the caller falls back to the cache; runs
     refresh tokens, listings do not.
 
+    Args:
+        provider_name: The provider's config name, under which its sign-in is stored.
+        entry: The provider entry.
+
+    Returns:
+        The URL `<base_url>/models` with the pinned `client_version`, and the headers: the
+        entry's extra headers, the stored access token and account id, and `originator`.
+
     Raises:
         ProviderError: No sign-in is stored for the provider.
     """
@@ -226,6 +260,13 @@ def _chatgpt_listing(payload: object) -> tuple[list[str], dict[str, int]]:
     """Return the (ids, context windows) of a ChatGPT `{"models": [...]}` body.
 
     Hidden entries are left out; a typed hidden slug still works, the backend validates.
+
+    Args:
+        payload: The decoded JSON of the backend's `/models` response.
+
+    Returns:
+        The model slugs in body order, and the context window in tokens of each slug whose
+        `context_window` is a positive integer.
     """
     models = payload.get("models") if isinstance(payload, dict) else None
     ids: list[str] = []
@@ -249,6 +290,12 @@ def _fetch(
     provider_name: str, entry: ProviderEntry, api_key: str | None, timeout_s: float
 ) -> tuple[list[str], dict[str, models_pricing.Price], dict[str, int]]:
     """Fetch the entry's listing; raises on any failure.
+
+    Args:
+        provider_name: The provider's config name.
+        entry: The provider entry.
+        api_key: The key, or None for a keyless attempt.
+        timeout_s: The request timeout.
 
     Returns:
         The ids, the pricing and the context windows.

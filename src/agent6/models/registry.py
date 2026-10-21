@@ -69,7 +69,15 @@ def normalize_model_id(model_id: str) -> str:
 
 
 def bundled_context_key(model_id: str) -> str | None:
-    """Return the matched exact, normalized, or Claude family-major table key."""
+    """Return the matched exact, normalized, or Claude family-major table key.
+
+    Args:
+        model_id: The model id.
+
+    Returns:
+        The first of those keys the table holds (`claude-fable-5-1` falls back to
+        `claude-fable-5`), or None when it holds none.
+    """
     if model_id in BUNDLED_CONTEXT_WINDOWS:
         return model_id
     base = normalize_model_id(model_id)
