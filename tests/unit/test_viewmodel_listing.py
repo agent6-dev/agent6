@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import pathlib
@@ -1775,3 +1776,23 @@ def test_older_journal_keeps_raw_task_blocks(tmp_path: pathlib.Path) -> None:
     assert label.task == raw
     assert label.line() == '<file path="a.py">'
     assert state.fold_session(journal).task_label == label
+
+
+def test_a_plan_reading_carries_its_own_time(tmp_path: pathlib.Path) -> None:
+    """A fan-out picked its newest lane reading by journal mtime, which any later event moves."""
+    window = {"name": "primary", "used_percent": 40.0, "window_minutes": 10080, "resets_at": 1.0}
+    events = [
+        {"ts": "2026-10-20T10:00:00+00:00", "type": "budget.update", "plan_windows": [window]},
+        {
+            "ts": "2026-10-20T11:00:00+00:00",
+            "type": "budget.update",
+            "plan_windows": [dict(window, used_percent=41.0)],
+        },
+        {"ts": "2026-10-20T12:00:00+00:00", "type": "tool.call", "name": "read_file"},
+    ]
+    log = tmp_path / "logs.jsonl"
+    log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    scan = _session_log.scan_session_log(log)
+    assert scan.plan_usage is not None and scan.plan_usage.windows[0].used_percent == 41.0
+    taken = datetime.datetime(2026, 10, 20, 11, tzinfo=datetime.UTC)
+    assert scan.plan_usage_at == taken.timestamp()

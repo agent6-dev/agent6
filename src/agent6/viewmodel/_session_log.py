@@ -59,6 +59,7 @@ class LogScan:
         plan_cap: `[budget].max_percent` for this execution, 0.0 until a plan call runs.
         plan_used_percent: The account's last reading, 0.0 until a plan call runs.
         plan_usage: That reading's windows, None until a plan call reports them.
+        plan_usage_at: When the reading was taken, as epoch seconds; 0.0 without one.
         iteration: The last event's iteration.
         start_ep: session.start's epoch, else the first event's (a fork's log has none).
         last_ep: The last event's epoch.
@@ -105,6 +106,7 @@ class LogScan:
     plan_cap: float = 0.0
     plan_used_percent: float = 0.0
     plan_usage: budget.PlanUsage | None = None
+    plan_usage_at: float = 0.0
     iteration: int | None = None
     start_ep: float | None = None
     last_ep: float | None = None
@@ -270,6 +272,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     cache_creation_tokens: int | None = None
     plan_consumed = plan_prior_executions = plan_cap = plan_used_percent = 0.0
     plan_usage: budget.PlanUsage | None = None
+    plan_usage_at: float = 0.0
     iteration: int | None = None
     start_ep: float | None = None
     first_ep: float | None = None
@@ -408,7 +411,9 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     plan_consumed = figure(ev, "plan_consumed", plan_consumed)
                     plan_cap = figure(ev, "plan_cap", plan_cap)
                     plan_used_percent = figure(ev, "plan_used_percent", plan_used_percent)
-                    plan_usage = read_plan_usage(ev) or plan_usage
+                    if (reading := read_plan_usage(ev)) is not None:
+                        plan_usage = reading
+                        plan_usage_at = events.event_epoch(ev.get("ts")) or 0.0
     except OSError:
         pass
     return LogScan(
@@ -440,6 +445,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         plan_cap=plan_cap,
         plan_used_percent=plan_used_percent,
         plan_usage=plan_usage,
+        plan_usage_at=plan_usage_at,
         unattended_questions=unattended_questions,
         iteration=iteration,
         start_ep=start_ep if start_ep is not None else first_ep,

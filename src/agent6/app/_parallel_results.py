@@ -273,7 +273,7 @@ def import_lanes(
         scan = _session_log.scan_session_log(dest / sessions_layout.LOGS_NAME)
         budget_stops += scan.end_reason == "budget_exhausted"
         if scan.plan_usage is not None and (provider := lane_provider(dest)):
-            seen = (listing.session_mtime(dest), scan.plan_usage)
+            seen = (scan.plan_usage_at, scan.plan_usage)
             readings[provider] = max(readings.get(provider, seen), seen, key=lambda r: r[0])
         if not produced_result(summary.status):
             # Only a deliberate end is rankable work.

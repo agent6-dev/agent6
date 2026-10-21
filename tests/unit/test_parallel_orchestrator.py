@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import datetime
 import io
 import json
 import os
@@ -73,6 +74,7 @@ def _write_fake_run(
     lane: int | None = None,
     coordinator: str | None = None,
     points: float | None = None,
+    read_at: float = 0.0,
 ) -> None:
     session_dir.mkdir(parents=True)
     # A real lane's manifest records its lineage from birth (the spawn env);
@@ -102,6 +104,7 @@ def _write_fake_run(
         # A lane on a subscription plan: no dollars, the account's reading and its points.
         used = 40.0 + points
         events[1] = {
+            "ts": datetime.datetime.fromtimestamp(read_at, tz=datetime.UTC).isoformat(),
             "type": "budget.update",
             "plan_used_percent": used,
             "plan_consumed": points,
@@ -136,6 +139,9 @@ def _write_fake_run(
     )
 
 
+_READ_AT = 1_800_000_000.0
+
+
 class _FakeSpawner:
     """A synchronous stand-in for the bridge spawner.
 
@@ -155,9 +161,12 @@ class _FakeSpawner:
         pid_lanes: set[int] | None = None,
         fanout_id: str | None = None,
         points_by_lane: dict[int, float] | None = None,
+        read_at_by_lane: dict[int, float] | None = None,
         no_commit: set[int] | None = None,
     ) -> None:
         self.points_by_lane = points_by_lane or {}
+        # A lane's plan reading is stamped later for each later lane unless a test says otherwise.
+        self.read_at_by_lane = read_at_by_lane or {}
         self.no_commit = no_commit or set()
         self.origin = origin
         self.origin_state = origin_state
@@ -202,6 +211,7 @@ class _FakeSpawner:
             status=self.status_by_lane.get(spec.lane, "passed"),
             cost=self.cost_by_lane.get(spec.lane, 0.05),
             points=self.points_by_lane.get(spec.lane),
+            read_at=self.read_at_by_lane.get(spec.lane, _READ_AT + spec.lane),
         )
         if spec.lane in self.pid_lanes:
             (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -1531,6 +1541,42 @@ def test_the_report_spells_a_lanes_cost_and_outcome_as_the_listing_does(
     # The report ends on the account's newest reading among the lanes, as a run's end does.
     assert out.rstrip().splitlines()[-1] == (
         "plan usage (chatgpt): 42.5% of the 7-day window (resets in 100h)"
+    )
+
+
+def test_the_report_ends_on_the_newest_reading_by_its_own_clock(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: app_lanes.LaneRuntime,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The newest reading was the newest journal's: a lane that ran on past an old reading won."""
+    origin_state = paths.state_dir(origin)
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "fan", "2")
+    spawner = _FakeSpawner(
+        origin,
+        origin_state,
+        tmp_path / "lane-state",
+        points_by_lane={1: 1.0, 2: 2.5},
+        read_at_by_lane={1: _READ_AT + 3600, 2: _READ_AT},
+    )
+
+    parallel.run_parallel(
+        "t",
+        lanes,
+        explicit_leaves=frozenset(),
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="fan",
+    )
+
+    out = capsys.readouterr().out
+    assert out.rstrip().splitlines()[-1] == (
+        "plan usage (chatgpt): 41% of the 7-day window (resets in 100h)"
     )
 
 
