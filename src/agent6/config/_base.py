@@ -9,7 +9,7 @@ from typing import Annotated
 import pydantic
 
 # strict: TOML delivers native types, so a typo must not coerce ("5" is not an int).
-# allow_inf_nan=False: an infinite timeout or budget raises a raw OverflowError downstream.
+# allow_inf_nan=False: an inf timeout raises OverflowError; an inf or nan budget cap never binds.
 MODEL_CONFIG = pydantic.ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
 
 # The list-to-tuple conversion is the only one strict mode keeps; items stay uncoerced.

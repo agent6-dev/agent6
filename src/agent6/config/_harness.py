@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import math
 import pathlib
 from typing import Literal
 
@@ -612,10 +611,7 @@ class BudgetConfig(pydantic.BaseModel):
     @pydantic.field_validator("max_usd", "max_percent")
     @classmethod
     def _usd_unlimited_is_exactly_minus_one(cls, v: float) -> float:
-        """Refuse a cap that is non-finite or negative other than exactly -1.
-
-        A non-finite cap never binds (nan fails every comparison), which would silently disable
-        the hard budget.
+        """Refuse a negative cap other than exactly -1.
 
         Args:
             v: The configured cap.
@@ -624,8 +620,8 @@ class BudgetConfig(pydantic.BaseModel):
             The cap unchanged.
 
         Raises:
-            ValueError: The cap is nan, infinite, or negative and not -1.
+            ValueError: The cap is negative and not -1.
         """
-        if not math.isfinite(v) or (v < 0 and v != -1):
+        if v < 0 and v != -1:
             raise ValueError("a budget cap is finite and >= 0, or exactly -1 for unlimited")
         return v

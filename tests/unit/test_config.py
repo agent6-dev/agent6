@@ -637,7 +637,7 @@ def test_budget_max_usd_rejects_non_finite(tmp_path: pathlib.Path) -> None:
 
 
 def test_budget_flag_override_rejects_non_finite(tmp_path: pathlib.Path) -> None:
-    # --max-usd routes through the same validator, so `--max-usd inf` cannot disable the meter.
+    # --max-usd routes through the same validation, so `--max-usd inf` cannot disable the meter.
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     with pytest.raises(pydantic.ValidationError, match="finite"):
         cfg.with_budget_overrides(max_usd=float("inf"))
