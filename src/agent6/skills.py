@@ -17,8 +17,8 @@ import re
 import stat
 from collections.abc import Mapping, Sequence
 
-# The agentskills.io name rule.
-_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
+# ASCII letters, digits and hyphens, starting with a letter or digit: one path component.
+_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
 _KEY_RE = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*)$")
 
 
@@ -27,8 +27,14 @@ def is_valid_skill_name(name: str) -> bool:
 
     Discovery and install both gate on this; an unvalidated name from untrusted
     frontmatter could escape the skills dir.
+
+    Args:
+        name: A SKILL.md frontmatter name or a `skills remove` argument.
+
+    Returns:
+        True when the name is valid.
     """
-    return bool(_NAME_RE.match(name))
+    return _NAME_RE.fullmatch(name) is not None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

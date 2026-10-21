@@ -303,6 +303,14 @@ class TestRemoveListComplete:
             cli_skills_cmds._cmd_skills_remove("../victim")
         assert victim.is_dir()  # never touched
 
+    def test_remove_refuses_a_name_with_a_trailing_newline(self, env: pathlib.Path) -> None:
+        """`skills remove` refuses a name ending in a newline, which `re.match` with `$` accepts."""
+        stray = env / "data" / "agent6" / "skills" / "tidy\n"
+        stray.mkdir(parents=True)
+        with pytest.raises(errors.OperatorError, match="invalid skill name"):
+            cli_skills_cmds._cmd_skills_remove("tidy\n")
+        assert stray.is_dir()  # never touched
+
     def test_list_shows_state_and_origin(
         self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
