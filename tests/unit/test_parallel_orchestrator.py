@@ -1580,6 +1580,47 @@ def test_the_report_ends_on_the_newest_reading_by_its_own_clock(
     )
 
 
+def test_a_fan_out_moves_the_origins_legacy_rulings_before_seeding(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: app_lanes.LaneRuntime,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A fan-out on a pre-upgrade origin seeded its lanes from a `decisions.md` no run had made yet.
+
+    The rulings stayed in `memory/DECISIONS.md`, where the first run moves them from.
+    """
+    origin_state = paths.state_dir(origin)
+    legacy = memory.memory_dir(origin_state) / "DECISIONS.md"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text("- ruling\n", encoding="utf-8")
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "fan", "1")
+    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+    seeded_from: list[str] = []
+
+    def spawn(spec: subrun.LaneSpec, task: str) -> subrun.LaneResult:
+        # What the bridge spawner's seeding would copy at this moment.
+        seeded_from.append(memory.decisions_text(origin_state))
+        return spawner(spec, task)
+
+    parallel.run_parallel(
+        "t",
+        lanes,
+        explicit_leaves=frozenset(),
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawn,
+        fanout_id="fan",
+    )
+
+    assert seeded_from == ["- ruling"]
+    assert not legacy.exists()
+    assert "operator rulings moved from" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("coordinator", [False, True])
 def test_a_lane_with_no_commit_does_not_claim_a_branch_was_imported(
     origin: pathlib.Path,

@@ -173,7 +173,7 @@ A fact file is `<name>.md` under the name rule, a regular file; any other entry 
 Outside the store, `<state-dir>/decisions.md` holds the operator's rulings beside `memory-use.json`.
 The harness appends every `ask_user` answer and every steer that answered a question, verbatim with its question, session and time; an identical ruling already on file is recorded once.
 The model sees it first (a `<decisions>` block, re-shown after a compaction restart) and never opens or writes the file; `agent6 memory decisions` prints it.
-A `memory/DECISIONS.md` with no `decisions.md` beside the store is renamed once, by the next run start or `agent6 memory` command, which says so; a run start creates an empty `decisions.md`, and a `memory/DECISIONS.md` beside one is reported and ignored, never merged.
+A `memory/DECISIONS.md` with no `decisions.md` beside the store is renamed once, by the next run start, `run --parallel` or `agent6 memory` command, which says so; a run start creates an empty `decisions.md`, and a `memory/DECISIONS.md` beside one is reported and ignored, never merged.
 A finish-time check reports any ruling missing from the file.
 
 - the index injects into every run's prompt as a capped `<memory>` block; depth is a file read

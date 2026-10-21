@@ -19,7 +19,7 @@ import functools
 import pathlib
 from collections.abc import Sequence
 
-from agent6 import errors, event_log, git_ops, kinds, task_text
+from agent6 import errors, event_log, git_ops, kinds, memory, task_text
 from agent6.app import (
     _lane_watch,
     _parallel_results,
@@ -94,6 +94,9 @@ def run_parallel(
         return 2
     if fanout_id is None:
         fanout_id = lanes[0].session_id.rsplit("-l", 1)[0]
+    # The lanes are seeded from the origin's rulings file, which a run start would move first.
+    if note := memory.migrate_legacy_decisions(origin_state):
+        reporter.note(note)
     try:
         origin_status = git_ops.status(origin)
     except errors.GitError as exc:
