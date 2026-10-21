@@ -162,9 +162,9 @@ def _conventional_scope(paths: Sequence[str]) -> str:
         }
         return names.pop() if len(names) == 1 else ""
     tops = {pp[0] for pp in parts}
-    if len(tops) != 1:
+    if len(tops) != 1 or any(len(pp) < 3 for pp in parts):
         return ""
-    seconds = {pp[1] for pp in parts if len(pp) >= 3}
+    seconds = {pp[1] for pp in parts}
     return seconds.pop() if len(seconds) == 1 else ""
 
 

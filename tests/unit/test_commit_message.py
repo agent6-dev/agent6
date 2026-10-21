@@ -74,3 +74,10 @@ def test_the_configured_identity_reaches_the_commit(tmp_path: pathlib.Path) -> N
     assert (identity.name, identity.email) == ("Agent Six", "agent6@example.com")
     assert identity.trailer == "Assisted-by: agent6:m1"
     assert _chain.commit_identity(Config().git.commit, None) is None
+
+
+def test_a_shared_second_level_dir_needs_every_path_under_it() -> None:
+    """`docs/a.md` beside `docs/x/b.md` scoped as `x`, a dir the first path is not under."""
+    scope = commit_message._conventional_scope  # pyright: ignore[reportPrivateUsage]
+    assert scope(["docs/x/a.md", "docs/x/b.md"]) == "x"
+    assert scope(["docs/a.md", "docs/x/b.md"]) == ""
