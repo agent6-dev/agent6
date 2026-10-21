@@ -127,6 +127,7 @@ def run_one(
             "AGENT6_SB_REVIEW_SEATS",
             "AGENT6_SB_REVIEW_DECISION",
             "AGENT6_SB_REVIEW_QUORUM",
+            "AGENT6_SB_STAGNATION_S",
         )
         if (v := os.environ.get(k))
         for flag in ("-e", f"{k}={v}")

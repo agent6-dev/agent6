@@ -139,9 +139,8 @@ model = "$MODEL"
 # UNSANDBOXED: the container is the isolation. agent6's jail fights the container
 # here (couldn't exec the conda interpreter under hardened/strict), so the config
 # opts out of the kernel sandbox entirely: the standard SWE-bench setup, Docker as
-# the boundary. profile="none" is self-authorizing (an operator-only config
-# value); the per-invocation forms are --dangerously-disable-sandbox /
-# AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1.
+# the boundary. isolation = "none" is an operator-only config value; the
+# per-invocation forms are --disable-sandbox / AGENT6_DISABLE_SANDBOX=1.
 isolation = "none"
 network = "session"
 run_commands = "yes"
@@ -157,6 +156,7 @@ $VERIFY_TOML
 ${AGENT6_SB_VERIFY_WHEN:+verify_when = \"$AGENT6_SB_VERIFY_WHEN\"}
 # Half a 1200s run died in ONE 600s full-suite verify; fast signal wins.
 verify_timeout_s = 240
+${AGENT6_SB_STAGNATION_S:+stagnation_notice_after_s = $AGENT6_SB_STAGNATION_S}
 
 [prompt]
 revise_prompt = "off"
