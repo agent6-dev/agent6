@@ -129,6 +129,10 @@ def tool_failure(exit_code: int, timed_out: bool, output: str) -> str:
         exit_code: The command's exit code.
         timed_out: The command hit its timeout.
         output: Its stderr, or its stdout when stderr is empty.
+
+    Returns:
+        `exit N` or `timed out`, then the last non-blank output line cut to 160
+        characters when there is one.
     """
     if exit_code == 0 and not timed_out:
         return ""
@@ -772,7 +776,11 @@ def machine_word_for_dir(ms: MachineState, machine_dir: pathlib.Path) -> str:
 def notification_key(n: NotificationView) -> tuple[str, str, str]:
     """Return a notification's identity for dedup across the sliding window.
 
-    Mirrors the web client's `ts|state|message`.
+    Args:
+        n: A notification from `MachineState.notifications`.
+
+    Returns:
+        Its `(ts, state, message)`, mirroring the web client's `ts|state|message`.
     """
     return (n.ts, n.state, n.message)
 

@@ -136,7 +136,8 @@ class LogScan:
     def gate_word(self) -> str:
         """Return `verified`, with `timed_out` for a red that is the gate running out its limit.
 
-        The one word `sessions show` and `sessions merge` describe the final tree by.
+        Returns:
+            The gate's word for the final tree.
         """
         return "timed_out" if self.verified == "failed" and self.verify_timeout_s else self.verified
 
@@ -156,6 +157,9 @@ class LogScan:
         """Return this scan's answers to the status questions.
 
         The typed fold's `_state_view.status_facts` agrees on the same log.
+
+        Returns:
+            The facts `status_for_session_dir` reads.
         """
         return _session_status.StatusFacts(
             started=self.saw_start,

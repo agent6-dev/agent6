@@ -90,6 +90,12 @@ def is_session_husk(session_dir: pathlib.Path) -> bool:
     A dir with a live worker is a just-launched run in its pre-manifest preflight
     window and stays listed as "starting". Listings skip husks, and an id lookup must
     not let one shadow a real run of the same id in another bucket.
+
+    Args:
+        session_dir: The session's state dir.
+
+    Returns:
+        True when the dir has none of the three.
     """
     return not layout.session_has_record(session_dir) and not process.worker_is_alive(session_dir)
 
@@ -329,6 +335,12 @@ def session_is_live(session_dir: pathlib.Path) -> bool:
     """Return whether anything will read what the operator writes to this session.
 
     Derived from the status word, so a surface cannot disagree with the label it shows.
+
+    Args:
+        session_dir: The session's state dir.
+
+    Returns:
+        True while the status word is in `LIVE_STATUS_WORDS`.
     """
     logs = session_dir / layout.LOGS_NAME
     facts = (
@@ -375,6 +387,13 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
     The resume command is printed only where it would work: a coordinator has no loop, a
     lane's tree is no checkout's once its clone is gone, a worktree run whose worktree is
     gone continues through `fork`, and a run that never reached a turn has no snapshot.
+
+    Args:
+        session_dir: The session's state dir.
+
+    Returns:
+        The reason, naming the `agent6 fork` command when one continues the run; "" when
+        the resume can start.
     """
     if is_fanout(session_dir):
         return "a fan-out coordinator is not resumable"
@@ -410,6 +429,12 @@ def is_fanout(session_dir: pathlib.Path) -> bool:
     """Return whether the session is a fan-out coordinator; False when its manifest is unreadable.
 
     A hub asks before it spawns a resume that could only refuse.
+
+    Args:
+        session_dir: The session's state dir.
+
+    Returns:
+        True when its manifest carries a fan-out record.
     """
     try:
         return sessions_manifest.read_manifest(session_dir).fanout is not None
@@ -418,7 +443,15 @@ def is_fanout(session_dir: pathlib.Path) -> bool:
 
 
 def undone_refusal(session_id: str, child: str) -> str:
-    """Return the refusal resume and merge share for a run `/undo` took back."""
+    """Return the refusal resume and merge share for a run `/undo` took back.
+
+    Args:
+        session_id: The undone run's id.
+        child: The fork that continues the run.
+
+    Returns:
+        The refusal, then the `agent6 resume` command for `child`.
+    """
     return (
         f"run {session_id!r} was taken back by /undo; its continuation is {child}:\n"
         f'    agent6 resume {child} --steer "<the message, edited>"'

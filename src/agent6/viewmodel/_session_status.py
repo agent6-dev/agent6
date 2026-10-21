@@ -22,21 +22,53 @@ class TaskLabel:
     continued_task: str = ""
 
     def start(self, task: str) -> TaskLabel:
-        """Return the first non-empty task; REPL questions do not rename the session."""
+        """Return the first non-empty task; REPL questions do not rename the session.
+
+        Args:
+            task: The task an execution starts with.
+
+        Returns:
+            This label when it holds a task, else a label holding `task`.
+        """
         return self if self.task else TaskLabel(task)
 
     def resume(self, task: str, steer: str) -> TaskLabel:
-        """Return the original task and latest steer; an unsteered resume clears the prior steer."""
+        """Return the original task and latest steer; an unsteered resume clears the prior steer.
+
+        Args:
+            task: The original task the resume carries.
+            steer: The resume's steer, "" for an unsteered resume.
+
+        Returns:
+            This label with `steer` as its continuation when it holds a task, else a label
+            holding `steer`, or `task` when `steer` is empty.
+        """
         if not self.task:
             return self.start(steer or task)
         return TaskLabel(self.task, steer)
 
     def fallback(self, task: str) -> TaskLabel:
-        """Return manifest text only when the journal holds no task."""
+        """Return manifest text only when the journal holds no task.
+
+        Args:
+            task: The manifest's task text.
+
+        Returns:
+            This label when it holds a task, else a label holding `task` in the journal's
+            display form.
+        """
         return self if self.task else TaskLabel(task_text.task_display_text(task))
 
     def line(self, max_chars: int | None = None) -> str:
-        """Return each task clipped once at the caller's width."""
+        """Return each task clipped once at the caller's width.
+
+        Args:
+            max_chars: The caller's width; None leaves each line whole.
+
+        Returns:
+            The original task's one-line summary, then a `continued: ...` line for the
+            latest continuation when there is one.
+        """
         line = task_snippet(self.task, max_chars=max_chars)
         if self.continued_task:
             line += "\n" + task_snippet(f"continued: {self.continued_task}", max_chars=max_chars)
@@ -325,6 +357,12 @@ def produced_result(status: str) -> bool:
     """Return whether the status word means a deliberate end that left mergeable work.
 
     Only such a lane is a fan-out compare candidate or joins a coordinator's branch.
+
+    Args:
+        status: The session's status word.
+
+    Returns:
+        True for a word in `RESULT_WORDS`.
     """
     return status in RESULT_WORDS
 

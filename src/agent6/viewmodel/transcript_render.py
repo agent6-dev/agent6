@@ -197,6 +197,13 @@ def _same_item(a: Any, b: Any) -> bool:
 
     By id when both carry one, else by what it says, since a replayed message drops
     the id, status and annotations the response carried.
+
+    Args:
+        a: The input item, from the next request.
+        b: The output item, from the previous response.
+
+    Returns:
+        True when `a` replays `b`.
     """
     if not isinstance(a, dict) or not isinstance(b, dict) or a.get("type") != b.get("type"):
         return False

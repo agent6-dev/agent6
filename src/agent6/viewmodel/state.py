@@ -517,6 +517,12 @@ def open_question(session_dir: pathlib.Path) -> _state_types.QuestionPrompt | No
 
     Every surface that writes an answer file checks against it, so an answer list of
     the wrong length is refused rather than thrown away by the asking side.
+
+    Args:
+        session_dir: The session's state dir.
+
+    Returns:
+        The prompt, None when none is open.
     """
     from agent6.viewmodel import tail  # noqa: PLC0415  # cycle at import time  # noqa: PLC0415  # cycle at import time
 
