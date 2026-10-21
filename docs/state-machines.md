@@ -306,7 +306,7 @@ network = "host"                    # except this reviewed tool
 - a bare binary in `command[0]` resolves against the jail PATH (the set `machine check` probes and `run_command` uses), never the host `PATH`; absolute paths for anything elsewhere
 - `machine check` validates the bundle: every `scripts/` entry and static command reference resolves inside it (escaping symlinks rejected)
 - the bundle is read-only in every jail, so a tool or agent cannot rewrite its own machine logic mid-run
-    - under `partial` `sandbox.isolation`, a jailed command also cannot create a new top-level entry in the workspace, so a tool writes its output to `$AGENT6_MACHINE_DATA_DIR`
+    - under `partial` `sandbox.isolation`, a jailed command also cannot create a new top-level entry in a workspace that holds the bundle, so a tool writes its output to `$AGENT6_MACHINE_DATA_DIR`
 
 Cross-iteration persistence: `$AGENT6_MACHINE_DATA_DIR`.
 

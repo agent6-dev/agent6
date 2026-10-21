@@ -467,8 +467,8 @@ if __name__ == "__main__":
     non-conforming stdout HALTS the machine: print one JSON object matching
     your `output_schema` on stdout and exit 0. stderr is free for diagnostics.
   - A `tool` script that writes outside `$AGENT6_MACHINE_DATA_DIR`: on
-    `partial` a tool jail cannot create new top-level entries in the workspace.
-    Write to the data dir (or print to stdout).
+    `partial` a tool jail cannot create new top-level entries in a workspace
+    that holds the bundle. Write to the data dir (or print to stdout).
   - A non-total `branch`: the last clause MUST be `{ else = true, goto = ... }`.
 
 ## Validity requirements (the file must pass `machine check`)
