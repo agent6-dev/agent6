@@ -81,6 +81,14 @@ def draft_dir_for(cwd: pathlib.Path, name: str) -> pathlib.Path | None:
 
     The draft's logs.jsonl is the authoring agent's run-style log, watched through
     the run endpoints.
+
+    Args:
+        cwd: The repository.
+        name: The draft's dir name.
+
+    Returns:
+        The draft's dir, or None for an unsafe name, a missing draft or one that never
+        started.
     """
     if not layout.is_safe_session_id(name):
         return None
@@ -95,6 +103,14 @@ def draft_workspace(
 
     The workspace is a repository of its own beside the other subordinate working
     trees; publishing the draft removes it.
+
+    Args:
+        cwd: The repository.
+        name: The draft's dir name.
+        config_paths: The `--config` files in command-line order.
+
+    Returns:
+        The workspace, or None once it is gone or when the config does not load.
     """
     try:
         cfg = layer.load_effective(cwd, config_paths).config
@@ -360,8 +376,13 @@ def config_payload(
 ) -> dict[str, Any]:
     """Return the effective config per leaf, keyed by dotted key.
 
-    The shared fields are what `agent6 config show --json` prints; `input` is each
-    value's round-trippable editor text. No secret is included.
+    Args:
+        cwd: The repository.
+        config_paths: The `--config` files in command-line order.
+
+    Returns:
+        Each leaf's `agent6 config show --json` fields, plus `input`, the value's
+        round-trippable editor text. No secret is included.
     """
     eff = layer.load_effective(cwd, config_paths)
     resolved = confine.resolved_config_values(eff.config)
@@ -385,8 +406,14 @@ def config_suggestions(
 ) -> list[str]:
     """Return value suggestions for one open-text config leaf.
 
-    `preset` offers the preset names; every other key what `config_value_choices`
-    offers. A config error suggests nothing.
+    Args:
+        cwd: The repository.
+        key: The leaf's dotted key.
+        config_paths: The `--config` files in command-line order.
+
+    Returns:
+        The preset names for `preset`; for any other key, what `config_value_choices`
+        offers, or [] on a config error.
     """
     if key == "preset":
         return layer.available_preset_names(cwd, config_paths)

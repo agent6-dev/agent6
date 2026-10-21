@@ -108,6 +108,13 @@ def _live_session_dir(cwd: pathlib.Path, session_id: str) -> pathlib.Path | tupl
 
     A dead run is refused whatever the page still offers: nothing would consume the
     answer or the marker, and the next resume drops them.
+
+    Args:
+        cwd: The repository.
+        session_id: The run.
+
+    Returns:
+        The session dir, or False and the refusal for an unknown or dead run.
     """
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
@@ -119,6 +126,12 @@ def _live_session_dir(cwd: pathlib.Path, session_id: str) -> pathlib.Path | tupl
 
 def approve(cwd: pathlib.Path, session_id: str, prompt_id: str, answer: str) -> tuple[bool, str]:
     """Answer a pending approval prompt with the operator's literal choice.
+
+    Args:
+        cwd: The repository.
+        session_id: The run.
+        prompt_id: The prompt's id; refused unless that prompt is still open.
+        answer: `yes`, `no`, `session` or `session-deny`.
 
     Returns:
         Whether the answer landed, and the note or the refusal.
@@ -138,6 +151,12 @@ def answer_question(
     cwd: pathlib.Path, session_id: str, question_id: str, answers: list[str]
 ) -> tuple[bool, str]:
     """Answer a pending `ask_user` prompt, one answer per question by index.
+
+    Args:
+        cwd: The repository.
+        session_id: The run.
+        question_id: The prompt's id; refused unless that prompt is still open.
+        answers: A count mismatch is refused.
 
     Returns:
         Whether the answers landed, and the note or the refusal.
@@ -181,6 +200,11 @@ def fork_run(
 ) -> tuple[dict[str, str] | None, str]:
     """Fork a run at its latest checkpoint into a new, unstarted run.
 
+    Args:
+        cwd: The repository.
+        session_id: The run.
+        config_paths: The `--config` files in command-line order.
+
     Returns:
         The new session id in a dict and "", or None and the reason.
     """
@@ -201,6 +225,11 @@ def undo_session(
     """Fork a finished run at the state before its last operator message, unstarted.
 
     A live run is refused: its `/undo` rides the steer channel.
+
+    Args:
+        cwd: The repository.
+        session_id: The run.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         The new session id, the undone text and the rewind notice in a dict and "", or None
@@ -269,6 +298,11 @@ def run_plan(
 
     The plan session is untouched, so revising it keeps working.
 
+    Args:
+        cwd: The repository.
+        session_id: The plan.
+        config_paths: The `--config` files in command-line order.
+
     Returns:
         The new run id in a dict and "", or None and the reason.
     """
@@ -304,6 +338,11 @@ def run_plan(
 def stop_run(cwd: pathlib.Path, session_id: str, *, after_step: bool) -> tuple[bool, str]:
     """Stop a run now, or after the current step's tool results and auto-commit.
 
+    Args:
+        cwd: The repository.
+        session_id: The run.
+        after_step: Let the current step finish first.
+
     Returns:
         Whether the stop landed, and the message.
     """
@@ -316,6 +355,10 @@ def stop_run(cwd: pathlib.Path, session_id: str, *, after_step: bool) -> tuple[b
 
 def compact_run(cwd: pathlib.Path, session_id: str) -> tuple[bool, str]:
     """Ask a live run to compact its context at the next safe boundary.
+
+    Args:
+        cwd: The repository.
+        session_id: The run.
 
     Returns:
         Whether the request landed, and the note or the refusal.
@@ -361,6 +404,10 @@ def _machine_dir_or_missing(cwd: pathlib.Path, name: str) -> pathlib.Path:
 
 def machine_stop(cwd: pathlib.Path, name: str) -> tuple[bool, str]:
     """Write the stop marker for a running machine; it parks at its next transition.
+
+    Args:
+        cwd: The repository.
+        name: The machine instance.
 
     Returns:
         Whether it succeeded, and the note or the refusal; nothing to stop is a note.
@@ -412,6 +459,9 @@ def _state_dir_for_verb(
         name: The machine instance.
         verb: The verb, for the refusal.
         state: The state dir the client rendered, or "" for the newest.
+
+    Returns:
+        The state dir, or False and the refusal.
     """
     machine_dir = _machine_dir_or_missing(cwd, name)
     ok, refusal = machine_state.verb_answer(machine_dir, name, verb)
@@ -434,6 +484,13 @@ def machine_approve(
 ) -> tuple[bool, str]:
     """Answer a pending approval in the agent state the prompt was rendered from.
 
+    Args:
+        cwd: The repository.
+        name: The machine instance.
+        prompt_id: The prompt's id; refused unless that prompt is still open.
+        answer: `yes`, `no`, `session` or `session-deny`.
+        state: The state dir the client rendered, or "" for the newest.
+
     Returns:
         Whether the answer landed, and the note or the refusal.
     """
@@ -452,6 +509,13 @@ def machine_answer(
     cwd: pathlib.Path, name: str, question_id: str, answers: list[str], *, state: str = ""
 ) -> tuple[bool, str]:
     """Answer a pending `ask_user` prompt in the agent state it was rendered from.
+
+    Args:
+        cwd: The repository.
+        name: The machine instance.
+        question_id: The prompt's id; refused unless that prompt is still open.
+        answers: One per question, in order; a count mismatch is refused.
+        state: The state dir the client rendered, or "" for the newest.
 
     Returns:
         Whether the answers landed, and the note or the refusal.
@@ -472,6 +536,12 @@ def machine_answer(
 def machine_steer(cwd: pathlib.Path, name: str, text: str, *, state: str = "") -> tuple[bool, str]:
     """Steer the agent state the operator is viewing, under the run steer's contract.
 
+    Args:
+        cwd: The repository.
+        name: The machine instance.
+        text: A free instruction; "" continues, "abort" stops the agent state.
+        state: The state dir the client rendered, or "" for the newest.
+
     Returns:
         Whether the request landed, and the note or the refusal.
     """
@@ -491,6 +561,12 @@ def merge_run(
 ) -> tuple[bool, str]:
     """Merge a run's branch through `agent6 sessions merge`.
 
+    Args:
+        cwd: The repository.
+        session_id: The run.
+        strategy: `squash`, `merge` or `ff`; "" takes `git.merge_strategy`.
+        config_paths: The `--config` files in command-line order.
+
     Returns:
         Whether the CLI succeeded, and its message.
     """
@@ -505,6 +581,11 @@ def review_run(
     cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[dict[str, str] | None, str]:
     """Review a finished run's record through `agent6 sessions review`, a call of minutes.
+
+    Args:
+        cwd: The repository.
+        session_id: The run.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         The review markdown in a dict and "", or None and the CLI's refusal.
@@ -544,6 +625,11 @@ def remove_session(
 ) -> tuple[bool, str]:
     """Delete one run's history through `agent6 sessions rm`; the branch is prune's.
 
+    Args:
+        cwd: The repository.
+        session_id: The run.
+        config_paths: The `--config` files in command-line order.
+
     Returns:
         Whether the CLI succeeded, and its message; a live run is refused.
     """
@@ -554,6 +640,10 @@ def remove_session(
 
 def remove_asks(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()) -> tuple[bool, str]:
     """Clear every saved ask through `agent6 sessions rm --asks`.
+
+    Args:
+        cwd: The repository.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         Whether the CLI succeeded, and its message.
@@ -572,6 +662,13 @@ def set_config(
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Set one config leaf through `agent6 config set`, which validates key and value.
+
+    Args:
+        cwd: The repository.
+        key: The setting's dotted name, such as `sandbox.network`.
+        value: The value as typed.
+        repo: Write to the per-repo config instead of the global one.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         Whether the CLI succeeded, and its message.
@@ -636,6 +733,12 @@ def unset_config(
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Unset one config leaf through `agent6 config unset`.
+
+    Args:
+        cwd: The repository.
+        key: The setting's dotted name, such as `sandbox.network`.
+        repo: Remove it from the per-repo config instead of the global one.
+        config_paths: The `--config` files in command-line order.
 
     Returns:
         Whether the CLI succeeded, and its message.

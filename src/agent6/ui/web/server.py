@@ -213,6 +213,9 @@ class WebServer(http_server.ThreadingHTTPServer):
         """Register as the run's answer front-end on its first viewer.
 
         The claim file is per process, so other front-ends are never displaced.
+
+        Args:
+            session_dir: The run's directory, or a machine's instance directory.
         """
         key = str(session_dir)
         with self._pid_lock:
@@ -226,6 +229,9 @@ class WebServer(http_server.ThreadingHTTPServer):
 
         The count and the claim change under one lock, so a concurrent claim cannot
         interleave.
+
+        Args:
+            session_dir: The directory given to `claim_session`.
         """
         key = str(session_dir)
         with self._pid_lock:
@@ -409,6 +415,9 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         browser-driven, and meets the cookie check).
         A DNS-rebound page passes both and holds no cookie for its own host name;
         a Host allow-list would break `tailscale serve`.
+
+        Returns:
+            The reason, or None when the POST passes both checks.
         """
         if self._body_length > 0:
             ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
@@ -851,6 +860,9 @@ class _Handler(http_server.BaseHTTPRequestHandler):
     def _sse_send(self, obj: Any) -> bool:
         """Write one data frame.
 
+        Args:
+            obj: The frame's payload, written as JSON.
+
         Returns:
             False once the client has gone.
         """
@@ -888,6 +900,9 @@ class _Handler(http_server.BaseHTTPRequestHandler):
 
         A state's answer files live in its per-state dir; the liveness gate probes
         the instance dir.
+
+        Args:
+            machine_dir: The machine instance's directory.
         """
         self._begin_sse()
         self.server.claim_session(machine_dir)
@@ -906,6 +921,13 @@ def _launch_lines(url: str, secret: auth.Secret) -> list[str]:
 
     A minted secret is shown, and rides the URL's fragment so the first browser signs in
     on load; an operator's own secret is named by where it was set, never shown.
+
+    Args:
+        url: The `http://host:port` a browser opens.
+        secret: The secret a browser signs in with, and where it came from.
+
+    Returns:
+        The lines, without the `agent6 web: ` prefix the caller adds.
     """
     if secret.origin == "minted":
         return [

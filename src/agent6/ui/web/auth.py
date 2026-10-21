@@ -62,6 +62,13 @@ def mint() -> str:
 def _operator_secret(raw: str, name: str) -> str:
     """Return the operator's secret normalized.
 
+    Args:
+        raw: The secret as the operator gave it.
+        name: The flag or variable, named in the refusal.
+
+    Returns:
+        The secret as lowercase words joined by `-`.
+
     Raises:
         WebSecretError: It is under `MIN_SECRET_CHARS`, too short to resist guessing.
     """
@@ -81,6 +88,9 @@ def resolve(flag: str | None, env: str | None) -> Secret:
     Args:
         flag: The `--secret` value, or None.
         env: The `AGENT6_WEB_SECRET` value, or None.
+
+    Returns:
+        The normalized secret and its origin.
 
     Raises:
         WebSecretError: The operator's secret is under `MIN_SECRET_CHARS` once normalized.
@@ -110,14 +120,29 @@ def cookie_name(port: int) -> str:
 def set_cookie(port: int, token: str, *, secure: bool = False) -> str:
     """Return the `Set-Cookie` header a successful login answers with.
 
-    `secure` adds `Secure`, for a browser that reached the server over HTTPS.
+    Args:
+        port: The server's port, which names the cookie.
+        token: The session token.
+        secure: Add `Secure`, for a browser that reached the server over HTTPS.
+
+    Returns:
+        The header's value.
     """
     attributes = f"{_COOKIE_ATTRIBUTES}; Secure" if secure else _COOKIE_ATTRIBUTES
     return f"{cookie_name(port)}={token}; {attributes}"
 
 
 def has_session(cookie_headers: list[str], port: int, token: str) -> bool:
-    """Return whether the request's `Cookie` headers carry this server's session token."""
+    """Return whether the request's `Cookie` headers carry this server's session token.
+
+    Args:
+        cookie_headers: Every `Cookie` header the request sent.
+        port: The server's port, which names its cookie.
+        token: The server's session token.
+
+    Returns:
+        True when the cookie named for `port` holds `token`.
+    """
     name = cookie_name(port)
     for header in cookie_headers:
         for part in header.split(";"):
