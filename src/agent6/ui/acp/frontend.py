@@ -87,6 +87,15 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         A scoped prompt offers the four answers every front-end shares (`yes`, `session`,
         `no`, `session-deny`). One with no scope offers one call or a deny, so an "always
         allow" cannot cover it.
+
+        Args:
+            prompt: The question the editor shows.
+            scope: What a standing answer grants.
+            call_id: The dispatcher's stamp on the gated tool call, if any.
+            until: True once another route answered, ending the wait with None.
+
+        Returns:
+            The answer; `no` when the client cannot be asked.
         """
         if not capabilities.can_ask:
             return "no"
@@ -166,6 +175,10 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
 
     def _confirm_unconfined(isolation: kinds.IsolationLevel, cfg: Config) -> bool:
         """Ask only when the run is unconfined, so the approval never becomes reflexive.
+
+        Args:
+            isolation: The resolved isolation level, "none" for an unconfined run.
+            cfg: The run's config, whose `[sandbox].run_commands` is "yes" for an unconfined run.
 
         Returns:
             Whether the run may go ahead.

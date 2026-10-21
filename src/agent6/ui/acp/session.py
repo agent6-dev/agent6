@@ -81,6 +81,9 @@ class Sessions:
     def new(self, params: dict[str, Any]) -> dict[str, Any]:
         """Serve `session/new`.
 
+        Args:
+            params: The request's `cwd`, `mcpServers` and `additionalDirectories`.
+
         Returns:
             The reply with the new session's id.
 
@@ -123,6 +126,12 @@ class Sessions:
     def get(self, params: dict[str, Any]) -> Session:
         """Return the session the params name.
 
+        Args:
+            params: The request's `sessionId`.
+
+        Returns:
+            The session.
+
         Raises:
             RpcError: No such session.
         """
@@ -136,6 +145,12 @@ class Sessions:
         self, session: Session, text: str, *, finish: Callable[[StopReason], None]
     ) -> None:
         """Run the prompt on a worker, and answer when it ends.
+
+        Args:
+            session: The session the prompt came on.
+            text: The prompt, as `prompt_text` joined it.
+            finish: Answers the prompt; called once with the stop reason, `cancelled` after
+                a cancel whatever the run returned.
 
         Raises:
             RpcError: The session has a turn in flight.
@@ -185,6 +200,9 @@ class Sessions:
 
         What the run had not committed stays in the tree for the next prompt. The worker is
         the ACP server, so the cancel never waits for or signals it.
+
+        Args:
+            session: The session to cancel; nothing happens when no turn is in flight.
         """
         if not session.is_running():
             return
@@ -211,6 +229,9 @@ def prompt_text(params: dict[str, Any]) -> str:
 
     A `resource_link` renders as its uri, which the model reads through the
     ordinary tools; other non-text blocks are dropped, as `initialize` said.
+
+    Args:
+        params: The `session/prompt` params.
 
     Returns:
         The task text.

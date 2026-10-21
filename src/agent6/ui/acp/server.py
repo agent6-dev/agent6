@@ -50,6 +50,9 @@ def capabilities_from(_client: dict[str, Any]) -> frontend.FrontendCapabilities:
     """Return the client's capabilities in the seam every front-end declares.
 
     Every ACP client must serve `session/request_permission`, so it can be asked.
+
+    Returns:
+        `can_ask` true, whatever the client declared.
     """
     return frontend.FrontendCapabilities(can_ask=True)
 
@@ -146,6 +149,9 @@ class ACPServer:
         Invalid JSON has no id to echo, so its parse error carries a null id; the
         connection stays open.
 
+        Args:
+            line: One line the client sent.
+
         Returns:
             The id, method and params, or None when there is nothing to act on.
         """
@@ -222,6 +228,10 @@ class ACPServer:
     def _deliver(self, req_id: object, message: dict[str, Any]) -> bool:
         """Hand a client response to the slot waiting for it.
 
+        Args:
+            req_id: The id the frame answers, one `request` minted.
+            message: The client's frame.
+
         Returns:
             Whether a slot was waiting; a frame with neither result nor error is not
             a response, and would otherwise deny the approval it named.
@@ -283,6 +293,10 @@ class ACPServer:
     def _session_prompt(self, params: dict[str, Any], req_id: object) -> object:
         """Serve `session/prompt`; the worker replies with the stop reason.
 
+        Args:
+            params: The `sessionId` and the `prompt` content blocks.
+            req_id: The id the worker's reply answers.
+
         Returns:
             `DEFERRED`.
 
@@ -306,6 +320,9 @@ class ACPServer:
     def _session_cancel(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Serve `session/cancel`, a notification.
 
+        Args:
+            params: The `sessionId` of the session to cancel.
+
         Returns:
             An empty result, never sent; an unknown session is told to the editor.
         """
@@ -321,6 +338,9 @@ class ACPServer:
     def _sessions(self) -> acp_session.Sessions:
         """Return the session runner.
 
+        Returns:
+            The connection's session table.
+
         Raises:
             RpcError: None is wired.
         """
@@ -330,6 +350,9 @@ class ACPServer:
 
     def _initialize(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Serve `initialize`: the capability exchange.
+
+        Args:
+            params: The client's `protocolVersion` and `clientCapabilities`.
 
         Returns:
             The protocol version and the agent's capabilities.

@@ -143,6 +143,10 @@ def option_kind(text: str, standing: bool | None) -> str:
         standing: True for a scoped approval, whose "allow all" and "deny all" the session
             remembers; False for one nothing may remember; None for a question the model
             wrote.
+
+    Returns:
+        `allow_once`, `allow_always`, `reject_once` or `reject_always`; every option of a
+        question is `allow_once`.
     """
     if standing is None:
         return "allow_once"
@@ -154,13 +158,15 @@ def option_kind(text: str, standing: bool | None) -> str:
 def stop_reason(code: int, *, end_reason: str = "") -> acp_session.StopReason:
     """Return ACP's stop reason for the lifecycle's exit code.
 
-    A deliberate finish is `end_turn` even over a red gate or stranded edits, which
-    are already on the wire; `refusal` is ACP's one word for a run that could not
-    complete.
-
     Args:
         code: The exit code.
         end_reason: The journal's end reason for this turn, or "".
+
+    Returns:
+        `cancelled` for an operator stop (exit 130) and `max_turn_requests` for a run that
+        hit its iteration cap. A deliberate finish is `end_turn` even over a red gate or
+        stranded edits: those are already on the wire. `refusal` is ACP's one word for a
+        run that could not complete.
     """
     if code == 130:
         return "cancelled"
@@ -178,6 +184,14 @@ def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
 
     The answer must be an offered index, or an unknown string could become an
     "allow" by prefix.
+
+    Args:
+        answer: The client's result for `session/request_permission`; empty when none came.
+        options: The options offered; each went out with its index as the option id.
+
+    Returns:
+        The option whose index the client selected; None for no `selected` outcome or an
+        option id not offered.
     """
     outcome = answer.get("outcome")
     if not isinstance(outcome, dict) or outcome.get("outcome") != "selected":
@@ -385,6 +399,9 @@ class RunBridge:
     def _cancelled_unstarted(self, session: acp_session.Session) -> acp_session.StopReason:
         """Clear a queued cancel's requests so the next turn starts without them.
 
+        Args:
+            session: The cancelled session.
+
         Returns:
             The stop reason "cancelled".
         """
@@ -402,6 +419,11 @@ class RunBridge:
 
     def run(self, session: acp_session.Session, text: str) -> acp_session.StopReason:
         """Run one prompt as a turn, queued behind another session's turn.
+
+        Args:
+            session: The session the prompt came on.
+            text: The prompt: a new run's task, or the resumed run's first steering
+                instruction.
 
         Returns:
             ACP's stop reason.
@@ -456,6 +478,10 @@ class RunBridge:
         """Tell the editor why a run died before the turn returns its stop reason.
 
         A non-operator fault's traceback goes to stderr.
+
+        Args:
+            session: The session whose run died.
+            exc: The error that ended the run.
         """
         what = "could not start" if not self.had_journal(session) else "failed"
         self.server.notify_raw(updates.message_update(session.acp_id, f"the run {what}: {exc}"))
@@ -466,6 +492,15 @@ class RunBridge:
         self, session: acp_session.Session, text: str, *, resuming: bool, started_at: float
     ) -> acp_session.StopReason:
         """Run the turn under the run lock, with a tail projecting its journal.
+
+        Args:
+            session: The session the prompt came on.
+            text: The prompt: a new run's task, or the resumed run's first steering
+                instruction.
+            resuming: Resume the run from its snapshot, the tail skipping the turns the
+                editor already rendered; False starts a new run.
+            started_at: When the prompt arrived; a cancel written since is this turn's to
+                honor.
 
         Returns:
             ACP's stop reason.

@@ -70,6 +70,10 @@ def updates_for(
         cwd: The working directory the locations resolve against.
         paths: The paths the tool result named.
         streamed: The item is one delta of a message in flight, sent whole.
+
+    Returns:
+        The notifications, in the order to send them; none for a blank message or a `task`
+        item.
     """
     if item.kind == "done":
         summary = item.body.strip()
@@ -112,7 +116,15 @@ def updates_for(
 
 
 def status_line(item: transcript.TranscriptItem) -> str:
-    """Return the run status without the model's summary."""
+    """Return the run status without the model's summary.
+
+    Args:
+        item: The fold's `done` item.
+
+    Returns:
+        "Session" and the status label ("ended" without one), then " - " and the item's
+        detail (cost, wall time, counts, commit subject) when it has one.
+    """
     parts = [f"Session {item.name or 'ended'}"]
     if item.detail:
         parts.append(f"- {item.detail}")
@@ -124,6 +136,13 @@ def message_update(acp_session_id: str, text: str) -> dict[str, Any]:
 
     The chunk ends its line: an editor appends chunks as they come, and the model's next
     words would otherwise start on the notice's line.
+
+    Args:
+        acp_session_id: The conversation the notification addresses.
+        text: The line, without the `[agent6]` marker this adds.
+
+    Returns:
+        An `agent_message_chunk` notification.
     """
     return _update(
         acp_session_id,
@@ -145,6 +164,12 @@ def printable(text: str) -> str:
 
     Every model-authored string on the wire goes through here: content blocks,
     tool titles, and the permission request an operator reads before granting.
+
+    Args:
+        text: A string bound for the wire.
+
+    Returns:
+        The text, keeping only printable characters, newlines and tabs.
     """
     return "".join(c for c in text if c.isprintable() or c in "\n\t")
 
@@ -167,6 +192,12 @@ def _tool_content(item: transcript.TranscriptItem) -> list[dict[str, Any]]:
     A bare content-block array makes a strict client reject the notification, and
     the call then stays pending; `tail` is the failure's output, the reason an
     editor shows beside "failed".
+
+    Args:
+        item: A tool item of the fold.
+
+    Returns:
+        One `content` entry holding the item's detail and tail; empty when neither is set.
     """
     body = "\n".join(part for part in (item.detail, item.tail) if part)
     return [{"type": "content", "content": _text(body)}] if body else []
@@ -185,6 +216,9 @@ def wire_call_id(session_id: str, turn: int, within_execution: str) -> str:
         session_id: The run id; "" leaves the stamp bare.
         turn: The turn.
         within_execution: The dispatcher's stamp, a counter that restarts every turn.
+
+    Returns:
+        The `toolCallId` the call's announcement, updates and permission request carry.
     """
     return f"{session_id}:{turn}:{within_execution}" if session_id else within_execution
 
