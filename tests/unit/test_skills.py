@@ -100,11 +100,34 @@ class TestDiscoverSkills:
         assert found[0].dir == tmp_path / "tidy"
         assert "Body text here." in found[0].text
 
-    def test_frontmatter_name_wins_over_dirname(self, tmp_path: pathlib.Path) -> None:
-        _write_skill(tmp_path, "wrong-dir-name", PLAIN)
+    @pytest.mark.parametrize(
+        ("dirname", "name"),
+        [
+            ("Upper", "Upper"),
+            ("tail-", "tail-"),
+            ("two--parts", "two--parts"),
+            ("x" * 65, "x" * 65),
+            ("wrong-dir-name", "tidy"),
+        ],
+    )
+    def test_name_rule_skips_with_one_warning(
+        self, tmp_path: pathlib.Path, dirname: str, name: str
+    ) -> None:
+        path = _write_skill(tmp_path, dirname, PLAIN.replace("tidy", name)) / "SKILL.md"
         found, warnings = skills.discover_skills([tmp_path])
-        assert [s.name for s in found] == ["tidy"]
-        assert any("wrong-dir-name" in w for w in warnings)
+        assert found == ()
+        assert len(warnings) == 1
+        assert str(path) in warnings[0]
+        assert repr(name) in warnings[0]
+        assert skills.SKILL_NAME_RULE in warnings[0]
+
+    def test_name_length_boundary(self, tmp_path: pathlib.Path) -> None:
+        name = "x" * 64
+        _write_skill(tmp_path, name, PLAIN.replace("tidy", name))
+        _write_skill(tmp_path, name + "x", PLAIN.replace("tidy", name + "x"))
+        found, warnings = skills.discover_skills([tmp_path])
+        assert [s.name for s in found] == [name]
+        assert len(warnings) == 1
 
     def test_missing_required_fields_skips_with_warning(self, tmp_path: pathlib.Path) -> None:
         _write_skill(tmp_path, "broken", "---\nname: broken\n---\nno description\n")

@@ -17,16 +17,20 @@ import re
 import stat
 from collections.abc import Mapping, Sequence
 
-# ASCII letters, digits and hyphens, starting with a letter or digit: one path component.
-_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
+# The agentskills.io name rule, as discovery's warning and the skills verbs' refusals print it.
+SKILL_NAME_RULE = (
+    "a skill name must be 1 to 64 characters of lowercase ASCII letters, digits and hyphens, "
+    "with no leading, trailing or doubled hyphen, and equal its skill directory name"
+)
+_NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _KEY_RE = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*)$")
 
 
 def is_valid_skill_name(name: str) -> bool:
-    """Return whether the name is valid: alphanumeric plus hyphens, so one safe path component.
+    """Return whether the name meets the skill name syntax and length rule.
 
-    Discovery and install both gate on this; an unvalidated name from untrusted
-    frontmatter could escape the skills dir.
+    Discovery and install both gate on this: an unvalidated name from untrusted frontmatter
+    could escape the skills dir. Discovery also checks that the name equals its directory name.
 
     Args:
         name: A SKILL.md frontmatter name, or a `skills remove` or `skills update` argument.
@@ -34,7 +38,7 @@ def is_valid_skill_name(name: str) -> bool:
     Returns:
         True when the name is valid.
     """
-    return _NAME_RE.fullmatch(name) is not None
+    return 1 <= len(name) <= 64 and _NAME_RE.fullmatch(name) is not None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -149,11 +153,9 @@ def _load_skill(
     description = fields.get("description", "")
     if not name or not description:
         return None, [f"{path}: missing required frontmatter name/description", *warnings]
-    if not is_valid_skill_name(name):
-        return None, [f"{path}: invalid skill name {name!r}", *warnings]
+    if not is_valid_skill_name(name) or name != skill_dir.name:
+        return None, [f"{path}: invalid skill name {name!r}: {SKILL_NAME_RULE}"]
     prefixed = [f"{path}: {w}" for w in warnings]
-    if name != skill_dir.name:
-        prefixed.append(f"{path}: frontmatter name {name!r} != directory {skill_dir.name!r}")
     return Skill(name=name, description=description, dir=skill_dir, text=text), prefixed
 
 

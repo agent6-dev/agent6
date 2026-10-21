@@ -230,6 +230,9 @@ Tiered context compaction (approximate chars; tokens ≈ chars/4).
 
 Operator-installed SKILL.md packs (the agentskills.io format, shared with Claude Code), under `$XDG_DATA_HOME/agent6/skills/<name>/`.
 
+A skill name is 1 to 64 characters of lowercase ASCII letters, digits and hyphens, with no leading, trailing or doubled hyphen, and equals its skill directory name.
+Discovery skips a skill that breaks this rule with a warning.
+
 - `agent6 skills install <url>` takes a SKILL.md URL, a git repo (every `skills/*/SKILL.md`) or a local path; `extra_dirs` points at an existing collection (`~/.claude/skills`, …) instead of copying
 - installed means enabled: an index in the system prompt, on-demand content via `use_skill`, a `/<name>` pause-menu command, and `run --skill <name>`
 - repo-local skill dirs are not discovered (repo content is not config); the trust model is in [security.md](security.md)

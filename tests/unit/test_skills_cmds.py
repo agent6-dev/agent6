@@ -12,7 +12,7 @@ from http import server
 
 import pytest
 
-from agent6 import errors
+from agent6 import errors, skills
 from agent6.config import write
 from agent6.ui.cli import skills_cmds as cli_skills_cmds
 
@@ -46,6 +46,14 @@ def _installed(tmp_path: pathlib.Path, name: str) -> pathlib.Path:
 
 
 class TestInstall:
+    @pytest.mark.parametrize("name", ["Upper", "tail-", "two--parts", "x" * 65])
+    def test_install_name_rule_refused(self, env: pathlib.Path, name: str) -> None:
+        src = _write_skill_file(env / "src" / "SKILL.md", name)
+        with pytest.raises(errors.OperatorError) as exc:
+            cli_skills_cmds._cmd_skills_install(str(src), force=False)
+        assert skills.SKILL_NAME_RULE in str(exc.value)
+        assert not _installed(env, name).exists()
+
     def test_local_skill_md_file(
         self, env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:

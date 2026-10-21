@@ -160,8 +160,8 @@ def _skill_name_from_text(text: str, source: str) -> str:
         The name, safe as one path component.
 
     Raises:
-        OperatorError: The frontmatter lacks a name or description, or the name is not one
-            safe path component.
+        OperatorError: The frontmatter lacks a name or description, or the name breaks
+            the skill name syntax or length rule.
     """
     fields, _warnings = agent6_skills.parse_frontmatter(text)
     name, description = fields.get("name", ""), fields.get("description", "")
@@ -172,8 +172,7 @@ def _skill_name_from_text(text: str, source: str) -> str:
     # The name becomes a path component and, under --force, an rmtree target: discovery's gate.
     if not agent6_skills.is_valid_skill_name(name):
         raise errors.OperatorError(
-            f"{source}: invalid skill name {name!r} "
-            "(letters, digits, and hyphens only, starting alphanumeric)"
+            f"{source}: invalid skill name {name!r} ({agent6_skills.SKILL_NAME_RULE})"
         )
     return name
 
@@ -590,10 +589,7 @@ def _cmd_skills_update(name: str) -> int:
         OperatorError: The name is unsafe or not installed, or a refetch refused.
     """
     if name and not agent6_skills.is_valid_skill_name(name):
-        raise errors.OperatorError(
-            f"invalid skill name {name!r} "
-            "(letters, digits, and hyphens only, starting alphanumeric)"
-        )
+        raise errors.OperatorError(f"invalid skill name {name!r} ({agent6_skills.SKILL_NAME_RULE})")
     base = _installed_dir()
     if name and not (base / name).is_dir():
         raise errors.OperatorError(f"{name!r} is not installed")
@@ -834,10 +830,7 @@ def _cmd_skills_remove(name: str, config_paths: tuple[pathlib.Path, ...] = ()) -
         OperatorError: The name is unsafe, managed elsewhere, or not installed.
     """
     if not agent6_skills.is_valid_skill_name(name):
-        raise errors.OperatorError(
-            f"invalid skill name {name!r} "
-            "(letters, digits, and hyphens only, starting alphanumeric)"
-        )
+        raise errors.OperatorError(f"invalid skill name {name!r} ({agent6_skills.SKILL_NAME_RULE})")
     target = _installed_dir() / name
     if not target.is_dir():
         # Distinguish "managed elsewhere" from "unknown" for a useful error.
