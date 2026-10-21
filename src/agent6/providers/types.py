@@ -137,8 +137,11 @@ def scrub_secret_values(text: str, headers: dict[str, str]) -> str:
 def _max_seq_in_dir(transcripts_dir: pathlib.Path) -> int:
     """Return the highest seq recorded in the directory, or 0 when it holds none.
 
-    The seq is the suffix of each `<ts>-<seq>.json` file; an in-flight temp file
-    and a stray `.json` without the suffix are skipped.
+    Args:
+        transcripts_dir: The sink's directory.
+
+    Returns:
+        The highest `<seq>` among the `<ts>-<seq>.json` files.
     """
     seqs = [
         int(tail)
@@ -367,5 +370,11 @@ def output_cap_truncated(resp: ProviderResponse) -> bool:
 
     A reasoning model can spend its whole cap before emitting content, so a
     truncated call is a failed call, never an empty verdict.
+
+    Args:
+        resp: The response.
+
+    Returns:
+        True for the stop reason `length` or `max_tokens`, ignoring case.
     """
     return resp.stop_reason.strip().lower() in _OUTPUT_CAP_STOP_REASONS

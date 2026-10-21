@@ -80,6 +80,13 @@ def _has_assistant_output(data: dict[str, Any]) -> bool:
 
     A top-level `error` beside real output is incidental, not an envelope; a
     placeholder choice with null content is not output.
+
+    Args:
+        data: The parsed body.
+
+    Returns:
+        True when a choice carries content or tool_calls, or the Anthropic `content`
+        list is non-empty.
     """
     choices = data.get("choices")
     if isinstance(choices, list):

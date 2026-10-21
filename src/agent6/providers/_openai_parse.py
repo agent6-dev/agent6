@@ -25,6 +25,9 @@ def response_string(value: Any, field: str, *, empty: bool = True) -> str:
         field: The field's name, for the error.
         empty: Whether a blank string is accepted.
 
+    Returns:
+        The value, unchanged.
+
     Raises:
         ProviderError: The value is not a string, or is blank when one is required.
     """
@@ -36,6 +39,12 @@ def response_string(value: Any, field: str, *, empty: bool = True) -> str:
 
 def usage_mapping(value: Any) -> Mapping[str, Any]:
     """Return the response's `usage` object, empty when absent.
+
+    Args:
+        value: The body's `usage` value.
+
+    Returns:
+        The object; empty for None.
 
     Raises:
         ProviderError: The value is present but not an object.

@@ -341,6 +341,10 @@ class ClaudeCodeProvider:
     def _audit_init(self, s: _claude_code_session.Session, line: Mapping[str, Any]) -> None:
         """Check every `system/init`: the tool set is exactly what agent6 offered.
 
+        Args:
+            s: The session; the line's model and session id are stored on it.
+            line: The `system/init` line.
+
         Raises:
             ProviderError: The child exposed another tool set, or resolved an API key
                 instead of the login (fatal).
@@ -373,6 +377,11 @@ class ClaudeCodeProvider:
         watch: _claude_code_session.Watch,
     ) -> None:
         """Send the continuing call: each pending result as its answer, the texts on the last.
+
+        Args:
+            s: The live session.
+            tail: The results and texts the new history adds.
+            watch: The wait loop's checks.
 
         Raises:
             ProviderError: A result with its notices is over the CLI's persist threshold
@@ -418,6 +427,14 @@ class ClaudeCodeProvider:
     ) -> _claude_code_session.ToolCall:
         """Return the `tools/call` for a tool_use id, stashed or the next one the CLI sends.
 
+        Args:
+            s: The session.
+            tool_use_id: The id of one of the last round's pending calls.
+            watch: The wait loop's checks.
+
+        Returns:
+            The `tools/call`, taken out of the session's stash.
+
         Raises:
             ProviderError: The CLI refused the call itself or moved on without it.
         """
@@ -443,6 +460,10 @@ class ClaudeCodeProvider:
         A tools/call is stashed, a stray can_use_tool allowed, any other control
         request refused, a plan reading taken, a refused call noted, and the CLI's
         other echoes and progress lines dropped.
+
+        Args:
+            s: The session.
+            line: A stdout line of any `type`.
         """
         kind = line.get("type")
         if kind == "control_request":
@@ -461,6 +482,10 @@ class ClaudeCodeProvider:
 
     def _control(self, s: _claude_code_session.Session, line: Mapping[str, Any]) -> None:
         """Handle a control request.
+
+        Args:
+            s: The session; a tools/call is stashed on it.
+            line: The `control_request` line.
 
         Raises:
             ProviderError: An MCP request other than a tools/call.
@@ -507,6 +532,10 @@ class ClaudeCodeProvider:
     def _check_result(self, s: _claude_code_session.Session, line: Mapping[str, Any]) -> None:
         """Raise a `result` line's error, if it carries one.
 
+        Args:
+            s: The session, whose login email is scrubbed from the error.
+            line: The `result` line.
+
         Raises:
             ProviderError: The turn failed; a signed-out login is fatal, and an API
                 status carried by the line keeps its retry class.
@@ -530,6 +559,14 @@ class ClaudeCodeProvider:
         self, s: _claude_code_session.Session, watch: _claude_code_session.Watch
     ) -> dict[str, Any]:
         """Return the next meaningful line, ticking the watch while waiting.
+
+        Args:
+            s: The session to read; a pushed-back line comes first.
+            watch: The wait loop's checks; a returned line resets its idle clock.
+
+        Returns:
+            The line; a plan reading is absorbed and a ping skipped, so neither comes
+            back.
 
         Raises:
             ProviderError: The child exited or wrote an unreadable line.
@@ -670,6 +707,10 @@ class ClaudeCodeProvider:
         self, s: _claude_code_session.Session, watch: _claude_code_session.Watch
     ) -> None:
         """Read a prose round's `result` line, so a turn error is raised where it happened.
+
+        Args:
+            s: The session.
+            watch: The wait loop's checks.
 
         Raises:
             ProviderError: The turn failed, or another round started first.

@@ -17,7 +17,11 @@ from agent6.providers import types
 def tool_result_text(tr_content: Any) -> str:
     """Return a tool_result's content as the one string the OpenAI wires carry.
 
-    The text blocks joined, else the content as JSON, else as text.
+    Args:
+        tr_content: A tool_result block's `content`.
+
+    Returns:
+        A block list's text blocks joined, else the list as JSON; anything else as text.
     """
     if isinstance(tr_content, list):
         parts = [

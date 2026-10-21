@@ -114,8 +114,13 @@ def emit_delta(
 def block(s: _claude_code_session.Session, raw: Mapping[str, Any]) -> dict[str, Any]:
     """Return one assistant block in Anthropic shape.
 
-    Tool names are bare, the email is scrubbed from text and thinking, and the
-    CLI's `caller` is dropped.
+    Args:
+        s: The session holding the email to scrub.
+        raw: A content block of the CLI's `assistant` line.
+
+    Returns:
+        The block with tool names bare, the login's email scrubbed from text and
+        thinking, and the CLI's `caller` dropped.
     """
     kind = raw.get("type")
     if kind == "text":

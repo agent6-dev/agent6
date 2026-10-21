@@ -33,6 +33,10 @@ def end_child(proc: subprocess.Popen[bytes], private_dir: pathlib.Path) -> None:
     SIGTERM to its process group (the CLI exits at once; on stdin EOF alone it
     stays up while a tools/call awaits its answer), SIGKILL after the grace. The
     reader threads close stdout and stderr at their EOF.
+
+    Args:
+        proc: The child, leader of its own process group.
+        private_dir: The child's cwd.
     """
     with contextlib.suppress(OSError, ValueError):
         if proc.stdin is not None:
@@ -243,6 +247,9 @@ def read_stdout(s: Session) -> None:
 
     A close from another thread while a read is in flight would let that read
     land on the next child's descriptor.
+
+    Args:
+        s: The session whose `lines` queue this thread fills, ending with None.
     """
     stream = s.proc.stdout
     assert stream is not None
@@ -355,6 +362,10 @@ def note_refusals(s: Session, line: Mapping[str, Any]) -> None:
 
     A `user` echo carrying an `is_error` tool_result the CLI wrote means it refused
     that call's input and never sent the `tools/call`; the next round follows.
+
+    Args:
+        s: The session; each refusal's reason lands in its `refused` map.
+        line: A `user` line the CLI echoed.
     """
     content = (line.get("message") or {}).get("content")
     if not isinstance(content, list):

@@ -213,6 +213,13 @@ def _scrub(text: str, secrets: tuple[str, ...]) -> str:
     """Return the text with every echoed credential value replaced.
 
     Raw and JSON-escaped spellings are covered; values under 8 characters are skipped.
+
+    Args:
+        text: A response body.
+        secrets: The credential values the request sent.
+
+    Returns:
+        The text, each value replaced by `<REDACTED>`.
     """
     for value in secrets:
         if len(value) < 8:
@@ -519,7 +526,13 @@ def jwt_claims(token: str) -> dict[str, Any]:
     """Return a JWT's payload claims; `{}` on any malformation.
 
     No signature check: agent6 is the OAuth client, not a verifier, and the
-    claims are only read back for the account id.
+    claims are only read back for the account id and the plan type.
+
+    Args:
+        token: An access token or id_token.
+
+    Returns:
+        The decoded payload.
     """
     parts = token.split(".")
     if len(parts) != 3:
@@ -538,6 +551,12 @@ def account_id_of(grant: TokenGrant) -> str:
     """Return the account id a grant is bound to; "" when absent.
 
     The claim rides in the access token and, for a workspace account, the id_token.
+
+    Args:
+        grant: The grant whose tokens are read, access token first.
+
+    Returns:
+        The `chatgpt_account_id` claim.
     """
     for token in (grant.access_token, grant.id_token):
         auth = jwt_claims(token).get(_CLAIMS_KEY)
@@ -689,6 +708,9 @@ class ChatGPTCredential:
 
     def token(self) -> str:
         """Return a fresh-enough bearer, rotating the stored grant when needed.
+
+        Returns:
+            The access token.
 
         Raises:
             ProviderError: No usable sign-in is stored, the refresh lock could not

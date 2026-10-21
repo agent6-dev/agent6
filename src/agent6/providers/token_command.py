@@ -43,6 +43,9 @@ class CommandToken:
     def token(self) -> str:
         """Return the cached bearer while younger than the TTL, else re-run the command.
 
+        Returns:
+            The bearer the command printed, stripped; never empty.
+
         Raises:
             ProviderError: The command is missing, times out, exits non-zero or
                 prints nothing.

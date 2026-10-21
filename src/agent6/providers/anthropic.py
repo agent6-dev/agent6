@@ -35,6 +35,12 @@ def _anthropic_version(deployment: str) -> tuple[str, str]:
 
     Direct sends the `anthropic-version` header; Vertex sends an `anthropic_version`
     body field with its own value.
+
+    Args:
+        deployment: The URL profile; every profile but "vertex" takes the header.
+
+    Returns:
+        "header" or "body", then the version.
     """
     if deployment == "vertex":
         return ("body", ANTHROPIC_VERTEX_VERSION)
@@ -89,6 +95,13 @@ def _summarise_thinking_display(model: str) -> bool:
 def _non_negative_integer(value: Any, field_name: str) -> int:
     """Return a response value as a non-negative integer.
 
+    Args:
+        value: The decoded value; a bool or a fractional float is refused.
+        field_name: The field's name, for the error.
+
+    Returns:
+        The integer.
+
     Raises:
         ProviderError: The value is not one.
     """  # noqa: DOC501  # the TypeError is raised and caught in the same try
@@ -116,6 +129,12 @@ def _usage_count(usage: Mapping[str, Any], key: str) -> int:
 def _usage_mapping(value: Any) -> Mapping[str, Any]:
     """Return a `usage` object, empty when absent.
 
+    Args:
+        value: The `usage` field's value.
+
+    Returns:
+        The object; empty for None.
+
     Raises:
         ProviderError: The value is present but not an object.
     """
@@ -133,6 +152,9 @@ def _response_string(value: Any, field_name: str, *, empty: bool = True) -> str:
         value: The field's value.
         field_name: The field's name, for the error.
         empty: Whether a blank string is accepted.
+
+    Returns:
+        The value, unchanged.
 
     Raises:
         ProviderError: The value is not a string, or is blank when one is required.
@@ -178,6 +200,12 @@ def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[st
     The harness places rolling breakpoints in the message list; with
     `prompt_caching = false` they are stripped before the request is built. The
     caller's list, shared with resume snapshots, is never mutated.
+
+    Args:
+        messages: The conversation in Anthropic shape.
+
+    Returns:
+        A new list when a block carried a marker, else `messages` itself.
     """
     out: list[dict[str, Any]] = []
     changed = False
@@ -204,6 +232,12 @@ def shape_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
 
     Reasoning from another wire has no Anthropic signature and cannot be replayed;
     a message it empties is dropped, since the API rejects an empty one.
+
+    Args:
+        messages: The conversation in Anthropic shape.
+
+    Returns:
+        A new list when anything was dropped, else `messages` itself.
 
     Raises:
         ProviderError: No message is left (fatal).
@@ -562,6 +596,11 @@ class AnthropicProvider:
 
         def consume(resp: httpx2.Response, clock: _stream.StreamClock) -> None:  # noqa: C901, PLR0912, PLR0915  # one streaming state machine; a split hides the event order
             """Read the stream's events into the accumulators.
+
+            Args:
+                resp: The open 2xx response.
+                clock: The watchdog's idle clock; every event but a ping marks it, and
+                    the first content block ends prefill.
 
             Raises:
                 ProviderError: A malformed event or a stream error frame.

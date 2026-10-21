@@ -88,6 +88,12 @@ def _is_reasoning_model(model: str) -> bool:
 
     This set gates the effort default, a measured behaviour, so it stays the
     measured families; the token floor matches more broadly.
+
+    Args:
+        model: The model id.
+
+    Returns:
+        True when the id contains a `_REASONING_MODEL_HINTS` entry, ignoring case.
     """
     lowered = model.lower()
     return any(hint in lowered for hint in _REASONING_MODEL_HINTS)
@@ -449,6 +455,11 @@ class OpenAIProvider:
 
         def consume(resp: httpx2.Response, clock: _stream.StreamClock) -> None:  # noqa: C901, PLR0912, PLR0915  # one streaming state machine; a split hides the event order
             """Read the stream's events into the accumulators.
+
+            Args:
+                resp: The open 2xx response.
+                clock: The watchdog's idle clock; every event marks it, and the first
+                    output ends prefill.
 
             Raises:
                 ProviderError: A malformed delta or a stream error frame.

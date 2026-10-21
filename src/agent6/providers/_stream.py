@@ -185,6 +185,9 @@ class StreamClock:
 
         A thinking block gets the patient budget, prefill the first-data budget,
         and output the tight mid-stream budget.
+
+        Returns:
+            The timeout in seconds and the phase the idle error names.
         """
         if self._in_thinking.is_set():
             return (STREAM_THINKING_IDLE_TIMEOUT_S, "mid-thinking")

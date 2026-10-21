@@ -187,6 +187,13 @@ def _tool_use_of(item: dict[str, Any], *, n: int) -> dict[str, Any] | None:
 def _usage_count(value: Any, field_name: str) -> int:
     """Return one usage count; 0 when absent.
 
+    Args:
+        value: The decoded value; a bool or a fractional float is refused.
+        field_name: The field's path under `usage`, for the error.
+
+    Returns:
+        The count.
+
     Raises:
         ProviderError: The value is not a non-negative integer.
     """  # noqa: DOC501  # the TypeError is raised and caught in the same try
@@ -291,6 +298,9 @@ def _accepted_efforts(status: int | None, text: str) -> tuple[str, ...]:
 
 def _unreachable_hook(data: dict[str, Any]) -> Any:
     """Refuse the non-streaming hooks; this wire is stream-only.
+
+    Args:
+        data: The response body, unused.
 
     Raises:
         ProviderError: Always.
@@ -715,6 +725,11 @@ class ChatGPTProvider:
             resp: httpx2.Response, clock: _stream.StreamClock
         ) -> None:
             """Read the stream's events into the accumulators.
+
+            Args:
+                resp: The open 2xx response.
+                clock: The watchdog's idle clock; every event marks it, and the first
+                    output ends prefill.
 
             Raises:
                 ProviderError: A failed response or an unknown terminal status.

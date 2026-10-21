@@ -98,9 +98,10 @@ def claude_argv(
 def child_env() -> dict[str, str]:
     """Return the child's environment.
 
-    The curated base (HOME included, so the binary finds its login), `CLAUDE_CONFIG_DIR`
-    when set, and the fixed toggles; no other `ANTHROPIC_*` or `CLAUDE*` variable
-    reaches it, since a key would override the subscription login.
+    Returns:
+        The curated base (HOME included, so the binary finds its login),
+        `CLAUDE_CONFIG_DIR` when set, and the fixed toggles; no other `ANTHROPIC_*` or
+        `CLAUDE*` variable reaches it, since a key would override the subscription login.
     """
     return agent6_child_env.curated_env(
         passthrough=_PASSTHROUGH, extra=CLAUDE_CODE_ENV, desktop=False
@@ -177,8 +178,12 @@ def tool_use_ids(message: Mapping[str, Any]) -> tuple[str, ...]:
 def result_text(content: Any) -> str:
     """Return a tool result's content as text.
 
-    A string as is, a block list's text joined, absent content as "", anything
-    else as its JSON.
+    Args:
+        content: A tool_result block's `content`.
+
+    Returns:
+        A string as is, a block list's text joined, absent content as "", anything
+        else as its JSON.
     """
     if content is None:
         return ""
@@ -206,9 +211,14 @@ Skeleton = tuple[str, tuple[tuple[str, str], ...]]
 def message_skeleton(message: Mapping[str, Any]) -> Skeleton:
     """Return what identifies a message the process has consumed.
 
-    The role and, per block, the tool_use id, the tool_result id or the text. A
-    tool_result's content and thinking are left out: elision and thinking strips
+    A tool_result's content and thinking are left out: elision and thinking strips
     rewrite those in place without changing what the process was sent.
+
+    Args:
+        message: A message in Anthropic shape.
+
+    Returns:
+        The role and, per block, the tool_use id, the tool_result id or the text.
     """
     keys = {"text": "text", "tool_use": "id", "tool_result": "tool_use_id"}
     return (

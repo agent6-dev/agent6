@@ -108,6 +108,13 @@ def _tool_code_calls(code: str, tool_names: frozenset[str]) -> list[_Call]:
 
     The block is parsed with `ast`, never executed; top-level calls and list or
     tuple elements count, and a `print(...)` wrapper is unwrapped.
+
+    Args:
+        code: The fence's content.
+        tool_names: The tools offered.
+
+    Returns:
+        The `{"name", "input"}` calls; empty when the block is not valid Python.
     """
     code = code.strip()
     if not code:
