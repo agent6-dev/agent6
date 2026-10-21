@@ -65,17 +65,17 @@ AGENT6_LIGHT = Theme(
     name="agent6-light",
     primary="#2E5BA8",
     secondary="#1E6FA8",
-    accent="#4C7A2F",
+    accent="#456F2B",
     foreground="#2A2E3F",
     background="#F4F5F8",
     surface="#EAECF2",
     panel="#DEE1EA",
-    success="#4C7A2F",
-    warning="#9A6E00",
+    success="#456F2B",
+    warning="#835E00",
     error="#C0392B",
     dark=False,
     variables={
-        "footer-key-foreground": "#C2410C",
+        "footer-key-foreground": "#B13B0B",  # on the panel, the footer's ground
         "scrollbar-background": "#EAECF2",  # the surface, as in agent6-dark
         "scrollbar-background-hover": "#EAECF2",
         "scrollbar-background-active": "#EAECF2",
@@ -199,6 +199,33 @@ ANSI_THEME_LIGHT = TerminalTheme(
         (186, 13, 187),  # bright magenta
         (8, 115, 138),  # bright cyan
         (105, 105, 105),  # bright white
+    ],
+)
+
+# The dark ANSI theme: textual's Monokai with its red and magenta, which every red text on
+# agent6-dark paints, at 4.5:1 or more on agent6-dark's background, surface and panel.
+ANSI_THEME_DARK = TerminalTheme(
+    (12, 12, 12),
+    (217, 217, 217),
+    [
+        (26, 26, 26),  # black
+        (255, 55, 133),  # red
+        (152, 224, 36),  # green
+        (253, 151, 31),  # yellow
+        (157, 101, 255),  # blue
+        (255, 55, 133),  # magenta
+        (88, 209, 235),  # cyan
+        (196, 197, 181),  # white
+    ],
+    [
+        (98, 94, 76),  # bright black
+        (255, 55, 133),  # bright red
+        (152, 224, 36),  # bright green
+        (224, 213, 97),  # bright yellow
+        (157, 101, 255),  # bright blue
+        (255, 55, 133),  # bright magenta
+        (88, 209, 235),  # bright cyan
+        (246, 246, 239),  # bright white
     ],
 )
 
@@ -346,14 +373,15 @@ def setup_theme(app: textual_app.App[Any]) -> None:
     """Register the built-in themes, apply the saved one, and persist every change.
 
     Called from `App.on_mount`. The `theme_changed_signal` subscription remembers a
-    change from any path, the picker or the command palette. Sets the app's light
-    ANSI theme to `ANSI_THEME_LIGHT`. Also installs the half-height horizontal
-    scrollbar renderer, a class-level hook over every bar.
+    change from any path, the picker or the command palette. Sets the app's ANSI
+    themes to `ANSI_THEME_DARK` and `ANSI_THEME_LIGHT`. Also installs the half-height
+    horizontal scrollbar renderer, a class-level hook over every bar.
 
     Args:
         app: The app to theme.
     """
     ScrollBar.renderer = ThinScrollBarRender
+    app.ansi_theme_dark = ANSI_THEME_DARK
     app.ansi_theme_light = ANSI_THEME_LIGHT
     for theme in (AGENT6_DARK, AGENT6_LIGHT, ALICE, SNOW, ROSE, GRIMM):
         if theme.name not in app.available_themes:

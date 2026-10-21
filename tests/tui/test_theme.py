@@ -80,6 +80,64 @@ def test_a_light_theme_paints_every_ansi_colour_at_4_5_to_1(cfg: pathlib.Path) -
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("name", ["agent6-dark", "agent6-light"])
+def test_an_agent6_theme_paints_its_text_at_4_5_to_1(cfg: pathlib.Path, name: str) -> None:
+    """An agent6 theme's text colours read at 4.5:1 or more on its background and surface.
+
+    The footer's colours are measured on the footer's own ground, the panel. agent6-light
+    painted its warning at 3.86:1 on its surface; agent6-dark painted every red through
+    textual's Monokai ANSI red at 4.12:1. A dark theme's ANSI black is a background (Rich
+    paints code spans on it) and its bright black is dim by design, so those two are left out.
+    """
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.theme = name
+            await pilot.pause()
+            current = app.current_theme
+            variables = app.get_css_variables()
+            ansi = app.ansi_theme
+            parse = textual_color.Color.parse
+            text: dict[str, tuple[int, int, int]] = {}
+            for slot in (
+                "foreground",
+                "primary",
+                "secondary",
+                "accent",
+                "success",
+                "warning",
+                "error",
+            ):
+                value = getattr(current, slot)
+                assert isinstance(value, str), slot
+                text[slot] = parse(value).rgb
+            text["ANSI foreground"] = ansi.foreground_color
+            skipped = {0, 8} if current.dark else set[int]()
+            text |= {f"ANSI {n}": ansi.ansi_colors[n] for n in range(16) if n not in skipped}
+            low: list[str] = []
+            for ground in ("background", "surface"):
+                rgb = parse(variables[ground]).rgb
+                low += [
+                    f"{name} {ground}: {label} at {_contrast(c, rgb):.2f}:1"
+                    for label, c in text.items()
+                    if _contrast(c, rgb) < 4.5
+                ]
+            footer_ground = parse(variables["footer-background"]).rgb
+            for key in (
+                "footer-foreground",
+                "footer-key-foreground",
+                "footer-description-foreground",
+            ):
+                ratio = _contrast(parse(variables[key]).rgb, footer_ground)
+                if ratio < 4.5:
+                    low.append(f"{name} footer: {key} at {ratio:.2f}:1")
+            assert not low, low
+
+    asyncio.run(scenario())
+
+
 def test_setup_registers_applies_saved_and_persists(cfg: pathlib.Path) -> None:
     settings.save_theme("nord")
 
