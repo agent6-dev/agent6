@@ -521,13 +521,16 @@ def approval_text(
         prompt: The approval's prompt.
         note: The words after the head.
         dim: Nobody can answer this one.
+
+    Returns:
+        The text, each payload line indented four spaces.
     """
     head, payload = approval_parts(prompt)
     if dim:
         body = rich_text.Text(f"? {head}: {note}", style="dim")
     else:
-        body = rich_text.Text("? ", style="bold yellow")
-        body.append(f"{head}: {note}", style="bold")
+        # Spans: a style passed to Text() is the base of the whole text, payload included.
+        body = rich_text.Text.assemble(("? ", "bold yellow"), (f"{head}: {note}", "bold"))
     if payload:
         body.append("\n" + "\n".join(f"    {ln}" for ln in payload.splitlines()))
     return body

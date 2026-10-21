@@ -472,12 +472,8 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         if self._host_waiting():
             # Blocked on the operator: a thinking pulse would lie under the very prompt asking.
             live.display = True
-            live.update(
-                rich_text.Text(
-                    self._host.status_label,
-                    style="bold yellow",
-                )
-            )
+            # A span: textual parses a base style's "yellow" as #ffff00 instead of ANSI yellow.
+            live.update(rich_text.Text.assemble((self._host.status_label, "bold yellow")))
             return
         call_in_flight = self._host.model_call_in_flight()
         if not call_in_flight:

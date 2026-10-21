@@ -55,11 +55,7 @@ def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> rich_t
         return rich_text.Text("no matching model ids", style="dim")
     total = len(starts) + len(rest)
     more = f"  (+{total - len(shown)} more, keep typing)" if total > len(shown) else ""
-    return (
-        rich_text.Text("models: ", style="dim")
-        + rich_text.Text("  ".join(shown))
-        + rich_text.Text(more, style="dim")
-    )
+    return rich_text.Text.assemble(("models: ", "dim"), "  ".join(shown), (more, "dim"))
 
 
 class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):

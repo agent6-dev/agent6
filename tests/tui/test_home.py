@@ -203,6 +203,42 @@ def test_new_task_view_esc_closes_an_open_list_before_the_view(tmp_path: pathlib
     asyncio.run(scenario())
 
 
+def test_the_model_hint_dims_its_label_not_the_model_ids(tmp_path: pathlib.Path) -> None:
+    """The `/parallel` model hint dims its `models:` label, never the ids it offers.
+
+    `Text("models: ", style="dim") + Text(ids)` keeps the left part's base style over the whole
+    sum, so the ids painted dim too.
+    """
+    from rich import segment
+
+    from agent6.ui.tui import composer
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
+
+    async def scenario() -> None:
+        app = tui_home.Agent6HomeApp(tmp_path / ".agent6", tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(tui_new_work.NewWorkScreen(tmp_path, routes=["o/alpha", "o/beta"]))
+            await pilot.pause()
+            await pilot.press(*"/parallel o")
+            hint = app.screen.query_one("#draft-suggest", composer.SteerSuggest)
+
+            def segments() -> list[segment.Segment]:
+                # A widget shown this frame has no size, so no lines, until the next layout.
+                return [seg for y in range(hint.size.height) for seg in hint.render_line(y)]
+
+            await wait_for(
+                pilot, lambda: any("o/alpha" in seg.text for seg in segments()), "the model hint"
+            )
+            label = next(seg.style for seg in segments() if "models:" in seg.text)
+            ids = next(seg.style for seg in segments() if "o/alpha" in seg.text)
+            assert label is not None and label.dim
+            assert ids is not None and not ids.dim
+
+    asyncio.run(scenario())
+
+
 def test_new_task_view_starts_the_chosen_mode_and_preset(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

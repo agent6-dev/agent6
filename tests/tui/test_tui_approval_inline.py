@@ -12,9 +12,12 @@ import json
 import os
 import pathlib
 import time
+from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
+from rich import color as rich_color
+from rich import style as rich_style
 from textual import screen, widgets
 
 from agent6.ui.tui import app as tui_app
@@ -45,7 +48,37 @@ def _append(d: pathlib.Path, ev: dict[str, object]) -> None:
         fh.write(json.dumps(ev) + "\n")
 
 
+# textual paints a span's "yellow" as ANSI colour 3, and a base style's as CSS #ffff00.
+_ANSI_YELLOW = rich_color.Color.parse("color(3)")
+
+
+async def _painted(
+    pilot: Any, widget: widgets.Static, *texts: str, pump: Callable[[], None] | None = None
+) -> list[rich_style.Style]:
+    """Return the style each text paints with, once the widget's lines show every one.
+
+    A widget shown this frame has no size, so no lines, until the next layout.
+    """
+
+    def styles() -> dict[str, rich_style.Style]:
+        return {
+            seg.text.strip(): seg.style or rich_style.Style()
+            for y in range(widget.size.height)
+            for seg in widget.render_line(y)
+            if seg.text.strip()
+        }
+
+    await wait_for(pilot, lambda: set(texts) <= styles().keys(), f"{texts} painted", pump=pump)
+    painted = styles()
+    return [painted[text] for text in texts]
+
+
 def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: pathlib.Path) -> None:
+    """An approval is an inline item answered from a key row, and only its `?` paints yellow.
+
+    A style passed to `Text(...)` is the base of the whole text, so the head and the command
+    under judgment painted bold yellow too.
+    """
     run = tmp_path / "live-run-AAAAAA"
     _live_run(run)
 
@@ -72,6 +105,16 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: pathlib.Path) ->
             assert item.display
             text = str(item.render())
             assert "approval needed" in text and "pytest -q tests/unit/test_x.py" in text
+            mark, head, command = await _painted(
+                pilot,
+                item,
+                "?",
+                "Allow run_command: approval needed",
+                "pytest -q tests/unit/test_x.py",
+            )
+            assert mark.bold and head.bold and not command.bold
+            assert mark.color == _ANSI_YELLOW
+            assert head.color == command.color != mark.color
             # The composer keeps focus: an empty one lets the row's keys answer.
             assert app.focused is app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             await focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
@@ -113,6 +156,31 @@ async def _open_approval(app: tui_app.Agent6TUI, pilot: Any, run: pathlib.Path) 
     await pilot.pause()
     await pilot.pause()
     assert await _row_shown(app, pilot)
+
+
+def test_the_waiting_line_under_an_approval_paints_ansi_yellow(tmp_path: pathlib.Path) -> None:
+    """The `waiting · needs answer` line paints the ANSI yellow of the approval's `?`.
+
+    textual reads a base style's `yellow` as #ffff00, at 1.1:1 contrast on agent6-light.
+    """
+    run = tmp_path / "live-run-MMMMMM"
+    _live_run(run)
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_approval(app, pilot, run)
+            conv = app._conv  # pyright: ignore[reportPrivateUsage]
+            live = conv.query_one("#conv-live", widgets.Static)
+            (label,) = await _painted(
+                pilot,
+                live,
+                "waiting · needs answer",
+                pump=conv._poll,  # pyright: ignore[reportPrivateUsage]
+            )
+            assert label.bold and label.color == _ANSI_YELLOW
+
+    asyncio.run(scenario())
 
 
 def test_a_typed_message_never_answers_the_approval(tmp_path: pathlib.Path) -> None:
