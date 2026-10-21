@@ -28,10 +28,8 @@ from agent6.tools import policy as tools_policy
 
 # Mirrors SYSTEM_BINDS in the jail's main.rs; tests/security pins the two against each other.
 FULL_SYSTEM_BINDS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/alternatives")
-# What `partial`'s Landlock grants read-only (main.rs ro_paths base set).
-PARTIAL_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc")
 
-_TMP = pathlib.Path("/tmp")  # noqa: S108 - the jail's own tmpfs, or the host's under partial
+_TMP = pathlib.Path("/tmp")  # noqa: S108 - the jail's own tmpfs under `full`
 _DEV_SHM = pathlib.Path("/dev/shm")  # noqa: S108 - named as not granted
 _FILE_TOOLS = (
     "read_file, list_dir, outline, find_definition, find_references, apply_edit, apply_patch"
@@ -220,17 +218,24 @@ def _command_rows(
         home_row = Row("--", home, "not mounted, except the rows under it below")
         hidden = "masked out of the jail's view"
     else:
-        rows.append(Row("rw", _TMP, "the host's /tmp, shared with every process of yours"))
-        rows += [Row("ro", pathlib.Path(p), "system, by Landlock rule") for p in PARTIAL_SYSTEM_RO]
+        rows += [
+            Row("rw", pathlib.Path(p), f"the host's {p}, shared with every process of yours")
+            for p in confine.PARTIAL_SYSTEM_RW
+        ]
+        rows += [
+            Row("ro", pathlib.Path(p), "system, by Landlock rule")
+            for p in confine.PARTIAL_SYSTEM_RO
+        ]
         rows.append(
             Row("--", pathlib.Path("/proc"), f"not granted under {selected}: `ps` fails there")
         )
+        nodes = confine.PARTIAL_DEVICE_NODES
         rows.append(
             Row(
                 "--",
                 _DEV_SHM,
                 "the host's, not granted: Python multiprocessing cannot use it;"
-                " /dev/null, /dev/zero, /dev/urandom, /dev/random and /dev/full are granted",
+                f" {', '.join(nodes[:-1])} and {nodes[-1]} are granted",
             )
         )
         root_row = Row("--", pathlib.Path("/"), "Landlock: denied except the paths below")

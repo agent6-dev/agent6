@@ -368,6 +368,25 @@ def test_hide_paths_refuses_the_launcher_grant_regions(
     assert _hide_on_partial(tmp_path, "/nonexistent-elsewhere/private") is None
 
 
+def test_hide_paths_under_dev_refuses_only_the_granted_device_nodes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`partial` grants five /dev nodes and `sandbox.extra_device_paths`, not /dev itself.
+
+    The region set held all of /dev, so a hide_paths entry on the host's /dev/shm refused the
+    run. No jailed command can open /dev/shm.
+    """
+    monkeypatch.chdir(tmp_path)
+    assert _hide_on_partial(tmp_path, "/dev/shm") is None
+    assert _hide_on_partial(tmp_path, "/dev/shm/vault-token") is None
+    r = _hide_on_partial(tmp_path, "/dev/null")
+    assert r is not None and "device node" in r
+    r = _hide_on_partial(tmp_path, "/dev")
+    assert r is not None and "'/dev/null'" in r
+    r = _hide_on_partial(tmp_path, "/dev/fuse", {"extra_device_paths": ["/dev/fuse"]})
+    assert r is not None and "extra_device_paths" in r
+
+
 def test_hide_paths_resolves_aliases_and_refuses_inner_grants(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

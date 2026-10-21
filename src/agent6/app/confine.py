@@ -20,6 +20,11 @@ from agent6.models import registry
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.tools import policy as tools_policy
 
+# `partial`'s fixed Landlock grants in jail/src/main.rs; tests/security pins each against it.
+PARTIAL_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc")
+PARTIAL_SYSTEM_RW = ("/tmp",)  # noqa: S108 - a granted path, never opened
+PARTIAL_DEVICE_NODES = ("/dev/null", "/dev/zero", "/dev/urandom", "/dev/random", "/dev/full")
+
 
 def warn_sandbox_gaps(
     isolation: kinds.IsolationLevel,
@@ -308,16 +313,27 @@ def _partial_grant_regions(
 
     Derived from the builders the run uses, so preflight and enforcement cannot drift. The
     fixed sets mirror the Landlock rules jail/src/main.rs applies under `partial`.
+
+    Args:
+        cfg: The resolved config.
+        root: The workspace.
+        worktree_git_dir: The linked worktree's git dir, when the run is in one.
+
+    Returns:
+        The (region, source) pairs.
     """
     policy = tools_policy.jail_policy(
         root, cfg, "partial", ("true",), worktree_git_dir=worktree_git_dir
     )
-    regions: list[tuple[pathlib.Path, str]] = [
-        (root, "the workspace"),
-        (pathlib.Path("/tmp"), "the host's shared /tmp"),  # noqa: S108
+    regions: list[tuple[pathlib.Path, str]] = [(root, "the workspace")]
+    regions += [(pathlib.Path(p), f"the host's shared {p}") for p in PARTIAL_SYSTEM_RW]
+    regions += [
+        (pathlib.Path(p), "a system dir every command is granted") for p in PARTIAL_SYSTEM_RO
     ]
-    for sysdir in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"):
-        regions.append((pathlib.Path(sysdir), "a system dir every command is granted"))
+    regions += [
+        (pathlib.Path(p), "a device node every command is granted") for p in PARTIAL_DEVICE_NODES
+    ]
+    regions += [(p, "sandbox.extra_device_paths") for p in policy.extra_device_paths]
     network_reads = tools_policy.host_network_reads()
     for p in policy.extra_ro_paths:
         if pathlib.Path(p) == worktree_git_dir:

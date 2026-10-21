@@ -2,10 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 check sandbox` tells the truth about what the launcher enforces.
 
-The report's system-path lists are Python mirrors of constants the Rust
-launcher owns (SYSTEM_BINDS, the `partial` ro_paths base). A drift between the
-report and the enforcer would make the report lie, so the mirrors are pinned
-against the launcher's source text.
+The report's system-path lists are Python mirrors of constants the Rust launcher owns:
+SYSTEM_BINDS, and the `partial` ro_paths and rw_paths bases and device nodes. The `partial`
+hide_paths preflight reads them too. A drift from the enforcer would make the report or the
+preflight lie, so the mirrors are pinned against the launcher's source text.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import re
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import _setup
+from agent6.app import _setup, confine
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox import detect, tool_paths
 from agent6.tools import policy as tools_policy
@@ -50,7 +50,32 @@ def test_partial_ro_base_mirrors_the_launcher() -> None:
     m = re.search(r"let mut ro_paths[^=]*=\s*vec!\[(.*?)\];", src, re.S)
     assert m, "`partial` ro_paths base not found in main.rs"
     launcher = tuple(re.findall(r'PathBuf::from\("([^"]+)"\)', m.group(1)))
-    assert launcher == _check_sandbox.PARTIAL_SYSTEM_RO
+    assert launcher == confine.PARTIAL_SYSTEM_RO
+
+
+def test_partial_rw_base_mirrors_the_launcher() -> None:
+    """The preflight's writable host regions are the base `apply_landlock_partial` grants."""
+    src = _MAIN_RS.read_text(encoding="utf-8")
+    m = re.search(r"let mut rw_paths[^=]*=\s*vec!\[(.*?)\];", src, re.S)
+    assert m, "`partial` rw_paths base not found in main.rs"
+    launcher = tuple(re.findall(r'PathBuf::from\("([^"]+)"\)', m.group(1)))
+    assert launcher == confine.PARTIAL_SYSTEM_RW
+
+
+def test_partial_device_nodes_mirror_the_launcher() -> None:
+    """The preflight's device-node regions are the nodes `apply_landlock_partial` grants.
+
+    The read loop names them all; the write loop for the sink devices names a subset.
+    """
+    src = _MAIN_RS.read_text(encoding="utf-8")
+    body = src[src.index("fn apply_landlock_partial") :].split("\nfn ", 1)[0]
+    loops = [
+        tuple(f"/dev/{n}" for n in re.findall(r'"([^"]+)"', m))
+        for m in re.findall(r"for dev in \[(.*?)\]", body)
+    ]
+    assert len(loops) == 2, "`partial` device-node rules not found in main.rs"
+    assert loops[0] == confine.PARTIAL_DEVICE_NODES
+    assert set(loops[1]) <= set(confine.PARTIAL_DEVICE_NODES)
 
 
 def _force(monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None = None) -> None:
@@ -173,7 +198,7 @@ def test_boundaries_report_is_level_aware(
     out = capsys.readouterr().out
     assert _verdicts(checks) == []
     assert "'full' is unavailable because userns blocked (test)" in out
-    for p in _check_sandbox.PARTIAL_SYSTEM_RO:
+    for p in confine.PARTIAL_SYSTEM_RO:
         assert f"    ro  {p}  (system, by Landlock rule)" in out
     assert f"rw  {paths.jail_cache_home(pathlib.Path.cwd())}  (HOME" in out and "persists" in out
     assert "denied by Landlock" in out
