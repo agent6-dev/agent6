@@ -46,7 +46,12 @@ class PromptDispatcher:
         self._seen.clear()
 
     def dispatch(self, session_dir: pathlib.Path, state: SessionState) -> None:
-        """Push a modal for each unanswered, unclaimed question; close one answered elsewhere."""
+        """Push a modal for each unanswered, unclaimed question; close one answered elsewhere.
+
+        Args:
+            session_dir: The session the answers are written to.
+            state: That session's fold.
+        """
         for qp in state.pending_questions:
             key = f"{session_dir}|{qp.id}"
             if qp.answered:

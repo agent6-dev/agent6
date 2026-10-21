@@ -44,6 +44,9 @@ def composer_labels(
         mode: The composer's mode.
         continue_as: The fork an undone run continues as; Enter resumes that session.
         needs_new_work: The agent finished green, so a bare resume has nothing to do.
+
+    Returns:
+        The border title, then the key hint.
     """
     if mode == "steer":
         return ("steer this session (/pin, /compact [focus])", "Enter sends · Ctrl-J newline")
@@ -67,6 +70,9 @@ def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, s
     Args:
         text: The composer's text.
         mode: The composer's mode.
+
+    Returns:
+        The matching rows.
     """
     if not text.startswith("/") or any(ch.isspace() for ch in text):
         return []
@@ -88,12 +94,12 @@ def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, s
 def complete_steer(text: str, *, mode: ComposerMode) -> str | None:
     """Return the Tab completion of a command word, or None when Tab keeps its focus meaning.
 
-    A unique match completes with a trailing space; several advance to their common
-    prefix, or return the text unchanged so Tab never moves the focus mid-command.
-
     Args:
         text: The composer's text.
         mode: The composer's mode.
+
+    Returns:
+        The unique match and a space, else the matches' common prefix; None without a match.
     """
     rows = steer_suggestion_rows(text, mode=mode)
     if not rows:

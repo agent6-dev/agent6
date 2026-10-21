@@ -84,6 +84,9 @@ def menu_bindings(
         menus: The screen's menus.
         footer: The actions the footer shows, in its order, with their labels; every
             other keyed action binds hidden.
+
+    Returns:
+        The bindings, the footer's actions first, in its order.
     """
     keys = keymap.SCREEN_KEYS[screen]
     shown = dict(footer)
@@ -146,7 +149,11 @@ _MODIFIERS = {"ctrl": "^", "shift": "⇧", "alt": "Alt+", "super": "Super+"}
 def _key_label(key: str) -> str:
     """Return the compact display of one key, as the footer shows it: n, ^c, ⇧Enter, PgDn.
 
-    A capital letter stays capital, so g and G stay distinct.
+    Args:
+        key: The key as textual spells it, such as "ctrl+c".
+
+    Returns:
+        The label; g and G stay distinct.
     """
     if key in _KEY_NAMES:
         return _KEY_NAMES[key]
@@ -159,11 +166,13 @@ def _key_label(key: str) -> str:
 def action_keys(source: object) -> dict[str, str]:
     """Return each bound action's shortcut labels from the active bindings.
 
-    The one source the menu bar, the help page and the footer read, so they never
-    drift; several keys on one action are joined, as in "PgDn / ^End".
+    The one source the menu bar, the help page and the footer read, so they never drift.
 
     Args:
         source: A screen, or an app (its current screen is used).
+
+    Returns:
+        The labels by action, joined as in "PgDn / ^End".
     """
     screen = (
         source if isinstance(source, textual_screen.Screen) else getattr(source, "screen", source)
@@ -199,6 +208,9 @@ def _menu_options(
         items: The menu's rows.
         keys: Each action's shortcut label, from the live bindings.
         screen: The host screen, asked `check_action`.
+
+    Returns:
+        One option per item, its id the action a pick dispatches.
     """
     checker = getattr(screen, "check_action", None)
     labels = [keys.get(it.action, "") for it in items]
@@ -227,6 +239,10 @@ def _footer_only_rows(
         source: A screen, or an app (its current screen is used).
         menus: The screen's menus.
         keys: Each action's shortcut label.
+
+    Returns:
+        The (description, shortcut) pairs, one per action; a binding without a
+        description shows its action's name.
     """
     screen = (
         source if isinstance(source, textual_screen.Screen) else getattr(source, "screen", source)

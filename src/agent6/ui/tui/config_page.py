@@ -220,6 +220,9 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """Yield the menu bar, the filter row, the pinned header and one table per section.
 
         The sections are fixed once the view loads; a reload only repopulates rows.
+
+        Yields:
+            The widgets top to bottom, the footer last.
         """
         self._rebuild_view()
         yield menubar.MenuBar(self.MENUS)
@@ -583,6 +586,9 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
 
         A leaf from a preset or a `--config` file is modified but outside the two
         files an unset writes.
+
+        Args:
+            setting: The selected setting.
         """
         if not setting.modified:
             self.notify(f"{setting.key} is already at its default.")

@@ -77,6 +77,9 @@ class DiffPane(forms.ScrollPane):
 
         Hidden while nothing is committed, and under `[git].control = "model"`, which
         has no chain to select from.
+
+        Args:
+            s: The session's fold.
         """
         nav = self.query_one("#diff-nav", forms.PickerRow)
         if self.git_control() == "model" or not s.steps:

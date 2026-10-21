@@ -210,6 +210,16 @@ class ThinScrollBarRender(ScrollBarRender):
     ) -> Segments:
         """Render the bar; the upstream signature.
 
+        Args:
+            size: The bar's length in cells.
+            virtual_size: The content's length along the bar.
+            window_size: The visible part's length along the bar.
+            position: The scroll offset.
+            thickness: How many cells thick the bar is.
+            vertical: A vertical bar keeps the default rendering.
+            back_color: The bar's background color.
+            bar_color: The thumb's color.
+
         Returns:
             The bar's segments.
         """
@@ -311,6 +321,9 @@ def setup_theme(app: textual_app.App[Any]) -> None:
     Called from `App.on_mount`. The `theme_changed_signal` subscription remembers a
     change from any path, the picker or the command palette. Also installs the
     half-height horizontal scrollbar renderer, a class-level hook over every bar.
+
+    Args:
+        app: The app to theme.
     """
     ScrollBar.renderer = ThinScrollBarRender
     for theme in (AGENT6_DARK, AGENT6_LIGHT, ALICE, SNOW, ROSE, GRIMM):

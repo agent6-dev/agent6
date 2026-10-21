@@ -445,6 +445,9 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
         """Dismiss without a result: now when on top, else once the screen covering it closes.
 
         `dismiss` pops the top of the stack, whichever screen that is.
+
+        Args:
+            on_top: Whether this modal is the app's top screen.
         """
         if on_top:
             self.dismiss(None)

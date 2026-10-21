@@ -112,6 +112,10 @@ def empty_conversation_note(word: str, detail: str, *, ended: bool) -> str:
         word: The session's status word.
         detail: The status reason.
         ended: The session is known to have ended.
+
+    Returns:
+        The state and any action left for a run with no live worker; else a note that the
+        ended session made no conversation, or that one appears as the session streams.
     """
     state, action = format.dead_run_note(word, detail)
     if state:
@@ -380,6 +384,9 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
 
         The approval as last rendered here keeps an answer given here from being
         re-offered on a reload before the worker journals it.
+
+        Args:
+            event: The next raw event from the session's log.
         """
         etype = event.get("type")
         if etype in events.SESSION_START_EVENTS:

@@ -358,6 +358,10 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         are the CLI's to make: the summary's `unmerged` mark is branch-derived and
         reads False for a session whose commits live only on its chain ref.
 
+        Args:
+            action: The action's name, from a key binding or a menu item.
+            parameters: The action's arguments, unused.
+
         Returns:
             True, None to grey the key, or False to hide it.
         """

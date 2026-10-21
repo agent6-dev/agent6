@@ -146,8 +146,10 @@ class RunHeader(widgets.Static):
     def _start_role(self) -> str:
         """Return the role line before the first model call, from the manifest's driver.
 
-        A launching run has no manifest for a moment, so nothing is cached until it
-        exists; a manifest naming no driver reads "(unknown)".
+        A launching run has no manifest for a moment, so nothing is cached until it exists.
+
+        Returns:
+            The line as `role / model`, or "(unknown)" without a manifest or a driver.
         """
         if self._start_role_line is None:
             try:
@@ -175,6 +177,9 @@ class RunHeader(widgets.Static):
         since the auto-merge lands after the end while a held screen keeps
         repainting; a resume in place drops the cache, since a commit past the stamp
         unmakes the merge.
+
+        Returns:
+            The line, starting with a newline; "" while the run has no manifest or no branch.
         """
         finished = self._tui.state.finished
         if finished != self._branch_finished:
@@ -200,7 +205,8 @@ class RunHeader(widgets.Static):
     def _serving_top(self) -> str:
         """Return the serving line: the listening ports and the `agent6 forward` line.
 
-        A live probe, so "" once the network is gone.
+        Returns:
+            The line, starting with a newline; "" while nothing listens.
         """
         ports = process.listening_ports(self._tui.session_dir)
         if not ports:

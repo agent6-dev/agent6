@@ -27,6 +27,10 @@ def _scroll_row_into_view(widget: Widget, row: int) -> None:
     """Scroll the widget's nearest scrollable ancestor so its content row is visible.
 
     The widget is not itself scrollable, so the ancestor is driven directly.
+
+    Args:
+        widget: The control holding the row.
+        row: The row's offset from the top of the widget's content.
     """
     for node in widget.ancestors:
         if isinstance(node, containers.ScrollableContainer):
@@ -79,6 +83,9 @@ def _window(text: str, cursor: int, width: int) -> tuple[str, int]:
         text: The whole value.
         cursor: The caret's index in it.
         width: The row's width in cells.
+
+    Returns:
+        The slice, then the caret's column in it.
     """
     room = max(width - 1, 1)
     start = max(0, cursor - room + 1)
@@ -162,6 +169,9 @@ class ChoiceField(Widget, can_focus=True):
 
         Silent, so a dialog can prefill the field from a preset without retriggering
         its own change handlers.
+
+        Args:
+            value: The option to select.
         """
         if value in self._options:
             self._sel = self._cursor = self._options.index(value)

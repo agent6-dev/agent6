@@ -214,8 +214,14 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     ) -> None:
         """Spawn the session detached and locate it, off the UI thread.
 
-        The locate waits for the first event, which can take seconds. The app is
-        passed in: a screen dismissed mid-spawn has no parent to reach it through.
+        The locate waits for the first event, which can take seconds.
+
+        Args:
+            app: The hub app; a screen dismissed mid-spawn has no parent to reach it through.
+            mode: The picked mode, such as run or ask.
+            task: The typed text; a refusal loads it back into the composer.
+            preset: The picked preset, "" for the config's own.
+            model: The picked route, "" for the config's own.
         """
         session_dir, err = spawn.spawn_new_work(
             self.repo_cwd, mode, task, preset=preset, model=model, config_paths=self.config_paths

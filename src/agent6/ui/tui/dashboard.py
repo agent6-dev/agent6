@@ -175,7 +175,11 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
     def _details_state(self, s: SessionState) -> tuple[SessionState, str]:
         """Return the state the task tree and the cost line show, and its "as of" suffix.
 
-        Live, or as of the selected step, folded once per selection from the log.
+        Args:
+            s: The app's live fold.
+
+        Returns:
+            The selected step's state and ` · as of iter N`, else the live fold and "".
         """
         sha = self.diff.step_sel
         if not sha:
@@ -456,6 +460,10 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         Args:
             s: The folded state.
             active: A model call is in flight.
+
+        Returns:
+            The end story, the live deltas, a waiting, working or starting line, or the
+            dead state; else "(no model call in flight)".
         """
         tui = self._tui
         role = s.last_role

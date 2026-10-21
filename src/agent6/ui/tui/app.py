@@ -187,7 +187,11 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         )
 
     def task_label(self) -> _session_status.TaskLabel:
-        """Return the original task and latest continuation from the live fold."""
+        """Return the original task and latest continuation from the live fold.
+
+        Returns:
+            The fold's label, else the manifest's task.
+        """
         return self.state.task_label.fallback(self.fallback_task)
 
     def _task_lead(self) -> str:
@@ -289,8 +293,10 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
     def seconds_since_event(self) -> int:
         """Return the idle seconds for the heartbeat, anchored to the last event's timestamp.
 
-        An arrival anchor would read a few seconds on attach to a run wedged for
-        forty minutes; the fold time is the fallback for a log without timestamps.
+        An arrival anchor would read a few seconds on attach to a run wedged for forty minutes.
+
+        Returns:
+            The seconds; from the last event's arrival when the log has no timestamps.
         """
         if self.state.last_event_ep is None:
             return int(time.monotonic() - self.last_event_at)
@@ -808,6 +814,9 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         """Return whether the run can receive operator input over the file bridge.
 
         Parked, stale and every end word route the composer to resume instead.
+
+        Returns:
+            True while the status word is running, starting or waiting.
         """
         return self.dir_status[0] in _session_status.LIVE_STATUS_WORDS
 

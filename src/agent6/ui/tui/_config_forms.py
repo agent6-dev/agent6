@@ -317,6 +317,9 @@ class ProviderModal(_FormModal[None]):
         """Prefill a known provider's api_format and base_url, as `agent6 connect` does.
 
         Only a blank or autofilled base_url is overwritten, never a typed one.
+
+        Args:
+            event: The edit to the provider name field.
         """
         preset = write.PROVIDER_DEFAULTS.get(event.value.strip())
         baseurl = self.query_one("#prov-baseurl", textual_widgets.Input)

@@ -84,6 +84,9 @@ def _discrete_log_line(evt: dict[str, object], *, in_flight: bool = False) -> ri
         evt: The event.
         in_flight: The turn is still open; only then is a role.call marked as thinking,
             since a replayed finished turn would otherwise read as live.
+
+    Returns:
+        The line for a role call, a tool call or a tool result; None for any other event.
     """
     t = evt.get("type")
     if t == "role.call":
@@ -445,6 +448,9 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
 
         Only while the machine runs: a parked or ended instance's fold still carries an
         unanswered prompt, but nothing would poll the answer.
+
+        Args:
+            live: The machine runs; False clears the docked approval.
         """
         state_log = self._execution_fold.log
         if not live or state_log is None:
@@ -744,7 +750,12 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Return None to dim a row action with no fitting row; False would hide the key.
 
-        View and Run need an authored file, Watch an instance.
+        Args:
+            action: The action's name, from a key binding or a menu item.
+            parameters: The action's arguments, unused.
+
+        Returns:
+            True, or None to dim the action: View and Run need an authored file, Watch an instance.
         """
         del parameters
         if action in ("view", "run"):
