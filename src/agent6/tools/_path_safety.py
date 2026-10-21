@@ -66,6 +66,12 @@ def fold_name(name: str) -> str:
     these refusals are all that protects `.git` and the hidden trees there: compared exactly,
     `.GIT/config` opens the real `.git/config`. Folded on every platform, one rule; the cost is
     refusing a path to a distinct `.GIT`, which nobody has.
+
+    Args:
+        name: One path component.
+
+    Returns:
+        The component lowercased.
     """
     return name.lower()
 
@@ -156,6 +162,10 @@ class Workspace:
     def _in_grant(self, candidate: str, bases: tuple[pathlib.Path, ...]) -> SafePath:
         """Contain an absolute path against the deepest grant holding it.
 
+        Args:
+            candidate: The absolute path the model gave.
+            bases: The workspace root and the read or write grants.
+
         Returns:
             The path contained against that grant.
 
@@ -229,6 +239,14 @@ def resolve_in_root(root: pathlib.Path, candidate: str) -> SafePath:
 
 def _open_dir(dir_fd: int, name: str, *, create: bool) -> int:
     """Return a descriptor on a subdirectory, creating it when missing and asked to.
+
+    Args:
+        dir_fd: A descriptor on the parent directory.
+        name: The subdirectory's name.
+        create: Whether to create it when missing.
+
+    Returns:
+        An `O_PATH` descriptor the caller owns.
 
     Raises:
         FileNotFoundError: The subdirectory is missing and `create` is off.
@@ -378,6 +396,12 @@ def read_bytes_contained(sp: SafePath) -> bytes:
 
     For a reader that indexes by byte offset (tree-sitter), which a text read's newline
     translation would shift.
+
+    Args:
+        sp: The contained path.
+
+    Returns:
+        The whole file.
     """
     fd = open_contained(sp, os.O_RDONLY)
     with os.fdopen(fd, "rb") as handle:
@@ -388,6 +412,12 @@ def list_contained(sp: SafePath) -> list[ContainedEntry]:
     """Return the directory's entries, listed through a descriptor walked from its base.
 
     A listing taken by full path is a second lookup, so it can be a host directory's.
+
+    Args:
+        sp: The contained directory.
+
+    Returns:
+        The entries, unsorted.
     """
     fd = open_contained(sp, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -399,6 +429,9 @@ def list_contained(sp: SafePath) -> list[ContainedEntry]:
 
 def unlink_contained(sp: SafePath) -> None:
     """Remove the file by name relative to a descriptor walked to its parent.
+
+    Args:
+        sp: The contained file.
 
     Raises:
         ToolError: The path names the base itself, or a component is not a directory.

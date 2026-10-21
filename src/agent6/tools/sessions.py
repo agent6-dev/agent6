@@ -184,6 +184,13 @@ def _file_contains(path: pathlib.Path, needle: str) -> bool:
 
     A journal reaches megabytes; reading whole ones costs about 1 GB per query over a few
     hundred sessions.
+
+    Args:
+        path: A session's journal.
+        needle: The lowercase text to find; the file's case is ignored.
+
+    Returns:
+        Whether the needle occurs; False when the file cannot be read.
     """
     overlap = len(needle)
     try:

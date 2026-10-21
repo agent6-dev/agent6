@@ -107,6 +107,9 @@ class ApplyEditInput(_ToolInput):
     def _one_edit_at_the_top(cls, data: Any) -> Any:
         """Fold a flat pair into `edits` as its one edit.
 
+        Args:
+            data: The tool call's arguments, before validation.
+
         Returns:
             The data with the pair folded, or as given.
 
@@ -199,6 +202,9 @@ class EditPair(pydantic.BaseModel):
     @classmethod
     def _resolve_kind(cls, data: Any) -> Any:
         """Fill an omitted `kind` from the pair's shape.
+
+        Args:
+            data: One edit as the call gave it.
 
         Returns:
             The data with `kind` set.
@@ -546,6 +552,9 @@ class AskUserInput(_ToolInput):
     def _accept_flat_single_question(cls, data: Any) -> Any:
         """Fold a lone question sent flat (question=..., options=...) into `questions`.
 
+        Args:
+            data: The tool call's arguments, before validation.
+
         Returns:
             The data with the question folded, or as given.
         """
@@ -692,9 +701,14 @@ def _strip_titles(node: Any, *, keys_are_names: bool = False) -> Any:
 def wire_schema(cls: type[_ToolInput]) -> dict[str, Any]:
     """Return the JSON schema of a tool as the model receives it.
 
-    Pydantic's schema minus the title noise and the model-level descriptions it derives from
-    class docstrings, with "type" present. The one builder behind the loop's tool list and the
-    descriptor dump, so what tests pin is what the model gets.
+    The one builder behind the loop's tool list and the descriptor dump, so what tests pin is
+    what the model gets.
+
+    Args:
+        cls: The tool's input model.
+
+    Returns:
+        Pydantic's schema without its titles or class docstrings, with "type" present.
     """
     schema = _strip_titles(cls.model_json_schema())
     schema.pop("description", None)

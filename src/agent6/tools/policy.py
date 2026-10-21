@@ -38,9 +38,10 @@ _HOST_NETWORK_FILES = (
 def host_network_reads() -> tuple[pathlib.Path, ...]:
     """Return the files a child on the host network reads to resolve names and verify TLS.
 
-    Those that exist on this host, each followed by the file it points to when it is a symlink
-    (a resolver file often points into `/run`): `full` binds the name the resolver opens, and
-    Landlock needs the real file.
+    Returns:
+        Those that exist on this host, each followed by the file it points to when it is a
+        symlink (a resolver file often points into `/run`): `full` binds the name the resolver
+        opens, and Landlock needs the real file.
     """
     out: dict[pathlib.Path, None] = {}
     for name in _HOST_NETWORK_FILES:
@@ -101,6 +102,12 @@ def jail_home_refusal(home: pathlib.Path) -> str | None:
     on every build, never restored), or a path inside an agent6-private dir, which the `full`
     mask would re-bind writable. Checked on resolved paths so a symlinked ancestor cannot dodge
     it; the config validator refuses the same for `extra_write_paths`.
+
+    Args:
+        home: The persistent HOME `persistent_jail_home` returned.
+
+    Returns:
+        The refusal, naming the path and the problem; None when the path can be the HOME.
     """
     real = home.resolve()
     for private in paths.private_dirs():

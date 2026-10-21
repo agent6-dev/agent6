@@ -86,6 +86,12 @@ def split_tool_name(qualified_name: str) -> tuple[str, str]:
     The split is on the first double underscore after the prefix, so a tool name containing
     "__" survives; a server name cannot contain one (`mcp_server_name_refusal`).
 
+    Args:
+        qualified_name: The tool name the model called.
+
+    Returns:
+        The server name, then the tool name.
+
     Raises:
         MCPError: The name lacks the prefix or the separator.
     """
@@ -310,6 +316,12 @@ class _MCPServer:
 
         A third-party server may echo one through stderr or a protocol error, both of which
         can reach the transcript and the journal.
+
+        Args:
+            text: The diagnostic.
+
+        Returns:
+            The text with the `pass_env` values and the bearer token replaced by `<REDACTED>`.
         """
         names = self.pass_env
         if self.http is not None and self.http.token_env:
@@ -363,6 +375,9 @@ class _MCPServer:
 
     def _list_tools(self) -> list[Any]:
         """Return every page of `tools/list`, followed through `nextCursor`.
+
+        Returns:
+            Every page's tool entries in order, unvalidated.
 
         Raises:
             MCPError: A page has no tools array, an invalid cursor, or the pages exceed the cap.
@@ -481,6 +496,10 @@ class _MCPServer:
 
         A stdio server still busy with the call it never answered cannot take the next one.
 
+        Args:
+            generation: The generation the timed-out call ran under; a later one means another
+                call already restarted the server.
+
         Returns:
             What happened, for the call's error.
         """
@@ -514,6 +533,10 @@ class _MCPServer:
 
     def _call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Send one tools/call.
+
+        Args:
+            tool_name: The name the server advertised.
+            arguments: The LLM's arguments, forwarded verbatim.
 
         Returns:
             The result, bounded.
@@ -686,6 +709,10 @@ class _MCPServer:
     def _notify(self, method: str, params: dict[str, Any]) -> None:
         """Send a notification, which has no id and expects no response.
 
+        Args:
+            method: The JSON-RPC method.
+            params: The parameters.
+
         Raises:
             MCPError: The transport failed.
         """
@@ -704,6 +731,9 @@ class _MCPServer:
 
     def _write_line(self, obj: dict[str, Any]) -> None:
         """Write one JSON-RPC message to the server's stdin.
+
+        Args:
+            obj: The message.
 
         Raises:
             MCPError: The server is HTTP, gone, or its stdin closed.

@@ -98,6 +98,12 @@ def _highest_shell_seq(root: pathlib.Path) -> int:
 
     Both `<root>/bg<N>` and `<root>/logs/bg<N>` are scanned: an execution that died between
     creating them leaves only one behind.
+
+    Args:
+        root: The shells dir under the session dir.
+
+    Returns:
+        The largest N, or 0.
     """
     highest = 0
     for directory in (root, root / _LOG_ROOT):
@@ -224,6 +230,9 @@ class BackgroundShells:
     def _register(self, shell: _Shell) -> ShellView:
         """Record and expose the shell, or stop it when the record cannot be written.
 
+        Args:
+            shell: The command just started or adopted.
+
         Returns:
             The shell's view.
 
@@ -275,6 +284,9 @@ class BackgroundShells:
         a symlink, and a `mkdir(exist_ok=True)` would follow it into a directory a command
         named. O_EXCL makes the log a regular file this process owns; O_CLOEXEC keeps the handle
         from every child. The command's own `exec >` lands on the same inode.
+
+        Args:
+            shell_id: The command's `bg<N>` id.
 
         Returns:
             The read descriptor every later read goes through.
@@ -384,6 +396,9 @@ class BackgroundShells:
     def stop(self, shell_id: str) -> ShellView:
         """Kill one command and sweep what it left behind.
 
+        Args:
+            shell_id: The command's id.
+
         Returns:
             The command's view after the stop.
 
@@ -417,6 +432,9 @@ class BackgroundShells:
 
     def _stop(self, shell: _Shell) -> bool:
         """Kill the shell and sweep what it left behind.
+
+        Args:
+            shell: The registered command.
 
         Returns:
             Whether it was still running; a command that had exited keeps its own ending.
@@ -464,6 +482,12 @@ def shell_host_processes(root: pathlib.Path) -> list[process.ProcessIdentity]:
 
     A command inside the session's namespaces records no host identity and dies with the
     session. A stale record cannot target a recycled pid.
+
+    Args:
+        root: The run's shells dir.
+
+    Returns:
+        Each live process's pid and start time.
     """
     if not root.is_dir():
         return []
@@ -491,6 +515,12 @@ def roster_from_dir(root: pathlib.Path) -> list[str]:
 
     For surfaces in another process: liveness needs the owning process, so this reports what
     each command was and how it ended, and says when it cannot tell.
+
+    Args:
+        root: The run's shells dir.
+
+    Returns:
+        One line per recorded command, in `bg<N>` order.
     """
     if not root.is_dir():
         return []

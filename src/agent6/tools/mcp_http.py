@@ -36,8 +36,14 @@ def _clean_session_id(value: str) -> str:
     The value crosses the wire, so it is untrusted like the token in `_auth`: a non-ASCII byte
     makes the HTTP layer raise on the next send with the value in its message (which reaches
     stderr, the launch log and the model's context), and a control character rides into the
-    outgoing header. The spec restricts a session id to visible ASCII (0x21-0x7E); anything
-    else is dropped, never quoted, and the caller treats the response as stateless.
+    outgoing header.
+
+    Args:
+        value: The response's `mcp-session-id` header, "" when absent.
+
+    Returns:
+        The value when it is visible ASCII (0x21-0x7E), as the spec requires of a session id;
+        anything else is dropped, never quoted, and the caller treats the response as stateless.
     """
     if value and all("\x21" <= ch <= "\x7e" for ch in value):
         return value
@@ -85,6 +91,9 @@ class HttpTransport:
 
     def _auth(self) -> str:
         """Return the bearer header value, or "" when no token is configured.
+
+        Returns:
+            `Bearer <token>`; "" when no token is configured.
 
         Raises:
             MCPHttpError: The token cannot be a header value; a stray CR would make the HTTP
@@ -186,6 +195,13 @@ class HttpTransport:
 def _parse(raw: bytes, *, name: str) -> dict[str, Any]:
     """Return the JSON-RPC message in the body, whether it arrived bare or as SSE.
 
+    Args:
+        raw: The response body.
+        name: The server's name, for the error message.
+
+    Returns:
+        The message, checked only to be a JSON object.
+
     Raises:
         MCPHttpError: The body is not a JSON object, or an SSE stream without data.
     """
@@ -207,6 +223,13 @@ def _sse_data(text: str, *, name: str) -> str:
     An event may open with `id:` or `retry:`, carry `data` across several lines joined with
     newlines, and end lines with CR, LF or CRLF. `str.splitlines()` is avoided: it also splits
     on U+2028, U+2029 and U+0085, which are legal inside a JSON string.
+
+    Args:
+        text: The decoded response body, an SSE stream.
+        name: The server's name, for the error message.
+
+    Returns:
+        The payload, without the `data:` field names.
 
     Raises:
         MCPHttpError: No event carries data.

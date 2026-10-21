@@ -67,11 +67,17 @@ _JSON_WORDS = {
 
 
 def invalid_arguments(exc: pydantic.ValidationError) -> str:
-    """Return one line per real argument problem, for the model and the log.
+    """Return the real argument problems as one line, for the model and the log.
 
-    Each line is the dotted field and the message without pydantic's "Value error, " lead and
-    docs URL, a container's in JSON's words. A container error caused by an invalid item is
-    dropped: the item's own line says what to fix.
+    A container error caused by an invalid item is dropped: the item's own problem says what to fix.
+
+    Args:
+        exc: The validation error the tool call's arguments raised.
+
+    Returns:
+        "invalid arguments: " then the problems joined by "; ". Each problem is the dotted field
+        and the message without pydantic's "Value error, " lead and docs URL, a container's in
+        JSON's words.
     """
     errors = exc.errors(include_url=False)
     item_locs = [tuple(e["loc"]) for e in errors]

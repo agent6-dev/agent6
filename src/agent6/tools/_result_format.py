@@ -85,9 +85,15 @@ _READ_HEAD_CHARS = 300
 def output_tails(name: str, result: results.ToolResult) -> dict[str, Any]:
     """Return the excerpts a tool's result carries into its tool.result event, else {}.
 
-    A command gets its output tails; read_file a head preview and the line count; an edit or
-    patch the paths it wrote, so a resume can tell the run's own untracked files from the
-    operator's.
+    The written paths let a resume tell the run's own untracked files from the operator's.
+
+    Args:
+        name: The tool's name.
+        result: The tool's result.
+
+    Returns:
+        The output tails of run_command and run_metric_command, read_file's head preview and
+        line count, or the paths an edit or patch wrote.
     """
     if isinstance(result, results.EditResult):
         return {"paths": [result.path]}

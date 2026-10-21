@@ -227,6 +227,10 @@ class ToolDispatcher:
 
         Re-read rather than cached: an operator who denies for the session mid-run withdraws
         the tools from the next turn.
+
+        Returns:
+            `[sandbox].run_commands` as `ipc.effective_run_commands` resolves it for the
+            session, or as configured when no run dir is wired.
         """
         configured = self._config.sandbox.run_commands
         if self._session_dir is None:
@@ -276,6 +280,12 @@ class ToolDispatcher:
 
         Read at both gates: the tool list drops the server, and the call gate refuses it, since
         the model still has the previous turn's list in context.
+
+        Args:
+            server: The server's name in config.
+
+        Returns:
+            Whether its session deny marker is set; False when no run dir is wired.
         """
         if self._session_dir is None:
             return False
@@ -345,6 +355,10 @@ class ToolDispatcher:
     def _dispatch_inner(self, name: str, raw_input: dict[str, Any]) -> results.ToolResult:
         """Resolve and execute a tool; `dispatch` owns the events around it.
 
+        Args:
+            name: The tool's name; an `mcp__` name routes to its MCP server.
+            raw_input: The model's arguments.
+
         Returns:
             The handler's result.
 
@@ -373,6 +387,11 @@ class ToolDispatcher:
 
     def _run_handler(self, name: str, raw_input: dict[str, Any]) -> results.ToolResult:
         """Execute the handler, retrying once with stringified JSON arguments coerced.
+
+        Args:
+            name: The built-in tool's name, a key of `_handlers`.
+            raw_input: The model's arguments, or `{"_raw_arguments": text}` when the provider
+                could not parse them as a JSON object.
 
         Returns:
             The handler's result.
@@ -478,9 +497,13 @@ class ToolDispatcher:
         """Gate one MCP tool call on its server's `approve`.
 
         A server's tools are asked about like a command, on their own scope: "allow all" for one
-        server grants that server alone. The arguments are in the prompt whole, never clipped,
-        because they are the whole risk: a clipped argument is consent to an operation the
-        operator never saw.
+        server grants that server alone. The prompt holds the arguments whole. In a run, past
+        `_APPROVAL_PROMPT_MAX_CHARS`, it shows their start and names the run-dir file that holds
+        them all: a clipped argument is consent to an operation the operator never saw.
+
+        Args:
+            name: The `mcp__<server>__<tool>` name the model called.
+            raw_input: The model's arguments.
 
         Raises:
             ToolError: The server is not configured (the scope becomes a filename, and the LLM
@@ -523,6 +546,12 @@ class ToolDispatcher:
 
         The gate cannot tell a human "no" from an unattended run's auto-deny, so the message
         names the knob; a stop requested while the approval waited is the one cause it can name.
+
+        Args:
+            name: What the refusal calls the command, such as `run_command`.
+
+        Returns:
+            The error to raise.
         """
         if self._session_dir is not None and ipc.stop_request_pending(self._session_dir):
             return tools_errors.ToolDeniedError(
@@ -608,6 +637,10 @@ class ToolDispatcher:
     def _approve_command(self, name: str, argv: tuple[str, ...]) -> None:
         """Gate a command on the run's policy.
 
+        Args:
+            name: What the prompt and the refusal call the command, such as `run_command`.
+            argv: The command.
+
         Raises:
             ToolDeniedError: The policy is "ask" and the operator did not approve.
         """
@@ -641,6 +674,10 @@ class ToolDispatcher:
         """Return whether the operator has asked this run to stop or abort.
 
         Consulted only to cut a wait short; the run still ends at its own boundary.
+
+        Returns:
+            True while a stop request or an `abort` steer answer is pending; False when no run
+            dir is wired.
         """
         if self._session_dir is None:
             return False
@@ -652,6 +689,10 @@ class ToolDispatcher:
         """Return whether the operator's stop is immediate: the abort, or a stop marked `now`.
 
         A stop after the step lets the step's command finish.
+
+        Returns:
+            True while an `abort` steer answer or a `now` stop is pending; False when no run
+            dir is wired.
         """
         if self._session_dir is None:
             return False
@@ -660,7 +701,14 @@ class ToolDispatcher:
         )
 
     def _read_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
-        """Return background output with the run's check-in and stop policy."""
+        """Return background output with the run's check-in and stop policy.
+
+        Args:
+            raw: The tool call's arguments.
+
+        Returns:
+            The roster, with the command's output when the call gives an `id`.
+        """
         return _command_tools.read_background(
             raw,
             get_background=self._background,
@@ -669,11 +717,21 @@ class ToolDispatcher:
         )
 
     def _stop_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
-        """Return the background roster after stopping a command."""
+        """Return the background roster after stopping a command.
+
+        Args:
+            raw: The tool call's arguments, naming the command by its `id`.
+
+        Returns:
+            The roster after the stop.
+        """
         return _command_tools.stop_background(raw, get_background=self._background)
 
     def _background(self) -> background.BackgroundShells:
         """Return the background roster.
+
+        Returns:
+            The roster.
 
         Raises:
             ToolError: No run directory was wired.
@@ -684,6 +742,9 @@ class ToolDispatcher:
 
     def _fetch(self, raw: dict[str, Any]) -> results.FetchResult:
         """Fetch one URL: an allow-listed host reads, any other asks.
+
+        Args:
+            raw: The tool call's arguments.
 
         Returns:
             The response.
@@ -719,6 +780,9 @@ class ToolDispatcher:
 
     def _read_session(self, raw: dict[str, Any]) -> results.SessionsResult:
         """List the project's sessions, and read one's conversation when asked.
+
+        Args:
+            raw: The tool call's arguments.
 
         Returns:
             The roster, with the conversation when an id was given.
@@ -757,7 +821,10 @@ class ToolDispatcher:
         """Return the operator's skills, resolved once per dispatcher.
 
         The same source as the system prompt's index: `[skills].extra_dirs`, then the installed
-        dir under the user data dir. An off switch resolves to nothing.
+        dir under the user data dir.
+
+        Returns:
+            The skills; empty when `[skills].enabled` is false.
         """
         if self._skills_cache is None:
             self._skills_cache = skills.operator_skills(
@@ -776,6 +843,9 @@ class ToolDispatcher:
 
     def _run_metric(self, raw: dict[str, Any]) -> results.MetricResult:
         """Run the configured metric command in the jail and parse its score.
+
+        Args:
+            raw: The tool call's arguments; the tool takes none.
 
         Returns:
             The outcome plus the score: the pattern's first capture group as a float, or None
@@ -860,10 +930,12 @@ class ToolDispatcher:
         """Return the run's jail process, or None to give each command its own.
 
         Every isolation level uses it, `none` included: the launcher owns output capture and the
-        background lifecycle. A session that cannot start answers None once and is not retried,
-        so the per-command path stays the fallback. Its confinement is fixed when it opens, so
-        the policy is the run's, not the first command's, and the background log root is
-        granted before any command asks for it.
+        background lifecycle. Its confinement is fixed when it opens, so the policy is the run's,
+        not the first command's, and the background log root is granted before any command asks
+        for it.
+
+        Returns:
+            The session; None when `use_jail_session` is off or once it has failed to start.
         """
         if not self._use_session:
             return None

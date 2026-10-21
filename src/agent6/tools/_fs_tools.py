@@ -249,6 +249,13 @@ def refuse_protected_writes(
 def _existing_text(sp: _path_safety.SafePath, rel_path: str) -> str | None:
     """Return the file's current text, or None when it does not exist yet.
 
+    Args:
+        sp: The contained path.
+        rel_path: The path the model gave, named in the errors.
+
+    Returns:
+        The whole text, or None when there is no file yet.
+
     Raises:
         ToolError: The path exists but is not a file (an OSError would leak the host path into
             the transcript), or the file is larger than the edit tools take.

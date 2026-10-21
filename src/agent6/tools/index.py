@@ -483,9 +483,14 @@ class SymbolIndex:
     def _included_rel(self, p: pathlib.Path) -> pathlib.Path | None:
         """Return the path relative to the root, or None when it is out of scope.
 
-        Out of scope: outside the root, under an excluded directory, or hidden by the workspace
-        boundary. The boundary check lives here rather than at the query: a hidden file that
-        reached the index would leak its symbol names and line numbers.
+        The boundary check lives here rather than at the query: a hidden file that reached the
+        index would leak its symbol names and line numbers.
+
+        Args:
+            p: The resolved path.
+
+        Returns:
+            The relative path; None outside the root, under an excluded directory, or hidden.
         """
         try:
             rel = p.relative_to(self._root)

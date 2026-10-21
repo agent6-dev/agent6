@@ -50,8 +50,12 @@ def start_detached(
 ) -> results.ExecResult:
     """Start a command detached: the same hand-back as a check-in, at zero seconds.
 
-    Only a session that edits owns a background command's lifetime, derived from the same
-    tool set that withholds read_background elsewhere.
+    Args:
+        argv: The command.
+        mode: The session's mode; only a session that edits owns a background command's
+            lifetime, derived from the same tool set that withholds read_background elsewhere.
+        get_background: Returns the run's background roster.
+        access: The dispatcher's lazy jail accessors.
 
     Returns:
         The hand-back, with no output yet.
@@ -98,6 +102,15 @@ def run_model_command(
     The check-in needs a jail session to own the running command, a background roster to
     hand it to, and a mode whose tools can read the hand-back; otherwise this is a bounded
     run with its timeout.
+
+    Args:
+        argv: The command.
+        mode: The session's mode.
+        shells: The run's background roster; None without a run directory.
+        checkin: Seconds until a running command is handed back; 0 disables the hand-back.
+        interrupted: Whether the operator asked for an immediate stop.
+        emit: The run's event sink, for `command.backgrounded`.
+        access: The dispatcher's lazy jail accessors.
 
     Returns:
         The outcome, or the hand-back with the output so far.
@@ -162,6 +175,12 @@ def read_background(
 ) -> results.BackgroundResult:
     """Read a background command's output, or the roster when no id is given.
 
+    Args:
+        raw: The tool call's arguments.
+        get_background: Returns the run's background roster.
+        checkin: Seconds to wait for the command to end when the call gives no `wait_s`.
+        interrupted: Cuts the wait short.
+
     Returns:
         The roster, with the output when an id was given.
 
@@ -191,6 +210,10 @@ def stop_background(
     get_background: Callable[[], background.BackgroundShells],
 ) -> results.BackgroundResult:
     """Stop a background command.
+
+    Args:
+        raw: The tool call's arguments.
+        get_background: Returns the run's background roster.
 
     Returns:
         The roster after the stop.

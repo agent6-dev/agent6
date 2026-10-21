@@ -101,6 +101,9 @@ class Checked:
         The host shown is the one the connection is proved against and the one `fetch_hosts`
         would name. A GET carries data out in its query string, so clipping the path or dropping
         the query is consent to an exfiltration the operator never saw.
+
+        Returns:
+            `<host>[:<port>] <path>[?<query>]`, the path "/" when the URL has none.
         """
         parts = parse.urlsplit(self.url)
         tail = parts.path or "/"

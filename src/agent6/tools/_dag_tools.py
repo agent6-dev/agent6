@@ -114,8 +114,12 @@ def update_task(
 def _claim_note(curator: graph_curator.GraphCurator, node: models.TaskNode) -> str:
     """Return what marking a task in_progress did to the focus.
 
-    The harness works the claimed task next while it stays workable, so a claim the frontier
-    cannot honour says so instead of quietly doing nothing.
+    Args:
+        curator: The graph curator.
+        node: The task just marked in_progress.
+
+    Returns:
+        The note for the model: the harness works the task next, or the task is not workable yet.
     """
     if order.is_focusable_subtask(curator.nodes(), node):
         return "claimed: this is the task the harness works next"

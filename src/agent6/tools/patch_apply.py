@@ -371,9 +371,12 @@ def apply_parsed_patch(  # noqa: PLR0912
 def _common_shift(actual: list[str], expected: list[str]) -> tuple[str, str] | None:
     """Return the one leading-whitespace transform turning the expected lines into the actual.
 
+    Args:
+        actual: The lines on disk.
+        expected: The lines the hunk expects.
+
     Returns:
-        (strip_prefix, add_prefix), verified over every non-blank line, or None when no single
-        transform explains all of them.
+        (strip_prefix, add_prefix) shared by every non-blank line that differs, else None.
     """
     if len(actual) != len(expected):
         return None
@@ -603,6 +606,13 @@ def split_patch_files(text: str) -> list[str]:
 def patch_target_path(text: str) -> str:
     """Return the target path of a single-file patch in either format, without applying it.
 
+    Args:
+        text: The patch.
+
+    Returns:
+        The path the V4A file directive names, else the `+++` header's path (the `---`
+        header's for a deletion) without its `a/` or `b/` prefix.
+
     Raises:
         PatchError: No header names the file.
     """
@@ -632,6 +642,13 @@ _V4A_OPS: dict[str, PatchOp] = {"Add": "create", "Update": "edit", "Delete": "de
 
 def patch_op(text: str) -> PatchOp:
     """Return what a single-file patch in either format does to its file.
+
+    Args:
+        text: The patch.
+
+    Returns:
+        "create" for a V4A Add or `--- /dev/null`, "delete" for a V4A Delete or
+        `+++ /dev/null`, else "edit".
 
     Raises:
         PatchError: No header names the file.
@@ -665,6 +682,11 @@ def _v4a_file_directive(line: str) -> tuple[str, str] | None:
 
 def _v4a_delete(path: str, section: list[str], original: str | None) -> tuple[str, None]:
     """Apply a `*** Delete File:` directive, which is bare.
+
+    Args:
+        path: The path the directive names.
+        section: The lines after the directive.
+        original: The file's content, or None when it does not exist.
 
     Returns:
         The path and None.
@@ -739,6 +761,13 @@ def apply_v4a_text(
 def _v4a_added_content(path: str, section: list[str]) -> str:
     """Return the content of an Add File body, all `+` lines with blank lines tolerated.
 
+    Args:
+        path: The path the directive names.
+        section: The lines after the directive.
+
+    Returns:
+        The lines without their `+`, each ending in a newline.
+
     Raises:
         PatchError: A line carries another prefix.
     """
@@ -757,6 +786,11 @@ def _v4a_apply_update(
     path: str, section: list[str], original: str
 ) -> tuple[str, str, tuple[str, ...]]:
     """Apply an Update File body, locating each hunk by context and healing per the ladder.
+
+    Args:
+        path: The path the directive names.
+        section: The lines after the directive.
+        original: The file's content.
 
     Returns:
         The path, the new content and the healed hunks.
@@ -814,6 +848,12 @@ def _v4a_heal(
 ) -> tuple[str, str] | None:
     """Run the V4A context-miss ladder: `rstrip`, then `indent`, each requiring uniqueness.
 
+    Args:
+        content: The file's content.
+        old_block: The lines the hunk expects, joined with newlines.
+        new_lines: The lines the hunk writes.
+        body: The hunk's (prefix, text) pairs.
+
     Returns:
         The new content and the heal's kind, or None on a miss.
     """
@@ -849,6 +889,15 @@ def _v4a_splice(content: str, idx: int, old_block: str, new_lines: tuple[str, ..
 
     The block carries no trailing newline, so a pure deletion (no new lines; one empty line is
     a blank line) takes the newline that terminated the last removed line with it.
+
+    Args:
+        content: The file's content.
+        idx: The block's character offset.
+        old_block: The lines the hunk expects, joined with newlines.
+        new_lines: The lines the hunk writes.
+
+    Returns:
+        The new content.
     """
     rest = content[idx + len(old_block) :]
     if not new_lines and rest.startswith("\n"):
@@ -863,6 +912,9 @@ def _v4a_split_hunks(
 
     A `@@ <text>` line is a locator hint for the hunk that follows, naming the enclosing region
     when the context repeats elsewhere; an empty `@@` is a bare separator.
+
+    Args:
+        section: The lines after the `*** Update File:` directive.
 
     Returns:
         (hints, old_block, new_lines, body) per hunk, where `body` keeps the hunk's own
@@ -916,6 +968,14 @@ def _v4a_locate_with_hints(content: str, hints: tuple[str, ...], old_block: str)
 
     Each hint must appear in order; the block must then occur exactly once at or after the last
     hint's position.
+
+    Args:
+        content: The file's content.
+        hints: The hunk's `@@` hints, in order.
+        old_block: The lines the hunk expects, joined with newlines.
+
+    Returns:
+        The block's character offset, or None when the hints do not pin one occurrence.
     """
     search_from = 0
     last_hint_pos = 0
@@ -936,6 +996,13 @@ def _line_anchored_indices(content: str, block: str) -> list[int]:
 
     A V4A block is whole lines, so a substring match straddling a boundary (`x = 1` inside
     `x = 10`) would splice mid-line.
+
+    Args:
+        content: The file's content.
+        block: The lines to find, joined with newlines.
+
+    Returns:
+        The character offsets, in ascending order.
     """
     out: list[int] = []
     start = 0

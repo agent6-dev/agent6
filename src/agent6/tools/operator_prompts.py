@@ -138,6 +138,9 @@ def _default_approver(request: ApprovalRequest, /) -> ApprovalAnswer:  # pragma:
 def _default_questioner(request: QuestionRequest, /) -> QuestionAnswer:  # pragma: no cover
     """Ask on stdin, one numbered prompt per question, when no front-end is wired.
 
+    Args:
+        request: The questions to ask.
+
     Returns:
         The answers; a stdin that is not a terminal answers "" for each so a run never hangs.
     """

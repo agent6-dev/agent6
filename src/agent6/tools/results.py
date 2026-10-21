@@ -411,6 +411,10 @@ class MetricResult(ToolResult):
     def from_exec(cls, res: ExecResult, score: float | None) -> MetricResult:
         """Pair an exec result with its parsed score.
 
+        Args:
+            res: The metric command's exec result.
+            score: The parsed score, or None when the metric pattern found none.
+
         Returns:
             The metric result.
 
