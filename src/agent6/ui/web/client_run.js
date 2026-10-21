@@ -488,8 +488,16 @@ function paintRun(cards, s) {
   if (s.compare && s.compare.rationale) {
     cards.head.appendChild(el('div', 'sub muted', 'judge: ' + s.compare.rationale));
   }
-  // The same one-line fold the CLI banner and the TUI composer read.
-  if (s.policy) cards.head.appendChild(el('div', 'sub muted', esc(s.policy)));
+  // The same one-line fold the CLI banner and the TUI composer read; a setting and its value
+  // stay on one line, so a narrow card breaks the line only between settings.
+  if (s.policy) {
+    const pol = el('div', 'sub muted');
+    s.policy.split(' · ').forEach((part, i) => {
+      if (i) pol.appendChild(document.createTextNode(' · '));
+      pol.appendChild(el('span', 'nowrap', part));
+    });
+    cards.head.appendChild(pol);
+  }
   if (s.last_role) {
     // The in-flight mark means a call is in flight. A killed worker leaves a
     // role.call with no role.result, so it would stay on beside "stale".

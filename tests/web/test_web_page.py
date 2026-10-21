@@ -16,7 +16,7 @@ from importlib import resources
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "8f20f213f6a9a32034e95bc5c81b1388cd6b7c054c5ff01301cd62c51d222acc"
+PAGE_SHA256 = "393fe1658ad5dcfeb5a3fbfa2dfba11a13fde0eaa9b7c81ea31a021086eb2209"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -84,6 +84,15 @@ def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
     composer = client[client.index("function makeComposer") :]
     assert "pickerRow([['continue under preset', preset], ['model', model]])" in composer
     assert "root.appendChild(presetRow); root.appendChild(ta);" in composer
+
+
+def test_the_policy_line_breaks_only_between_its_settings() -> None:
+    """The run card wrapped `run_commands` on one line and `ask` on the next at 300 px."""
+    run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
+    assert "s.policy.split(' · ')" in run
+    assert "pol.appendChild(el('span', 'nowrap', part));" in run
+    css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
+    assert ".nowrap { white-space: nowrap; }" in css
 
 
 def test_the_commit_step_row_is_a_picker_row() -> None:
