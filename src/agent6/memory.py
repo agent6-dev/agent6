@@ -15,6 +15,7 @@ import contextlib
 import dataclasses
 import hashlib
 import json
+import os
 import pathlib
 import re
 import time
@@ -332,9 +333,14 @@ def ensure_decisions_file(state_dir: pathlib.Path) -> None:
         state_dir: The repo's state dir.
     """
     path = decisions_path(state_dir)
-    if not path.exists():
-        paths.mkdir_for_real_user(state_dir)
-        portable.atomic_write(path, b"")
+    if path.exists():
+        return
+    paths.mkdir_for_real_user(state_dir)
+    try:
+        # Create-only: a session that won the race keeps what it wrote since the check.
+        os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+    except FileExistsError:
+        return
 
 
 @contextlib.contextmanager

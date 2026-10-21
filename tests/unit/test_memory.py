@@ -827,3 +827,19 @@ def test_seed_and_merge_share_the_fact_rule(tmp_path: pathlib.Path) -> None:
     (memory.memory_dir(lane) / "lane-link.md").symlink_to(memory.memory_dir(lane) / "a-fact.md")
     assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge()
     assert not (memory.memory_dir(origin) / "lane-link.md").exists()
+
+
+def test_the_rulings_file_init_never_truncates_a_file_another_session_just_wrote(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two sessions starting at once both saw no file; the later empty write erased a ruling."""
+    path = memory.decisions_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("- ruling\n", encoding="utf-8")
+
+    def absent(_self: pathlib.Path) -> bool:
+        return False  # the stale check both sessions made
+
+    monkeypatch.setattr(pathlib.Path, "exists", absent)
+    memory.ensure_decisions_file(tmp_path)
+    assert path.read_text(encoding="utf-8") == "- ruling\n"
