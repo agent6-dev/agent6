@@ -258,6 +258,8 @@ Every path they take resolves through `Workspace`:
 
 - A file is read only when its real path stays inside the workspace root (the git root for `AGENTS.md`), outside `.git` and outside the hidden set; anything else reads as absent.
 - A symlink that stays inside the root is followed (`AGENTS.md -> docs/AGENTS.md`).
+- The existence probes (a root `verify.sh`, a manifest, loose `test_*.py` files) and the model call's top-level listing leave out a file under the hidden set, by its name or its link target.
+  A link out of the root still counts as present.
 
 **Repo memory** is a prompt-injection persistence channel: the rendered index joins the system prompt of later runs on the same repo.
 Memory (`<state_dir>/memory/`) holds facts the model may correct; rules belong in the repo's committed `AGENTS.md` or the operator rulings file `<state_dir>/decisions.md`, which the harness appends to, the operator edits with any editor, and the model sees only as read-only text injected into its prompt.

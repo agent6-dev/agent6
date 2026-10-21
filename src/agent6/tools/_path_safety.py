@@ -337,6 +337,20 @@ def read_contained(sp: SafePath, *, errors: str = "strict", limit_chars: int | N
         return handle.read() if limit_chars is None else handle.read(limit_chars)
 
 
+def host_workspace(root: pathlib.Path, hide: Iterable[str] = ()) -> Workspace:
+    """Return the boundary of a host-side read: the root minus `.git` and the hidden set.
+
+    Args:
+        root: The workspace root.
+        hide: `[sandbox].hide_paths`; agent6's private dirs are hidden without it.
+
+    Returns:
+        The workspace, each denied root resolved.
+    """
+    denied = (root / ".git", *paths.hidden_paths(pathlib.Path(p) for p in hide))
+    return Workspace(root=root, denied=tuple(p.resolve() for p in denied))
+
+
 def read_workspace_text(root: pathlib.Path, name: str, hide: Iterable[str] = ()) -> str:
     """Return a workspace file's text for a host-side read, "" when it is out of bounds.
 
@@ -353,10 +367,8 @@ def read_workspace_text(root: pathlib.Path, name: str, hide: Iterable[str] = ())
         The text with undecodable bytes replaced; "" when the file is missing, unreadable,
         not a regular file, or resolves out of bounds.
     """
-    denied = (root / ".git", *paths.hidden_paths(pathlib.Path(p) for p in hide))
-    workspace = Workspace(root=root, denied=tuple(p.resolve() for p in denied))
     try:
-        return read_contained(workspace.resolve_read(name), errors="replace")
+        return read_contained(host_workspace(root, hide).resolve_read(name), errors="replace")
     except (OSError, tools_errors.ToolError):
         return ""
 

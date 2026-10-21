@@ -16,7 +16,6 @@ of AGENTS.md is read here too, by the same fence reader.
 from __future__ import annotations
 
 import dataclasses
-import functools
 import json
 import os
 import pathlib
@@ -24,7 +23,7 @@ import re
 import shlex
 from collections.abc import Callable
 
-from agent6 import git_ops, paths
+from agent6 import git_ops
 from agent6.sandbox import tool_paths
 from agent6.tools import _path_safety
 from agent6.tools import errors as tools_errors
@@ -186,10 +185,8 @@ def read_agents_md(
     name = (here.relative_to(root) / "AGENTS.md").as_posix()
     if at is None:
         return _path_safety.read_workspace_text(root, name, hide)
-    denied = (root / ".git", *paths.hidden_paths(pathlib.Path(p) for p in hide))
-    workspace = _path_safety.Workspace(root=root, denied=tuple(p.resolve() for p in denied))
     try:
-        workspace.resolve_read(name)
+        _path_safety.host_workspace(root, hide).resolve_read(name)
     except (OSError, tools_errors.ToolError):
         return ""
     return git_ops.read_file_at(root, at, name)
@@ -243,9 +240,22 @@ def _has_make_target(text: str, target: str) -> bool:
     return any(m.group(1) == target for m in _MAKE_TARGET.finditer(text))
 
 
-def _python(repo_root: pathlib.Path) -> str:
+def _hidden(repo_root: pathlib.Path, name: str, hide: tuple[str, ...]) -> bool:
+    """Return whether the path, or the path it resolves to, is under a hidden path."""
+    path = repo_root.resolve() / name
+    workspace = _path_safety.host_workspace(repo_root, hide)
+    # realpath, not resolve(): on Python 3.12 resolve() raises RuntimeError on a symlink loop.
+    return workspace.is_denied(path) or workspace.is_denied(pathlib.Path(os.path.realpath(path)))
+
+
+def _present(repo_root: pathlib.Path, name: str, hide: tuple[str, ...]) -> bool:
+    """Return whether the file exists and is not under a hidden path."""
+    return (repo_root / name).is_file() and not _hidden(repo_root, name, hide)
+
+
+def _python(repo_root: pathlib.Path, hide: tuple[str, ...]) -> str:
     """Return the interpreter a pytest gate runs with: the project's `.venv`, else `python3`."""
-    return ".venv/bin/python" if (repo_root / ".venv" / "bin" / "python").exists() else "python3"
+    return ".venv/bin/python" if _present(repo_root, ".venv/bin/python", hide) else "python3"
 
 
 Signal = tuple[tuple[str, ...], str]
@@ -255,12 +265,11 @@ _ECOSYSTEM_SOURCES = frozenset({"Cargo.toml", "go.mod", "package.json", "pyproje
 _SHELL_SYNTAX = frozenset("&|;<>()$`\\*?[]~#{}")
 
 
-def _verify_sh(repo_root: pathlib.Path) -> Signal | None:
+def _verify_sh(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
     """Return the root `verify.sh` as the command, or None."""
-    script = repo_root / "verify.sh"
-    if not script.is_file():
+    if not _present(repo_root, "verify.sh", hide):
         return None
-    argv = ("./verify.sh",) if os.access(script, os.X_OK) else ("sh", "verify.sh")
+    argv = ("./verify.sh",) if os.access(repo_root / "verify.sh", os.X_OK) else ("sh", "verify.sh")
     return (argv, "verify.sh")
 
 
@@ -311,32 +320,30 @@ def _makefile(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
     return None
 
 
-def _python_manifest(repo_root: pathlib.Path) -> Signal | None:
+def _python_manifest(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
     """Return a pytest run when a Python manifest exists, or None."""
     manifests = ("pyproject.toml", "pytest.ini", "tox.ini", "setup.cfg", "setup.py")
-    if any((repo_root / f).is_file() for f in manifests):
-        return ((_python(repo_root), "-m", "pytest", "-q"), "pyproject")
+    if any(_present(repo_root, f, hide) for f in manifests):
+        return ((_python(repo_root, hide), "-m", "pytest", "-q"), "pyproject")
     return None
 
 
-def _cargo(repo_root: pathlib.Path) -> Signal | None:
+def _cargo(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
     """Return `cargo test` when Cargo.toml exists, or None."""
-    return (
-        (("cargo", "test", "--quiet"), "Cargo.toml")
-        if (repo_root / "Cargo.toml").is_file()
-        else None
-    )
+    found = _present(repo_root, "Cargo.toml", hide)
+    return (("cargo", "test", "--quiet"), "Cargo.toml") if found else None
 
 
-def _go(repo_root: pathlib.Path) -> Signal | None:
+def _go(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
     """Return `go test` when go.mod exists, or None."""
-    return (("go", "test", "./..."), "go.mod") if (repo_root / "go.mod").is_file() else None
+    return (("go", "test", "./..."), "go.mod") if _present(repo_root, "go.mod", hide) else None
 
 
-def _loose_python_tests(repo_root: pathlib.Path) -> Signal | None:
+def _loose_python_tests(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
     """Return a pytest run when loose `test_*.py` files exist, or None."""
-    if any(repo_root.glob("test_*.py")) or any((repo_root / "tests").glob("test_*.py")):
-        return ((_python(repo_root), "-m", "pytest", "-q"), "test_*.py")
+    tests = (*repo_root.glob("test_*.py"), *(repo_root / "tests").glob("test_*.py"))
+    if any(_present(repo_root, t.relative_to(repo_root).as_posix(), hide) for t in tests):
+        return ((_python(repo_root, hide), "-m", "pytest", "-q"), "test_*.py")
     return None
 
 
@@ -345,14 +352,14 @@ def repo_signals(repo_root: pathlib.Path, hide: tuple[str, ...] = ()) -> list[Si
     # Loose Python tests last, so a Rust or Go repo's `tests/` dir never reads as pytest.
     probes = (
         _verify_sh,
-        functools.partial(_package_json, hide=hide),
-        functools.partial(_makefile, hide=hide),
+        _package_json,
+        _makefile,
         _python_manifest,
         _cargo,
         _go,
         _loose_python_tests,
     )
-    return [found for probe in probes if (found := probe(repo_root))]
+    return [found for probe in probes if (found := probe(repo_root, hide))]
 
 
 # The files fed to the LLM.
@@ -390,7 +397,11 @@ def gather_repo_manifests(
     """Return the clipped manifest files and AGENTS.md as the LLM call's context."""
     parts: list[str] = []
     try:
-        top = sorted(p.name + ("/" if p.is_dir() else "") for p in repo_root.iterdir())
+        top = sorted(
+            p.name + ("/" if p.is_dir() else "")
+            for p in repo_root.iterdir()
+            if not _hidden(repo_root, p.name, hide)
+        )
     except OSError:
         top = []
     parts.append("<top-level>\n" + " ".join(top[:80]) + "\n</top-level>")
@@ -439,7 +450,7 @@ def infer_verify_command(
         agents_md: The AGENTS.md text.
         llm_call: Takes the gathered context and returns the model's text; None skips
             the LLM tier, as does a repo with no manifest and no AGENTS.md prose.
-        hide: `[sandbox].hide_paths`, which no manifest is read from.
+        hide: `[sandbox].hide_paths`; a hidden file reads as absent.
 
     Returns:
         The command, its source and what was passed over; an empty command when unknown.
@@ -469,7 +480,7 @@ def infer_verify_command(
                 ]
             return InferredVerify(argv, source, tuple(passed))
     readable = bool(agents_md.strip()) or any(
-        (repo_root / name).is_file() for name in _MANIFEST_FILES
+        _present(repo_root, name, hide) for name in _MANIFEST_FILES
     )
     if llm_call is not None and readable:
         context = gather_repo_manifests(repo_root, agents_md, hide)

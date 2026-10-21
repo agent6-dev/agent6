@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import sys
 
 import pytest
 
@@ -165,6 +166,74 @@ def test_repo_signal_loose_python_tests_come_last(tmp_path: pathlib.Path) -> Non
 
 def test_repo_signal_none(tmp_path: pathlib.Path) -> None:
     assert verify_infer.repo_signals(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    ("hidden", "name"),
+    [
+        ("verify.sh", "verify.sh"),
+        ("pyproject.toml", "pyproject.toml"),
+        ("Cargo.toml", "Cargo.toml"),
+        ("go.mod", "go.mod"),
+        ("tests", "tests/test_calc.py"),
+        ("test_calc.py", "test_calc.py"),
+    ],
+)
+def test_a_hidden_file_gives_no_repo_signal(tmp_path: pathlib.Path, hidden: str, name: str) -> None:
+    """A file under `sandbox.hide_paths` gave the gate, which then ran on the jail's empty mask.
+
+    A hidden verify.sh became `sh verify.sh`, which exits 0 on the empty file.
+    """
+    (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / name).write_text("exit 1\n", encoding="utf-8")
+    assert verify_infer.repo_signals(tmp_path, (str(tmp_path / hidden),)) == []
+
+
+def test_a_hidden_link_target_or_parent_reads_as_absent(tmp_path: pathlib.Path) -> None:
+    """A verify.sh linked into a hidden dir stayed the gate, and a hidden `.venv` its Python."""
+    (tmp_path / "ci").mkdir()
+    (tmp_path / "ci" / "verify.sh").write_text("exit 1\n", encoding="utf-8")
+    (tmp_path / "verify.sh").symlink_to("ci/verify.sh")
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    (tmp_path / ".venv" / "bin").mkdir(parents=True)
+    (tmp_path / ".venv" / "bin" / "python").symlink_to(sys.executable)
+    hide = (str(tmp_path / "ci"), str(tmp_path / ".venv"))
+    assert verify_infer.repo_signals(tmp_path, hide) == [
+        (("python3", "-m", "pytest", "-q"), "pyproject")
+    ]
+
+
+def test_the_model_tier_reads_no_hidden_file(tmp_path: pathlib.Path) -> None:
+    """The model's context listed a hidden file, and a hidden manifest still made the call."""
+    (tmp_path / "run_tests.sh").write_text("exit 1\n", encoding="utf-8")
+    (tmp_path / "noxfile.py").write_text("import nox\n", encoding="utf-8")
+    contexts: list[str] = []
+
+    def fake_llm(context: str) -> str:
+        contexts.append(context)
+        return "[]"
+
+    hide = (str(tmp_path / "run_tests.sh"),)
+    verify_infer.infer_verify_command(tmp_path, "", llm_call=fake_llm, hide=hide)
+    assert len(contexts) == 1 and "run_tests.sh" not in contexts[0]
+    verify_infer.infer_verify_command(
+        tmp_path, "", llm_call=fake_llm, hide=(str(tmp_path / "noxfile.py"),)
+    )
+    assert len(contexts) == 1
+
+
+def test_a_symlink_loop_at_the_root_still_reaches_the_model_tier(tmp_path: pathlib.Path) -> None:
+    """A `loop -> loop` link would make a `Path.resolve()` name check raise on Python 3.12."""
+    (tmp_path / "loop").symlink_to("loop")
+    (tmp_path / "noxfile.py").write_text("import nox\n", encoding="utf-8")
+    contexts: list[str] = []
+
+    def fake_llm(context: str) -> str:
+        contexts.append(context)
+        return "[]"
+
+    verify_infer.infer_verify_command(tmp_path, "", llm_call=fake_llm)
+    assert len(contexts) == 1 and "loop" in contexts[0]
 
 
 def test_parse_llm_verify() -> None:

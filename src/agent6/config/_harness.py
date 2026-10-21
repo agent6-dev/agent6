@@ -95,8 +95,9 @@ class HarnessConfig(pydantic.BaseModel):
             "`verify.sh`, the repo's manifest files, and loose `test_*.py` files, then a model "
             "call over "
             "those manifests; a command whose first word the sandbox PATH lacks is passed over, "
-            "and the run names it; a package.json test script that is one plain command runs as "
-            "itself when the sandbox PATH has its runner but no `npm`); a run that can infer "
+            "and the run names it; a file under `sandbox.hide_paths` reads as absent; a "
+            "package.json test script that is one plain command runs as itself when the sandbox "
+            "PATH has its runner but no `npm`); a run that can infer "
             "none starts gateless and adopts the first gate a recognizable project created "
             "mid-run yields."
         ),
