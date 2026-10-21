@@ -68,6 +68,73 @@ def test_agents_md_inline_marker_written_as_code() -> None:
     assert verify_infer.verify_from_agents_md("Verify: ruff check .") == ("ruff", "check", ".")
 
 
+@pytest.mark.parametrize("heading", ["Verify command", "Setup command"])
+@pytest.mark.parametrize(
+    ("block", "expected"),
+    [
+        ("banner\n$ make test\nall passed\n$ make check\ndone", "make test && make check"),
+        ("> make test", "make test"),
+        ("> make test\nall passed\n> make check", "make test && make check"),
+        ("$ make \\\n> test\nall passed", "make test"),
+        ("$ make \\\n  test\nall passed", "make test"),
+        ("$ make test &&\n  make check\nall passed", "make test && make check"),
+        ("$ make test ||\n  make check\nall passed", "make test || make check"),
+        ("$ make test |\n  cat\nall passed", "make test | cat"),
+    ],
+)
+def test_agents_md_console_fence(heading: str, block: str, expected: str) -> None:
+    """A console fence ran its output lines as commands, and a `> ` prompt as a redirect."""
+    reader = (
+        verify_infer.setup_from_agents_md
+        if heading == "Setup command"
+        else verify_infer.verify_from_agents_md
+    )
+    assert reader(f"## {heading}\n```console\n{block}\n```") == (
+        verify_infer.line_to_argv(expected)
+    )
+
+
+def test_agents_md_unprompted_fence_keeps_every_command() -> None:
+    """A fence without prompts runs every line, `$HOME`, `$(...)` and `>>>` included."""
+    block = "$HOME/check\n$(runner) test\n>>> result\nmake check"
+    assert verify_infer.verify_from_agents_md(f"## Test\n```sh\n{block}\n```") == (
+        "sh",
+        "-c",
+        "$HOME/check && $(runner) test && >>> result && make check",
+    )
+
+
+@pytest.mark.parametrize(
+    ("block", "expected"),
+    [
+        ("pytest -q \\\n> verify.log", "pytest -q > verify.log"),
+        ("pytest -q && # record\n> out echo ok", "pytest -q && > out echo ok"),
+        ("pytest -q &&\n# log\n\n> out echo ok", "pytest -q && > out echo ok"),
+        ("pytest -q\n> verify.log", "pytest -q && > verify.log"),
+    ],
+)
+def test_agents_md_redirect_after_a_plain_line_is_not_a_prompt(block: str, expected: str) -> None:
+    """A `> verify.log` line in a plain fence read as a prompt, so the log ran as the command.
+
+    After a continued line, after a trailing comment, after a comment line, and on its own
+    after a complete command. A fence opening with `> ` stays a transcript.
+    """
+    assert verify_infer.verify_from_agents_md(f"## Test\n```sh\n{block}\n```") == (
+        "sh",
+        "-c",
+        expected,
+    )
+
+
+@pytest.mark.parametrize("marker", ["Verify", "Test"])
+@pytest.mark.parametrize(
+    "command", ["$ make test", "`$ make test`", "> make test", "`> make test`"]
+)
+def test_agents_md_inline_prompt(marker: str, command: str) -> None:
+    """An inline `Verify: $ make test` kept its `$` prompt."""
+    assert verify_infer.verify_from_agents_md(f"{marker}: {command}") == ("make", "test")
+
+
 def test_agents_md_none_when_absent() -> None:
     assert verify_infer.verify_from_agents_md("# Readme\n\nNo verify here.") is None
     assert verify_infer.verify_from_agents_md("") is None

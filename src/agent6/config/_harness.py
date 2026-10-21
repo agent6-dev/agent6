@@ -90,8 +90,9 @@ class HarnessConfig(pydantic.BaseModel):
         description=(
             "The command that decides whether a step succeeded, as argv (no shell; wrap a pipeline "
             'as `["sh", "-c", "a && b"]`). Set it to pin the gate. Unset: each run infers one and '
-            "prints it (an AGENTS.md `## Verify command` block first, one command per line "
-            "joined with `&&`, so a `for` or `if` spanning lines is not one; then a root "
+            "prints it (an AGENTS.md `## Verify command` block or inline `Verify:` line first, "
+            "one command per line joined with `&&`, so a `for` or `if` spanning lines is not one; "
+            "then a root "
             "`verify.sh`, the repo's manifest files, and loose `test_*.py` files, then a model "
             "call over "
             "those manifests; a command whose first word the sandbox PATH lacks is passed over, "
@@ -99,7 +100,9 @@ class HarnessConfig(pydantic.BaseModel):
             "package.json test script that is one plain command runs as itself when the sandbox "
             "PATH has its runner but no `npm`); a run that can infer "
             "none starts gateless and adopts the first gate a recognizable project created "
-            "mid-run yields."
+            "mid-run yields. Inference drops a `$ ` or `> ` prompt. In a fence with a `$ ` "
+            "prompt, or opening with a `> ` prompt, only the prompted lines and their "
+            "continuations are commands."
         ),
     )
     verify_infer: bool = pydantic.Field(

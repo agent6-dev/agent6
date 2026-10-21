@@ -31,8 +31,8 @@ from agent6.tools import errors as tools_errors
 # A command line with any of these, or a leading assignment, is shell, wrapped in `sh -c`.
 _SHELL_META = re.compile(r"[|&;<>`$*]")
 _ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
-# A `$` prompt is a whole first word, so `$HOME` and `$(...)` keep their `$`.
-_PROMPT = re.compile(r"^\$(?:\s+|$)")
+# A prompt is a whole first word, so `$HOME`, `$(...)` and `>>>` stay intact.
+_PROMPT = re.compile(r"^[$>](?:\s+|$)")
 _VERIFY_HEADING = re.compile(r"^#{1,6}\s*(verify|test)\b", re.IGNORECASE)
 _SETUP_HEADING = re.compile(r"^#{1,6}\s*setup command\b", re.IGNORECASE)
 _INLINE_VERIFY = re.compile(r"^\s*(?:verify|test)\s*:\s*(.+)$", re.IGNORECASE)
@@ -135,8 +135,10 @@ def line_to_argv(cmd: str) -> tuple[str, ...] | None:
 def _block_to_argv(block: list[str]) -> tuple[str, ...] | None:
     """Return a fenced block as one argv.
 
-    A `$` prompt and comments are dropped, a continued line joins the one before,
-    and several commands chain with `&&`.
+    A block with a `$` prompt, or opening with a `>` prompt, keeps only prompted lines and
+    their continuations. Prompts and comments are dropped, continued lines join, and commands
+    chain with `&&`. A `>` line after a plain line is a redirect, and a continuation prompt in
+    a transcript.
 
     Args:
         block: The lines between the fences.
@@ -145,10 +147,14 @@ def _block_to_argv(block: list[str]) -> tuple[str, ...] | None:
         The argv; None when the block holds no command, or a single command that has no shell
         syntax and does not parse.
     """
+    transcript = _has_prompt(block)
     commands: list[str] = []
     continued = False
     for raw in block:
-        line = _strip_comment(_PROMPT.sub("", raw.strip()))
+        line = raw.strip()
+        if transcript and not continued and not _PROMPT.match(line):
+            continue
+        line = _strip_comment(_PROMPT.sub("", line) if transcript else line)
         if not line:
             continue
         part = line.removesuffix("\\").rstrip()
@@ -158,6 +164,24 @@ def _block_to_argv(block: list[str]) -> tuple[str, ...] | None:
             commands.append(part)
         continued = line.endswith(("\\", "&&", "||", "|"))
     return line_to_argv(" && ".join(commands))
+
+
+def _has_prompt(block: list[str]) -> bool:
+    """Return whether the block is a transcript: a `$` prompt anywhere, or a `>` prompt first.
+
+    A `>` line after a plain line is a redirect. Lines are read as `_block_to_argv` reads
+    them: comments off, and a blank line skipped.
+
+    Args:
+        block: The lines between the fences.
+
+    Returns:
+        True for a transcript.
+    """
+    lines = [line for line in (_strip_comment(raw.strip()) for raw in block) if line]
+    if any(line.startswith("$") and _PROMPT.match(line) for line in lines):
+        return True
+    return bool(lines) and lines[0].startswith(">") and _PROMPT.match(lines[0]) is not None
 
 
 def _first_fenced_block(lines: list[str], start: int) -> list[str] | None:
@@ -211,7 +235,7 @@ def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
     """Return the verify command AGENTS.md states, or None.
 
     A `## Verify command` or `## Test` heading followed by a fenced block, or an
-    inline `Verify:` or `Test:` line.
+    inline `Verify:` or `Test:` line. Both readers strip whole-word `$` and `>` prompts.
 
     Args:
         agents_md: The AGENTS.md text.
@@ -225,8 +249,10 @@ def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
     for line in agents_md.splitlines():
         m = _INLINE_VERIFY.match(line)
         # The comment goes first: backticks closed after it would survive the unquote.
-        if m and (argv := line_to_argv(_unquote_code(_strip_comment(m.group(1))))) is not None:
-            return argv
+        if m:
+            command = _unquote_code(_strip_comment(m.group(1))).strip()
+            if (argv := line_to_argv(_PROMPT.sub("", command))) is not None:
+                return argv
     return None
 
 
