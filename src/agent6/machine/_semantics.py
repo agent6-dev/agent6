@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import datetime
+import math
 import pathlib
 import tomllib
 from collections.abc import Mapping
@@ -400,13 +401,26 @@ def _enum_problems(value: Any, field: schema.FieldSpec, label: str) -> list[str]
 
 
 def _check_scalar(value: Any, name: str, label: str) -> list[str]:
-    """Return the problem of a value against a scalar type; a bool is never an int."""
+    """Return the problem of a value against a scalar type.
+
+    A bool is never an int, and a float is finite.
+
+    Args:
+        value: The value.
+        name: The scalar type name.
+        label: Names the value in the problem.
+
+    Returns:
+        The problems; empty when the value fits.
+    """
     if name == "bool":
         ok = isinstance(value, bool)
     elif name == "int":
         ok = isinstance(value, int) and not isinstance(value, bool)
     elif name == "float":
         ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if isinstance(value, float) and not math.isfinite(value):
+            return [f"{label}: expected a finite float, got {value!r}"]
     else:  # str
         ok = isinstance(value, str)
     if not ok:

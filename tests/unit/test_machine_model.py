@@ -163,6 +163,28 @@ def test_duplicate_name_across_owners(tmp_path: pathlib.Path) -> None:
     assert any("declared in both" in p and "cursor" in p for p in problems)
 
 
+@pytest.mark.parametrize("literal", ["nan", "inf", "-inf"])
+def test_a_float_variable_refuses_a_non_finite_value(tmp_path: pathlib.Path, literal: str) -> None:
+    """TOML's `nan` and `inf` passed as floats; no predicate holds on them, JSON has no literal."""
+    body = VALID_MACHINE.replace(
+        'poll_secs = { type = "int", value = 300 }',
+        'poll_secs = { type = "int", value = 300 }\n'
+        f'threshold = {{ type = "float", value = {literal} }}',
+    )
+    problems = _problems(tmp_path, body)
+    assert any("'threshold'" in p and "expected a finite float" in p for p in problems), problems
+
+
+def test_a_captured_record_refuses_a_non_finite_float(tmp_path: pathlib.Path) -> None:
+    """A tool's JSON stdout may carry `NaN`, which Python's json reads as a float."""
+    spec = _semantics.load_machine(_write(tmp_path, VALID_MACHINE))
+    payload = {"label": "urgent", "confidence": float("nan")}
+    problems = _semantics.validate_record_payload(
+        spec.schemas, "classification", payload, where="scan"
+    )
+    assert problems == ["scan.confidence: expected a finite float, got nan"]
+
+
 def test_bare_top_level_var(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE + '\n[vars.stray]\nx = { type = "str", default = "" }\n'
     # `vars.stray` becomes an owner-less subtable.

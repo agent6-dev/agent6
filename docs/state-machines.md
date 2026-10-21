@@ -119,7 +119,7 @@ Only `tool` states (into `[vars.code]`) and `agent` states (into `[vars.agent]`)
 - a `tool` capture targets only `[vars.code]`; an `agent` capture only `[vars.agent]`; `[vars.operator]` is read-only to every state
 - a `tool` cannot smuggle a write into an LLM-owned variable; an agent cannot overwrite a deterministic one
 
-Allowed types (all three subtables): `str`, `int`, `float`, `bool`, `list[<scalar>]`, `json`, and any **named record type** declared in `[schemas.*]` (see [Record schemas](#46-record-schemas-schemas)).
+Allowed types (all three subtables): `str`, `int`, `float` (finite: `nan` and `inf` refuse), `bool`, `list[<scalar>]`, `json`, and any **named record type** declared in `[schemas.*]` (see [Record schemas](#46-record-schemas-schemas)).
 The two structured types differ on one axis, **navigability**:
 
 - `json` is an **opaque** blob: read or written wholesale only
