@@ -10,7 +10,6 @@ so `agent6 machine check` prints them all at once.
 from __future__ import annotations
 
 import dataclasses
-import math
 import re
 from typing import Annotated, Any, Literal
 
@@ -35,6 +34,7 @@ __all__ = [
 ]
 
 # Strict: TOML supplies native scalars, so a quoted number is refused; tuple fields opt out.
+# allow_inf_nan=False: an infinite max_usd passes gt=0.0 and never binds.
 _MODEL_CONFIG = pydantic.ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
 _StrTuple = Annotated[tuple[str, ...], pydantic.Field(strict=False)]
 _NonEmptyStrTuple = Annotated[tuple[str, ...], pydantic.Field(strict=False, min_length=1)]
@@ -214,20 +214,6 @@ class VarsSection(pydantic.BaseModel):
     agent: dict[str, MutableVar] = pydantic.Field(default_factory=dict)
 
 
-def _finite_usd(v: float) -> float:
-    """Return the cap, refusing an infinite one, which passes `gt=0.0` and never binds.
-
-    Raises:
-        ValueError: The cap is not finite.
-    """
-    if not math.isfinite(v):
-        raise ValueError("max_usd must be a finite cap")
-    return v
-
-
-_FiniteUsd = Annotated[float, pydantic.AfterValidator(_finite_usd)]
-
-
 class BudgetSpec(pydantic.BaseModel):
     """The machine's spend bounds.
 
@@ -239,7 +225,7 @@ class BudgetSpec(pydantic.BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    max_usd: _FiniteUsd | None = pydantic.Field(default=None, gt=0.0)
+    max_usd: float | None = pydantic.Field(default=None, gt=0.0)
     max_transitions: int = pydantic.Field(gt=0)
 
 
@@ -327,7 +313,7 @@ class AgentState(pydantic.BaseModel):
     capture: Capture
     timeout_secs: int = pydantic.Field(gt=0)
     on: dict[str, str]
-    max_usd: _FiniteUsd | None = pydantic.Field(default=None, gt=0.0)
+    max_usd: float | None = pydantic.Field(default=None, gt=0.0)
     config: dict[str, Any] = pydantic.Field(default_factory=dict)
 
     @pydantic.model_validator(mode="after")
