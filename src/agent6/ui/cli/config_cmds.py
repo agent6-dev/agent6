@@ -406,30 +406,29 @@ def _cmd_config_get(
     return 0
 
 
-def _flag_shadow_note(key: str, config_paths: tuple[pathlib.Path, ...]) -> str | None:
-    """Return a note when a `--config FILE` in force sets the key the write just landed under.
+def _shadow_note(key: str, to_repo: bool, config_paths: tuple[pathlib.Path, ...]) -> str | None:
+    """Return a note when a layer above the target sets the key the write just landed under.
 
-    Under several files the note names the last one that sets the key: its value wins.
+    Under several `--config` files the note names the last one that sets the key: its value wins.
 
     Args:
         key: The dotted key the write set or removed.
+        to_repo: The write landed in the repo config.
         config_paths: The invocation's `--config`.
 
     Returns:
-        The note; None when no `--config` file sets the key, the key is a table, or the config
-        does not load.
+        The note; None when no layer above the target sets the key, the key is a table, or the
+        config does not load.
     """
-    if not config_paths:
-        return None
     try:
         eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
     except ConfigError:
         return None
-    source = eff.sources.get(key, "")
-    located = next((lyr for lyr in eff.layers if lyr.name == "flag" and lyr.source == source), None)
-    if located is None:
+    above = layer.shadowing_layer(eff, key, "repo" if to_repo else "global")
+    if above is None:
         return None
-    return f"note: --config {located.path} overrides {key} while that flag is used."
+    tail = " while that flag is used." if above.name == "flag" else "; a run here reads its value."
+    return f"note: {above.described} overrides {key}{tail}"
 
 
 def _cmd_config_set(
@@ -472,7 +471,7 @@ def _cmd_config_set(
     if machine is None:
         _warn_if_still_broken()
     print(f"Set {key} = {io.format_toml_value(parsed)} in {target}")
-    if machine is None and (note := _flag_shadow_note(key, config_paths)):
+    if machine is None and (note := _shadow_note(key, repo, config_paths)):
         print(note)
     return 0
 
@@ -552,7 +551,7 @@ def _cmd_config_unset(
     if machine is None:
         _warn_if_still_broken()
     print(f"Unset {key} in {target}")
-    if machine is None and (note := _flag_shadow_note(key, config_paths)):
+    if machine is None and (note := _shadow_note(key, repo, config_paths)):
         print(note)
     return 0
 

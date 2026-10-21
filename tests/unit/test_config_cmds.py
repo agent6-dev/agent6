@@ -971,6 +971,24 @@ def test_config_set_names_the_flag_file_that_shadows_the_write(
     assert "overrides sandbox.protect_git" not in out
 
 
+def test_config_set_notes_a_repo_layer_that_keeps_a_global_write_out(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A global write under a repo override said nothing; a run kept reading the repo value."""
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "set", "--repo", "harness.max_iterations", "7"]) == 0
+    capsys.readouterr()
+    assert main(["config", "set", "harness.max_iterations", "9"]) == 0
+    out = capsys.readouterr().out
+    assert (
+        "note: the repo config overrides harness.max_iterations; a run here reads its value." in out
+    )
+    assert main(["config", "set", "--repo", "harness.max_iterations", "8"]) == 0
+    assert "overrides" not in capsys.readouterr().out
+
+
 def test_config_set_shadow_note_names_the_last_file_setting_the_key(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
