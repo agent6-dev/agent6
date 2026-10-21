@@ -229,6 +229,17 @@ def test_boundaries_report_says_what_partial_leaves_writable(
     assert "    --  /dev/shm  (the host's, not granted" in out
 
 
+def test_boundaries_report_prints_one_row_for_a_hidden_dev_shm(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`hide_paths = ["/dev/shm"]` under partial printed the path twice: not granted, and hidden."""
+    _force(monkeypatch, "partial")
+    _check_sandbox.check_sandbox_section(Config(sandbox=SandboxConfig(hide_paths=("/dev/shm",))))
+    jailed = capsys.readouterr().out.partition("jailed commands (")[2]
+    assert jailed.count("  /dev/shm  ") == 1, jailed
+    assert "    --  /dev/shm  (denied by Landlock)" in jailed
+
+
 def test_boundaries_report_lists_what_the_host_network_reads(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

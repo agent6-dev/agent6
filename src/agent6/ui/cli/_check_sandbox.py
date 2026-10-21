@@ -265,8 +265,10 @@ def _command_rows(
             if p == "/etc/alternatives" and net != "host":
                 note = "system; the rest of /etc is empty"
             rows.append(Row("ro", pathlib.Path(p), note))
-        root_row = Row("--", pathlib.Path("/"), "empty except /proc, /dev and the paths below")
-        home_row = Row("--", home, "not mounted, except the rows under it below")
+        defaults = [
+            Row("--", pathlib.Path("/"), "empty except /proc, /dev and the paths below"),
+            Row("--", home, "not mounted, except the rows under it below"),
+        ]
         hidden = "masked out of the jail's view"
     else:
         rows += [
@@ -281,16 +283,16 @@ def _command_rows(
             Row("--", pathlib.Path("/proc"), f"not granted under {selected}: `ps` fails there")
         )
         nodes = confine.PARTIAL_DEVICE_NODES
-        rows.append(
+        defaults = [
+            Row("--", pathlib.Path("/"), "Landlock: denied except the paths below"),
+            Row("--", home, "Landlock: denied, except the rows under it below"),
             Row(
                 "--",
                 _DEV_SHM,
                 "the host's, not granted: Python multiprocessing cannot use it;"
                 f" {', '.join(nodes[:-1])} and {nodes[-1]} are granted",
-            )
-        )
-        root_row = Row("--", pathlib.Path("/"), "Landlock: denied except the paths below")
-        home_row = Row("--", home, "Landlock: denied, except the rows under it below")
+            ),
+        ]
         hidden = "denied by Landlock"
     rows.append(_home_row(cfg, selected, ws.root, git_grant))
     rows += _tool_rows()
@@ -306,7 +308,7 @@ def _command_rows(
     ]
     masked = {*agent6_paths.private_dirs(), *(pathlib.Path(p) for p in cfg.sandbox.hide_paths)}
     rows += [Row("--", p, hidden) for p in sorted(masked)]
-    return _with_defaults(rows, root_row, home_row)
+    return _with_defaults(rows, *defaults)
 
 
 def _mcp_lines(cfg: Config, root: pathlib.Path, selected: kinds.IsolationLevel) -> None:
