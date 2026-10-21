@@ -155,9 +155,8 @@ Two durable stores, both available at every isolation level:
     transition with its fact (each `tool` stdout, each `agent` payload), so it
     IS a replayable audit log of everything that happened — for free.
   - `$AGENT6_MACHINE_DATA_DIR` is a persistent, WRITABLE directory every `tool`
-    script may write to (the one writable spot under `partial`, where new
-    top-level files in the workspace are read-only). It's an absolute path valid
-    inside the tool jail, so just open it — works at every isolation level:
+    script may write to. It's an absolute path valid inside the tool jail, so
+    just open it — works at every isolation level:
     `open(os.environ["AGENT6_MACHINE_DATA_DIR"] + "/trades.jsonl", "a")`.
 
 For values you branch on or template later, capture them into the blackboard:
@@ -186,9 +185,9 @@ data. So:
     names the key. A tool that touches the network sets `network = "host"` in
     its table; `network = "session"` in `[config.sandbox]` keeps every other
     state offline.
-  - Persist outputs/state to `$AGENT6_MACHINE_DATA_DIR`: under `partial` a
-    tool jail cannot create new top-level entries in the workspace, and the
-    machine's own bundle is read-only at every level.
+  - Persist outputs/state to `$AGENT6_MACHINE_DATA_DIR`. Under `partial`, a
+    tool jail cannot create new top-level entries in a workspace that holds
+    the bundle. The bundle itself is read-only in every tool jail.
 
 ## Test every non-trivial script (offline simulation)
 
@@ -468,8 +467,8 @@ if __name__ == "__main__":
     non-conforming stdout HALTS the machine: print one JSON object matching
     your `output_schema` on stdout and exit 0. stderr is free for diagnostics.
   - A `tool` script that writes outside `$AGENT6_MACHINE_DATA_DIR`: on
-    `partial` the rest of the workspace is read-only to tool jails (new
-    top-level files are denied). Write to the data dir (or print to stdout).
+    `partial` a tool jail cannot create new top-level entries in the workspace.
+    Write to the data dir (or print to stdout).
   - A non-total `branch`: the last clause MUST be `{ else = true, goto = ... }`.
 
 ## Validity requirements (the file must pass `machine check`)

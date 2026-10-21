@@ -105,6 +105,33 @@ def test_authoring_guide_describes_the_metered_budget() -> None:
     assert "best_effort_usd_limit" not in prompt
 
 
+def test_authoring_guide_does_not_call_the_data_dir_the_one_writable_spot() -> None:
+    """The guide never calls the data dir the one writable spot under `partial`.
+
+    Existing workspace entries outside the protect paths stay writable there.
+    """
+    prompt = " ".join(build_authoring_prompt("Poll a queue", attempt=1).split())
+    assert "one writable spot" not in prompt
+
+
+def test_authoring_guide_does_not_call_the_workspace_read_only_under_partial() -> None:
+    """The guide never says `partial` makes the workspace read-only to a tool jail.
+
+    Existing workspace entries outside the protect paths stay writable there.
+    """
+    prompt = " ".join(build_authoring_prompt("Poll a queue", attempt=1).split())
+    assert "workspace is read-only" not in prompt
+
+
+def test_authoring_guide_does_not_call_the_bundle_read_only_at_every_level() -> None:
+    """The guide never says the bundle is read-only at every level.
+
+    Under `none` no jail runs, so a tool can write the bundle.
+    """
+    prompt = " ".join(build_authoring_prompt("Poll a queue", attempt=1).split())
+    assert "read-only at every level" not in prompt
+
+
 def test_build_authoring_prompt_retry_carries_only_the_diagnostics() -> None:
     """A retry names the problems and sends the agent back to its own files in the workspace."""
     prompt = build_authoring_prompt(
