@@ -519,6 +519,7 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 - A `--config FILE` inside the workspace is read-only in every jail, like the bundle: a state cannot raise its own ceiling
 - A grant bounds what a state touches directly: a granted state can copy what it reads to the blackboard, the data dir, the jail's `HOME` or a commit, where a later state reads it
 - A `tool` only declares `pass_env`; whether a variable is passed is your `[machine].pass_env`
+    - its setup command gets none of them: setup runs the tree's code at the chain tip, which a run state can edit, so a passed secret would reach model-written code
 
 **Bundle confinement**
 

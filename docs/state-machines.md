@@ -211,7 +211,7 @@ Where a run state's work lands:
     - a failed setup command takes the tool state's `nonzero` edge (`timeout` for a timed-out setup); clone or jail host failures abort the machine instead
     - an agent state's failed setup command returns `setup_command_failed`
     - [setup approval policy](security.md#4-commands-and-environment) is checked at preflight
-    - setup inherits the tool state's `pass_env` and network
+    - setup runs under the tool state's network with none of its `pass_env`: the file it runs is the tree's at the chain tip, which a run state can edit
     - instances started before `machine.begin.base_commit` was recorded must restart using the refusal's fresh-start remedy; this pre-alpha format has no compatibility shim
     - an edit-then-check loop sees the committed work with no plumbing
 - a `tool` state's tree writes are scratch, discarded with its clone; durable output goes to the blackboard or `$AGENT6_MACHINE_DATA_DIR`

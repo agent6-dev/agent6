@@ -224,6 +224,7 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
         tmp_path / "clones",
         {"check": StateConfig(Config(), frozenset(), "none")},
         reporter.STDIO_REPORTER,
+        tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
     )
     policy = kinds.JailPolicy(cwd=origin, argv=("x",), extra_protect_paths=(origin / "scripts",))
     assert runner("check", policy, None).returncode == 0
@@ -270,6 +271,7 @@ def test_tool_clone_runs_setup_before_reading_environment(
         tmp_path / "clones",
         {"check": StateConfig(cfg, frozenset(), "none")},
         reporter.STDIO_REPORTER,
+        tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
     )
     outcomes: list[kinds.CommandResult] = []
 
@@ -334,6 +336,42 @@ reason = "setup failed"
     assert not (origin / "environment.txt").exists()
 
 
+def test_a_tool_states_setup_runs_without_its_pass_env(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Setup runs the tree's code at the chain tip, so the tool's `pass_env` never reaches it.
+
+    The tool command, the operator's argv, still receives the variables the state declares.
+    """
+    from agent6 import kinds
+    from agent6.app.machine import run as machine_run
+
+    origin = _origin(tmp_path)
+    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}}).with_setup_command(
+        ("sh", "-c", "true")
+    )
+    states = {"check": StateConfig(cfg, frozenset(), "none")}
+    factory = machine_run.machine_tool_policy_factory(
+        states, origin, protect_paths=(), data_dir=None
+    )
+    monkeypatch.setenv("X_TOKEN", "s3cret")
+    seen: list[tuple[tuple[str, ...], bool]] = []
+
+    def execute(policy: kinds.JailPolicy) -> kinds.CommandResult:
+        seen.append((policy.argv, "X_TOKEN" in dict(policy.env)))
+        return kinds.CommandResult(
+            argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0
+        )
+
+    monkeypatch.setattr(sandbox_jail, "run_in_jail", execute)
+    runner = machine_run.machine_tool_runner(
+        origin, "m1", tmp_path / "clones", states, reporter.STDIO_REPORTER, tool_policy=factory
+    )
+    policy = factory("check", ("cat", "x"), 5.0, ("X_TOKEN",))
+    assert runner("check", policy, None).returncode == 0
+    assert seen == [(("sh", "-c", "true"), False), (("cat", "x"), True)]
+
+
 @pytest.mark.parametrize("state", ["", "unknown"])
 def test_tool_clone_unknown_state_is_an_engine_error(tmp_path: pathlib.Path, state: str) -> None:
     """An unknown state is a wiring error, never a synthetic command exit."""
@@ -341,7 +379,12 @@ def test_tool_clone_unknown_state_is_an_engine_error(tmp_path: pathlib.Path, sta
     from agent6.app.machine import run as machine_run
 
     runner = machine_run.machine_tool_runner(
-        tmp_path, "m1", tmp_path / "clones", {}, reporter.STDIO_REPORTER
+        tmp_path,
+        "m1",
+        tmp_path / "clones",
+        {},
+        reporter.STDIO_REPORTER,
+        tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=tmp_path, argv=argv),
     )
     with pytest.raises(machine.EngineError, match="no config was resolved"):
         runner(state, kinds.JailPolicy(cwd=tmp_path, argv=("true",)), None)
@@ -371,6 +414,7 @@ def test_tool_clone_host_failure_aborts_the_machine(
             tmp_path / "clones",
             {"check": StateConfig(Config(), frozenset(), "none")},
             reporter.STDIO_REPORTER,
+            tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
         ),
         tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
     )
@@ -403,6 +447,7 @@ def test_tool_setup_logs_share_numeric_state_log_pruning(
             tmp_path / "clones",
             {"check": StateConfig(cfg, frozenset(), "none")},
             reporter.STDIO_REPORTER,
+            tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
         ),
         tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
         state_log_root=tmp_path / "states",
@@ -455,6 +500,7 @@ def test_tool_setup_routes_its_outcome_without_checking_a_session_gate(
         tmp_path / "clones",
         {"check": StateConfig(cfg, frozenset(), "none")},
         reporter.STDIO_REPORTER,
+        tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
     )
     policy = kinds.JailPolicy(cwd=origin, argv=("tool",), timeout_s=3)
     spec_path = tmp_path / "m.asm.toml"

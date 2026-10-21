@@ -111,12 +111,23 @@ def uncommitted_refusal(path: pathlib.Path, cwd: pathlib.Path) -> str | None:
     return None
 
 
+def _in_clone(policy: kinds.JailPolicy, dest: pathlib.Path, cwd: pathlib.Path) -> kinds.JailPolicy:
+    """Return the policy with the clone as its cwd and the bundle protect paths remapped into it."""
+    protect = tuple(
+        dest / p.relative_to(cwd) if p.is_relative_to(cwd) else p
+        for p in policy.extra_protect_paths
+    )
+    return dataclasses.replace(policy, cwd=dest, extra_protect_paths=protect)
+
+
 def machine_tool_runner(
     cwd: pathlib.Path,
     machine_id: str,
     clone_root: pathlib.Path,
     states: Mapping[str, _states.StateConfig],
     reporter: app_reporter.Reporter,
+    *,
+    tool_policy: ToolPolicyFactory,
 ) -> Callable[[str, kinds.JailPolicy, pathlib.Path | None], kinds.CommandResult]:
     """Return a jail runner that executes each tool policy in a fresh clone at the chain tip.
 
@@ -130,6 +141,8 @@ def machine_tool_runner(
         clone_root: Where the per-call clones are made.
         states: The resolved config for each state.
         reporter: Receives setup output.
+        tool_policy: The builder the live world builds each tool's policy with; the setup
+            command takes the same policy built with no `pass_env`.
 
     Returns:
         The runner.
@@ -164,17 +177,15 @@ def machine_tool_runner(
             shutil.rmtree(dest, ignore_errors=True)
             raise jail.JailUnavailableError(f"machine tree clone failed: {exc}") from exc
         try:
-            protect = tuple(
-                dest / p.relative_to(cwd) if p.is_relative_to(cwd) else p
-                for p in policy.extra_protect_paths
+            # Setup runs the tree's code at the chain tip, which a run state can edit: it gets
+            # the tool's policy with none of its pass_env, and the state's timeout_secs.
+            setup_policy = tool_policy(state, policy.argv, policy.timeout_s, ())
+            failed = _workspace.tool_setup_failure(
+                resolved.config, _in_clone(setup_policy, dest, cwd), events_log, reporter
             )
-            cfg = resolved.config
-            policy = dataclasses.replace(policy, cwd=dest, extra_protect_paths=protect)
-            # Setup and the tool each get the state's timeout_secs.
-            failed = _workspace.tool_setup_failure(cfg, policy, events_log, reporter)
             if failed is not None:
                 return failed
-            return jail.run_in_jail(policy)
+            return jail.run_in_jail(_in_clone(policy, dest, cwd))
         finally:
             shutil.rmtree(dest, ignore_errors=True)
 
@@ -652,21 +663,29 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 )
                 reporter.note(f"state {state!r}: {detail}")
 
+            tool_policy = machine_tool_policy_factory(
+                configs.states,
+                cwd,
+                protect_paths=protect_paths,
+                data_dir=data_dir,
+                bundle_dir=path.parent,
+            )
             world = LiveWorld(
                 cwd=cwd,
                 journal=journal,
                 agent_runner=agent_runner,
-                tool_policy=machine_tool_policy_factory(
-                    configs.states,
-                    cwd,
-                    protect_paths=protect_paths,
-                    data_dir=data_dir,
-                    bundle_dir=path.parent,
-                ),
+                tool_policy=tool_policy,
                 # A machine that writes runs its tool states in its own tree,
                 # so an edit-then-check loop sees the run states' commits.
                 jail_runner=(
-                    machine_tool_runner(cwd, spec.machine, clone_root, configs.states, reporter)
+                    machine_tool_runner(
+                        cwd,
+                        spec.machine,
+                        clone_root,
+                        configs.states,
+                        reporter,
+                        tool_policy=tool_policy,
+                    )
                     if has_run_agent
                     else None
                 ),
