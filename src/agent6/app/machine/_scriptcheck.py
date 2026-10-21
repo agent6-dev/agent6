@@ -34,7 +34,12 @@ _MAX_DIAG_LINES = 30
 def _resolve_tool(name: str) -> list[str] | None:
     """Return the argv prefix that runs a dev tool (`ruff`, `ty`), or None when it is absent.
 
-    The console script beside the running interpreter wins, then `PATH`, then `uvx <name>`.
+    Args:
+        name: The tool's command name.
+
+    Returns:
+        The console script beside the running interpreter, else the one on `PATH`, else
+        `uvx <name>`, else None.
     """
     local = pathlib.Path(sys.executable).parent / name
     if local.is_file():
@@ -97,6 +102,13 @@ def _nearest_ruff_config(start: pathlib.Path) -> pathlib.Path | None:
 
     For the one caller whose files live outside the tree their config governs: the scratch
     bundle of `machine create`.
+
+    Args:
+        start: The directory the walk starts at.
+
+    Returns:
+        The nearest `.ruff.toml`, `ruff.toml`, or `pyproject.toml` with a `[tool.ruff]`
+        table, else None.
     """
     base = start.resolve()
     for directory in (base, *base.parents):

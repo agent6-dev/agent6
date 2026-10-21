@@ -36,6 +36,14 @@ def lane_terminal(
 
     `session.end` lands before the teardown clears `worker.pid`, so status alone races it. A
     lane that dies without a `session.end` cannot hang the gate: the fold reads it "stale".
+
+    Args:
+        session_dir: The lane's run dir.
+        status: The lane's status as the fold reads it.
+        worker_is_alive: The liveness check for the run dir's worker.
+
+    Returns:
+        True when the status is not "running" and the worker is gone.
     """
     return status != "running" and not worker_is_alive(session_dir)
 
@@ -102,6 +110,10 @@ def symlink_lane(origin_state: pathlib.Path, res: subrun.LaneResult) -> None:
     """Symlink a lane's clone-side run dir into the origin's `runs/` so the hub shows it live.
 
     The import replaces the link with the real dir.
+
+    Args:
+        origin_state: The origin's state dir.
+        res: The started lane.
     """
     link = lane_link(origin_state, res.spec.session_id)
     paths.mkdir_for_real_user(link.parent)
@@ -226,7 +238,16 @@ def print_lane_status(
     waiting: str = "",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
-    """Print one lane's status line, its cost as the listing's cell spells it."""
+    """Print one lane's status line, its cost as the listing's cell spells it.
+
+    Args:
+        spec: The lane, shown by number, session id and model route, if any.
+        status: The status, shown unless `waiting` is set.
+        cost: The cost; "" shows none.
+        waiting: The prompt kind the lane waits on, from `pending_prompt`; shown with where
+            to answer.
+        reporter: Receives the line.
+    """
     model = f" ({spec.route.spec})" if spec.route else ""
     cost_s = f"  {cost}" if cost else ""
     state = (

@@ -169,6 +169,9 @@ def lane_verify_origin() -> str:
     `AGENT6_LANE_VERIFY_ORIGIN`: the coordinator resolves the gate in the origin, where the
     repo signals are, and writes it into the lane's config; the lane alone would read it
     as configured.
+
+    Returns:
+        The gate's origin, "" outside a lane or when the coordinator passed none.
     """
     if parallel_lineage() is None:
         return ""
@@ -180,6 +183,9 @@ def parallel_lineage() -> manifest.ParallelLineage | None:
 
     `AGENT6_PARALLEL_LINEAGE=<coordinator>:<group>:<lane>`. Read at the manifest's write so the
     grouping survives a coordinator death.
+
+    Returns:
+        The lineage, None outside a lane or when the value does not parse.
     """
     raw = os.environ.get("AGENT6_PARALLEL_LINEAGE", "")
     coordinator, _, rest = raw.partition(":")
@@ -217,6 +223,10 @@ def unpark(session_dir: pathlib.Path, *, run_branch: str | None) -> None:
     """End the park at the execution's start and record the branch the start cut.
 
     A manifest carrying no park, or none readable, is left alone.
+
+    Args:
+        session_dir: The session directory.
+        run_branch: The run's branch, None for a run without one.
     """
     try:
         m = manifest.read_manifest(session_dir)
@@ -234,6 +244,13 @@ def stamp_execution(session_dir: pathlib.Path, cfg: Config, mode: str, isolation
     """Re-stamp what an execution owns: the models driving it and the policy it runs under.
 
     `agent6 exec` joins the recorded policy's jail and `sessions show` reads the recorded model.
+
+    Args:
+        session_dir: The session directory.
+        cfg: The execution's config; its preset replaces the recorded one unless that came
+            from `--preset`.
+        mode: The session mode, which picks the driving role.
+        isolation: The resolved isolation level.
     """
     m = manifest.read_manifest(session_dir)
     harness = m.harness
@@ -327,6 +344,11 @@ def stamp_fork_task(session_dir: pathlib.Path, steer: str, *, source_dir: pathli
     A fork starts with its source's task; later steers are follow-ups within the task, so the
     stamp fires only while the task is still the source's. A newer manifest, or a pruned
     source, leaves the task as it stands rather than failing the resume.
+
+    Args:
+        session_dir: The fork's session directory.
+        steer: The steer that resumed the fork.
+        source_dir: The source's session directory.
     """
     m = manifest.read_manifest(session_dir)
     if m.parent_session_id is None:
@@ -359,6 +381,11 @@ def stamp_verify_gate(session_dir: pathlib.Path, argv: Sequence[str], origin: st
     """Pin the gate the run is judged by and where it came from.
 
     From here on the pair is the run's, so a mid-run edit to AGENTS.md cannot move the gate.
+
+    Args:
+        session_dir: The session directory.
+        argv: The gate command.
+        origin: Where the gate came from (`HarnessStamp.verify_origin`).
     """
     m = manifest.read_manifest(session_dir)
     harness = m.harness.model_copy(update={"verify_command": tuple(argv), "verify_origin": origin})

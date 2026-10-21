@@ -179,6 +179,10 @@ def warn_cleartext_credential_endpoints(
 
     An explicit but discouraged config: it runs with the cost named, never a refusal, since an
     internal-network or VPN endpoint is a real case.
+
+    Args:
+        cfg: The config whose providers and MCP servers are checked.
+        reporter: Where the warnings go.
     """
     for label in cfg.cleartext_credential_endpoints():
         reporter.warn(
@@ -193,6 +197,12 @@ def home_grant_warnings(cfg: Config) -> tuple[str, ...]:
 
     Such a grant reaches the credentials other tools keep under the home directory. The grant
     is the operator's to make, so it runs, with the cost named.
+
+    Args:
+        cfg: The config whose `sandbox.extra_read_paths` and `extra_write_paths` are checked.
+
+    Returns:
+        The warnings; a path in both lists warns once.
     """
     home = paths.effective_user().home.resolve()
     sb = cfg.sandbox
@@ -226,6 +236,12 @@ def check_workspace_outside_private_dirs(root: pathlib.Path) -> str | None:
 
     A workspace inside a private dir cannot read its own files; a private dir inside the
     workspace has its transcripts and keys readable by jailed commands and staged into commits.
+
+    Args:
+        root: The workspace.
+
+    Returns:
+        The refusal, or None when no private dir overlaps the workspace.
     """
     resolved = root.resolve()
     for private in paths.private_dirs():
@@ -252,7 +268,14 @@ def check_workspace_outside_hidden_paths(cfg: Config, root: pathlib.Path) -> str
 
     Such a workspace hides the run's files from its own tools; the launcher's rootfs setup
     fails under the mask, and a write grant on the workspace would bind it back through the
-    mask, `.git` included. An entry inside the workspace is fine.
+    mask, `.git` included.
+
+    Args:
+        cfg: The resolved config.
+        root: The workspace.
+
+    Returns:
+        The refusal, or None otherwise; an entry inside the workspace is fine.
     """
     resolved = root.resolve()
     for entry in cfg.sandbox.hide_paths:
@@ -273,6 +296,14 @@ def check_protect_git_support(
 
     `protect_git` requires `full` `sandbox.isolation` to bind-remount `.git` read-only. The
     default degrades with a warning instead.
+
+    Args:
+        cfg: The resolved config.
+        isolation: The resolved isolation level.
+        explicitly_set: Whether the operator's config wrote `sandbox.protect_git`.
+
+    Returns:
+        The refusal for an explicit `protect_git = true` on `partial`, else None.
     """
     if isolation != "partial" or not (cfg.sandbox.protect_git and explicitly_set):
         return None
@@ -297,6 +328,16 @@ def check_jail_home(
     another level the default degrades to the repository's cache dir with a warning, and an
     explicit one refuses. A persistent dir the policy builder could not make agent6's own
     refuses too, without creating anything.
+
+    Args:
+        cfg: The resolved config.
+        isolation: The resolved isolation level.
+        workspace: The workspace.
+        worktree_git_dir: The linked worktree's git dir, when the run is in one.
+        explicitly_set: Whether the operator's config wrote `sandbox.home`.
+
+    Returns:
+        The refusal, or None.
     """
     persistent = tools_policy.persistent_jail_home(cfg, isolation, workspace, worktree_git_dir)
     if persistent is None:
@@ -324,7 +365,7 @@ def _partial_grant_regions(
         worktree_git_dir: The linked worktree's git dir, when the run is in one.
 
     Returns:
-        The (region, source) pairs.
+        The (region, source) pairs; a source is the phrase a warning or refusal quotes.
     """
     policy = tools_policy.jail_policy(
         root, cfg, "partial", ("true",), worktree_git_dir=worktree_git_dir
@@ -376,9 +417,17 @@ def unmaskable_exposures(
 ) -> tuple[tuple[pathlib.Path, pathlib.Path, str], ...]:
     """Return the (hidden path, granted region, region source) triples the isolation cannot mask.
 
-    Empty on `full`, which masks, and on `none`, which has no jail. Under `partial` a hidden
-    path overlapping a granted region is exposed in both directions. Paths are resolved
-    before containment so a `..` spelling cannot dodge the check.
+    Under `partial`, a hidden path is exposed when it holds a granted region or sits inside one.
+    Paths are resolved before containment so a `..` spelling cannot dodge the check.
+
+    Args:
+        cfg: The resolved config.
+        isolation: The resolved isolation level.
+        root: The workspace.
+        worktree_git_dir: The linked worktree's git dir, when the run is in one.
+
+    Returns:
+        At most one triple per hidden path; empty outside `partial`.
     """
     if isolation != "partial":
         return ()
@@ -404,6 +453,15 @@ def check_hide_paths_support(
 
     `hide_paths` is only ever explicit, so an entry that `partial` cannot mask refuses. The
     always-hidden private dirs warn instead: granting a region holding them may be meant.
+
+    Args:
+        cfg: The resolved config.
+        isolation: The resolved isolation level.
+        root: The workspace.
+        worktree_git_dir: The linked worktree's git dir, when the run is in one.
+
+    Returns:
+        The refusal naming the first exposed entry and the region exposing it, else None.
     """
     if isolation != "partial":
         return None  # before reading config: every other level masks
@@ -429,12 +487,12 @@ def mcp_network_refusal(
     both ask here, for each server a run starts.
 
     Args:
-        name: The server's name.
+        name: The server's name under `[mcp.servers]`.
         srv: The server's config block.
         isolation: The resolved isolation level.
 
     Returns:
-        The refusal, or None.
+        The refusal for a `none` or `session` network on `partial`, else None.
     """
     if isolation != "partial" or srv.effective_network not in ("none", "session"):
         return None
@@ -522,6 +580,13 @@ def check_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str |
     """Return the refusal when the network config needs what the isolation cannot give, else None.
 
     `session` requires `full` `sandbox.isolation`, while `auto` degrades with a warning.
+
+    Args:
+        cfg: The resolved config.
+        isolation: The resolved isolation level.
+
+    Returns:
+        The refusal for `sandbox.network = "session"` on `partial`, else None.
     """
     if isolation != "partial":
         return None
@@ -538,8 +603,12 @@ def check_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str |
 def resolved_config_values(cfg: Config) -> dict[str, object]:
     """Return every config leaf whose effective value differs from its raw one.
 
-    The adaptive model settings and the two `auto` sandbox knobs as this host resolves them.
-    With no jail binary to probe, the two stay `auto`.
+    Args:
+        cfg: The effective config.
+
+    Returns:
+        The values by leaf: the adaptive model settings and the two `auto` sandbox knobs as
+        this host resolves them. With no jail binary to probe, the two stay `auto`.
     """
     out = registry.resolved_adaptive_values(cfg)
     if cfg.sandbox.isolation == "auto" or cfg.sandbox.network == "auto":

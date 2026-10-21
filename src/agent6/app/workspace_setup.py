@@ -78,7 +78,15 @@ def _gate_path(gate: Sequence[str]) -> str:
 
 
 def _no_setup_text(path: str, workspace: str) -> str:
-    """Return the refusal naming the gate's path and the two ways to state a setup command."""
+    """Return the refusal naming the gate's path and the two ways to state a setup command.
+
+    Args:
+        path: The gate's first word.
+        workspace: The workspace, for the message ("a new worktree").
+
+    Returns:
+        The refusal: the reason, a bullet per way, and a line on working offline.
+    """
     return (
         f"the verify gate runs `{path}`, a path git does not track, so it is absent in"
         f" {workspace}, which holds tracked files only, and no setup command builds it there.\n"
@@ -132,6 +140,13 @@ def session_needs_setup(session_dir: pathlib.Path) -> bool:
 
     The manifest holds the state, so a resume never runs the command again and a fork's new
     worktree does.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        Whether setup is still due; False without a worktree or clone of its own, or without
+        a readable manifest.
     """
     try:
         manifest = sessions_manifest.read_manifest(session_dir)
@@ -169,7 +184,14 @@ class SetupRunner(Protocol):
         ...
 
     def run_setup(self, argv: tuple[str, ...]) -> kinds.CommandResult:
-        """Run setup under the workspace's command policy and jail."""
+        """Run setup under the workspace's command policy and jail.
+
+        Args:
+            argv: The setup command.
+
+        Returns:
+            The outcome, a nonzero exit included.
+        """
         ...
 
 
@@ -214,6 +236,11 @@ def prepare(
 def setup(cfg: Config, *, runner: SetupRunner, reporter: app_reporter.Reporter) -> Prepared:
     """Run setup without the session-specific gate-path check.
 
+    Args:
+        cfg: The config naming the setup command.
+        runner: The workspace's command policy and jailed setup runner.
+        reporter: Receives the command line, and the last lines of its output when it succeeds.
+
     Returns:
         The command result and any setup failure.
     """
@@ -245,7 +272,16 @@ def setup(cfg: Config, *, runner: SetupRunner, reporter: app_reporter.Reporter) 
 
 
 def _no_route_line(cfg: Config, isolation: kinds.IsolationLevel) -> str:
-    """Return the line a failed setup command ends on where commands have no route out."""
+    """Return the line a failed setup command ends on where commands have no route out.
+
+    Args:
+        cfg: The config holding `sandbox.network`.
+        isolation: The workspace's isolation level; under `partial` or `none`, commands share
+            the host's network.
+
+    Returns:
+        The line, "" when commands share the host's network.
+    """
     if tools_policy.resolve_network(cfg, isolation) == "host":
         return ""
     return (

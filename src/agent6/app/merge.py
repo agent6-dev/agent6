@@ -553,7 +553,12 @@ def _land_included_run(
 def merge_command(session_id: str, base_branch: str) -> str:
     """Return the command that lands a run, as a hint prints it.
 
-    A run started on a detached HEAD recorded no base branch, so the operator names the target.
+    Args:
+        session_id: The run to land.
+        base_branch: The run's base branch; `git_ops.DETACHED_HEAD` for a detached HEAD.
+
+    Returns:
+        The command; on a detached HEAD it ends in `--into BRANCH` for the operator to fill in.
     """
     into = " --into BRANCH" if base_branch == git_ops.DETACHED_HEAD else ""
     return f"agent6 sessions merge {session_id}{into}"
@@ -566,6 +571,13 @@ def left_behind_line(target: str, outcome: MergeOutcome) -> str:
     held, so an operator's edit is never overwritten; the tree they then test holds the older
     content. Committed as it is, such a file would undo the merged change, so the line carries
     the two commands that merge the edit with what landed.
+
+    Args:
+        target: The branch the run landed on.
+        outcome: The landed merge.
+
+    Returns:
+        The line, "" when the checkout kept no file of its own.
     """
     if not outcome.left_behind:
         return ""

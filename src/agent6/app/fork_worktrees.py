@@ -120,6 +120,12 @@ def worktree_owners(
 
     The manifests are the only record of which directories are agent6's: a path no manifest
     names is never touched. An `/undo` fork shares its source's worktree.
+
+    Args:
+        state_dir: The repo's state directory.
+
+    Returns:
+        Each worktree, mapped to the directory and manifest of every session naming it.
     """
     owners: dict[pathlib.Path, list[tuple[pathlib.Path, sessions_manifest.SessionManifest]]] = {}
     for session_dir in session_dirs(state_dir):
@@ -133,8 +139,12 @@ def worktree_owners(
 def sweep_checkout(cwd: pathlib.Path) -> pathlib.Path:
     """Return the checkout `sessions prune` and `sessions rm` run git from.
 
-    Inside a session's worktree that is the repository's own checkout: those verbs remove
-    the worktree, and git cannot run in a directory that is gone.
+    Args:
+        cwd: The directory the verb runs in.
+
+    Returns:
+        The repository's own checkout when `cwd` is inside a session's worktree, else `cwd`.
+        Those verbs remove the worktree, and git cannot run in a directory that is gone.
     """
     owned = {worktree.resolve() for worktree in worktree_owners(paths.state_dir(cwd))}
     return paths.project_root(cwd) if paths.checkout_root(cwd) in owned else cwd
@@ -148,6 +158,14 @@ def _still_needs_worktree(
     The merge stamp is the test of "merged": the branch still points where the merge left it.
     A session with no chain committed nothing and has no merge to wait for; a fork's chain is
     cut at its fork point, so a fork always has one.
+
+    Args:
+        repo: The repository the worktree is linked to.
+        session_dir: The session's directory.
+        manifest: The session's manifest.
+
+    Returns:
+        "live" while its worker runs, "unmerged" until its merge stamp holds, else "".
     """
     if process.worker_is_alive(session_dir):
         return "live"
@@ -166,6 +184,13 @@ def _landed_tips(
     """Return the commits the sessions landed: each chain tip, else its merge stamp's tip.
 
     `--delete-squashed` deletes the ref in the same sweep, and the commit outlives it.
+
+    Args:
+        repo: The repository.
+        sessions: The directory and manifest of each session sharing the worktree.
+
+    Returns:
+        The commits, one per session with a chain tip or a merge stamp.
     """
     tips = (
         git_ops.chain_tip(repo, git_ops.chain_ref_for(d.name)) or (m.merged.tip if m.merged else "")

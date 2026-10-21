@@ -49,7 +49,11 @@ def _text_of(content: object) -> str:
 def _operator_messages(messages: list[dict[str, Any]]) -> list[str]:
     """Return the operator's words in a restored conversation: the task, then each steer.
 
-    A steer loses its notice line; tool results and other harness notices stay out.
+    Args:
+        messages: The conversation, the task first.
+
+    Returns:
+        The words, each steer without its notice line.
     """
     out: list[str] = []
     for i, message in enumerate(messages):
@@ -308,6 +312,15 @@ def _manifest_refusal(
     A model-controlled run has no chain, and a chain ref written for it is one auto_merge
     lands. Landed work predates the checkpoint, other sessions' work included. A worktree
     the manifest cannot place, or that is gone, leaves nothing to rewind.
+
+    Args:
+        cwd: The repository.
+        checkout: The session's checkout: its worktree, else the repository.
+        session_id: The session being undone.
+        manifest: The session's manifest.
+
+    Returns:
+        The refusal, "" when the record allows the undo.
     """
     if (refusal := sessions_manifest.model_git_refusal(manifest, "undo")) is not None:
         return refusal
@@ -449,6 +462,11 @@ def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_te
 
     Without it the source would read passed with a merge line, and `sessions merge` would
     land the taken-back work.
+
+    Args:
+        undone: The session being undone.
+        child: The fork's id.
+        undone_text: The message taken back.
     """
     iterations = _session_log.scan_session_log(undone.logs_path).iteration or 0
     events = event_log.EventSink(undone.logs_path)
@@ -466,7 +484,15 @@ def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_te
 def _report_rewind(
     reporter: app_reporter.Reporter, rewound: _Rewound, *, turn: str, kept: str | None, where: str
 ) -> None:
-    """Print the undo notice: the paths put back, the paths left, and where the commits live."""
+    """Print the undo notice: the paths put back, the paths left, and where the commits live.
+
+    Args:
+        reporter: Receives the notice.
+        rewound: What the rewind put back and left.
+        turn: The checkpoint as the notice names it: `turn N (sha)`.
+        kept: The commit holding the tree as it stood; None when the tree held nothing new.
+        where: The run's branch, else its chain ref.
+    """
     paths = rewound.put_back
     if paths:
         reporter.note(

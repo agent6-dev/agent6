@@ -76,6 +76,13 @@ def uncommitted_refusal(path: pathlib.Path, cwd: pathlib.Path) -> str | None:
     A tool or agent executes the bundle as trusted logic, so an uncommitted piece is
     unreviewed; `machine test` is the ungated iteration loop. Skipped outside a git repo and
     for pieces that resolve outside the repo tree.
+
+    Args:
+        path: The `.asm.toml`, checked with its sibling `scripts/` when one exists.
+        cwd: The repository.
+
+    Returns:
+        The refusal naming the first uncommitted piece, or None.
     """
     if not git_ops.is_git_repo(cwd):
         return None
@@ -133,8 +140,13 @@ def machine_tool_runner(
     ) -> kinds.CommandResult:
         """Run the policy in a fresh clone, with the protect paths remapped into it.
 
+        Args:
+            state: The tool state's name, which selects the config the workspace setup reads.
+            policy: The tool command's jail policy, built for the repository.
+            events_log: The state's log, for the `workspace.setup` event; None writes none.
+
         Returns:
-            The command's result.
+            The command's result, or the setup command's when workspace setup fails.
 
         Raises:
             JailUnavailableError: The clone or jail is unavailable.
@@ -209,6 +221,15 @@ def machine_tool_policy_factory(
     ) -> kinds.JailPolicy:
         """Return one call's policy; the pass_env names were allowed at startup.
 
+        Args:
+            state: The tool state's name, which selects its resolved config.
+            argv: The rendered command.
+            timeout_s: The command's wall-clock cap.
+            pass_env: The operator environment variables the command receives, when set.
+
+        Returns:
+            The policy, with the repository as the command's working directory.
+
         Raises:
             JailUnavailableError: No config was resolved for the state.
         """
@@ -238,7 +259,15 @@ def machine_tool_policy_factory(
 
 
 def _labelled(reporter: app_reporter.Reporter, where: str) -> app_reporter.Reporter:
-    """Return a reporter whose stderr lines name the overlay they are about."""
+    """Return a reporter whose stderr lines name the overlay they are about.
+
+    Args:
+        reporter: The reporter to wrap.
+        where: The overlay's label, such as `[states.<name>.config]`.
+
+    Returns:
+        A copy whose stderr lines end in `(<where>)`; `reporter` itself when `where` is empty.
+    """
     if not where:
         return reporter
 
@@ -251,7 +280,15 @@ def _labelled(reporter: app_reporter.Reporter, where: str) -> app_reporter.Repor
 def _checked_configs(
     configs: _states.MachineConfigs,
 ) -> Iterator[tuple[str, _states.StateConfig]]:
-    """Yield each distinct config the run uses with the label a refusal names it by."""
+    """Yield each distinct config the run uses with the label a refusal names it by.
+
+    Args:
+        configs: The run's resolved configs.
+
+    Yields:
+        The label and the config, in order: the operator's and the machine's with no label,
+        then each state config other than the machine's, labelled `[states.<name>.config]: `.
+    """
     yield "", configs.operator
     yield "", configs.machine
     for name, resolved in configs.states.items():
@@ -398,7 +435,15 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     clone_root = _workdirs.subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
 
     def agent_config(name: str, state: AgentState) -> Config:
-        """Return an agent state's config with its spend cap applied."""
+        """Return an agent state's config with its spend cap applied.
+
+        Args:
+            name: The state's name, which selects its resolved config.
+            state: The state, whose `max_usd`, when set, replaces `budget.max_usd`.
+
+        Returns:
+            The config, revalidated.
+        """
         return configs.states[name].config.with_machine_agent_overrides(max_usd=state.max_usd)
 
     if agent_states or has_tool_state:
@@ -538,7 +583,14 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             operator_hook = _preflight.build_machine_notify_hook(cfg, spec.machine, root)
 
             def surface_notify(kind: str, state: str, message: str, level: str) -> None:
-                """Show a notify here, where the foreground run is its own watcher, then hook."""
+                """Show a notify here, where the foreground run is its own watcher, then hook.
+
+                Args:
+                    kind: `notify`, or `end`, which only the hook gets.
+                    state: The state entered, or the one the machine ended in.
+                    message: The notify message, or the end's reason.
+                    level: The notify's level, or the end's status.
+                """
                 # Presentation never affects control flow: a dead stderr is swallowed.
                 if kind == "notify":
                     with contextlib.suppress(OSError):
@@ -566,7 +618,12 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     poke_hint_shown = True
 
             def say_tool_failure(state: str, outcome: ToolExecResult) -> None:
-                """Name a failed tool step here: a bare `nonzero` edge reads as progress."""
+                """Name a failed tool step here: a bare `nonzero` edge reads as progress.
+
+                Args:
+                    state: The tool state's name.
+                    outcome: Its result, shown as its exit code or timeout and last output line.
+                """
                 detail = machine_state.tool_failure(
                     outcome.exit_code, outcome.timed_out, outcome.stderr or outcome.stdout
                 )

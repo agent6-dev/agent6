@@ -54,8 +54,12 @@ def resolve_isolation_or_refuse(
 def tool_result_cap_bytes(cfg: Config, role: RoleName) -> int:
     """Return the byte bound on one tool result entering the conversation of the role's provider.
 
-    Claude Code persists a result above its threshold and serves a preview, so its bound is
-    tighter than the loop's default.
+    Args:
+        cfg: The resolved config.
+        role: The role that drives the session.
+
+    Returns:
+        The loop's default; for a role on Claude Code, a bound under its persist threshold.
     """
     rm = cfg.models.resolve(role)
     entry = cfg.providers.get(rm.provider) if rm is not None else None
@@ -133,6 +137,12 @@ def install_inside_workspace(cwd: pathlib.Path) -> pathlib.Path | None:
 
     An in-tree install is inside the jail's writable workspace, so a jailed command can
     rewrite the running agent.
+
+    Args:
+        cwd: The workspace.
+
+    Returns:
+        The resolved package directory, or None when it is outside the workspace.
     """
     root = pathlib.Path(agent6.__file__).resolve().parent
     return root if root.is_relative_to(cwd.resolve()) else None

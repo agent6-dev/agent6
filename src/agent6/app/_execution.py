@@ -153,8 +153,12 @@ def detach_to_background(
 def _escape_reason(exc: BaseException) -> _snapshot.SessionEndReason:
     """Return the end reason an escaping exception stands for.
 
-    A closed output pipe (`agent6 run ... | head`) is the operator's side going away, an
-    interruption like Ctrl-C.
+    Args:
+        exc: The escaping exception.
+
+    Returns:
+        "interrupted" for Ctrl-C or a closed output pipe (`agent6 run ... | head`), the
+        operator's side going away; else "crashed".
     """
     return "interrupted" if isinstance(exc, (KeyboardInterrupt, BrokenPipeError)) else "crashed"
 
@@ -188,6 +192,13 @@ def _tree_left_before_the_loop(cwd: pathlib.Path, inputs: ExecutionInputs) -> st
 
     Seeded on the chain tip like a chain commit, as the harness's own read is; the escape's
     end then tells the next resume the run's files from the operator's.
+
+    Args:
+        cwd: The workspace.
+        inputs: The execution's inputs.
+
+    Returns:
+        The tree's sha; "" outside run mode or when the read fails or is interrupted.
     """
     if inputs.mode != "run":
         return ""
@@ -205,6 +216,13 @@ def _tree_left(wf: loop.Harness, mode: str) -> str:
 
     The read runs git inside the escape handler, where another Ctrl-C can land: the end is
     then written without the tree rather than not at all.
+
+    Args:
+        wf: The run's harness.
+        mode: The session mode.
+
+    Returns:
+        The tree's sha; "" outside run mode or when the read fails or is interrupted.
     """
     if mode != "run":
         return ""
@@ -360,7 +378,11 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
 
         def _undo_forker() -> tuple[str, str] | None:
-            """Return the `/undo` fork's outcome, kept for the end block."""
+            """Return the `/undo` fork's outcome, kept for the end block.
+
+            Returns:
+                The fork's id and the text taken back, or None with the reason printed.
+            """
             got = inputs.undo_forker()
             if got is not None:
                 undo_outcome.append(got)

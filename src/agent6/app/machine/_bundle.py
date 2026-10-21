@@ -21,6 +21,12 @@ def _bundle_script_ref(element: str) -> str | None:
 
     A reference is a relative path whose first component is `scripts` (`scripts/fetch.sh`,
     `./scripts/fetch.sh`); an absolute path names an interpreter or binary.
+
+    Args:
+        element: One element of a tool state's command.
+
+    Returns:
+        The path with any leading `./` dropped; None for any other element.
     """
     cleaned = element[2:] if element.startswith("./") else element
     if not cleaned or cleaned.startswith("/"):

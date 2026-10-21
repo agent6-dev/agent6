@@ -47,6 +47,15 @@ def tool_setup_failure(
 
     Host failures propagate to LiveWorld, which aborts the machine with EngineError.
 
+    Args:
+        cfg: The tool state's config, whose `[parallel].setup_command` runs.
+        policy: The tool's jail policy, which the setup command runs under.
+        events_log: The log the `workspace.setup` event goes to; None writes none.
+        reporter: Receives the setup's notes.
+
+    Returns:
+        The failed setup command's result, or None when the tool can run.
+
     Raises:
         EngineError: Setup failed without a command result.
     """

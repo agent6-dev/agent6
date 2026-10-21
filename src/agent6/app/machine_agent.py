@@ -502,7 +502,15 @@ class StateOverlay:
 
 
 def state_overlay(cfg: Config, isolation: kinds.IsolationLevel) -> StateOverlay:
-    """Return the overlay a state's resolved config travels as."""
+    """Return the overlay a state's resolved config travels as.
+
+    Args:
+        cfg: The state's resolved config.
+        isolation: The isolation level the engine validated for the state.
+
+    Returns:
+        The whole config except `preset`, with the isolation level.
+    """
     overlay = cfg.model_dump(mode="json")
     overlay.pop("preset", None)  # an overlay cannot select a preset
     return StateOverlay(overlay, isolation)

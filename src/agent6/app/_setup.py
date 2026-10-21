@@ -116,6 +116,12 @@ class BudgetOverrides:
     def apply(self, cfg: Config) -> Config:
         """Return the config with these overrides applied.
 
+        Args:
+            cfg: The loaded config.
+
+        Returns:
+            The config with each set flag's cap.
+
         Raises:
             ConfigError: A flag's value fails validation, named by the flag the operator typed.
         """
@@ -229,6 +235,9 @@ def apply_git_ops_policy(cfg: Config) -> None:
     One call per entry point, so git_ops itself stays config-free. Repo hooks and content
     drivers are repo-controlled host code, off by default; the provider-key env vars are
     stripped from git's environment, since a credential helper must not inherit one.
+
+    Args:
+        cfg: The resolved config.
     """
     git_policy.set_repo_hook_policy(cfg.git.run_repo_hooks)
     git_policy.set_repo_filter_policy(cfg.git.run_repo_filters)
@@ -245,6 +254,14 @@ def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = 
     The interactive-mode clamp catches a standing `run_commands = "yes"` nobody is watching;
     the operator's flags land last, so an explicit `--auto-approve` stays in force and
     `--no-commands` still pins "no".
+
+    Args:
+        cfg: The loaded config.
+        mode: The session mode.
+        overrides: The operator's sandbox and approval flags.
+
+    Returns:
+        The config with the mode's clamp, then the flags, applied.
     """
     clamped = cfg.with_run_commands_clamped() if kinds.session_kind(mode).clamps_commands else cfg
     return clamped if overrides is None else overrides.apply(clamped)
@@ -338,8 +355,17 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
 def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, str]) -> str | None:
     """Return why one routed provider cannot run, or None.
 
-    A keyed or local endpoint passes and refreshes its model listing on the way (TTL-gated,
-    about 1.5 s): that cache feeds completion, context sizing and the prices the budget meters.
+    A keyed endpoint or a signed-in ChatGPT provider passes and refreshes its model listing
+    (TTL-gated, about 1.5 s): that cache feeds completion, context sizing and the prices the
+    budget meters.
+
+    Args:
+        name: The provider's name under `[providers]`.
+        entry: The provider's config block.
+        secrets: The loaded secrets file.
+
+    Returns:
+        The refusal, or None when the provider can run.
     """
     if isinstance(entry, ClaudeCodeProviderEntry):
         err = claude_code.login_status(entry.binary)
@@ -377,7 +403,8 @@ def wants_session_network(cfg: Config, isolation: kinds.IsolationLevel) -> bool:
         isolation: The resolved isolation level.
 
     Returns:
-        True when the run's commands, or a server a run starts, join a session network.
+        True on `full` when `sandbox.network` is not `host`, or when a server a run starts
+        has a `session` network.
     """
     if isolation != "full":
         return False

@@ -41,7 +41,14 @@ class SessionRefusedError(Exception):
 
 
 def _by_model(pairs: Iterable[tuple[str, str]]) -> list[str]:
-    """Return one entry per model with the roles that use it: `'m' (planner, worker)`."""
+    """Return one entry per model with the roles that use it: `'m' (planner, worker)`.
+
+    Args:
+        pairs: The `(role, model)` pairs; a role may be "".
+
+    Returns:
+        The entries, sorted by model; a model with no role reads `'m'`.
+    """
     roles: dict[str, set[str]] = {}
     for role, model in pairs:
         roles.setdefault(model, set()).update({role} if role else ())

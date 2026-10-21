@@ -78,6 +78,9 @@ def _also_the_runs(cwd: pathlib.Path, left: str, outside: Sequence[str]) -> list
         cwd: The checkout.
         left: The tree the run left: its recorded end tree, else its chain tip; "" for neither.
         outside: The paths that changed outside the run.
+
+    Returns:
+        The paths the run also changed; empty when `left` is "".
     """
     if not left:
         return []

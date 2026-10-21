@@ -89,6 +89,13 @@ def _covered(path: str, trees: Iterable[str]) -> bool:
     """Return whether a path is at or below one of the trees, each by its real path.
 
     Real paths, so a symlink inside a tree that points outside it is not covered.
+
+    Args:
+        path: An overlay's grant.
+        trees: The operator's grants.
+
+    Returns:
+        True when it is.
     """
     real = pathlib.Path(os.path.realpath(path))
     return any(real.is_relative_to(os.path.realpath(tree)) for tree in trees)
@@ -98,6 +105,13 @@ def _spelled_under(path: str, trees: Iterable[str]) -> bool:
     """Return whether a path is, as spelled, one of the trees or below one.
 
     A hidden path is masked where it is spelled, so a link to it elsewhere hides nothing.
+
+    Args:
+        path: One of the operator's hidden paths.
+        trees: The overlay's hidden paths.
+
+    Returns:
+        True when it is.
     """
     spelled = pathlib.PurePath(os.path.normpath(path))
     return any(spelled.is_relative_to(os.path.normpath(tree)) for tree in trees)
@@ -141,7 +155,16 @@ _COVERS: dict[str, Callable[[SandboxConfig, str], bool]] = {
 
 
 def _grant(verb: str, leaf: str, values: Iterable[str]) -> str:
-    """Return the remedy for a key the operator grants: one config command per value."""
+    """Return the remedy for a key the operator grants: one config command per value.
+
+    Args:
+        verb: The `agent6 config` verb: `set` for a scalar key, `add` for list entries.
+        leaf: The key under `[sandbox]`.
+        values: The values to grant, spelled as `agent6 config` takes them.
+
+    Returns:
+        The remedy, unfinished: the caller appends where to drop it from.
+    """
     commands = ", ".join(
         f"`agent6 config {verb} --repo sandbox.{leaf} {shlex.quote(value)}`" for value in values
     )

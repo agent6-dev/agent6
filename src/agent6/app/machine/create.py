@@ -40,6 +40,10 @@ def _write_scripts(base_dir: pathlib.Path, scripts: dict[str, str]) -> None:
 
     A pre-existing symlink at a target is unlinked first, so a planted link cannot redirect the
     write out of the bundle; `validate_bundle` is the backstop for symlinks anywhere in the tree.
+
+    Args:
+        base_dir: The bundle's root, the directory the machine file goes in.
+        scripts: Each script's source, written ending in a newline.
     """
     for rel, content in scripts.items():
         p = base_dir / rel
@@ -79,8 +83,13 @@ def _read_scripts(workspace: pathlib.Path) -> dict[str, str]:
     """Return the bundle's whole `scripts/` tree as {bundle-relative path: source}.
 
     The whole tree is what the validators passed: a script may import a module or read a data
-    file no `tool` command names. A file that is not plain readable text is left out;
-    `validate_bundle` refuses a bundle that needed it.
+    file no `tool` command names.
+
+    Args:
+        workspace: The drafting workspace, the bundle's root.
+
+    Returns:
+        The sources; a file that is not plain readable text is left out.
     """
     out: dict[str, str] = {}
     for path in sorted((workspace / "scripts").rglob("*")):
@@ -97,8 +106,12 @@ def _read_scripts(workspace: pathlib.Path) -> dict[str, str]:
 def _attempt_reason(problems: list[str]) -> str:
     """Return a one-line reason an attempt failed.
 
-    The first problem's first line, plus the block's last line when the first only introduces
-    it (a traceback ends with the actual error), then a count of the rest.
+    Args:
+        problems: The attempt's problems; one may span several lines.
+
+    Returns:
+        The first problem's first line, plus the block's last line when the first only
+        introduces it (a traceback ends with the actual error), then a count of the rest.
     """
     first = problems[0] if problems and problems[0].strip() else ""
     lines = [ln.strip() for ln in first.splitlines() if ln.strip()]
@@ -118,6 +131,10 @@ def _discard_workspace(workspace: pathlib.Path, reporter: app_reporter.Reporter)
     """Remove a drafting workspace whose bundle is published, with its per-repo state dir.
 
     The prune sweep knows fan-out clones and fork worktrees; a drafting workspace is neither.
+
+    Args:
+        workspace: The drafting workspace.
+        reporter: Receives the note when a removal fails.
     """
     errors: list[str] = []
     for path in (paths.state_dir(workspace), workspace):

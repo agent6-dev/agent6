@@ -27,7 +27,16 @@ from agent6.viewmodel import _session_log, format, listing, produced_result, sum
 
 
 def imported_branch_note(origin: pathlib.Path, branch: str) -> str:
-    """Return the branch a successful import landed, or say the lane made no commit."""
+    """Return the branch a successful import landed, or say the lane made no commit.
+
+    Args:
+        origin: The repository the lane was imported into.
+        branch: The lane's branch.
+
+    Returns:
+        "branch imported as <branch>", or "no branch (the run made no commit)" when the
+        origin has no such branch.
+    """
     if git_ops.branch_exists(origin, branch):
         return f"branch imported as {branch}"
     return "no branch (the run made no commit)"

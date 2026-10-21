@@ -21,7 +21,13 @@ from agent6.machine import StateSpec, ToolState
 def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> str | None:
     """Return the refusal naming every tool state asking for a disallowed variable, else None.
 
-    The allowlist is `[machine].pass_env` in the global or repo config, never the machine's file.
+    Args:
+        cfg: The operator's config: the allowlist is its `[machine].pass_env`, from the global
+            or repo config, never the machine's file.
+        states: The machine's states, by name.
+
+    Returns:
+        The refusal, or None when the allowlist covers every variable asked for.
     """
     allowed = set(cfg.machine.pass_env)
     asks = [
@@ -44,8 +50,14 @@ def machine_protect_paths(
     """Return the machine file, its `scripts/` bundle and the `--config` files, read-only in jails.
 
     The `--config` files are part of the operator's ceiling, so a state must not rewrite them.
-    Only paths under the jail-mounted cwd are listed: a path outside it is not in the child's
-    view.
+
+    Args:
+        machine_path: The machine file.
+        cwd: The working directory the jails mount.
+        config_paths: The `--config` files.
+
+    Returns:
+        Those that exist under `cwd`, resolved.
     """
     cwd_r = cwd.resolve()
     out: list[pathlib.Path] = []
@@ -67,6 +79,15 @@ def build_machine_notify_hook(
     """Return the operator hook fired on `machine.notify` and `machine.end`, or None.
 
     The argv is `[machine.notify].on_event`, the mirror of `[notify].on_complete`.
+
+    Args:
+        cfg: The machine's resolved config.
+        machine_id: The hook's `AGENT6_MACHINE_ID`.
+        root: The instance dir, passed as `AGENT6_MACHINE_DIR`.
+
+    Returns:
+        The hook, called with the event (`notify` or `end`), the state, the message and the
+        level; None when `on_event` is empty.
     """
     notify = cfg.machine.notify
     if not notify.on_event:

@@ -68,7 +68,7 @@ def approval_scopes(cfg: Config) -> tuple[str, ...]:
         cfg: The resolved config.
 
     Returns:
-        The command scope, then one scope per server a run starts.
+        `command`, then `mcp.<name>` for each server a run starts.
     """
     servers = tuple(f"{ipc.MCP_SCOPE_PREFIX}{name}" for name in cfg.mcp.enabled_servers)
     return (ipc.COMMAND_SCOPE, *servers)
@@ -81,6 +81,11 @@ def settle_away_mode(session_dir: pathlib.Path, cfg: Config, *, can_ask: bool) -
     someone is there to answer; a start nobody can answer for honours the away marker the
     launcher set. A terminal start also drops every approve-all grant: the operator is back to
     answer afresh. An editor's grant covers its session's later prompts, so an ACP turn keeps it.
+
+    Args:
+        session_dir: The run dir holding the away marker and the grants.
+        cfg: The resolved config, for the scopes `AGENT6_DETACHED_AWAY=approve` grants.
+        can_ask: Whether approvals and questions reach a human.
     """
     if can_ask:
         ipc.clear_away_mode(session_dir)
@@ -96,6 +101,10 @@ def apply_spawned_away_default(session_dir: pathlib.Path, scopes: tuple[str, ...
     Without it a spawned run with no terminal fabricates empty ask_user answers when no viewer
     is live. An away mode already on the run dir is the operator's own detach answer and wins:
     overwriting a chosen 'deny' with 'wait' would block the run on an approval nobody answers.
+
+    Args:
+        session_dir: The run dir.
+        scopes: The approval scopes `AGENT6_DETACHED_AWAY=approve` grants.
     """
     away = os.environ.get("AGENT6_DETACHED_AWAY", "")
     if not away or ipc.away_mode(session_dir):
