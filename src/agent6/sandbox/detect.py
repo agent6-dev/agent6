@@ -121,6 +121,9 @@ def sandbox_disabled_by_env() -> bool:
     A `machine run` supervisor resolves once and passes `none` to each agent
     subprocess in its request, which does not re-resolve. The LLM cannot set the
     launcher's environment.
+
+    Returns:
+        True only for the exact value `1`.
     """
     return os.environ.get("AGENT6_DISABLE_SANDBOX") == "1"
 
@@ -131,6 +134,10 @@ def probe_userns_supported() -> bool:
 
     `unshare -U -r true` is the side-effect-free probe; `full` needs it to succeed.
     Cached for the process lifetime.
+
+    Returns:
+        True when the probe exits 0 within 2 seconds; False otherwise, including
+        without `/usr/bin/unshare`.
     """
     unshare = "/usr/bin/unshare"
     if not pathlib.Path(unshare).is_file():
@@ -151,8 +158,12 @@ def probe_userns_supported() -> bool:
 def probe_landlock_abi() -> int:
     """Return the kernel's Landlock ABI version, 0 when unavailable.
 
-    Fails closed: a probe error reads as no Landlock, so resolution refuses
-    `partial` and takes `auto` to the warned `none`. Cached for the process lifetime.
+    Cached for the process lifetime.
+
+    Returns:
+        The version, 0 off Linux or without Landlock. A probe error also returns 0, so
+        resolution refuses `partial`, and `auto` without user namespaces falls to `none`
+        with a warning.
     """
     if not sandbox_available():
         return 0
@@ -167,8 +178,11 @@ def apparmor_userns_restricted() -> bool:
 
     Ubuntu 23.10+ ships `kernel.apparmor_restrict_unprivileged_userns=1`, so
     `full` can be unavailable with `unprivileged_userns_clone = 1`; the fix is
-    `agent6 system apparmor install` or the sysctl at 0. The proc file is absent
-    on non-AppArmor kernels.
+    `agent6 system apparmor install` or the sysctl at 0.
+
+    Returns:
+        True when the sysctl reads 1; False when its proc file cannot be read. The proc
+        file is absent on non-AppArmor kernels.
     """
     try:
         raw = pathlib.Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text(
@@ -220,6 +234,12 @@ def degrade_reason(env: Environment) -> str | None:
 
     Every surface reporting an auto-selected level below `full` prints this, so a
     degraded level never appears without its cause.
+
+    Args:
+        env: The detected environment.
+
+    Returns:
+        The cause, as a clause to embed in a sentence, or None.
     """
     if not env.sandbox_available:
         return f"there is no Linux kernel sandbox on {sys.platform!r}"

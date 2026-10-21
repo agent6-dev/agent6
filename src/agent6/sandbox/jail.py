@@ -311,6 +311,12 @@ def policy_spec(policy: kinds.JailPolicy) -> dict[str, Any]:
     """Return the launcher's policy spec, JSON-shaped; the caller encodes it.
 
     An absent `mode` is the launcher's "once"; the exec and serve callers add theirs.
+
+    Args:
+        policy: The jail policy.
+
+    Returns:
+        Each policy field under its own name; `hide_paths` also holds agent6's private dirs.
     """
     return {
         "isolation": policy.isolation,
@@ -414,6 +420,9 @@ def namespaces_work() -> bool:
 
 def require_jail_binary() -> pathlib.Path:
     """Return the launcher binary.
+
+    Returns:
+        The path `locate_jail_binary` found.
 
     Raises:
         JailBinaryError: No binary was found; the message names the remedies.
@@ -537,8 +546,11 @@ def become_subreaper() -> None:
 def keep_out_of_the_sweep(pid: int) -> None:
     """Mark a pid as a child agent6 started deliberately, not an escapee.
 
-    Called right after a detached spawn; never cleared, the set is bounded by the
-    sessions one run opens.
+    Called right after a detached spawn; each sweep drops the pids that are no longer
+    children, so a recycled pid is never spared.
+
+    Args:
+        pid: The child, started in a session of its own.
     """
     _own_detached.add(pid)
 
@@ -547,8 +559,11 @@ def own_children() -> dict[int, int]:
     """Return this process's children as `{pid: session id}`, right now.
 
     Read as bytes: comm is whatever a process named itself, so one hostile name
-    must not break the scan. Empty without /proc: the sweep is a Linux mechanism,
-    and an error here would leave a running background command untracked.
+    must not break the scan.
+
+    Returns:
+        The children found. Empty without /proc: the sweep is a Linux mechanism, and an
+        error here would leave a running background command untracked.
     """
     me = str(os.getpid()).encode()
     found: dict[int, int] = {}
@@ -908,9 +923,14 @@ def _with_launcher_warnings(
 ) -> kinds.CommandResult:
     """Return the result with the launcher's own diagnostics appended to its stderr.
 
-    The child's stderr arrives in the result JSON, so the launcher's stderr is the
-    jail reporting on itself: a mount it could not make, a grant it skipped. Read
-    on success too; a degraded but working jail is the case they exist for.
+    Read on success too; a degraded but working jail is the case they exist for.
+
+    Args:
+        result: The command's result.
+        launcher_stderr: The jail's reports on itself, such as a skipped grant.
+
+    Returns:
+        The result with the diagnostics appended.
     """
     warnings = launcher_stderr.strip()
     if not warnings:
@@ -923,8 +943,14 @@ def result_from_json(
 ) -> kinds.CommandResult:
     """Return the launcher's result object as a CommandResult.
 
-    An `exec_failed` result gets the same wording as the one-shot path's 127, so the
-    model reads one message however its run is jailed.
+    Args:
+        result_json: The decoded result line; only `returncode` is required.
+        argv: The command the launcher ran.
+        duration: How long the command took in seconds, as the caller timed it.
+
+    Returns:
+        The result. An `exec_failed` result gets the same wording as the one-shot path's
+        127, so the model reads one message however its run is jailed.
     """
     failed_exec = bool(result_json.get("exec_failed", False))
     stderr = str(result_json.get("stderr", ""))

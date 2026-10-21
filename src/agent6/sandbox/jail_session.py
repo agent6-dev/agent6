@@ -58,6 +58,10 @@ def _abandon_launcher(proc: subprocess.Popen[bytes], interrupt_w: int) -> None:
     Closing stdin here swallows the EPIPE the dead peer forces on the buffered spec
     write; left to garbage collection it surfaces as unraisable noise, and the
     unreaped child is a zombie for the rest of the process.
+
+    Args:
+        proc: The launcher; its group is killed if it still runs.
+        interrupt_w: The write end of its interrupt pipe.
     """
     jail.forget_launcher(proc.pid)
     with contextlib.suppress(OSError):
@@ -277,6 +281,13 @@ class JailSession:
     def status_background(self, pid: int) -> BackgroundStatus:
         """Return what a backgrounded command is doing.
 
+        Args:
+            pid: The command's namespace-local pid.
+
+        Returns:
+            The launcher's answer; after one carrying the exit code, asking again gets an
+            ECHILD `error`.
+
         Raises:
             jail.JailUnavailableError: The launcher is gone.
         """
@@ -356,7 +367,14 @@ class JailSession:
 
         Selecting on the raw descriptor is safe because the channel is in lockstep:
         a complete answer can never sit in the reader's buffer while select says
-        there is nothing to read. EOF selects ready and reads empty.
+        there is nothing to read.
+
+        Args:
+            interrupted: Polled while waiting; true asks the launcher to hand the command
+                back. None waits without polling.
+
+        Returns:
+            The answer line; empty at EOF.
         """
         assert self._proc.stdout is not None
         if interrupted is None:

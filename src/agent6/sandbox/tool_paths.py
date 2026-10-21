@@ -39,11 +39,12 @@ def _under_system_root(p: pathlib.Path) -> bool:
 def _never_mounted(p: pathlib.Path) -> bool:
     """Return whether a dir must never be a jail mount, however a tool symlink resolves.
 
-    Refused by identity, never by content: $HOME and its ancestors (a mount there
-    hands the jail `~/.ssh` and every credential), and agent6's private dirs
-    (`agent6.paths.private_dirs`: `secrets.toml`, memory, transcripts) in either
-    direction, since a mount above a private dir grants the same reads. A dir below
-    home stays allowed; that keeps `~/.local/bin` tools working.
+    Args:
+        p: The dir a mount would bind.
+
+    Returns:
+        True for $HOME and its ancestors, and for a dir inside or above one of agent6's
+        private dirs (`agent6.paths.private_dirs`).
     """
     if pathlib.Path.home().is_relative_to(p):
         return True
@@ -74,6 +75,10 @@ def operator_tool_mounts() -> tuple[ToolMount, ...]:
     Recomputed per call, so a tool just installed is picked up. A bin dir under a
     mounted system root only joins PATH; a dir outside one, and the real dir a
     symlink resolves to, also needs the mount.
+
+    Returns:
+        The mounts. A dir mounted for several reasons gets one `why`: the jail's PATH,
+        else uv's interpreters, else its first link with a count of the rest.
     """
     whys: dict[pathlib.Path, list[str]] = {}
     for d in _tool_bin_dirs():
@@ -190,6 +195,10 @@ def jail_search_path() -> str:
     """Return the PATH a jailed command resolves against, for host-side probes.
 
     Advisory only; the jail recomputes its own per call.
+
+    Returns:
+        `/usr/bin:/bin`, then each existing bin dir scanned for operator tools, such as
+        `~/.local/bin`.
     """
     return operator_tool_paths()[0]
 
@@ -197,6 +206,10 @@ def jail_search_path() -> str:
 def jail_resolves(exe: str) -> bool:
     """Return whether a command's first word resolves in the jail, by the same advisory probe.
 
-    A word with a slash is a path, resolved against the mounted workspace, and counts as found.
+    Args:
+        exe: The command's first word.
+
+    Returns:
+        True when `exe` contains a slash or names an executable on `jail_search_path()`.
     """
     return "/" in exe or shutil.which(exe, path=jail_search_path()) is not None

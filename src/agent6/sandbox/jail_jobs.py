@@ -35,6 +35,9 @@ def write_stopped(outcome_dir: pathlib.Path) -> None:
     No code is invented: nobody observed one. Written only over an empty result; a
     command that exited just before the kill keeps the code its launcher wrote, and
     a failed read is no grounds to overwrite.
+
+    Args:
+        outcome_dir: Where the launcher writes the command's exit code.
     """
     result = outcome_dir / _RESULT_NAME
     try:
