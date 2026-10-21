@@ -60,6 +60,10 @@ def _prompt_for_provider(config_paths: tuple[pathlib.Path, ...]) -> str:
 def _prompt_for_model(config_paths: tuple[pathlib.Path, ...], provider: str) -> str | None:
     """Return the model picked interactively from the provider's list.
 
+    Args:
+        config_paths: The `--config` files in command-line order, if any.
+        provider: The provider whose models are listed.
+
     Returns:
         The model, "" when nothing was typed, or None after a refusal it printed (a number
         past the list).
@@ -85,6 +89,9 @@ def _prompt_for_model(config_paths: tuple[pathlib.Path, ...], provider: str) -> 
 
 def _show_assignments(config_paths: tuple[pathlib.Path, ...]) -> int:
     """Print the three role assignments with their config origin.
+
+    Args:
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code, 0.

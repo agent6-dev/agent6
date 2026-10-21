@@ -29,6 +29,9 @@ def lane_runtime() -> app_lanes.LaneRuntime:
 
     Injected so `agent6.app` never imports `agent6.ui`. Lane liveness and stop are the
     run-dir bridge, which `agent6.app.parallel` imports directly.
+
+    Returns:
+        The primitives.
     """
 
     def spawn(
@@ -40,6 +43,13 @@ def lane_runtime() -> app_lanes.LaneRuntime:
         env: dict[str, str],
     ) -> tuple[pathlib.Path | None, str]:
         """Spawn a detached agent6 process and locate its session dir.
+
+        Args:
+            argv: The agent6 subcommand and flags, without the executable.
+            cwd: Where to spawn.
+            before: The session dirs that existed before the spawn.
+            list_dirs: Lists the candidate session dirs.
+            env: The child's environment.
 
         Returns:
             The session dir and an error text, from `spawn_and_locate`.
@@ -61,6 +71,9 @@ def _parallel_approval_refusal(cfg: Config) -> str | None:
     Lanes run detached at the same time, so waiting for an approver would mean attaching
     to each lane in turn; the decision is made once, at launch.
 
+    Args:
+        cfg: The effective config.
+
     Returns:
         The refusal, or None when commands are not on `ask`.
     """
@@ -80,6 +93,10 @@ def _sandbox_refusal(cfg: Config, origin: pathlib.Path) -> str | None:
     """Print the sandbox's degrades once for the fan-out.
 
     The lanes run detached, so the warnings a run prints at its start print here instead.
+
+    Args:
+        cfg: The effective config.
+        origin: The repo the lanes clone.
 
     Returns:
         The host's refusal of the isolation, or None.

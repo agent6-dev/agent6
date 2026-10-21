@@ -211,7 +211,14 @@ def _dirty_worktree_note(cwd: pathlib.Path, run_branch: object) -> str:
     """Return a note when the diffed run's branch is checked out with uncommitted work, else "".
 
     Only when the dirty files are unambiguously this run's: the current branch must equal
-    the run branch. Best effort; a git error reads as "".
+    the run branch.
+
+    Args:
+        cwd: The checkout git runs from.
+        run_branch: The run's branch from its manifest; empty gives "".
+
+    Returns:
+        The note, counting the dirty files. Best effort; a git error reads as "".
     """
     if not run_branch:
         return ""
@@ -263,9 +270,15 @@ class _CommitsRef:
 def _commits_ref(cwd: pathlib.Path, manifest: sessions_manifest.SessionManifest) -> _CommitsRef:
     """Return where the run's commits end.
 
-    The run branch while it covers the chain, else the chain ref; else the manifest's branch
-    name while no chain exists (the verbs read its absence themselves: pruned, never cut, or
-    a lane's branch still in its clone); else the reason the run has no commits.
+    Args:
+        cwd: The repo.
+        manifest: The run's manifest.
+
+    Returns:
+        The run branch while it covers the chain, else the chain ref; else the manifest's
+        branch name while no chain exists (the verbs read its absence themselves: pruned,
+        never cut, or a lane's branch still in its clone); else the reason the run has no
+        commits.
     """
     if ref := wire.commits_ref(manifest, cwd):
         return _CommitsRef(head_ref=ref, reason="")
@@ -353,7 +366,13 @@ def _resolve_session_manifest(
 def _committed_nothing(cwd: pathlib.Path, session_id: str) -> bool:
     """Return whether a run left no commit anywhere.
 
-    The chain ref it commits to was never created, so its branch was never cut either.
+    Args:
+        cwd: The repo.
+        session_id: The run's id.
+
+    Returns:
+        True when the chain ref it commits to was never created, so its branch was never
+        cut either.
     """
     return git_ops.chain_tip(cwd, git_ops.chain_ref_for(session_id)) is None
 
@@ -363,9 +382,15 @@ def _pruned_branch_note(
 ) -> str | None:
     """Return where the work went when a run's branch is absent, or None when it is there.
 
-    Separates the ways to get here: a merged-then-pruned branch (the stamp covering every
-    commit), a branch deleted past its stamp or with no merge recorded (the chain ref keeps
-    the commits), and a run that committed nothing.
+    Args:
+        cwd: The repo.
+        manifest: The run's manifest.
+        run_branch: The manifest's run branch.
+
+    Returns:
+        The note, separating the ways to get here: a merged-then-pruned branch (the stamp
+        covering every commit), a branch deleted past its stamp or with no merge recorded
+        (the chain ref keeps the commits), and a run that committed nothing.
     """
     if git_ops.branch_exists(cwd, run_branch):
         return None
@@ -392,8 +417,11 @@ def _pruned_branch_note(
 def _cmd_commits(*, session_id: str) -> int:
     """List the per-step commits on a run's branch or chain ref.
 
+    Args:
+        session_id: The run, or "" for the newest.
+
     Returns:
-        The exit code; 2 when the run cannot be resolved or has no commits.
+        The exit code; 2 when the run cannot be resolved, or names no branch and has no chain ref.
     """
     cwd = pathlib.Path.cwd()
     res = _resolve_session_manifest(cwd, session_id)
@@ -434,6 +462,9 @@ def _cmd_sessions_dir(session_id: str = "") -> int:
     One bare line so it composes (`ls "$(agent6 sessions dir)"`). Sessions live under
     `sessions/<bucket>/`, one bucket per mode.
 
+    Args:
+        session_id: The session, or "" for the state dir.
+
     Returns:
         The exit code; 2 when the session cannot be resolved.
     """
@@ -452,6 +483,11 @@ def _cmd_sessions_dir(session_id: str = "") -> int:
 
 def _rm_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     """Clear this directory's asks bucket.
+
+    Args:
+        cwd: The directory whose asks bucket is cleared.
+        session_id: The run id typed beside `--asks`; any id is refused.
+        yes: Delete without asking.
 
     Returns:
         The exit code; 1 when a deletion failed, never a success line over a surviving dir.
@@ -498,6 +534,9 @@ def _rm_refusal(
         layout: The session.
         worktree: The fork's own worktree; None when another session shares and keeps it.
         tips: The branch tips the worktree's commits must reach.
+
+    Returns:
+        The refusal when the session is live or its worktree holds work no commit has.
     """
     if process.worker_is_alive(layout.session_dir):
         return (
@@ -518,6 +557,9 @@ def _rm_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) -> str
     Args:
         cwd: The checkout git is read from.
         layout: The session.
+
+    Returns:
+        The id, task and state lines, then for unmerged commits whether a branch keeps them.
     """
     tips = git_ops.run_ref_tips(cwd)
     summary = summarize_session_dir(layout.session_dir, branch_tips=tips)

@@ -36,6 +36,10 @@ from agent6.ui.cli import _common
 def _review_range(base: str, head: str) -> str:
     """Use the merge base for ref pairs and preserve an explicit range.
 
+    Args:
+        base: The base rev, an explicit `a..b` range, or "" for the working tree.
+        head: The head rev; unused when `base` is a range or "".
+
     Returns:
         The git diff revision expression, or HEAD for a working-tree review.
     """
@@ -151,6 +155,9 @@ def _is_checked_out(git: str, root: pathlib.Path, rev: str) -> bool:
         git: The git binary.
         root: The repo root.
         rev: The reviewed head.
+
+    Returns:
+        True when HEAD is the rev's commit and no tracked file has changes.
     """
     checked_out = git_ops.chain_tip(root, "HEAD")
     if checked_out is None or git_ops.chain_tip(root, rev) != checked_out:
@@ -360,6 +367,10 @@ def _reviewer_config(config_paths: tuple[pathlib.Path, ...], model: str) -> Conf
     Args:
         config_paths: The `--config` files in command-line order, if any.
         model: The `[provider/]model` value; "" leaves the route as configured.
+
+    Returns:
+        The current directory's effective config, its reviewer route replaced when `model`
+        is given.
 
     Raises:
         ConfigError: The value names no configured provider or no model.

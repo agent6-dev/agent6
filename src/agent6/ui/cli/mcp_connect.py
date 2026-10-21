@@ -42,6 +42,9 @@ _CONNECT_TIMEOUT_S = 60.0
 def _probe(spec: mcp_client.MCPServerSpec) -> tuple[tuple[mcp_client.MCPToolDescriptor, ...], str]:
     """Start the server as a run does, take its tool list, stop it.
 
+    Args:
+        spec: The server to start.
+
     Returns:
         The tools and the failure text; one of them is empty.
     """
@@ -67,6 +70,9 @@ def _refuse_bad_flags(
         token_env: The `--token-env` flag.
         pass_env: The `--pass-env` names.
         cfg: The effective config.
+
+    Returns:
+        The refusal, or "".
     """
     if bool(command) == bool(url):
         return (
@@ -104,6 +110,9 @@ def _cleartext_token_go_ahead(url: str, token_env: str) -> bool:
     Args:
         url: The server URL.
         token_env: The variable holding the token.
+
+    Returns:
+        False only when the operator does not answer yes at the prompt.
     """
     if not (token_env and is_cleartext_url(url) and not is_loopback_url(url)):
         return True
@@ -305,6 +314,15 @@ def _written_line(effective: config_layer.EffectiveConfig, name: str, to_repo: b
     """Return where the entry went, and what that means beside the other layer's entry.
 
     The repo layer wins over the global one.
+
+    Args:
+        effective: The config as loaded before the write.
+        name: The server name.
+        to_repo: The entry went to the repo config instead of the global one.
+
+    Returns:
+        One line: the config written, and whether the entry replaced one there, shadows
+        the global entry, or loses to the repo entry.
     """
     holders = _layers_holding(effective, name)
     target, other = ("repo", "global") if to_repo else ("global", "repo")
@@ -376,6 +394,9 @@ def cmd_mcp_list(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
 
     Reads config only: it never starts anything, so it says nothing about whether a server
     currently works (`agent6 check mcp` does that).
+
+    Args:
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code, 0.

@@ -42,7 +42,8 @@ def _plan_next(session_id: str) -> str:
 def _resolve_plan_session_id(session_id: str) -> str | None:
     """Resolve a plan id or prefix under the per-repo state dir.
 
-    An empty id resolves the most recent plan, as the sessions commands do.
+    Args:
+        session_id: The id or prefix, or "" for the newest.
 
     Returns:
         The id, or None after printing an error.
@@ -79,6 +80,9 @@ def _resolve_plan_session_id(session_id: str) -> str | None:
 def _cmd_plan_show(session_id: str) -> int:
     """Print a planning run's plan.md.
 
+    Args:
+        session_id: The plan, or "" for the newest.
+
     Returns:
         The exit code; 2 when the plan cannot be resolved.
     """
@@ -96,8 +100,11 @@ def _cmd_plan_edit(session_id: str) -> int:
     The argv is the operator's editor name and the resolved plan path, never LLM input, so
     a direct subprocess is allowed.
 
+    Args:
+        session_id: The plan, or "" for the newest.
+
     Returns:
-        The editor's exit code; 2 when the plan cannot be resolved.
+        The exit code; 1 when the editor fails, 2 when the plan cannot be resolved.
     """
     resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
@@ -121,6 +128,12 @@ def _most_recent_plan_session_id(plans_dir: pathlib.Path) -> str | None:
     """Return the most recently active plan dir that holds a `plan.md`.
 
     A bare `agent6 run` offers it for execution.
+
+    Args:
+        plans_dir: The per-repo `plans/` bucket.
+
+    Returns:
+        The plan's id, or None when no plan holds a `plan.md`.
     """
     if not plans_dir.is_dir():
         return None
@@ -192,6 +205,9 @@ def _cmd_tui(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     Loops between the home screen and the run view; opening a run watches it, then returns
     here on close.
 
+    Args:
+        config_paths: The `--config` files in command-line order, if any.
+
     Returns:
         The exit code; 3 when textual is not installed.
     """
@@ -222,11 +238,12 @@ def _cmd_tui(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
 def format_plain_event(line: str, *, session_start_ts: float | None) -> str:
     """Return one logs.jsonl line as `<elapsed> <type> key=val ...`.
 
-    Falls back to the raw line on a parse error, so a corrupt event does not abort the tail.
-
     Args:
         line: The raw line.
         session_start_ts: The earliest event's wall-clock time so far, for the elapsed column.
+
+    Returns:
+        The formatted line, or the raw line when it is not a JSON object.
     """
     raw = line.rstrip("\n")
     try:
@@ -262,7 +279,11 @@ def format_plain_event(line: str, *, session_start_ts: float | None) -> str:
 def _standing(event: dict[str, object]) -> bool:
     """Return whether an `approval.prompt` offers a session-wide answer.
 
-    Absent means it does; only the scopeless gates journal False.
+    Args:
+        event: The journaled prompt event.
+
+    Returns:
+        Its `standing` field, True when absent; only the scopeless gates journal False.
     """
     return bool(event.get("standing", True))
 
@@ -295,6 +316,9 @@ class _PromptWatch:
 
         The journal is the one durable record of an answer: the worker deletes the answer
         file as it reads it.
+
+        Returns:
+            True once closed; `closed_by` then says why.
         """
         if self.closed_by:
             return True
@@ -381,6 +405,9 @@ class _CliFrontEnd:
         replay does not re-ask it. An approval's journaled `standing` rides along: False is a
         gate with no scope to grant (`fetch`), so the prompt offers no session choice. A prompt
         that closes while it waits is dropped with one line and no answer written.
+
+        Args:
+            event: The `approval.prompt` or `question.prompt` event.
         """
         prompt_id = str(event.get("id", ""))
         approval = event.get("type") == "approval.prompt"
@@ -496,6 +523,10 @@ def _install_front_end(
 ) -> _CliFrontEnd | None:
     """Attach as the answering front-end on an interactive terminal.
 
+    Args:
+        target: The session dir.
+        view: The console view the front-end pauses while it prompts.
+
     Returns:
         The front-end, or None when a stream is piped or redirected: then attach stays a
         pure reader.
@@ -524,8 +555,11 @@ def _watch_transcript(target: pathlib.Path) -> int:
     run would. Renders from the start, tails until the run ends, then returns; Ctrl-C exits.
     A detach emits no session end, so a detached run is followed to its end.
 
+    Args:
+        target: The session dir.
+
     Returns:
-        The exit code; 1 when the worker died mid-call, 2 when the run has no log yet.
+        The exit code; 1 when the worker died.
     """
     events_path = target / sessions_layout.LOGS_NAME
     if not events_path.is_file():

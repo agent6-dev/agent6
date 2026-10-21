@@ -51,6 +51,12 @@ def _unanswered_questions(plan_md: str) -> list[str]:
     """Return the plan's `**Q:**` lines that no answer text follows, in order.
 
     An answer is text on the question's `**A:**` line or on the line under a blank one.
+
+    Args:
+        plan_md: The plan's markdown; its lines may be indented or quoted with `>`.
+
+    Returns:
+        Each question's text after its `**Q:**` marker; empty when none is unanswered.
     """
     unanswered: list[str] = []
     pending: str | None = None
@@ -75,7 +81,12 @@ def _unanswered_questions(plan_md: str) -> list[str]:
 
 
 def _warn_unanswered_questions(plan_md: str, session_id: str) -> None:
-    """Print one warning naming the plan's unanswered open questions, when it has any."""
+    """Print one warning naming the plan's unanswered open questions, when it has any.
+
+    Args:
+        plan_md: The plan's markdown.
+        session_id: The plan's id, named in the warning and its `agent6 plan edit` hint.
+    """
     questions = _unanswered_questions(plan_md)
     if not questions:
         return
@@ -274,6 +285,13 @@ def _minted_session_id(explicit: str, mode: str) -> str:
 
     The end-of-session prompt then offers the session this invocation created, not
     the repo's newest. Minting reserves nothing on disk.
+
+    Args:
+        explicit: The `--session-id` value; "" mints one.
+        mode: The session's mode, `run` or `plan`; a failed mint names its bucket.
+
+    Returns:
+        The named id, else a fresh one no bucket holds.
     """
     from agent6 import kinds
     from agent6.sessions import id
@@ -340,6 +358,13 @@ def _names_an_existing_plan(cwd: pathlib.Path, task: str) -> bool:
 
     A task that cannot be a directory name is none: a separator, or a name past the
     filesystem's limit, which the lookup reports as an OSError.
+
+    Args:
+        cwd: The checkout.
+        task: The `agent6 plan` task, stripped.
+
+    Returns:
+        True when the task is a plan's id.
     """
     from agent6.sessions import id
     from agent6.sessions import layout as sessions_layout
@@ -502,7 +527,14 @@ def _dispatch_exec_new(args: argparse.Namespace) -> int:
 
 
 def _dispatch_exec(args: argparse.Namespace) -> int:
-    """Return the exit code of `agent6 exec [SESSION --] CMD...`, run in the session's sandbox."""
+    """Return the exit code of `agent6 exec [SESSION --] CMD...`, run in the session's sandbox.
+
+    Args:
+        args: The parsed command line; `--new` runs the command in a fresh sandbox instead.
+
+    Returns:
+        The command's exit code; 2 when agent6 cannot run it.
+    """
     from agent6.config import (
         ConfigError,
         layer,

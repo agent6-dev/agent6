@@ -118,6 +118,9 @@ def _fanout_lanes(cwd: pathlib.Path, parallel_id: str) -> tuple[str, ...]:
     Args:
         cwd: The repo.
         parallel_id: The fan-out's id, as each lane's manifest records it.
+
+    Returns:
+        The lane ids; empty when no run names the fan-out.
     """
     lanes: list[tuple[int, str]] = []
     runs = _common._runs_dir(cwd)

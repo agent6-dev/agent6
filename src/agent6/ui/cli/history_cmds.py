@@ -111,6 +111,9 @@ def _match_core(text: str, start: int, end: int) -> str:
         text: The matched line.
         start: The match's start offset.
         end: The match's end offset.
+
+    Returns:
+        The identity, normalized; "" when no letter or digit survives.
     """
     matched = _collapse_escapes(text[start:end])
     if matched.strip() and (event := _json_object(text)) is not None:
@@ -128,6 +131,9 @@ def _match_core(text: str, start: int, end: int) -> str:
 
 def _json_object(raw: str) -> dict[object, object] | None:
     """Decode a JSON object, or one line of a pretty-printed object as rg emits it.
+
+    Args:
+        raw: The matched line.
 
     Returns:
         The object, or None when the line is neither.
@@ -147,6 +153,9 @@ def _strings_in(obj: object) -> Iterator[str]:
 
     Iterative: json.loads accepts nesting up to the interpreter's stack ceiling, so a
     recursive walk over what it returns could be the thing that blows up.
+
+    Args:
+        obj: The value json.loads returned.
 
     Yields:
         Each string, in document order.
@@ -239,6 +248,12 @@ def _kind_rank(hit: _SearchHit) -> int:
 
     A timestamped event line beats the transcript record, which beats a rendered .md,
     which beats raw internals (manifest.json, per-call JSON).
+
+    Args:
+        hit: The hit to rank.
+
+    Returns:
+        The rank, from 0 (most readable) to 3.
     """
     if hit.when:
         return 0
@@ -268,6 +283,9 @@ def _char_span(line: bytes, b_start: int, b_end: int) -> tuple[int, int]:
         line: The matched line.
         b_start: The match's start byte.
         b_end: The match's end byte.
+
+    Returns:
+        The match's start and end as character offsets.
     """
     start = len(line[:b_start].decode("utf-8", "replace"))
     return start, start + len(line[b_start:b_end].decode("utf-8", "replace"))
@@ -286,12 +304,15 @@ def _session_id_from_path(path: pathlib.Path) -> str:
 def _event_when_kind(path: pathlib.Path, raw: str) -> tuple[str, str]:
     """Return `(clock time, event type)` when the matched line is a logs.jsonl event.
 
-    Otherwise `("", label)`: a transcript snapshot, plan.md and the like. The snapshots are
-    cumulative, so they share one "transcript" label to collapse repeated text.
+    Transcript snapshots are cumulative, so they share one label to collapse repeated text.
 
     Args:
         path: The match file.
         raw: The matched line.
+
+    Returns:
+        The event's `HH:MM:SS` time and type; otherwise "" and the file's name, or
+        "transcript" for a transcript snapshot.
     """
     if path.name == sessions_layout.LOGS_NAME:
         try:
@@ -361,8 +382,12 @@ def _hex4(s: str, i: int) -> int | None:
 def _decode_u_escape(s: str, i: int) -> tuple[str, int] | None:
     r"""Decode the `\uXXXX` escape at `s[i]`, combining a surrogate pair.
 
+    Args:
+        s: The fragment.
+        i: The offset of the escape's backslash.
+
     Returns:
-        The character and the index after the escape, or None (the literal text is kept)
+        The character and the length of the text it replaces, or None (the literal text is kept)
         for malformed hex, a truncation or a lone surrogate.
     """
     cp = _hex4(s, i + 2)
@@ -383,8 +408,11 @@ def _window(text: str, start: int) -> str:
     spaces, so the snippet reads as one line.
 
     Args:
-        text: The matched line.
+        text: The matched line, or the string field holding the match.
         start: The match's start offset.
+
+    Returns:
+        The excerpt of up to `_SNIPPET_HALF` characters either side of the offset.
     """
     lo = max(0, start - _SNIPPET_HALF)
     hi = min(len(text), start + _SNIPPET_HALF)
@@ -397,6 +425,10 @@ def _render_history_hits(hits: list[_SearchHit], target: pathlib.Path) -> None:
 
     Identical snippets within a session (the same system-prompt boilerplate matched in
     every transcript) collapse to one line with an `(xN)` count.
+
+    Args:
+        hits: The hits, in rg's order.
+        target: The searched directory, named when nothing matched.
     """
     if not hits:
         print(f"[agent6] no matches under {target}.")
@@ -435,8 +467,11 @@ def _render_history_hits(hits: list[_SearchHit], target: pathlib.Path) -> None:
 def _cmd_history_graph(session_id: str) -> int:
     """Print a session's persisted task tree as a DFS-ordered listing.
 
+    Args:
+        session_id: The session, or "" for the newest with a graph.
+
     Returns:
-        The exit code; 2 when the session cannot be resolved.
+        The exit code; 2 when the session cannot be resolved or has no graph.
     """
     cwd = pathlib.Path.cwd()
     if session_id:
@@ -473,6 +508,9 @@ def _cmd_history_graph(session_id: str) -> int:
 def _parse_seq_window(spec: str) -> tuple[int, int] | None:
     """Parse a `--seq` window: "" for all, "5" for one call, "3-7" for a range.
 
+    Args:
+        spec: The `--seq` value.
+
     Returns:
         `(first, last)`, or None for all.
 
@@ -495,7 +533,9 @@ def _parse_seq_window(spec: str) -> tuple[int, int] | None:
 def _transcript_layout(cwd: pathlib.Path, session_id: str) -> sessions_layout.SessionLayout | int:
     """Resolve the session whose transcripts to render.
 
-    By id, else the most recent session that has a transcripts dir.
+    Args:
+        cwd: The repo.
+        session_id: The session, or "" for the most recent one that has a transcripts dir.
 
     Returns:
         The layout, or the exit code of a printed error.

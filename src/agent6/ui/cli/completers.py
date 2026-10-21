@@ -24,7 +24,14 @@ from agent6.viewmodel import listing, machine_state
 
 
 def _explicit_config(kw: dict[str, object]) -> tuple[pathlib.Path, ...]:
-    """Return the `--config FILE` layers already typed on the line, before and after the verb."""
+    """Return the `--config FILE` layers already typed on the line, before and after the verb.
+
+    Args:
+        kw: A completer's keyword arguments; its `parsed_args` is the line parsed so far.
+
+    Returns:
+        The files, those before the verb first.
+    """
     parsed = kw.get("parsed_args")
     before = getattr(parsed, "config", None)
     after = getattr(parsed, "config_after", None)
@@ -38,6 +45,12 @@ def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
     """Return the completer wrapped to answer nothing on any exception.
 
     A traceback would land on the operator's command line.
+
+    Args:
+        fn: The completer to guard.
+
+    Returns:
+        The guarded completer.
     """
 
     @functools.wraps(fn)
@@ -118,6 +131,12 @@ def _config_enum_choices(
     """Return every closed-value leaf's allowed values, through the view the config surfaces render.
 
     A bool completes like an enum: `config set` takes exactly `true` or `false`.
+
+    Args:
+        config_paths: The `--config` files already typed on the line.
+
+    Returns:
+        The values, keyed by the leaf's dotted key.
     """
     from agent6.viewmodel import config_view  # noqa: PLC0415  # noqa: PLC0415
 
@@ -159,8 +178,14 @@ def _config_list_keys(config_paths: tuple[pathlib.Path, ...] = ()) -> set[str]:
 def _user_preset_names(config_paths: tuple[pathlib.Path, ...] = ()) -> list[str]:
     """Return the user-defined `[presets.*]` names.
 
-    A built-in name is withheld: writing `presets.<builtin>.*` replaces the built-in
-    table wholesale.
+    A built-in the operator has not replaced is withheld: writing `presets.<builtin>.*`
+    replaces the built-in table wholesale.
+
+    Args:
+        config_paths: The `--config` files already typed on the line.
+
+    Returns:
+        The names; none when a config layer is unreadable or malformed.
     """
     try:
         return [
@@ -183,7 +208,11 @@ def _complete_config_keys(
             paths are offered too.
         settable: Offer the enum keys and the preset paths, which `config get` rejects.
         sections: Offer section prefixes too, for `config show`.
-        kw: argcomplete's keyword arguments.
+        **kw: argcomplete's keyword arguments.
+
+    Returns:
+        The keys starting with prefix, sorted: only list keys for `config add` and
+        `config remove`, and no operator-only key for a `--machine-file` write.
     """
     explicit = _explicit_config(kw)
     try:
@@ -228,8 +257,13 @@ def _complete_config_values(
 ) -> list[str]:
     """Return the values the config key already typed accepts.
 
-    Its enum or configured choices, a role's provider's model ids, or the extra_body
-    recipes.
+    Args:
+        prefix: The text typed so far.
+        parsed_args: The line parsed so far; its `key` is the config key.
+
+    Returns:
+        The key's enum or configured choices, a role's provider's model ids, or the
+        extra_body recipes, those starting with prefix; none for a key the verb refuses.
     """
     key = getattr(parsed_args, "key", "") or ""
     if isinstance(getattr(parsed_args, "machine_file", None), pathlib.Path):
@@ -264,6 +298,14 @@ def _complete_model_verb_values(
 
     Only once a valid role is typed: argcomplete bleeds every optional positional's
     completer into the first slot.
+
+    Args:
+        prefix: The text typed so far.
+        parsed_args: The line parsed so far.
+        **kw: The rest of argcomplete's keyword arguments.
+
+    Returns:
+        The config's provider names, then its routes, each starting with prefix.
     """
     role = getattr(parsed_args, "role", None)
     if role not in ("planner", "worker", "reviewer", "all"):

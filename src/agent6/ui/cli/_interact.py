@@ -32,8 +32,9 @@ def _note(text: str) -> None:
 def lane_away_mode() -> ipc.AwayMode:
     """Return the away-mode a fan-out's lanes run with.
 
-    The coordinator's own marker when a hub set one, else `wait` with a terminal to
-    attach from, else `deny`.
+    Returns:
+        The coordinator's `AGENT6_DETACHED_AWAY` when valid, else `wait` with a terminal to
+        attach from, else `deny`.
     """
     marker = os.environ.get("AGENT6_DETACHED_AWAY", "")
     if marker in ipc.AWAY_MODES:

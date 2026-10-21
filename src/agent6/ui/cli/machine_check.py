@@ -137,6 +137,9 @@ def _tool_reachability_warnings(spec: MachineSpec, path: pathlib.Path) -> list[s
     Args:
         spec: The machine.
         path: The machine file.
+
+    Returns:
+        The warnings, sorted by binary name.
     """
     search = tool_paths.jail_search_path()
     sources: dict[str, str] = {}
@@ -162,6 +165,10 @@ def _leaves(table: dict[str, Any]) -> str:
 
 def _cmd_machine_check(path: pathlib.Path, *, config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     """Validate a machine file offline and print OK or FAIL.
+
+    Args:
+        path: The machine file.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code, 1 on FAIL.
@@ -265,6 +272,10 @@ def _print_dry_run_report(spec: MachineSpec, report: DryRunReport) -> None:
 
 def _cmd_machine_graph(path: pathlib.Path, *, fmt: str) -> int:
     """Print the machine's diagram as DOT or Mermaid.
+
+    Args:
+        path: The machine file.
+        fmt: "dot" or "mermaid".
 
     Returns:
         The exit code, 1 when the file does not parse.

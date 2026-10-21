@@ -62,6 +62,9 @@ def _add_config_flag(parser: argparse.ArgumentParser) -> None:
     list; `parser.config_files` appends it at dispatch. The default is SUPPRESS because
     argparse copies a nested verb's whole namespace upward: a leaf that saw no `--config`
     would otherwise write None over what a parent collected.
+
+    Args:
+        parser: The verb's parser.
     """
     parser.add_argument(
         "--config",
@@ -125,6 +128,9 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
 
     `--disable-sandbox` is a one-off `sandbox.isolation = "none"`.
     `--auto-approve` changes `sandbox.run_commands` from `ask` to `yes` and leaves `no` as it is.
+
+    Args:
+        parser: The verb's parser.
     """
     group = parser.add_argument_group("sandbox")
     group.add_argument(
@@ -204,7 +210,11 @@ warn = reporter.STDIO_REPORTER.warn
 
 
 def note_removed_cwd(checkout: pathlib.Path) -> None:
-    """Say the shell's directory is gone when the command removed the worktree it was typed in."""
+    """Say the shell's directory is gone when the command removed the worktree it was typed in.
+
+    Args:
+        checkout: The checkout the note says to `cd` into.
+    """
     try:
         pathlib.Path.cwd()
     except FileNotFoundError:
@@ -372,9 +382,12 @@ def styled_status(
 
     Args:
         status: The status word, which picks the colour.
-        reason: The status's reason, folded into the plain label.
+        reason: The status's reason, folded into the label.
         color: Style the label.
         label: Overrides the text.
+
+    Returns:
+        The styled and plain labels.
     """
     text = format.status_label(status, reason) if label is None else label
     sgr_code = _LEVEL_SGR[format.status_level(status)]

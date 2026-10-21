@@ -47,6 +47,9 @@ def _run_intent(repo_root: pathlib.Path, target: str) -> tuple[bool, str | None]
 def _machine_json_snapshot(machine_dir: pathlib.Path) -> int:
     """Print a machine's snapshot as one JSON object.
 
+    Args:
+        machine_dir: The machine instance's directory.
+
     Returns:
         The exit code; 1 when the machine or its journal cannot be read.
     """
@@ -66,8 +69,11 @@ def _machine_json_snapshot(machine_dir: pathlib.Path) -> int:
 def _machine_watch_tui(machine_dir: pathlib.Path) -> int:
     """Open the full-screen machine watch.
 
+    Args:
+        machine_dir: The machine instance's directory.
+
     Returns:
-        The exit code; 3 when the TUI cannot be imported.
+        The exit code; 1 when the machine cannot be read, 3 when the TUI cannot be imported.
     """
     source = machine_dir / "machine.asm.toml"
     try:

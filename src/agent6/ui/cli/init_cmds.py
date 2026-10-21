@@ -31,6 +31,9 @@ def _scaffold_rel_paths(root: pathlib.Path, created: tuple[pathlib.Path, ...]) -
     Args:
         root: The workspace.
         created: The paths init wrote.
+
+    Returns:
+        The paths; empty when nothing is left to commit.
     """
     candidates = git_ops.unignored(root, _workspace_rel_paths(root, created))
     return tuple(rel for rel in candidates if git_ops.paths_dirty(root, (rel,)))

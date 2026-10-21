@@ -98,6 +98,16 @@ def _probe_refusal(
 
     A diagnostic never starts a server outside a run's confinement, so a write grant
     of any kind, or no jail at all, means no probe.
+
+    Args:
+        cfg: The config.
+        env: The detected host.
+        name: The server's key under `mcp.servers`.
+        srv: The server's config entry.
+        isolation: The resolved isolation level.
+
+    Returns:
+        The reason; None to probe it.
     """
     if srv.url:
         return None

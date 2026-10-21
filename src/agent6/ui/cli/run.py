@@ -70,6 +70,10 @@ def _remember_steer(
 ) -> steer.SteerState:
     """Publish the execution's steer state for the approver's late-bound read.
 
+    Args:
+        cell: The slot the approver and the `run -i` hook read.
+        state: The execution's steer state.
+
     Returns:
         The state, unchanged.
     """
@@ -80,13 +84,15 @@ def _remember_steer(
 def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.SessionFrontend:
     """Return the presentation seam the run and resume lifecycles drive.
 
-    One per invocation: the console-view cell is run-scoped. The console view is created
-    lazily on `attach_console_view`, and the builders that need it close over its cell, so
-    the lifecycle never holds a UI type. The lifecycle owns egress itself; only the two
-    exe-spawn primitives it cannot reach (`ui.spawn`) are injected.
+    The console view is created lazily on `attach_console_view`, and the builders that need
+    it close over its cell, so the lifecycle never holds a UI type. The lifecycle owns egress
+    itself; only the two exe-spawn primitives it cannot reach (`ui.spawn`) are injected.
 
     Args:
         config_paths: The `--config` files in command-line order, if any.
+
+    Returns:
+        A new seam for one invocation.
     """
     # Late-bound: the approver and questioner are built before the view or steer state exists.
     console_cell: list[_console_view.ConsoleView | None] = [None]

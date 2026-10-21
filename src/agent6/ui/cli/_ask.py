@@ -78,6 +78,13 @@ def _git_diff_text(cwd: pathlib.Path, range_spec: str) -> tuple[int, str, str]:
     Bytes are decoded lossily, since a valid diff can be non-UTF-8. Fixed argv from
     operator input; the hardening flags keep a poisoned `.git/config` from running
     `diff.external` or a textconv on the host.
+
+    Args:
+        cwd: The repo.
+        range_spec: The revision range, such as `base..tip`.
+
+    Returns:
+        The exit code, stdout and stderr.
     """
     proc = subprocess.run(
         [

@@ -98,6 +98,9 @@ def _resolve_provider_name(provider: str) -> str | None:
     The name becomes the table key `[providers.<name>]`; `connect` does not re-validate the
     file after writing, so a name with a space, dot or bracket would corrupt it.
 
+    Args:
+        provider: The name; blank prompts for one.
+
     Returns:
         The name, or None after the error.
     """
@@ -224,6 +227,9 @@ class _CallbackServer:
     def wait(self, timeout_s: float) -> str | None:
         """Wait for the code, polling so Ctrl-C lands promptly.
 
+        Args:
+            timeout_s: The longest wait.
+
         Returns:
             The code, or None on timeout.
         """
@@ -244,6 +250,9 @@ def _gui_browser_available() -> bool:
 
     On a display-less Linux box `webbrowser.open` falls back to a console browser, which
     takes over the terminal the sign-in prompt lives on; there the printed URL is the flow.
+
+    Returns:
+        True on macOS and Windows; elsewhere, when `DISPLAY` or `WAYLAND_DISPLAY` is set.
     """
     if sys.platform in ("darwin", "win32"):
         return True
@@ -252,6 +261,10 @@ def _gui_browser_available() -> bool:
 
 def _code_via_callback_server(url: str, state: str) -> str | None:
     """Open the browser and wait on localhost for the redirect: the GUI path.
+
+    Args:
+        url: The authorize URL the browser opens.
+        state: The state the callback must echo.
 
     Returns:
         The code, or None on timeout, Ctrl-C or an unbindable port; the caller falls back.
@@ -281,8 +294,13 @@ def _grant_via_device_code(
 
     The no-display path: nothing to forward over SSH.
 
+    Args:
+        issuer: The OAuth issuer.
+        client_id: The client registration.
+        provider: The provider name, for the reconnect hint.
+
     Returns:
-        The grant, or None when the issuer has the flow disabled, on refusal or on Ctrl-C;
+        The grant, or None when the issuer has the flow disabled, on an error or on Ctrl-C;
         the caller falls back to pasting the callback URL.
     """
     try:
@@ -379,6 +397,9 @@ def _claude_code_check(name: str) -> None:
 
     No secret to store: the binary carries the operator's own login. `connect` checks
     `claude` on PATH; the run preflight and `agent6 model` check `[providers.<name>].binary`.
+
+    Args:
+        name: The provider name, for the warning.
     """
     err = claude_code.login_status("claude")
     if err is None:
@@ -389,6 +410,10 @@ def _claude_code_check(name: str) -> None:
 
 def _prompt_api_format(name: str, preset_format: str) -> str | None:
     """Return the api_format for the provider: the preset's, else the operator's answer.
+
+    Args:
+        name: The provider name, for the prompt.
+        preset_format: The preset's format; "" for a custom name.
 
     Returns:
         The format, or None (after printing why) on no input or an unknown value.

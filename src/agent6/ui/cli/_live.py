@@ -83,6 +83,9 @@ def should_spawn_tui(*, tui: bool, interactive: bool, mode: str) -> bool:
         tui: The `--tui` flag.
         interactive: The `-i` flag.
         mode: The session mode.
+
+    Returns:
+        True to open the dashboard.
     """
     if not tui:
         return False
@@ -105,14 +108,15 @@ def should_spawn_tui(*, tui: bool, interactive: bool, mode: str) -> bool:
 def stream_modes(*, tui_enabled: bool) -> tuple[bool, bool]:
     """Return `(stream_text, console_stream)` for the worker provider.
 
-    `stream_text` makes the provider emit the delta events every live view renders;
-    `console_stream` also subscribes a `ConsoleView` to render them on stderr.
     Streaming is on for a stderr TTY, under `AGENT6_FORCE_STREAM=1` (a gateway that
     corrupts a non-streaming body), and under `AGENT6_STREAM_TO_LOG=1`, which the
     `tui` hub sets for a run it watches on the dashboard: deltas without the echo.
 
     Args:
         tui_enabled: The dashboard owns the terminal.
+
+    Returns:
+        Whether the provider streams text, and whether a console view renders the run on stderr.
     """
     stream_to_log = os.environ.get("AGENT6_STREAM_TO_LOG") == "1"
     stream_text = (

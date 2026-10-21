@@ -33,6 +33,9 @@ from agent6.viewmodel import config_view
 def _require_machine_file(machine: pathlib.Path | None) -> None:
     """Refuse a missing machine file instead of treating it as empty.
 
+    Args:
+        machine: The `--machine-file` path, None when none is named.
+
     Raises:
         OperatorError: The file does not exist.
     """
@@ -42,6 +45,9 @@ def _require_machine_file(machine: pathlib.Path | None) -> None:
 
 def _read_machine_overlay(machine: pathlib.Path | None) -> dict[str, object] | None:
     """Read a machine file's `[config]` overlay.
+
+    Args:
+        machine: The `--machine-file` path.
 
     Returns:
         The overlay; None when no file is named.
@@ -142,6 +148,9 @@ def _cmd_config_path() -> int:
 
 def _cmd_config_presets(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     """Print every known preset with the overrides it applies, the selected one marked.
+
+    Args:
+        config_paths: The invocation's `--config`.
 
     Returns:
         The exit code.
@@ -261,11 +270,13 @@ def _sandbox_problems(
 ) -> dict[str, str]:
     """Return the problem `machine check` reports per sandbox key of a machine's `[config]`.
 
-    Empty where this host lacks an explicit isolation level: `machine check` reports that.
-
     Args:
         overlay: The `[config]` table.
         config_paths: The invocation's `--config`, part of the operator's ceiling.
+
+    Returns:
+        The problem per key the overlay widens; empty when this host cannot provide an
+        explicit `sandbox.isolation` level, which `machine check` reports.
 
     Raises:
         ConfigError: A layer does not load.
@@ -296,6 +307,9 @@ def _added_widening(
         prior_text: The file before the write; None when it did not exist.
         overlay: The `[config]` table as the file now holds it.
         config_paths: The invocation's `--config`, part of the operator's ceiling.
+
+    Returns:
+        The refusals, one per line; None when the edit added no widening.
 
     Raises:
         ConfigError: A layer does not load.
@@ -396,6 +410,14 @@ def _flag_shadow_note(key: str, config_paths: tuple[pathlib.Path, ...]) -> str |
     """Return a note when a `--config FILE` in force sets the key the write just landed under.
 
     Under several files the note names the last one that sets the key: its value wins.
+
+    Args:
+        key: The dotted key the write set or removed.
+        config_paths: The invocation's `--config`.
+
+    Returns:
+        The note; None when no `--config` file sets the key, the key is a table, or the config
+        does not load.
     """
     if not config_paths:
         return None

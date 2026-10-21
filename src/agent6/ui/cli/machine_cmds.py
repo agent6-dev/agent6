@@ -96,8 +96,12 @@ def _cmd_machine_list() -> int:
 def machine_file(given: pathlib.Path) -> pathlib.Path:
     """Return the machine file an argument names: a path, or the name `machine list` prints.
 
-    An existing path wins over a name; a name no authored file declares stays the path it
-    was typed as, so the loader reports it.
+    Args:
+        given: The argument as typed.
+
+    Returns:
+        The path when it exists, else the authored file declaring the name; a name no
+        authored file declares stays the path it was typed as, so the loader reports it.
 
     Raises:
         OperatorError: Several authored files declare the name.
@@ -124,12 +128,16 @@ def _no_instance_hint(machine_id: str, cwd: pathlib.Path) -> str:
     """Return the next step for a missing-instance error.
 
     `machine run` takes a file; status, replay, poke, stop and `agent6 attach` take an
-    instance id. Given an `.asm.toml` file, its `machine` name suggests the instance id;
-    else the closest name or the available instances and list/start commands are offered.
+    instance id.
 
     Args:
         machine_id: The argument as given.
         cwd: The repo.
+
+    Returns:
+        The hint, starting with a space: for a machine file, the instance id its `machine`
+        name matches, or the command to run it, or to check it when it does not load;
+        otherwise the closest instance id, or the existing ones and the list and start commands.
     """
     machines = layout.machines_root(paths.state_dir(cwd))
     existing = sorted(p.name for p in machines.iterdir() if p.is_dir()) if machines.is_dir() else []
@@ -178,6 +186,10 @@ def machine_instance_root(machine_id: str, cwd: pathlib.Path) -> pathlib.Path | 
 def _existing_machine_root(machine_id: str, cwd: pathlib.Path) -> pathlib.Path | None:
     """Resolve an instance id, printing the shared missing-instance error.
 
+    Args:
+        machine_id: The instance id as given.
+        cwd: The repo.
+
     Returns:
         The instance dir, or None after the error.
     """
@@ -193,8 +205,11 @@ def _existing_machine_root(machine_id: str, cwd: pathlib.Path) -> pathlib.Path |
 def _cmd_machine_replay(machine_id: str) -> int:
     """Re-run a machine's journal offline and print the result.
 
+    Args:
+        machine_id: The instance.
+
     Returns:
-        The exit code; 1 when the replay did not end ok.
+        The exit code; 1 when the replay ended neither ok nor incomplete.
     """
     cwd = pathlib.Path.cwd()
     root = _existing_machine_root(machine_id, cwd)
@@ -227,6 +242,10 @@ def _armed_wait_tolerant(root: pathlib.Path, ms: MachineState) -> tuple[PendingW
     Args:
         root: The instance dir.
         ms: The machine state.
+
+    Returns:
+        The armed wait (None when none is armed) and ""; for a corrupt wait.json, None
+        and the error text.
     """
     try:
         return armed_wait(root, ms), ""
@@ -236,6 +255,9 @@ def _armed_wait_tolerant(root: pathlib.Path, ms: MachineState) -> tuple[PendingW
 
 def _cmd_machine_status(machine_id: str) -> int:
     """Print an instance's state, current wait and recent history.
+
+    Args:
+        machine_id: The instance.
 
     Returns:
         The exit code; 1 when the journal cannot be read.
@@ -365,6 +387,9 @@ def _cmd_machine_stop(machine_id: str) -> int:
     journaling an end, so the instance stays resumable. A machine that is not running gets
     the note and exit 0, as `agent6 stop` answers, and no marker to ambush the next run.
 
+    Args:
+        machine_id: The instance.
+
     Returns:
         The exit code.
     """
@@ -434,6 +459,9 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
 
     Read-only. Exits when the worker is dead (parked or crashed), when the instance ended,
     or on Ctrl-C.
+
+    Args:
+        machine_id: The instance.
 
     Returns:
         The exit code.

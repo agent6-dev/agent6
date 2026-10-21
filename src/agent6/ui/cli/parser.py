@@ -81,6 +81,12 @@ def config_files(args: argparse.Namespace) -> tuple[pathlib.Path, ...]:
 
     The top-level flag appends to `config`, a verb's to `config_after` (absent when no verb
     saw one); the merge happens once, at dispatch, and the app layer below sees one tuple.
+
+    Args:
+        args: The parsed command line.
+
+    Returns:
+        The files.
     """
     return (*(args.config or []), *getattr(args, "config_after", ()))
 
@@ -88,8 +94,10 @@ def config_files(args: argparse.Namespace) -> tuple[pathlib.Path, ...]:
 def _shell_default_help() -> str:
     """Return the completions `shell` help, naming what detection resolves to.
 
-    Detection walks the process tree (a fish inside bash detects fish); unknown keeps the
-    generic wording.
+    Detection walks the process tree (a fish inside bash detects fish).
+
+    Returns:
+        The help naming the detected shell; an unknown shell keeps the generic wording.
     """
     from agent6.ui.cli import completions_cmd  # noqa: PLC0415  # noqa: PLC0415
 
@@ -103,6 +111,9 @@ def _command_index(argv: list[str]) -> int | None:
     """Return the index of the subcommand token, skipping leading global options.
 
     `["--config", "c.toml", "plan", ...]` gives 2.
+
+    Args:
+        argv: The command line after the program name.
 
     Returns:
         The index, or None when a global help or version flag comes first or no command
@@ -130,7 +141,14 @@ def _inject_default_verb(argv: list[str]) -> list[str]:
     """Return argv with a group's implicit verb inserted when the next token is not one.
 
     `["plan", "fix the bug"]` becomes `["plan", "run", "fix the bug"]`. Leading global
-    options are skipped to find the command; an explicit verb or `-h`/`--help` is left as is.
+    options are skipped to find the command.
+
+    Args:
+        argv: The command line after the program name.
+
+    Returns:
+        The argv with the verb after the command; an explicit verb, `-h`/`--help`, or a
+        non-option word after a group in `_BARE_DEFAULT_GROUPS` is left as is.
     """
     ci = _command_index(argv)
     if ci is None or argv[ci] not in _DEFAULT_VERBS:
@@ -149,6 +167,10 @@ def _directories_epilog() -> str:
     """Return where agent6 keeps things, resolved, for the bottom of `--help`.
 
     Paths only, each a plain env or home lookup, so building the parser stays cheap.
+
+    Returns:
+        The epilog: one row per directory (config, state, data, cache) with what it holds,
+        then the `agent6 config path` hint.
     """
     user = paths.effective_user()
     rows = (

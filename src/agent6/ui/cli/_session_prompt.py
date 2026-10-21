@@ -26,6 +26,9 @@ def prompting_is_possible() -> bool:
     A tty is not enough: `agent6 run ... &` keeps one on stdin, and a read from a
     background process group raises SIGTTIN, suspending the job instead of finishing
     it. The foreground check also covers a tty with nobody at it (`docker run -t`).
+
+    Returns:
+        True when stdin is a terminal with this process in the foreground.
     """
     if not sys.stdin.isatty():
         return False
@@ -38,9 +41,13 @@ def prompting_is_possible() -> bool:
 def follow_up_on_offer(session_dir: pathlib.Path) -> bool:
     """Return whether the run can take a follow-up execution from here.
 
-    Not after a detach (the run goes on in the background), an `/undo` (the fork it
-    named is the continuation) or an `/exit` (asking again would reopen what the
-    operator closed); each printed its own line.
+    Args:
+        session_dir: The session dir, whose log says whether and why the execution ended.
+
+    Returns:
+        False after a detach (the run goes on in the background), an `/undo` (the fork
+        it named is the continuation) or an `/exit` (asking again would reopen what the
+        operator closed); each printed its own line.
     """
     scan = _session_log.scan_session_log(session_dir / layout.LOGS_NAME)
     return scan.finished and scan.end_reason not in ("undone", "steer_exit")

@@ -64,6 +64,13 @@ def _not_mergeable_now(layout: sessions_layout.SessionLayout, session_id: str) -
     """Return why the run's work is not for merging: a live worker, or an `/undo` took it back.
 
     The raw pid, not session_is_live: after session.end the finalizer may still be at work.
+
+    Args:
+        layout: The run.
+        session_id: The id the refusal names.
+
+    Returns:
+        The refusal, or "" when nothing blocks the merge.
     """
     if process.worker_is_alive(layout.session_dir):
         return (
@@ -204,6 +211,13 @@ def _manual_merge_cmd(cwd: pathlib.Path, plan: _MergePlan) -> str:
     Git refuses to merge over modified tracked files, and a finished run leaves its work in
     the tree until merged, so a dirty tree is stashed first; a checkout on another branch
     moves to the target.
+
+    Args:
+        cwd: The repo.
+        plan: The merge that conflicted.
+
+    Returns:
+        The git commands, joined by `&&`.
     """
     steps: list[str] = []
     with contextlib.suppress(errors.GitError):
@@ -299,6 +313,9 @@ def _session_stamp(
 ) -> tuple[sessions_manifest.MergeStamp | None, str]:
     """Return a session's recorded merge and why none could be read.
 
+    Args:
+        layout: The run; None when it has no session record.
+
     Returns:
         `(stamp, reason)`: the reason names a missing or unreadable record, or an unstarted
         fork (kept, never deleted), else ""; the stamp is None when the manifest records no merge.
@@ -330,6 +347,9 @@ def _squash_unconfirmed(cwd: pathlib.Path, stamp: sessions_manifest.MergeStamp) 
     Args:
         cwd: The repo.
         stamp: The merge stamp.
+
+    Returns:
+        The keep reason; "" when both checks pass.
     """
     if not stamp.tip:
         return "no merge tip was recorded"
@@ -371,6 +391,9 @@ def landed(
         stamp: The merge stamp.
         tip: The branch's or chain ref's sha; None when the branch is gone.
         delete_squashed: `--delete-squashed` was given.
+
+    Returns:
+        The verdict, with the keep reason when it is `keep`.
     """
     if not git_ops.branch_exists(cwd, stamp.into):
         return Landed("keep", _base_gone(stamp.into))

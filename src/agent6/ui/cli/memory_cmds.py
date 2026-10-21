@@ -19,6 +19,9 @@ def _state() -> pathlib.Path:
     """Return the cwd repo's state dir, with an old `memory/DECISIONS.md` moved out of the store.
 
     The move, or a stray file ignored, is reported on stderr: stdout is the command's output.
+
+    Returns:
+        The state dir.
     """
     state = paths.state_dir(pathlib.Path.cwd())
     if note := memory.migrate_legacy_decisions(state):
@@ -28,6 +31,10 @@ def _state() -> pathlib.Path:
 
 def _cmd_memory_add(name: str, body: str) -> int:
     """Write a memory and print its path.
+
+    Args:
+        name: The new memory.
+        body: The memory's text.
 
     Returns:
         The exit code, 0.
@@ -61,9 +68,13 @@ def _cmd_memory_list() -> int:
 def format_use(use: memory.MemoryUse) -> str:
     """Return a memory's use record as one line.
 
-    The parts are `written <date> by <session>`, `edited <date> by <session>` and
-    `read once|N times, last <date> by <session>` or `never read`; a part the record does
-    not hold is left out.
+    Args:
+        use: The memory's record.
+
+    Returns:
+        The parts the record holds, joined by commas: `written <date> by <session>`,
+        `edited <date> by <session>`, and `read once|N times, last <date> by <session>`
+        or `never read`.
     """
     parts: list[str] = []
     created, updated = use.created, use.updated
@@ -87,6 +98,9 @@ def _when_by(touch: memory.Touch) -> str:
 
 def _cmd_memory_show(name: str) -> int:
     """Print a memory's body.
+
+    Args:
+        name: The memory.
 
     Returns:
         The exit code, 0.

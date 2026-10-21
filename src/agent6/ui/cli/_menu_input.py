@@ -101,6 +101,13 @@ def read_line_until(fd: int, until: Callable[[], bool] | None) -> str | None:
 def _read_key_until(fd: int, until: Callable[[], bool]) -> str:
     """Return the next key, polling `until` every 0.2 s while nothing is typed.
 
+    Args:
+        fd: The terminal, in cbreak mode.
+        until: Holds once another route answered the line.
+
+    Returns:
+        The key, as `_read_key` names it.
+
     Raises:
         LineSuperseded: `until` held first.
     """
@@ -229,7 +236,9 @@ class _Reader:
     def _rows(self) -> tuple[list[tuple[str, str]], int]:
         """Return the rows under the input line as (label, dim tail) pairs and the highlight.
 
-        The highlight is -1 for none; a search marker is all dim, with an empty label.
+        Returns:
+            The rows and the highlighted row's index, -1 for none; a search marker is all
+            dim, with an empty label.
         """
         if self.searching:
             if not self.hits:

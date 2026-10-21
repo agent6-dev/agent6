@@ -229,6 +229,9 @@ class ConsoleView:
         """Print the task tree when it first appears and each time it grows.
 
         A single root is not a plan worth a block.
+
+        Args:
+            event: A `graph.update` event.
         """
         nodes = event.get("nodes", {}) or {}
         if not isinstance(nodes, dict) or len(nodes) <= 1 or len(nodes) <= self._plan_count:
@@ -248,6 +251,9 @@ class ConsoleView:
 
         An in-flight tool call prints nothing; the settled item prints the call whole.
         The task headline sits at the margin, over everything the run did.
+
+        Args:
+            item: The fold item.
         """
         if item.kind == "tool" and item.ok is None:
             return
@@ -284,6 +290,9 @@ class ConsoleView:
 
         A per-token flush on a slow terminal backpressures the SSE read in the same
         thread and can stall the stream.
+
+        Args:
+            text: A piece of the open prose block.
         """
         self._clear_status()
         self._out.write(text)

@@ -98,6 +98,9 @@ def _relay(master: int, proc: jail.JailedProcess) -> None:
 def _exit_on_signal(signum: int, _frame: types.FrameType | None) -> None:
     """Turn a terminating signal into an exit, so `run_attached` cleans up.
 
+    Args:
+        signum: The signal received.
+
     Raises:
         SystemExit: Always, with 128 plus the signal.
     """

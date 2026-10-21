@@ -105,8 +105,11 @@ def _discard_failed_install() -> None:
 def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
     """Install, remove or report the agent6-jail AppArmor profile.
 
+    Args:
+        action: The `agent6 system apparmor` action.
+
     Returns:
-        The exit code; 1 when the host lacks AppArmor or a step failed.
+        The exit code; 1 when the action failed, or on `install` when the host lacks AppArmor.
     """
     installed = pathlib.Path(_APPARMOR_PROFILE_PATH).is_file()
 

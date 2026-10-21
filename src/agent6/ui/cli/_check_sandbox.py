@@ -66,8 +66,12 @@ def _with_defaults(rows: list[Row], *defaults: Row) -> list[Row]:
 def grant_rows(grants: tools_policy.Grants) -> list[Row]:
     """Return the rows of the extra path grants the file tools and jailed commands share.
 
-    Each row names the resolved path a run binds, with the configured spelling when the two
-    differ, and each grant a run leaves out says why.
+    Args:
+        grants: The config's resolved path grants.
+
+    Returns:
+        Each row names the resolved path a run binds, with the configured spelling when the two
+        differ, and each grant a run leaves out says why.
     """
 
     def row(mode: str, key: str, path: pathlib.Path, real: pathlib.Path) -> Row:
@@ -100,7 +104,17 @@ def _home_row(
     root: pathlib.Path,
     git_grant: pathlib.Path | None,
 ) -> Row:
-    """Return the jail's HOME row: `full`'s tmpfs, or the repository's cache dir and why."""
+    """Return the jail's HOME row: `full`'s tmpfs, or the repository's cache dir and why.
+
+    Args:
+        cfg: The config; under `full`, `sandbox.home` picks the tmpfs or the cache dir.
+        selected: The resolved isolation level.
+        root: The workspace root, whose repository names the cache dir.
+        git_grant: The repository git dir a fork's worktree grants, or None.
+
+    Returns:
+        The row, read-write either way.
+    """
     persistent = tools_policy.persistent_jail_home(cfg, selected, root, git_grant)
     if persistent is None:
         return Row("rw", tools_policy.JAIL_TMP_HOME, "HOME, inside the private /tmp")
@@ -118,6 +132,15 @@ def _fork_git_grant(
     """Return the repository git dir a fork's worktree grants a jailed command, or None.
 
     Resolved through the execution's own policy builder, so the row matches the grant.
+
+    Args:
+        cfg: The config, passed to the policy builder.
+        ws: The workspace, looked up among the worktrees the session manifests name.
+        selected: The resolved isolation level.
+
+    Returns:
+        The git dir; None under `none`, outside a git repository, or when no session recorded
+        one for this workspace.
     """
     if selected == "none":
         return None
@@ -143,7 +166,15 @@ def _tool_rows() -> list[Row]:
 
 
 def _file_tool_rows(ws: _path_safety.Workspace, grants: tools_policy.Grants) -> list[Row]:
-    """Return what the in-process file tools reach, at every isolation level."""
+    """Return what the in-process file tools reach, at every isolation level.
+
+    Args:
+        ws: The tools' workspace: its root, the memory dir it exempts, the dirs it hides.
+        grants: The config's resolved path grants.
+
+    Returns:
+        One row per path, with `--` rows for / and the home dir unless a row names them.
+    """
     home = agent6_paths.effective_user().home.resolve()
     rows = [Row("rw", ws.root, "the workspace"), *grant_rows(grants)]
     rows += [Row("rw", p, "repo memory, inside the hidden state dir") for p in sorted(ws.exempt)]
@@ -156,7 +187,16 @@ def _file_tool_rows(ws: _path_safety.Workspace, grants: tools_policy.Grants) -> 
 
 
 def _unconfined_rows(cfg: Config, root: pathlib.Path) -> list[Row]:
-    """Return what a command reaches with no jail: everything, the private dirs included."""
+    """Return what a command reaches with no jail: everything, the private dirs included.
+
+    Args:
+        cfg: The config, for the HOME row.
+        root: The workspace root, for the HOME row.
+
+    Returns:
+        One row per path: /, the home dir, the commands' HOME, and agent6's config and state
+        dirs.
+    """
     user = agent6_paths.effective_user()
     rows = [
         Row(
@@ -180,7 +220,18 @@ def _command_rows(
     selected: kinds.IsolationLevel,
     git_grant: pathlib.Path | None,
 ) -> list[Row]:
-    """Return what a jailed command reaches under `full` or `partial`."""
+    """Return what a jailed command reaches under `full` or `partial`.
+
+    Args:
+        cfg: The config whose `sandbox` settings the rows show.
+        ws: The workspace, whose root a command writes.
+        grants: The config's resolved path grants.
+        selected: The resolved isolation level.
+        git_grant: The repository git dir a fork's worktree grants, or None.
+
+    Returns:
+        One row per path, with `--` rows for / and the home dir unless a row names them.
+    """
     home = agent6_paths.effective_user().home.resolve()
     net = tools_policy.resolve_network(cfg, selected)
     rows = [Row("rw", ws.root, "the workspace")]
@@ -294,7 +345,13 @@ def _mcp_lines(cfg: Config, root: pathlib.Path, selected: kinds.IsolationLevel) 
 
 
 def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel) -> None:
-    """Print the resolved isolation and why, then the command, network and memory settings."""
+    """Print the resolved isolation and why, then the command, network and memory settings.
+
+    Args:
+        cfg: The config.
+        env: The detected host.
+        selected: The resolved isolation level.
+    """
     if selected == "none":
         print(f"  isolation: none  ({_setup.no_jail_cause(cfg, env)})")
     else:
@@ -333,6 +390,11 @@ def _probe(
     cfg: Config, isolation: kinds.IsolationLevel, env: detect.Environment
 ) -> list[kinds.SandboxReport]:
     """Run the jail's live probes under the selected isolation.
+
+    Args:
+        cfg: The config, whose network the network probe's detail names.
+        isolation: The resolved isolation level; only `full` probes the network.
+        env: The detected host, unused.
 
     Returns:
         One report per probe.
@@ -432,6 +494,11 @@ def _probe_checks(
 
     No jail means nothing to probe: an operator's `none` is a WARN naming the setting, a
     host that cannot sandbox is a FAIL.
+
+    Args:
+        cfg: The config.
+        env: The detected host.
+        selected: The resolved isolation level.
 
     Returns:
         The `sandbox` row.

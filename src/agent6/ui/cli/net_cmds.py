@@ -105,6 +105,12 @@ def no_session_network_reason(layout: sessions_layout.SessionLayout) -> str:
 
     The run is not live (its network lives only while it does), or a live run made none
     (host network, or an isolation short of full).
+
+    Args:
+        layout: The run.
+
+    Returns:
+        The refusal text, which names the session.
     """
     if not session_is_live(layout.session_dir):
         word = summarize_session_dir(layout.session_dir).status
@@ -210,9 +216,12 @@ def _stamped_policy(
 ) -> tuple[str, kinds.NetworkMode | None] | None:
     """Return the run's recorded `(isolation, network)`.
 
+    Args:
+        layout: The run.
+
     Returns:
-        The stamp, or None when unreadable or unstamped; an unknown network word reads as
-        unset rather than guessed.
+        The stamp, or None when unreadable or unstamped; its network is None when `auto` or
+        unknown.
     """
     try:
         stamp = manifest.read_manifest(layout.session_dir).policy
@@ -231,6 +240,10 @@ def _recorded_workspace(
     layout: sessions_layout.SessionLayout, cwd: pathlib.Path
 ) -> tuple[pathlib.Path, pathlib.Path | None]:
     """Return where the run's commands run and the git dir recorded for it.
+
+    Args:
+        layout: The run.
+        cwd: The checkout.
 
     Returns:
         The session's linked worktree and its repository git dir when the manifest records

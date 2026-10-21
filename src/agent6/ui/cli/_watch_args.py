@@ -223,6 +223,9 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
 
     Top-level verbs, like `attach`, because they act on a running session; `exec --new`
     alone needs none.
+
+    Args:
+        sub: The top-level subparsers.
     """
     exec_p = _common._sub(
         sub,

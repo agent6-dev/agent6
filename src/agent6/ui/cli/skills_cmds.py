@@ -77,6 +77,12 @@ def _toml_str(value: str) -> str:
 
     A quote in a source path would otherwise make the hand-built origin unparseable, and
     `skills update` would lose its source.
+
+    Args:
+        value: An origin field's value.
+
+    Returns:
+        The quoted value.
     """
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -111,6 +117,12 @@ def _fetch_url(url: str) -> str:
     Refused past `_FETCH_MAX_BYTES` while it arrives, past `_FETCH_TIMEOUT_S` from its
     first byte, or under a content-encoding other than identity.
 
+    Args:
+        url: A SKILL.md URL.
+
+    Returns:
+        The decoded body.
+
     Raises:
         OperatorError: The fetch was refused, failed, or the body is not UTF-8.
     """
@@ -140,6 +152,13 @@ def _fetch_url(url: str) -> str:
 def _skill_name_from_text(text: str, source: str) -> str:
     """Return the skill's name from its SKILL.md frontmatter, gated as discovery gates it.
 
+    Args:
+        text: The SKILL.md text.
+        source: The URL or path a refusal names.
+
+    Returns:
+        The name, safe as one path component.
+
     Raises:
         OperatorError: The frontmatter lacks a name or description, or the name is not one
             safe path component.
@@ -165,6 +184,13 @@ def _refuse_existing(name: str, *, force: bool) -> pathlib.Path:
     Never clears: the old install survives until the staged replacement is fully built
     (`_publish_staged`), so a copy or write fault cannot destroy a good skill.
 
+    Args:
+        name: The skill's frontmatter name.
+        force: Allow an existing install.
+
+    Returns:
+        The skill's dir in the managed skills dir.
+
     Raises:
         OperatorError: The skill is installed and `--force` was not given.
     """
@@ -183,6 +209,10 @@ def _publish_staged(staging: pathlib.Path, target: pathlib.Path) -> None:
 
     The dot-prefixed staging name fails the skill-name gate, so a crash's leftover is
     invisible to discovery.
+
+    Args:
+        staging: The built dir, beside the target.
+        target: The skill's dir in the managed skills dir.
     """
     if target.exists():
         shutil.rmtree(target)
@@ -231,6 +261,11 @@ def _install_skill_dir(
 def _install_skill_text(text: str, *, url: str, force: bool) -> str:
     """Install a single-file skill from raw SKILL.md text.
 
+    Args:
+        text: The SKILL.md text.
+        url: The source, for the origin file.
+        force: Replace an existing install.
+
     Returns:
         The installed name.
 
@@ -256,6 +291,10 @@ def _install_skill_text(text: str, *, url: str, force: bool) -> str:
 
 def _git_clone(url: str, dest: pathlib.Path) -> str:
     """Shallow-clone an operator-chosen URL; nothing in it is executed.
+
+    Args:
+        url: The repository URL.
+        dest: The clone's directory.
 
     Returns:
         The clone's HEAD sha.
@@ -287,6 +326,13 @@ def _source_declaring(candidates: list[pathlib.Path], name: str) -> pathlib.Path
     """Return the skill directory whose SKILL.md declares the name, or None.
 
     A skill installs under its frontmatter name, which need not be its directory's.
+
+    Args:
+        candidates: The origin's skill directories.
+        name: The installed skill's name.
+
+    Returns:
+        The first valid candidate that declares it; None means the skill is gone from its origin.
     """
     for d in candidates:
         try:
@@ -313,6 +359,10 @@ def _repo_skill_dirs(root: pathlib.Path) -> list[pathlib.Path]:
 def _refuse_any_existing(dirs: list[pathlib.Path], *, force: bool) -> None:
     """Pre-check every skill name of a multi-skill install, so a conflict refuses the whole install.
 
+    Args:
+        dirs: The skill directories about to be installed.
+        force: Replace existing installs, so nothing is checked.
+
     Raises:
         OperatorError: A skill is already installed and `--force` was not given.
     """
@@ -334,11 +384,15 @@ def _refuse_any_existing(dirs: list[pathlib.Path], *, force: bool) -> None:
 def _install_from_local(local: pathlib.Path, *, force: bool) -> list[str]:
     """Install from a local SKILL.md file, one skill dir, or a repo checkout.
 
+    Args:
+        local: An existing file or directory.
+        force: Replace existing installs.
+
     Returns:
-        The installed names.
+        The installed names; empty when a directory holds no skill.
 
     Raises:
-        OperatorError: The path holds no skill, or an install refused.
+        OperatorError: A file holds no skill, or an install refused.
     """
     src_url = str(local.resolve())
     if local.is_file():
@@ -354,6 +408,10 @@ def _install_from_local(local: pathlib.Path, *, force: bool) -> list[str]:
 
 def _install_from_git(url: str, *, force: bool) -> list[str]:
     """Install every skill a git repository ships.
+
+    Args:
+        url: The repository URL.
+        force: Replace existing installs.
 
     Returns:
         The installed names.
@@ -431,6 +489,10 @@ def _cmd_skills_install(
 def _print_disabled_notes(installed: list[str], config_paths: tuple[pathlib.Path, ...]) -> bool:
     """Name every installed skill a surviving `skills.state = "disabled"` leaf covers.
 
+    Args:
+        installed: The names just installed.
+        config_paths: The `--config` files in command-line order, if any.
+
     Returns:
         Whether any was named; the closing line must not then read "active".
     """
@@ -447,6 +509,12 @@ def _state_map(config_paths: tuple[pathlib.Path, ...]) -> dict[str, str]:
     """Return the effective `[skills.state]` map, or {} when config is unreadable.
 
     The notes built on it then just do not print; the command's own work is already done.
+
+    Args:
+        config_paths: The `--config` files in command-line order, if any.
+
+    Returns:
+        The configured states by skill name: `enabled`, `disabled` or `always`.
     """
     try:
         return dict(layer.load_effective(pathlib.Path.cwd(), config_paths).config.skills.state)
@@ -576,6 +644,9 @@ def _cmd_skills_update(name: str) -> int:
 def _cmd_skills_list(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     """List the installed skills grouped by origin, with their state when any is not enabled.
 
+    Args:
+        config_paths: The `--config` files in command-line order, if any.
+
     Returns:
         The exit code, 0.
     """
@@ -641,6 +712,13 @@ def _known_skill_names(
     An empty tuple would make `skills enable` and `disable` answer "unknown skill", sending
     the operator after a skill that is only unreadable.
 
+    Args:
+        repo_root: The repo.
+        config_paths: The `--config` files in command-line order, if any.
+
+    Returns:
+        The names discovery finds in `[skills].extra_dirs` and the managed dir.
+
     Raises:
         OperatorError: The installed skills could not be read.
     """
@@ -660,6 +738,11 @@ def _require_known(
     name: str, repo_root: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> None:
     """Refuse a name no installed skill has.
+
+    Args:
+        name: The skill.
+        repo_root: The repo.
+        config_paths: The `--config` files in command-line order, if any.
 
     Raises:
         OperatorError: The skill is unknown.
@@ -712,6 +795,11 @@ def _cmd_skills_disable(
 ) -> int:
     """Set a skill's state to disabled.
 
+    Args:
+        name: The skill.
+        repo: Write to the repo config.
+        config_paths: The `--config` files in command-line order, if any.
+
     Returns:
         The exit code, 0.
 
@@ -734,6 +822,10 @@ def _cmd_skills_remove(name: str, config_paths: tuple[pathlib.Path, ...] = ()) -
 
     The name becomes a path component under that dir and an rmtree target, so it must be
     one safe component, the same gate install applies.
+
+    Args:
+        name: The skill.
+        config_paths: The `--config` files in command-line order, if any.
 
     Returns:
         The exit code, 0.
@@ -772,6 +864,12 @@ def resolved_skill_names_for_completion(repo_root: pathlib.Path) -> list[str]:
 
     A shell completion has nowhere to show an error and must not raise into the shell, so a
     discovery failure is nothing at all.
+
+    Args:
+        repo_root: The repo.
+
+    Returns:
+        The names discovery finds in `[skills].extra_dirs` and the managed dir.
     """
     try:
         return list(_known_skill_names(repo_root))

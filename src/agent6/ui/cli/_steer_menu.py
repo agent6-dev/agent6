@@ -86,6 +86,9 @@ def skill_menu_table(config_paths: tuple[pathlib.Path, ...] = ()) -> dict[str, t
 
     Args:
         config_paths: The invocation's `--config`.
+
+    Returns:
+        The skill commands.
     """
     try:
         cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
@@ -268,6 +271,9 @@ def _line_reader(
         session_dir: The run's dir.
         offered: The commands and their help.
         skills: The skill commands.
+
+    Returns:
+        Reads one line for a prompt; raises `LineSuperseded` once a steer answer is on disk.
     """
     arrived = functools.partial(ipc.steer_answer_written, session_dir)
     _RECALL.seed(session_dir)

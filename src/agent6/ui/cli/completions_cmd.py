@@ -108,9 +108,10 @@ completer.add_one_completer("agent6", _agent6_completer, "start")
 def detect_shell() -> str:
     """Return the shell this command was launched from.
 
-    The nearest known shell up the process tree, since `$SHELL` is the login shell
-    and the direct parent can be a wrapper like `uv`; `$SHELL`'s basename when the
-    walk finds nothing (no `/proc`).
+    Returns:
+        The nearest known shell up the process tree, since `$SHELL` is the login shell
+        and the direct parent can be a wrapper like `uv`; `$SHELL`'s basename when the
+        walk finds nothing (no `/proc`).
     """
     pid = os.getppid()
     for _ in range(10):

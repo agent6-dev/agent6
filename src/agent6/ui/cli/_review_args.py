@@ -12,8 +12,14 @@ from agent6.ui.cli import _common, completers
 def _reviewer_count(raw: str) -> int:
     """Return the `--reviewers` count.
 
+    Args:
+        raw: The flag's value as typed.
+
+    Returns:
+        The count; 0 runs the single freeform review.
+
     Raises:
-        ArgumentTypeError: The count is under one.
+        ArgumentTypeError: The count is negative.
     """
     value = int(raw)
     if value < 0:

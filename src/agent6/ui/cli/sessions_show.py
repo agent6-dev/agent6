@@ -62,6 +62,9 @@ def _print_parallel_compare(manifest: sessions_manifest.SessionManifest) -> None
 
     The coordinator it nests under, then the compare outcome once there is one: its place,
     whether it won, judged or mechanical, and the judge's rationale.
+
+    Args:
+        manifest: The run's manifest.
     """
     if (lineage := manifest.parallel) is not None:
         print(f"lane of:    {lineage.coordinator} (lane {lineage.lane} of group {lineage.group})")
@@ -141,15 +144,18 @@ def _status_state(
 ) -> tuple[str, str, str]:
     """Return the run's state as `(status, label, detail)`.
 
-    The status is the listing's own word and the label its own rendering, so no second
-    rule can disagree with the listing about the mode fold or the unmerged mark. The detail
-    is this surface's diagnostic: what to do, or why the word applies. The text render
-    joins them; `--json` emits all three, so a script never parses prose.
+    The text render joins them; `--json` emits all three, so a script never parses prose.
 
     Args:
         row: The listing's fold of this run.
         scan: The log scan.
         last_age: Seconds since the last event, when there is one.
+
+    Returns:
+        The status is the listing's own word and the label its own rendering, so no second
+        rule can disagree with the listing about the mode fold or the unmerged mark. The
+        detail is this surface's diagnostic: what to do, or why the word applies; "" when
+        there is none.
     """
     word, reason = row.status, row.reason
     cell = format.listing_status_label(row.mode, row.status, row.reason, unmerged=row.unmerged)
@@ -258,10 +264,16 @@ def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resume: str
 def _usage_line(scan: LogScan) -> str:
     """Return the run's tokens and cost line.
 
-    `in` and `out`, the cached side when the journal recorded it, the plan points a
-    percent-metered execution consumed against its cap, then the cost as the listing's cell
-    spells it (blank for a clean $0). Token counters and the points against the cap are per
-    execution and the cost is banked across executions, so a resumed run says which is which.
+    Token counters and the points against the cap are per execution and the cost is banked
+    across executions, so a resumed run says which is which.
+
+    Args:
+        scan: The run's log scan.
+
+    Returns:
+        `in` and `out`, the cached side when the journal recorded it, the plan points a
+        percent-metered execution consumed against its cap, then the cost as the listing's
+        cell spells it (blank for a clean $0).
     """
     tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
     if scan.cache_read_tokens is not None or scan.cache_creation_tokens is not None:
@@ -456,6 +468,9 @@ def _changes(
         session_id: The session.
         manifest: Its manifest.
         undone: `/undo` took the work back, so no merge is offered.
+
+    Returns:
+        The text row ("" without a run branch) and the base the work is merged into ("" when none).
     """
     run_branch = manifest.run_branch or ""
     if not run_branch:
@@ -487,6 +502,9 @@ def _print_listening_ports(session_dir: pathlib.Path) -> None:
 
     A run's commands share a network with no way in from outside, so a dev server the agent
     started is invisible here, its port included; the line names the command that opens it.
+
+    Args:
+        session_dir: The run's dir.
     """
     ports = process.listening_ports(session_dir)
     if not ports:

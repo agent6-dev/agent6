@@ -170,12 +170,15 @@ def delete_confirmed(what: str, question: str) -> bool:
     """Return whether a delete goes ahead, asking first on the controlling terminal.
 
     The question goes to the terminal itself, so a redirected stdin or stdout does not skip
-    it and piped input is never read as the answer. With no controlling terminal nothing is
-    asked, so a script keeps working. `sessions rm` and `memory rm` ask here.
+    it and piped input is never read as the answer. `sessions rm` and `memory rm` ask here.
 
     Args:
         what: The lines naming what will go.
         question: The question, without its `[y/N]` suffix.
+
+    Returns:
+        True on a yes, or with no controlling terminal so a script keeps working; False
+        after printing "nothing was deleted".
     """
     if not portable.has_controlling_tty():
         return True
@@ -470,6 +473,9 @@ def make_steer_state(
         session_facts: Reads the facts the pause banner prints.
         btw_runner: Starts a btw for the menu.
         config_paths: The invocation's `--config`.
+
+    Returns:
+        The steer state; its `restore` puts the previous signal handlers back.
     """
     try:
         with open("/dev/tty", encoding="utf-8"):  # noqa: PTH123
