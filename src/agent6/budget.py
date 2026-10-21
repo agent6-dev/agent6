@@ -215,6 +215,12 @@ def _billed_apart_from_plan(t: ModelUsage) -> bool:
 
     One model id can reach both a subscription provider and a paid API, and the bucket
     is keyed by the id, so the plan's $0 must not stand for the API dollars.
+
+    Args:
+        t: The bucket.
+
+    Returns:
+        True when it holds a reported cost or unreported tokens.
     """
     return bool(
         t.reported_cost_usd

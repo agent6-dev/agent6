@@ -32,6 +32,12 @@ def scrub_terminal_controls(text: str) -> str:
     """Return the text without terminal control sequences and stray control characters.
 
     Idempotent, so an accumulating stream tail re-scrubs for free.
+
+    Args:
+        text: Untrusted text bound for display.
+
+    Returns:
+        The text, newline and tab kept.
     """
     return _CONTROL_RE.sub("", text)
 

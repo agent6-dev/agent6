@@ -127,6 +127,10 @@ _Ask = Callable[[str, bool], bool]
 def _ask(prompt: str, default: bool) -> bool:
     """Ask a yes/no question.
 
+    Args:
+        prompt: The question, followed by a `[Y/n]` or `[y/N]` hint.
+        default: The answer the hint capitalizes.
+
     Returns:
         The answer; the default on EOF or empty input.
     """
@@ -146,6 +150,13 @@ def _accept_default(_prompt: str, default: bool) -> bool:
 def _missing_gitignore_entries(root: pathlib.Path, *, ecosystem: str) -> list[str]:
     """Return the secret and build-artifact entries `.gitignore` lacks.
 
+    Args:
+        root: The repository.
+        ecosystem: "py", "rust" or "node" adds that ecosystem's build artifacts; "" adds none.
+
+    Returns:
+        The entries, the secret ones first; empty when `.gitignore` has them all.
+
     Raises:
         OSError: The file cannot be read.
         UnicodeDecodeError: The file is not UTF-8.
@@ -159,6 +170,10 @@ def _missing_gitignore_entries(root: pathlib.Path, *, ecosystem: str) -> list[st
 
 def _append_gitignore(root: pathlib.Path, missing: list[str]) -> str:
     """Append the missing entries to `.gitignore` under an agent6 comment.
+
+    Args:
+        root: The repository.
+        missing: The entries to add, as `_missing_gitignore_entries` returns them.
 
     Returns:
         The line to print.

@@ -28,6 +28,10 @@ class SecretsError(Exception):
 def _require_safe_perms(path: pathlib.Path, user: paths.RealUser) -> None:
     """Refuse a secrets file that others can read or that the operator does not own.
 
+    Args:
+        path: The secrets file.
+        user: The operator, who must own the file unless agent6 runs as root.
+
     Raises:
         SecretsError: The file is not regular, has group or other bits, or has another owner.
     """
@@ -49,6 +53,9 @@ def _require_safe_perms(path: pathlib.Path, user: paths.RealUser) -> None:
 
 def _read_secrets_toml(path: pathlib.Path) -> dict[str, Any]:
     """Parse the secrets file, the one reader.
+
+    Args:
+        path: The secrets file.
 
     Returns:
         The parsed TOML.
@@ -109,6 +116,12 @@ def save_secret(
 ) -> pathlib.Path:
     """Write a provider's `api_key` and any extra string fields, replacing its entry.
 
+    Args:
+        provider_name: The provider's name under `[providers]`.
+        api_key: The provider's API key.
+        extra: More fields, by name.
+        user: The operator; None resolves the effective one.
+
     Returns:
         The secrets file's path.
     """
@@ -123,6 +136,11 @@ def _save_provider_entry(
     Two concurrent writers (a `connect` beside a run refreshing tokens) would
     otherwise read the same base file and the later publish drop the earlier
     credential.
+
+    Args:
+        provider_name: The provider's name under `[providers]`.
+        entry: The new entry.
+        user: The operator; None resolves the effective one.
 
     Returns:
         The secrets file's path.
@@ -154,6 +172,10 @@ def _save_provider_entry(
 
 def delete_provider_secrets(provider_name: str, *, user: paths.RealUser | None = None) -> bool:
     """Remove one provider's entry.
+
+    Args:
+        provider_name: The provider's name under `[providers]`.
+        user: The operator; None resolves the effective one.
 
     Returns:
         True when it existed.
@@ -199,6 +221,11 @@ def save_oauth_tokens(
 ) -> pathlib.Path:
     """Write a provider's OAuth tokens, replacing its entry.
 
+    Args:
+        provider_name: The provider's name under `[providers]`.
+        tokens: The grant to store.
+        user: The operator; None resolves the effective one.
+
     Returns:
         The secrets file's path.
     """
@@ -222,8 +249,13 @@ def load_oauth_tokens(
 ) -> OAuthTokens | None:
     """Return one provider's stored OAuth tokens, or None when absent or mangled.
 
-    A mangled entry reads as absent: every caller's None path says to run
-    `agent6 connect`, which is also the repair.
+    Args:
+        provider_name: The provider's name under `[providers]`.
+        secrets: The loaded secrets; None loads the operator's.
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        The tokens; None when absent or mangled, which `agent6 connect` repairs.
     """
     data = secrets if secrets is not None else load_secrets(user)
     providers = data.get("providers")

@@ -72,6 +72,9 @@ class ResolvedSkills:
 def parse_frontmatter(text: str) -> tuple[dict[str, str], list[str]]:
     """Parse a SKILL.md's leading frontmatter block.
 
+    Args:
+        text: The whole SKILL.md.
+
     Returns:
         The fields and the warnings; a missing or unclosed block yields no fields and
         a warning.
@@ -159,6 +162,12 @@ def _mode(path: pathlib.Path) -> int | None:
 
     A path the process may not reach raises, where `Path.is_dir` reports it absent
     from Python 3.13 on and discovery would skip it silently.
+
+    Args:
+        path: The path; a symlink is followed.
+
+    Returns:
+        The `st_mode`, or None when nothing is there.
     """
     try:
         return path.stat().st_mode
@@ -236,6 +245,10 @@ def skill_search_dirs(
 
 def resolve_states(skills: Sequence[Skill], state: Mapping[str, str]) -> ResolvedSkills:
     """Apply the operator's `[skills.state]` map; an absent name is enabled.
+
+    Args:
+        skills: The discovered skills.
+        state: Each skill's state by name: `enabled`, `disabled` or `always`.
 
     Returns:
         The resolved skills, with a warning per name the map has and the skills lack.

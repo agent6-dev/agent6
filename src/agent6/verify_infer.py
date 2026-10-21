@@ -90,6 +90,13 @@ def command_head(argv: tuple[str, ...]) -> str:
 
     A pipeline or an `&&` chain is judged by its first program, the one that must exist for
     any of it to run; a line whose first word is a shell builtin reads as that builtin.
+
+    Args:
+        argv: The command, plain or a shell line wrapped as `sh -c LINE`.
+
+    Returns:
+        The program's name or path, else the argv's first word (`sh` when the wrapped line
+        names no program or does not parse); "" for an empty argv.
     """
     words = argv
     if argv[:2] == ("sh", "-c"):
@@ -104,7 +111,15 @@ def command_head(argv: tuple[str, ...]) -> str:
 
 
 def line_to_argv(cmd: str) -> tuple[str, ...] | None:
-    """Return one command line as argv, shell syntax wrapped in `sh -c`; None when empty."""
+    """Return one command line as argv, shell syntax wrapped in `sh -c`; None when empty.
+
+    Args:
+        cmd: The line; a `#` comment is dropped.
+
+    Returns:
+        The argv; None when the line holds no command, or has no shell syntax and does not
+        parse.
+    """
     cmd = _strip_comment(cmd.strip())
     if not cmd:
         return None
@@ -197,6 +212,13 @@ def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
 
     A `## Verify command` or `## Test` heading followed by a fenced block, or an
     inline `Verify:` or `Test:` line.
+
+    Args:
+        agents_md: The AGENTS.md text.
+
+    Returns:
+        The command as argv, a heading's block taking precedence over an inline line; None
+        when AGENTS.md states neither.
     """
     if (argv := _heading_block_argv(agents_md, _VERIFY_HEADING)) is not None:
         return argv
@@ -212,12 +234,26 @@ def setup_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
     """Return the setup command AGENTS.md states, or None.
 
     A `## Setup command` heading followed by a fenced block, read as the verify block is.
+
+    Args:
+        agents_md: The AGENTS.md text.
+
+    Returns:
+        The command as argv; None when AGENTS.md states none.
     """
     return _heading_block_argv(agents_md, _SETUP_HEADING)
 
 
 def _heading_block_argv(agents_md: str, heading: re.Pattern[str]) -> tuple[str, ...] | None:
-    """Return the first fenced block under a matching heading as one argv, or None."""
+    """Return the first fenced block under a matching heading as one argv, or None.
+
+    Args:
+        agents_md: The AGENTS.md text.
+        heading: The pattern a heading line matches, `#` marks included.
+
+    Returns:
+        The argv; None when no matching heading's block reads as a command.
+    """
     lines = agents_md.splitlines()
     for i, line in enumerate(lines):
         if heading.match(line.strip()):
@@ -281,6 +317,14 @@ def _package_json(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | No
     assignment, a second line) needs npm's shell and stays `npm test`, as does a runner given
     as a path, which can be untracked or outside the jail, and a script with a `pretest` or
     `posttest` hook, which only npm runs.
+
+    Args:
+        repo_root: The directory whose package.json is read.
+        hide: `[sandbox].hide_paths`; a hidden package.json reads as absent.
+
+    Returns:
+        The command and its source, "package.json"; None when there is no test script, or
+        only npm's placeholder.
     """
     try:
         data = json.loads(_path_safety.read_workspace_text(repo_root, "package.json", hide))
@@ -297,7 +341,15 @@ def _package_json(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | No
 
 
 def _plain_argv(script: str) -> tuple[str, ...]:
-    """Return a shell script as an argv the jail can run, or () when it needs a shell."""
+    """Return a shell script as an argv the jail can run, or () when it needs a shell.
+
+    Args:
+        script: The package.json test script.
+
+    Returns:
+        The script's words; () when it needs a shell, names its runner by path, or the jail's
+        PATH lacks the runner.
+    """
     if "\n" in script.strip():
         return ()  # sh runs each line as a command of its own
     try:
@@ -348,7 +400,15 @@ def _loose_python_tests(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signa
 
 
 def repo_signals(repo_root: pathlib.Path, hide: tuple[str, ...] = ()) -> list[Signal]:
-    """Return every repo signal that matches, the preferred one first."""
+    """Return every repo signal that matches, the preferred one first.
+
+    Args:
+        repo_root: The directory whose files are probed.
+        hide: `[sandbox].hide_paths`; a hidden file reads as absent.
+
+    Returns:
+        The matches as (command, source) pairs.
+    """
     # Loose Python tests last, so a Rust or Go repo's `tests/` dir never reads as pytest.
     probes = (
         _verify_sh,

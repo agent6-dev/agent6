@@ -26,6 +26,12 @@ def spawn(
 ) -> tuple[tuple[str, ...], int, bytes, bytes]:
     """Run one hardened git command.
 
+    Args:
+        cwd: The repository.
+        args: The git subcommand and its arguments.
+        env_extra: Environment entries added for this call.
+        stdin_text: Text fed to git's stdin.
+
     Returns:
         The full argv, the exit code, stdout and stderr as bytes.
 
@@ -80,7 +86,18 @@ def spawn(
 
 
 def failure(args: tuple[str, ...], returncode: int, stdout: str, stderr: str) -> str:
-    """Return the message for a failed git command, with its own explanation."""
+    """Return the message for a failed git command, with its own explanation.
+
+    Args:
+        args: The git subcommand and its arguments.
+        returncode: The exit code.
+        stdout: The command's stdout.
+        stderr: The command's stderr.
+
+    Returns:
+        `git <args> failed:` and git's explanation, stderr before stdout; the exit code
+        when both are empty.
+    """
     # `git commit` explains most failures on stdout, not stderr.
     stderr_msg = stderr.strip()
     stdout_msg = stdout.strip()

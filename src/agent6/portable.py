@@ -30,6 +30,9 @@ def lock_shared_nonblocking(fd: int) -> None:
     would exclude the very writer it asks about. Windows has no shared range lock,
     so the probe there takes the exclusive one.
 
+    Args:
+        fd: The lock file's descriptor.
+
     Raises:
         OSError: An exclusive holder has the lock.
     """
@@ -233,6 +236,12 @@ def toml_basic_string(value: str) -> str:
 
     The one owner of the escaping: an unescaped control character writes a file
     that fails to parse on read while the write reported success.
+
+    Args:
+        value: Any string.
+
+    Returns:
+        The literal.
     """
     out: list[str] = []
     for ch in value:

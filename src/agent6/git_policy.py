@@ -14,6 +14,9 @@ from agent6 import errors
 def git() -> str:
     """Return the git executable's path.
 
+    Returns:
+        The path of the first `git` on PATH.
+
     Raises:
         GitError: git is not on PATH.
     """

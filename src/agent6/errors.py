@@ -27,6 +27,9 @@ class GitError(Exception):
 def read_operator_file(path: pathlib.Path) -> str:
     """Read a file the operator named, the one reader for operator-supplied files.
 
+    Args:
+        path: The file, which the refusal names.
+
     Returns:
         The text.
 

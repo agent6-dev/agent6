@@ -109,6 +109,12 @@ def is_side_role(role: str) -> bool:
     """Return whether a `role.*` event's answer is a side call's, not the session's own.
 
     An unnamed role is not a side call: older events carry none.
+
+    Args:
+        role: The event's `role` field.
+
+    Returns:
+        True for a named role that drives no mode.
     """
     return bool(role) and role not in DRIVING_ROLES
 
@@ -119,6 +125,12 @@ class UnknownSessionKindError(ValueError):
 
 def session_kind(name: str) -> SessionKind:
     """Return the record for a mode string.
+
+    Args:
+        name: The mode, such as `run`.
+
+    Returns:
+        What the mode may do and the role that drives it.
 
     Raises:
         UnknownSessionKindError: The mode is unknown; a damaged manifest must never
@@ -132,6 +144,12 @@ def session_kind(name: str) -> SessionKind:
 
 def session_bucket(name: str) -> str:
     """Return the bucket a mode's sessions get their directories in, derived and never stored.
+
+    Args:
+        name: The mode, such as `run`.
+
+    Returns:
+        The mode's name plus `s`, such as `runs`.
 
     Raises:
         UnknownSessionKindError: The mode is unknown, or is `agent`, whose executions
@@ -334,7 +352,15 @@ class SandboxReport:
 
 
 def workspace_setup_fields(result: CommandResult) -> dict[str, object]:
-    """Return the shared workspace.setup event body."""
+    """Return the shared workspace.setup event body.
+
+    Args:
+        result: The setup command's result.
+
+    Returns:
+        The command, its exit code, duration and exec failure, and its stdout and stderr,
+        each cut to its last 2000 characters.
+    """
     return {
         "cmd": list(result.argv),
         "exit_code": result.returncode,

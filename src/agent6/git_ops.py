@@ -174,6 +174,12 @@ def untracked_paths(path: pathlib.Path) -> frozenset[str]:
 
     Taken once at run start as `untracked_at_start`: those files are the operator's,
     so chain commits and dirty checks leave them out.
+
+    Args:
+        path: The repository.
+
+    Returns:
+        The paths; empty outside a repo.
     """
     return frozenset(rel for code, rel in _porcelain_entries(path) if code == "??")
 
@@ -268,6 +274,13 @@ def find_stash(path: pathlib.Path, message: str) -> StashEntry | None:
 
     The subject is `On <branch>: MSG`, so `: MSG` anchored at the end matches the whole
     message: lane ids are ordinal, so one message can be a prefix of another.
+
+    Args:
+        path: The repository.
+        message: The stash message.
+
+    Returns:
+        The entry, or None.
     """
     res = _git_command.run(path, "stash", "list", "--format=%gd%x09%H%x09%gs", check=False)
     for line in res.stdout.splitlines():
@@ -311,6 +324,10 @@ def _drop_by_sha(path: pathlib.Path, sha: str) -> None:
     drop shifts every position. git names the commit it dropped: a stranger's is stored
     straight back under its own subject, and agent6's own then stays listed, since a
     second attempt would race the same way.
+
+    Args:
+        path: The repository.
+        sha: The stash commit; nothing is dropped when no entry has it.
 
     Raises:
         GitError: The bystander could not be stored back.
@@ -359,6 +376,12 @@ def valid_branch_name(name: str) -> bool:
 
     A session id becomes a branch and a chain ref; a branch name is the stricter role,
     so this is the one check a session id needs. Run from "/": no repo is involved.
+
+    Args:
+        name: The bare name, without `refs/heads/`.
+
+    Returns:
+        True when git accepts it as a branch name.
     """
     return _git_command.run(pathlib.Path("/"), "check-ref-format", "--branch", name, check=False).ok
 
@@ -522,6 +545,12 @@ def chain_ref_for(session_id: str) -> str:
     The id is a namespace, not the ref: git resolves `refs/<name>` before
     `refs/heads/<name>`, so a ref at `refs/agent6/<id>` would make the visible branch's
     short name ambiguous. The kind under the id follows `refs/pull/<n>/head`.
+
+    Args:
+        session_id: The ref's `<id>`.
+
+    Returns:
+        The full ref name.
     """
     return f"{_CHAIN_NS}/{session_id}/{_CHAIN_KIND}"
 
@@ -540,6 +569,12 @@ def list_chain_refs(path: pathlib.Path) -> tuple[tuple[str, str], ...]:
     """Return the session id and sha of every chain ref, sorted by id.
 
     Globbed on the kind, so another per-session ref beside it is not read as a chain.
+
+    Args:
+        path: The repository.
+
+    Returns:
+        The (session id, sha) pairs.
     """
     pattern = f"{_CHAIN_NS}/*/{_CHAIN_KIND}"
     out = _git_command.run(
@@ -789,6 +824,13 @@ def commit_is_reachable(path: pathlib.Path, sha: str) -> bool:
 
     Existence is a different question: a loose commit no ref reaches is one `git gc`
     from gone, and a sweep deleting the last copy of work asks this one.
+
+    Args:
+        path: The repository.
+        sha: The commit.
+
+    Returns:
+        True when a ref contains it; False also for a commit the repository lacks.
     """
     res = _git_command.run(
         path, "for-each-ref", "--contains", sha, "--count=1", "--format=%(refname)", check=False
@@ -847,7 +889,13 @@ EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 def worktree_matches(path: pathlib.Path, ref: str, paths: Collection[str]) -> bool:
     """Return whether the worktree's content of the paths equals the ref's, ignoring the index.
 
-    The paths are repo-relative, whichever directory of the checkout `path` is.
+    Args:
+        path: Any directory of the checkout.
+        ref: The commit to compare against.
+        paths: Repo-relative paths, whichever directory `path` is.
+
+    Returns:
+        True when the contents are equal; False also on a bad ref.
     """
     specs = (f":(top,literal){p}" for p in sorted(paths))
     res = _git_command.run(path, "diff", "--quiet", ref, "--", *specs, check=False)
@@ -930,6 +978,14 @@ def tree_diff_paths(path: pathlib.Path, old_tree: str, new_tree: str) -> list[st
     """Return the paths whose content differs between two trees, unquoted.
 
     Print one through `terminal.printable_name`: a name can hold a newline.
+
+    Args:
+        path: The repository.
+        old_tree: The tree or commit diffed from.
+        new_tree: The tree or commit diffed to.
+
+    Returns:
+        The repo-relative paths; empty when the trees match.
     """
     return list(
         filter(
@@ -1195,6 +1251,13 @@ def _commit(
     only_paths: tuple[str, ...] | None = None,
 ) -> str:
     """Commit the index, or only the given paths from the worktree.
+
+    Args:
+        path: The repository.
+        message: The commit message.
+        trailers: Trailer lines appended to the message.
+        identity: The author and committer overrides; None uses the repo's config.
+        only_paths: The repo-relative paths; None commits the index.
 
     Returns:
         The new HEAD sha.
@@ -1557,6 +1620,9 @@ def read_file_at(path: pathlib.Path, ref: str, name: str) -> str:
 
 def tracked_files(path: pathlib.Path) -> tuple[str, ...]:
     """Return the tracked files in git's own order.
+
+    Args:
+        path: The repository; a subdirectory lists only the files under it, relative to it.
 
     Returns:
         The paths with POSIX separators; empty outside a repo, which callers read as no

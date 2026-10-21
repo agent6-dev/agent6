@@ -18,6 +18,12 @@ def task_display_text(text: str) -> str:
     """Return the operator's task text in the journal's canonical display form.
 
     Clipping can collapse two steers that share their first TASK_DISPLAY_CHARS characters.
+
+    Args:
+        text: A composed task or steer.
+
+    Returns:
+        The operator's words, clipped to TASK_DISPLAY_CHARS without a marker.
     """
     return operator_task_text(text)[:TASK_DISPLAY_CHARS]
 
@@ -42,6 +48,12 @@ def operator_task_text(text: str) -> str:
     """Return the text minus every context block, the skills preamble and the rule.
 
     An unclosed block drops from its opener to the end.
+
+    Args:
+        text: A composed task or steer.
+
+    Returns:
+        The operator's words, with surrounding whitespace stripped.
     """
     out = _BLOCK_RE.sub("", text)
     out = _OPEN_BLOCK_RE.sub("", out)

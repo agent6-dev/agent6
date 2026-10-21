@@ -115,7 +115,16 @@ def first_prose_line(text: str, *, fallback: str) -> str:
 
 
 def agent6_subject(text: str, iteration: int, *, fallback: str = "verify passed") -> str:
-    """Return `agent6 iter N: <first line>`, the line fitted to the subject limit."""
+    """Return `agent6 iter N: <first line>`, the line fitted to the subject limit.
+
+    Args:
+        text: The agent's response; its first prose line is `<first line>`.
+        iteration: The loop iteration, `N`.
+        fallback: The `<first line>` when the text holds no prose.
+
+    Returns:
+        The subject line.
+    """
     return f"agent6 iter {iteration}: {_fit(first_prose_line(text, fallback=fallback))}"
 
 
@@ -135,8 +144,13 @@ def _is_docish(p: str) -> bool:
 def _conventional_scope(paths: Sequence[str]) -> str:
     """Return the one area every path shares, or "".
 
-    The package dir under `src/<pkg>/`, the module stem for a file directly under the
-    package, else a second-level dir every path shares.
+    Args:
+        paths: The changed paths, repo-relative; when any is under `src/<pkg>/`, only
+            those count.
+
+    Returns:
+        The package dir under `src/<pkg>/`, the module stem for a file directly under the
+        package, else a second-level dir every path shares.
     """
     parts = [pathlib.PurePosixPath(p).parts for p in paths if p]
     if not parts:

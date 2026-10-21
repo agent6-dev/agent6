@@ -48,8 +48,12 @@ def memory_dir(state_dir: pathlib.Path) -> pathlib.Path:
 def seed_digests(state_dir: pathlib.Path) -> dict[str, str]:
     """Return the seed manifest's name to sha256 map.
 
-    A missing, unreadable or misshapen manifest reads as empty, so every file then
-    reads as the lane's own.
+    Args:
+        state_dir: The lane's state dir.
+
+    Returns:
+        Each seeded fact's sha256 as copied, by name. A missing, unreadable or misshapen
+        manifest reads as empty, so every file then reads as the lane's own.
     """
     try:
         raw = json.loads(seed_path(state_dir).read_text(encoding="utf-8"))
@@ -113,8 +117,13 @@ class MemoryUse:
 def read_use(state_dir: pathlib.Path) -> dict[str, MemoryUse]:
     """Return the use record by fact name.
 
-    A missing, unreadable or misshapen file reads as empty and a misshapen entry is
-    dropped: the record is a surface, never a gate.
+    Args:
+        state_dir: The repo's state dir.
+
+    Returns:
+        Each fact's provenance and use, by name. A missing, unreadable or misshapen file
+        reads as empty and a misshapen entry is dropped: the record is a surface, never a
+        gate.
     """
     try:
         raw: Any = json.loads(use_path(state_dir).read_text(encoding="utf-8"))
@@ -333,6 +342,9 @@ def _locked_memory(state_dir: pathlib.Path) -> Generator[None]:
     """Serialize the harness's mutations of one repo's store.
 
     The model's own edits under its write grant take no lock.
+
+    Args:
+        state_dir: The repo's state dir.
 
     Yields:
         With the store locked.
@@ -616,6 +628,12 @@ def _is_fact_file(path: pathlib.Path) -> bool:
     """Return whether a store entry is a fact: `<name>.md` under the name rule, a regular file.
 
     A symlink is not one: the store is model-writable, and a fact feeds every prompt.
+
+    Args:
+        path: The store entry.
+
+    Returns:
+        True for a fact.
     """
     return (
         path.suffix == ".md"
@@ -666,6 +684,9 @@ def ignored_names(state_dir: pathlib.Path) -> tuple[str, ...]:
 def index_text(state_dir: pathlib.Path) -> str:
     """Render the index for injection.
 
+    Args:
+        state_dir: The repo's state dir.
+
     Returns:
         One `- <name>: <first line>` per fact, sorted by name; "" with no facts.
     """
@@ -679,6 +700,12 @@ def is_memory_name(name: str) -> bool:
 
 def _check_name(name: str) -> str:
     """Return the name when the store accepts it.
+
+    Args:
+        name: The fact's name.
+
+    Returns:
+        The name, unchanged.
 
     Raises:
         MemoryStoreError: The name is not one the store accepts.
@@ -720,6 +747,10 @@ def add(state_dir: pathlib.Path, name: str, body: str) -> pathlib.Path:
 def remove(state_dir: pathlib.Path, name: str) -> None:
     """Delete a fact file for `agent6 memory rm`.
 
+    Args:
+        state_dir: The repo's state dir.
+        name: The fact's name.
+
     Raises:
         MemoryStoreError: The name has no file.
     """
@@ -734,6 +765,13 @@ def remove(state_dir: pathlib.Path, name: str) -> None:
 
 def show(state_dir: pathlib.Path, name: str) -> str:
     """Return a fact's text.
+
+    Args:
+        state_dir: The repo's state dir.
+        name: The fact's name.
+
+    Returns:
+        The fact file's whole text.
 
     Raises:
         MemoryStoreError: The name is bad or the file cannot be read.

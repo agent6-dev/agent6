@@ -123,6 +123,12 @@ def ui_settings_path(user: RealUser | None = None) -> pathlib.Path:
 
     A theme is a viewer preference, not agent behaviour, so it never enters the
     config schema or the shareable config layers.
+
+    Args:
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        `ui.toml` in the global config directory.
     """
     return global_config_dir(user) / "ui.toml"
 
@@ -131,6 +137,12 @@ def cache_dir(user: RealUser | None = None) -> pathlib.Path:
     """Return the cache directory, `$XDG_CACHE_HOME/agent6` or `~/.cache/agent6`.
 
     It holds regenerable data such as the provider model lists; safe to delete.
+
+    Args:
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        The directory, which may not exist yet.
     """
     return _user_dir(user, "XDG_CACHE_HOME", ".cache")
 
@@ -141,23 +153,43 @@ def jail_cache_home(repo_root: pathlib.Path, user: RealUser | None = None) -> pa
     Used under `partial` and `none`, which have no private /tmp, and under `full`
     with `[sandbox].home = "cache"`. Model-writable across that repository's runs, 0700,
     never the operator's own home and never another repository's;
-    `app.confine.check_jail_home` creates it and refuses a symlink or another user's
+    `tools.policy.jail_policy` creates it and refuses a symlink or another user's
     directory there.
+
+    Args:
+        repo_root: The repository.
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        The directory, which may not exist yet.
     """
     return jail_cache_home_of(repo_id(repo_root), user)
 
 
 def jail_cache_home_of(repo: str, user: RealUser | None = None) -> pathlib.Path:
-    """Return the persistent HOME of the repository with this `repo_id`."""
+    """Return the persistent HOME of the repository with this `repo_id`.
+
+    Args:
+        repo: The repository's `repo_id`.
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        `<cache>/homes/<repo>`, which may not exist yet.
+    """
     return cache_dir(user) / "homes" / repo
 
 
 def parallel_base(workdir: str) -> pathlib.Path:
     """Return the directory that holds every repository's subordinate working trees.
 
-    `[parallel].workdir` as an absolute path, or the cache's `parallel` dir. Each repository
-    has one directory in it, named by its `repo_id`, for its worktrees, lane clones and
-    machine clones.
+    Each repository has one directory in it, named by its `repo_id`, for its worktrees, lane
+    clones and machine clones.
+
+    Args:
+        workdir: The `[parallel].workdir` setting.
+
+    Returns:
+        `workdir` as an absolute path, or the cache's `parallel` dir when `workdir` is empty.
     """
     return pathlib.Path(workdir).resolve() if workdir else cache_dir() / "parallel"
 
@@ -166,6 +198,12 @@ def data_dir(user: RealUser | None = None) -> pathlib.Path:
     """Return the data directory, `$XDG_DATA_HOME/agent6` or `~/.local/share/agent6`.
 
     It holds installed skills; unlike the cache it is not regenerable.
+
+    Args:
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        The directory, which may not exist yet.
     """
     return _user_dir(user, "XDG_DATA_HOME", ".local", "share")
 
@@ -174,6 +212,12 @@ def state_base(user: RealUser | None = None) -> pathlib.Path:
     """Return the state base, `$XDG_STATE_HOME/agent6` or `~/.local/state/agent6`.
 
     Each repo gets `<base>/<repo-id>/`, out of the workspace; the jail masks the base.
+
+    Args:
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        The directory, which may not exist yet.
     """
     return _user_dir(user, "XDG_STATE_HOME", ".local", "state")
 
@@ -185,6 +229,9 @@ def private_dirs() -> tuple[pathlib.Path, ...]:
     validator rejects grants inside them. The data dir holds skills the model is meant
     to run and the cache holds regenerable lists, so neither is private. Read per call,
     since the XDG variables are per-process.
+
+    Returns:
+        The config dir, then the state base.
     """
     return (global_config_dir(), state_base())
 
@@ -194,6 +241,12 @@ def hidden_paths(extra: Iterable[pathlib.Path]) -> tuple[pathlib.Path, ...]:
 
     One owner, because the jail and the in-process `Workspace` both enforce it, and a
     boundary they disagree about is a hole.
+
+    Args:
+        extra: The `[sandbox].hide_paths` entries.
+
+    Returns:
+        `extra`, then the private dirs, unresolved.
     """
     return (*extra, *private_dirs())
 
@@ -212,6 +265,12 @@ def repo_id(repo_root: pathlib.Path) -> str:
     reversible, so nothing collides. Keyed on the resolved path, so a moved checkout
     gets a new id. A path too long for one component has its middle elided and a
     hash of the full path appended.
+
+    Args:
+        repo_root: The repository.
+
+    Returns:
+        The name, never empty.
     """
     real = str(repo_root.resolve()).strip("/")
     flat = real.replace("/", "-")
@@ -278,6 +337,12 @@ def project_root(start: pathlib.Path) -> pathlib.Path:
     directory a project of its own. No stop at `$HOME`: under `git init $HOME` every
     directory is one repo, and splitting it would give two runs separate locks on one
     working tree.
+
+    Args:
+        start: The path, such as the cwd.
+
+    Returns:
+        The project root, resolved.
     """
     root = checkout_root(start)
     if (root / ".git").is_file():
@@ -302,6 +367,13 @@ def linked_worktree_git_dir(root: pathlib.Path) -> pathlib.Path | None:
     Resolved as git does, from the `.git` file and the entry's `commondir`. Both files
     are writable by a jailed command under `partial`, so the pointer keys state and
     verifies a recorded grant, and never makes one.
+
+    Args:
+        root: The checkout whose `.git` is read.
+
+    Returns:
+        The git dir, resolved, or None when `.git` is not a file pointing at an entry with
+        a readable `commondir`.
     """
     pointer = root / ".git"
     if not pointer.is_file():

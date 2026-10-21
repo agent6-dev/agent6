@@ -222,6 +222,12 @@ def stray_directive(text: str) -> str | None:
 
     A token further in travels to the model as ordinary text; naming it tells a
     mistyped command from a sentence that mentions one.
+
+    Args:
+        text: The steer text.
+
+    Returns:
+        The token, such as `/pin`, or None.
     """
     m = _STRAY.search(text)
     return m.group(1) if m is not None else None
@@ -232,6 +238,9 @@ def steer_problem(text: str) -> str | None:
 
     A malformed directive or a front-end command refuses: an execution spent on a
     directive the loop can only decline reads as a silent finish.
+
+    Args:
+        text: The task or steer.
 
     Returns:
         The refusal, or None for ordinary text and a well-formed directive.
@@ -279,6 +288,9 @@ def _is_spec_token(token: str) -> bool:
 
 def _parse_segment(raw: str) -> Segment:
     """Parse one segment's spec and task.
+
+    Args:
+        raw: The segment's text after its `/parallel` token.
 
     Returns:
         The segment.
