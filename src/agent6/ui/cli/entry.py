@@ -134,7 +134,12 @@ def cli_main(argv: list[str] | None = None) -> int:
     """
     with _terminal_guard.guarded_terminal():
         try:
-            return main(argv)
+            try:
+                return main(argv)
+            finally:
+                # A short answer still sits in stdout's buffer: a closed pipe fails it here, in
+                # the handler's reach, not at the interpreter's exit (120 and a diagnostic).
+                sys.stdout.flush()
         except KeyboardInterrupt:
             print("\nagent6: interrupted.", file=sys.stderr)
             return 130
