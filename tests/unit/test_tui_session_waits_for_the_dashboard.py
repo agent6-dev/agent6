@@ -86,3 +86,36 @@ def test_a_dashboard_that_never_registers_does_not_hold_the_run(
     with _live.tui_session(session_dir, enabled=True):
         pass
     assert time.monotonic() - started < 2.0
+
+
+def test_a_dashboard_slower_than_five_seconds_is_still_waited_for(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dashboard registering after 5 s was left behind.
+
+    The run started without it, and its first approval prompt read the terminal the
+    dashboard owned.
+    """
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+
+    class _Clock:
+        """Ten seconds pass per reading, so any deadline is behind the first check."""
+
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def monotonic(self) -> float:
+            self.now += 10.0
+            return self.now
+
+        def sleep(self, seconds: float) -> None:
+            time.sleep(seconds)
+
+    def _popen(*_a: object, **_k: object) -> _Dashboard:
+        return _Dashboard(session_dir)
+
+    monkeypatch.setattr(_live.subprocess, "Popen", _popen)
+    monkeypatch.setattr(_live, "time", _Clock())
+    with _live.tui_session(session_dir, enabled=True):
+        assert process.frontend_is_live(session_dir), "the block ran before the dashboard was up"

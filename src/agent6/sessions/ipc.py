@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import json
+import math
 import os
 import pathlib
 import tempfile
@@ -619,7 +620,7 @@ def read_answer(
     session_dir: pathlib.Path,
     prompt_id: str,
     *,
-    timeout_s: float = 600.0,
+    timeout_s: float = math.inf,
     poll_s: float = 0.2,
     live_dir: pathlib.Path | None = None,
     dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
@@ -629,14 +630,14 @@ def read_answer(
     Args:
         session_dir: The session directory.
         prompt_id: The prompt id.
-        timeout_s: The most to wait.
+        timeout_s: The most to wait; by default as long as the front-end lives.
         poll_s: The poll interval.
         live_dir: The dir the liveness gate probes for claims; a machine agent state reads
             answers from its per-state dir while the front-end registers on the instance dir.
         dead_grace_s: How long the front-end may stay dead before the wait ends.
 
     Returns:
-        The lower-cased choice; None on the timeout, a stop, or a dead front-end.
+        The lower-cased choice; None on a stop, a dead front-end, or a timeout given.
 
     Raises:
         ValueError: The prompt id is not a plain file name.
@@ -707,7 +708,7 @@ def read_question_answers(
     session_dir: pathlib.Path,
     question_id: str,
     *,
-    timeout_s: float = 600.0,
+    timeout_s: float = math.inf,
     poll_s: float = 0.2,
     live_dir: pathlib.Path | None = None,
     dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
@@ -717,14 +718,14 @@ def read_question_answers(
     Args:
         session_dir: The session directory.
         question_id: The question id.
-        timeout_s: The most to wait.
+        timeout_s: The most to wait; by default as long as the front-end lives.
         poll_s: The poll interval.
         live_dir: The dir the liveness gate probes, as in `read_answer`.
         dead_grace_s: How long the front-end may stay dead before the wait ends.
 
     Returns:
-        The answers, one per question; a bare non-JSON file is one answer. None on the
-        timeout, a stop, or a dead front-end.
+        The answers, one per question; a bare non-JSON file is one answer. None on a
+        stop, a dead front-end, or a timeout given.
 
     Raises:
         ValueError: The question id is not a plain file name.

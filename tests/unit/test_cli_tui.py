@@ -746,6 +746,7 @@ def test_ctrl_c_kills_a_dashboard_that_ignores_graceful_shutdown(
         return _Wedged()
 
     monkeypatch.setattr(livemod.subprocess, "Popen", spawn_wedged)
+    process.register_frontend(session_dir, os.getpid())  # the dashboard holds its claim
 
     with livemod.tui_session(session_dir, enabled=True):
         pass
@@ -784,6 +785,7 @@ def test_tui_session_restores_the_console_when_a_second_ctrl_c_lands(
         "subprocess",
         types.SimpleNamespace(Popen=spawn, TimeoutExpired=subprocess.TimeoutExpired),
     )
+    process.register_frontend(session_dir, os.getpid())  # the dashboard holds its claim
     before = (sys.stdout, sys.stderr)
     with pytest.raises(KeyboardInterrupt), livemod.tui_session(session_dir, enabled=True):
         pass

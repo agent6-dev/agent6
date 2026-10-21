@@ -119,9 +119,9 @@ def build_approver(
 ) -> operator_prompts.Approver:
     """Build the command approver, bridged to a live front-end when one is attached.
 
-    A live front-end answers through the file bridge; otherwise the terminal prompt
-    asks, reading the same file while it waits, so an answer by another route
-    lands too.
+    A live front-end answers through the file bridge, awaited for as long as it lives;
+    otherwise the terminal prompt asks, reading the same file while it waits, so an
+    answer by another route lands too.
 
     Args:
         session_dir: The run's dir.

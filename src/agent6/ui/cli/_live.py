@@ -127,10 +127,25 @@ def stream_modes(*, tui_enabled: bool) -> tuple[bool, bool]:
     return stream_text, console_stream
 
 
+def _take_down(proc: subprocess.Popen[bytes]) -> None:
+    """Take the dashboard down after a Ctrl-C: SIGINT, then SIGTERM, then SIGKILL."""
+    proc.send_signal(signal.SIGINT)
+    try:
+        proc.wait(timeout=4)
+    except subprocess.TimeoutExpired:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+
 @contextlib.contextmanager
 def tui_session(session_dir: pathlib.Path, *, enabled: bool) -> Generator[None]:
     """Run the dashboard TUI as a co-process that owns the terminal for the block.
 
+    The block starts once the dashboard holds its front-end claim, or the dashboard is gone.
     This process's console goes to `<session_dir>/tui_console.log` meanwhile; the
     TUI tails the log and approvals cross the file bridge. The TUI holds the finished
     dashboard until the operator leaves, and the block waits for that. A spawn
@@ -174,14 +189,15 @@ def tui_session(session_dir: pathlib.Path, *, enabled: bool) -> Generator[None]:
         print(f"[agent6] could not start TUI ({exc}); continuing without it.", file=sys.stderr)
         yield
         return
-    # Wait for the dashboard to register, so no approval prompt races it for the terminal.
-    deadline = time.monotonic() + 5.0
-    while (
-        proc.poll() is None
-        and not process.frontend_is_live(session_dir)
-        and time.monotonic() < deadline
-    ):
-        time.sleep(0.05)
+    # Wait for the dashboard's claim as long as the dashboard lives: the loop's first approval
+    # prompt would otherwise read the terminal the dashboard owns.
+    try:
+        while proc.poll() is None and not process.frontend_is_live(session_dir):
+            time.sleep(0.05)
+    except KeyboardInterrupt:
+        _take_down(proc)
+        log_fh.close()
+        raise
     orig_out, orig_err = sys.stdout, sys.stderr
     sys.stdout = log_fh
     sys.stderr = log_fh
@@ -198,16 +214,7 @@ def tui_session(session_dir: pathlib.Path, *, enabled: bool) -> Generator[None]:
         try:
             proc.wait()
         except KeyboardInterrupt:
-            proc.send_signal(signal.SIGINT)
-            try:
-                proc.wait(timeout=4)
-            except subprocess.TimeoutExpired:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
+            _take_down(proc)
         finally:
             # Whatever the teardown does, this process gets its console back.
             sys.stdout, sys.stderr = orig_out, orig_err
