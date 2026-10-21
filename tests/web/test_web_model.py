@@ -589,7 +589,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
     stamps.stamp_parked(layout.session_dir, task="t", reason="checkout busy")
     snap = session_snapshot(layout.session_dir)
     assert snap["status_label"] == "parked · checkout busy"
-    assert snap["policy"].endswith("python3 -m pytest (configured)")
+    assert snap["policy"].endswith("· gate python3 -m pytest (configured)")
     # A gateless config's run infers its gate at the start; parked, it has not yet.
     stamps.write_session_manifest(
         layout,

@@ -21,6 +21,7 @@ from agent6.app import frontend
 from agent6.sessions import ipc, process
 from agent6.ui import keymap, steer
 from agent6.ui.cli import _common, _console_view, _menu_input, _steer_menu
+from agent6.viewmodel import policy
 
 
 @contextlib.contextmanager
@@ -251,7 +252,7 @@ def format_session_facts(facts: frontend.SessionFacts) -> str:
     """Return the one-line status the pause banner and Ctrl-Z print, spend first."""
     return (
         f"{budget.format_usd(facts.spend_usd, partial=facts.spend_partial)}"
-        f" · {facts.model} · commands {facts.run_commands} · {facts.isolation}"
+        f" · {facts.model} · {policy.short_form(facts.isolation, facts.run_commands)}"
     )
 
 

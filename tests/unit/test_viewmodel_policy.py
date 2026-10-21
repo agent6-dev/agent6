@@ -27,7 +27,7 @@ def test_the_line_carries_what_an_operator_needs(tmp_path: pathlib.Path) -> None
     """Model, sandbox, command setting and the gate, without an interrupt or a config read."""
     _manifest(tmp_path)
     line = session_policy(tmp_path).line()
-    assert line == "claude-x · full · commands ask · uv run pytest (configured)"
+    assert line == "claude-x · isolation full · run_commands ask · gate uv run pytest (configured)"
 
 
 def test_the_gate_says_whose_it_is(tmp_path: pathlib.Path) -> None:
@@ -36,7 +36,7 @@ def test_the_gate_says_whose_it_is(tmp_path: pathlib.Path) -> None:
     A surface that hides the difference hides the only thing that makes "passed" mean something.
     """
     _manifest(tmp_path, harness={"verify_command": ["make", "test"], "verify_origin": "inferred"})
-    assert session_policy(tmp_path).gate() == "make test (inferred)"
+    assert session_policy(tmp_path).gate() == "gate make test (inferred)"
 
 
 def test_a_gateless_run_says_so(tmp_path: pathlib.Path) -> None:
@@ -57,4 +57,4 @@ def test_an_unreadable_dir_reports_nothing_rather_than_guessing(tmp_path: pathli
 def test_an_asks_line_names_no_gate(tmp_path: pathlib.Path) -> None:
     """An ask's policy line carries no gate; a configured gate still rides its manifest."""
     _manifest(tmp_path, mode="ask")
-    assert session_policy(tmp_path).line() == "claude-x · full · commands ask"
+    assert session_policy(tmp_path).line() == "claude-x · isolation full · run_commands ask"

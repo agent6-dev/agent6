@@ -43,22 +43,18 @@ class SessionPolicy:
         off a file the model can edit.
 
         Returns:
-            The gate's shell line with its origin in parentheses, or "no verify gate".
+            `gate` plus the shell line with its origin in parentheses, or "no verify gate".
         """
         if self.verify_origin == "pending":
             return "verify gate not settled yet"
         if not self.verify_command:
             return "no verify gate"
-        return f"{shlex.join(self.verify_command)} ({self.verify_origin or 'unknown origin'})"
+        origin = self.verify_origin or "unknown origin"
+        return f"gate {shlex.join(self.verify_command)} ({origin})"
 
     def short(self) -> str:
-        """Return the compact form for a border or header: commands mode and isolation."""
-        parts = [
-            p
-            for p in (f"commands {self.run_commands}" if self.run_commands else "", self.isolation)
-            if p
-        ]
-        return " · ".join(parts)
+        """Return the compact form for a border or header: isolation and commands mode."""
+        return short_form(self.isolation, self.run_commands)
 
     def line(self) -> str:
         """Return the one-line form every surface shows.
@@ -70,12 +66,27 @@ class SessionPolicy:
         """
         if not (self.model or self.isolation or self.run_commands or self.verify_command):
             return ""
-        parts = [p for p in (self.model, self.isolation) if p]
-        if self.run_commands:
-            parts.append(f"commands {self.run_commands}")
+        parts = [p for p in (self.model, self.short()) if p]
         if self.mode != "ask":
             parts.append(self.gate())
         return " · ".join(parts)
+
+
+def short_form(isolation: str, run_commands: str) -> str:
+    """Return the isolation and commands settings, each named before its resolved value.
+
+    Args:
+        isolation: The resolved `sandbox.isolation` word, "" when unknown.
+        run_commands: The `sandbox.run_commands` word, "" when unknown.
+
+    Returns:
+        `isolation full · run_commands ask`, with an unknown setting left out.
+    """
+    parts = [
+        f"isolation {isolation}" if isolation else "",
+        f"run_commands {run_commands}" if run_commands else "",
+    ]
+    return " · ".join(p for p in parts if p)
 
 
 def session_policy(session_dir: pathlib.Path) -> SessionPolicy:

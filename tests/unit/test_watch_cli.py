@@ -404,7 +404,7 @@ def test_attach_prints_the_runs_policy_line_like_the_run_did(
     )
     monkeypatch.chdir(tmp_path)
     assert main(["attach", "done-run"]) == 0
-    assert "  m-1 · full · commands ask · " in capsys.readouterr().out
+    assert "  m-1 · isolation full · run_commands ask · " in capsys.readouterr().out
 
 
 def test_watch_json_checks_the_merged_claim_against_the_repo(

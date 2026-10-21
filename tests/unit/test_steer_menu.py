@@ -562,7 +562,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
 
         sigint(signal.SIGINT, None)  # first Ctrl-C: arm + show the facts
         assert state.requested() is True
-        assert "$1.42 · claude-sonnet-4-6 · commands ask · full" in printed[0]
+        assert "$1.42 · claude-sonnet-4-6 · isolation full · run_commands ask" in printed[0]
 
         sigtstp(signal.SIGTSTP, None)  # Ctrl-Z: same facts, and stand down
         assert "$1.42" in printed[1] and "pause cancelled" in printed[1]
