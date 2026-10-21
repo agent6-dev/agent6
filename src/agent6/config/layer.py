@@ -50,6 +50,15 @@ class Layer:
         """Identify the layer, including the path for command-line files."""
         return f"flag ({self.path})" if self.name == "flag" else self.name
 
+    @property
+    def described(self) -> str:
+        """Name the layer as a sentence does: `the repo config`, `--config FILE`, `the preset`."""
+        if self.name == "flag":
+            return f"--config {self.path}"
+        if self.name in ("global", "repo"):
+            return f"the {self.name} config"
+        return f"the {self.name}" if self.name == "preset" else f"the {self.name} overlay"
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class EffectiveConfig:
@@ -695,6 +704,35 @@ def load_effective(
     presets = preset_names(layers)
     layers = _apply_preset(layers, preset)
     return _effective_from_layers(layers, source="(merged config layers)", presets=presets)
+
+
+def shadowing_layer(eff: EffectiveConfig, leaf: str, target: LayerName) -> Layer | None:
+    """Return the layer above the target that sets a leaf, or None.
+
+    A write to the target changes what a run reads only when no layer above it sets the leaf.
+    A target file that does not exist yet sits where it would load: a global one under every
+    layer, a repo one above the global layer and the preset that layer selected.
+
+    Args:
+        eff: The loaded config.
+        leaf: The dotted leaf.
+        target: The layer a write lands in, `global` or `repo`.
+
+    Returns:
+        The layer whose value a run reads over the target's; None when the leaf is a table or
+        the target's own value, a lower layer's or the default is in force.
+    """
+    source = eff.sources.get(leaf)
+    if source is None:
+        return None
+    names = [lyr.name for lyr in eff.layers]
+    if target in names:
+        above = eff.layers[names.index(target) + 1 :]
+    elif target == "global":
+        above = eff.layers
+    else:
+        above = eff.layers[len([n for n in names[:2] if n in ("global", "preset")]) :]
+    return next((lyr for lyr in above if lyr.source == source), None)
 
 
 def load_global_only() -> EffectiveConfig:

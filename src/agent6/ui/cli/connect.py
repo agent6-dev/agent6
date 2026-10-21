@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import getpass
 import html as html_module
 import http.server
@@ -75,34 +76,109 @@ def _current_entry(name: str) -> ProviderEntry | None:
         return None
 
 
-def _provider_defaults(name: str, target: pathlib.Path) -> tuple[str, str]:
-    """Read prompt defaults from the effective config, falling back to the target table.
+@dataclasses.dataclass(frozen=True, slots=True)
+class _Leaves:
+    """The two leaves connect writes, as one file or the merged config holds them.
+
+    Attributes:
+        api_format: The API format; "" when absent.
+        base_url: The base URL; "" when absent.
+    """
+
+    api_format: str
+    base_url: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _Current:
+    """What a run here reads for a provider, beside what the target file holds.
+
+    Attributes:
+        effective: The merged config's leaves, the values the prompts offer.
+        target: The target file's own leaves, which Enter leaves alone when they match.
+        shadowed: The layer above the target that sets each leaf, by leaf name.
+    """
+
+    effective: _Leaves
+    target: _Leaves
+    shadowed: dict[str, layer.Layer]
+
+
+def _target_leaves(name: str, target: pathlib.Path) -> _Leaves:
+    """Return the target file's own `[providers.<name>]` leaves.
 
     Args:
         name: The provider name.
-        target: The config file connect will edit.
+        target: The config file connect will edit; absent reads as empty.
 
     Returns:
-        The API format and base URL; empty strings for absent values.
+        The leaves; "" for each the file does not hold.
 
     Raises:
         ConfigError: The target file cannot be read as TOML.
     """
+    providers = io.read_toml_file(target).get("providers")
+    block = providers.get(name) if isinstance(providers, dict) else None
+    if not isinstance(block, dict):
+        return _Leaves("", "")
+    return _Leaves(str(block.get("api_format", "")), str(block.get("base_url", "")))
+
+
+def _current(name: str, target: pathlib.Path, to_repo: bool) -> _Current:
+    """Read the provider's effective leaves and the target file's own.
+
+    Args:
+        name: The provider name.
+        target: The config file connect will edit.
+        to_repo: The target is the repo config.
+
+    Returns:
+        The current state; when the config does not load, the target's own leaves stand in
+        for the effective ones.
+
+    Raises:
+        ConfigError: The target file cannot be read as TOML.
+    """
+    held = _target_leaves(name, target)
     try:
-        current = layer.load_effective(pathlib.Path.cwd()).config.providers.get(name)
+        eff = layer.load_effective(pathlib.Path.cwd())
     except ConfigError:
-        providers = io.read_toml_file(target).get("providers")
-        block = providers.get(name) if isinstance(providers, dict) else None
-        if not isinstance(block, dict):
-            return "", ""
-        return str(block.get("api_format", "")), str(block.get("base_url", ""))
-    return (
-        current.api_format if current is not None else "",
-        current.base_url if isinstance(current, OpenAIProviderEntry) else "",
+        return _Current(held, held, {})
+    entry = eff.config.providers.get(name)
+    effective = _Leaves(
+        entry.api_format if entry is not None else "",
+        entry.base_url if isinstance(entry, OpenAIProviderEntry) else "",
+    )
+    target_layer = "repo" if to_repo else "global"
+    shadowed = {
+        leaf: lyr
+        for leaf in ("api_format", "base_url")
+        if (lyr := layer.shadowing_layer(eff, f"providers.{name}.{leaf}", target_layer)) is not None
+    }
+    return _Current(effective, held, shadowed)
+
+
+def _shadow_notice(current: _Current, leaf: str, to_repo: bool, written: str) -> None:
+    """Say when a layer above the target keeps a run on a value other than the one written.
+
+    Args:
+        current: The provider's current state.
+        leaf: `api_format` or `base_url`.
+        to_repo: The target is the repo config.
+        written: The value the target holds after this command.
+    """
+    above = current.shadowed.get(leaf)
+    value = getattr(current.effective, leaf)
+    if above is None or value == written:
+        return
+    target = "repo" if to_repo else "global"
+    print(
+        f"  note: {above.described} sets {leaf} = {value}, above the {target} config this"
+        " command writes; a run here keeps reading it."
     )
 
 
-def _prompt_base_url(current_format: str, current_url: str, preset_url: str) -> str | None:
+def _prompt_base_url(offered: str) -> str:
     """Prompt for an OpenAI-compatible base URL and validate it.
 
     Validated before any secret or config write, so a scheme-less value (an API key pasted
@@ -110,29 +186,20 @@ def _prompt_base_url(current_format: str, current_url: str, preset_url: str) -> 
     error.
 
     Args:
-        current_format: The existing block's format; "" when absent.
-        current_url: The existing block's URL; "" when absent.
-        preset_url: The preset's URL; "" for a custom name.
+        offered: The URL Enter keeps: the one a run reads, else the preset's or the default.
 
     Returns:
-        The URL to write; None when the block already holds it.
+        The URL typed, or `offered`.
 
     Raises:
         ValueError: The URL is invalid, by the `OpenAIProviderEntry.base_url` check.
     """
-    default = OpenAIProviderEntry(api_format="openai").base_url
-    if current_format == "openai":
-        held = offered = current_url or default
-    else:
-        offered = preset_url or default
-        # A block changing format may keep a base_url of its own, which only a write replaces.
-        held = default if not current_format and not current_url else None
     try:
         url = input(f"Base URL [{offered}]: ").strip() or offered
     except EOFError:
         url = offered
     validate_base_url(url)
-    return None if url == held else url
+    return url
 
 
 def _write_provider_block(
@@ -546,6 +613,53 @@ def _cmd_logout(name: str, api_format: str) -> int:
     return 0
 
 
+def _write_shown_values(
+    name: str,
+    api_format: str,
+    current: _Current,
+    preset_url: str,
+    target: pathlib.Path,
+    to_repo: bool,
+) -> int:
+    """Prompt for the base URL when the format takes one, then write what the prompts showed.
+
+    Enter writes the shown value to the target unless the target already holds it.
+
+    Args:
+        name: The provider name.
+        api_format: The format the prompt settled.
+        current: The provider's current state.
+        preset_url: The preset's URL; "" for a custom name.
+        target: The config file connect edits.
+        to_repo: Write the per-repo config instead of the global one.
+
+    Returns:
+        0 once written or already held; 2 after an invalid URL or a refused edit.
+    """
+    fields: dict[str, io.ConfigLeafValue] = {
+        "api_format": api_format if api_format != current.target.api_format else None
+    }
+    if api_format == "openai":
+        # A loaded block always carries a URL; the target's own leaves may not.
+        held = current.effective.base_url if current.effective.api_format == "openai" else ""
+        offered = held or preset_url or OpenAIProviderEntry(api_format="openai").base_url
+        try:
+            url = _prompt_base_url(offered)
+        except ValueError as exc:
+            _common.error(f"{exc}")
+            return 2
+        _shadow_notice(current, "base_url", to_repo, url)
+        fields["base_url"] = url if url != current.target.base_url else None
+    if all(value is None for value in fields.values()):
+        print(f"[providers.{name}] in {target} already holds these values.")
+        return 0
+    if (refusal := _write_provider_block(name, fields, to_repo=to_repo)) is not None:
+        _common.refuse(refusal)
+        return 2
+    print(f"Wrote [providers.{name}] to {target}.")
+    return 0
+
+
 def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: bool = False) -> int:  # noqa: PLR0911, PLR0912
     """Interactively add a provider and its API key.
 
@@ -568,32 +682,24 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
         return 2
     preset = write.PROVIDER_DEFAULTS.get(name)
     preset_format = preset["api_format"] if preset else ""
+    target = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
+    try:
+        current = _current(name, target, to_repo)
+    except ConfigError as exc:
+        if not logout:
+            _common.error(str(exc))
+            return 2
+        current = _Current(_Leaves("", ""), _Leaves("", ""), {})
     if logout:
         return _cmd_logout(name, preset_format)
     print("agent6 connect: set up a model provider.\n")
-    target = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
-    try:
-        current_format, current_url = _provider_defaults(name, target)
-    except ConfigError as exc:
-        _common.error(str(exc))
-        return 2
-    api_format = _prompt_api_format(name, preset_format, current_format)
+    api_format = _prompt_api_format(name, preset_format, current.effective.api_format)
     if api_format is None:
         return 2
-    fields: dict[str, io.ConfigLeafValue] = {"api_format": api_format}
-    if api_format == "openai":
-        try:
-            fields["base_url"] = _prompt_base_url(
-                current_format, current_url, (preset or {}).get("base_url", "")
-            )
-        except ValueError as exc:
-            _common.error(f"{exc}")
-            return 2
-
-    if (refusal := _write_provider_block(name, fields, to_repo=to_repo)) is not None:
-        _common.refuse(refusal)
-        return 2
-    print(f"Wrote [providers.{name}] to {target}.")
+    _shadow_notice(current, "api_format", to_repo, api_format)
+    preset_url = (preset or {}).get("base_url", "")
+    if (rc := _write_shown_values(name, api_format, current, preset_url, target, to_repo)) != 0:
+        return rc
 
     api_key = ""
     if api_format == "claude_code":

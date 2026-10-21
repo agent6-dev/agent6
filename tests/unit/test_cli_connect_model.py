@@ -194,10 +194,15 @@ def test_connect_checks_effective_host_after_target_layer_edit(
     iso: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
     to_repo: bool,
     replacement: str,
 ) -> None:
-    """The target layer receives the URL edit; the probe follows the effective override."""
+    """The prompt offers the URL a run reads; a value the repo layer keeps over the target is said.
+
+    Enter writes the shown URL to the target unless the target holds it; the probe follows the
+    effective value. Writing the global file under a repo override wrote nothing and said nothing.
+    """
     global_path = paths.global_config_path()
     repo_path = paths.repo_config_path(tmp_path)
     for path, host in ((global_path, "global"), (repo_path, "repo")):
@@ -216,19 +221,77 @@ def test_connect_checks_effective_host_after_target_layer_edit(
 
     monkeypatch.setattr(cache.httpx2, "get", get)
     assert main(["connect", "custom", *(["--repo"] if to_repo else [])]) == 0
+    out = capsys.readouterr().out
     assert prompts[-1] == "Base URL [https://repo.example/v1]: "
+    notice = (
+        "note: the repo config sets base_url = https://repo.example/v1, above the global config"
+        " this command writes; a run here keeps reading it."
+    )
+    assert (notice in out) is bool(replacement and not to_repo)
+    shown = replacement or "https://repo.example/v1"
     for path, host in ((global_path, "global"), (repo_path, "repo")):
-        expected = (
-            replacement
-            if replacement and (path == repo_path) == to_repo
-            else f"https://{host}.example/v1"
-        )
+        expected = shown if (path == repo_path) == to_repo else f"https://{host}.example/v1"
         assert tomllib.loads(path.read_text())["providers"]["custom"] == {
             "api_format": "openai",
             "base_url": expected,
         }
+    assert ("already holds" in out) is (to_repo and not replacement)
     effective_url = replacement if replacement and to_repo else "https://repo.example/v1"
     assert requested == [effective_url + "/models"]
+
+
+def test_connect_says_when_a_typed_url_is_kept_out_by_the_repo_layer(
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Global and repo held the same URL, so no notice said the typed one never reaches a run."""
+    same = '[providers.custom]\napi_format = "openai"\nbase_url = "https://same.example/v1"\n'
+    for path in (paths.global_config_path(), paths.repo_config_path(tmp_path)):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(same)
+    _scripted_input(monkeypatch, "", "https://typed.example/v1")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-test")
+    assert main(["connect", "custom"]) == 0
+    out = capsys.readouterr().out
+    assert (
+        "note: the repo config sets base_url = https://same.example/v1, above the global config"
+        " this command writes; a run here keeps reading it." in out
+    )
+    saved = tomllib.loads(paths.global_config_path().read_text())["providers"]["custom"]
+    assert saved["base_url"] == "https://typed.example/v1"
+
+
+def test_a_broken_config_still_offers_the_default_url_for_a_bare_openai_block(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the config not loading, a block without base_url offered `Base URL []`; Enter failed."""
+    gc = paths.global_config_path()
+    gc.parent.mkdir(parents=True)
+    gc.write_text('[providers.az]\napi_format = "openai"\n[budget]\nbogus_key = 1\n')
+    prompts = _scripted_input(monkeypatch, "", "")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-az")
+    assert main(["connect", "az"]) == 0
+    assert prompts[-1] == "Base URL [https://api.openai.com/v1]: "
+    saved = tomllib.loads(gc.read_text())["providers"]["az"]
+    assert saved["base_url"] == "https://api.openai.com/v1"
+
+
+def test_connect_writes_a_repo_only_providers_url_to_the_global_file(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A provider only the repo config held got a global block with no URL: Enter wrote nothing."""
+    repo_path = paths.repo_config_path(tmp_path)
+    repo_path.parent.mkdir(parents=True, exist_ok=True)
+    repo_path.write_text(
+        '[providers.custom]\napi_format = "openai"\nbase_url = "https://repo.example/v1"\n'
+    )
+    _scripted_input(monkeypatch, "", "")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-test")
+    assert main(["connect", "custom"]) == 0
+    saved = tomllib.loads(paths.global_config_path().read_text())["providers"]["custom"]
+    assert saved == {"api_format": "openai", "base_url": "https://repo.example/v1"}
 
 
 def test_connect_over_a_non_table_provider_entry_does_not_crash(
