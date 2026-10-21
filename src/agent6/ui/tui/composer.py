@@ -255,15 +255,6 @@ RUN_MENU = menubar.Menu(
 )
 
 
-# The row's colour per answer; the keymap owns the keys and the words.
-_ANSWER_STYLES: dict[str, str] = {
-    "yes": "bold green",
-    "session": "green",
-    "no": "bold red",
-    "session-deny": "red",
-}
-
-
 # A run view lists these in its own BINDINGS; textual takes bindings only from DOM classes.
 APPROVAL_KEY_BINDINGS: tuple[binding.Binding, ...] = tuple(
     binding.Binding(entry.key, f"answer('{entry.answer}')", entry.label, show=False)
@@ -550,10 +541,8 @@ class _AnswerLabel(widgets.Static, can_focus=True):
         binding.Binding("space", "answer", "Answer", show=False),
     ]
 
-    def __init__(self, key: str, answer: str, label: str, style: str) -> None:
-        super().__init__(
-            rich_text.Text(f"[{key}] {label}", style=style), classes=f"answer-{answer}"
-        )
+    def __init__(self, key: str, answer: str, label: str) -> None:
+        super().__init__(rich_text.Text(f"[{key}] {label}"), classes=f"answer-{answer}")
         self.answer = answer
 
     def on_click(self) -> None:
@@ -576,6 +565,10 @@ class ApprovalRow(containers.Vertical):
     ApprovalRow { height: auto; padding: 0 1; background: $surface; }
     ApprovalRow #approval-answers { height: auto; }
     ApprovalRow Static { width: auto; padding: 0 2 0 0; }
+    ApprovalRow .answer-yes { color: ansi_green; text-style: bold; }
+    ApprovalRow .answer-session { color: ansi_green; }
+    ApprovalRow .answer-no { color: ansi_red; text-style: bold; }
+    ApprovalRow .answer-session-deny { color: ansi_red; }
     ApprovalRow _AnswerLabel:focus { background: $primary; color: $text; text-style: bold; }
     ApprovalRow _AnswerLabel:hover { background: $primary 30%; }
     """
@@ -606,9 +599,7 @@ class ApprovalRow(containers.Vertical):
         with containers.Horizontal(id="approval-answers"):
             for entry in keymap.APPROVAL_ANSWERS:
                 if self.offers(entry.answer):
-                    yield _AnswerLabel(
-                        entry.key, entry.answer, entry.label, _ANSWER_STYLES[entry.answer]
-                    )
+                    yield _AnswerLabel(entry.key, entry.answer, entry.label)
             yield widgets.Static(rich_text.Text(self._hint, style="dim"))
 
     def offers(self, answer: str) -> bool:

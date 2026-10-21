@@ -7,7 +7,7 @@ An iteration-capped pause loop spins through in milliseconds under load while
 the awaited work lags behind, then falls through silently to fail at some later
 assert; a wall-clock deadline fails at the wait that actually missed.
 
-The rest wait on an approval row.
+`painted` waits until a widget paints its texts. The rest wait on an approval row.
 
 A row is queryable a frame before the labels it composes, so a test that reads
 its presence as readiness races that mount: `focus_answers` finds no labels and
@@ -22,6 +22,9 @@ import pathlib
 import time
 from collections.abc import Callable
 from typing import Any
+
+from rich import style as rich_style
+from textual import widgets
 
 from agent6.ui.tui import composer
 
@@ -46,6 +49,27 @@ async def wait_for(
         if pump is not None:
             pump()
         await pilot.pause(0.05)
+
+
+async def painted(
+    pilot: Any, widget: widgets.Static, *texts: str, pump: Callable[[], None] | None = None
+) -> list[rich_style.Style]:
+    """Return the style each text paints with, once the widget's lines show every one.
+
+    A widget shown this frame has no size, so no lines, until the next layout.
+    """
+
+    def styles() -> dict[str, rich_style.Style]:
+        return {
+            seg.text.strip(): seg.style or rich_style.Style()
+            for y in range(widget.size.height)
+            for seg in widget.render_line(y)
+            if seg.text.strip()
+        }
+
+    await wait_for(pilot, lambda: set(texts) <= styles().keys(), f"{texts} painted", pump=pump)
+    shown = styles()
+    return [shown[text] for text in texts]
 
 
 def answerable(view: Any) -> bool:

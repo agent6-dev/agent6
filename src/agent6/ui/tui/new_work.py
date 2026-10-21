@@ -205,7 +205,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         preset = str(self.query_one("#draft-preset", widgets.Select).value)
         model = str(self.query_one("#draft-model", widgets.Select).value)
         self._starting = True
-        self._notice(rich_text.Text(f"starting the {mode}…", style="bold cyan"))
+        self._notice(f"starting the {mode}…", "bold cyan")
         self._start(self.app, mode, message.text, preset, model)
 
     @textual.work(thread=True, exclusive=True)
@@ -237,12 +237,15 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             self.app.notify(err or "could not start", severity="error", timeout=8.0)
             return
         # The refusal renders selectable, above the text it refused, back in the composer.
-        self._notice(rich_text.Text(err or "could not start", style="bold red"))
+        self._notice(err or "could not start", "bold red")
         with contextlib.suppress(query.NoMatches):
             bar = self.query_one("#draft-input", composer.SteerInput)
             bar.load_text(task)
             bar.move_cursor(bar.document.end)
             bar.focus()
 
-    def _notice(self, text: rich_text.Text) -> None:
-        self.query_one("#draft-notice", widgets.Static).update(text)
+    def _notice(self, text: str, style: str) -> None:
+        # A span: textual paints a base style's colour as fixed CSS, not the theme's ANSI colour.
+        self.query_one("#draft-notice", widgets.Static).update(
+            rich_text.Text.assemble((text, style))
+        )

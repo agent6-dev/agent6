@@ -9,6 +9,8 @@ import pathlib
 
 import pytest
 from textual import app as textual_app
+from textual import color as textual_color
+from textual import theme as textual_theme
 from textual import widgets
 
 from agent6.ui.tui import forms, settings, theme
@@ -26,6 +28,56 @@ class _Host(textual_app.App[None]):
 
     def on_mount(self) -> None:
         theme.setup_theme(self)
+
+
+def _luminance(rgb: tuple[int, int, int]) -> float:
+    """Return the WCAG relative luminance of an sRGB colour."""
+    unit = [v / 255 for v in rgb]
+    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in unit)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
+    """Return the WCAG contrast ratio of two colours, from 1 to 21."""
+    lighter, darker = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def test_a_light_theme_paints_every_ansi_colour_at_4_5_to_1(cfg: pathlib.Path) -> None:
+    """An agent6 light theme's ANSI colours read at 4.5:1 or more on its background and surface.
+
+    textual's light default painted yellow #cb9000, 2.36:1 on agent6-light's surface.
+    """
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            light = [
+                t
+                for t in app.available_themes.values()
+                if not t.dark and t.name not in textual_theme.BUILTIN_THEMES
+            ]
+            assert light
+            low: list[str] = []
+            for light_theme in light:
+                app.theme = light_theme.name
+                await pilot.pause()
+                ansi = app.ansi_theme
+                colours = {"foreground": ansi.foreground_color} | {
+                    f"ANSI {n}": ansi.ansi_colors[n] for n in range(16)
+                }
+                variables = app.get_css_variables()
+                for ground in ("background", "surface"):
+                    rgb = textual_color.Color.parse(variables[ground]).rgb
+                    low += [
+                        f"{light_theme.name} {ground}: {name} at {_contrast(c, rgb):.2f}:1"
+                        for name, c in colours.items()
+                        if _contrast(c, rgb) < 4.5
+                    ]
+            assert not low, low
+
+    asyncio.run(scenario())
 
 
 def test_setup_registers_applies_saved_and_persists(cfg: pathlib.Path) -> None:

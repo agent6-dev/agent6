@@ -19,6 +19,7 @@ try:
     from rich.color import Color
     from rich.segment import Segment, Segments
     from rich.style import Style
+    from rich.terminal_theme import TerminalTheme
     from textual import app as textual_app
     from textual import binding, containers, events, screen
     from textual import widgets as textual_widgets
@@ -175,6 +176,32 @@ GRIMM = Theme(
     },
 )
 
+# The light ANSI theme: each colour at 4.5:1 or more on agent6's light backgrounds and surfaces.
+ANSI_THEME_LIGHT = TerminalTheme(
+    (247, 247, 247),
+    (0, 0, 0),
+    [
+        (0, 0, 0),  # black
+        (170, 55, 49),  # red
+        (48, 120, 10),  # green
+        (140, 98, 5),  # yellow
+        (50, 92, 192),  # blue
+        (122, 62, 157),  # magenta
+        (4, 116, 131),  # cyan
+        (105, 105, 105),  # white
+    ],
+    [
+        (105, 105, 105),  # bright black
+        (202, 40, 49),  # bright red
+        (54, 120, 1),  # bright green
+        (145, 95, 3),  # bright yellow
+        (4, 108, 181),  # bright blue
+        (186, 13, 187),  # bright magenta
+        (8, 115, 138),  # bright cyan
+        (105, 105, 105),  # bright white
+    ],
+)
+
 # The command palette restyled as a dialog; added to an App's CSS, since the palette is pushed
 # on the App. Targets textual-internal ids.
 PALETTE_CSS = """
@@ -319,13 +346,15 @@ def setup_theme(app: textual_app.App[Any]) -> None:
     """Register the built-in themes, apply the saved one, and persist every change.
 
     Called from `App.on_mount`. The `theme_changed_signal` subscription remembers a
-    change from any path, the picker or the command palette. Also installs the
-    half-height horizontal scrollbar renderer, a class-level hook over every bar.
+    change from any path, the picker or the command palette. Sets the app's light
+    ANSI theme to `ANSI_THEME_LIGHT`. Also installs the half-height horizontal
+    scrollbar renderer, a class-level hook over every bar.
 
     Args:
         app: The app to theme.
     """
     ScrollBar.renderer = ThinScrollBarRender
+    app.ansi_theme_light = ANSI_THEME_LIGHT
     for theme in (AGENT6_DARK, AGENT6_LIGHT, ALICE, SNOW, ROSE, GRIMM):
         if theme.name not in app.available_themes:
             app.register_theme(theme)

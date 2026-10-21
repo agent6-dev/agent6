@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 import pytest
+from rich import color as rich_color
 from textual.widgets._select import SelectCurrent
 
 from agent6 import paths
@@ -19,7 +20,11 @@ from agent6.models import choices
 from agent6.sessions import ipc, process
 from agent6.ui import spawn
 from agent6.viewmodel import session_dirs, session_mtime
-from tests.tui._waits import wait_for
+from tests.tui._waits import painted, wait_for
+
+# textual paints a span's colour as the ANSI colour a theme maps, and a base style's as CSS.
+_ANSI_RED = rich_color.Color.parse("color(1)")
+_ANSI_CYAN = rich_color.Color.parse("color(6)")
 
 
 def _write_run(
@@ -451,6 +456,99 @@ def test_new_task_view_keeps_the_text_on_a_refusal(
             assert "REFUSING" in shown and "[git] seed.txt" in shown  # markup-safe
             assert bar.text == "fix"  # back in the composer, not lost
             assert app.return_value is None and isinstance(app.screen, tui_new_work.NewWorkScreen)
+
+    asyncio.run(scenario())
+
+
+def test_the_starting_notice_paints_ansi_cyan(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`starting the run…` paints ANSI cyan, which the theme maps to its own shade.
+
+    As a base style it painted CSS #00ffff on every theme, 1.1:1 on agent6-light.
+    """
+    import threading
+
+    from textual import widgets
+
+    from agent6.ui.tui import composer
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
+
+    gate = threading.Event()
+
+    def _spawn(
+        cwd: pathlib.Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str = "",
+        model: str = "",
+        config_paths: object = (),
+    ):
+        gate.wait(timeout=5.0)
+        return tmp_path / "located", ""
+
+    monkeypatch.setattr(spawn, "spawn_new_work", _spawn)
+
+    async def scenario() -> None:
+        app = tui_home.Agent6HomeApp(tmp_path / ".agent6", tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(tui_new_work.NewWorkScreen(tmp_path))
+            await pilot.pause()
+            app.screen.query_one("#draft-input", composer.SteerInput).focus()
+            await pilot.pause()
+            await pilot.press("f", "i", "x", "enter")
+            notice = app.screen.query_one("#draft-notice", widgets.Static)
+            try:
+                (style,) = await painted(pilot, notice, "starting the run…")
+            finally:
+                gate.set()
+            assert style.bold and style.color == _ANSI_CYAN
+            await wait_for(pilot, lambda: app.return_value is not None, "the start to finish")
+
+    asyncio.run(scenario())
+
+
+def test_the_refusal_notice_paints_ansi_red(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused start's reason paints ANSI red, which the theme maps to its own shade.
+
+    As a base style it painted CSS #ff0000 on every theme, 3.4:1 on agent6-light.
+    """
+    from textual import widgets
+
+    from agent6.ui.tui import composer
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
+
+    def _spawn(
+        cwd: pathlib.Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str = "",
+        model: str = "",
+        config_paths: object = (),
+    ):
+        return None, "REFUSING: the tree is dirty"
+
+    monkeypatch.setattr(spawn, "spawn_new_work", _spawn)
+
+    async def scenario() -> None:
+        app = tui_home.Agent6HomeApp(tmp_path / ".agent6", tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(tui_new_work.NewWorkScreen(tmp_path))
+            await pilot.pause()
+            app.screen.query_one("#draft-input", composer.SteerInput).focus()
+            await pilot.pause()
+            await pilot.press("f", "i", "x", "enter")
+            notice = app.screen.query_one("#draft-notice", widgets.Static)
+            (style,) = await painted(pilot, notice, "REFUSING: the tree is dirty")
+            assert style.bold and style.color == _ANSI_RED
 
     asyncio.run(scenario())
 

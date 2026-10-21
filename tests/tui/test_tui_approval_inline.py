@@ -12,12 +12,12 @@ import json
 import os
 import pathlib
 import time
-from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
+import pytest
 from rich import color as rich_color
-from rich import style as rich_style
+from textual import color as textual_color
 from textual import screen, widgets
 
 from agent6.ui.tui import app as tui_app
@@ -27,6 +27,7 @@ from tests.tui._waits import (
     answer_written,
     answerable,
     focus_answers,
+    painted,
     row_gone,
     wait_for,
 )
@@ -48,29 +49,10 @@ def _append(d: pathlib.Path, ev: dict[str, object]) -> None:
         fh.write(json.dumps(ev) + "\n")
 
 
-# textual paints a span's "yellow" as ANSI colour 3, and a base style's as CSS #ffff00.
+# textual paints a span's colour as the ANSI colour a theme maps, and a base style's as CSS.
 _ANSI_YELLOW = rich_color.Color.parse("color(3)")
-
-
-async def _painted(
-    pilot: Any, widget: widgets.Static, *texts: str, pump: Callable[[], None] | None = None
-) -> list[rich_style.Style]:
-    """Return the style each text paints with, once the widget's lines show every one.
-
-    A widget shown this frame has no size, so no lines, until the next layout.
-    """
-
-    def styles() -> dict[str, rich_style.Style]:
-        return {
-            seg.text.strip(): seg.style or rich_style.Style()
-            for y in range(widget.size.height)
-            for seg in widget.render_line(y)
-            if seg.text.strip()
-        }
-
-    await wait_for(pilot, lambda: set(texts) <= styles().keys(), f"{texts} painted", pump=pump)
-    painted = styles()
-    return [painted[text] for text in texts]
+_ANSI_RED = rich_color.Color.parse("color(1)")
+_ANSI_GREEN = rich_color.Color.parse("color(2)")
 
 
 def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: pathlib.Path) -> None:
@@ -105,7 +87,7 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: pathlib.Path) ->
             assert item.display
             text = str(item.render())
             assert "approval needed" in text and "pytest -q tests/unit/test_x.py" in text
-            mark, head, command = await _painted(
+            mark, head, command = await painted(
                 pilot,
                 item,
                 "?",
@@ -172,13 +154,92 @@ def test_the_waiting_line_under_an_approval_paints_ansi_yellow(tmp_path: pathlib
             await _open_approval(app, pilot, run)
             conv = app._conv  # pyright: ignore[reportPrivateUsage]
             live = conv.query_one("#conv-live", widgets.Static)
-            (label,) = await _painted(
+            (label,) = await painted(
                 pilot,
                 live,
                 "waiting · needs answer",
                 pump=conv._poll,  # pyright: ignore[reportPrivateUsage]
             )
             assert label.bold and label.color == _ANSI_YELLOW
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("theme", ["agent6-light", "agent6-dark"])
+def test_the_answers_paint_ansi_green_and_red(tmp_path: pathlib.Path, theme: str) -> None:
+    """The row's answers paint ANSI green and red, which the theme maps to its own shades.
+
+    As a base style they painted CSS #008000 and #ff0000 on every theme, the red at 3.4:1 on
+    agent6-light. The two single answers are bold.
+    """
+    run = tmp_path / "live-run-NNNNNN"
+    _live_run(run)
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_approval(app, pilot, run)
+            app.theme = theme
+            await pilot.pause()
+            row = app._conv.query_one(composer.ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            colours: dict[str, object] = {}
+            for answer, text in (
+                ("yes", "[y] allow"),
+                ("session", "[a] allow all"),
+                ("no", "[n] deny"),
+                ("session-deny", "[d] deny all"),
+            ):
+                label = row.query_one(f".answer-{answer}", widgets.Static)
+                (style,) = await painted(pilot, label, text)
+                assert label.styles.color.ansi is not None
+                assert bool(style.bold) is (answer in ("yes", "no"))
+                colours[answer] = style.color
+            assert colours == {
+                "yes": _ANSI_GREEN,
+                "session": _ANSI_GREEN,
+                "no": _ANSI_RED,
+                "session-deny": _ANSI_RED,
+            }
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("theme", ["agent6-light", "agent6-dark"])
+@pytest.mark.parametrize("answer", ["yes", "session", "no", "session-deny"])
+def test_focused_answer_paints_readable_theme_text(
+    tmp_path: pathlib.Path, theme: str, answer: str
+) -> None:
+    """A focused answer kept its green or red on $primary, at 1.04:1 to 2.04:1."""
+    run = tmp_path / "live-run-FOCUS1"
+    _live_run(run)
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_approval(app, pilot, run)
+            app.theme = theme
+            label = app.screen.query_one(f".answer-{answer}", widgets.Static)
+            label.focus()
+            await pilot.pause()
+            assert app.focused is label
+            (style,) = await painted(pilot, label, str(label.render()))
+            variables = app.get_css_variables()
+            foreground = label.rich_style.color
+            background = textual_color.Color.parse(variables["primary"])
+            assert style.color == foreground
+            assert style.bgcolor == background.rich_color
+            assert style.color is not None and style.bgcolor is not None
+
+            def luminance(colour: rich_color.Color) -> float:
+                rgb = colour.get_truecolor(app.ansi_theme)
+                linear = [
+                    c / 255 / 12.92 if c / 255 <= 0.04045 else ((c / 255 + 0.055) / 1.055) ** 2.4
+                    for c in rgb
+                ]
+                return sum(c * w for c, w in zip(linear, (0.2126, 0.7152, 0.0722), strict=True))
+
+            light, dark = sorted((luminance(style.color), luminance(style.bgcolor)), reverse=True)
+            assert (light + 0.05) / (dark + 0.05) >= 4.5
 
     asyncio.run(scenario())
 
