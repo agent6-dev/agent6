@@ -34,6 +34,8 @@ class LogScan:
         stranded: The latest execution finished with its edits uncommitted and no commit landed.
         setup_output: The workspace's setup command and retained output, or its failure diagnostic.
         end_summary: The journaled end sentence, "" while an execution runs or none was recorded.
+        gate_swapped: The verify gate changed between executions, so the first baseline is
+            another gate's verdict.
         baseline_ok: The start gate's verdict on the tree before the run's first turn; None
             when none was recorded.
         verified: The gate's word for the final tree, as the last session.end carried it:
@@ -86,6 +88,7 @@ class LogScan:
     setup_output: str = ""
     end_summary: str = ""
     baseline_ok: bool | None = None
+    gate_swapped: bool = False
     verified: str = ""
     end_tree: str = ""
     undone_to: str = ""
@@ -249,6 +252,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     stranded = False
     end_tree = ""
     baseline_ok: bool | None = None
+    gate_swapped = False
     undone_to = ""
     setup_output = ""
     provider_error = ""
@@ -377,6 +381,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         provider_error = str(ev.get("error", ""))
                 elif etype == "loop.baseline" and baseline_ok is None:
                     baseline_ok = bool(ev.get("ok"))
+                elif etype == "loop.verify_swapped":
+                    gate_swapped = True
                 elif etype == "loop.edit.left_out":
                     for reason in ("ignored", "untracked"):
                         raw_paths = ev.get(reason)
@@ -416,6 +422,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         stranded=stranded,
         end_summary=end_summary,
         baseline_ok=baseline_ok,
+        gate_swapped=gate_swapped,
         verified=verified,
         setup_output=setup_output,
         end_tree=end_tree,

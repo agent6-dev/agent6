@@ -199,6 +199,57 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
     assert "uv run pytest)\n\nToken + cost summary:" in out
 
 
+def test_a_gate_that_changed_between_executions_takes_no_blame_for_the_edits(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A resume with another gate blamed the edits for a red off the old gate's green verdict."""
+    import json
+
+    from agent6 import budget
+    from agent6.app import finalize
+    from agent6.harness import _snapshot
+
+    layout = _layout(tmp_path)
+    records = [
+        {"type": "loop.start"},
+        {"type": "loop.baseline", "ok": True, "iteration": 0},
+        {"type": "session.end", "reason": "finish_session", "verified": "passed"},
+        {"type": "loop.resume.start"},
+        {"type": "loop.verify_swapped", "was": ["pytest"], "now": ["make", "test"]},
+        {"type": "verify.start"},
+        {"type": "verify.end", "exit_code": 1},
+        {"type": "session.end", "reason": "finish_session", "verified": "failed"},
+    ]
+    layout.logs_path.write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    stamps.pin_gate(
+        layout.session_dir,
+        ("make", "test"),
+        "configured",
+        events=_sink(tmp_path),
+        reporter=_quiet()[0],
+    )
+    finalize.print_session_end(
+        _snapshot.SessionResult(
+            completed=True,
+            reason="finish_session",
+            summary="s",
+            iterations=1,
+            tool_calls=1,
+            verified="failed",
+        ),
+        layout=layout,
+        cwd=tmp_path,
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=False,
+        reporter=app_reporter.STDIO_REPORTER,
+    )
+    out = capsys.readouterr().out
+    assert "green at the base" in out and "the gate changed since" in out
+    assert "this run's edits made it red" not in out
+
+
 @pytest.mark.parametrize("baseline_ok", [True, False])
 def test_a_resumed_red_gate_reads_the_first_executions_baseline(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], baseline_ok: bool

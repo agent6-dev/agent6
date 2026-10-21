@@ -214,7 +214,14 @@ def _print_red_gate(
         return
     if scan.baseline_ok is not None:
         word = "green" if scan.baseline_ok else "already red"
-        attribution = "; this run's edits made it red" if scan.baseline_ok else ""
+        attribution = ""
+        if scan.baseline_ok:
+            # Another gate's green says nothing about this one.
+            attribution = (
+                "; the gate changed since"
+                if scan.gate_swapped
+                else "; this run's edits made it red"
+            )
         reporter.out(f"\nthe gate was {word} at the base ({base[:12]}){attribution}.")
         return
     reporter.out(
