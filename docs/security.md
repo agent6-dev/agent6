@@ -301,7 +301,7 @@ The agent works within the environment it is given and cannot expand it:
            `--link-mode=copy` on both steps: the jail binds the cache `HOME` and the working tree as separate mounts, so uv cannot hardlink between them and warns on every install without it
     - the warmed cache serves every working tree agent6 makes for the repository: a `run --worktree` worktree, a fork's, a `--parallel` lane's clone and a machine state's clone all get the repository's `HOME`
 - Running agent6 as root needs `--allow-root` / `AGENT6_ALLOW_ROOT=1` (plus a banner) and weakens the boundary
-    - jailed children run as real root under Landlock, seccomp and `NO_NEW_PRIVS` only, even under `full` `sandbox.isolation`
+    - jailed children run as real root (uid 0), even under `full` `sandbox.isolation`: the uid is no boundary, and the level's layers (the table in [Sandbox](#2-sandbox)) are the whole confinement
     - a setuid bit planted through `openat2` (the one create path seccomp cannot filter) then lands on a root-owned file in the workspace.
       That is local root for whoever runs it outside the jail
     - writes outside the workspace and routes off the box stay closed
