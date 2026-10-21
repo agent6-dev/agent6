@@ -371,14 +371,19 @@ def wants_session_network(cfg: Config, isolation: kinds.IsolationLevel) -> bool:
 
     Asked once before anything spawns, since the network exists before its first member. Only
     `full` can provide one.
+
+    Args:
+        cfg: The resolved config.
+        isolation: The resolved isolation level.
+
+    Returns:
+        True when the run's commands, or a server a run starts, join a session network.
     """
     if isolation != "full":
         return False
     if cfg.sandbox.network != "host":
         return True
-    return cfg.mcp.enabled and any(
-        srv.enabled and srv.effective_network == "session" for srv in cfg.mcp.servers.values()
-    )
+    return any(srv.effective_network == "session" for srv in cfg.mcp.enabled_servers.values())
 
 
 def mcp_server_grants(
@@ -518,14 +523,11 @@ def start_mcp_manager_if_enabled(
         session_net: The session's network namespace, when one exists.
 
     Returns:
-        The manager, or None when MCP is disabled or no server is configured.
+        The manager, or None when a run starts no server.
     """
-    if not cfg.mcp.enabled or not cfg.mcp.servers:
-        return None
     configs = [
         mcp_server_spec(cfg, root, isolation, name, srv)
-        for name, srv in cfg.mcp.servers.items()
-        if srv.enabled
+        for name, srv in cfg.mcp.enabled_servers.items()
     ]
     if not configs:
         return None
@@ -543,11 +545,16 @@ def _warn_servers_that_keep_the_network(
     """Warn per server whose `network = "auto"` degrades to the host's network.
 
     An explicit `none` or `session` refused before this.
+
+    Args:
+        cfg: The resolved config.
+        isolation: The resolved isolation level; nothing degrades on `full`.
+        reporter: Where the warnings go.
     """
     if isolation == "full":
         return
-    for name, srv in sorted(cfg.mcp.servers.items()):
-        if srv.enabled and srv.effective_network == "auto":
+    for name, srv in sorted(cfg.mcp.enabled_servers.items()):
+        if srv.effective_network == "auto":
             reporter.warn(
                 f"MCP server {name!r} uses the host network. Keeping it off the host network"
                 f" requires sandbox.isolation = 'full', but this host resolved to {isolation!r}."

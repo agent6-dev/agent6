@@ -148,9 +148,7 @@ def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
     root = pathlib.Path.cwd()
     out: list[kinds.DoctorCheck] = []
     probed: dict[str, MCPServerEntry] = {}
-    for name, srv in sorted(cfg.mcp.servers.items()):
-        if not srv.enabled:
-            continue
+    for name, srv in sorted(cfg.mcp.enabled_servers.items()):
         if (refusal := confine.mcp_network_refusal(name, srv, isolation)) is not None:
             detail = f"a run would refuse: {refusal}"
             print(f"  {name}: {detail}")

@@ -149,8 +149,8 @@ def test_a_real_loopback_url_still_takes_a_token() -> None:
 def test_a_plaintext_nonloopback_credential_warns_instead_of_refusing() -> None:
     """An internal-network or VPN endpoint over http with a credential is a real, deliberate setup.
 
-    It loads (the old validator refused it) and is listed for the run-entry warning and the connect
-    confirmation. https and credential-less http endpoints are not listed.
+    It loads (the old validator refused it) and is listed for the run-entry warning. https and
+    credential-less http endpoints are not listed.
     """
     cfg = Config.model_validate(
         {
@@ -167,13 +167,29 @@ def test_a_plaintext_nonloopback_credential_warns_instead_of_refusing() -> None:
                     "auth_style": "none",
                 },
             },
-            "mcp": {"servers": {"s": {"url": "http://mcp.corp.internal/mcp", "token_env": "T"}}},
+            "mcp": {
+                "enabled": True,
+                "servers": {"s": {"url": "http://mcp.corp.internal/mcp", "token_env": "T"}},
+            },
         }
     )
     assert cfg.cleartext_credential_endpoints() == (
         "[providers.corp] http://llm.corp.internal/v1",
         "[mcp.servers.s] http://mcp.corp.internal/mcp",
     )
+
+
+@pytest.mark.parametrize("switch", ["mcp.enabled", "mcp.servers.s.enabled"])
+def test_a_server_a_run_never_starts_is_no_cleartext_endpoint(switch: str) -> None:
+    """A server a run never starts sends no token, so its url is not listed for the warning.
+
+    A plaintext-token `url` server a run never starts (`[mcp].enabled = false`, or its own
+    `enabled = false`) warned at every run start.
+    """
+    table, server = (False, True) if switch == "mcp.enabled" else (True, False)
+    entry = {"url": "http://mcp.corp.internal/mcp", "token_env": "T", "enabled": server}
+    cfg = Config.model_validate({"mcp": {"enabled": table, "servers": {"s": entry}}})
+    assert cfg.cleartext_credential_endpoints() == ()
 
 
 def test_a_server_name_is_refused_before_it_becomes_a_table_header(

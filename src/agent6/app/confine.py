@@ -153,17 +153,21 @@ def warn_sandbox_gaps(
 
 
 def _warn_grants(cfg: Config, root: pathlib.Path, reporter: app_reporter.Reporter) -> None:
-    """Name each grant the run leaves out, and each that is the home directory or above it."""
+    """Name each grant the run leaves out, and each that is the home directory or above it.
+
+    Args:
+        cfg: The resolved config.
+        root: The workspace.
+        reporter: Where the warnings go.
+    """
     for dropped in tools_policy.resolve_grants(cfg, root).dropped:
         reporter.warn(dropped.line())
-    if cfg.mcp.enabled:
-        for name, srv in cfg.mcp.servers.items():
-            unconfined = srv.sandbox is not None and srv.sandbox.unconfined
-            if not srv.enabled or srv.url or unconfined:
-                continue
-            for dropped in _setup.mcp_server_grants(cfg, root, srv, name).dropped:
-                if dropped.key.startswith("mcp."):
-                    reporter.warn(dropped.line())
+    for name, srv in cfg.mcp.enabled_servers.items():
+        if srv.url or (srv.sandbox is not None and srv.sandbox.unconfined):
+            continue
+        for dropped in _setup.mcp_server_grants(cfg, root, srv, name).dropped:
+            if dropped.key.startswith("mcp."):
+                reporter.warn(dropped.line())
     for line in home_grant_warnings(cfg):
         reporter.warn(line)
 
@@ -350,20 +354,17 @@ def _partial_grant_regions(
         for p in policy.extra_rw_paths
     ]
     regions += [(pathlib.Path(p), "an operator tool dir (PATH mount)") for p in policy.tool_paths]
-    if cfg.mcp.enabled:
-        for name, srv in cfg.mcp.servers.items():
-            if not srv.enabled:
-                continue
-            spol = _setup.mcp_server_policy(cfg, root, "partial", srv)
-            if spol is None:
-                continue  # unconfined by explicit opt-out; its own loud path
-            regions += [
-                (pathlib.Path(p), f"[mcp.servers.{name}] read_paths") for p in spol.extra_ro_paths
-            ]
-            regions += [
-                (pathlib.Path(p), f"[mcp.servers.{name}] write_paths") for p in spol.extra_rw_paths
-            ]
-            regions.append((pathlib.Path(spol.cwd), f"[mcp.servers.{name}]'s working dir"))
+    for name, srv in cfg.mcp.enabled_servers.items():
+        spol = _setup.mcp_server_policy(cfg, root, "partial", srv)
+        if spol is None:
+            continue  # unconfined by explicit opt-out; its own loud path
+        regions += [
+            (pathlib.Path(p), f"[mcp.servers.{name}] read_paths") for p in spol.extra_ro_paths
+        ]
+        regions += [
+            (pathlib.Path(p), f"[mcp.servers.{name}] write_paths") for p in spol.extra_rw_paths
+        ]
+        regions.append((pathlib.Path(spol.cwd), f"[mcp.servers.{name}]'s working dir"))
     return tuple(regions)
 
 
@@ -425,11 +426,17 @@ def mcp_network_refusal(
 
     A server's `none` or `session` network requires `full` `sandbox.isolation` and refuses on
     `partial`, while `auto` degrades with a warning. The run's preflight and `agent6 check`
-    both ask here.
+    both ask here, for each server a run starts.
+
+    Args:
+        name: The server's name.
+        srv: The server's config block.
+        isolation: The resolved isolation level.
+
+    Returns:
+        The refusal, or None.
     """
-    if isolation != "partial" or not srv.enabled:
-        return None
-    if srv.effective_network not in ("none", "session"):
+    if isolation != "partial" or srv.effective_network not in ("none", "session"):
         return None
     return (
         f"MCP server {name!r} sets sandbox.network = {srv.effective_network!r}. Keeping the"
@@ -440,8 +447,16 @@ def mcp_network_refusal(
 
 
 def check_mcp_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str | None:
-    """Return the first server's network refusal, else None."""
-    for name, srv in sorted(cfg.mcp.servers.items()):
+    """Return the first network refusal among the servers a run starts, else None.
+
+    Args:
+        cfg: The resolved config.
+        isolation: The resolved isolation level.
+
+    Returns:
+        The refusal, or None.
+    """
+    for name, srv in sorted(cfg.mcp.enabled_servers.items()):
         if (refusal := mcp_network_refusal(name, srv, isolation)) is not None:
             return refusal
     return None

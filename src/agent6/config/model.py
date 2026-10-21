@@ -449,7 +449,8 @@ class Config(pydantic.BaseModel):
         """Return the endpoints that send a credential over plain http off loopback.
 
         Returns:
-            `[table] url` labels for the run-entry warning and the `mcp connect` confirmation.
+            `[table] url` labels for the run-entry warning: every provider, and each MCP server
+            a run starts.
         """
         out: list[str] = []
         for name, entry in sorted(self.providers.items()):
@@ -460,7 +461,7 @@ class Config(pydantic.BaseModel):
                 and not _sandbox.is_loopback_url(entry.base_url)
             ):
                 out.append(f"[providers.{name}] {entry.base_url}")
-        for name, srv in sorted(self.mcp.servers.items()):
+        for name, srv in sorted(self.mcp.enabled_servers.items()):
             if (
                 srv.token_env
                 and _sandbox.is_cleartext_url(srv.url)

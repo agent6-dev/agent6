@@ -123,7 +123,7 @@ def model_exchange_for(
         system=system,
         tools=tools,
         first_message=f"TASK:\n<the task text>\n\n{header}{hint}",
-        mcp_pending=config.mcp.enabled and any(s.enabled for s in config.mcp.servers.values()),
+        mcp_pending=bool(config.mcp.enabled_servers),
     )
 
 

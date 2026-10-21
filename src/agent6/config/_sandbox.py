@@ -389,7 +389,7 @@ class MCPServerEntry(pydantic.BaseModel):
         description=(
             "For a `url` server: the environment variable holding its bearer token, named here and "
             "never inlined or logged. Over plaintext `http://` to a non-loopback host the token is "
-            "readable on the wire: `mcp connect` asks first, and every run warns."
+            "readable on the wire: `mcp connect` asks first, and every run that starts it warns."
         ),
     )
     enabled: bool = pydantic.Field(
@@ -587,3 +587,10 @@ class MCPConfig(pydantic.BaseModel):
             if refusal:
                 raise ValueError(refusal)
         return v
+
+    @property
+    def enabled_servers(self) -> dict[str, MCPServerEntry]:
+        """The servers a run starts: every `enabled` entry while the table's `enabled` is on."""
+        if not self.enabled:
+            return {}
+        return {name: srv for name, srv in self.servers.items() if srv.enabled}

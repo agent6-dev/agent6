@@ -63,12 +63,14 @@ def approval_scopes(cfg: Config) -> tuple[str, ...]:
 
     A grant is per scope, so an approve-all with only the command scope granted would block
     on the first MCP call.
+
+    Args:
+        cfg: The resolved config.
+
+    Returns:
+        The command scope, then one scope per server a run starts.
     """
-    servers = (
-        tuple(f"{ipc.MCP_SCOPE_PREFIX}{name}" for name, s in cfg.mcp.servers.items() if s.enabled)
-        if cfg.mcp.enabled
-        else ()
-    )
+    servers = tuple(f"{ipc.MCP_SCOPE_PREFIX}{name}" for name in cfg.mcp.enabled_servers)
     return (ipc.COMMAND_SCOPE, *servers)
 
 

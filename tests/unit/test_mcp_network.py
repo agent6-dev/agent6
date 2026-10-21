@@ -66,6 +66,30 @@ def test_explicit_block_refuses_where_there_is_no_namespace() -> None:
     assert confine.check_mcp_network_support(cfg, "full") is None
 
 
+@pytest.mark.parametrize("network", ["none", "session"])
+@pytest.mark.parametrize("switch", ["mcp.enabled", "mcp.servers.s.enabled"])
+def test_a_server_a_run_never_starts_refuses_no_run(
+    switch: str, network: str, tmp_path: pathlib.Path
+) -> None:
+    """A server a run never starts refuses nothing, whichever switch keeps it off.
+
+    A `none` or `session` server under `[mcp].enabled = false` refused a `partial` run that would
+    start nothing, while `check mcp` read the same config as PASS.
+    """
+    from agent6.app import _setup
+
+    def config(on: bool) -> Config:
+        table, server = (on, True) if switch == "mcp.enabled" else (True, on)
+        entry = {"command": ["x"], "enabled": server, "sandbox": {"network": network}}
+        return Config.model_validate({"mcp": {"enabled": table, "servers": {"s": entry}}})
+
+    off = config(False)
+    assert _setup.start_mcp_manager_if_enabled(off, tmp_path, "partial") is None
+    assert confine.config_refusal(off, "partial", tmp_path) is None
+    err = confine.config_refusal(config(True), "partial", tmp_path)
+    assert err is not None and err.startswith("MCP server 's'"), "the switch alone differs"
+
+
 def test_auto_degrades_with_a_warning_naming_the_server(
     capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
 ) -> None:
