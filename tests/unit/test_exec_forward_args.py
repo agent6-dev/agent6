@@ -705,3 +705,33 @@ def test_forward_local_port_zero_picks_a_free_port(
     line = next(ln for ln in out.getvalue().splitlines() if "forwarding http://127.0.0.1:" in ln)
     bound = int(line.split("127.0.0.1:", 1)[1].split()[0])
     assert bound not in (0, 8080)
+
+
+def test_exec_refuses_a_run_stamped_with_an_isolation_level_it_does_not_know(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run recorded under an older name (`strict`) read as unstamped and fell back to today."""
+    import json
+
+    from agent6.config import Config
+    from agent6.ui.cli import net_cmds
+
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="old-1", subdir="runs")
+    layout.session_dir.mkdir(parents=True)
+    process.write_worker_pid(layout.session_dir, os.getpid())
+    (layout.session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "mode": "run",
+                "session_id": "old-1",
+                "models": {"driver": {"provider": "p", "model": "m"}},
+                "policy": {"run_commands": "ask", "isolation": "strict"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert net_cmds.exec_in_session(layout, Config(), tmp_path, ("true",)) == 2
+    err = capsys.readouterr().err
+    assert "recorded isolation 'strict'" in err and "older" in err
+    assert "recorded no launch policy" not in err

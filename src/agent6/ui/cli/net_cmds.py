@@ -220,16 +220,13 @@ def _stamped_policy(
         layout: The run.
 
     Returns:
-        The stamp, or None when unreadable or unstamped; its network is None when `auto` or
-        unknown.
+        The stamp, with the isolation word as recorded; None when the manifest is unreadable.
+        The network is None when `auto` or unknown.
     """
     try:
         stamp = manifest.read_manifest(layout.session_dir).policy
     except manifest.ManifestError:
         return None
-    if stamp.isolation not in ("full", "partial", "none"):
-        return None
-    # "auto" and "" (unstamped) read as None: jail_policy applies its own auto semantics.
     network: kinds.NetworkMode | None = (
         stamp.network if stamp.network in ("host", "session", "none") else None
     )
@@ -258,7 +255,46 @@ def _recorded_workspace(
     return recorded.worktree, recorded.worktree_git_dir
 
 
-def exec_in_session(
+def _launch_policy(
+    layout: sessions_layout.SessionLayout, cfg: Config, pid: int | None
+) -> tuple[kinds.IsolationLevel, kinds.NetworkMode | None] | None:
+    """Return the isolation and network an exec joins the run under, or None after a refusal.
+
+    The run's recorded policy, not today's config; an unstamped run falls back to the config
+    with a warning, and a stamp this agent6 does not know refuses: an older agent6 started it.
+
+    Args:
+        layout: The run.
+        cfg: The effective config, the fallback when the run is unstamped.
+        pid: The run's network holder, None without one.
+
+    Returns:
+        The resolved isolation and the network word; None when the stamp is unknown.
+    """
+    stamped = _stamped_policy(layout)
+    recorded = stamped[0] if stamped is not None else ""
+    if recorded in ("full", "partial", "none"):
+        assert stamped is not None
+        # The recorded word, not the holder: a host-network run can still hold a netns for MCP.
+        network = stamped[1] if stamped[1] is not None else ("session" if pid else None)
+        return detect.resolve_isolation(recorded, _setup.detect_env()), network
+    if recorded not in ("", "auto"):
+        _common.refuse(
+            f"run {layout.session_id} recorded isolation {recorded!r}, a level this agent6 does"
+            " not know: an older agent6 started it, and only that one reaches its commands"
+            " as they run."
+        )
+        return None
+    print(
+        "[agent6] WARNING: this run recorded no launch policy; using the"
+        " current config, which may differ from what the run's commands got.",
+        file=sys.stderr,
+    )
+    isolation = detect.resolve_isolation(cfg.sandbox.isolation, _setup.detect_env())
+    return isolation, ("session" if pid else None)
+
+
+def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
     layout: sessions_layout.SessionLayout, cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]
 ) -> int:
     """Run a command in the jail, network and tree the run's own commands get.
@@ -283,21 +319,10 @@ def exec_in_session(
         _common.refuse(f"{no_session_network_reason(layout)}")
         return 2
     pid = process.read_session_netns_pid(layout.session_dir)
-    # The run's recorded policy, not today's config; unstamped falls back with a warning.
-    stamped = _stamped_policy(layout)
-    if stamped is not None:
-        isolation_word, network_word = stamped
-        isolation = detect.resolve_isolation(isolation_word, _setup.detect_env())
-        # The recorded word, not the holder: a host-network run can still hold a netns for MCP.
-        network = network_word if network_word is not None else ("session" if pid else None)
-    else:
-        print(
-            "[agent6] WARNING: this run recorded no launch policy; using the"
-            " current config, which may differ from what the run's commands got.",
-            file=sys.stderr,
-        )
-        isolation = detect.resolve_isolation(cfg.sandbox.isolation, _setup.detect_env())
-        network = "session" if pid else None
+    launch = _launch_policy(layout, cfg, pid)
+    if launch is None:
+        return 2
+    isolation, network = launch
     workspace, git_dir = _recorded_workspace(layout, cwd)
     try:
         policy = exec_cmds.exec_policy(
