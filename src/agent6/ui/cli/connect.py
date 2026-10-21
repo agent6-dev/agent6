@@ -539,19 +539,22 @@ def _claude_code_check(name: str) -> None:
 
 
 def _prompt_api_format(name: str, preset_format: str, current_format: str) -> str | None:
-    """Return the api_format for the provider: the preset's, else the operator's answer.
+    """Return the api_format for the provider: the block's, the preset's, or the answer.
+
+    An existing block's format wins over a preset's; the prompt appears when the two differ
+    or there is no preset, and Enter keeps the block's.
 
     Args:
         name: The provider name, for the prompt.
         preset_format: The preset's format; "" for a custom name.
-        current_format: The existing block's format, which Enter keeps; "" for a new block.
+        current_format: The existing block's format; "" for a new block.
 
     Returns:
         The format, or None (after printing why) on no input or an unknown value.
     """
-    api_format = preset_format
+    default = current_format or preset_format or "anthropic"
+    api_format = default if default == preset_format else ""
     if not api_format:
-        default = current_format or "anthropic"
         try:
             api_format = (
                 input(

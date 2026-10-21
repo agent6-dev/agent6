@@ -294,6 +294,23 @@ def test_connect_writes_a_repo_only_providers_url_to_the_global_file(
     assert saved == {"api_format": "openai", "base_url": "https://repo.example/v1"}
 
 
+def test_a_preset_name_keeps_an_existing_blocks_other_format(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`connect claude` over an anthropic-format `[providers.claude]` rewrote it to claude_code."""
+    gc = paths.global_config_path()
+    gc.parent.mkdir(parents=True)
+    gc.write_text('[providers.claude]\napi_format = "anthropic"\n')
+    prompts = _scripted_input(monkeypatch, "")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant")
+    assert main(["connect", "claude"]) == 0
+    assert prompts == [
+        "API format for 'claude' (anthropic/openai/chatgpt/claude_code) [anthropic]: "
+    ]
+    assert tomllib.loads(gc.read_text())["providers"]["claude"] == {"api_format": "anthropic"}
+    assert "already holds these values" in capsys.readouterr().out
+
+
 def test_connect_over_a_non_table_provider_entry_does_not_crash(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
