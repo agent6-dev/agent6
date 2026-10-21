@@ -368,31 +368,31 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         if not base_commit:
             reporter.refuse("machine clones need a committed starting point")
             return 2
-        resolved_states = dict(configs.states)
-        inferred_setup: tuple[str, ...] = ()
-        if any(
-            not configs.states[name].config.parallel.setup_command
-            for name, state in spec.states.items()
-            if isinstance(state, (AgentState, ToolState))
-        ):
-            inferred_setup = workspace_setup.infer_if_unset(
-                cfg.with_setup_command(()), cwd, reporter=reporter, at=base_commit
-            ).parallel.setup_command
-        for name, state in spec.states.items():
-            if not isinstance(state, (AgentState, ToolState)):
-                continue
-            resolved = resolved_states[name]
+        cfg = workspace_setup.infer_if_unset(cfg, cwd, reporter=reporter, at=base_commit)
+        if cfg is not configs.machine.config:
+            # parallel.* is machine-wide: a state with no config table shares the machine's config.
+            machine = dataclasses.replace(configs.machine, config=cfg)
+            setup = cfg.parallel.setup_command
+            configs = dataclasses.replace(
+                configs,
+                machine=machine,
+                states={
+                    name: machine
+                    if resolved is configs.machine
+                    else dataclasses.replace(
+                        resolved, config=resolved.config.with_setup_command(setup)
+                    )
+                    for name, resolved in configs.states.items()
+                },
+            )
+        for name, resolved in configs.states.items():
             state_cfg = resolved.config
-            if not state_cfg.parallel.setup_command:
-                state_cfg = state_cfg.with_setup_command(inferred_setup)
             if state_cfg.parallel.setup_command and state_cfg.sandbox.run_commands == "ask":
                 reporter.refuse(
                     f"state {name!r} needs workspace setup, but sandbox.run_commands='ask'; "
                     "use --auto-approve or set sandbox.run_commands='yes' to allow setup"
                 )
                 return 2
-            resolved_states[name] = dataclasses.replace(resolved, config=state_cfg)
-        configs = dataclasses.replace(configs, states=resolved_states)
     snapshot_keep = cfg.machine.snapshot_keep
     # One clone base for the agent states' per-state clones and the tool states' per-call trees.
     clone_root = _workdirs.subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")

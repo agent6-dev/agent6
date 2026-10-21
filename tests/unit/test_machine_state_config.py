@@ -7,6 +7,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import pathlib
+import subprocess
 from typing import Any
 from unittest import mock
 
@@ -111,6 +112,47 @@ reason = "done"
 kind = "terminal"
 status = "failed"
 reason = "failed"
+"""
+
+# A wait, then a mode="run" agent state and a tool state, with no config table anywhere.
+RUN_STATE_AFTER_WAIT = """
+machine = "writer"
+version = 1
+initial = "poll"
+
+[budget]
+max_transitions = 10
+
+[schemas.r]
+ok = "bool"
+
+[vars.agent]
+out = { type = "r", default = {} }
+
+[states.poll]
+kind = "wait"
+every_secs = 3600
+on = { tick = "work", signal = "work" }
+
+[states.work]
+kind = "agent"
+mode = "run"
+prompt = "fix it"
+output_schema = "r"
+capture = { finish_json = "out" }
+timeout_secs = 60
+on = { ok = "check", failed = "done", budget_exhausted = "done", timeout = "done" }
+
+[states.check]
+kind = "tool"
+command = ["true"]
+timeout_secs = 5
+on = { ok = "done", nonzero = "done", timeout = "done" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "done"
 """
 
 OPERATOR = """
@@ -726,6 +768,48 @@ def test_a_machine_run_prints_the_home_grant_warning(
     warned = [line for line in said if "sandbox.extra_read_paths grants" in line]
     assert len(warned) == 1 and "which holds your home directory" not in warned[0], said
     assert f"grants {str(tmp_path.parent)!r}, your home directory" in warned[0]
+
+
+@pytest.mark.parametrize("agents_md", ["", "## Setup command\n\n```sh\ntrue\n```\n"])
+@pytest.mark.usefixtures("working_jail")
+def test_a_writing_machine_warns_once_for_the_states_without_a_config_table(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, agents_md: str
+) -> None:
+    """A mode='run' machine repeated each warning per table-less state, naming its absent table."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path.parent))
+    grant = f'[sandbox]\nextra_read_paths = ["{tmp_path.parent}"]\n'
+    _operator(OPERATOR.partition("[sandbox]")[0] + grant)
+    mfile = _write(tmp_path, RUN_STATE_AFTER_WAIT)
+    if agents_md:
+        _write(tmp_path, agents_md, name="AGENTS.md")
+    for argv in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "machine"]):
+        subprocess.run(["git", "-C", str(tmp_path), *argv], check=True)
+    said: list[str] = []
+    reporter = app_reporter.Reporter(out=said.append, err=said.append)
+    assert run.run_machine(mfile, reporter, exit_on_wait=True, auto_approve=True) == 0, said
+    warned = [line for line in said if "sandbox.extra_read_paths grants" in line]
+    assert len(warned) == 1 and "[states." not in warned[0], said
+
+
+@pytest.mark.usefixtures("working_jail")
+def test_a_state_with_its_own_table_still_refuses_setup_under_ask(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state whose own table narrows run_commands to ask refuses the inferred setup command."""
+    monkeypatch.chdir(tmp_path)
+    _operator(OPERATOR.partition("[sandbox]")[0] + '[sandbox]\nrun_commands = "yes"\n')
+    own_table = RUN_STATE_AFTER_WAIT.replace(
+        "[states.done]\n", '[states.check.config.sandbox]\nrun_commands = "ask"\n\n[states.done]\n'
+    )
+    mfile = _write(tmp_path, own_table)
+    _write(tmp_path, "## Setup command\n\n```sh\ntrue\n```\n", name="AGENTS.md")
+    for argv in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "machine"]):
+        subprocess.run(["git", "-C", str(tmp_path), *argv], check=True)
+    said: list[str] = []
+    reporter = app_reporter.Reporter(out=said.append, err=said.append)
+    assert run.run_machine(mfile, reporter, exit_on_wait=True) == 2, said
+    assert any("state 'check' needs workspace setup" in line for line in said), said
 
 
 @pytest.mark.usefixtures("working_jail")
