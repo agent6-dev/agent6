@@ -51,7 +51,7 @@ def warn_sandbox_gaps(
         worktree_git_dir: The linked worktree's git dir, when the run is in one.
         reporter: Where the warnings go.
     """
-    if cfg.sandbox.isolation == "auto":
+    if cfg.sandbox.isolation == "auto" and not detect.sandbox_disabled_by_env():
         reason = detect.degrade_reason(env)
         if reason is not None:
             # `agent6 check sandbox` prints the same reason.
@@ -60,13 +60,9 @@ def warn_sandbox_gaps(
                 f" because {reason}."
             )
     if isolation == "none":
-        origin = (
-            "sandbox.isolation = 'none'"
-            if cfg.sandbox.isolation == "none"
-            else "'auto' found no confinement mechanism on this host"
-        )
+        # The one owner of the cause; `check sandbox` prints the same.
         reporter.warn(
-            f"running UNSANDBOXED ({origin}). "
+            f"running UNSANDBOXED ({_setup.no_jail_cause(cfg, env)}). "
             "Every command runs as a plain subprocess with no filesystem, network, "
             "or syscall confinement: the LLM's run_command, the verify command, and "
             "any spawned MCP server. sandbox.memory_limit_mb still applies: the "

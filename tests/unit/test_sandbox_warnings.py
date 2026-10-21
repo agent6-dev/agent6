@@ -474,6 +474,18 @@ def test_partial_names_the_workspace_when_it_sits_inside_a_private_dir(
     assert f"can read {paths.state_base()}," not in err
 
 
+def test_the_unsandboxed_warning_names_the_variable_that_disabled_the_jail(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Under AGENT6_DISABLE_SANDBOX=1 the warning blamed `auto` for finding no mechanism."""
+    monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
+    confine.warn_sandbox_gaps("none", _env(4), Config(), root=tmp_path)
+    err = capsys.readouterr().err
+    assert "running UNSANDBOXED (AGENT6_DISABLE_SANDBOX=1 is set)" in err, err
+    assert "resolved to 'none'" not in err and "found no confinement" not in err
+
+
 def test_root_on_partial_names_what_it_costs(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -557,10 +569,10 @@ def test_explicit_partial_has_no_degrade_line(
 def test_unsandboxed_origin_says_auto_or_the_operator(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The UNSANDBOXED banner attributes `isolation = 'none'` to `auto` or to the operator.
+    """The UNSANDBOXED banner attributes `isolation = 'none'` to the host or to the operator.
 
-    `auto` resolves there on a host with no confinement mechanism; that is not the operator's
-    choice.
+    `auto` resolves there on a host with no confinement mechanism, and the banner names that
+    cause; the operator's own `none` is named as the setting.
     """
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
 
@@ -570,11 +582,11 @@ def test_unsandboxed_origin_says_auto_or_the_operator(
     monkeypatch.setattr("agent6.sandbox.detect.degrade_reason", _why)
     confine.warn_sandbox_gaps("none", _env(0), _cfg(), root=tmp_path)
     err = capsys.readouterr().err
-    assert "'auto' found no confinement mechanism" in err
-    assert "sandbox.isolation = 'none'" not in err
+    assert "running UNSANDBOXED (nothing here (test))" in err
+    assert "sandbox.isolation = none" not in err
     confine.warn_sandbox_gaps("none", _env(0), _cfg(isolation="none"), root=tmp_path)
     err = capsys.readouterr().err
-    assert "sandbox.isolation = 'none'" in err
+    assert "running UNSANDBOXED (sandbox.isolation = none)" in err
 
 
 def test_a_grant_of_the_home_directory_or_above_it_warns(

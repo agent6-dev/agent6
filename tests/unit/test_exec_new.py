@@ -263,7 +263,7 @@ def test_new_unsandboxed_says_nothing_is_confined(
     cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
     assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ("true",)) == 5
     assert host["policy"].isolation == "none" and host["nets"] == []
-    assert "running UNSANDBOXED (sandbox.isolation = 'none')" in capsys.readouterr().err
+    assert "running UNSANDBOXED (sandbox.isolation = none)" in capsys.readouterr().err
 
 
 def test_new_unsandboxed_gets_the_env_an_unsandboxed_command_gets(

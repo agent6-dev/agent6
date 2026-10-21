@@ -213,7 +213,7 @@ def test_a_fan_out_prints_the_sandbox_degrades_a_run_prints(
         cli_parallel.dispatch_parallel(cfg, "t", "2", explicit_leaves=frozenset(), cwd=tmp_path)
         == 0
     )
-    assert "running UNSANDBOXED (sandbox.isolation = 'none')" in capsys.readouterr().err
+    assert "running UNSANDBOXED (sandbox.isolation = none)" in capsys.readouterr().err
 
 
 def test_summary_hands_a_conflicted_lane_to_the_operator() -> None:
