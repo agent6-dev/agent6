@@ -102,6 +102,9 @@ class AgentExecResult(pydantic.BaseModel):
         Unscrubbed, the subprocess dies before writing `result.json` and the host routes a
         finished agent to its `on.failed` edge.
 
+        Args:
+            value: The `finish_session` payload.
+
         Returns:
             The scrubbed payload, or None.
         """
@@ -135,7 +138,18 @@ class World(Protocol):
         pass_env: tuple[str, ...] = (),
         step_seq: int = 0,
     ) -> ToolExecResult:
-        """Run one tool command under the named state's sandbox."""
+        """Run one tool command under the named state's sandbox.
+
+        Args:
+            argv: The rendered command.
+            timeout_s: The wall-clock cap.
+            state: The state's name.
+            pass_env: The operator environment variables the command receives.
+            step_seq: The transition number, for the state's log directory.
+
+        Returns:
+            The exit code, output and whether the command timed out.
+        """
         ...
 
     def run_agent(self, request: AgentRequest) -> AgentExecResult:

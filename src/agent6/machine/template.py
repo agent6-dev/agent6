@@ -159,6 +159,11 @@ def resolve_reference(ref: predicate.Reference, scope: Mapping[str, object]) -> 
 def _apply_filter(value: object, filt: str | None, where: str) -> object:
     """Apply the filter: `len`, or `json` (compact, keys sorted).
 
+    Args:
+        value: The referenced value.
+        filt: The interpolation's filter.
+        where: The location named in an error.
+
     Returns:
         The filtered value, or the value itself with no filter.
 
@@ -176,6 +181,10 @@ def _apply_filter(value: object, filt: str | None, where: str) -> object:
 
 def _scalar_str(value: object, where: str) -> str:
     """Render a scalar as text: TOML booleans, "" for None.
+
+    Args:
+        value: The value to render.
+        where: The location named in an error.
 
     Returns:
         The text.

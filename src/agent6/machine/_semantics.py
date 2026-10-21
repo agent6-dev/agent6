@@ -73,7 +73,12 @@ _CONFIG_ONLY_AGENT_KEYS: dict[str, tuple[str, str]] = {
 def _precheck(raw: dict[str, Any]) -> list[str]:
     """Return the problems pydantic would report less readably.
 
-    A var outside an owner table, and an agent state key that belongs in its `config` table.
+    Args:
+        raw: The parsed TOML.
+
+    Returns:
+        The problems: a var outside an owner table, and an agent state key that belongs in
+        its `config` table.
     """
     problems: list[str] = []
     vars_section = raw.get("vars")
@@ -128,6 +133,9 @@ class _Env:
 def _resolve_env(spec: schema.MachineSpec) -> tuple[_Env, list[str]]:
     """Resolve the schemas and variables.
 
+    Args:
+        spec: The parsed machine.
+
     Returns:
         The env and the problems found.
     """
@@ -177,6 +185,10 @@ def _resolve_schemas(
     spec: schema.MachineSpec, schema_names: frozenset[str]
 ) -> tuple[dict[str, dict[str, schema.TypeRef]], list[str]]:
     """Resolve each schema's field types.
+
+    Args:
+        spec: The parsed machine.
+        schema_names: The declared schema names.
 
     Returns:
         The schemas and the problems found.
@@ -240,6 +252,11 @@ def _resolve_vars(
     schemas: dict[str, dict[str, schema.TypeRef]],
 ) -> tuple[dict[str, schema.TypeRef], dict[str, str], dict[str, Any], list[str]]:
     """Resolve the three owner tables into one namespace.
+
+    Args:
+        spec: The parsed machine.
+        schema_names: The declared schema names.
+        schemas: The resolved schemas.
 
     Returns:
         The types, the owners, the values and the problems found.
@@ -335,6 +352,17 @@ def _check_value(
 
     A record value is a placeholder: presence is not required, but every present field
     must be known and well typed.
+
+    Args:
+        value: The value, from the machine file, a fixture or a captured payload.
+        t: The type it must satisfy.
+        schemas: The resolved schemas, where a record type finds its fields.
+        label: Names the value in each problem.
+        raw_schemas: The declared schema table, for a record field's `enum`; None skips the
+            `enum` check.
+
+    Returns:
+        The problems; empty when the value fits.
     """
     if isinstance(t, schema.ScalarT):
         return _check_scalar(value, t.name, label)
@@ -485,6 +513,11 @@ def _resolve_ref_type(
 ) -> tuple[schema.TypeRef | None, str | None]:
     """Resolve a reference's type.
 
+    Args:
+        ref: A variable or `result`, with a field path into it.
+        env: The resolved declarations.
+        result_type: The type of `result` here; None where `result` is not navigable.
+
     Returns:
         The type and None, or None and the problem.
     """
@@ -551,7 +584,16 @@ def _validate_template(
 
 
 def _validate_state(name: str, state: schema.StateSpec, env: _Env) -> list[str]:
-    """Return one state's problems; `notify` and a terminal's `reason` are checked as templates."""
+    """Return one state's problems; `notify` and a terminal's `reason` are checked as templates.
+
+    Args:
+        name: The state's name, quoted in each problem.
+        state: The state, of any kind.
+        env: The resolved declarations.
+
+    Returns:
+        The problems; empty when the state is valid.
+    """
     problems: list[str] = []
     if state.notify is not None:
         problems.extend(

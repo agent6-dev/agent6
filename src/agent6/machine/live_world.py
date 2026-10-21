@@ -156,6 +156,9 @@ class LiveWorld:
     def run_agent(self, request: _contracts.AgentRequest) -> _contracts.AgentExecResult:
         """Run one agent loop through the injected runner.
 
+        Args:
+            request: The agent state's request.
+
         Returns:
             The loop's result.
 
@@ -169,7 +172,15 @@ class LiveWorld:
         return self.agent_runner(request, self._state_log(request.state_name, request.step_seq))
 
     def _state_log(self, state: str, step_seq: int) -> pathlib.Path | None:
-        """Return the state's own logs.jsonl path, pruning old ones first, or None."""
+        """Return the state's own logs.jsonl path, pruning old ones first, or None.
+
+        Args:
+            state: The state's name.
+            step_seq: The transition number.
+
+        Returns:
+            The path; None when `state_log_root` is None or `state` is empty.
+        """
         if self.state_log_root is None or not state:
             return None
         _prune_state_logs(self.state_log_root, keep=self.state_log_keep)
@@ -210,6 +221,9 @@ class LiveWorld:
 
         Atomic, and called before the StepEvent is appended, so a durable step implies a
         durable file. A no-op without a data dir.
+
+        Args:
+            payload: The JSON the poke carried; None for a bare poke, written as `null`.
         """
         if self.data_dir is None:
             return

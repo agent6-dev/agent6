@@ -100,6 +100,10 @@ def parse_predicate(source: str) -> Predicate:
 def _check(node: ast.expr, references: list[Reference]) -> None:  # noqa: PLR0911, PLR0912
     """Walk the node against the allow-list, collecting references.
 
+    Args:
+        node: An expression in the predicate.
+        references: Receives every reference the node reads, in source order.
+
     Raises:
         PredicateError: The node is outside the allow-list.
     """
@@ -148,6 +152,10 @@ def _check(node: ast.expr, references: list[Reference]) -> None:  # noqa: PLR091
 
 def _check_call(node: ast.Call, references: list[Reference]) -> None:
     """Check a call: one positional argument to `len` or `has`, and `has` takes a reference.
+
+    Args:
+        node: A call in the predicate.
+        references: Receives every reference the argument reads.
 
     Raises:
         PredicateError: Any other call.
@@ -215,6 +223,13 @@ def evaluate(predicate: Predicate, blackboard: Mapping[str, object]) -> bool:
 
 def _eval(node: ast.expr, blackboard: Mapping[str, object]) -> object:  # noqa: PLR0911, PLR0912
     """Return the value of an allow-listed node.
+
+    Args:
+        node: The predicate's body, or one of its subexpressions.
+        blackboard: The variables.
+
+    Returns:
+        The value: a literal, a blackboard value, or the result of an operator or call.
 
     Raises:
         PredicateError: A reference does not resolve, or `len` of a value with no length.
@@ -288,6 +303,14 @@ def _order(op: ast.cmpop, left: object, right: object) -> bool:
 
     No numeric coercion: float() collapses distinct ints above 2^53.
 
+    Args:
+        op: `<`, `<=`, `>` or `>=`.
+        left: The left operand.
+        right: The right operand.
+
+    Returns:
+        Whether the comparison holds.
+
     Raises:
         PredicateError: The operands do not order.
     """
@@ -305,6 +328,13 @@ def _order(op: ast.cmpop, left: object, right: object) -> bool:
 
 def _contains(container: object, item: object) -> bool:
     """Return whether the item is in the container.
+
+    Args:
+        container: The right operand of `in` or `not in`.
+        item: The left operand.
+
+    Returns:
+        Whether the item is a substring, an element of a list or tuple, or a key of a dict.
 
     Raises:
         PredicateError: The container is not one, a string container met a non-string, or
@@ -326,6 +356,13 @@ def _contains(container: object, item: object) -> bool:
 def _has(reference: Reference, blackboard: Mapping[str, object]) -> bool:
     """Return whether every segment of the reference resolves.
 
+    Args:
+        reference: The argument of `has()`.
+        blackboard: The variables.
+
+    Returns:
+        Whether the root and every field exist.
+
     Raises:
         PredicateError: A segment navigates into a non-record value, a type mismatch rather
             than absence, as in `_resolve`.
@@ -345,6 +382,13 @@ def _has(reference: Reference, blackboard: Mapping[str, object]) -> bool:
 def _resolve(reference: Reference, blackboard: Mapping[str, object]) -> object:
     """Return the referenced value.
 
+    Args:
+        reference: The variable or record field to read.
+        blackboard: The variables.
+
+    Returns:
+        The value.
+
     Raises:
         PredicateError: The root is unknown, a field is missing, or a segment navigates into
             a non-record value.
@@ -363,6 +407,12 @@ def _resolve(reference: Reference, blackboard: Mapping[str, object]) -> object:
 
 def _as_number(value: object) -> float:
     """Return the value as a float.
+
+    Args:
+        value: The operand of a unary `-` or `+`.
+
+    Returns:
+        The float.
 
     Raises:
         PredicateError: The value is a bool or not a number.

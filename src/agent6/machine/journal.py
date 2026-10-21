@@ -407,6 +407,9 @@ class MachineJournal:
 
         A torn previous append (a file not ending in a newline) is truncated off first, so
         this event lands on its own line.
+
+        Args:
+            event: One of the `JournalEvent` models.
         """
         self._heal_torn_tail()
         line = dump_json(event)
@@ -506,6 +509,9 @@ class MachineJournal:
 
         Recovery and replay fold the journal; the retained tail is a fallback for a corrupt
         latest.
+
+        Args:
+            snapshot: The blackboard and position.
         """
         paths.mkdir_for_real_user(self.snapshots_dir)
         dest = self.snapshots_dir / f"{snapshot.seq}.json"
@@ -527,6 +533,9 @@ class MachineJournal:
 
         A torn newest snapshot falls back to the next older one, so one bad snapshot never
         fails `machine status`.
+
+        Returns:
+            The snapshot, or None.
         """
         if not self.snapshots_dir.is_dir():
             return None
@@ -701,6 +710,9 @@ def write_stop_request(root: pathlib.Path) -> None:
 
     A marker, not a kill: the state in flight finishes and journals its fact, then the
     engine returns `stopped` with no end, so the instance stays resumable.
+
+    Args:
+        root: The instance directory.
     """
     paths.mkdir_for_real_user(root)
     (root / "stop").touch()
@@ -721,6 +733,10 @@ def write_bundle(root: pathlib.Path, machine_path: pathlib.Path) -> None:
     """Persist the bundle the instance starts from: the source plus its `scripts/` tree.
 
     Replay evidence, and the baseline `bundle_drift` holds every continuation to.
+
+    Args:
+        root: The instance directory.
+        machine_path: The working machine file.
     """
     write_source(root, machine_path.read_text(encoding="utf-8"))
     dst = root / "scripts"

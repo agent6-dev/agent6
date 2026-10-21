@@ -37,6 +37,13 @@ def _emit_notify(
 
     Presentation only: the caller swallows a render error, so a notify never flips a
     terminal's status.
+
+    Args:
+        state: The state being entered; one without a `notify` emits nothing.
+        blackboard: The values the message renders against.
+        journal: The instance's journal.
+        world: The world, whose operator hook fires.
+        state_name: The state's name.
     """
     if state.notify is None:
         return
@@ -56,6 +63,13 @@ def _terminal_reason(state: schema.TerminalState, blackboard: Mapping[str, objec
 
     Presentation only: a reference that cannot render keeps the template in the text, with
     the error beside it, and never changes the status.
+
+    Args:
+        state: The terminal state.
+        blackboard: The values the reason renders against.
+
+    Returns:
+        The rendered reason.
     """
     try:
         return machine_template.render_string(
@@ -115,6 +129,15 @@ def _end_failed(
     unbooked: machine_journal.AgentFact | None = None,
 ) -> _contracts.MachineResult:
     """Journal a failed end for a runtime state error.
+
+    Args:
+        journal: The instance's journal.
+        world: The world, whose operator hook fires for the end.
+        state: The state that failed.
+        transitions: The transitions taken.
+        exc: The state error, quoted in the end's reason.
+        unbooked: An agent slice whose StepEvent was never written (its capture could not be
+            reduced); its spend rides on the end event.
 
     Returns:
         The failed result.
@@ -179,6 +202,12 @@ def _validate_recorded_route(
     remedy: str,
 ) -> None:
     """Hold a replayed event's route to the outcome its fact determines.
+
+    Args:
+        state: The state at the replayed position.
+        event: The journaled step.
+        blackboard: The replayed blackboard before the step.
+        remedy: The fresh-start hint appended to each error.
 
     Raises:
         EngineError: The recorded clause, label or goto disagrees with the fact.

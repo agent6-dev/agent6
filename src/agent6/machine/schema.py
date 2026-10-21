@@ -242,6 +242,9 @@ class Capture(pydantic.BaseModel):
     def _exactly_one(self) -> Capture:
         """Return the capture, requiring exactly one of its three modes.
 
+        Returns:
+            The capture unchanged.
+
         Raises:
             ValueError: None or several modes are set.
         """
@@ -274,6 +277,9 @@ class WhenClause(pydantic.BaseModel):
     @pydantic.model_validator(mode="after")
     def _exactly_one(self) -> WhenClause:
         """Return the clause, requiring exactly one of `if` and `else`, and `else = true`.
+
+        Returns:
+            The clause unchanged.
 
         Raises:
             ValueError: The clause declares both, neither, or `else = false`.
@@ -320,6 +326,9 @@ class AgentState(pydantic.BaseModel):
     def _one_spelling_for_the_cap(self) -> AgentState:
         """Return the state, refusing a `max_usd` that its `config` table also sets.
 
+        Returns:
+            The state unchanged.
+
         Raises:
             ValueError: The cap is set both ways.
         """
@@ -362,6 +371,12 @@ class ToolState(pydantic.BaseModel):
     @classmethod
     def _env_names(cls, names: tuple[str, ...]) -> tuple[str, ...]:
         """Return the names, each a valid environment variable name.
+
+        Args:
+            names: The state's `pass_env`.
+
+        Returns:
+            The names unchanged.
 
         Raises:
             ValueError: A name is not one.
@@ -464,6 +479,9 @@ def protected_overlay_key_error(key: str, state: str = "") -> str | None:
     Args:
         key: The dotted key.
         state: The state whose `config` table holds it; "" for the machine's `[config]`.
+
+    Returns:
+        The refusal message; None when the key is allowed.
     """
     where = f"[states.{state}.config]" if state else "machine [config] overlays"
     for table in PROTECTED_OVERLAY_TABLES:
@@ -485,6 +503,9 @@ def protected_overlay_error(config: dict[str, Any], *, state: str = "") -> str |
     Args:
         config: The machine's `[config]` table, or one state's `config` table.
         state: The state whose table it is; "" for the machine's.
+
+    Returns:
+        The refusal message; None when every key is allowed.
     """
     for head, value in config.items():
         keys = [head, *(f"{head}.{leaf}" for leaf in value)] if isinstance(value, dict) else [head]
@@ -528,6 +549,9 @@ class MachineSpec(pydantic.BaseModel):
     @pydantic.model_validator(mode="after")
     def _forbid_protected_overlay_tables(self) -> MachineSpec:
         """Return the machine, refusing an overlay that carries operator-only policy.
+
+        Returns:
+            The machine unchanged.
 
         Raises:
             ValueError: The overlay sets a protected table or leaf.

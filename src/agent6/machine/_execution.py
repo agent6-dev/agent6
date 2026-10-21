@@ -41,6 +41,12 @@ def apply_capture(
 ) -> None:
     """Apply a tool's capture to the blackboard in place.
 
+    Args:
+        spec: The machine, for its schema table.
+        state: The tool state that ran; one without a `capture` changes nothing.
+        stdout: The tool's stdout, parsed as JSON.
+        blackboard: The blackboard; a `capture.set` template reads it beside `result`.
+
     Raises:
         StateRuntimeError: The stdout is not JSON, or does not match the output schema; the
             capture gate halts the machine before a poison fact is journaled.
@@ -138,6 +144,13 @@ def route_branch(
 ) -> tuple[int, str, str]:
     """Return the (clause index, label, goto) of the first clause that fires.
 
+    Args:
+        state: The branch state.
+        blackboard: The values the predicates read.
+
+    Returns:
+        The clause's index, its label (its `if` predicate, or `else`) and its goto.
+
     Raises:
         EngineError: No clause fired, which `validate_semantics` rules out.
     """
@@ -157,6 +170,14 @@ def is_forever(state: schema.WaitState) -> bool:
 
 def compute_wake(state: schema.WaitState, blackboard: Mapping[str, object], now: float) -> float:
     """Return the wait's absolute wake instant.
+
+    Args:
+        state: The wait state, with an `every_secs` or `until` timing.
+        blackboard: The values its timing renders against.
+        now: The current epoch, which `every_secs` counts from.
+
+    Returns:
+        The instant as an epoch; an `until` without a timezone reads as UTC.
 
     Raises:
         StateRuntimeError: The rendered timing is not a positive integer or an ISO-8601
@@ -204,6 +225,17 @@ def arm_pending_wait(
     The absolute instant is persisted before anything waits on it, so a resume compares
     against the same instant; the seq tells this visit from an earlier visit's uncleared
     record.
+
+    Args:
+        state: The wait state.
+        blackboard: The values its timing renders against.
+        journal: The instance's journal.
+        world: The world.
+        state_name: The wait state's name.
+        seq: The transition this visit belongs to.
+
+    Returns:
+        The armed wait; its `wake_epoch` is None for a timerless wait.
     """
     pending = journal.read_pending_wait()
     if pending is None or pending.state != state_name or pending.seq != seq:
@@ -225,6 +257,14 @@ def block_on_wait(
 
     The driver clears the pending record once the transition is journaled: a stale one would
     suppress the notify on re-entry and reuse its instant under a later `--exit-on-wait`.
+
+    Args:
+        state: The wait state.
+        blackboard: The values its timing renders against.
+        journal: The instance's journal.
+        world: The world.
+        state_name: The wait state's name.
+        seq: The transition this visit belongs to.
 
     Returns:
         The (label, goto, fact) of the wake, or None when a stop request interrupted the
@@ -252,6 +292,14 @@ def fire_persisted_wait(
     seq: int,
 ) -> tuple[str, str, machine_journal.Fact] | None:
     """Arm or fire a wait without blocking (`--exit-on-wait`).
+
+    Args:
+        state: The wait state.
+        blackboard: The values its timing renders against.
+        journal: The instance's journal.
+        world: The world.
+        state_name: The wait state's name.
+        seq: The transition this visit belongs to.
 
     Returns:
         The (label, goto, fact) when a poke arrived or the instant has passed, or None when
@@ -309,6 +357,13 @@ def agent_usd_cap(state_cap: float | None, remaining: float | None) -> float | N
 
     The aggregate gate guards only state starts, so the child needs this cap to stay under
     the machine's max_usd.
+
+    Args:
+        state_cap: The state's own `max_usd`, or None when uncapped.
+        remaining: The machine's unspent budget, or None when uncapped.
+
+    Returns:
+        The smaller of the two; when one is None, the other.
     """
     if state_cap is None:
         return remaining
