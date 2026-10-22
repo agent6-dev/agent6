@@ -91,7 +91,8 @@ class TranscriptItem:
         kind: The item's kind.
         body: The thinking, text or marker prose; the final summary for `done`.
         name: The tool's name; the status label for `done`.
-        arg: The tool's salient argument (a path, a pattern, a command).
+        arg: The tool's salient argument (a path, a pattern, a command); the end reason
+            for `done`, which says whose sentence the body is.
         ok: The tool or run outcome; None while in flight or when not applicable.
         detail: The tool result's summary, the verify badge or the commit and done
             metadata; for a call in flight, why it waits ("awaiting approval").
@@ -616,6 +617,7 @@ class TranscriptFold:
                     ok=all_passed if isinstance(all_passed, bool) else None,
                     detail=counts,
                     name=format.status_label(word, detail),
+                    arg=reason,
                 )
             )
             return out

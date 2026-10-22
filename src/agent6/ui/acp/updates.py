@@ -184,13 +184,16 @@ def updates_for(
     if item.kind == "done":
         summary = item.body.strip()
         result: list[dict[str, Any]] = []
-        if summary:
+        if summary and item.arg in _session_status.MODEL_ENDS:
             result.append(
                 _update(
                     acp_session_id,
                     {"sessionUpdate": "agent_message_chunk", "content": _text(summary + "\n\n")},
                 )
             )
+        elif summary:
+            # A stop's sentence (a spend ceiling, an operator stop) is agent6's, not the model's.
+            result.append(message_update(acp_session_id, summary))
         result.append(message_update(acp_session_id, status_line(item)))
         return result
     if item.kind == "commit":

@@ -522,3 +522,27 @@ def test_usage_is_silent_without_a_window_and_costless_while_unpriced() -> None:
     assert _updates_of(_info(), plan) == [
         {"sessionUpdate": "usage_update", "used": 5, "size": 200_000}
     ]
+
+
+def test_a_stops_sentence_is_agent6s_line_and_a_finish_summary_the_models() -> None:
+    """A harness-written end sentence is not sent in the model's voice.
+
+    A spend ceiling's sentence went out as an `agent_message_chunk`, the model's voice, with
+    agent6's status line one chunk later; the end reason says whose words the sentence is.
+    """
+    stopped = transcript.TranscriptItem(
+        "done", body="budget exhausted", name="stopped", arg="budget_exhausted"
+    )
+    texts = [
+        u["params"]["update"]["content"]["text"]
+        for u in acp_updates.updates_for(stopped, acp_session_id="s")
+    ]
+    assert texts == ["[agent6] budget exhausted\n", "[agent6] Session stopped\n"]
+    finished = transcript.TranscriptItem(
+        "done", body="Fixed it.", name="finished", arg="finish_session"
+    )
+    texts = [
+        u["params"]["update"]["content"]["text"]
+        for u in acp_updates.updates_for(finished, acp_session_id="s")
+    ]
+    assert texts == ["Fixed it.\n\n", "[agent6] Session finished\n"]

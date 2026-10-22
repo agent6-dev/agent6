@@ -1031,3 +1031,13 @@ def test_the_end_label_reads_the_gate_the_model_ran_and_a_stranded_finish() -> N
         ("done", "passed"),
         ("marker", "no commit landed: the edits sit uncommitted (not committed)"),
     ]
+
+
+def test_the_end_item_carries_its_reason() -> None:
+    """The `done` item names the end reason, so a surface knows whose sentence its body is."""
+    from agent6.viewmodel import transcript
+
+    fold = transcript.TranscriptFold()
+    end = {"type": "session.end", "reason": "budget_exhausted", "summary": "budget exhausted"}
+    items = fold.feed({**end, "turns": 3, "all_passed": False})
+    assert items[-1].kind == "done" and items[-1].arg == "budget_exhausted"

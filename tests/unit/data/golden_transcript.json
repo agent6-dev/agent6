@@ -103,7 +103,7 @@
     "kind": "done",
     "body": "all green",
     "name": "passed",
-    "arg": "",
+    "arg": "finish_session",
     "ok": true,
     "detail": "2s · 0 tools · 0 commits",
     "tail": "",

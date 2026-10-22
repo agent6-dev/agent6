@@ -117,6 +117,9 @@ def cost_cell(
 # The operator's own stops: each reads "stopped" and exits 130.
 OPERATOR_STOPS = frozenset({"interactive_stop", "interrupted", "steer_abort", "steer_exit"})
 
+# Ends whose sentence is the model's own finish summary; every other end's sentence is agent6's.
+MODEL_ENDS = frozenset({"", "finish_session", "finish_planning"})
+
 
 def end_text(reason: str, summary: str = "", finish_summary: str = "") -> str:
     """Return the sentence a session's end carries, "" when it carries none.
@@ -132,7 +135,7 @@ def end_text(reason: str, summary: str = "", finish_summary: str = "") -> str:
     """
     if summary.strip():
         return summary.strip()
-    if reason in ("", "finish_session", "finish_planning"):
+    if reason in MODEL_ENDS:
         return finish_summary.strip()
     return ""
 
