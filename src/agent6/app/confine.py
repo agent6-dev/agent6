@@ -90,12 +90,12 @@ def warn_sandbox_gaps(
             " root-only files in the system dirs it is granted (/etc/shadow, /etc/sudoers, the"
             " host's ssh private keys). Run as your normal user."
         )
-    if isolation == "partial" and cfg.protects_git:
+    if isolation != "full" and cfg.protects_git:
         reporter.warn(
-            "sandbox.protect_git = 'auto' resolves to off: bind-remounting .git read-only needs"
-            " sandbox.isolation = 'full', but this run resolved to 'partial', so jailed commands"
-            " can write .git. Set sandbox.protect_git = 'off' to accept that silently, or"
-            " sandbox.isolation = 'full'."
+            "sandbox.protect_git = 'auto': bind-remounting .git read-only needs"
+            f" sandbox.isolation = 'full', but this run resolved to {isolation!r}, so jailed"
+            " commands can write .git (the edit tools still refuse). Set sandbox.protect_git ="
+            " 'off' to accept that silently, or sandbox.isolation = 'full'."
         )
     persistent = tools_policy.persistent_jail_home(cfg, isolation, root, worktree_git_dir)
     if persistent is not None and isolation != "none":
@@ -115,11 +115,11 @@ def warn_sandbox_gaps(
             "cache poisoned by one run, or a ~/.gitconfig alias, reaches the next jailed "
             f"run (never your own tools). {fix}"
         )
-    if isolation == "partial" and cfg.sandbox.network == "auto":
+    if isolation != "full" and cfg.sandbox.network == "auto":
         reporter.warn(
             "sandbox.network = 'auto' requires sandbox.isolation = 'full' to give the run its own"
-            " network, but this run resolved to 'partial', so jailed commands share this host's"
-            " network. Set sandbox.network = 'session' to refuse the run instead, or"
+            f" network, but this run resolved to {isolation!r}, so jailed commands share this"
+            " host's network. Set sandbox.network = 'session' to refuse the run instead, or"
             " sandbox.isolation = 'full'."
         )
     if isolation == "partial" and env.landlock_abi < 3:

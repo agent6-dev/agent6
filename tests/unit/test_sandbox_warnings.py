@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.app import confine
 from agent6.config import Config, GitConfig, SandboxConfig
 from agent6.sandbox import detect, tool_paths
@@ -55,6 +55,21 @@ def test_git_control_without_sandbox(
         "a commit the model runs lands on the checkout's branch."
     )
     assert err.count(warning) == (1 if control == "agent6" else 0)
+
+
+@pytest.mark.parametrize("isolation", ["partial", "none"])
+def test_every_auto_knob_names_its_degradation_below_full(
+    isolation: kinds.IsolationLevel, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`auto` network and `auto` protect_git each name what they resolve to, under `none` too.
+
+    `none` printed the unsandboxed banner alone, so neither knob said where it had landed.
+    """
+    confine.warn_sandbox_gaps(isolation, _env(4), _cfg(), root=tmp_path)
+    err = capsys.readouterr().err
+    assert "sandbox.network = 'auto' requires sandbox.isolation = 'full'" in err
+    assert "sandbox.protect_git = 'auto': bind-remounting .git read-only needs" in err
+    assert err.count(f"resolved to '{isolation}'") >= 2
 
 
 def test_none_warns_unsandboxed(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -430,8 +445,9 @@ def test_the_unsandboxed_warning_names_the_variable_that_disabled_the_jail(
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     confine.warn_sandbox_gaps("none", _env(4), Config(), root=tmp_path)
     err = capsys.readouterr().err
-    assert "running UNSANDBOXED (AGENT6_DISABLE_SANDBOX=1 is set)" in err, err
-    assert "resolved to 'none'" not in err and "found no confinement" not in err
+    banner = next(line for line in err.splitlines() if "UNSANDBOXED" in line)
+    assert "running UNSANDBOXED (AGENT6_DISABLE_SANDBOX=1 is set)" in banner, err
+    assert "resolved to 'none'" not in banner and "found no confinement" not in banner
 
 
 def test_root_on_partial_names_what_it_costs(
