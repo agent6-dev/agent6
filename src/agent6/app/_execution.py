@@ -39,6 +39,7 @@ from agent6.sessions import ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, operator_prompts
+from agent6.tools import policy as tools_policy
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -301,7 +302,11 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             events,
             layout.session_dir,
             _session.session_facts_provider(
-                budget, session.rm_role.model, cfg.sandbox.run_commands, inputs.isolation
+                budget,
+                session.rm_role.model,
+                cfg.sandbox.run_commands,
+                inputs.isolation,
+                tools_policy.resolve_network(cfg, inputs.isolation),
             ),
         )
     except (KeyboardInterrupt, Exception) as exc:

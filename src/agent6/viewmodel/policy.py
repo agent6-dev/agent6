@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Fold a session's policy facts from its dir.
 
-The driving model, whether commands ask, the isolation and the verify gate: one fold,
-so the CLI banner, the TUI composer and the web header cannot drift apart.
+The driving model, the isolation, the network, whether commands ask and the verify gate:
+one fold, so the CLI banner, the TUI composer and the web header cannot drift apart.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ class SessionPolicy:
         model: The driving model, "" when the manifest names none.
         run_commands: The commands mode ("yes", "no", "ask"), "" when unknown.
         isolation: The sandbox isolation word, "" when unknown.
+        network: The network the run's commands join ("session", "host"), "" when unknown.
         verify_command: The verify gate's argv, empty when there is no gate.
         verify_origin: Where the gate came from ("configured", "inferred", "adopted"),
             "pending" for a run whose execution has not resolved its gate yet, or "withheld"
@@ -33,6 +34,7 @@ class SessionPolicy:
     model: str
     run_commands: str
     isolation: str
+    network: str
     verify_command: tuple[str, ...]
     verify_origin: str
     mode: str = ""
@@ -57,18 +59,19 @@ class SessionPolicy:
         return f"gate {shlex.join(self.verify_command)} ({origin})"
 
     def short(self) -> str:
-        """Return the compact form for a border or header: isolation and commands mode."""
-        return short_form(self.isolation, self.run_commands)
+        """Return the compact form for a border or header: isolation, network, commands mode."""
+        return short_form(self.isolation, self.network, self.run_commands)
 
     def line(self) -> str:
         """Return the one-line form every surface shows.
 
         Returns:
-            The model, isolation, commands mode and gate joined by " · ", or "" for a
-            run whose manifest could not be read (an all-empty policy must not claim
+            The model, isolation, network, commands mode and gate joined by " · ", or ""
+            for a run whose manifest could not be read (an all-empty policy must not claim
             "no verify gate" about a run it knows nothing of).
         """
-        if not (self.model or self.isolation or self.run_commands or self.verify_command):
+        known = (self.model, self.isolation, self.network, self.run_commands, self.verify_command)
+        if not any(known):
             return ""
         parts = [p for p in (self.model, self.short()) if p]
         if self.mode != "ask":
@@ -76,18 +79,20 @@ class SessionPolicy:
         return " · ".join(parts)
 
 
-def short_form(isolation: str, run_commands: str) -> str:
-    """Return the isolation and commands settings, each named before its resolved value.
+def short_form(isolation: str, network: str, run_commands: str) -> str:
+    """Return the sandbox settings, each named before its resolved value.
 
     Args:
         isolation: The resolved `sandbox.isolation` word, "" when unknown.
+        network: The resolved `sandbox.network` word, "" when unknown.
         run_commands: The `sandbox.run_commands` word, "" when unknown.
 
     Returns:
-        `isolation full · run_commands ask`, with an unknown setting left out.
+        `isolation full · network session · run_commands ask`, with an unknown setting left out.
     """
     parts = [
         f"isolation {isolation}" if isolation else "",
+        f"network {network}" if network else "",
         f"run_commands {run_commands}" if run_commands else "",
     ]
     return " · ".join(p for p in parts if p)
@@ -112,12 +117,15 @@ def session_policy(session_dir: pathlib.Path) -> SessionPolicy:
 def manifest_policy(m: manifest.SessionManifest | None) -> SessionPolicy:
     """Return the policy from an already-read manifest, or empty when unavailable."""
     if m is None:
-        return SessionPolicy("", "", "", (), "")
+        return SessionPolicy("", "", "", "", (), "")
     driver = m.models.driver
+    # A manifest an older agent6 wrote holds the configured word; `auto` names no network.
+    network = m.policy.network if m.policy.network in ("session", "host") else ""
     return SessionPolicy(
         model=driver.model if driver else "",
         run_commands=m.policy.run_commands,
         isolation=m.policy.isolation,
+        network=network,
         verify_command=tuple(m.harness.verify_command),
         verify_origin=m.harness.verify_origin,
         mode=m.mode,

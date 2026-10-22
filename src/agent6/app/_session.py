@@ -331,7 +331,11 @@ def build_session_tools(
 
 
 def session_facts_provider(
-    budget: agent6_budget.BudgetTracker, model: str, run_commands: str, isolation: str
+    budget: agent6_budget.BudgetTracker,
+    model: str,
+    run_commands: str,
+    isolation: str,
+    network: str,
 ) -> Callable[[], frontend.SessionFacts]:
     """Return the live-facts thunk the pause banner reads; spend reads live, the rest binds."""
 
@@ -343,6 +347,7 @@ def session_facts_provider(
             model=model,
             run_commands=run_commands,
             isolation=isolation,
+            network=network,
         )
 
     return facts

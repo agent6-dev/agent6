@@ -34,6 +34,7 @@ class SessionFacts:
         model: The model in use.
         run_commands: The run-commands policy word.
         isolation: The isolation level word.
+        network: The network the run's commands join.
     """
 
     spend_usd: float
@@ -41,6 +42,7 @@ class SessionFacts:
     model: str
     run_commands: str
     isolation: str
+    network: str
 
 
 class SteerHooks(Protocol):

@@ -252,7 +252,8 @@ def format_session_facts(facts: frontend.SessionFacts) -> str:
     """Return the one-line status the pause banner and Ctrl-Z print, spend first."""
     return (
         f"{budget.format_usd(facts.spend_usd, partial=facts.spend_partial)}"
-        f" · {facts.model} · {policy.short_form(facts.isolation, facts.run_commands)}"
+        f" · {facts.model}"
+        f" · {policy.short_form(facts.isolation, facts.network, facts.run_commands)}"
     )
 
 
