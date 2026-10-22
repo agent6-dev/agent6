@@ -299,7 +299,7 @@ def _seed_source_run(
     head_sha: str,
     turns: tuple[int, ...],
     mode: str = "run",
-    workflow_profile: str = "",
+    workflow_profile: str = "none",
     preset_from_flag: bool | None = None,
 ) -> sessions_layout.SessionLayout:
     """Lay down a source session dir with a manifest, graph DAG, and checkpoints."""
@@ -323,7 +323,7 @@ def _seed_source_run(
                     "preset": workflow_profile,
                     # A flag-selected preset the fork replays; False for a config-selected one.
                     "preset_from_flag": (
-                        bool(workflow_profile) if preset_from_flag is None else preset_from_flag
+                        workflow_profile != "none" if preset_from_flag is None else preset_from_flag
                     ),
                 },
             }
@@ -434,14 +434,16 @@ def test_fork_preserves_source_run_profile(
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
-    _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1, 2), workflow_profile="paranoid")
+    _seed_source_run(
+        state, "src-AAAA11", head_sha=head, turns=(1, 2), workflow_profile="deep_review"
+    )
 
     rc = fork._cmd_fork((), "src", new_session_id="child-BBBB22", no_run=True)
     assert rc == 0
 
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["harness"]["preset"] == "paranoid"
+    assert manifest["harness"]["preset"] == "deep_review"
 
 
 def test_fork_stamps_the_child_manifest_from_the_profiled_config(
@@ -502,12 +504,14 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
 ) -> None:
     """A config-selected preset re-resolves on fork; only a flag-selected one is pinned by name."""
     paths.global_config_dir().mkdir(parents=True, exist_ok=True)
-    (paths.global_config_dir() / "config.toml").write_text('preset = "quick"\n', encoding="utf-8")
+    (paths.global_config_dir() / "config.toml").write_text(
+        'preset = "no_review"\n', encoding="utf-8"
+    )
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
-    # A config-selected source whose stamped name is now STALE (config says quick).
+    # A config-selected source whose stamped name is now STALE (config says no_review).
     _seed_source_run(
         state,
         "src-CFG11",
@@ -523,7 +527,7 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
             state_dir=state, session_id="child-CFG22"
         ).manifest_path.read_text(encoding="utf-8")
     )
-    assert manifest["harness"]["preset"] == "quick"  # re-derived, not "stale-old-name"
+    assert manifest["harness"]["preset"] == "no_review"  # re-derived, not "stale-old-name"
     assert manifest["harness"]["preset_from_flag"] is False
 
 

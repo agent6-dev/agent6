@@ -427,7 +427,7 @@ def test_model_field_is_a_typeahead_picker(
     asyncio.run(scenario())
 
 
-def test_empty_preset_prefill_saves_back_unchanged(repo: pathlib.Path) -> None:
+def test_none_preset_prefill_saves_back_unchanged(repo: pathlib.Path) -> None:
     async def scenario() -> None:
         from agent6.ui.tui import forms
 
@@ -444,10 +444,10 @@ def test_empty_preset_prefill_saves_back_unchanged(repo: pathlib.Path) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, _config_forms.EditModal)
-            assert modal.query_one("#edit-value", forms.ChoiceField).value == ""
+            assert modal.query_one("#edit-value", forms.ChoiceField).value == "none"
             modal.action_save()
             await pilot.pause()
-            assert layer.load_effective(repo).config.preset == ""
+            assert layer.load_effective(repo).config.preset == "none"
 
     asyncio.run(scenario())
 

@@ -526,12 +526,12 @@ def test_deep_merge_still_merges_when_kind_unchanged() -> None:
 
 def test_fix_finds_a_preset_definition_that_is_not_a_table(repo: pathlib.Path) -> None:
     global_path = repo.parent / "g" / "agent6" / "config.toml"
-    global_path.write_text('[presets]\ndemo = "quick"\n', encoding="utf-8")
+    global_path.write_text('[presets]\ndemo = "no_review"\n', encoding="utf-8")
 
     diagnosis = layer.find_invalid_entries(repo)
 
     assert [(entry.leaf, entry.value, entry.path) for entry in diagnosis.removable] == [
-        ("presets.demo", "quick", global_path)
+        ("presets.demo", "no_review", global_path)
     ]
 
 
@@ -550,7 +550,9 @@ def test_fix_finds_a_stale_value_masked_by_the_selected_preset(
     repo: pathlib.Path,
 ) -> None:
     global_path = repo.parent / "g" / "agent6" / "config.toml"
-    global_path.write_text('preset = "quick"\n\n[review]\ntrigger = "banana"\n', encoding="utf-8")
+    global_path.write_text(
+        'preset = "no_review"\n\n[review]\ntrigger = "banana"\n', encoding="utf-8"
+    )
 
     diagnosis = layer.find_invalid_entries(repo)
 
@@ -694,11 +696,11 @@ def test_profile_key_is_rejected_in_flag_and_machine_layers(
     Neither layer can select a preset.
     """
     explicit = tmp_path / "ci.toml"
-    explicit.write_text('preset = "ultra"\n', encoding="utf-8")
+    explicit.write_text('preset = "review"\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="preset"):
         layer.load_effective(repo, (explicit,))
     with pytest.raises(ConfigError, match="preset"):
-        layer.load_effective_with_overlay(repo, {"preset": "ultra"})
+        layer.load_effective_with_overlay(repo, {"preset": "review"})
 
 
 def test_materialize_quotes_non_bare_keys(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:

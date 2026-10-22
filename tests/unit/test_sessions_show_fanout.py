@@ -86,12 +86,12 @@ def test_show_names_the_preset_the_run_continues_under(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    _session(repo, "preset", {"harness": {"preset": "paranoid", "preset_from_flag": True}})
+    _session(repo, "preset", {"harness": {"preset": "deep_review", "preset_from_flag": True}})
 
     assert main(["sessions", "show", "preset"]) == 0
-    assert "preset:     paranoid" in capsys.readouterr().out
+    assert "preset:     deep_review" in capsys.readouterr().out
     assert main(["sessions", "show", "preset", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["preset"] == "paranoid"
+    assert json.loads(capsys.readouterr().out)["preset"] == "deep_review"
 
 
 def test_show_on_a_coordinator_lists_its_lanes(

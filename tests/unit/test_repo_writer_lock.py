@@ -421,7 +421,7 @@ def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: pa
     m = manifest.read_manifest(
         sessions_layout.SessionLayout(state_dir=state, session_id="run-PROF").session_dir
     )
-    assert m.harness.preset == _load_cfg().preset  # the CONFIG preset ("")
+    assert m.harness.preset == _load_cfg().preset  # the CONFIG preset ("none")
     # The exact call resume makes with it must not blow up on a sandbox word.
     layer.load_effective(repo, (), preset=m.harness.preset)
 

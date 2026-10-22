@@ -180,29 +180,49 @@ def test_unset_last_leaf_drops_the_empty_table(iso: pathlib.Path) -> None:
 # --- top-level `preset` (the one section-less leaf) -------------------------
 
 
+@pytest.mark.parametrize("name", ["quick", "ultra", "paranoid", "standard"])
+def test_removed_preset_flag_names_the_known_selectors(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    """Removed built-in names fail at lookup and list the supported selectors."""
+    assert _refuse(["ask", "--preset", name, "explain the code"]) == 2
+    error = capsys.readouterr().err
+    assert f"unknown preset {name!r}" in error
+    assert "Known presets: deep_review, no_review, none, review" in error
+
+
+def test_empty_preset_flag_names_none(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An explicitly empty flag is refused, not treated as an omitted flag."""
+    assert _refuse(["ask", "--preset", "", "explain the code"]) == 2
+    error = capsys.readouterr().err
+    assert "empty" in error and "none" in error
+
+
 def test_set_top_level_profile_and_get(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert _run(["config", "set", "preset", "ultra"]) == 0
-    assert _global_toml(iso)["preset"] == "ultra"
+    assert _run(["config", "set", "preset", "review"]) == 0
+    assert _global_toml(iso)["preset"] == "review"
     capsys.readouterr()
     assert _run(["config", "get", "preset"]) == 0
     out = capsys.readouterr().out
-    assert "preset = ultra" in out
+    assert "preset = review" in out
     assert "[global]" in out
 
 
 def test_set_unknown_profile_name_reverts(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert _run(["config", "set", "preset", "ultra"]) == 0
+    assert _run(["config", "set", "preset", "review"]) == 0
     assert _run(["config", "set", "preset", "porifle"]) == 2
     assert "unknown preset" in capsys.readouterr().err
-    assert _global_toml(iso)["preset"] == "ultra"  # rolled back to the prior value
+    assert _global_toml(iso)["preset"] == "review"  # rolled back to the prior value
 
 
 def test_unset_top_level_profile(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    _run(["config", "set", "preset", "quick"])
+    _run(["config", "set", "preset", "no_review"])
     assert _run(["config", "unset", "preset"]) == 0
     assert "preset" not in _global_toml(iso)
     capsys.readouterr()
@@ -214,26 +234,26 @@ def test_set_profile_heals_a_profile_table_typo(iso: pathlib.Path) -> None:
     # A leftover `[preset]` table breaks the config; `config set preset <name>` heals it.
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text(
-        '[preset]\nporifle = "ultra"\n', encoding="utf-8"
+        '[preset]\nporifle = "review"\n', encoding="utf-8"
     )
-    assert _run(["config", "set", "preset", "ultra"]) == 0
-    assert _global_toml(iso) == {"preset": "ultra"}
+    assert _run(["config", "set", "preset", "review"]) == 0
+    assert _global_toml(iso) == {"preset": "review"}
 
 
 def test_set_profile_table_typo_reports_profile_error(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `config set preset.porifle x` fails with the preset-must-be-a-string message and rolls back.
-    assert _run(["config", "set", "preset", "ultra"]) == 0
+    assert _run(["config", "set", "preset", "review"]) == 0
     assert _run(["config", "set", "preset.porifle", "x"]) == 2
     assert "must be a preset name string" in capsys.readouterr().err
-    assert _global_toml(iso) == {"preset": "ultra"}
+    assert _global_toml(iso) == {"preset": "review"}
 
 
 def test_set_profile_repo_targets_repo_config(iso: pathlib.Path) -> None:
-    assert _run(["config", "set", "preset", "quick", "--repo"]) == 0
+    assert _run(["config", "set", "preset", "no_review", "--repo"]) == 0
     repo_cfg = (paths.state_dir(iso) / "config.toml").read_text(encoding="utf-8")
-    assert 'preset = "quick"' in repo_cfg
+    assert 'preset = "no_review"' in repo_cfg
     assert not (iso / "g" / "agent6" / "config.toml").is_file()
 
 
@@ -243,7 +263,7 @@ def test_set_profile_machine_file_is_refused(
     # A machine [config] overlay cannot smuggle a preset selection; the write is rolled back.
     mf = tmp_path / "m.asm.toml"
     mf.write_text("[config]\n", encoding="utf-8")
-    assert _run(["config", "set", "preset", "ultra", "--machine-file", str(mf)]) == 2
+    assert _run(["config", "set", "preset", "review", "--machine-file", str(mf)]) == 2
     assert "preset" in capsys.readouterr().err
     assert "preset" not in mf.read_text(encoding="utf-8").replace("[config]", "")
 
@@ -256,15 +276,15 @@ def test_config_profiles_lists_builtins_and_user(
 ) -> None:
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text(
-        'preset = "ultra"\n\n[presets.myteam.review]\nconcurrency = 2\n', encoding="utf-8"
+        'preset = "review"\n\n[presets.myteam.review]\nconcurrency = 2\n', encoding="utf-8"
     )
     assert _run(["config", "presets"]) == 0
     out = capsys.readouterr().out
-    for builtin in ("standard", "quick", "ultra", "paranoid"):
+    for builtin in ("no_review", "review", "deep_review"):
         assert builtin in out
-    assert "selected" in out  # ultra marked as the selection, with its source
+    assert "selected" in out  # review marked as the selection, with its source
     assert "global" in out
-    assert "review.concurrency = 3" in out  # ultra's contents are shown
+    assert "review.concurrency = 3" in out  # review's contents are shown
     assert "myteam" in out  # user preset listed with its contents
     assert "review.concurrency = 2" in out
 
@@ -275,16 +295,16 @@ def test_config_profiles_none_selected(
     assert _run(["config", "presets"]) == 0
     out = capsys.readouterr().out
     assert "no preset selected" in out
-    assert "standard" in out  # built-ins still listed
+    assert "no_review" in out  # built-ins still listed
 
 
 def test_config_profiles_user_shadow_replaces_builtin(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A user [presets.ultra] replaces the built-in wholesale; the listing shows the user's contents.
+    # The listing shows the user's body, not the replaced built-in.
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text(
-        "[presets.ultra.review]\nconcurrency = 9\n", encoding="utf-8"
+        "[presets.review.review]\nconcurrency = 9\n", encoding="utf-8"
     )
     assert _run(["config", "presets"]) == 0
     out = capsys.readouterr().out
@@ -763,6 +783,7 @@ def test_fill_never_bakes_the_repo_layer_into_the_global_config(iso: pathlib.Pat
     """Fill writes the global file from defaults plus global, never this repo's overrides."""
     assert _run(["config", "set", "--repo", "sandbox.memory_limit_mb", "4321"]) == 0
     filled = _fill_and_read(iso)
+    assert filled["preset"] == "none"
     sandbox = filled["sandbox"]
     assert isinstance(sandbox, dict)
     assert sandbox["memory_limit_mb"] != 4321, "the repo layer leaked into the global config"
@@ -770,12 +791,12 @@ def test_fill_never_bakes_the_repo_layer_into_the_global_config(iso: pathlib.Pat
 
 def test_fill_keeps_the_preset_selector_and_does_not_bake_its_effects(iso: pathlib.Path) -> None:
     """Fill keeps a selected preset selected and does not bake its effects."""
-    assert _run(["config", "set", "preset", "quick"]) == 0
+    assert _run(["config", "set", "preset", "no_review"]) == 0
     filled = _fill_and_read(iso)
-    assert filled.get("preset") == "quick", "the selector was dropped"
+    assert filled.get("preset") == "no_review", "the selector was dropped"
     review = filled["review"]
     assert isinstance(review, dict)
-    # `quick` sets review.trigger = "off"; the filled value is the default and the preset applies.
+    # The fill keeps the default; the preset applies on load.
     from agent6.config import Config
 
     assert review["trigger"] == Config().review.trigger

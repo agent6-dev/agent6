@@ -78,9 +78,9 @@ def test_merge_and_config_argv_end_options_before_values(
 @pytest.mark.parametrize(
     "argv",
     [
-        ["run", "--preset", "quick", "--", "-dashy task"],
+        ["run", "--preset", "no_review", "--", "-dashy task"],
         ["run", "--parallel", "2", "--", "-dashy task"],
-        ["run", "--preset", "quick", "--parallel", "gpt-5,opus", "--", "-dashy task"],
+        ["run", "--preset", "no_review", "--parallel", "gpt-5,opus", "--", "-dashy task"],
         ["plan", "--", "-dashy task"],
         ["ask", "--", "-dashy question"],
         ["machine", "create", "--", "-dashy task"],

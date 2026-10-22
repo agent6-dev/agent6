@@ -149,7 +149,7 @@ def test_repeated_undo_follows_the_fork_lineage(tmp_path: pathlib.Path) -> None:
         run_branch=None,
         cfg=Config(),
         mode="run",
-        effective_preset="",
+        effective_preset="none",
         preset_from_flag=False,
         parent_session_id="run-p",
     )
@@ -173,7 +173,7 @@ def test_a_cyclic_lineage_does_not_crash(tmp_path: pathlib.Path) -> None:
         run_branch=None,
         cfg=Config(),
         mode="run",
-        effective_preset="",
+        effective_preset="none",
         preset_from_flag=False,
         parent_session_id="cyclic-run",  # points at itself
     )

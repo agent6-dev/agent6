@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.config import layer
+from agent6.config import layer, model
 from agent6.ui.cli import _common, completers
 
 # `run -i` and `resume -i` share one hook (`app/_execution.py`), so they share one help.
@@ -134,12 +134,13 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     )
     run_profile = run_p.add_argument(
         "--preset",
-        default="",
+        default=argparse.SUPPRESS,
+        type=model.preset_name,
         help=(
             f"Apply a built-in strategy preset ({'/'.join(layer.BUILTIN_PRESETS)}) or a custom"
             " presets.NAME. This overrides any `preset` selected in a config file and values"
             " from the global and per-repository configs. Values from --config FILE and other"
-            " command flags still win."
+            " command flags still win. Use none to select no preset."
         ),
     )
     run_profile.completer = completers._complete_presets  # type: ignore[attr-defined]
@@ -191,11 +192,12 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     resume_preset = resume_p.add_argument(
         "--preset",
-        default="",
+        default=argparse.SUPPRESS,
+        type=model.preset_name,
         help=(
             "Use another strategy preset for this continuation. A preset can change any"
             " setting, so it takes effect only when resuming. The session records it and uses"
-            " it on later resumes."
+            " it on later resumes. Use none to select no preset."
         ),
     )
     resume_preset.completer = completers._complete_presets  # type: ignore[attr-defined]

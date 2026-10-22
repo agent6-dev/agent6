@@ -312,7 +312,7 @@ def test_a_state_table_cannot_select_a_preset(
             tmp_path,
             MACHINE.replace(
                 "max_iterations = 7",
-                'max_iterations = 7\n\n[states.judge.config]\npreset = "ultra"',
+                'max_iterations = 7\n\n[states.judge.config]\npreset = "review"',
             ),
         )
     )

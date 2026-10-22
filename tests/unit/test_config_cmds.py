@@ -53,8 +53,8 @@ def test_profile_value_completer_offers_profile_names(
     monkeypatch.chdir(tmp_path)
     args = argparse.Namespace(key="preset")
     out = cli_completers._complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
-    assert "ultra" in out and "myteam" in out
-    assert cli_completers._complete_config_values("ul", args) == ["ultra"]  # pyright: ignore[reportPrivateUsage]
+    assert "review" in out and "myteam" in out
+    assert cli_completers._complete_config_values("re", args) == ["review"]  # pyright: ignore[reportPrivateUsage]
 
 
 def test_config_key_completer_offers_user_profile_paths(
@@ -70,7 +70,7 @@ def test_config_key_completer_offers_user_profile_paths(
     monkeypatch.chdir(tmp_path)
     out = cli_completers._complete_config_keys("presets.")  # pyright: ignore[reportPrivateUsage]
     assert any(k.startswith("presets.myteam.review.") for k in out)
-    assert not any(k.startswith("presets.ultra") for k in out)
+    assert not any(k.startswith("presets.review") for k in out)
     # the top-level `preset` leaf itself is offered alongside presets.*
     assert "preset" in cli_completers._complete_config_keys("preset")  # pyright: ignore[reportPrivateUsage]
     # a bare TAB (empty prefix) is not flooded with the generated paths
@@ -185,7 +185,7 @@ def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: path
     m = tmp_path / "m.asm.toml"
     for key in (
         "providers.openai.base_url",
-        "presets.ultra.sandbox.run_commands",
+        "presets.review.sandbox.run_commands",
         "machine.notify.on_event",
         "mcp.servers",
         "notify.on_complete",

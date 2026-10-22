@@ -78,6 +78,7 @@ depends_on = [
   "agent6.config",
   "agent6.config.io",
   "agent6.config.layer",
+  "agent6.config.model",
   "agent6.config.write",
   "agent6.directive",
   "agent6.errors",

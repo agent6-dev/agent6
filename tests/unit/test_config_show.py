@@ -21,7 +21,7 @@ def test_a_top_level_scalar_is_not_dressed_as_a_table(tmp_path: pathlib.Path) ->
 
     `config fill` emits top-level scalars the same way.
     """
-    out = config_view.render_show(layer.load_effective(tmp_path, preset="quick"))
+    out = config_view.render_show(layer.load_effective(tmp_path, preset="no_review"))
 
     assert "[preset]" not in out, "a scalar rendered as a TOML table header"
     assert "preset" in out, "the setting itself must still be shown"
@@ -224,8 +224,10 @@ def test_an_empty_string_default_renders_a_visible_token(tmp_path: pathlib.Path)
     rows = config_view.render_show(
         eff, resolved=registry.resolved_adaptive_values(eff.config)
     ).splitlines()
+    prompt = next(line for line in rows if line.split()[:1] == ["prompt.system_prompt_file"])
+    assert "(empty)" in prompt, prompt
     preset = next(line for line in rows if line.split()[:1] == ["preset"])
-    assert "(empty)" in preset, preset
+    assert preset.split()[1:] == ["none", "default"]
 
 
 def test_the_auto_sandbox_leaves_show_what_this_host_resolves_them_to(

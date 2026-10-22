@@ -69,14 +69,14 @@ def test_a_live_undo_hands_both_resumes_to_the_fork_under_the_picks(
             assert app.continue_as == "fork-child-AAAAAA"
             assert bar.text == "name it better"
             assert "continue as fork-child-AAAAAA" in str(bar.border_title)
-            app.resume_preset = "quick"
+            app.resume_preset = "no_review"
             app.resume_model = "o/m"
             app.submit_instruction("name it much better")
             await app.workers.wait_for_complete()
-            assert spawned == [("fork-child-AAAAAA", "name it much better", "quick", "o/m")]
+            assert spawned == [("fork-child-AAAAAA", "name it much better", "no_review", "o/m")]
             app.action_resume()
             await app.workers.wait_for_complete()
-            assert spawned[-1] == ("fork-child-AAAAAA", "", "quick", "o/m")
+            assert spawned[-1] == ("fork-child-AAAAAA", "", "no_review", "o/m")
             # The dashboard's bar agrees.
             await pilot.press("ctrl+d")
             await pilot.pause()

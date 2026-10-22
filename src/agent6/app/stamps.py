@@ -85,7 +85,7 @@ def write_session_manifest(
     run_branch: str | None,
     cfg: Config,
     mode: str = "run",
-    effective_preset: str = "",
+    effective_preset: str = "none",
     preset_from_flag: bool = False,
     driver_from_flag: bool = False,
     gate: tuple[Sequence[str], str] | None = None,

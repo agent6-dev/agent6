@@ -31,7 +31,7 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
 
 
 def test_preset_via_preset_field_expands_review_knobs(repo: pathlib.Path) -> None:
-    _write_repo_config(repo, 'preset = "ultra"\n')
+    _write_repo_config(repo, 'preset = "review"\n')
     cfg = layer.load_effective(repo).config
     assert cfg.review.trigger == "before_finish"
     assert cfg.review.seats == ("security", "correctness", "tests")
@@ -40,8 +40,8 @@ def test_preset_via_preset_field_expands_review_knobs(repo: pathlib.Path) -> Non
 
 
 def test_preset_via_flag_overrides_field(repo: pathlib.Path) -> None:
-    _write_repo_config(repo, 'preset = "quick"\n')
-    cfg = layer.load_effective(repo, preset="paranoid").config  # flag wins over the field
+    _write_repo_config(repo, 'preset = "no_review"\n')
+    cfg = layer.load_effective(repo, preset="deep_review").config  # flag wins over the field
     assert len(cfg.review.seats) == 5
     assert cfg.review.tier == "explore"
     assert cfg.review.decision == "veto"
@@ -51,7 +51,7 @@ def test_preset_via_flag_overrides_field(repo: pathlib.Path) -> None:
 def test_repo_selected_preset_beats_same_layer_setting(repo: pathlib.Path) -> None:
     # The preset selected by the repo's top-level `preset` is injected ABOVE the
     # repo config, so it OVERRIDES a conflicting value set in the SAME repo config.
-    _write_repo_config(repo, 'preset = "ultra"\n\n[review]\ndecision = "advisory"\n')
+    _write_repo_config(repo, 'preset = "review"\n\n[review]\ndecision = "advisory"\n')
     cfg = layer.load_effective(repo).config
     assert cfg.review.decision == "veto"  # repo-selected preset wins
     assert cfg.review.seats == ("security", "correctness", "tests")  # rest of the preset applies
@@ -90,21 +90,17 @@ def test_only_a_flag_selected_preset_is_replayed_on_resume(repo: pathlib.Path) -
     assert layer.load_effective(repo, (), preset="t").config.review.concurrency == 5  # as a flag
 
 
-def test_user_preset_named_standard_replaces_the_builtin(repo: pathlib.Path) -> None:
-    """A user preset named `standard` replaces the built-in.
-
-    A user table named after a built-in replaces it wholesale (docs/config.md, and resolve_preset's
-    own "user presets win over built-ins" contract); short-circuiting the name to the empty built-in
-    drops its overrides silently while `agent6 config presets` reports it selected and applied.
-    """
+def test_user_preset_replaces_the_builtin(repo: pathlib.Path) -> None:
+    """A user preset replaces a same-named built-in instead of merging with it."""
     _write_repo_config(
         repo,
-        'preset = "standard"\n\n[presets.standard]\nreview = { trigger = "before_finish",'
+        'preset = "review"\n\n[presets.review]\nreview = { trigger = "before_finish",'
         " concurrency = 4 }\n",
     )
     cfg = layer.load_effective(repo).config
     assert cfg.review.trigger == "before_finish"
     assert cfg.review.concurrency == 4
+    assert cfg.review.decision == "advisory"
 
 
 def test_unknown_preset_errors(repo: pathlib.Path) -> None:
@@ -117,9 +113,9 @@ def test_preset_table_instead_of_string_is_clear_error(repo: pathlib.Path) -> No
     """A `[preset]` table instead of a string is a clear error.
 
     A mistyped `config set preset.porifle x` fails as "preset must be a string", never str()-coerced
-    into `unknown preset "{'porifle': 'ultra'}"`.
+    into `unknown preset "{'porifle': 'review'}"`.
     """
-    _write_repo_config(repo, '[preset]\nporifle = "ultra"\n')
+    _write_repo_config(repo, '[preset]\nporifle = "review"\n')
     with pytest.raises(ConfigError, match="must be a preset name string"):
         layer.load_effective(repo)
 
@@ -127,6 +123,7 @@ def test_preset_table_instead_of_string_is_clear_error(repo: pathlib.Path) -> No
 def test_no_preset_is_plain_defaults(repo: pathlib.Path) -> None:
     _write_repo_config(repo, "[review]\n")
     cfg = layer.load_effective(repo).config
+    assert cfg.preset == "none"
     assert cfg.review.trigger == "off" and cfg.review.concurrency == 1
 
 
@@ -151,6 +148,43 @@ def global_config(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pa
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     return gdir / "agent6" / "config.toml"
+
+
+def test_repo_none_stops_the_global_preset(repo: pathlib.Path, global_config: pathlib.Path) -> None:
+    """A repo can turn off a global preset without erasing the global config's own settings."""
+    global_config.write_text('preset = "review"\n[review]\nconcurrency = 2\n', encoding="utf-8")
+    _write_repo_config(repo, 'preset = "none"\n')
+    effective = layer.load_effective(repo)
+    assert effective.config.preset == "none"
+    assert effective.sources["preset"] == "repo"
+    assert effective.config.review.trigger == "off"
+    assert effective.config.review.concurrency == 2
+    assert all(source.name != "preset" for source in effective.layers)
+
+
+def test_flag_none_stops_the_repo_preset(repo: pathlib.Path) -> None:
+    """An explicit no-preset flag overrides a repo selection and records its source."""
+    _write_repo_config(repo, 'preset = "review"\n')
+    effective = layer.load_effective(repo, preset="none")
+    assert effective.config.preset == "none"
+    assert effective.sources["preset"] == "flag"
+    assert effective.config.review.trigger == "off"
+
+
+@pytest.mark.parametrize("selected", [False, True])
+def test_none_is_reserved_even_when_unselected(repo: pathlib.Path, selected: bool) -> None:
+    """A user definition cannot turn the no-preset selector into an override."""
+    selector = 'preset = "none"\n' if selected else ""
+    _write_repo_config(repo, selector + "[presets.none]\n")
+    with pytest.raises(ConfigError, match=r"none.*reserved"):
+        layer.load_effective(repo)
+
+
+def test_empty_preset_names_none_as_the_replacement(repo: pathlib.Path) -> None:
+    """An empty selector is refused instead of falling through to a lower layer."""
+    _write_repo_config(repo, 'preset = ""\n')
+    with pytest.raises(ConfigError, match=r"empty.*none"):
+        layer.load_effective(repo)
 
 
 def test_global_selected_preset_loses_to_repo_config(

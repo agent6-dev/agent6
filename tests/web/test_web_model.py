@@ -478,15 +478,15 @@ def test_config_suggestions_providers_and_models(
     monkeypatch.setattr(models_cache, "list_models", _fake_list)
     payload = model.config_payload(tmp_path)
     assert payload["models.worker.provider"]["choices"] == ["openrouter"]
-    assert payload["preset"]["choices"] == ["paranoid", "quick", "standard", "ultra"]
+    assert payload["preset"]["choices"] == ["deep_review", "no_review", "none", "review"]
     assert model.config_suggestions(tmp_path, "models.worker.provider") == []
     assert model.config_suggestions(tmp_path, "models.worker.model") == ["kimi", "qwen3"]
     assert seen["provider"] == "openrouter"
     assert model.config_suggestions(tmp_path, "preset") == [
-        "paranoid",
-        "quick",
-        "standard",
-        "ultra",
+        "deep_review",
+        "no_review",
+        "none",
+        "review",
     ]
     # unknown keys / roles suggest nothing
     assert model.config_suggestions(tmp_path, "web.port") == []

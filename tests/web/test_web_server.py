@@ -280,10 +280,10 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
     status, data = _post(
         port,
         "/api/session/run-r/resume",
-        {"text": "also fix the docs", "preset": "quick", "model": "o/b"},
+        {"text": "also fix the docs", "preset": "no_review", "model": "o/b"},
     )
     assert status == 200 and data["ok"] is True
-    assert calls == [(tmp_path, "run-r", "also fix the docs", "quick", "o/b")]
+    assert calls == [(tmp_path, "run-r", "also fix the docs", "no_review", "o/b")]
 
 
 def test_run_plan_http_returns_the_child_and_leaves_the_plan_unchanged(

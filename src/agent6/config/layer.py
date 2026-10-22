@@ -48,7 +48,7 @@ class Layer:
     @property
     def source(self) -> str:
         """Identify the layer, including the path for command-line files."""
-        return f"flag ({self.path})" if self.name == "flag" else self.name
+        return f"flag ({self.path})" if self.name == "flag" and self.path else self.name
 
     @property
     def described(self) -> str:
@@ -158,19 +158,17 @@ def discover_layers(
     return layers
 
 
-# The docs table and the `--preset` help print each note.
+# The generated config table prints each note.
 BUILTIN_PRESET_NOTES: dict[str, str] = {
-    "standard": "the plain defaults, no review panel",
-    "quick": "no review panel: fast and cheap",
-    "ultra": "a three-seat review panel that vetoes the finish it does not pass",
-    "paranoid": "five explore-tier review seats vetoing the finish: maximum scrutiny",
+    "no_review": "turns off the review panel",
+    "review": "three review seats that can veto the finish",
+    "deep_review": "five explore-tier review seats that can veto the finish",
 }
 BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
-    "standard": {},
-    "quick": {
+    "no_review": {
         "review": {"trigger": "off"},
     },
-    "ultra": {
+    "review": {
         "review": {
             "trigger": "before_finish",
             # veto, not quorum: the seats share one model, and the gate counts blocks per model.
@@ -179,7 +177,7 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
             "concurrency": 3,
         },
     },
-    "paranoid": {
+    "deep_review": {
         "review": {
             "trigger": "before_finish",
             "decision": "veto",
@@ -200,20 +198,20 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
 def resolve_preset(name: str, user_presets: dict[str, Any]) -> dict[str, Any]:
     """Return the overrides a preset applies.
 
-    A user preset wins over a built-in of the same name, `standard` included: it is an empty
-    built-in like any other, so a user table of that name replaces it as the docs promise.
+    A user preset replaces a built-in of the same name wholesale.
 
     Args:
-        name: The preset name; "" selects nothing.
+        name: The preset name; "none" selects nothing.
         user_presets: The `[presets.*]` tables, merged.
 
     Returns:
-        The nested config dict; {} for "".
+        The nested config dict; {} for "none".
 
     Raises:
         ConfigError: The name is unknown, or the user table is not a table.
     """
-    if not name:
+    config_model.preset_name(name)
+    if name == "none":
         return {}
     if name in user_presets:
         prof = user_presets[name]
@@ -224,7 +222,7 @@ def resolve_preset(name: str, user_presets: dict[str, Any]) -> dict[str, Any]:
         return prof
     if name in BUILTIN_PRESETS:
         return BUILTIN_PRESETS[name]
-    known = ", ".join(sorted({*BUILTIN_PRESETS, *user_presets}))
+    known = ", ".join(sorted({"none", *BUILTIN_PRESETS, *user_presets}))
     raise config_model.ConfigError(f"unknown preset {name!r}. Known presets: {known}.")
 
 
@@ -237,7 +235,7 @@ def preset_names(layers: Iterable[Layer]) -> list[str]:
     Returns:
         The names, sorted and de-duplicated.
     """
-    names: set[str] = set(BUILTIN_PRESETS)
+    names: set[str] = {"none", *BUILTIN_PRESETS}
     for layer in layers:
         prof = layer.data.get("presets")
         if isinstance(prof, dict):
@@ -272,7 +270,7 @@ class PresetInfo:
 
     Attributes:
         name: The preset name.
-        overrides: The nested config dict it applies; {} for the plain defaults.
+        overrides: The nested config dict it applies; {} applies no overrides.
         origin: `built-in`, `global`, `repo` or `global+repo`.
         replaces_builtin: A user preset with a built-in's name replaces it whole.
     """
@@ -289,8 +287,8 @@ class PresetCatalog:
 
     Attributes:
         presets: The built-ins in definition order, then the user's, sorted.
-        selected: The selected preset's name; "" when none is selected anywhere.
-        source: `repo`, `global` or `none`.
+        selected: The selected preset's name; "none" selects no preset.
+        source: `repo`, `global` or `default`.
     """
 
     presets: tuple[PresetInfo, ...]
@@ -314,10 +312,11 @@ def preset_catalog(
         The catalog.
 
     Raises:
-        ConfigError: A layer is unreadable, or a `[presets.<name>]` is not a table.
+        ConfigError: A layer is unreadable, a preset name is unknown or reserved, or a body
+            is not a table.
     """
     layers = discover_layers(repo_root, explicit_paths)
-    user: dict[str, dict[str, Any]] = {}
+    _, user = _strip_presets(layers)
     origins: dict[str, str] = {}
     for layer in layers:
         prof = layer.data.get("presets")
@@ -328,9 +327,9 @@ def preset_catalog(
                 raise config_model.ConfigError(
                     f"[presets.{name}] must be a table, got {type(body).__name__}"
                 )
-            user[name] = _deep_merge(user.get(name, {}), body)
             origins[name] = f"{origins[name]}+{layer.name}" if name in origins else layer.name
     selected, source = _select_preset(layers, "")
+    resolve_preset(selected, user)
     builtins = tuple(
         PresetInfo(name, user[name], origins[name], replaces_builtin=True)
         if name in user
@@ -571,7 +570,7 @@ def _own_preset(layer: Layer) -> str:
         The preset name the layer itself sets; "" when it sets none.
 
     Raises:
-        ConfigError: The value is not a string (a `[preset]` table from a typo'd `config set`).
+        ConfigError: The value is empty or not a string.
     """
     raw = layer.data.get("preset")
     if raw is None:
@@ -580,10 +579,10 @@ def _own_preset(layer: Layer) -> str:
         shape = "a [preset] table" if isinstance(raw, dict) else f"a {type(raw).__name__}"
         raise config_model.ConfigError(
             f"top-level `preset` in the {layer.name} config must be a preset name"
-            f' string (e.g. preset = "ultra"), got {shape};'
+            f' string (e.g. preset = "review"), got {shape};'
             f" set it with `agent6 config set preset <name>`."
         )
-    return raw
+    return config_model.preset_name(raw)
 
 
 def _select_preset(cleaned: list[Layer], preset_override: str) -> tuple[str, str]:
@@ -595,7 +594,7 @@ def _select_preset(cleaned: list[Layer], preset_override: str) -> tuple[str, str
 
     Returns:
         `(name, source)`: the flag, else the repo layer's own `preset`, else the global
-        layer's, else `("", "none")`.
+        layer's, else `("none", "default")`.
 
     Raises:
         ConfigError: A layer's `preset` is not a string.
@@ -607,7 +606,7 @@ def _select_preset(cleaned: list[Layer], preset_override: str) -> tuple[str, str
         layer = by_name.get(source)
         if layer is not None and (name := _own_preset(layer)):
             return name, source
-    return "", "none"
+    return "none", "default"
 
 
 def _insert_preset(cleaned: list[Layer], preset: Layer, source: str) -> list[Layer]:
@@ -648,6 +647,9 @@ def _strip_presets(layers: list[Layer]) -> tuple[list[Layer], dict[str, Any]]:
 
     Returns:
         The stripped layers, and the user presets merged low to high.
+
+    Raises:
+        ConfigError: A layer defines the reserved `[presets.none]` table.
     """
     cleaned: list[Layer] = []
     user_presets: dict[str, Any] = {}
@@ -655,6 +657,10 @@ def _strip_presets(layers: list[Layer]) -> tuple[list[Layer], dict[str, Any]]:
         data = dict(layer.data)
         prof = data.pop("presets", None)
         if isinstance(prof, dict):
+            if "none" in prof:
+                raise config_model.ConfigError(
+                    '[presets.none] is refused: "none" is reserved for selecting no preset.'
+                )
             user_presets = _deep_merge(user_presets, prof)
         cleaned.append(Layer(layer.name, layer.path, data))
     return cleaned, user_presets
@@ -679,6 +685,8 @@ def _apply_preset(layers: list[Layer], preset_override: str) -> list[Layer]:
     cleaned, user_presets = _strip_presets(layers)
     name, source = _select_preset(cleaned, preset_override)
     overrides = resolve_preset(name, user_presets)
+    if source == "flag":
+        cleaned.append(Layer("flag", None, {"preset": name}))
     if not overrides:
         return cleaned
     return _insert_preset(cleaned, Layer("preset", None, overrides), source)

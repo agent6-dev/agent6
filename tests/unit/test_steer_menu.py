@@ -309,13 +309,13 @@ def test_pause_menu_status_shows_ctx_and_profile(
         encoding="utf-8",
     )
     (tmp_path / "manifest.json").write_text(
-        json.dumps({"harness": {"preset": "paranoid"}}), encoding="utf-8"
+        json.dumps({"harness": {"preset": "deep_review"}}), encoding="utf-8"
     )
     assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
     printed = capsys.readouterr().out
     assert "ctx 90,000 tok" in printed
     assert "(45%)" in printed  # 90k of the 200k sonnet window
-    assert "preset paranoid" in printed
+    assert "preset deep_review" in printed
     assert "elided" not in printed  # no compaction yet: no elision suffix
 
 

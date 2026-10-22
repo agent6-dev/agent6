@@ -99,7 +99,7 @@ class HarnessStamp(pydantic.BaseModel):
 
     review_trigger: str = ""
     revise_prompt: str = ""
-    preset: str = ""
+    preset: str = "none"
     verify_command: tuple[str, ...] = ()
     verify_origin: str = ""
     preset_from_flag: bool = False

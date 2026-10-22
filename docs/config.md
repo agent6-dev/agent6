@@ -261,7 +261,7 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 
 | Field | Default | Meaning |
 |---|---|---|
-| `preset` | `""` | The strategy preset in force: `standard` (plain defaults), `quick` (no review panel), `ultra` (a three-seat panel that advises and vetoes before finish), `paranoid` (five explore-tier seats), or a `[presets.<name>]` of your own. Fills many settings at once and overrides every section of the layer that selects it; `--preset` overrides per run, `resume --preset` per resumed execution. Empty: no preset. |
+| `preset` | `"none"` | The selected preset: `none` (no preset), `no_review` (review panel off), `review` (three review seats that can veto the finish), `deep_review` (five explore-tier review seats that can veto the finish), or a `[presets.<name>]` of your own. A preset overrides settings in the layer that selects it. `--preset` selects per run, `resume --preset` per resumed execution. `none` stops preset lookup; an empty string is refused. |
 
 ## `[harness]`
 
@@ -348,12 +348,17 @@ A preset fills many settings at once.
 A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
 A `--config FILE` or machine overlay cannot select one.
 
+The default `preset = "none"` selects no preset.
+Set `preset = "none"` in the repo config to stop lookup before a global preset, or pass `--preset none` to override both layers.
+This keeps the layers' own settings; it does not reset them to defaults.
+An empty string is refused.
+The name `none` is reserved, so `[presets.none]` is refused.
+
 | Preset | For | Sets |
 |---|---|---|
-| `standard` | the plain defaults, no review panel | nothing (the defaults) |
-| `quick` | no review panel: fast and cheap | `review.trigger = "off"` |
-| `ultra` | a three-seat review panel that vetoes the finish it does not pass | `review.trigger = "before_finish"`, `review.decision = "veto"`, `review.seats = ["security", "correctness", "tests"]`, `review.concurrency = 3` |
-| `paranoid` | five explore-tier review seats vetoing the finish: maximum scrutiny | `review.trigger = "before_finish"`, `review.decision = "veto"`, `review.tier = "explore"`, `review.seats = ["security", "correctness", "tests", "edge-cases", "over-engineering"]`, `review.concurrency = 5` |
+| `no_review` | turns off the review panel | `review.trigger = "off"` |
+| `review` | three review seats that can veto the finish | `review.trigger = "before_finish"`, `review.decision = "veto"`, `review.seats = ["security", "correctness", "tests"]`, `review.concurrency = 3` |
+| `deep_review` | five explore-tier review seats that can veto the finish | `review.trigger = "before_finish"`, `review.decision = "veto"`, `review.tier = "explore"`, `review.seats = ["security", "correctness", "tests", "edge-cases", "over-engineering"]`, `review.concurrency = 5` |
 
 Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
 

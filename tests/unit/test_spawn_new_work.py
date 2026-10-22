@@ -36,8 +36,8 @@ def test_argv_ends_options_before_task_and_carries_the_preset(
 ) -> None:
     """A task that looks like a flag rides behind `--`; the config-default preset adds no flag."""
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "run", "--allow-root pwn", preset="quick")
-    assert captured[-1][1:] == ["run", "--preset", "quick", "--", "--allow-root pwn"]
+    spawn.spawn_new_work(tmp_path, "run", "--allow-root pwn", preset="no_review")
+    assert captured[-1][1:] == ["run", "--preset", "no_review", "--", "--allow-root pwn"]
     spawn.spawn_new_work(tmp_path, "plan", "do it")
     assert captured[-1][1:] == ["plan", "--", "do it"]
 
@@ -112,9 +112,9 @@ def test_parallel_model_list_with_preset(
 ) -> None:
     _configure_worker()
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "run", "/parallel gpt-5,opus refactor", preset="quick")
+    spawn.spawn_new_work(tmp_path, "run", "/parallel gpt-5,opus refactor", preset="no_review")
     assert captured[-1][1:] == [
-        "run", "--preset", "quick", "--parallel", "gpt-5,opus", "--", "refactor",
+        "run", "--preset", "no_review", "--parallel", "gpt-5,opus", "--", "refactor",
     ]  # fmt: skip
 
 
@@ -379,8 +379,8 @@ def test_argv_carries_the_model_route(
 ) -> None:
     """The picker's route rides as `--model` after the preset, on every /parallel lane too."""
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "plan", "t", preset="quick", model="o/m")
-    assert captured[-1][1:] == ["plan", "--preset", "quick", "--model", "o/m", "--", "t"]
+    spawn.spawn_new_work(tmp_path, "plan", "t", preset="no_review", model="o/m")
+    assert captured[-1][1:] == ["plan", "--preset", "no_review", "--model", "o/m", "--", "t"]
     spawn.spawn_new_work(tmp_path, "run", "/parallel 2 t", model="o/m")
     assert captured[-1][1:] == ["run", "--model", "o/m", "--parallel", "2", "--", "t"]
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 import pathlib
 import tomllib
 from collections.abc import Callable
-from typing import Literal
+from typing import Annotated, Literal
 
 import pydantic
 
@@ -22,6 +22,23 @@ from agent6.config import _base, _git, _harness, _providers, _sandbox, _surfaces
 
 class ConfigError(errors.OperatorError):
     """The config file is missing, malformed or invalid: the operator's file, so a refusal."""
+
+
+def preset_name(name: str) -> str:
+    """Refuse an empty preset selector.
+
+    Args:
+        name: The selected name.
+
+    Returns:
+        The non-empty name.
+
+    Raises:
+        ConfigError: The selector is empty.
+    """
+    if not name:
+        raise ConfigError('preset must not be empty; use "none" to select no preset.')
+    return name
 
 
 EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
@@ -184,14 +201,15 @@ class Config(pydantic.BaseModel):
     parallel: _surfaces.ParallelConfig = pydantic.Field(default_factory=_surfaces.ParallelConfig)
     workspace: _surfaces.WorkspaceConfig = pydantic.Field(default_factory=_surfaces.WorkspaceConfig)
     # The injection order and stacking rules live in config.layer._apply_preset.
-    preset: str = pydantic.Field(
-        default="",
+    preset: Annotated[str, pydantic.AfterValidator(preset_name)] = pydantic.Field(
+        default="none",
         description=(
-            "The strategy preset in force: `standard` (plain defaults), `quick` (no review panel), "
-            "`ultra` (a three-seat panel that advises and vetoes before finish), `paranoid` (five "
-            "explore-tier seats), or a `[presets.<name>]` of your own. Fills many settings at once "
-            "and overrides every section of the layer that selects it; `--preset` overrides per "
-            "run, `resume --preset` per resumed execution. Empty: no preset."
+            "The selected preset: `none` (no preset), `no_review` (review panel off), "
+            "`review` (three review seats that can veto the finish), `deep_review` (five "
+            "explore-tier review seats that can veto the finish), or a `[presets.<name>]` "
+            "of your own. A preset overrides settings in the layer that selects it. "
+            "`--preset` selects per run, `resume --preset` per resumed execution. "
+            "`none` stops preset lookup; an empty string is refused."
         ),
     )
 

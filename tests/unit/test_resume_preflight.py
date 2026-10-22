@@ -328,11 +328,15 @@ def test_resume_preset_flag_is_recorded_for_later_executions(
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
     monkeypatch.setattr(git_ops, "verify_git_identity", _nothing)
     monkeypatch.setattr(app__execution, "run_execution", _finished_execution)
-    assert cli_resume._cmd_resume((), "plan-PRESET1", force=False, preset="quick") == 0
+    assert cli_resume._cmd_resume((), "plan-PRESET1", force=False, preset="no_review") == 0
     stamp = sessions_manifest.read_manifest(session_dir).harness
-    assert (stamp.preset, stamp.preset_from_flag, stamp.replay_preset) == ("quick", True, "quick")
+    assert (stamp.preset, stamp.preset_from_flag, stamp.replay_preset) == (
+        "no_review",
+        True,
+        "no_review",
+    )
     assert cli_resume._cmd_resume((), "plan-PRESET1", force=False) == 0
-    assert sessions_manifest.read_manifest(session_dir).harness.replay_preset == "quick"
+    assert sessions_manifest.read_manifest(session_dir).harness.replay_preset == "no_review"
 
 
 def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
@@ -422,7 +426,7 @@ def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
             (),
             "plan-PICKREFUSE",
             force=False,
-            preset="quick",
+            preset="no_review",
             model="claude-y",
         )
         == 2
@@ -430,7 +434,7 @@ def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
     manifest = sessions_manifest.read_manifest(
         paths.state_dir(repo) / "sessions" / "runs" / "plan-PICKREFUSE"
     )
-    assert manifest.harness.preset == ""
+    assert manifest.harness.preset == "none"
     assert manifest.models.driver_from_flag is False
 
 
@@ -641,7 +645,7 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "parked-DETACH"
-    _park_manifest(session_dir, preset="", from_flag=False)
+    _park_manifest(session_dir, preset="none", from_flag=False)
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)  # no key in a unit test
     child = subprocess.Popen(["sleep", "60"])
@@ -690,7 +694,7 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "parked-LEAVES"
-    _park_manifest(session_dir, preset="", from_flag=False)
+    _park_manifest(session_dir, preset="none", from_flag=False)
     cfg_path = tmp_path / "cfg.toml"
     cfg_path.write_text(_PLANNER_AND_WORKER + "[harness]\nmax_iterations = 7\n", encoding="utf-8")
     cfg = load_config(cfg_path)
@@ -1250,7 +1254,7 @@ def test_a_parked_resume_with_no_provider_key_refuses_and_stays_parked(
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "parked-NOKEY"
-    _park_manifest(session_dir, preset="", from_flag=False)
+    _park_manifest(session_dir, preset="none", from_flag=False)
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
 
@@ -1283,7 +1287,7 @@ def test_a_parked_resume_says_it_is_starting_once_it_starts(
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "parked-STARTS"
-    _park_manifest(session_dir, preset="", from_flag=False)
+    _park_manifest(session_dir, preset="none", from_flag=False)
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
@@ -1359,7 +1363,9 @@ def test_a_parked_resume_hands_run_task_the_config_path(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _park_manifest(
-        paths.state_dir(repo) / "sessions" / "runs" / "parked-AAAA11", preset="", from_flag=False
+        paths.state_dir(repo) / "sessions" / "runs" / "parked-AAAA11",
+        preset="none",
+        from_flag=False,
     )
     seen: list[object] = []
 

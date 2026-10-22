@@ -37,7 +37,7 @@ ORDER = [
 
 DEMO_CONFIG = """\
 # Demo config used only to render the docs screenshots; no secrets here.
-preset = "standard"
+preset = "none"
 
 [sandbox]
 isolation = "auto"

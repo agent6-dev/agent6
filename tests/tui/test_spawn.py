@@ -176,10 +176,12 @@ def test_spawn_detached_resume_argv_env_and_owning_signal(
         f"echo $$ > {run / 'worker.pid'}\n"
         "sleep 5\n",
     )
-    err = spawn.spawn_detached_resume(tmp_path, "tidy-owl-9Z3AAA", steer="go on", preset="quick")
+    err = spawn.spawn_detached_resume(
+        tmp_path, "tidy-owl-9Z3AAA", steer="go on", preset="no_review"
+    )
     assert err == ""
     lines = seen.read_text(encoding="utf-8").splitlines()
-    assert lines[:4] == ["resume", "tidy-owl-9Z3AAA", "--preset=quick", "--steer=go on"]
+    assert lines[:4] == ["resume", "tidy-owl-9Z3AAA", "--preset=no_review", "--steer=go on"]
     assert "AGENT6_STREAM_TO_LOG=1" in lines and "AGENT6_DETACHED_AWAY=wait" in lines
 
 

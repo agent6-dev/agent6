@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import os
 
+from agent6.config import model
 from agent6.ui.cli import _common, _run_args, completers
 
 
@@ -38,8 +39,12 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     )
     plan_profile = plan_run.add_argument(
         "--preset",
-        default="",
-        help="Apply a strategy preset. `agent6 config presets` lists the choices.",
+        default=argparse.SUPPRESS,
+        type=model.preset_name,
+        help=(
+            "Apply a preset, or none to select no preset."
+            " `agent6 config presets` lists the choices."
+        ),
     )
     plan_profile.completer = completers._complete_presets  # type: ignore[attr-defined]
     _run_args._add_model_flag(plan_run)
@@ -134,8 +139,12 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     )
     ask_profile = ask_query.add_argument(
         "--preset",
-        default="",
-        help="Apply a strategy preset. `agent6 config presets` lists the choices.",
+        default=argparse.SUPPRESS,
+        type=model.preset_name,
+        help=(
+            "Apply a preset, or none to select no preset."
+            " `agent6 config presets` lists the choices."
+        ),
     )
     ask_profile.completer = completers._complete_presets  # type: ignore[attr-defined]
     _run_args._add_model_flag(ask_query)

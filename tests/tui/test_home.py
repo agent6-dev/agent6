@@ -184,7 +184,9 @@ def test_new_task_view_esc_closes_an_open_list_before_the_view(tmp_path: pathlib
         app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(tui_new_work.NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a"]))
+            app.push_screen(
+                tui_new_work.NewWorkScreen(tmp_path, presets=["review"], routes=["o/a"])
+            )
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, tui_new_work.NewWorkScreen)
@@ -281,20 +283,20 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
         app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(tui_new_work.NewWorkScreen(tmp_path, presets=["ultra"]))
+            app.push_screen(tui_new_work.NewWorkScreen(tmp_path, presets=["review"]))
             await pilot.pause()
             assert isinstance(app.screen, tui_new_work.NewWorkScreen)
             bar = app.screen.query_one("#draft-input", composer.SteerInput)
             assert bar.border_title == "new session"
             app.screen.query_one("#draft-mode", widgets.Select).value = "plan"
-            app.screen.query_one("#draft-preset", widgets.Select).value = "ultra"
+            app.screen.query_one("#draft-preset", widgets.Select).value = "review"
             bar.focus()
             await pilot.pause()
             await pilot.press("a", "ctrl+j", "b", "enter")
             deadline = time.monotonic() + 10
             while app.return_value is None and time.monotonic() < deadline:
                 await pilot.pause(0.05)
-            assert started == [("plan", "a\nb", "ultra")]
+            assert started == [("plan", "a\nb", "review")]
             assert app.return_value == tmp_path / "located"
 
     asyncio.run(scenario())
@@ -1160,13 +1162,13 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
-    resolved = {("run", ""): "o/a", ("plan", ""): "o/b", ("plan", "ultra"): "o/c"}
+    resolved = {("run", ""): "o/a", ("plan", ""): "o/b", ("plan", "review"): "o/c"}
 
     def _route(cwd: pathlib.Path, config_paths: object, mode: str, preset: str) -> str:
         return resolved.get((mode, preset), "")
 
     def _preset(cwd: pathlib.Path, config_paths: object) -> str:
-        return "quick"
+        return "no_review"
 
     monkeypatch.setattr(choices, "default_route", _route)
     monkeypatch.setattr(choices, "default_preset", _preset)
@@ -1194,20 +1196,20 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
         async with app.run_test() as pilot:
             await pilot.pause()
             app.push_screen(
-                tui_new_work.NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a", "o/b"])
+                tui_new_work.NewWorkScreen(tmp_path, presets=["review"], routes=["o/a", "o/b"])
             )
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, tui_new_work.NewWorkScreen)
             preset = screen.query_one("#draft-preset", widgets.Select)
             picker = screen.query_one("#draft-model", widgets.Select)
-            assert (preset.value, label(preset)) == ("", "quick (config default)")
+            assert (preset.value, label(preset)) == ("", "no_review (config default)")
             assert (picker.value, label(picker)) == ("", "o/a (config default)")
             picker.value = "o/b"
             screen.query_one("#draft-mode", widgets.Select).value = "plan"
             await pilot.pause()
             assert (picker.value, label(picker)) == ("", "o/b (config default)")
-            preset.value = "ultra"
+            preset.value = "review"
             await pilot.pause()
             assert (picker.value, label(picker)) == ("", "o/c (config default)")
             picker.value = pick
@@ -1221,7 +1223,7 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
 
     asyncio.run(scenario("o/a"))
     asyncio.run(scenario(""))
-    assert started == [("plan", "t", "ultra", "o/a"), ("plan", "t", "ultra", "")]
+    assert started == [("plan", "t", "review", "o/a"), ("plan", "t", "review", "")]
 
 
 def test_new_task_view_model_box_says_none_when_no_route_resolves(
@@ -1324,7 +1326,9 @@ def test_new_task_view_tab_reaches_the_mode_picker_first(tmp_path: pathlib.Path)
         app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            app.push_screen(tui_new_work.NewWorkScreen(tmp_path, presets=["ultra"], routes=["o/a"]))
+            app.push_screen(
+                tui_new_work.NewWorkScreen(tmp_path, presets=["review"], routes=["o/a"])
+            )
             await pilot.pause()
             first = app.focused
             assert first is not None and first.id == "draft-input"

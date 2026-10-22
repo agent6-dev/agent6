@@ -59,10 +59,10 @@ def test_the_flag_routes_the_modes_role(repo: pathlib.Path) -> None:
     asked = _setup.load_session_config(repo, (), mode="ask", model="claude-y").config
     assert asked.models.worker is not None
     assert (asked.models.worker.provider, asked.models.worker.model) == ("anthropic", "claude-y")
-    quick = _setup.load_session_config(
-        repo, (), mode="run", preset="quick", model="claude-z"
+    no_review = _setup.load_session_config(
+        repo, (), mode="run", preset="no_review", model="claude-z"
     ).config
-    assert quick.models.worker is not None and quick.models.worker.model == "claude-z"
+    assert no_review.models.worker is not None and no_review.models.worker.model == "claude-z"
 
 
 def test_route_choices_are_the_cached_listings_plus_the_configured_routes(
@@ -113,7 +113,7 @@ def test_a_hubs_picker_follows_the_preset_and_lists_every_route(
         "anthropic/claude-x",
         "openrouter/moonshotai/kimi-k2.6",
     ]
-    assert choices.default_preset(repo, ()) == ""
+    assert choices.default_preset(repo, ()) == "none"
     config.write_text('preset = "fast"\n' + config.read_text(encoding="utf-8"), encoding="utf-8")
     assert choices.default_preset(repo, ()) == "fast"
     config.write_text("[models.worker]\nprovider = 1\n", encoding="utf-8")
@@ -145,7 +145,7 @@ def test_a_resume_rows_defaults_name_what_a_bare_resume_runs_under(
         body = {"session_id": "run", "mode": "run", **fields}
         (run / "manifest.json").write_text(json.dumps(body), encoding="utf-8")
 
-    manifest(harness={"preset": "quick"}, models={"driver": {"provider": "o", "model": "m"}})
+    manifest(harness={"preset": "no_review"}, models={"driver": {"provider": "o", "model": "m"}})
     assert choices.resume_defaults(repo, (), run) == (
         "none (config default)",
         "anthropic/claude-x (config default)",
@@ -157,7 +157,7 @@ def test_a_resume_rows_defaults_name_what_a_bare_resume_runs_under(
         harness={"preset": "fast", "preset_from_flag": True},
         models={"driver": {"provider": "o", "model": "m"}, "driver_from_flag": True},
     )
-    assert choices.resume_defaults(repo, (), run, preset="quick") == (
+    assert choices.resume_defaults(repo, (), run, preset="no_review") == (
         "fast (as recorded)",
         "o/m (as recorded)",
     )

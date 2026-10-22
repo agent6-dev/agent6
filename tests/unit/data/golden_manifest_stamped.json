@@ -20,7 +20,7 @@
   "harness": {
     "review_trigger": "on",
     "revise_prompt": "off",
-    "preset": "",
+    "preset": "none",
     "verify_command": [],
     "verify_origin": "",
     "preset_from_flag": false

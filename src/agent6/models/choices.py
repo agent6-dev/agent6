@@ -112,7 +112,7 @@ def default_preset(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...]) ->
         config_paths: The `--config` files in command-line order.
 
     Returns:
-        The selected preset, or "" when none is selected or on any config error.
+        The selected preset, "none" for no preset, or "" on any config error.
     """
     try:
         return layer.preset_catalog(cwd, config_paths).selected
@@ -142,7 +142,7 @@ def default_route(
 
 
 def default_label(name: str, *, recorded: bool = False) -> str:
-    """Return the label of a picker's no-flag entry, such as `quick (config default)`.
+    """Return the label of a picker's no-flag entry, such as `no_review (config default)`.
 
     Args:
         name: What the entry runs under; "" reads as `none`.

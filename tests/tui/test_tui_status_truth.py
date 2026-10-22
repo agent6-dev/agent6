@@ -381,7 +381,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
     monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
 
     def _presets(_cwd: pathlib.Path, _cp: object) -> list[str]:
-        return ["quick", "ultra"]
+        return ["no_review", "review"]
 
     def _routes(_cwd: pathlib.Path, _cp: object) -> list[str]:
         return ["o/a", "o/b"]
@@ -404,32 +404,34 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
             row = app._conv.query_one("#conv-resume", composer.ResumeOptions)
             await wait_for(pilot, lambda: row.display, "the resume row")
             preset_options = row.query_one("#resume-preset", widgets.Select)._options  # pyright: ignore[reportPrivateUsage]
-            assert [value for _label, value in preset_options] == ["", "quick", "ultra"]
+            assert [value for _label, value in preset_options] == ["", "no_review", "review"]
             model_options = row.query_one("#resume-model", widgets.Select)._options  # pyright: ignore[reportPrivateUsage]
             assert [value for _label, value in model_options] == ["", "o/a", "o/b"]
-            row.query_one("#resume-preset", widgets.Select).value = "quick"
+            row.query_one("#resume-preset", widgets.Select).value = "no_review"
             row.query_one("#resume-model", widgets.Select).value = "o/b"
             await pilot.pause()
-            assert (app.resume_preset, app.resume_model) == ("quick", "o/b")
+            assert (app.resume_preset, app.resume_model) == ("no_review", "o/b")
             app.submit_instruction("go ahead")
             await app.workers.wait_for_complete()
             await pilot.pause()
-            assert spawned == [("parked2", "go ahead", "quick", "o/b")]
+            assert spawned == [("parked2", "go ahead", "no_review", "o/b")]
             assert any(
-                "under preset quick, model o/b with your instruction" in note for note in notes
+                "under preset no_review, model o/b with your instruction" in note for note in notes
             )
             app.action_resume()
             await app.workers.wait_for_complete()
             await pilot.pause()
-            assert spawned[-1] == ("parked2", "", "quick", "o/b")
-            assert any("under preset quick, model o/b in the background" in note for note in notes)
+            assert spawned[-1] == ("parked2", "", "no_review", "o/b")
+            assert any(
+                "under preset no_review, model o/b in the background" in note for note in notes
+            )
             # The dashboard's pickers show the same choices.
             await _open_dash(app, pilot)
             dash_row = app._dash.query_one("#dash-resume", composer.ResumeOptions)
             await wait_for(pilot, lambda: dash_row.display, "the dashboard's row")
             preset = dash_row.query_one("#resume-preset", widgets.Select)
             model = dash_row.query_one("#resume-model", widgets.Select)
-            assert preset.value == "quick"
+            assert preset.value == "no_review"
             assert model.value == "o/b"
             preset.value = ""
             model.value = ""
@@ -454,7 +456,7 @@ def test_the_resume_rows_name_what_a_bare_resume_runs_under(
     from textual.widgets._select import SelectCurrent
 
     def _presets(_cwd: pathlib.Path, _cp: object) -> list[str]:
-        return ["quick"]
+        return ["no_review"]
 
     def _routes(_cwd: pathlib.Path, _cp: object) -> list[str]:
         return ["o/a", "o/b"]
@@ -486,17 +488,17 @@ def test_the_resume_rows_name_what_a_bare_resume_runs_under(
             preset = row.query_one("#resume-preset", widgets.Select)
             assert str(preset.query_one(SelectCurrent).label) == "fast (as recorded)"
             row.query_one("#resume-model", widgets.Select).value = "o/b"
-            row.query_one("#resume-preset", widgets.Select).value = "quick"
+            row.query_one("#resume-preset", widgets.Select).value = "no_review"
             await pilot.pause()
             await pilot.pause()
-            assert labels(row) == ("fast (as recorded)", "o/quick (config default)")
-            assert (app.resume_preset, app.resume_model) == ("quick", "o/b")
+            assert labels(row) == ("fast (as recorded)", "o/no_review (config default)")
+            assert (app.resume_preset, app.resume_model) == ("no_review", "o/b")
             assert row.query_one("#resume-model", widgets.Select).value == "o/b"
             await _open_dash(app, pilot)
             dash_row = app._dash.query_one("#dash-resume", composer.ResumeOptions)
             await wait_for(pilot, lambda: dash_row.display, "the dashboard's row")
             await pilot.pause()
-            assert labels(dash_row) == ("fast (as recorded)", "o/quick (config default)")
+            assert labels(dash_row) == ("fast (as recorded)", "o/no_review (config default)")
             assert dash_row.query_one("#resume-model", widgets.Select).value == "o/b"
 
     asyncio.run(scenario())

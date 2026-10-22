@@ -156,10 +156,10 @@ def _cmd_config_presets(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
         The exit code.
     """
     cat = layer.preset_catalog(pathlib.Path.cwd(), config_paths)
-    if cat.selected:
+    if cat.selected != "none":
         print(f"preset = {cat.selected}  [{cat.source}]")
     else:
-        print("no preset selected (plain defaults)")
+        print(f"preset = none  [{cat.source}] (no preset selected)")
     for info in cat.presets:
         tag = "built-in" if info.origin == "built-in" else f"user, {info.origin} config"
         if info.replaces_builtin:

@@ -92,30 +92,30 @@ def test_upsert_toml_leaf_top_level_key_lands_before_first_table(tmp_path: pathl
     """A single-segment key is written into the top region, before the first table header."""
     path = tmp_path / "c.toml"
     path.write_text('# keep me\n[sandbox]\nrun_commands = "ask"\n')
-    io.upsert_toml_leaf(path, "profile", "ultra")
+    io.upsert_toml_leaf(path, "profile", "review")
     out = path.read_text()
-    assert tomllib.loads(out) == {"profile": "ultra", "sandbox": {"run_commands": "ask"}}
+    assert tomllib.loads(out) == {"profile": "review", "sandbox": {"run_commands": "ask"}}
     assert "# keep me" in out
 
 
 def test_upsert_toml_leaf_top_level_key_replaces_existing(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "c.toml"
-    path.write_text('profile = "quick"\n\n[sandbox]\nrun_commands = "ask"\n')
-    io.upsert_toml_leaf(path, "profile", "ultra")
+    path.write_text('profile = "no_review"\n\n[sandbox]\nrun_commands = "ask"\n')
+    io.upsert_toml_leaf(path, "profile", "review")
     out = path.read_text()
-    assert tomllib.loads(out) == {"profile": "ultra", "sandbox": {"run_commands": "ask"}}
+    assert tomllib.loads(out) == {"profile": "review", "sandbox": {"run_commands": "ask"}}
     assert out.count("profile") == 1
 
 
 def test_upsert_toml_leaf_top_level_key_into_empty_file(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "c.toml"
-    io.upsert_toml_leaf(path, "profile", "ultra")
-    assert tomllib.loads(path.read_text()) == {"profile": "ultra"}
+    io.upsert_toml_leaf(path, "profile", "review")
+    assert tomllib.loads(path.read_text()) == {"profile": "review"}
 
 
 def test_remove_toml_leaf_top_level_key_keeps_sections(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "c.toml"
-    path.write_text('profile = "ultra"\n\n[sandbox]\nrun_commands = "ask"\n')
+    path.write_text('profile = "review"\n\n[sandbox]\nrun_commands = "ask"\n')
     assert io.remove_toml_leaf(path, "profile") is True
     assert tomllib.loads(path.read_text()) == {"sandbox": {"run_commands": "ask"}}
     assert io.remove_toml_leaf(path, "profile") is False  # already gone
@@ -160,9 +160,9 @@ def test_upsert_top_level_key_replaces_conflicting_table(tmp_path: pathlib.Path)
     """
     path = tmp_path / "c.toml"
     path.write_text('[profile]\nporifle = "x"\n\n[sandbox]\nrun_commands = "ask"\n')
-    io.upsert_toml_leaf(path, "profile", "ultra")
+    io.upsert_toml_leaf(path, "profile", "review")
     assert tomllib.loads(path.read_text()) == {
-        "profile": "ultra",
+        "profile": "review",
         "sandbox": {"run_commands": "ask"},
     }
 
@@ -170,7 +170,7 @@ def test_upsert_top_level_key_replaces_conflicting_table(tmp_path: pathlib.Path)
 def test_upsert_table_leaf_replaces_conflicting_top_level_key(tmp_path: pathlib.Path) -> None:
     """Creating a `[profile]` table drops an existing bare `profile` key, never writing both."""
     path = tmp_path / "c.toml"
-    path.write_text('profile = "ultra"\n\n[sandbox]\nrun_commands = "ask"\n')
+    path.write_text('profile = "review"\n\n[sandbox]\nrun_commands = "ask"\n')
     io.upsert_toml_leaf(path, "profile.porifle", "x")
     assert tomllib.loads(path.read_text()) == {
         "profile": {"porifle": "x"},
@@ -393,7 +393,7 @@ def test_no_writer_deletes_a_top_level_inline_table(tmp_path: pathlib.Path) -> N
     assert p.read_text(encoding="utf-8") == body, "the operator's settings were deleted"
 
     # The conflict it DOES exist for still resolves: a bare scalar gives way.
-    p.write_text('profile = "ultra"\n', encoding="utf-8")
+    p.write_text('profile = "review"\n', encoding="utf-8")
     io.upsert_toml_leaf(p, "profile.nested", 1)
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
     assert parsed["profile"] == {"nested": 1}

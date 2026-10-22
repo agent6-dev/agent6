@@ -254,6 +254,12 @@ A preset fills many settings at once.
 A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
 A `--config FILE` or machine overlay cannot select one.
 
+The default `preset = "none"` selects no preset.
+Set `preset = "none"` in the repo config to stop lookup before a global preset, or pass `--preset none` to override both layers.
+This keeps the layers' own settings; it does not reset them to defaults.
+An empty string is refused.
+The name `none` is reserved, so `[presets.none]` is refused.
+
 <!-- presets-table -->
 
 Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
