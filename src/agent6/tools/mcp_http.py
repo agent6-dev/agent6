@@ -76,7 +76,7 @@ class HttpTransport:
         url: The server's endpoint.
         token_env: The env var holding the bearer token; its value is read here and never
             logged, written to a transcript or quoted in an error.
-        httpx_trust_env: Whether httpx honours the ambient HTTP(S)_PROXY; off by default so the
+        http_trust_env: Whether httpx honours the ambient HTTP(S)_PROXY; off by default so the
             bearer token never routes to a proxy.
         session_id: The streamable-HTTP session id the server assigns on `initialize`, echoed
             on every later request and cleared on the 404 that means it expired; "" for a
@@ -86,7 +86,7 @@ class HttpTransport:
     name: str
     url: str
     token_env: str = ""
-    httpx_trust_env: bool = False
+    http_trust_env: bool = False
     session_id: str = ""
 
     def _auth(self) -> str:
@@ -129,7 +129,7 @@ class HttpTransport:
 
         `trust_env` is off by default: an ambient `HTTP_PROXY` would otherwise capture this
         connection, loopback included, sending the bearer token to the proxy.
-        `[mcp.servers.<name>].httpx_trust_env` opts a server in.
+        `[mcp.servers.<name>].http_trust_env` opts a server in.
 
         Args:
             payload: The JSON-RPC message.
@@ -146,7 +146,7 @@ class HttpTransport:
         try:
             with (
                 httpx2.Client(
-                    timeout=timeout_s, follow_redirects=False, trust_env=self.httpx_trust_env
+                    timeout=timeout_s, follow_redirects=False, trust_env=self.http_trust_env
                 ) as client,
                 client.stream(
                     "POST",

@@ -24,7 +24,7 @@ _POPULATED: dict[str, Any] = {
         "servers": {
             "notes": {
                 "command": ["true"],
-                "sandbox": {"read_paths": ["/usr"], "network": "session"},
+                "sandbox": {"extra_read_paths": ["/usr"], "network": "session"},
             }
         },
     },

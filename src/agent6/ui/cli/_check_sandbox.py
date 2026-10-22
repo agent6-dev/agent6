@@ -351,8 +351,8 @@ def _mcp_lines(cfg: Config, root: pathlib.Path, selected: kinds.IsolationLevel) 
             )
         else:
             where = "spawned in the jail"
-            ro = len(sb.read_paths) if sb else 0
-            rw = len(sb.write_paths) if sb else 0
+            ro = len(sb.extra_read_paths) if sb else 0
+            rw = len(sb.extra_write_paths) if sb else 0
             confinement = f"paths ro+{ro} rw+{rw}, network {policy.network}"
         print(f"    {name}: {where}  approve={srv.approve}  {confinement}")
 

@@ -368,8 +368,8 @@ A spawned server's `[sandbox]` block names what it needs on top of the sandbox a
 command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "~/notes"]
 
 [mcp.servers.notes.sandbox]
-read_paths  = ["~/notes"]   # additive; the system and tool dirs are already there
-write_paths = ["~/notes"]
+extra_read_paths  = ["~/notes"]   # additive; the system and tool dirs are already there
+extra_write_paths = ["~/notes"]
 ```
 
 A confined spawn also loses the desktop-session addresses (`DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`, `DISPLAY`, `WAYLAND_DISPLAY`): Landlock does not gate unix-socket `connect()`, and an unconfined session daemon would act on the server's behalf.

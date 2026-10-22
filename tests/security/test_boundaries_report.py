@@ -449,7 +449,7 @@ def test_boundaries_report_names_each_mcp_server(
                 "docs": _sandbox.MCPServerEntry(url="http://127.0.0.1:9000/mcp"),
                 "fs": _sandbox.MCPServerEntry(
                     command=("mcp-fs",),
-                    sandbox=_sandbox.MCPSandbox(read_paths=("/data",), network="none"),
+                    sandbox=_sandbox.MCPSandbox(extra_read_paths=("/data",), network="none"),
                 ),
                 "off": _sandbox.MCPServerEntry(command=("x",), enabled=False),
                 "plain": _sandbox.MCPServerEntry(command=("y",)),

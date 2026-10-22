@@ -18,7 +18,7 @@ from agent6.config import layer
 from agent6.ui.cli import mcp_connect as cli_mcp_connect
 
 # The interpreter a jailed probe can reach: the run's sandbox grants /usr,
-# not the venv (a server there needs `read_paths`, which is the point).
+# not the venv (a server there needs `extra_read_paths`, which is the point).
 _JAIL_PYTHON = "/usr/bin/python3"
 
 
@@ -138,7 +138,7 @@ def test_a_binary_missing_on_the_host_is_named_without_a_sandbox_hint(
 ) -> None:
     """A path that exists nowhere is a plain ENOENT.
 
-    No `read_paths` grant would change it, so the sandbox hint stays out.
+    No `extra_read_paths` grant would change it, so the sandbox hint stays out.
     """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -155,7 +155,7 @@ def test_a_binary_missing_on_the_host_is_named_without_a_sandbox_hint(
     assert rc == 1
     err = capsys.readouterr().err
     assert "/nonexistent/agent6-test-server: no such file on this host" in err
-    assert "read_paths" not in err
+    assert "extra_read_paths" not in err
 
 
 def test_an_existing_file_that_is_not_executable_is_named_as_such(

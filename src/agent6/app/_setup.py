@@ -430,8 +430,8 @@ def mcp_server_grants(
         The grants a spawned server is bound with, and those left out.
     """
     sandbox = srv.sandbox
-    reads = sandbox.read_paths if sandbox else ()
-    writes = sandbox.write_paths if sandbox else ()
+    reads = sandbox.extra_read_paths if sandbox else ()
+    writes = sandbox.extra_write_paths if sandbox else ()
     return policy.resolve_grants(cfg, root, server=(name, reads, writes))
 
 
@@ -510,7 +510,7 @@ def mcp_server_spec(
                 name=name,
                 url=srv.url,
                 token_env=srv.token_env,
-                httpx_trust_env=srv.httpx_trust_env,
+                http_trust_env=srv.http_trust_env,
             )
             if srv.url
             else None

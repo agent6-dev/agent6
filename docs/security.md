@@ -115,7 +115,7 @@ It drops a control sequence inside text the model influenced (a file name, a com
 Every tool call that allows the model to run arbitrary commands (`run_command`, `run_verify_command`, backgrounded commands, and MCP servers) runs in a jail at the effective isolation level.
 
 `agent6 check mcp` and `agent6 mcp connect` start a spawned MCP server under that jail with the repository bound read-only.
-`check mcp` applies the run's refusals first and leaves a server it cannot hold that way unstarted: `unconfined = true`, a write grant (`write_paths`, `sandbox.extra_write_paths`, `sandbox.extra_device_paths`), or no jail at all.
+`check mcp` applies the run's refusals first and leaves a server it cannot hold that way unstarted: `unconfined = true`, a write grant (`extra_write_paths`, `sandbox.extra_write_paths`, `sandbox.extra_device_paths`), or no jail at all.
 `mcp connect` probes under the same jail, and skips the probe only when there is no jail at all, saying so.
 It is the operator's own invocation naming the server they are adding.
 A diagnostic hands a server the repository to read and writes nothing but the config it was asked to write.
@@ -240,7 +240,7 @@ Every path they take resolves through `Workspace`:
     - a grant reached through a link that sits in one of those regions is dropped too, though it ends outside: a command of one run could point the link elsewhere for the next.
       Its line says to grant the target by its own path.
       The same holds for a link in `/tmp` under any `sandbox.isolation` but `full`
-    - an MCP server's own `read_paths` and `write_paths` (`[mcp.servers.<name>.sandbox]`) follow the same rule, resolved once when the server is spawned; a dropped one is named at run start under its own key
+    - an MCP server's own `extra_read_paths` and `extra_write_paths` (`[mcp.servers.<name>.sandbox]`) follow the same rule, resolved once when the server is spawned; a dropped one is named at run start under its own key
     - `agent6 check sandbox` lists each grant by its resolved path, with the configured spelling when the two differ, and each dropped grant with the region it sits in
 - A denied path is refused with the reason
     - `list_dir` drops the entry and reports `hidden: N`

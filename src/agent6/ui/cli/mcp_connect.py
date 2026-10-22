@@ -160,7 +160,7 @@ def _report_no_answer(
     elif command and isolation != "none":
         print(
             f"       (probed under sandbox.isolation = '{isolation}': a server outside the"
-            f" workspace needs [mcp.servers.{name}.sandbox] read_paths, or"
+            f" workspace needs [mcp.servers.{name}.sandbox] extra_read_paths, or"
             " unconfined = true)",
             file=sys.stderr,
         )

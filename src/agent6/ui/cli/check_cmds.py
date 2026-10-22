@@ -118,7 +118,7 @@ def _probe_refusal(
             " as configured, unconfined"
         )
     grants = (
-        (f"mcp.servers.{name}.sandbox.write_paths", sb.write_paths if sb else ()),
+        (f"mcp.servers.{name}.sandbox.extra_write_paths", sb.extra_write_paths if sb else ()),
         ("sandbox.extra_write_paths", cfg.sandbox.extra_write_paths),
         ("sandbox.extra_device_paths", cfg.sandbox.extra_device_paths),
     )

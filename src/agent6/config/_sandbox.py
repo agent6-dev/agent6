@@ -278,17 +278,17 @@ class MCPSandbox(pydantic.BaseModel):
 
     model_config = _base.MODEL_CONFIG
 
-    read_paths: _base.StrTuple = pydantic.Field(
+    extra_read_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
-            "Read+execute paths for this server beyond the sandbox a jailed command gets "
-            "(absolute or `~`). The workspace, system dirs, tool dirs and a writable `HOME` are "
-            "already there, so a block names only the server's own data."
+            "Read+execute paths for this server beyond the run's sandbox (absolute or `~`). "
+            "The workspace, system dirs, tool dirs and a writable `HOME` are already there, "
+            "so a block names only the server's own data."
         ),
     )
-    write_paths: _base.StrTuple = pydantic.Field(
+    extra_write_paths: _base.StrTuple = pydantic.Field(
         default=(),
-        description="Paths it may write, likewise additive.",
+        description="Paths this server may write beyond the run's sandbox (absolute or `~`).",
     )
     # Per server because servers differ: a browser server exists to reach something.
     network: Literal["auto", "none", "session", "host"] = pydantic.Field(
@@ -321,7 +321,7 @@ class MCPSandbox(pydantic.BaseModel):
                 `unconfined` is set with paths or a network.
         """
         if not self.unconfined:
-            for group in (self.read_paths, self.write_paths):
+            for group in (self.extra_read_paths, self.extra_write_paths):
                 for raw in group:
                     if not pathlib.Path(raw).expanduser().is_absolute():
                         raise ValueError(
@@ -329,7 +329,7 @@ class MCPSandbox(pydantic.BaseModel):
                             " A relative one would be resolved against whatever"
                             " directory agent6 happened to start in."
                         )
-            for raw in (*self.read_paths, *self.write_paths):
+            for raw in (*self.extra_read_paths, *self.extra_write_paths):
                 # Resolved on both sides: a symlink named here still mounts its target.
                 resolved = pathlib.Path(raw).expanduser().resolve()
                 for private in paths.private_dirs():
@@ -343,8 +343,8 @@ class MCPSandbox(pydantic.BaseModel):
         stated = [
             name
             for name, value in (
-                ("read_paths", self.read_paths),
-                ("write_paths", self.write_paths),
+                ("extra_read_paths", self.extra_read_paths),
+                ("extra_write_paths", self.extra_write_paths),
                 ("network", self.network != "auto"),
             )
             if value
@@ -441,12 +441,12 @@ class MCPServerEntry(pydantic.BaseModel):
             "after a timeout."
         ),
     )
-    httpx_trust_env: bool = pydantic.Field(
+    http_trust_env: bool = pydantic.Field(
         default=False,
         description=(
-            "For a `url` server: honor the ambient `HTTP(S)_PROXY`, `.netrc`, and `SSL_CERT_FILE` "
-            "(httpx's `trust_env`). `false` so a local server's bearer token never routes to a "
-            "proxy; set it for a server reachable only through the environment's proxy."
+            "For a `url` server: honor the ambient `HTTP(S)_PROXY`, `.netrc`, and `SSL_CERT_FILE`. "
+            "`false` so a local server's bearer token never routes to a proxy; set it for a "
+            "server reachable only through the environment's proxy."
         ),
     )
 
@@ -475,9 +475,9 @@ class MCPServerEntry(pydantic.BaseModel):
         if self.pass_env and self.url:
             # Nothing is spawned, so there is no environment to pass.
             raise ValueError("pass_env is for spawned servers; a `url` one uses token_env")
-        if self.httpx_trust_env and not self.url:
+        if self.http_trust_env and not self.url:
             raise ValueError(
-                "httpx_trust_env is for `url` servers; a spawned one has no http client"
+                "http_trust_env is for `url` servers; a spawned one has no http client"
             )
         return self
 

@@ -417,10 +417,11 @@ def _partial_grant_regions(
         if spol is None:
             continue  # not jailed: a `url` or `unconfined` server
         regions += [
-            (pathlib.Path(p), f"[mcp.servers.{name}] read_paths") for p in spol.extra_ro_paths
+            (pathlib.Path(p), f"[mcp.servers.{name}] extra_read_paths") for p in spol.extra_ro_paths
         ]
         regions += [
-            (pathlib.Path(p), f"[mcp.servers.{name}] write_paths") for p in spol.extra_rw_paths
+            (pathlib.Path(p), f"[mcp.servers.{name}] extra_write_paths")
+            for p in spol.extra_rw_paths
         ]
         regions.append((pathlib.Path(spol.cwd), f"[mcp.servers.{name}]'s working dir"))
     return tuple(regions)

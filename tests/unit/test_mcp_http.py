@@ -193,8 +193,8 @@ def test_the_token_is_read_from_the_environment_never_the_config(
         httpd.shutdown()
 
 
-def test_httpx_trust_env_reaches_the_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The per-server httpx_trust_env flag reaches the httpx client verbatim.
+def test_http_trust_env_reaches_the_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The per-server http_trust_env flag reaches the httpx client verbatim.
 
     Off by default so a local server's bearer token never routes to an ambient proxy, on when the
     operator opts a proxied server in.
@@ -214,7 +214,7 @@ def test_httpx_trust_env_reaches_the_client(monkeypatch: pytest.MonkeyPatch) -> 
         tools_mcp_http.HttpTransport(name="s", url=url).send(
             {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
         )
-        tools_mcp_http.HttpTransport(name="s", url=url, httpx_trust_env=True).send(
+        tools_mcp_http.HttpTransport(name="s", url=url, http_trust_env=True).send(
             {"jsonrpc": "2.0", "id": 2}, timeout_s=5.0
         )
     finally:
@@ -222,18 +222,18 @@ def test_httpx_trust_env_reaches_the_client(monkeypatch: pytest.MonkeyPatch) -> 
     assert seen == [False, True]
 
 
-def test_httpx_trust_env_is_rejected_on_a_spawned_server() -> None:
-    """httpx_trust_env is rejected on a spawned server.
+def test_http_trust_env_is_rejected_on_a_spawned_server() -> None:
+    """http_trust_env is rejected on a spawned server.
 
     It only affects the http client dialling a `url` server; a spawned (command) server has no
     client, so the setting is refused rather than silently dead.
     """
     Config.model_validate(
-        {"mcp": {"servers": {"r": {"url": "https://h/mcp", "httpx_trust_env": True}}}}
+        {"mcp": {"servers": {"r": {"url": "https://h/mcp", "http_trust_env": True}}}}
     )
-    with pytest.raises(Exception, match="httpx_trust_env is for"):
+    with pytest.raises(Exception, match="http_trust_env is for"):
         Config.model_validate(
-            {"mcp": {"servers": {"s": {"command": ["srv"], "httpx_trust_env": True}}}}
+            {"mcp": {"servers": {"s": {"command": ["srv"], "http_trust_env": True}}}}
         )
 
 

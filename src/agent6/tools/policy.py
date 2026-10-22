@@ -308,8 +308,8 @@ def resolve_grants(
     if server is not None:
         name, reads, writes = server
         groups += [
-            (f"mcp.servers.{name}.sandbox.read_paths", False, reads),
-            (f"mcp.servers.{name}.sandbox.write_paths", True, writes),
+            (f"mcp.servers.{name}.sandbox.extra_read_paths", False, reads),
+            (f"mcp.servers.{name}.sandbox.extra_write_paths", True, writes),
         ]
     fixed = (root.resolve(),)
     if _resolved_isolation(sb.isolation) != "full":

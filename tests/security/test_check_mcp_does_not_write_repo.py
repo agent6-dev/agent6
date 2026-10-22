@@ -192,7 +192,7 @@ def test_a_server_it_cannot_hold_read_only_is_reported_not_started(
             },
             "writer": {
                 "command": [_JAIL_PYTHON, "server.py"],
-                "sandbox": {"write_paths": ["/srv/data"]},
+                "sandbox": {"extra_write_paths": ["/srv/data"]},
             },
         },
         sandbox={"network": "host"},  # no session network to open on a host without one
@@ -205,7 +205,7 @@ def test_a_server_it_cannot_hold_read_only_is_reported_not_started(
     )
     assert by["mcp.writer"].status == "WARN"
     assert by["mcp.writer"].detail == (
-        "not probed: mcp.servers.writer.sandbox.write_paths grants writes (/srv/data); a run"
+        "not probed: mcp.servers.writer.sandbox.extra_write_paths grants writes (/srv/data); a run"
         " starts it as configured"
     )
     assert "unconf: not probed:" in capsys.readouterr().out  # the section states the fact

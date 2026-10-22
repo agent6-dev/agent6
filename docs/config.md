@@ -494,8 +494,8 @@ A spawned server's `[sandbox]` block names what it needs on top of the sandbox a
 command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "~/notes"]
 
 [mcp.servers.notes.sandbox]
-read_paths  = ["~/notes"]   # additive; the system and tool dirs are already there
-write_paths = ["~/notes"]
+extra_read_paths  = ["~/notes"]   # additive; the system and tool dirs are already there
+extra_write_paths = ["~/notes"]
 ```
 
 A confined spawn also loses the desktop-session addresses (`DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`, `DISPLAY`, `WAYLAND_DISPLAY`): Landlock does not gate unix-socket `connect()`, and an unconfined session daemon would act on the server's behalf.
@@ -512,14 +512,14 @@ Anything else that reaches an unconfined process is still a way out, so name the
 | `servers.<name>.approve` | `"ask"` | `ask` prompts before each of this server's tool calls, showing the arguments the model chose; `yes` never asks. The session answers are per server: "allow all" covers this server for the run (not the command tools, not a sibling server), "deny all" withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. There is no `no`: `enabled = false` is how a server's tools are withheld. |
 | `servers.<name>.startup_timeout_s` | `10.0` | Seconds the server gets to answer `initialize` and `tools/list` before it is given up on. |
 | `servers.<name>.call_timeout_s` | `60.0` | Seconds one `tools/call` may take before it fails; a spawned server is restarted after a timeout. |
-| `servers.<name>.httpx_trust_env` | `false` | For a `url` server: honor the ambient `HTTP(S)_PROXY`, `.netrc`, and `SSL_CERT_FILE` (httpx's `trust_env`). `false` so a local server's bearer token never routes to a proxy; set it for a server reachable only through the environment's proxy. |
+| `servers.<name>.http_trust_env` | `false` | For a `url` server: honor the ambient `HTTP(S)_PROXY`, `.netrc`, and `SSL_CERT_FILE`. `false` so a local server's bearer token never routes to a proxy; set it for a server reachable only through the environment's proxy. |
 
 ### `[mcp.servers.<name>.sandbox]`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `read_paths` | `[]` | Read+execute paths for this server beyond the sandbox a jailed command gets (absolute or `~`). The workspace, system dirs, tool dirs and a writable `HOME` are already there, so a block names only the server's own data. |
-| `write_paths` | `[]` | Paths it may write, likewise additive. |
+| `extra_read_paths` | `[]` | Read+execute paths for this server beyond the run's sandbox (absolute or `~`). The workspace, system dirs, tool dirs and a writable `HOME` are already there, so a block names only the server's own data. |
+| `extra_write_paths` | `[]` | Paths this server may write beyond the run's sandbox (absolute or `~`). |
 | `network` | `"auto"` | Which network this server joins. `auto`: one of its own where the host can give a namespace, degrading to the host's with a warning. `none`: the same, refusing rather than running connected. `session`: the run's network, so a dev server a background command started answers this server too (a browser server driving the app under test), and still nothing off the box. `host`: the machine's network. |
 | `unconfined` | `false` | No sandbox at all, for a server whose job is arbitrary host access. Contradicts every other field here, so setting both is refused rather than half-applied. |
 

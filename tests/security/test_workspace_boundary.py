@@ -423,7 +423,7 @@ def test_hide_paths_refuses_an_mcp_server_grant(
                 "servers": {
                     "srv": {
                         "command": ["fake-server"],
-                        "sandbox": {"read_paths": [str(mcp_dir)]},
+                        "sandbox": {"extra_read_paths": [str(mcp_dir)]},
                     }
                 },
             },

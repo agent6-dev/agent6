@@ -28,7 +28,7 @@ def test_a_relative_sandbox_path_is_refused(path: str) -> None:
             {
                 "mcp": {
                     "enabled": True,
-                    "servers": {"s": {"command": ["x"], "sandbox": {"read_paths": [path]}}},
+                    "servers": {"s": {"command": ["x"], "sandbox": {"extra_read_paths": [path]}}},
                 }
             }
         )
@@ -44,7 +44,9 @@ def test_a_connected_server_cannot_carry_a_sandbox_block() -> None:
             {
                 "mcp": {
                     "enabled": True,
-                    "servers": {"s": {"url": "https://h/mcp", "sandbox": {"read_paths": ["/usr"]}}},
+                    "servers": {
+                        "s": {"url": "https://h/mcp", "sandbox": {"extra_read_paths": ["/usr"]}}
+                    },
                 }
             }
         )
@@ -266,7 +268,7 @@ def test_a_server_block_names_only_what_is_extra(tmp_path: pathlib.Path) -> None
     writable HOME, so the block names only its own data; a block that must name an interpreter
     surfaces a wrong one as an empty tool list.
     """
-    policy = _policy_for({"read_paths": ["/srv/notes"]}, tmp_path)
+    policy = _policy_for({"extra_read_paths": ["/srv/notes"]}, tmp_path)
     assert policy is not None
     assert pathlib.Path("/srv/notes") in policy.extra_ro_paths
     assert policy.tool_paths, "the operator's tool dirs come with the base"
@@ -289,7 +291,7 @@ def test_one_servers_grants_do_not_reach_its_sibling(tmp_path: pathlib.Path) -> 
                 "servers": {
                     "browser": {
                         "command": ["npx", "browser"],
-                        "sandbox": {"read_paths": ["/srv/profile"], "network": "host"},
+                        "sandbox": {"extra_read_paths": ["/srv/profile"], "network": "host"},
                     },
                     "memory": {"command": ["npx", "memory"]},
                 },
@@ -325,7 +327,7 @@ def test_unconfined_cannot_be_half_applied() -> None:
     It contradicts every other field, so setting both is refused rather than silently applying one.
     """
     for body in (
-        {"unconfined": True, "read_paths": ["/srv"]},
+        {"unconfined": True, "extra_read_paths": ["/srv"]},
         {"unconfined": True, "network": "host"},
     ):
         with pytest.raises(ValueError, match="unconfined"):
@@ -350,7 +352,7 @@ def test_a_server_cannot_be_granted_the_private_dirs(
                     "servers": {
                         "s": {
                             "command": ["x"],
-                            "sandbox": {"read_paths": [str(tmp_path / "cfg" / "agent6")]},
+                            "sandbox": {"extra_read_paths": [str(tmp_path / "cfg" / "agent6")]},
                         }
                     },
                 }
@@ -367,7 +369,7 @@ def test_a_confined_server_gets_no_desktop_addresses(
     confined server must not be handed its address.
     """
     monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
-    policy = _policy_for({"read_paths": ["/srv/notes"]}, tmp_path)
+    policy = _policy_for({"extra_read_paths": ["/srv/notes"]}, tmp_path)
     assert policy is not None
     assert "DBUS_SESSION_BUS_ADDRESS" not in dict(policy.env)
 
@@ -375,7 +377,7 @@ def test_a_confined_server_gets_no_desktop_addresses(
 def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A server's `read_paths` reached the launcher as spelled, whatever they resolved to.
+    """A server's `extra_read_paths` reached the launcher as spelled, whatever they resolved to.
 
     A path linked into the workspace was bound though a jailed command can re-point it, and a
     symlinked toolchain was bound by following the link at launch. A server's paths resolve
@@ -391,7 +393,7 @@ def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
     tool.symlink_to(real, target_is_directory=True)
     into = tmp_path / "into"
     into.symlink_to(repo / "data", target_is_directory=True)
-    spec = {"command": ["npx", "server"], "sandbox": {"read_paths": [str(tool), str(into)]}}
+    spec = {"command": ["npx", "server"], "sandbox": {"extra_read_paths": [str(tool), str(into)]}}
     # Pinned to `full`: pytest's tmp_path sits in /tmp, where a link counts under auto.
     cfg = Config.model_validate(
         {"sandbox": {"isolation": "full"}, "mcp": {"enabled": True, "servers": {"fs": spec}}}
@@ -413,7 +415,10 @@ def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
     )
     confine.warn_sandbox_gaps("full", env, cfg, root=repo)
     err = capsys.readouterr().err
-    assert f"mcp.servers.fs.sandbox.read_paths entry {into} (it resolves to {repo / 'data'})" in err
+    assert (
+        f"mcp.servers.fs.sandbox.extra_read_paths entry {into} (it resolves to {repo / 'data'})"
+        in err
+    )
 
 
 def test_a_url_server_adds_no_partial_grant_region(tmp_path: pathlib.Path) -> None:
