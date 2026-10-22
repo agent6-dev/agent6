@@ -1870,3 +1870,53 @@ def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.P
     tail.join(timeout=5.0)
     kinds = [u["params"]["update"]["sessionUpdate"] for u in sent]
     assert kinds == ["session_info_update", "available_commands_update", "usage_update"], sent
+
+
+def test_a_streamed_final_answer_is_not_sent_again_as_the_end_summary(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A text-only ending streams its answer, and the end's summary repeats it: once on the wire.
+
+    Zed showed the final message twice, the deltas and then the `done` item's body.
+    """
+    events = [
+        {"type": "role.call", "role": "worker"},
+        {"type": "role.text_delta", "role": "worker", "text": "Appended the line.\n\n"},
+        {"type": "role.text_delta", "role": "worker", "text": "DONE"},
+        {"type": "role.result", "role": "worker", "text": "Appended the line.\n\nDONE"},
+        # The finish comes a call later, with no text of its own; the summary is the last text.
+        {"type": "role.call", "role": "worker"},
+        {"type": "role.result", "role": "worker", "text": ""},
+        {"type": "tool.call", "name": "finish_session", "args": {"summary": "ok"}, "call_id": 1},
+        {"type": "tool.result", "name": "finish_session", "ok": True, "call_id": 1},
+        {
+            "type": "session.end",
+            "reason": "finish_session",
+            "summary": "Appended the line.\n\nDONE",
+            "turns": 1,
+            "all_passed": True,
+        },
+    ]
+    sent: list[dict[str, Any]] = []
+    server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+
+    def _events(*_args: object, **_kwargs: object) -> Iterator[dict[str, Any]]:
+        yield from events
+
+    monkeypatch.setattr(viewmodel_tail, "tail_events", _events)
+    bridge = runner.RunBridge(server=server)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
+
+    bridge._stream(  # pyright: ignore[reportPrivateUsage]
+        session, tmp_path / "logs.jsonl", lambda: True, 0, runner.Announced(execution=1)
+    )
+
+    texts = [
+        update["content"]["text"]
+        for message in sent
+        if (update := message["params"]["update"])["sessionUpdate"] == "agent_message_chunk"
+    ]
+    joined = "".join(texts)
+    assert joined.count("Appended the line.") == 1, texts
+    assert "DONE\n\n[agent6] Session" in joined, texts  # the status line keeps its own paragraph

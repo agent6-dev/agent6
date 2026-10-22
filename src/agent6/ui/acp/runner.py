@@ -603,6 +603,8 @@ class RunBridge:
         """
         fold = transcript.TranscriptFold()
         streamed: set[str] = set()
+        # The last message streamed: an end summary repeating it is not sent again.
+        spoken: list[str] = []
         consumed = [0]
 
         def _at(position: int) -> None:
@@ -627,6 +629,10 @@ class RunBridge:
                 items = [] if side_delta else fold.feed(event)
                 if is_delta and not side_delta:
                     kind = "thinking" if event_type == "role.thinking_delta" else "text"
+                    if kind == "text":
+                        if "text" not in streamed:
+                            spoken.clear()  # a new message begins
+                        spoken.append(str(event.get("text", "")))
                     streamed.add(kind)
                     for body in updates.updates_for(
                         transcript.TranscriptItem(kind, body=str(event.get("text", ""))),
@@ -635,32 +641,8 @@ class RunBridge:
                     ):
                         self.server.notify_raw(body)
                 for item in items:
-                    if item.kind in streamed:
-                        continue
-                    wire_id = (
-                        updates.tool_call_id(item, session.session_id, announced.execution)
-                        if item.kind == "tool"
-                        else ""
-                    )
-                    for body in updates.updates_for(
-                        item,
-                        acp_session_id=session.acp_id,
-                        wire_id=wire_id,
-                        announced=wire_id in announced,
-                        cwd=session.cwd,
-                        paths=paths,
-                    ):
-                        self.server.notify_raw(body)
-                    if item.kind == "tool":
-                        announced.add(wire_id)
-                    elif item.kind == "done":
-                        _stderr(
-                            "\n\n".join(
-                                part
-                                for part in (item.body.strip(), updates.status_line(item))
-                                if part
-                            )
-                        )
+                    if item.kind not in streamed:
+                        self._send_item(session, item, announced, paths, "".join(spoken))
                 if event_type == "role.result":
                     streamed.clear()
                 if order is not None:
@@ -679,6 +661,56 @@ class RunBridge:
                     self.server.notify_raw(body)
             if order is not None:
                 order.flush(None)
+
+    def _send_item(
+        self,
+        session: acp_session.Session,
+        item: transcript.TranscriptItem,
+        announced: Announced,
+        paths: tuple[str, ...],
+        spoken: str,
+    ) -> None:
+        """Send one fold item's updates; the ending also goes to stderr.
+
+        Args:
+            session: The session.
+            item: The fold item.
+            announced: The execution's register of announced calls.
+            paths: The paths the tool result named.
+            spoken: The last message streamed; an end summary repeating it is not sent
+                again, and the status line keeps its own paragraph.
+        """
+        wire_id = (
+            updates.tool_call_id(item, session.session_id, announced.execution)
+            if item.kind == "tool"
+            else ""
+        )
+        wire_item = item
+        if item.kind == "done" and spoken.strip() and item.body.strip() == spoken.strip():
+            wire_item = dataclasses.replace(item, body="")
+            trailing = len(spoken) - len(spoken.rstrip("\n"))
+            if pad := "\n" * max(0, 2 - trailing):
+                for body in updates.updates_for(
+                    transcript.TranscriptItem("text", body=pad),
+                    acp_session_id=session.acp_id,
+                    streamed=True,
+                ):
+                    self.server.notify_raw(body)
+        for body in updates.updates_for(
+            wire_item,
+            acp_session_id=session.acp_id,
+            wire_id=wire_id,
+            announced=wire_id in announced,
+            cwd=session.cwd,
+            paths=paths,
+        ):
+            self.server.notify_raw(body)
+        if item.kind == "tool":
+            announced.add(wire_id)
+        elif item.kind == "done":
+            _stderr(
+                "\n\n".join(part for part in (item.body.strip(), updates.status_line(item)) if part)
+            )
 
 
 def serve_acp(
