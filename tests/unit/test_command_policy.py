@@ -17,9 +17,9 @@ from agent6.tools import dispatch, operator_prompts
 _COMMAND_TOOLS = {"run_command", "run_verify_command", "stop_background"}
 
 
-@pytest.mark.parametrize("configured", ["yes", "no"])
+@pytest.mark.parametrize("configured", ["allow", "deny"])
 def test_a_standing_policy_is_not_movable_in_run(tmp_path: pathlib.Path, configured: str) -> None:
-    """Only "ask" is a question; a configured yes or no is the operator's standing policy."""
+    """Only "ask" is a question; a configured allow or deny is the operator's standing policy."""
     ipc.set_session_allow(tmp_path, ipc.COMMAND_SCOPE)
     ipc.set_session_deny(tmp_path, ipc.COMMAND_SCOPE)
     ipc.set_away_mode(tmp_path, "deny")
@@ -29,7 +29,7 @@ def test_a_standing_policy_is_not_movable_in_run(tmp_path: pathlib.Path, configu
 def test_ask_is_what_the_session_choice_moves(tmp_path: pathlib.Path) -> None:
     assert ipc.effective_run_commands("ask", tmp_path) == "ask"
     ipc.set_session_allow(tmp_path, ipc.COMMAND_SCOPE)
-    assert ipc.effective_run_commands("ask", tmp_path) == "yes"
+    assert ipc.effective_run_commands("ask", tmp_path) == "allow"
 
 
 def test_deny_for_the_session_is_the_mirror_of_allow(tmp_path: pathlib.Path) -> None:
@@ -38,13 +38,13 @@ def test_deny_for_the_session_is_the_mirror_of_allow(tmp_path: pathlib.Path) -> 
     Only the session choices persist.
     """
     ipc.set_session_deny(tmp_path, ipc.COMMAND_SCOPE)
-    assert ipc.effective_run_commands("ask", tmp_path) == "no"
+    assert ipc.effective_run_commands("ask", tmp_path) == "deny"
 
 
 def test_an_away_mode_of_deny_withdraws_the_tools(tmp_path: pathlib.Path) -> None:
-    """Deny while away, deny for the session and `run_commands = "no"` all withdraw the tools."""
+    """Deny while away, deny for the session and `run_commands = "deny"` all withdraw the tools."""
     ipc.set_away_mode(tmp_path, "deny")
-    assert ipc.effective_run_commands("ask", tmp_path) == "no"
+    assert ipc.effective_run_commands("ask", tmp_path) == "deny"
 
 
 def test_a_front_end_that_can_ask_is_not_away(
@@ -60,7 +60,7 @@ def test_a_front_end_that_can_ask_is_not_away(
     app_frontend.settle_away_mode(tmp_path, Config(), can_ask=True)
     assert ipc.effective_run_commands("ask", tmp_path) == "ask"
     app_frontend.settle_away_mode(tmp_path, Config(), can_ask=False)
-    assert ipc.effective_run_commands("ask", tmp_path) == "no"
+    assert ipc.effective_run_commands("ask", tmp_path) == "deny"
 
 
 def test_an_editor_s_allow_all_outlives_its_next_turn(
@@ -70,7 +70,7 @@ def test_an_editor_s_allow_all_outlives_its_next_turn(
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
     ipc.record_answer(tmp_path, "session", ipc.COMMAND_SCOPE)
     app_frontend.settle_away_mode(tmp_path, Config(), can_ask=True)
-    assert ipc.effective_run_commands("ask", tmp_path) == "yes"
+    assert ipc.effective_run_commands("ask", tmp_path) == "allow"
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
     app_frontend.settle_away_mode(tmp_path, Config(), can_ask=True)
     assert ipc.effective_run_commands("ask", tmp_path) == "ask"
@@ -102,12 +102,12 @@ def test_the_policy_is_re_read_not_cached(tmp_path: pathlib.Path) -> None:
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
     assert d.command_policy() == "ask"
     ipc.set_session_allow(tmp_path, ipc.COMMAND_SCOPE)
-    assert d.command_policy() == "yes"
+    assert d.command_policy() == "allow"
 
 
 @pytest.mark.parametrize(
     ("commands", "refused"),
-    [("ask", True), ("yes", False), ("no", False)],
+    [("ask", True), ("allow", False), ("deny", False)],
 )
 def test_parallel_makes_the_operator_decide_once(commands: str, refused: bool) -> None:
     """`--parallel` under `ask` refuses at launch and names the two coherent choices.

@@ -41,7 +41,7 @@ def test_apply_flag_path_forces_none_and_auto_approve() -> None:
     assert cfg.sandbox.isolation == "auto"
     out = _setup.SandboxOverrides(disable_sandbox=True, auto_approve=True).apply(cfg)
     assert out.sandbox.isolation == "none"
-    assert out.sandbox.run_commands == "yes"
+    assert out.sandbox.run_commands == "allow"
 
 
 def test_apply_noop_when_no_flags() -> None:

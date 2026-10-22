@@ -170,7 +170,7 @@ def test_mcp_connect_with_no_jail_writes_the_entry_unproved(
         "server.py",
     )
     assert sorted(p.name for p in repo.iterdir()) == ["server.py"], (
-        "connect wrote into the repo through MCP startup"
+        "add wrote into the repo through MCP startup"
     )
 
 

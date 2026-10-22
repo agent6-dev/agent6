@@ -33,7 +33,7 @@ provider = "anthropic"
 model = "x"
 [sandbox]
 isolation = "auto"
-run_commands = "no"
+run_commands = "deny"
 protect_git = "on"
 [git]
 dirty_tree = "ask"
@@ -58,7 +58,7 @@ def _config_with_run_commands(tmp_path: pathlib.Path, mode: str) -> Config:
 
     p = tmp_path / f"agent6-{mode}.toml"
     p.write_text(
-        _VALID_TOML.replace('run_commands = "no"', f'run_commands = "{mode}"'),
+        _VALID_TOML.replace('run_commands = "deny"', f'run_commands = "{mode}"'),
         encoding="utf-8",
     )
     return load_config(p)
@@ -79,8 +79,8 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: pathlib.Path) -> None
     an ordinary verify failure, and the run committed unverified work. The model cannot fix
     operator config, so this fails loudly.
     """
-    # run_commands = "yes": this exercises verify EXECUTION, not the gate.
-    cfg = _config_with_run_commands(tmp_path, "yes")  # verify_command = ["true"]
+    # run_commands = "allow": this exercises verify EXECUTION, not the gate.
+    cfg = _config_with_run_commands(tmp_path, "allow")  # verify_command = ["true"]
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     unexecutable = kinds.CommandResult(
         argv=("true",),
@@ -226,7 +226,7 @@ def test_run_metric_refused_outside_run_mode(
 
     It executes the operator's metric command with no approval gate.
     """
-    body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
+    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"') + (
         "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
         'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
@@ -1127,7 +1127,7 @@ def test_passthrough_env_is_fixed_allowlist() -> None:
 
 
 def test_jail_env_disables_python_bytecode(tmp_path: pathlib.Path) -> None:
-    cfg = _config_with_run_commands(tmp_path, "yes")
+    cfg = _config_with_run_commands(tmp_path, "allow")
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     captured: dict[str, str] = {}
 
@@ -1248,9 +1248,9 @@ def test_empty_input_command_tools_reject_arguments(
     """A no-argument tool's empty schema is a contract, not a suggestion."""
     from agent6.config import load_config
 
-    body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"\nnetwork = "host"') + (
-        '\n[harness.metric]\ncommand = ["true"]\npattern = "(true)"\ngoal = "minimize"\n'
-    )
+    body = _VALID_TOML.replace(
+        'run_commands = "deny"', 'run_commands = "allow"\nnetwork = "host"'
+    ) + ('\n[harness.metric]\ncommand = ["true"]\npattern = "(true)"\ngoal = "minimize"\n')
     path = tmp_path / "agent6.toml"
     path.write_text(body, encoding="utf-8")
 
@@ -1266,7 +1266,7 @@ def test_empty_input_command_tools_reject_arguments(
 
 
 def test_run_metric_command_no_config(tmp_path: pathlib.Path) -> None:
-    cfg = _config_with_run_commands(tmp_path, "yes")
+    cfg = _config_with_run_commands(tmp_path, "allow")
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     with pytest.raises(errors.ToolError, match=r"no \[harness.metric\]"):
         d.dispatch("run_metric_command", {})
@@ -1275,10 +1275,10 @@ def test_run_metric_command_no_config(tmp_path: pathlib.Path) -> None:
 
 
 def test_run_metric_command_is_withheld_when_commands_are(tmp_path: pathlib.Path) -> None:
-    """`run_commands = "no"` withholds the verify tool with the other command tools.
+    """`run_commands = "deny"` withholds the verify tool with the other command tools.
 
     It runs the operator's argv in the same jail as often as the model asks; it was exposed
-    under "no" and prompted under "ask" only because the harness calls it itself.
+    under "deny" and prompted under "ask" only because the harness calls it itself.
     """
     body = _VALID_TOML + (
         "\n[harness.metric]\n"
@@ -1293,14 +1293,14 @@ def test_run_metric_command_is_withheld_when_commands_are(tmp_path: pathlib.Path
     d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(p))
 
     assert "run_metric_command" not in d.available_tool_names()
-    with pytest.raises(errors.ToolError, match="run_commands = 'no'"):
+    with pytest.raises(errors.ToolError, match="run_commands = 'deny'"):
         d.dispatch("run_metric_command", {})
 
 
 def test_run_metric_command_invokes_jail(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
+    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"') + (
         "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
         'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
@@ -1342,7 +1342,7 @@ def test_run_metric_command_honors_verify_timeout(
 
     The metric path ran on the jail's fixed 600s default.
     """
-    body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
+    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"') + (
         '\n[harness.metric]\ncommand = ["/usr/bin/true"]\npattern = "(\\\\d+)"\ngoal = "minimize"\n'
     )
     body = body.replace("[harness]\n", "[harness]\nverify_timeout_s = 7.0\n")
@@ -1371,7 +1371,7 @@ def test_run_metric_command_score_null_on_no_match(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A pattern that compiles but does not match yields a null score and an unchanged result."""
-    body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
+    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"') + (
         "\n[harness.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"no number here\\")"]\n'
         'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
@@ -1457,7 +1457,7 @@ def test_dispatcher_refuses_mutations_in_plan_mode(tmp_path: pathlib.Path) -> No
 def test_machine_mode_blocks_edits_and_commands(tmp_path: pathlib.Path) -> None:
     # a read-only machine agent state: the dispatcher refuses edits AND
     # run_command/run_verify (unlike ask, which allows run_command).
-    cfg = _config_with_run_commands(tmp_path, "yes")
+    cfg = _config_with_run_commands(tmp_path, "allow")
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="machine")
     with pytest.raises(errors.ToolError, match="machine mode"):
         d.dispatch("run_command", {"argv": ["ls"]})
@@ -1631,7 +1631,7 @@ def test_rejected_tool_emits_call_and_result_pair(tmp_path: pathlib.Path) -> Non
 
     from agent6 import event_log
 
-    cfg = _config(tmp_path)  # run_commands = "no"
+    cfg = _config(tmp_path)  # run_commands = "deny"
     logs = tmp_path / "logs.jsonl"
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=event_log.EventSink(logs))
 
@@ -1670,7 +1670,7 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
     session_dir = tmp_path / "session"
     logs = session_dir / "logs.jsonl"
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "yes"}, "harness": {"command_checkin_s": 10.0}}
+        {"sandbox": {"run_commands": "allow"}, "harness": {"command_checkin_s": 10.0}}
     )
     d = dispatch.ToolDispatcher(
         root=root, config=cfg, session_dir=session_dir, events=event_log.EventSink(logs)
@@ -1766,7 +1766,7 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: path
     from agent6.sessions import ipc
 
     session_dir = tmp_path / "session"
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     ipc.request_stop(session_dir, now=True)
     log = session_dir / "shells" / "logs" / "foreground.log"
@@ -1814,7 +1814,7 @@ def test_run_command_result_carries_output_tails(
 
     from agent6 import event_log
 
-    cfg = _config_with_run_commands(tmp_path, "yes")  # skip the approval prompt
+    cfg = _config_with_run_commands(tmp_path, "allow")  # skip the approval prompt
     logs = tmp_path / "logs.jsonl"
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=event_log.EventSink(logs))
 
@@ -1859,8 +1859,8 @@ def test_run_command_passes_extra_read_paths_to_policy(
     from agent6.config import load_config
 
     body = _VALID_TOML.replace(
-        'run_commands = "no"',
-        'run_commands = "yes"\nextra_read_paths = ["/opt/miniconda3"]',
+        'run_commands = "deny"',
+        'run_commands = "allow"\nextra_read_paths = ["/opt/miniconda3"]',
     )
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
@@ -1887,8 +1887,8 @@ def test_run_command_passes_extra_write_paths_to_policy(
     from agent6.config import load_config
 
     body = _VALID_TOML.replace(
-        'run_commands = "no"',
-        'run_commands = "yes"\nextra_write_paths = ["/var/cache/shared"]',
+        'run_commands = "deny"',
+        'run_commands = "allow"\nextra_write_paths = ["/var/cache/shared"]',
     )
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
@@ -2046,7 +2046,7 @@ def test_git_reaches_the_jail_as_a_protect_path_only_under_full(
         )
 
     monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", _capture)
-    cfg = _config_with_run_commands(tmp_path, "yes")
+    cfg = _config_with_run_commands(tmp_path, "allow")
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, isolation=isolation)
     d.dispatch("run_command", {"argv": ["true"]})
 
@@ -2061,14 +2061,14 @@ def test_every_jail_tool_answers_to_run_commands(tmp_path: pathlib.Path) -> None
     """
     gated = {"run_command", "run_verify_command", "stop_background"}
     denied = dispatch.ToolDispatcher(
-        root=tmp_path, config=_config_with_run_commands(tmp_path, "no")
+        root=tmp_path, config=_config_with_run_commands(tmp_path, "deny")
     )
     assert gated.isdisjoint(denied.available_tool_names())
     for name in sorted(gated):
         with pytest.raises(errors.ToolError, match="run_commands"):
             denied.dispatch(name, {"argv": ["true"], "id": "bg1"})
     allowed = dispatch.ToolDispatcher(
-        root=tmp_path, config=_config_with_run_commands(tmp_path, "yes")
+        root=tmp_path, config=_config_with_run_commands(tmp_path, "allow")
     )
     assert gated <= set(allowed.available_tool_names())
 

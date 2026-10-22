@@ -120,19 +120,19 @@ def test_a_denied_call_never_reaches_the_server(tmp_path: pathlib.Path) -> None:
         mgr.close()
 
 
-def test_approve_yes_is_the_standing_consent(tmp_path: pathlib.Path) -> None:
+def test_approve_allow_is_the_standing_consent(tmp_path: pathlib.Path) -> None:
     """The durable way to stop being asked, visible in `agent6 config show`."""
 
     def _forbidden(
         _request: operator_prompts.ApprovalRequest, /
     ) -> operator_prompts.ApprovalAnswer:
-        pytest.fail("approve = 'yes' must not prompt")
+        pytest.fail("approve = 'allow' must not prompt")
 
     mgr = _manager()
     try:
         d = dispatch.ToolDispatcher(
             root=tmp_path,
-            config=_cfg(approve="yes"),
+            config=_cfg(approve="allow"),
             mcp_manager=mgr,
             prompts=operator_prompts.OperatorPrompts(approver=_forbidden),
         )
@@ -144,8 +144,8 @@ def test_approve_yes_is_the_standing_consent(tmp_path: pathlib.Path) -> None:
 def test_auto_approve_covers_mcp_servers() -> None:
     """A "do not prompt me this run" that still prompted would not be that."""
     cfg = _cfg().with_sandbox_overrides(auto_approve=True)
-    assert cfg.mcp.servers["fake"].approve == "yes"
-    assert cfg.sandbox.run_commands == "yes"
+    assert cfg.mcp.servers["fake"].approve == "allow"
+    assert cfg.sandbox.run_commands == "allow"
 
 
 def test_allowing_every_command_does_not_allow_a_server(tmp_path: pathlib.Path) -> None:

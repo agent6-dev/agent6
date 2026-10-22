@@ -360,8 +360,8 @@ def test_a_key_with_no_rule_must_equal_the_operators(monkeypatch: pytest.MonkeyP
         ({"hide_paths": ["/h/secret"]}, {"hide_paths": ["/h"]}),
         ({"hide_paths": ["/h"]}, {"hide_paths": ["/h/"]}),
         ({"extra_device_paths": ["/dev/fuse"]}, {"extra_device_paths": ["/dev//fuse"]}),
-        ({"run_commands": "yes"}, {"run_commands": "ask"}),
-        ({"run_commands": "ask"}, {"run_commands": "no"}),
+        ({"run_commands": "allow"}, {"run_commands": "ask"}),
+        ({"run_commands": "ask"}, {"run_commands": "deny"}),
         ({"network": "host"}, {"network": "session"}),
         ({"network": "host"}, {"network": "auto"}),
         ({"network": "auto"}, {"network": "session"}),
@@ -402,8 +402,8 @@ def test_an_overlay_may_narrow(operator: dict[str, Any], state: dict[str, Any]) 
         ({"hide_paths": ["/h"]}, {"hide_paths": ["/other"]}, "hide_paths"),
         # Hiding a subdirectory leaves the rest of the operator's entry visible.
         ({"hide_paths": ["/h"]}, {"hide_paths": ["/h/sub"]}, "hide_paths"),
-        ({"run_commands": "ask"}, {"run_commands": "yes"}, "run_commands"),
-        ({"run_commands": "no"}, {"run_commands": "ask"}, "run_commands"),
+        ({"run_commands": "ask"}, {"run_commands": "allow"}, "run_commands"),
+        ({"run_commands": "deny"}, {"run_commands": "ask"}, "run_commands"),
         ({"network": "auto"}, {"network": "host"}, "network"),
         ({"network": "session"}, {"network": "host"}, "network"),
         ({"memory_limit_mib": 512}, {"memory_limit_mib": 0}, "memory_limit_mib"),
@@ -648,12 +648,12 @@ def test_the_operator_flags_apply_after_the_overlays(
     monkeypatch.chdir(tmp_path)
     _operator(OPERATOR + 'run_commands = "ask"\n')
     spec = load_machine(
-        _write(tmp_path, MACHINE + '\n[states.store.config.sandbox]\nrun_commands = "no"\n')
+        _write(tmp_path, MACHINE + '\n[states.store.config.sandbox]\nrun_commands = "deny"\n')
     )
     configs = resolve_configs(spec, tmp_path, _setup.detect_env(), auto_approve=True)
-    assert configs.states["scan"].config.sandbox.run_commands == "yes"
-    # A state's own `no` stays: a flag never grants what the standing policy denied.
-    assert configs.states["store"].config.sandbox.run_commands == "no"
+    assert configs.states["scan"].config.sandbox.run_commands == "allow"
+    # A state's own `deny` stays: a flag never grants what the standing policy denied.
+    assert configs.states["store"].config.sandbox.run_commands == "deny"
 
 
 def test_no_commands_and_disable_sandbox_reach_every_resolved_config(
@@ -662,7 +662,7 @@ def test_no_commands_and_disable_sandbox_reach_every_resolved_config(
     """`--no-commands` and `--disable-sandbox` land in the configs, not the env."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
-    _operator(OPERATOR + 'run_commands = "yes"\nisolation = "full"\n')
+    _operator(OPERATOR + 'run_commands = "allow"\nisolation = "full"\n')
     spec = load_machine(_write(tmp_path, MACHINE))
     configs = resolve_configs(
         spec, tmp_path, _setup.detect_env(), disable_sandbox=True, no_commands=True
@@ -670,7 +670,7 @@ def test_no_commands_and_disable_sandbox_reach_every_resolved_config(
     for resolved in (configs.operator, configs.machine, *configs.states.values()):
         assert resolved.isolation == "none"
         assert resolved.config.sandbox.isolation == "none"
-        assert resolved.config.sandbox.run_commands == "no"
+        assert resolved.config.sandbox.run_commands == "deny"
     assert "AGENT6_DISABLE_SANDBOX" not in os.environ
 
 
@@ -749,7 +749,7 @@ def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env
     for key in keys:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.chdir(tmp_path)
-    _operator(OPERATOR + 'run_commands = "yes"\n')
+    _operator(OPERATOR + 'run_commands = "allow"\n')
     seen: dict[str, machine_agent.StateOverlay] = {}
 
     def fake_build(
@@ -804,7 +804,7 @@ def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env
         request=AgentRequest(prompt="judge", timeout_s=5.0, state_name="judge"),
     )
     assert machine_agent.run_one(req).reason == "finish_session"
-    assert captured["config"].sandbox.run_commands == "no"
+    assert captured["config"].sandbox.run_commands == "deny"
     assert captured["config"].sandbox.isolation == "none"
     assert captured["isolation"] == "none"
     assert not any(key in os.environ for key in keys)
@@ -913,7 +913,7 @@ def test_a_state_with_its_own_table_still_refuses_setup_under_ask(
 ) -> None:
     """A state whose own table narrows run_commands to ask refuses the inferred setup command."""
     monkeypatch.chdir(tmp_path)
-    _operator(OPERATOR.partition("[sandbox]")[0] + '[sandbox]\nrun_commands = "yes"\n')
+    _operator(OPERATOR.partition("[sandbox]")[0] + '[sandbox]\nrun_commands = "allow"\n')
     own_table = RUN_STATE_AFTER_WAIT.replace(
         "[states.done]\n", '[states.check.config.sandbox]\nrun_commands = "ask"\n\n[states.done]\n'
     )

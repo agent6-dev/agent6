@@ -327,7 +327,7 @@ class HarnessConfig(pydantic.BaseModel):
             "request, and a finish that leaves that same red reads `finished · gate was already "
             "red`. Costs one gate run per fresh run: set `false` for a gate too slow to run "
             'twice. No start gate runs under `verify_when = "never"` or '
-            '`sandbox.run_commands = "no"`, and a resume keeps the baseline its run recorded.'
+            '`sandbox.run_commands = "deny"`, and a resume keeps the baseline its run recorded.'
         ),
     )
     verify_retries: int = pydantic.Field(

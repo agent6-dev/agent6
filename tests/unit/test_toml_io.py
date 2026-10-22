@@ -44,14 +44,14 @@ def test_table_header_lookup_tolerates_a_trailing_comment(tmp_path: pathlib.Path
     p = tmp_path / "c.toml"
     p.write_text('[sandbox]  # the jail\nprotect_git = "on"\n', encoding="utf-8")
 
-    io.upsert_toml_leaf(p, "sandbox.run_commands", "yes")
+    io.upsert_toml_leaf(p, "sandbox.run_commands", "allow")
     text = p.read_text(encoding="utf-8")
     assert text.count("[sandbox]") == 1, "a second table was appended"
     parsed = tomllib.loads(text)
-    assert parsed["sandbox"] == {"protect_git": "on", "run_commands": "yes"}
+    assert parsed["sandbox"] == {"protect_git": "on", "run_commands": "allow"}
 
     assert io.remove_toml_leaf(p, "sandbox.protect_git") is True
-    assert tomllib.loads(p.read_text(encoding="utf-8"))["sandbox"] == {"run_commands": "yes"}
+    assert tomllib.loads(p.read_text(encoding="utf-8"))["sandbox"] == {"run_commands": "allow"}
 
 
 def test_remove_toml_leaf_deletes_whole_multiline_array(tmp_path: pathlib.Path) -> None:
@@ -385,7 +385,7 @@ def test_no_writer_deletes_a_top_level_inline_table(tmp_path: pathlib.Path) -> N
     add`/`remove` and the engine-level writers behind the TUI, connect and init cannot skip it.
     """
     p = tmp_path / "c.toml"
-    body = 'sandbox = { protect_git = "off", run_commands = "yes", memory_limit_mib = 8000 }\n'
+    body = 'sandbox = { protect_git = "off", run_commands = "allow", memory_limit_mib = 8000 }\n'
     p.write_text(body, encoding="utf-8")
 
     with pytest.raises(ConfigError, match="not a plain \\[table\\]"):
@@ -406,14 +406,14 @@ def test_remove_toml_leaf_refuses_an_undeclared_table_ancestor(tmp_path: pathlib
     `config get` showed the leaf set.
     """
     p = tmp_path / "c.toml"
-    p.write_text('sandbox = { protect_git = "off", run_commands = "yes" }\n', encoding="utf-8")
+    p.write_text('sandbox = { protect_git = "off", run_commands = "allow" }\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="cannot be unset on its own"):
         io.remove_toml_leaf(p, "sandbox.protect_git")
     p.write_text('sandbox.protect_git = "off"\n', encoding="utf-8")  # the dotted-key shape
     with pytest.raises(ConfigError, match="cannot be unset on its own"):
         io.remove_toml_leaf(p, "sandbox.protect_git")
     # A genuinely absent leaf under a DECLARED header keeps the quiet False.
-    p.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
+    p.write_text('[sandbox]\nrun_commands = "allow"\n', encoding="utf-8")
     assert io.remove_toml_leaf(p, "sandbox.protect_git") is False
 
 

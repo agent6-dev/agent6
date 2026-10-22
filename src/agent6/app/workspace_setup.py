@@ -125,7 +125,7 @@ def gate_refusal(
         and when commands are withheld, which leaves the run gateless.
     """
     path = _gate_path(gate)
-    if not path or cfg.sandbox.run_commands == "no" or cfg.workspace.setup_command:
+    if not path or cfg.sandbox.run_commands == "deny" or cfg.workspace.setup_command:
         return None
     agents_md = verify_infer.read_agents_md(origin, cfg.sandbox.hide_paths, at=at)
     if verify_infer.setup_from_agents_md(agents_md) is not None:
@@ -215,7 +215,7 @@ def prepare(
         leave no gate to check.
     """
     prepared = setup(cfg, runner=runner, reporter=reporter)
-    if prepared.problem is not None or runner.command_policy() == "no":
+    if prepared.problem is not None or runner.command_policy() == "deny":
         return prepared
     argv = cfg.workspace.setup_command
     result = prepared.result
@@ -245,7 +245,7 @@ def setup(cfg: Config, *, runner: SetupRunner, reporter: app_reporter.Reporter) 
         The command result and any setup failure.
     """
     argv = cfg.workspace.setup_command
-    if runner.command_policy() == "no":
+    if runner.command_policy() == "deny":
         if argv:
             line = shlex.join(argv)
             reporter.note(f"commands are withheld, and the setup command is one ({line}): not run")

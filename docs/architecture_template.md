@@ -135,7 +135,7 @@ Over a red gate it returns under the same cap, counted apart from the model's ow
 
 **Per-step commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
 
-- a step no gate judged commits as a checkpoint: a gateless run, a gate nobody may run (under `run_commands = "no"`, or after a denial), or `verify_when = "finish"` between the model's own gate runs
+- a step no gate judged commits as a checkpoint: a gateless run, a gate nobody may run (under `run_commands = "deny"`, or after a denial), or `verify_when = "finish"` between the model's own gate runs
 - `branch_per_run` also advances a visible `agent6/<id>` branch
 - HEAD never moves; when the run's own branch is the checked-out one, the index and the working tree are brought forward for the paths the commit changed, each only where it still matches the old tip
 - consolidation is chosen at `sessions merge` time (`git.merge_method`: `squash`, `merge`, `ff_only`)

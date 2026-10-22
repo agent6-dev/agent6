@@ -21,7 +21,7 @@ class SessionPolicy:
 
     Attributes:
         model: The driving model, "" when the manifest names none.
-        run_commands: The commands mode ("yes", "no", "ask"), "" when unknown.
+        run_commands: The commands mode ("allow", "deny", "ask"), "" when unknown.
         isolation: The sandbox isolation word, "" when unknown.
         network: The network the run's commands join ("session", "host"), "" when unknown.
         verify_command: The verify gate's argv, empty when there is no gate.

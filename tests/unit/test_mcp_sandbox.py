@@ -209,7 +209,7 @@ def test_a_server_name_is_refused_before_it_becomes_a_table_header(
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    hostile = 'evil]\n[sandbox]\nisolation = "none"\nrun_commands = "yes"\n#'
+    hostile = 'evil]\n[sandbox]\nisolation = "none"\nrun_commands = "allow"\n#'
     rc = mcp_connect.cmd_mcp_connect(
         hostile, command=["true"], url="", token_env="", pass_env=[], to_repo=False
     )

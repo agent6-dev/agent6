@@ -9,7 +9,7 @@ workspace as a side effect. So an absolute "you CANNOT change anything" or a
 jailed, a probe's writes land in the workspace, and nothing carries them
 forward.
 
-plan is clamped like ask: a standing run_commands="yes" becomes "ask", so a
+plan is clamped like ask: a standing run_commands="allow" becomes "ask", so a
 write during planning is operator-approved, never auto-run.
 """
 
@@ -91,23 +91,23 @@ def test_plan_and_ask_prompts_state_that_probe_writes_go_nowhere(tmp_path: pathl
 def test_plan_clamps_run_commands_like_ask(tmp_path: pathlib.Path) -> None:
     """Plan clamps run_commands like ask.
 
-    Plan runs with the operator present, so a standing `run_commands="yes"` is clamped to "ask"
+    Plan runs with the operator present, so a standing `run_commands="allow"` is clamped to "ask"
     exactly as in ask: a write during planning is approved per call, never auto-run. The clamp only
-    tightens (a configured "no" stays "no"), and an allow-all session answer upgrades the clamped
-    "ask" back to "yes".
+    tightens (a configured "deny" stays "deny"). An allow-all session answer upgrades the
+    clamped "ask" back to "allow".
     """
     from agent6.app import _setup
     from agent6.sessions import ipc
 
-    yes = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    # Both interactive modes clamp yes->ask; run keeps the operator's yes.
-    assert _setup.session_config(yes, "plan").sandbox.run_commands == "ask"
-    assert _setup.session_config(yes, "ask").sandbox.run_commands == "ask"
-    assert _setup.session_config(yes, "run").sandbox.run_commands == "yes"
-    # Only tightens: a withheld "no" is never loosened by the clamp.
-    no = Config.model_validate({"sandbox": {"run_commands": "no"}})
-    assert _setup.session_config(no, "plan").sandbox.run_commands == "no"
-    # The clamped "ask" still upgrades to "yes" for the session on allow-all.
+    allowed = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    # Both interactive modes clamp allow->ask; run keeps the operator's allow.
+    assert _setup.session_config(allowed, "plan").sandbox.run_commands == "ask"
+    assert _setup.session_config(allowed, "ask").sandbox.run_commands == "ask"
+    assert _setup.session_config(allowed, "run").sandbox.run_commands == "allow"
+    # Only tightens: a withheld "deny" is never loosened by the clamp.
+    denied = Config.model_validate({"sandbox": {"run_commands": "deny"}})
+    assert _setup.session_config(denied, "plan").sandbox.run_commands == "deny"
+    # The clamped "ask" still upgrades to "allow" for the session on allow-all.
     assert ipc.effective_run_commands("ask", tmp_path) == "ask"
     ipc.set_session_allow(tmp_path, ipc.COMMAND_SCOPE)
-    assert ipc.effective_run_commands("ask", tmp_path) == "yes"
+    assert ipc.effective_run_commands("ask", tmp_path) == "allow"

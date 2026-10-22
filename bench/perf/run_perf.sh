@@ -172,7 +172,7 @@ model = "$MODEL"
 [sandbox]
 isolation = "auto"
 network = "session"
-run_commands = "yes"
+run_commands = "allow"
 protect_git = "on"
 
 [git]

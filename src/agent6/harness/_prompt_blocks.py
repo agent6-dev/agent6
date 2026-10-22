@@ -106,7 +106,7 @@ def initial_instructions(mode: str, run_commands: str, *, has_gate: bool) -> str
             "The question is above; a message with no tool call is the answer"
             " (`agent6_docs` covers agent6's own behaviour)."
         )
-    if run_commands == "no" or not has_gate:
+    if run_commands == "deny" or not has_gate:
         return "The task is above; `finish_session` requests the run end."
     return (
         "The task is above; `run_verify_command` checks the work and `finish_session`"
@@ -301,9 +301,11 @@ def build_system_prompt(
         isolation != "none" and (repo.root / ".git").is_file()
     )
     base = base.replace("__GIT_PROTECT_RULE__", loop.GIT_PROTECT_RULE if git_read_only else "")
-    # `run_commands = "no"` withholds every command tool: gateless whatever the config says.
+    # `run_commands = "deny"` withholds every command tool: gateless whatever the config says.
     # The caller's answer (a resumed run whose operator denied commands) wins over the config.
-    allowed = config.sandbox.run_commands != "no" if commands_allowed is None else commands_allowed
+    allowed = (
+        config.sandbox.run_commands != "deny" if commands_allowed is None else commands_allowed
+    )
     offline = allowed and policy.resolve_network(config, isolation) != "host"
     base = base.replace("__NETWORK_RULE__", loop.NETWORK_RULE if offline else "")
     has_gate = bool(config.harness.verify_command) and allowed

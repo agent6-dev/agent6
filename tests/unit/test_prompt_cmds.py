@@ -159,9 +159,9 @@ def test_prompt_show_infers_the_gate_a_run_would_infer(
 def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> None:
     """A withheld tool gets no block and no offer.
 
-    `run_commands = "no"` withholds every command tool, and a metric with no `[harness.metric]` can
-    only error; a prompt block describing a tool the model does not have is one it cannot act on,
-    and the metric tool must not be offered while `run_verify_command` is hidden.
+    `run_commands = "deny"` withholds every command tool. A metric with no `[harness.metric]`
+    can only error. A prompt block for an absent tool is one the model cannot act on, and the
+    metric tool must not be offered while `run_verify_command` is hidden.
     """
     import tempfile
 
@@ -174,7 +174,7 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> N
 
     withheld = Config.model_validate(
         {
-            "sandbox": {"run_commands": "no"},
+            "sandbox": {"run_commands": "deny"},
             "harness": {
                 "verify_command": ["pytest", "-q"],
                 "metric": {"command": ["m"], "pattern": r"x:(\d+)", "goal": "minimize"},

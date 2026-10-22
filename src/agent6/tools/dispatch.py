@@ -4,7 +4,7 @@
 
 File reads and writes resolve through the workspace boundary: the repo root plus the operator's
 extra grants and the per-repo memory dir. Commands run jailed, in the run's `JailSession` or a
-per-command `run_in_jail`. The `run_commands` gate ("no", "ask", "yes") is enforced here.
+per-command `run_in_jail`. The `run_commands` gate ("deny", "ask", "allow") is enforced here.
 """
 
 from __future__ import annotations
@@ -225,7 +225,7 @@ class ToolDispatcher:
         self._run_root_node_id = node_id
 
     def command_policy(self) -> str:
-        """Return the run's command policy right now: "no", "ask" or "yes".
+        """Return the run's command policy right now: "deny", "ask" or "allow".
 
         Re-read rather than cached: an operator who denies for the session mid-run withdraws
         the tools from the next turn.
@@ -245,12 +245,12 @@ class ToolDispatcher:
 
     def tool_is_withheld(self, name: str) -> bool:
         """Return whether the model is denied the tool, extras included."""
-        return name in _COMMAND_TOOLS and self.command_policy() == "no"
+        return name in _COMMAND_TOOLS and self.command_policy() == "deny"
 
     def _tool_refusal(self, name: str) -> str | None:
         """Return why a built-in tool is withheld right now, or None when it is offered."""
         if self.tool_is_withheld(name):
-            return "not available (run_commands = 'no')"
+            return "not available (run_commands = 'deny')"
         # `fetch` is redundant when a jailed command already has the network.
         if (
             name == schema.FetchInput.TOOL_NAME
@@ -484,7 +484,7 @@ class ToolDispatcher:
             Whether it was adopted; False when commands are withheld or a bare argv[0] does not
             resolve on the jail PATH, since a gate the sandbox cannot run would abort the run.
         """
-        if self.command_policy() == "no":
+        if self.command_policy() == "deny":
             return False
         if not tool_paths.jail_resolves(argv[0]):
             return False
@@ -518,7 +518,7 @@ class ToolDispatcher:
             raise tools_errors.ToolError(f"unknown MCP server in {name!r}")
         if self.mcp_denied(server):
             raise tools_errors.ToolError(f"not available ({server!r} was denied for this session)")
-        if entry.approve == "yes":
+        if entry.approve == "allow":
             return
         args = json.dumps(raw_input, ensure_ascii=False, sort_keys=True)
         if len(args) > _APPROVAL_PROMPT_MAX_CHARS and self._session_dir is not None:
@@ -532,7 +532,7 @@ class ToolDispatcher:
             )
         if not self._approve(f"Allow {name}: {args}", scope=f"{ipc.MCP_SCOPE_PREFIX}{server}"):
             raise tools_errors.ToolDeniedError(
-                f"{name} not approved (set [mcp.servers.{server}].approve = 'yes' to stop asking)"
+                f"{name} not approved (set [mcp.servers.{server}].approve = 'allow' to stop asking)"
             )
 
     def _approve(self, prompt: str, *, scope: str | None = None) -> bool:

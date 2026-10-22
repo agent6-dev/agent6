@@ -12,7 +12,7 @@ import dataclasses
 import pathlib
 from typing import Literal
 
-TernaryMode = Literal["no", "ask", "yes"]
+TernaryMode = Literal["deny", "ask", "allow"]
 # `none` runs commands as plain subprocesses: a host with no confinement, or an operator opt-out.
 IsolationLevel = Literal["full", "partial", "none"]
 NetworkMode = Literal["host", "session", "none"]
@@ -35,7 +35,7 @@ class SessionKind:
         role: The model role that drives it.
         edits: May mutate the workspace in-process and own a background command.
         runs_commands: May execute commands at all.
-        clamps_commands: Forces approval even where config says "yes".
+        clamps_commands: Forces approval even where config says "allow".
         resumable: `agent6 resume` can pick it up; a machine's states are driven by the
             machine agent instead.
     """

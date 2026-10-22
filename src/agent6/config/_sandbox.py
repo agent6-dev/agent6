@@ -49,15 +49,15 @@ class SandboxConfig(pydantic.BaseModel):
             "its own value in its `config` table, never wider than this one."
         ),
     )
-    run_commands: Literal["yes", "no", "ask"] = pydantic.Field(
+    run_commands: Literal["allow", "deny", "ask"] = pydantic.Field(
         default="ask",
         description=(
             "Whether the model may run commands (`run_command`, `run_verify_command`, "
-            "`run_metric_command`, `stop_background`, one decision for all four): `yes` runs "
-            "them, `no` withholds the "
+            "`run_metric_command`, `stop_background`, one decision for all four): `allow` runs "
+            "them, `deny` withholds the "
             "tools (and the verify gate with them), `ask` prompts per call with "
-            "allow-for-this-session answers. `ask` and `plan` clamp `yes` to `ask`. Per "
-            "invocation: `--auto-approve` (never over a configured `no`), `--no-commands`. A run "
+            "allow-for-this-session answers. `ask` and `plan` clamp `allow` to `ask`. Per "
+            "invocation: `--auto-approve` (never over a configured `deny`), `--no-commands`. A run "
             "set to `ask` with nobody to answer refuses to start."
         ),
     )
@@ -415,14 +415,14 @@ class MCPServerEntry(pydantic.BaseModel):
         ),
     )
     # A server's tools do things agent6 cannot classify, so the default is a command's: ask.
-    approve: Literal["ask", "yes"] = pydantic.Field(
+    approve: Literal["ask", "allow"] = pydantic.Field(
         default="ask",
         description=(
             "`ask` prompts before each of this server's tool calls, showing the arguments the "
-            'model chose; `yes` never asks. The session answers are per server: "allow all" covers '
-            'this server for the run (not the command tools, not a sibling server), "deny all" '
-            "withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. "
-            "There is no `no`: `enabled = false` is how a server's tools are withheld."
+            'model chose; `allow` never asks. The session answers are per server: "allow all" '
+            "covers this server for the run (not the command tools, not a sibling server), "
+            '"deny all" withdraws its tools from the next turn. `--auto-approve` sets `allow` for '
+            "the run. There is no `deny`: `enabled = false` is how a server's tools are withheld."
         ),
     )
     startup_timeout_s: float = pydantic.Field(

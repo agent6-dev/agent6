@@ -32,7 +32,7 @@ provider = "anthropic"
 model = "claude-sonnet-4-5"
 
 [sandbox]
-run_commands = "yes"
+run_commands = "allow"
 """
 
 
@@ -190,19 +190,19 @@ def test_config_page_edit_persists(repo: pathlib.Path) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, _config_forms.EditModal)
-            # run_commands is an enum -> a [x]/[ ] chooser, focused, current "yes".
+            # run_commands is an enum -> a [x]/[ ] chooser, focused, current "allow".
             field = modal.query_one("#edit-value", forms.ChoiceField)
-            assert field.value == "yes"
-            await pilot.press("down")  # highlight "no" (selection unchanged)
+            assert field.value == "allow"
+            await pilot.press("down")  # highlight "deny" (selection unchanged)
             await pilot.pause()
-            assert field.value == "yes"  # arrows only highlight
-            await pilot.press("space")  # select "no"
+            assert field.value == "allow"  # arrows only highlight
+            await pilot.press("space")  # select "deny"
             await pilot.pause()
-            assert field.value == "no"
+            assert field.value == "deny"
             modal.action_save()  # equivalent to the Save action
             await pilot.pause()
             # Persisted through config_layer.set_config_value (global config).
-            assert layer.load_effective(repo).config.sandbox.run_commands == "no"
+            assert layer.load_effective(repo).config.sandbox.run_commands == "deny"
 
     asyncio.run(scenario())
 
@@ -214,7 +214,7 @@ def test_edit_defaults_to_the_setting_source_layer(repo: pathlib.Path) -> None:
     """
     from agent6.config import write
 
-    assert write.set_config_value(repo, "sandbox.run_commands", "no", to_repo=True) is None
+    assert write.set_config_value(repo, "sandbox.run_commands", "deny", to_repo=True) is None
 
     async def scenario() -> None:
         from agent6.ui.tui import forms
@@ -254,9 +254,9 @@ def test_edit_unset_reverts_to_default(repo: pathlib.Path) -> None:
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, config_page.ConfigScreen)
-            # run_commands is set to "yes" in the (global) config fixture.
+            # run_commands is set to "allow" in the (global) config fixture.
             eff = layer.load_effective(repo)
-            assert layer.effective_leaf(eff, "sandbox.run_commands") == ("yes", "global")
+            assert layer.effective_leaf(eff, "sandbox.run_commands") == ("allow", "global")
             tbl = screen.query_one("#tbl-sandbox", widgets.DataTable)
             tbl.focus()
             ridx = next(
@@ -1530,7 +1530,7 @@ def test_unset_names_the_layer_instead_of_claiming_the_default(repo: pathlib.Pat
     """Unsetting a repo override that reveals a global override says so in its notice."""
     from agent6.config import write
 
-    assert write.set_config_value(repo, "sandbox.run_commands", "no", to_repo=True) is None
+    assert write.set_config_value(repo, "sandbox.run_commands", "deny", to_repo=True) is None
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -1547,7 +1547,7 @@ def test_unset_names_the_layer_instead_of_claiming_the_default(repo: pathlib.Pat
             screen._current_setting = lambda: setting  # type: ignore[method-assign]
             screen.action_reset()
             await pilot.pause()
-            assert layer.load_effective(repo).config.sandbox.run_commands == "yes"
+            assert layer.load_effective(repo).config.sandbox.run_commands == "allow"
             notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
             assert notes[-1] == "Unset sandbox.run_commands from repo config"
 

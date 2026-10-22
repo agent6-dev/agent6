@@ -376,7 +376,7 @@ def _exec(rc: int, out: str = "") -> Any:
 
 
 def _harness_wf(
-    when: str, retries: int = 2, *, policy: str = "yes"
+    when: str, retries: int = 2, *, policy: str = "allow"
 ) -> tuple[loop.Harness, mock.MagicMock]:
     """A run-mode loop over a gate, and the mock dispatcher that owns `run_verify`."""
     data: dict[str, Any] = {
@@ -515,8 +515,8 @@ def test_never_mode_leaves_a_finish_over_an_unverified_tree_alone() -> None:
     assert wf.gate.verification(state.verify) == "unverified"
 
 
-def test_run_commands_no_withholds_the_gate_from_the_harness_too() -> None:
-    wf, dispatcher = _harness_wf("finish", policy="no")
+def test_run_commands_deny_withholds_the_gate_from_the_harness_too() -> None:
+    wf, dispatcher = _harness_wf("finish", policy="deny")
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf.gate.harness_verify(state, turn)
@@ -607,7 +607,7 @@ def _scoped_wf(
         (root / rel).write_text("")
     data: dict[str, Any] = {"harness": {"verify_command": command, "verify_when": when}}
     dispatcher = mock.MagicMock()
-    dispatcher.command_policy.return_value = "yes"
+    dispatcher.command_policy.return_value = "allow"
     wf = loop.Harness(
         chain=_chain.RunChain(root),
         config=Config.model_validate(data),
@@ -823,7 +823,7 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     from agent6.tools import results
 
     dispatcher = mock.MagicMock()
-    dispatcher.command_policy.return_value = "yes"
+    dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
     )
@@ -855,7 +855,7 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     assert state.gates.verify_retries_used == 1
 
 
-@pytest.mark.parametrize(("policy", "withheld"), [("no", False), ("ask", True)])
+@pytest.mark.parametrize(("policy", "withheld"), [("deny", False), ("ask", True)])
 def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     policy: str, withheld: bool
 ) -> None:

@@ -35,7 +35,7 @@ provider = "anthropic"
 model = "x"
 [sandbox]
 isolation = "auto"
-run_commands = "no"
+run_commands = "deny"
 protect_git = "on"
 [git]
 dirty_tree = "ask"
@@ -301,8 +301,8 @@ def test_the_run_prompt_states_no_route_off_the_box_under_the_session_network(
 def test_the_run_prompt_has_no_network_rule_when_the_run_has_no_commands(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A run with `run_commands = "no"` has no command to describe: the rule would speak of none."""
-    cfg = Config.model_validate({"sandbox": {"run_commands": "no"}})
+    """A run with `run_commands = "deny"` has no command to describe."""
+    cfg = Config.model_validate({"sandbox": {"run_commands": "deny"}})
     text = _run_prompt(tmp_path, cfg, "full")
     assert "no route off this machine" not in text
     assert "__NETWORK_RULE__" not in text
@@ -324,10 +324,10 @@ def test_the_run_prompt_has_no_network_rule_under_the_host_network(
 
 def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "agent6.toml"
-    # `run_commands = "no"` withholds every command tool, the metric included,
+    # `run_commands = "deny"` withholds every command tool, the metric included,
     # and the block describing it goes with the tool.
     p.write_text(
-        _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"')
+        _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"')
         + '\n[harness.metric]\ncommand = ["python3", "bench.py"]\n'
         + 'pattern = "CYCLES: (\\\\d+)"\ngoal = "minimize"\n',
         encoding="utf-8",
@@ -357,10 +357,10 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: pathlib.Pa
         assert "run_metric_command" not in other, mode
 
 
-def test_run_commands_no_withholds_the_command_tools_and_every_rule_about_them(
+def test_run_commands_deny_withholds_the_command_tools_and_every_rule_about_them(
     tmp_path: pathlib.Path,
 ) -> None:
-    """`run_commands = "no"` withholds the command tools and every rule about them.
+    """`run_commands = "deny"` withholds the command tools and every rule about them.
 
     One answer per run: the gate does not exist, and the tool list, the verify block, the metric
     block and the auto-commit rule all say so. The metric tool is an extra outside ALL_TOOLS, so the
@@ -369,7 +369,7 @@ def test_run_commands_no_withholds_the_command_tools_and_every_rule_about_them(
     """
     p = tmp_path / "agent6.toml"
     p.write_text(
-        _VALID_TOML.replace(  # carries run_commands = "no" and a verify_command
+        _VALID_TOML.replace(  # carries run_commands = "deny" and a verify_command
             'verify_command = ["true"]', 'verify_command = ["true"]\nverify_when = "step"'
         )
         + '\n[harness.metric]\ncommand = ["python3", "bench.py"]\n'
@@ -407,7 +407,7 @@ def test_no_commands_removes_run_command_from_read_only_mode_prompts(
     tmp_path: pathlib.Path,
 ) -> None:
     """Plan and ask do not advertise probes when run_command is withheld from the tools."""
-    cfg = _config(tmp_path)  # run_commands = "no"
+    cfg = _config(tmp_path)  # run_commands = "deny"
     repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
@@ -443,7 +443,7 @@ def test_read_only_mode_prompts_splice_the_command_note_cleanly(tmp_path: pathli
         agents_md="",
         recent_log="",
     )
-    for commands in ("ask", "no"):
+    for commands in ("ask", "deny"):
         cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
         plan = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)  # pyright: ignore[reportPrivateUsage]
         rules = plan.split("<tool-use-rules>\n", 1)[1].split("</tool-use-rules>", 1)[0]
@@ -481,7 +481,7 @@ def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(
     # a read-only machine agent state: navigation + finish_session, NO
     # edit/patch/verify/run_command/DAG (the deliverable is a finish_session result).
     p = tmp_path / "agent6.toml"
-    p.write_text(_VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"'), "utf-8")
+    p.write_text(_VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"'), "utf-8")
     cfg = load_config(p)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     for mode in ("machine", "agent"):
@@ -555,7 +555,7 @@ def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: pathlib.
     # ask: read tools + run_command (when the config allows it), but NO edits and
     # NO control tools (no finish_session/finish_planning/DAG) -- it silent-finishes.
     p = tmp_path / "agent6.toml"
-    p.write_text(_VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"'), "utf-8")
+    p.write_text(_VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"'), "utf-8")
     cfg = load_config(p)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     names = {t.name for t in _toolset.tool_definitions(d, mode="ask")}  # pyright: ignore[reportPrivateUsage]

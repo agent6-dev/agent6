@@ -60,7 +60,7 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
         raise RuntimeError("stop here")
 
     monkeypatch.setattr(app__execution, "run_execution", _execution)
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
 
     def _cancel(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         order.append("ask")
@@ -112,7 +112,7 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
 
     assert (
         run_mod.run_task(
-            Config.model_validate({"sandbox": {"run_commands": "yes"}}),
+            Config.model_validate({"sandbox": {"run_commands": "allow"}}),
             "t",
             started_at=time.time(),
             frontend=frontend,
@@ -156,7 +156,7 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
 
     with pytest.raises(OSError, match="console teardown failed"):
         run_mod.run_task(
-            Config.model_validate({"sandbox": {"run_commands": "yes"}}),
+            Config.model_validate({"sandbox": {"run_commands": "allow"}}),
             "t",
             started_at=time.time(),
             frontend=frontend,
@@ -196,7 +196,7 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     frontend.close_console_view.side_effect = OSError("console teardown failed")
     cfg = Config.model_validate(
         {
-            "sandbox": {"run_commands": "yes"},
+            "sandbox": {"run_commands": "allow"},
             "git": {"dirty_tree": "stash", "auto_stash_pop": True},
         }
     )

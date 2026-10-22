@@ -312,8 +312,8 @@ def _write_models_cache(cache_home: pathlib.Path, provider: str, models: list[st
     p.write_text(json.dumps({"models": models}), encoding="utf-8")
 
 
-def _provider_cfg(model: str = "moonshotai/kimi-k2.6", run_commands: str = "yes") -> Config:
-    # run_commands defaults to "yes" here: `--parallel` refuses under "ask",
+def _provider_cfg(model: str = "moonshotai/kimi-k2.6", run_commands: str = "allow") -> Config:
+    # run_commands defaults to "allow" here: `--parallel` refuses under "ask",
     # since nobody can answer a detached lane, and these tests are about the
     # dispatch itself. The refusal has its own test.
     return Config.model_validate(
@@ -952,7 +952,7 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
                 "isolation": "none",
                 "home": "cache",
                 "network": "host",
-                "run_commands": "yes",
+                "run_commands": "allow",
             },
             "harness": {"verify_infer": False},
             "review": {"trigger": "off"},

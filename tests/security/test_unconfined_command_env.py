@@ -20,7 +20,7 @@ from agent6.config import Config
 from agent6.tools import dispatch
 
 _CFG = {
-    "sandbox": {"run_commands": "yes", "isolation": "none"},
+    "sandbox": {"run_commands": "allow", "isolation": "none"},
     "providers": {
         "anthropic": {
             "api_format": "anthropic",

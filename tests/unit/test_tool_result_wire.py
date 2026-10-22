@@ -47,7 +47,7 @@ provider = "anthropic"
 model = "x"
 [sandbox]
 isolation = "auto"
-run_commands = "yes"
+run_commands = "allow"
 protect_git = "on"
 [git]
 dirty_tree = "ask"

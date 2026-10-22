@@ -494,7 +494,7 @@ def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: path
             "mode": "run",
             "user_task": "t",
             "models": {"driver": {"provider": "openai", "model": "old-model"}},
-            "policy": {"run_commands": "yes", "isolation": "none", "network": "auto"},
+            "policy": {"run_commands": "allow", "isolation": "none", "network": "auto"},
         },
     )
     cfg = Config.model_validate(

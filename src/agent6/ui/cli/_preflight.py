@@ -53,7 +53,7 @@ def confirm_unconfined_autorun(isolation: kinds.IsolationLevel, cfg: Config) -> 
     Returns:
         Whether to proceed.
     """
-    if isolation != "none" or cfg.sandbox.run_commands != "yes":
+    if isolation != "none" or cfg.sandbox.run_commands != "allow":
         return True
     print(
         "[agent6] DANGER: the sandbox is DISABLED and run_command is"

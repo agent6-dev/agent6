@@ -341,10 +341,10 @@ def test_config_and_provider_help_cover_all_supported_shapes() -> None:
 
 def test_mcp_help_explains_server_setup_in_user_terms() -> None:
     mcp = _find(cli_parser.build_parser(), "mcp")
-    connect = _find(mcp, "connect")
-    assert (connect.description or "").startswith("Add an MCP server")
-    assert "without testing it" in (connect.description or "")
-    assert (_positional(connect, "name").help or "").startswith("Server name")
+    add = _find(mcp, "add")
+    assert (add.description or "").startswith("Add an MCP server")
+    assert "without testing it" in (add.description or "")
+    assert (_positional(add, "name").help or "").startswith("Server name")
     listing = _find(mcp, "list")
     assert "does not start or test" in (listing.description or "")
 

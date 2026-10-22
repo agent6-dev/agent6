@@ -61,7 +61,7 @@ case "$AGENT" in
 [harness]
 verify_command = ["bash", "verify.sh"]
 [sandbox]
-run_commands = "yes"
+run_commands = "allow"
 [git]
 dirty_tree = "include"
 CFG

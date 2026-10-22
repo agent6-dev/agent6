@@ -189,7 +189,7 @@ def _provider_block(provider: str, model: str, verify: list[str], effort: str = 
     # WITHOUT a section header (see CONDITIONS) legally extends it, whereas a
     # second [harness] header would be invalid TOML (cannot declare twice).
     return (
-        f'{roles}\n[sandbox]\nrun_commands = "yes"\n\n'
+        f'{roles}\n[sandbox]\nrun_commands = "allow"\n\n'
         f"[harness]\nverify_command = {verify_toml}\n"
         f"verify_timeout_s = 60.0\n"
     )

@@ -225,7 +225,7 @@ Where a run state's work lands:
 - under the default `ask`, an unattended machine auto-denies every call (`machine run` warns up front when a `mode = "run"` state would hit this)
 - a machine spawned from the web or TUI hub parks each approval and question for the front-end (the spawn carries the detached `wait` away-mode)
     - the answer never depends on when the viewer attached
-- grant per invocation with `--auto-approve` or `AGENT6_AUTO_APPROVE=1` (ask upgrades to yes; a withheld `no` stays no), or set `sandbox.run_commands = "yes"` in the repo config
+- grant per invocation with `--auto-approve` or `AGENT6_AUTO_APPROVE=1` (ask upgrades to allow; a withheld `deny` stays deny), or set `sandbox.run_commands = "allow"` in the repo config
 - `--no-commands` or `AGENT6_NO_COMMANDS=1` withholds every command tool
 - agent states alone read the two env names
 - an overlay cannot grant it: a `sandbox` key is never wider than your own config ([Machine config overlay](#47-machine-config-overlay-config))
@@ -561,7 +561,7 @@ Unset keys read straight through to the lower layers, so a machine only states w
 | `extra_device_paths`, `fetch_approved_hosts` | a subset of your list, entry for entry |
 | `hide_paths` | every entry of yours, or a directory above it, plus more |
 | `network`, `isolation` | yours or tighter, compared by what the value resolves to on this host |
-| `run_commands` | yours or tighter (`yes`, then `ask`, then `no`) |
+| `run_commands` | yours or tighter (`allow`, then `ask`, then `deny`) |
 | `protect_git`, `home` | yours, or a tighter value (`on` over `auto` over `off`; `tmp` over `auto` over `cache`); `protect_git` is compared by what it resolves to, so `git.control = "model"` under your `auto` is wider |
 | `memory_limit_mib` | a cap no larger than yours; any value when you set none |
 
@@ -740,7 +740,7 @@ Its state count includes the branches, matching `machine check`.
 Describe a loop in plain language and get a first-cut bundle back.
 It is an ordinary agent6 run handed this document's grammar, writing the `.asm.toml` and every `scripts/...` file with `apply_edit` in a drafting workspace of its own.
 
-- no new tool: the edit tools only, since `run_commands = "no"` withholds every command tool and drops the operator's `[harness].metric`
+- no new tool: the edit tools only, since `run_commands = "deny"` withholds every command tool and drops the operator's `[harness].metric`
 - no host is pre-allowed, so a headless `fetch` denies
 - it never sees the operator's checkout; the workspace bounds its writes the way a repo bounds a run's
 

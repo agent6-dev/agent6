@@ -39,9 +39,12 @@ def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (
         preflight.headless_approval_refusal(ask, tui_enabled=False, away="", can_ask=True) is None
     )
-    yes = cast(Config, types.SimpleNamespace(sandbox=types.SimpleNamespace(run_commands="yes")))
+    allowed = cast(
+        Config, types.SimpleNamespace(sandbox=types.SimpleNamespace(run_commands="allow"))
+    )
     assert (
-        preflight.headless_approval_refusal(yes, tui_enabled=False, away="", can_ask=False) is None
+        preflight.headless_approval_refusal(allowed, tui_enabled=False, away="", can_ask=False)
+        is None
     )
 
 

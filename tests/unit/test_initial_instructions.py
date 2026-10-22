@@ -23,21 +23,23 @@ def test_ask_gets_direct_answer_instructions() -> None:
 
 
 def test_a_no_commands_run_is_not_told_to_run_verify() -> None:
-    """`run_commands = "no"` withholds the command tools and the verify gate with them."""
+    """`run_commands = "deny"` withholds the command tools and the verify gate with them."""
     assert "run_verify_command" not in _prompt_blocks.initial_instructions(
-        "run", "no", has_gate=True
+        "run", "deny", has_gate=True
     )
-    assert "finish_session" in _prompt_blocks.initial_instructions("run", "no", has_gate=True)
+    assert "finish_session" in _prompt_blocks.initial_instructions("run", "deny", has_gate=True)
     assert "run_verify_command" in _prompt_blocks.initial_instructions("run", "ask", has_gate=True)
-    assert "run_verify_command" in _prompt_blocks.initial_instructions("run", "yes", has_gate=True)
+    assert "run_verify_command" in _prompt_blocks.initial_instructions(
+        "run", "allow", has_gate=True
+    )
 
 
 def test_a_gateless_run_is_not_told_to_run_verify() -> None:
     """A gateless run's header names no verify gate, however commands are configured."""
     assert "run_verify_command" not in _prompt_blocks.initial_instructions(
-        "run", "yes", has_gate=False
+        "run", "allow", has_gate=False
     )
-    assert "finish_session" in _prompt_blocks.initial_instructions("run", "yes", has_gate=False)
+    assert "finish_session" in _prompt_blocks.initial_instructions("run", "allow", has_gate=False)
 
 
 @pytest.mark.parametrize("mode", ["run", "plan", "ask", "agent"])
@@ -47,7 +49,7 @@ def test_no_instruction_names_a_tool_outside_the_mode_surface(mode: str) -> None
         *(schema.mode_tools(m).permitted for m in ("run", "plan", "ask", "machine", "agent"))
     )
     permitted = schema.mode_tools(mode).permitted
-    for rc in ("yes", "ask", "no"):
+    for rc in ("allow", "ask", "deny"):
         named = set(
             re.findall(
                 r"`([a-z_0-9.]+)`", _prompt_blocks.initial_instructions(mode, rc, has_gate=True)

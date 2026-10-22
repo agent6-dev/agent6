@@ -34,7 +34,7 @@ def test_config_presets_reads_the_explicit_config_file(
 ) -> None:
     """`config presets` honours `--config FILE` like every other config subcommand."""
     cfg = tmp_path / "custom.toml"
-    cfg.write_text('[presets.myfast.sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
+    cfg.write_text('[presets.myfast.sandbox]\nrun_commands = "allow"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     assert main(["--config", str(cfg), "config", "presets"]) == 0
@@ -69,7 +69,7 @@ def test_config_fill_keeps_the_presets_the_file_defines(
     (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
     (cfg_home / "agent6" / "config.toml").write_text(
-        'preset = "myfast"\n\n[presets.myfast.sandbox]\nrun_commands = "yes"\n',
+        'preset = "myfast"\n\n[presets.myfast.sandbox]\nrun_commands = "allow"\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
@@ -77,7 +77,7 @@ def test_config_fill_keeps_the_presets_the_file_defines(
     assert main(["config", "fill", "--force"]) == 0
 
     after = layer.load_effective(tmp_path)
-    assert after.config.sandbox.run_commands == "yes", "the preset stopped applying"
+    assert after.config.sandbox.run_commands == "allow", "the preset stopped applying"
     text = (cfg_home / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[presets.myfast" in text, f"config fill deleted the operator's preset:\n{text}"
     # The selector survives and the preset's effect is not baked; the filled leaf is the default.

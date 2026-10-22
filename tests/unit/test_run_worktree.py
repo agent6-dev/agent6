@@ -55,7 +55,7 @@ def _no_controlling_terminal(  # pyright: ignore[reportUnusedFunction]
 _CONFIG = """
 [sandbox]
 isolation = "none"
-run_commands = "no"
+run_commands = "deny"
 
 [models.worker]
 provider = "p"
@@ -601,7 +601,9 @@ def test_model_controlled_git_refuses(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A linked worktree's `.git` is read-only in the jail, so the model could not commit there."""
-    model_git = _CONFIG.replace('run_commands = "no"', 'run_commands = "no"\nprotect_git = "off"')
+    model_git = _CONFIG.replace(
+        'run_commands = "deny"', 'run_commands = "deny"\nprotect_git = "off"'
+    )
     repo = _repo(tmp_path, monkeypatch, config=model_git + '\n[git]\ncontrol = "model"\n')
 
     assert cli_main(["run", "--worktree", "--session-id", "wt-MODL01", "task"]) == 2
@@ -816,7 +818,7 @@ def test_a_worktree_the_cleanup_cannot_remove_is_named(
     assert _worktrees(repo) == [str(repo), str(added[0])]
 
 
-_COMMANDS = _CONFIG.replace('run_commands = "no"', 'run_commands = "yes"')
+_COMMANDS = _CONFIG.replace('run_commands = "deny"', 'run_commands = "allow"')
 
 
 def _with_setup(repo: pathlib.Path, argv: str) -> None:
@@ -1241,7 +1243,9 @@ def test_dispatch_setup_keeps_timeout_and_wraps_jail_unavailability(
     from agent6.sandbox import jail
     from agent6.tools import dispatch
 
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}}).with_setup_command(("true",))
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}}).with_setup_command(
+        ("true",)
+    )
     seen: list[kinds.JailPolicy] = []
 
     def run(policy: kinds.JailPolicy, **kwargs: object) -> kinds.CommandResult:
@@ -1282,7 +1286,7 @@ class _FailingSetup:
         self.isolation: kinds.IsolationLevel = isolation
 
     def command_policy(self) -> str:
-        return "yes"
+        return "allow"
 
     def run_setup(self, argv: tuple[str, ...]) -> kinds.CommandResult:
         return kinds.CommandResult(

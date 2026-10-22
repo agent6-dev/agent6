@@ -138,7 +138,7 @@ model = "$MODEL"
 isolation = "none"
 # The host network: a run's own network needs the kernel sandbox, and the container bounds it.
 network = "host"
-run_commands = "yes"
+run_commands = "allow"
 protect_git = "off"
 extra_read_paths = ["/opt/miniconda3", "/opt/conda"]
 

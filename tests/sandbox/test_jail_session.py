@@ -309,7 +309,7 @@ def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(
     from agent6.config import Config
     from agent6.tools import dispatch
 
-    cfg = Config.model_validate({"sandbox": {"isolation": "full", "run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "full", "run_commands": "allow"}})
     scoped = dispatch.ToolDispatcher(
         root=tmp_path, config=cfg, isolation="full", use_jail_session=True
     )
@@ -347,7 +347,7 @@ def test_a_backgrounded_server_is_reachable_by_the_run_s_next_command(
     from agent6.config import Config
     from agent6.tools import dispatch
 
-    cfg = Config.model_validate({"sandbox": {"isolation": "full", "run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"isolation": "full", "run_commands": "allow"}})
     d = dispatch.ToolDispatcher(
         root=tmp_path,
         config=cfg,

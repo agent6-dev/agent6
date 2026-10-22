@@ -188,7 +188,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
             {
                 "session_id": "r1",
                 "mode": "run",
-                "policy": {"run_commands": "yes", "isolation": "none", "network": "host"},
+                "policy": {"run_commands": "allow", "isolation": "none", "network": "host"},
             }
         ),
         encoding="utf-8",
@@ -372,7 +372,7 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
                 "version": 3,
                 "session_id": layout.session_id,
                 "mode": "run",
-                "policy": {"run_commands": "yes", "isolation": "full", "network": "host"},
+                "policy": {"run_commands": "allow", "isolation": "full", "network": "host"},
             }
         )
         + "\n",
@@ -440,7 +440,7 @@ def test_exec_runs_in_the_sessions_worktree_with_its_recorded_git_dir(
                 "version": 3,
                 "session_id": layout.session_id,
                 "mode": "run",
-                "policy": {"run_commands": "yes", "isolation": "full", "network": "host"},
+                "policy": {"run_commands": "allow", "isolation": "full", "network": "host"},
                 "worktree": str(worktree),
                 "worktree_git_dir": str(git_dir),
             }

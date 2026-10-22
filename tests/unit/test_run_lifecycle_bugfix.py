@@ -37,7 +37,7 @@ def _none_isolation(*_a: Any, **_k: Any) -> str:
 _CONFIG = """
 [sandbox]
 isolation = "none"
-run_commands = "no"
+run_commands = "deny"
 
 [models.worker]
 provider = "p"
@@ -210,7 +210,7 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
     # An Anthropic route with no resolvable key: the case that refuses (an
     # OpenAI-compat endpoint legitimately runs keyless, so it would not).
     (tmp_path / "cfg" / "agent6" / "config.toml").write_text(
-        '[sandbox]\nisolation = "none"\nrun_commands = "no"\n'
+        '[sandbox]\nisolation = "none"\nrun_commands = "deny"\n'
         '[models.worker]\nprovider = "anth"\nmodel = "claude-sonnet-4-5"\n'
         '[providers.anth]\napi_format = "anthropic"\napi_key_env = "ANTH_KEY_UNSET"\n'
         '[review]\ntrigger = "off"\n',
@@ -329,7 +329,7 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
 
     _setup(tmp_path, monkeypatch)
     (tmp_path / "cfg" / "agent6" / "config.toml").write_text(
-        '[sandbox]\nisolation = "none"\nrun_commands = "no"\n'
+        '[sandbox]\nisolation = "none"\nrun_commands = "deny"\n'
         '[models.worker]\nprovider = "chatgpt"\nmodel = "gpt-6-astra"\n'
         '[providers.chatgpt]\napi_format = "chatgpt"\n'
         '[review]\ntrigger = "off"\n'

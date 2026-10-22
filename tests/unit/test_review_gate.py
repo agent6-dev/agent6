@@ -600,7 +600,7 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
         {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
     )
     dispatcher = mock.MagicMock()
-    dispatcher.command_policy.return_value = "yes"
+    dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
     )
@@ -650,7 +650,7 @@ def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
         {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
     )
     dispatcher = mock.MagicMock()
-    dispatcher.command_policy.return_value = "yes"
+    dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
     )
@@ -701,7 +701,7 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
         {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
     )
     dispatcher = mock.MagicMock()
-    dispatcher.command_policy.return_value = "yes"
+    dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="2 failed", stderr="", duration_s=1.0, exec_failed=False
     )

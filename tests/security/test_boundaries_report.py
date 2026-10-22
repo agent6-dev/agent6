@@ -424,15 +424,15 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
 def test_boundaries_report_says_withheld_rather_than_unapproved(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`run_commands = "no"` withholds the command tools, and the header says so.
+    """`run_commands = "deny"` withholds the command tools, and the header says so.
 
-    "approval: sandbox.run_commands = no" would describe a prompting policy for tools the
+    "approval: sandbox.run_commands = deny" would describe a prompting policy for tools the
     model never sees.
     """
     _force(monkeypatch, "full")
-    _check_sandbox.check_sandbox_section(Config(sandbox=SandboxConfig(run_commands="no")))
+    _check_sandbox.check_sandbox_section(Config(sandbox=SandboxConfig(run_commands="deny")))
     out = capsys.readouterr().out
-    assert "  commands:  withheld from the model (sandbox.run_commands = no)" in out
+    assert "  commands:  withheld from the model (sandbox.run_commands = deny)" in out
     assert "approval: sandbox.run_commands" not in out
 
 

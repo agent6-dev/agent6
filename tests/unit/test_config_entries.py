@@ -63,10 +63,10 @@ def test_mcp_entry_keeps_blank_fields_and_removes_subtables(tmp_path: pathlib.Pa
     table = next(t for t in write.ENTRY_TABLES if t.path == "mcp.servers")
     assert write.add_entry(tmp_path, table, "local", {"command": "server --stdio"}) is None
     assert write.set_config_value(tmp_path, "mcp.servers.local.sandbox.network", "none") is None
-    assert write.add_entry(tmp_path, table, "local", {"command": " ", "approve": "yes"}) is None
+    assert write.add_entry(tmp_path, table, "local", {"command": " ", "approve": "allow"}) is None
     server = layer.load_effective(tmp_path).config.mcp.servers["local"]
     assert server.command == ("server", "--stdio")
-    assert server.approve == "yes"
+    assert server.approve == "allow"
     assert server.sandbox is not None
     assert write.remove_entry(tmp_path, table, "local") == write.UnsetResult(True)
     assert not layer.load_effective(tmp_path).config.mcp.servers
@@ -97,7 +97,7 @@ def test_bad_entry_input_leaves_config_untouched(tmp_path: pathlib.Path) -> None
         ),
         (
             "mcp.servers",
-            {"enabled": ["true", "false"], "approve": ["ask", "yes"]},
+            {"enabled": ["true", "false"], "approve": ["ask", "allow"]},
             "command",
             "argv",
         ),

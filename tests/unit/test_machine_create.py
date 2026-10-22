@@ -1356,7 +1356,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     # The operator's own settings ride as the overlay; the workspace's per-repo layer is empty.
     assert cfg["models"]["worker"]["provider"] == "openrouter"
     assert cfg["models"]["worker"]["model"] == "test-model"
-    assert cfg["sandbox"]["run_commands"] == "no", "and it still carries no command tool"
+    assert cfg["sandbox"]["run_commands"] == "deny", "and it still carries no command tool"
     # A workspace that never ran has no state dir; rmtree reported that like a failure.
     assert "the drafting workspace stays" not in capsys.readouterr().err
 

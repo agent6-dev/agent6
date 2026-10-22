@@ -40,7 +40,7 @@ _REPO = """\
 verify_command = ["pytest", "-q"]
 
 [sandbox]
-run_commands = "yes"
+run_commands = "allow"
 """
 
 
@@ -67,7 +67,7 @@ def test_layering_merges_global_and_repo(repo: pathlib.Path) -> None:
     # From repo:
     assert cfg.harness.verify_command == ("pytest", "-q")
     # Repo overrides global on the same field:
-    assert cfg.sandbox.run_commands == "yes"
+    assert cfg.sandbox.run_commands == "allow"
 
 
 def test_an_unknown_key_points_at_config_fix(repo: pathlib.Path) -> None:
@@ -156,7 +156,7 @@ def test_build_config_view_provenance_type_choices(repo: pathlib.Path) -> None:
     rc = settings["sandbox.run_commands"]
     assert rc.source == "repo" and rc.modified is True
     # enum field -> a dropdown's worth of choices, typed "choice"
-    assert rc.py_type == "choice" and rc.choices is not None and "yes" in rc.choices
+    assert rc.py_type == "choice" and rc.choices is not None and "allow" in rc.choices
     ap = settings["git.run_repo_hooks"]
     assert ap.source == "default" and ap.modified is False
     assert ap.py_type == "bool" and ap.default is False
@@ -195,7 +195,7 @@ def test_render_show_json_is_full_view(repo: pathlib.Path) -> None:
         "type",
         "choices",
     }
-    assert entry["type"] == "choice" and "yes" in entry["choices"]
+    assert entry["type"] == "choice" and "allow" in entry["choices"]
 
 
 def test_render_show_text_marks_adaptive(repo: pathlib.Path) -> None:
@@ -219,7 +219,7 @@ def test_config_write_keeps_the_edit_when_another_layer_was_already_invalid(
     # A pre-existing, unrelated error in the GLOBAL layer.
     (tmp_path / "g" / "agent6" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
 
-    err = write.set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
+    err = write.set_config_value(repo, "sandbox.run_commands", "deny", to_repo=True)
 
     assert err is None, "a pre-existing error elsewhere must not refuse this edit"
     assert "run_commands" in paths_mod.repo_config_path(repo).read_text(encoding="utf-8")
@@ -244,11 +244,11 @@ def test_a_dynamic_leaf_in_an_unselected_preset_is_readable(repo: pathlib.Path) 
 
 
 def test_set_then_unset_config_value(repo: pathlib.Path) -> None:
-    # repo config starts with run_commands="yes"; global has "ask".
-    err = write.set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
+    # repo config starts with run_commands="allow"; global has "ask".
+    err = write.set_config_value(repo, "sandbox.run_commands", "deny", to_repo=True)
     assert err is None
     eff = layer.load_effective(repo)
-    assert eff.config.sandbox.run_commands == "no"
+    assert eff.config.sandbox.run_commands == "deny"
     assert eff.sources["sandbox.run_commands"] == "repo"
     # unset removes the repo override -> falls through to the global "ask".
     res = write.unset_config_value(repo, "sandbox.run_commands", to_repo=True)
@@ -267,7 +267,7 @@ def test_unset_reports_whether_anything_was_removed(repo: pathlib.Path) -> None:
 def test_unset_refuses_a_shape_the_surgery_cannot_carve(repo: pathlib.Path) -> None:
     """Unset refuses a dotted top-level key as an OperatorError, never a returned string."""
     rcfg = paths_mod.repo_config_path(repo)
-    before = 'sandbox.run_commands = "yes"\n'
+    before = 'sandbox.run_commands = "allow"\n'
     rcfg.write_text(before, encoding="utf-8")
     with pytest.raises(errors.OperatorError):
         write.unset_config_value(repo, "sandbox.run_commands", to_repo=True)
@@ -277,14 +277,14 @@ def test_unset_refuses_a_shape_the_surgery_cannot_carve(repo: pathlib.Path) -> N
 def test_set_config_value_invalid_rolls_back(repo: pathlib.Path) -> None:
     err = write.set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True)
     assert err is not None  # invalid enum -> rejected
-    # the repo file was rolled back to its prior contents (run_commands="yes").
-    assert layer.load_effective(repo).config.sandbox.run_commands == "yes"
+    # the repo file was rolled back to its prior contents (run_commands="allow").
+    assert layer.load_effective(repo).config.sandbox.run_commands == "allow"
 
 
 def test_set_config_value_rejects_a_value_masked_by_a_higher_layer(repo: pathlib.Path) -> None:
     """An engine writer rejects a value invalid on its own even when a higher layer masks it.
 
-    The repo layer sets sandbox.run_commands="yes", so a bad global enum merges valid; only the
+    The repo layer sets sandbox.run_commands="allow", so a bad global enum merges valid; only the
     standalone written-value check catches it, shared with the CLI's guard.
     """
     gpath = repo.parent / "g" / "agent6" / "config.toml"
@@ -294,7 +294,7 @@ def test_set_config_value_rejects_a_value_masked_by_a_higher_layer(repo: pathlib
 
     assert err is not None and "sandbox.run_commands" in err
     assert gpath.read_text(encoding="utf-8") == before  # the masked bad value rolled back
-    assert layer.load_effective(repo).config.sandbox.run_commands == "yes"  # repo layer intact
+    assert layer.load_effective(repo).config.sandbox.run_commands == "allow"  # repo layer intact
 
 
 def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: pathlib.Path) -> None:
@@ -464,9 +464,9 @@ def test_set_config_table_rejects_a_masked_invalid_leaf(repo: pathlib.Path) -> N
 
 def test_flag_layer_wins(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     flag = tmp_path / "flag.toml"
-    flag.write_text('[sandbox]\nrun_commands = "no"\n', encoding="utf-8")
+    flag.write_text('[sandbox]\nrun_commands = "deny"\n', encoding="utf-8")
     eff = layer.load_effective(repo, (flag,))
-    assert eff.config.sandbox.run_commands == "no"
+    assert eff.config.sandbox.run_commands == "deny"
     assert eff.sources["sandbox.run_commands"] == f"flag ({flag})"
 
 
@@ -485,10 +485,10 @@ def test_repeated_flag_layers_land_in_order(repo: pathlib.Path, tmp_path: pathli
 
 
 def test_overlay_is_highest_layer(repo: pathlib.Path) -> None:
-    overlay = {"sandbox": {"run_commands": "no"}, "review": {"trigger": "periodic"}}
+    overlay = {"sandbox": {"run_commands": "deny"}, "review": {"trigger": "periodic"}}
     eff = layer.load_effective_with_overlay(repo, overlay)
     # Overlay beats the repo value.
-    assert eff.config.sandbox.run_commands == "no"
+    assert eff.config.sandbox.run_commands == "deny"
     assert eff.sources["sandbox.run_commands"] == "machine"
     # Overlay sets a brand-new value.
     assert eff.config.review.trigger == "periodic"
@@ -499,7 +499,7 @@ def test_overlay_is_highest_layer(repo: pathlib.Path) -> None:
 
 def test_empty_overlay_matches_load_effective(repo: pathlib.Path) -> None:
     eff = layer.load_effective_with_overlay(repo, {})
-    assert eff.config.sandbox.run_commands == "yes"
+    assert eff.config.sandbox.run_commands == "allow"
 
 
 def test_a_bad_leaf_from_a_machine_overlay_names_its_layer(repo: pathlib.Path) -> None:
@@ -575,7 +575,7 @@ def test_materialize_roundtrips(repo: pathlib.Path, tmp_path: pathlib.Path) -> N
     # The materialized file must be a complete, valid config on its own.
     reloaded = load_config(out)
     assert reloaded.harness.verify_command == ("pytest", "-q")
-    assert reloaded.sandbox.run_commands == "yes"
+    assert reloaded.sandbox.run_commands == "allow"
     assert reloaded.providers["anthropic"].api_format == "anthropic"
 
 
@@ -789,7 +789,7 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     assert results["b"] is None  # ...without taking B's valid write down with it
     eff = layer.load_effective(repo)
     assert eff.config.git.dirty_tree == "stash"  # B's update survived A's rollback
-    assert eff.config.sandbox.run_commands == "yes"  # A rolled back to the prior value
+    assert eff.config.sandbox.run_commands == "allow"  # A rolled back to the prior value
 
 
 def test_prepare_write_target_hands_back_the_created_state_base(
@@ -881,7 +881,7 @@ def test_engine_writers_refuse_a_write_into_an_unparseable_target(
     before = gcfg.read_text(encoding="utf-8")
 
     with pytest.raises(ConfigError):
-        write.set_config_value(repo, "sandbox.run_commands", "no")
+        write.set_config_value(repo, "sandbox.run_commands", "deny")
 
     assert gcfg.read_text(encoding="utf-8") == before
 

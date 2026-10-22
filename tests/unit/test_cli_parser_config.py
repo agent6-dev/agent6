@@ -108,7 +108,7 @@ def test_config_get_does_not_offer_keys_it_rejects(
 
     (tmp_path / "agent6").mkdir()
     (tmp_path / "agent6" / "config.toml").write_text(
-        '[presets.mine.sandbox]\nrun_commands = "yes"\n', encoding="utf-8"
+        '[presets.mine.sandbox]\nrun_commands = "allow"\n', encoding="utf-8"
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.chdir(tmp_path)

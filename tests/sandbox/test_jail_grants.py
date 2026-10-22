@@ -127,7 +127,7 @@ def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_w
         {
             "sandbox": {
                 "isolation": isolation,
-                "run_commands": "yes",
+                "run_commands": "allow",
                 "extra_read_paths": [str(grant)],
             }
         }

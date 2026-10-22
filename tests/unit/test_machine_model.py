@@ -650,7 +650,7 @@ def test_machine_overlay_cannot_name_a_system_prompt_file(tmp_path: pathlib.Path
 def test_machine_overlay_cannot_define_a_preset(tmp_path: pathlib.Path) -> None:
     # A `[config.presets.<name>]` table would splice operator-only policy into the effective config.
     body = VALID_MACHINE + (
-        '\n[config.presets.partial.sandbox]\nprotect_git = "off"\nrun_commands = "yes"\n'
+        '\n[config.presets.partial.sandbox]\nprotect_git = "off"\nrun_commands = "allow"\n'
     )
     problems = _problems(tmp_path, body)
     assert any("presets" in p for p in problems)

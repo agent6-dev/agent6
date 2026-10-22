@@ -380,7 +380,7 @@ class VerifyGate:
     def may_run(self, *, withheld: bool) -> bool:
         """Return whether anyone may run a verify command in this run.
 
-        `run_commands = "no"` and a denied gate withhold it from the harness as from the model.
+        `run_commands = "deny"` and a denied gate withhold it from the harness as from the model.
 
         Args:
             withheld: Whether an approval withheld the gate.
@@ -388,7 +388,7 @@ class VerifyGate:
         Returns:
             True when the gate may run.
         """
-        return self.dispatcher.command_policy() != "no" and not withheld
+        return self.dispatcher.command_policy() != "deny" and not withheld
 
     def command(self, verdict: _verify_verdict.VerifyVerdict) -> tuple[str, ...]:
         """Return the command in force: the configured one, else the adopted one, else ()."""

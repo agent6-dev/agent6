@@ -30,7 +30,7 @@ def _dispatcher(tmp_path: pathlib.Path, checkin: float) -> dispatch.ToolDispatch
     session_dir.mkdir(exist_ok=True)
     cfg = Config.model_validate(
         {
-            "sandbox": {"run_commands": "yes"},
+            "sandbox": {"run_commands": "allow"},
             "harness": {"command_checkin_s": checkin},
         }
     )
@@ -113,7 +113,7 @@ def test_the_verify_gate_is_never_handed_back(tmp_path: pathlib.Path) -> None:
     session_dir.mkdir(exist_ok=True)
     cfg = Config.model_validate(
         {
-            "sandbox": {"run_commands": "yes"},
+            "sandbox": {"run_commands": "allow"},
             "harness": {
                 "command_checkin_s": 0.5,
                 "verify_command": ["/bin/sh", "-c", "sleep 2; echo verified"],
@@ -203,7 +203,7 @@ def test_a_read_only_mode_cannot_background(tmp_path: pathlib.Path) -> None:
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"
     session_dir.mkdir(exist_ok=True)
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     d = dispatch.ToolDispatcher(
         root=root,
         config=cfg,
@@ -331,7 +331,7 @@ def test_a_plan_or_ask_command_runs_bounded_instead_of_handing_back(tmp_path: pa
     session_dir = tmp_path / "session"
     session_dir.mkdir(exist_ok=True)
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "yes"}, "harness": {"command_checkin_s": 0.3}}
+        {"sandbox": {"run_commands": "allow"}, "harness": {"command_checkin_s": 0.3}}
     )
     d = dispatch.ToolDispatcher(
         root=root,

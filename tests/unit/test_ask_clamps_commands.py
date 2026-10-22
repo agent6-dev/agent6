@@ -22,26 +22,26 @@ def _cfg(run_commands: str) -> Config:
 def test_auto_approval_becomes_a_prompt_in_ask() -> None:
     """Auto approval becomes a prompt in ask.
 
-    An ask is a question with the operator sitting there; `run_commands = "yes"` could run the
+    An ask is a question with the operator sitting there; `run_commands = "allow"` could run the
     command it was asked to write.
     """
-    assert _cfg("yes").with_run_commands_clamped().sandbox.run_commands == "ask"
+    assert _cfg("allow").with_run_commands_clamped().sandbox.run_commands == "ask"
 
 
-@pytest.mark.parametrize("setting", ["ask", "no"])
+@pytest.mark.parametrize("setting", ["ask", "deny"])
 def test_the_clamp_only_ever_tightens(setting: str) -> None:
-    """`no` stays refused: a run may narrow a boundary the operator set, never widen one."""
+    """`deny` stays refused: a run may narrow a boundary the operator set, never widen one."""
     assert _cfg(setting).with_run_commands_clamped().sandbox.run_commands == setting
 
 
 def test_the_clamp_leaves_the_rest_of_the_config_alone() -> None:
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "yes", "protect_git": "on"}, "preset": "no_review"}
+        {"sandbox": {"run_commands": "allow", "protect_git": "on"}, "preset": "no_review"}
     )
     clamped = cfg.with_run_commands_clamped()
     assert clamped.sandbox.protect_git == "on"
     assert clamped.preset == "no_review"
-    assert cfg.sandbox.run_commands == "yes"  # the operator's config is untouched
+    assert cfg.sandbox.run_commands == "allow"  # the operator's config is untouched
 
 
 def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
@@ -61,32 +61,32 @@ def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
     monkeypatch.chdir(tmp_path)
     modes: tuple[tuple[Literal["run", "plan", "ask"], str], ...] = (
         ("ask", "ask"),
-        ("run", "yes"),
+        ("run", "allow"),
     )
     for mode, expected in modes:
         seen.clear()
         run_mod.run_task(
-            _cfg("yes"), "q", started_at=time.time(), frontend=mock.MagicMock(), mode=mode
+            _cfg("allow"), "q", started_at=time.time(), frontend=mock.MagicMock(), mode=mode
         )
         assert seen == [expected], f"{mode} saw {seen}"
 
 
 def test_no_commands_pins_the_knob_shut() -> None:
     """--no-commands is the symmetric flag to --auto-approve: one knob, two per-invocation pins."""
-    for start in ("yes", "ask", "no"):
+    for start in ("allow", "ask", "deny"):
         cfg = Config.model_validate({"sandbox": {"run_commands": start}})
-        assert cfg.with_sandbox_overrides(no_commands=True).sandbox.run_commands == "no"
+        assert cfg.with_sandbox_overrides(no_commands=True).sandbox.run_commands == "deny"
 
 
 def test_tightening_needs_no_permission_but_widening_does() -> None:
     """Tightening needs no permission but widening does.
 
-    --auto-approve never resurrects a withheld "no"; --no-commands always may tighten.
+    --auto-approve never resurrects a withheld "deny"; --no-commands always may tighten.
     """
-    withheld = Config.model_validate({"sandbox": {"run_commands": "no"}})
-    assert withheld.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "no"
+    withheld = Config.model_validate({"sandbox": {"run_commands": "deny"}})
+    assert withheld.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "deny"
     asked = Config.model_validate({"sandbox": {"run_commands": "ask"}})
-    assert asked.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "yes"
+    assert asked.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "allow"
 
 
 def test_an_explicit_auto_approve_survives_the_ask_clamp(
@@ -94,7 +94,7 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
 ) -> None:
     """An explicit --auto-approve survives the ask clamp.
 
-    The clamp stops an ask inheriting a standing `run_commands = "yes"`; the flag typed on this
+    The clamp stops an ask inheriting a standing `run_commands = "allow"`; the flag typed on this
     invocation is the most specific layer and unreachable by the LLM.
     """
     from agent6.app import _setup, preflight
@@ -116,4 +116,4 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
         mode="ask",
         sandbox_overrides=_setup.SandboxOverrides(auto_approve=True),
     )
-    assert seen == ["yes"], f"the operator's own flag was undone: {seen}"
+    assert seen == ["allow"], f"the operator's own flag was undone: {seen}"

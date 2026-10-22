@@ -178,12 +178,12 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
 
         Args:
             isolation: The resolved isolation level, "none" for an unconfined run.
-            cfg: The run's config, whose `[sandbox].run_commands` is "yes" for an unconfined run.
+            cfg: The run's config, whose `[sandbox].run_commands` is "allow" for an unconfined run.
 
         Returns:
             Whether the run may go ahead.
         """
-        if isolation != "none" or cfg.sandbox.run_commands != "yes":
+        if isolation != "none" or cfg.sandbox.run_commands != "allow":
             return True
         # No scope: docs/security.md makes this a one-time gate, never an "always".
         asked = "Run commands UNSANDBOXED on this host, with no per-command prompt?"

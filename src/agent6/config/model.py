@@ -372,10 +372,10 @@ class Config(pydantic.BaseModel):
 
         Args:
             disable_sandbox: Force `sandbox.isolation = "none"`.
-            auto_approve: Turn `run_commands` `ask` into `yes` and every MCP server's
-                `approve` too; a configured `no` stays, since a flag never grants what the
+            auto_approve: Turn `run_commands` `ask` into `allow` and every MCP server's
+                `approve` too; a configured `deny` stays, since a flag never grants what the
                 standing policy denied.
-            no_commands: Pin `run_commands` to `no`; tightening needs no permission.
+            no_commands: Pin `run_commands` to `deny`; tightening needs no permission.
 
         Returns:
             The config with the flags applied; self when none is set.
@@ -386,13 +386,13 @@ class Config(pydantic.BaseModel):
         sandbox = data.setdefault("sandbox", {})
         if disable_sandbox:
             sandbox["isolation"] = "none"
-        if auto_approve and self.sandbox.run_commands != "no":
-            sandbox["run_commands"] = "yes"
+        if auto_approve and self.sandbox.run_commands != "deny":
+            sandbox["run_commands"] = "allow"
         if auto_approve:
             for server in data.get("mcp", {}).get("servers", {}).values():
-                server["approve"] = "yes"
+                server["approve"] = "allow"
         if no_commands:
-            sandbox["run_commands"] = "no"
+            sandbox["run_commands"] = "deny"
         return Config.model_validate(data)
 
     def with_machine_agent_overrides(
@@ -479,15 +479,15 @@ class Config(pydantic.BaseModel):
         return tuple(out)
 
     def with_run_commands_clamped(self) -> Config:
-        """Return a copy with `sandbox.run_commands` `yes` clamped to `ask` for an interactive mode.
+        """Clamp `sandbox.run_commands` from `allow` to `ask` for an interactive mode.
 
         Ask and plan run with the operator present, often outside a repo, so nothing runs
-        unwatched; `no` stays, since a run never loosens a boundary the operator set.
+        unwatched; `deny` stays, since a run never loosens a boundary the operator set.
 
         Returns:
             The clamped config; self when nothing changes.
         """
-        if self.sandbox.run_commands != "yes":
+        if self.sandbox.run_commands != "allow":
             return self
         data = self.model_dump(mode="python")
         data.setdefault("sandbox", {})["run_commands"] = "ask"

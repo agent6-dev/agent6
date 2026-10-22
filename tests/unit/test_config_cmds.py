@@ -169,7 +169,7 @@ def test_config_set_refuses_a_target_that_does_not_parse(
     monkeypatch.setattr(paths, "global_config_path", _global_path)
     monkeypatch.setattr(paths, "global_config_path", _global_path)
 
-    rc = cli_main(["config", "set", "sandbox.run_commands", "yes"])
+    rc = cli_main(["config", "set", "sandbox.run_commands", "allow"])
     out = capsys.readouterr()
     assert rc == 2, "a target that does not parse must not report success"
     assert "Set sandbox.run_commands" not in out.out
@@ -413,7 +413,7 @@ def test_config_set_rejects_a_masked_invalid_value(
 
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "--repo", "sandbox.run_commands", "yes"]) == 0  # the mask
+    assert main(["config", "set", "--repo", "sandbox.run_commands", "allow"]) == 0  # the mask
     capsys.readouterr()
     # Global set of an invalid value -> rejected despite the repo mask.
     rc = main(["config", "set", "sandbox.run_commands", "bogus"])
@@ -421,7 +421,7 @@ def test_config_set_rejects_a_masked_invalid_value(
     err = capsys.readouterr().err
     assert "sandbox.run_commands" in err  # a friendly per-field error, not a merge dump
     # A valid global set still succeeds.
-    assert main(["config", "set", "sandbox.run_commands", "no"]) == 0
+    assert main(["config", "set", "sandbox.run_commands", "deny"]) == 0
 
 
 def test_config_set_rejects_a_newly_invalid_value(
@@ -485,7 +485,7 @@ def test_config_set_unknown_leaf_gets_a_did_you_mean(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    rc = main(["config", "set", "sandbox.run_command", "yes"])  # missing 's'
+    rc = main(["config", "set", "sandbox.run_command", "allow"])  # missing 's'
     assert rc == 2
     err = capsys.readouterr().err
     assert "unknown config key 'sandbox.run_command'" in err
@@ -622,12 +622,12 @@ def test_config_fix_drops_a_masked_invalid_global_value(
     global_path.write_text('[sandbox]\nrun_commands = "bogus"\n', encoding="utf-8")
     repo_path = paths.repo_config_path(repo)
     repo_path.parent.mkdir(parents=True)
-    repo_path.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
+    repo_path.write_text('[sandbox]\nrun_commands = "allow"\n', encoding="utf-8")
 
     assert main(["config", "fix"]) == 0
     assert "sandbox.run_commands" in capsys.readouterr().out
     assert "run_commands" not in global_path.read_text(encoding="utf-8")
-    assert 'run_commands = "yes"' in repo_path.read_text(encoding="utf-8")
+    assert 'run_commands = "allow"' in repo_path.read_text(encoding="utf-8")
     other_repo = tmp_path / "other"
     other_repo.mkdir()
     assert layer.load_effective(other_repo).config.sandbox.run_commands == "ask"
@@ -959,8 +959,8 @@ def test_config_set_names_the_flag_file_that_shadows_the_write(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     flag = tmp_path / "f.toml"
-    flag.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
-    rc = main(["--config", str(flag), "config", "set", "sandbox.run_commands", "no"])
+    flag.write_text('[sandbox]\nrun_commands = "allow"\n', encoding="utf-8")
+    rc = main(["--config", str(flag), "config", "set", "sandbox.run_commands", "deny"])
     out = capsys.readouterr().out
     assert rc == 0
     assert f"--config {flag} overrides sandbox.run_commands" in out
@@ -998,10 +998,10 @@ def test_config_set_shadow_note_names_the_last_file_setting_the_key(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     first = tmp_path / "first.toml"
     second = tmp_path / "second.toml"
-    first.write_text('[sandbox]\nrun_commands = "yes"\nprotect_git = "on"\n', encoding="utf-8")
+    first.write_text('[sandbox]\nrun_commands = "allow"\nprotect_git = "on"\n', encoding="utf-8")
     second.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
     both = ["--config", str(first), "--config", str(second)]
-    assert main([*both, "config", "set", "sandbox.run_commands", "no"]) == 0
+    assert main([*both, "config", "set", "sandbox.run_commands", "deny"]) == 0
     out = capsys.readouterr().out
     assert f"--config {second} overrides sandbox.run_commands" in out
     assert str(first) not in out
@@ -1020,7 +1020,7 @@ def test_config_show_legend_names_the_flag_file(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     flag = tmp_path / "f.toml"
-    flag.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
+    flag.write_text('[sandbox]\nrun_commands = "allow"\n', encoding="utf-8")
     rc = main(["--config", str(flag), "config", "show"])
     out = capsys.readouterr().out
     assert rc == 0

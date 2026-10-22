@@ -513,13 +513,13 @@ def test_config_endpoint_sets_typed_values_and_unsets_to_the_next_layer(
     status, data = _post(
         port,
         "/api/config",
-        {"key": "sandbox.run_commands", "value": "no"},
+        {"key": "sandbox.run_commands", "value": "deny"},
     )
     assert status == 200 and data["ok"] is True
     status, body, _ = _get(port, "/api/config")
     config = json.loads(body)
     assert config["git.commit.name"]["value"] == "true"
-    assert config["sandbox.run_commands"]["value"] == "no"
+    assert config["sandbox.run_commands"]["value"] == "deny"
     assert config["git.commit.name"]["source"] == "global"
 
     status, data = _post(

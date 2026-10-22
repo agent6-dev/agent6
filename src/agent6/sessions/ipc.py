@@ -533,8 +533,8 @@ def effective_run_commands(configured: str, session_dir: pathlib.Path) -> str:
     """Return the command policy in force right now.
 
     One answer from the configured knob, the session choice and the away mode, so every
-    consumer agrees. Only `ask` moves: a configured `yes` or `no` is the standing policy.
-    `no` withdraws the tools, the same wiring for `--no-commands`, a session deny and an
+    consumer agrees. Only `ask` moves: a configured `allow` or `deny` is the standing policy.
+    `deny` withdraws the tools, the same wiring for `--no-commands`, a session deny and an
     away mode of `deny`.
 
     Args:
@@ -542,14 +542,14 @@ def effective_run_commands(configured: str, session_dir: pathlib.Path) -> str:
         session_dir: The session directory.
 
     Returns:
-        `no`, `ask` or `yes`.
+        `deny`, `ask` or `allow`.
     """
     if configured != "ask":
         return configured
     if session_allow_set(session_dir, COMMAND_SCOPE):
-        return "yes"
+        return "allow"
     if session_deny_set(session_dir, COMMAND_SCOPE) or away_mode(session_dir) == "deny":
-        return "no"
+        return "deny"
     return "ask"
 
 

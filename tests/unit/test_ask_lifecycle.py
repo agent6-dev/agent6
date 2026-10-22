@@ -73,9 +73,9 @@ def test_a_resumed_ask_is_still_clamped() -> None:
     """A resumed ask is still clamped: the clamp lives with the mode, not one lifecycle."""
     from agent6.app import _setup
 
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     assert _setup.session_config(cfg, "ask").sandbox.run_commands == "ask"
-    assert _setup.session_config(cfg, "run").sandbox.run_commands == "yes"
+    assert _setup.session_config(cfg, "run").sandbox.run_commands == "allow"
 
 
 def test_a_run_can_be_seeded_from_an_ask(

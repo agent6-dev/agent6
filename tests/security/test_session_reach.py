@@ -44,7 +44,7 @@ def _serving(
     process.write_session_netns_pid(session_dir, net.holder_pid)
     dispatcher = dispatch.ToolDispatcher(
         root=tmp_path,
-        config=Config.model_validate({"sandbox": {"run_commands": "yes"}}),
+        config=Config.model_validate({"sandbox": {"run_commands": "allow"}}),
         isolation="full",
         session_dir=session_dir,
         use_jail_session=True,
@@ -84,7 +84,7 @@ def test_exec_runs_where_the_agent_runs(tmp_path: pathlib.Path) -> None:
     try:
         code = net_cmds.exec_in_session(
             layout,
-            Config.model_validate({"sandbox": {"run_commands": "yes"}}),
+            Config.model_validate({"sandbox": {"run_commands": "allow"}}),
             tmp_path,
             (
                 "/usr/bin/python3",

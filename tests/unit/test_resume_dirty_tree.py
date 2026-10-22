@@ -27,7 +27,7 @@ from agent6.ui.cli import cli_main, run
 _CONFIG = """
 [sandbox]
 isolation = "none"
-run_commands = "no"
+run_commands = "deny"
 
 [models.worker]
 provider = "p"

@@ -196,7 +196,7 @@ class Harness:
             decisions=self._load_decisions(),
             skills=self._load_skills(),
             isolation=self.dispatcher.isolation,
-            commands_allowed=self.dispatcher.command_policy() != "no",
+            commands_allowed=self.dispatcher.command_policy() != "deny",
             protected_paths=bool(self.dispatcher.extra_protect_paths),
             dag_available=self.dispatcher.dag_available,
         )
@@ -328,7 +328,9 @@ class Harness:
         self.adopted_on_resume = _loop_resume.carry_adopted_gate(self, snapshot)
         gate = self.gate.configured or self.adopted_on_resume
         withheld = (
-            not gate and bool(snapshot.verify_command) and self.dispatcher.command_policy() == "no"
+            not gate
+            and bool(snapshot.verify_command)
+            and self.dispatcher.command_policy() == "deny"
         )
         if gate != snapshot.verify_command and not withheld:
             was = " ".join(snapshot.verify_command) or "none"
@@ -340,7 +342,7 @@ class Harness:
             self.log(f"LOOP: verify gate swapped on resume: {was} -> {now}")
             self.emit("loop.verify_swapped", was=list(snapshot.verify_command), now=list(gate))
 
-        if snapshot.verify_withheld and gate and self.dispatcher.command_policy() != "no":
+        if snapshot.verify_withheld and gate and self.dispatcher.command_policy() != "deny":
             # Denial resets per execution; its notice can survive even in a compacted summary.
             conversation.notice(
                 "[harness verify] Resumed: run_verify_command is available in this execution."

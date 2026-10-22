@@ -234,7 +234,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     # The execution writes files and nothing else; agent6 runs the validators itself.
     overlay["sandbox"] = {
         **overlay.get("sandbox", {}),
-        "run_commands": "no",
+        "run_commands": "deny",
         "fetch_approved_hosts": [],
     }
     overlay["harness"] = {**overlay.get("harness", {}), "metric": None}

@@ -390,9 +390,9 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     ):
         # An unattended machine auto-denies every run_command under 'ask'.
         always = (
-            f'set sandbox.run_commands = "yes" in {config_paths[-1]}'
+            f'set sandbox.run_commands = "allow" in {config_paths[-1]}'
             if config_paths
-            else "set `agent6 config set --repo sandbox.run_commands yes`"
+            else "set `agent6 config set --repo sandbox.run_commands allow`"
         )
         reporter.note(
             "this machine has mode='run' agent state(s) and"
@@ -446,7 +446,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             if state_cfg.workspace.setup_command and state_cfg.sandbox.run_commands == "ask":
                 reporter.refuse(
                     f"state {name!r} needs workspace setup, but sandbox.run_commands='ask'; "
-                    "use --auto-approve or set sandbox.run_commands='yes' to allow setup"
+                    "use --auto-approve or set sandbox.run_commands='allow' to allow setup"
                 )
                 return 2
     snapshot_keep = cfg.machine.snapshot_keep

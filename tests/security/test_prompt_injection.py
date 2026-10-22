@@ -33,7 +33,7 @@ provider = "anthropic"
 model = "x"
 [sandbox]
 isolation = "auto"
-run_commands = "no"
+run_commands = "deny"
 protect_git = "on"
 [git]
 dirty_tree = "ask"
@@ -399,7 +399,7 @@ def test_unknown_tool_rejected(tmp_path: pathlib.Path, fake: str) -> None:
 
 
 def test_run_command_disabled_by_config(tmp_path: pathlib.Path) -> None:
-    d = _dispatcher(tmp_path)  # run_commands = "no" in _VALID_TOML
+    d = _dispatcher(tmp_path)  # run_commands = "deny" in _VALID_TOML
     with pytest.raises(errors.ToolError, match="not available"):
         d.dispatch("run_command", {"argv": ["/bin/echo", "hi"]})
 

@@ -1346,7 +1346,7 @@ def test_run_refuses_clone_setup_under_ask_at_preflight(
     assert "needs workspace setup" in output
     assert "sandbox.run_commands='ask'" in output
     assert "--auto-approve" in output
-    assert "sandbox.run_commands='yes'" in output
+    assert "sandbox.run_commands='allow'" in output
 
 
 def test_run_warns_on_mode_run_states_under_ask_policy(
@@ -1375,7 +1375,7 @@ def test_run_warns_naming_the_config_file_the_ask_came_from(
     config.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
     assert main(["--config", str(config), "machine", "run", str(f)]) == 2
     err = capsys.readouterr().err
-    assert f'set sandbox.run_commands = "yes" in {config}' in err
+    assert f'set sandbox.run_commands = "allow" in {config}' in err
     assert "config set --repo" not in err
 
 
@@ -1393,7 +1393,7 @@ def test_run_warns_naming_the_last_config_file(
     second.write_text("[review]\ninterval_turns = 7\n", encoding="utf-8")
     assert main(["--config", str(first), "--config", str(second), "machine", "run", str(f)]) == 2
     err = capsys.readouterr().err
-    assert f'set sandbox.run_commands = "yes" in {second}' in err
+    assert f'set sandbox.run_commands = "allow" in {second}' in err
     assert str(first) not in err
 
 
@@ -1583,10 +1583,10 @@ def test_apply_operator_env_grants_upgrades_ask_never_no(
 
     monkeypatch.setenv("AGENT6_AUTO_APPROVE", "1")
     ask = Config.model_validate({"sandbox": {"run_commands": "ask"}})
-    assert machine_agent._apply_operator_env_grants(ask).sandbox.run_commands == "yes"
-    no = Config.model_validate({"sandbox": {"run_commands": "no"}})
+    assert machine_agent._apply_operator_env_grants(ask).sandbox.run_commands == "allow"
+    denied = Config.model_validate({"sandbox": {"run_commands": "deny"}})
     assert (
-        machine_agent._apply_operator_env_grants(no).sandbox.run_commands == "no"
+        machine_agent._apply_operator_env_grants(denied).sandbox.run_commands == "deny"
     )  # never resurrected
     monkeypatch.delenv("AGENT6_AUTO_APPROVE")
     assert (

@@ -47,7 +47,7 @@ mkdir -p "$XDG_CONFIG_HOME/agent6"
 cat > "$XDG_CONFIG_HOME/agent6/config.toml" <<EOF
 [sandbox]
 network = "session"
-run_commands = "yes"
+run_commands = "allow"
 protect_git = true
 [git]
 dirty_tree = "ask"

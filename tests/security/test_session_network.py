@@ -311,7 +311,7 @@ def test_the_dev_server_case_end_to_end(tmp_path: pathlib.Path) -> None:
 
     What the feature is for, through the dispatcher a run uses.
     """
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     sess = pathlib.Path(tempfile.mkdtemp(prefix="privnet-", dir=tmp_path))
     d = dispatch.ToolDispatcher(
         root=tmp_path, config=cfg, isolation="full", session_dir=sess, use_jail_session=True
@@ -466,13 +466,13 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
     port = _PORT + 3
     cfg = Config.model_validate(
         {
-            "sandbox": {"run_commands": "yes"},
+            "sandbox": {"run_commands": "allow"},
             "mcp": {
                 "enabled": True,
                 "servers": {
                     "browser": {
                         "command": ["/usr/bin/python3", str(script)],
-                        "approve": "yes",
+                        "approve": "allow",
                         "sandbox": {"network": server_network},
                     }
                 },
@@ -592,7 +592,7 @@ def test_two_runs_can_each_hold_the_same_port(tmp_path: pathlib.Path) -> None:
     A property of per-run networks people lean on; neither collides with the other or with
     the host.
     """
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     port = _PORT + 4
     serve = (
         "import http.server,socketserver;"

@@ -59,7 +59,7 @@ def _assert_withheld_are_refused(
 def test_a_command_tool_withheld_by_policy_is_refused(tmp_path: pathlib.Path) -> None:
     d = dispatch.ToolDispatcher(
         root=tmp_path,
-        config=Config.model_validate({"sandbox": {"run_commands": "no"}}),
+        config=Config.model_validate({"sandbox": {"run_commands": "deny"}}),
         isolation="none",
     )
     _assert_withheld_are_refused(d, {"run_command", "stop_background"})

@@ -64,7 +64,7 @@ def _runnable_cfg(git_cfg: GitConfig) -> Config:
         git=git_cfg,
         # Answerable, so the worktree policy under test is what decides: the
         # `ask` default has nobody to answer it here and is refused first.
-        sandbox=SandboxConfig(run_commands="yes"),
+        sandbox=SandboxConfig(run_commands="allow"),
     )
 
 

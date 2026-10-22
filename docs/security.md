@@ -252,7 +252,7 @@ Every path they take resolves through `Workspace`:
 - Rewriting an editable-install `.pth` corrupts a venv invisibly (venvs are gitignored), so those writes refuse
     - reads stay allowed; an editable install still imports itself inside the jail (the repo is bound at its real path)
 - Inside the per-repo state dir (`$XDG_STATE_HOME/agent6/<repo-id>/`), the edit tools may write `memory/` and nothing else; harness-written operator rulings live outside that grant in `decisions.md`.
-- Uncovered: with `isolation = "none"` and `run_commands = "yes"`, a command reads a denied path directly (`run_command` argv is not screened)
+- Uncovered: with `isolation = "none"` and `run_commands = "allow"`, a command reads a denied path directly (`run_command` argv is not screened)
 
 **Prompt reads.** The agent process itself reads `AGENTS.md` and the manifests the verify inference uses (`pyproject.toml`, `package.json`, a Makefile and the like), and their text reaches the provider.
 
@@ -274,7 +274,7 @@ Memory (`<state_dir>/memory/`) holds facts the model may correct; rules belong i
 ### 4. Commands and environment
 
 Every command tool (`run_command`, `run_verify_command`, `run_metric_command`, `stop_background`) answers to `[sandbox].run_commands`; the first three run jailed, and `stop_background` signals a jailed child agent6 already started.
-`run_commands = "no"` withholds the verify gate too, and such a run is gateless: its editing turns commit as checkpoints.
+`run_commands = "deny"` withholds the verify gate too, and such a run is gateless: its editing turns commit as checkpoints.
 Under `ask`, a denied gate is withheld the same way for the rest of the run (no retry loop can discharge a refusal), and the run ends unverified.
 
 The agent works within the environment it is given and cannot expand it:
@@ -287,8 +287,8 @@ The agent works within the environment it is given and cannot expand it:
 - The setup command of an isolated workspace (`[workspace].setup_command`, or an AGENTS.md `## Setup command` block) is a jailed command like any other
     - Machine clones use the operator's configured command, else the AGENTS.md block at the starting commit recorded in `machine.begin`, never a block committed by a run state; read-only agent states run this setup too, under their command policy and jail
     - Machine setup outcomes follow the [state setup and failure rules](state-machines.md#agent)
-    - A machine clone needing setup refuses `sandbox.run_commands = "ask"` at preflight rather than asking; use `--auto-approve` or set it to `"yes"` to allow setup
-    - it runs through the run's own jail: the isolation, network and grants every command of that run gets, the approval `run_commands = "ask"` asks, and nothing under `"no"`
+    - A machine clone needing setup refuses `sandbox.run_commands = "ask"` at preflight rather than asking; use `--auto-approve` or set it to `"allow"` to allow setup
+    - it runs through the run's own jail: the isolation, network and grants every command of that run gets, the approval `run_commands = "ask"` asks, and nothing under `"deny"`
     - it has no network of its own and no read of the checkout the workspace was cut from: a setup step with a wider network would let a dependency it fetches run with it
     - an AGENTS.md block is repository content, so a repository can state the command; it reaches what a command the model chose would reach
     - the files it leaves untracked stay out of the run's commits
@@ -398,7 +398,7 @@ Below `full` there is no network namespace: `auto` degrades to the agent process
 
 ### 6. Approvals
 
-- `[sandbox].run_commands` (`ask` default, `yes`, `no`) gates every command tool; an `ask` prompt shows the argv
+- `[sandbox].run_commands` (`ask` default, `allow`, `deny`) gates every command tool; an `ask` prompt shows the argv
 - Each `mcp__<server>__<tool>` call prompts with its arguments (`[mcp.servers.<name>].approve`, default `ask`).
 - An "allow all" answer covers that server for the run, never the command tools or another server
 - A tool name matching no configured server is refused, not prompted.
@@ -409,7 +409,7 @@ Below `full` there is no network namespace: `auto` degrades to the agent process
   A question under `deny` or `approve` gets empty answers with a note to decide alone.
   An unattended machine auto-denies.
 - `agent6 mcp serve` has no operator at all, so the tools that would prompt are not published.
-  Under `run_commands = "ask"` or `"no"` its command tools are absent from `tools/list`, and a client that names one is told which setting withheld it ([the tools](acp.md#as-an-mcp-server)).
+  Under `run_commands = "ask"` or `"deny"` its command tools are absent from `tools/list`, and a client that names one is told which setting withheld it ([the tools](acp.md#as-an-mcp-server)).
 
 ### 7. Git
 

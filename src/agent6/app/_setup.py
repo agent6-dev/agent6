@@ -252,9 +252,9 @@ def apply_git_ops_policy(cfg: Config) -> None:
 def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = None) -> Config:
     """Return the effective config for a session of the mode.
 
-    The interactive-mode clamp catches a standing `run_commands = "yes"` nobody is watching;
+    The interactive-mode clamp catches a standing `run_commands = "allow"` nobody is watching;
     the operator's flags land last, so an explicit `--auto-approve` stays in force and
-    `--no-commands` still pins "no".
+    `--no-commands` still pins "deny".
 
     Args:
         cfg: The loaded config.

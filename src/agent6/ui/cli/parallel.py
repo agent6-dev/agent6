@@ -84,7 +84,7 @@ def _parallel_approval_refusal(cfg: Config) -> str | None:
         " detached, with nobody to answer its prompts.\n"
         "  --auto-approve   approve every command in every lane\n"
         "  --no-commands    withhold commands from every lane\n"
-        "  (a hub has no flags: agent6 config set sandbox.run_commands yes|no, --repo"
+        "  (a hub has no flags: agent6 config set sandbox.run_commands allow|deny, --repo"
         " for this checkout)"
     )
 

@@ -378,9 +378,9 @@ def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel
         if cfg.sandbox.isolation == "auto" and reason is not None:
             print(f"  'full' is unavailable because {reason}")
     gate = {
-        "yes": "auto-approved",
+        "allow": "auto-approved",
         "ask": "prompted per call",
-        "no": "withheld from the model",
+        "deny": "withheld from the model",
     }[cfg.sandbox.run_commands]
     print(f"  commands:  {gate} (sandbox.run_commands = {cfg.sandbox.run_commands})")
     net = tools_policy.resolve_network(cfg, selected)

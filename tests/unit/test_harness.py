@@ -1324,7 +1324,7 @@ def test_the_first_model_call_carries_the_red_start_gate(
     provider = mock.MagicMock()
     provider.call.side_effect = ProviderError("down")
     dispatcher = mock.MagicMock()
-    dispatcher.command_policy.return_value = "yes"
+    dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = tools_results.ExecResult(
         returncode=1, stdout="FAILED test_x", stderr="", duration_s=5.0, exec_failed=False
     )
@@ -4892,7 +4892,7 @@ def test_resume_migrates_the_legacy_rulings_file_as_a_run_start_does(
 def test_a_commands_disabled_resume_keeps_the_withheld_gate_correction_pending(
     tmp_path: pathlib.Path,
 ) -> None:
-    """Resumed under run_commands = "no", the notice could not go out and the flag was saved off.
+    """Resumed under run_commands = "deny", the notice could not go out and the flag was saved off.
 
     A later resume with commands back never told the model the gate was available again.
     """
@@ -4910,7 +4910,7 @@ def test_a_commands_disabled_resume_keeps_the_withheld_gate_correction_pending(
     provider.call.return_value = _resp("all done")
     dispatcher = mock.MagicMock(operator_wait_s=0.0)
     dispatcher.set_run_root_node_id = mock.MagicMock()
-    dispatcher.command_policy.return_value = "no"
+    dispatcher.command_policy.return_value = "deny"
     wf = _wf(provider=provider, dispatcher=dispatcher, resume_state_path=snap_path)
     wf.config.harness.verify_command = ("true",)
     wf.resume()
@@ -8925,7 +8925,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
 
 
 def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pathlib.Path) -> None:
-    """`run_commands = "no"` withholds the verify gate from the harness and the model alike.
+    """`run_commands = "deny"` withholds the verify gate from the harness and the model alike.
 
     Gate presence has one owner, so under `verify_when = "step"` editing turns still commit.
     """
@@ -8943,7 +8943,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
 
     class DispatcherStub(_StubDispatcher):
         def command_policy(self) -> str:
-            return "no"
+            return "deny"
 
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
             if name == "finish_session":

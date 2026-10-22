@@ -72,7 +72,7 @@ def _worker_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
     subprocess.run(["git", "commit", "-qm", "seed"], check=True)
     cfg = tmp_path / "config.toml"
     cfg.write_text(
-        '[sandbox]\nisolation = "none"\nrun_commands = "yes"\n'
+        '[sandbox]\nisolation = "none"\nrun_commands = "allow"\n'
         '[harness]\nverify_when = "never"\nverify_infer = false\n'
         '[models.worker]\nprovider = "p"\nmodel = "m"\n'
         '[providers.p]\napi_format = "openai"\nbase_url = "http://127.0.0.1:1"\n'

@@ -35,7 +35,7 @@ provider = "anthropic"
 model = "x"
 [sandbox]
 isolation = "auto"
-run_commands = "no"
+run_commands = "deny"
 protect_git = "on"
 [git]
 dirty_tree = "ask"
@@ -47,8 +47,8 @@ max_tokens_fallback = 2000000
 """
 
 
-def _config(tmp_path: pathlib.Path, *, run_commands: str = "no") -> Config:
-    toml = _VALID_TOML.replace('run_commands = "no"', f'run_commands = "{run_commands}"')
+def _config(tmp_path: pathlib.Path, *, run_commands: str = "deny") -> Config:
+    toml = _VALID_TOML.replace('run_commands = "deny"', f'run_commands = "{run_commands}"')
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")
     return load_config(p)
@@ -99,7 +99,7 @@ def test_initialize_returns_server_info(tmp_path: pathlib.Path) -> None:
 
 
 def test_tools_list_advertises_five_tools(tmp_path: pathlib.Path) -> None:
-    server = _server(tmp_path, run_commands="yes")
+    server = _server(tmp_path, run_commands="allow")
     resps = _roundtrip(
         server,
         [{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}],
@@ -121,10 +121,10 @@ def test_tools_list_advertises_five_tools(tmp_path: pathlib.Path) -> None:
 def test_withdrawn_command_tools_are_absent_and_named(tmp_path: pathlib.Path) -> None:
     """Withdrawn command tools are absent from tools/list, and a call by name says why.
 
-    Under `run_commands = "no"` (or the non-interactive "ask" clamp) an offered-and-failing tool
+    Under `run_commands = "deny"` (or the non-interactive "ask" clamp) an offered-and-failing tool
     lies about the surface; a client calling one is told the real reason, not "unknown tool".
     """
-    server = _server(tmp_path)  # the fixture's default is "no"
+    server = _server(tmp_path)  # the fixture's default is "deny"
     resps = _roundtrip(
         server,
         [
@@ -140,7 +140,7 @@ def test_withdrawn_command_tools_are_absent_and_named(tmp_path: pathlib.Path) ->
     names = {t["name"] for t in resps[0]["result"]["tools"]}
     assert names == {"query_dag", "list_sessions"}
     err = resps[1]["error"]["message"]
-    assert "withdrawn" in err and "run_commands" in err and "'no'" in err
+    assert "withdrawn" in err and "run_commands" in err and "'deny'" in err
 
 
 def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(
@@ -154,7 +154,7 @@ def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(
     """
     p = tmp_path / "agent6.toml"
     p.write_text(
-        _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"').replace(
+        _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"').replace(
             'verify_command = ["true"]', ""
         ),
         encoding="utf-8",
@@ -389,7 +389,7 @@ def test_query_dag_reads_persisted_nodes(tmp_path: pathlib.Path) -> None:
 def test_run_verify_delegates_to_dispatcher(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    server = _server(tmp_path, run_commands="yes")
+    server = _server(tmp_path, run_commands="allow")
     captured: list[tuple[str, dict[str, Any]]] = []
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
@@ -419,7 +419,7 @@ def test_run_verify_delegates_to_dispatcher(
 def test_run_in_sandbox_validates_argv(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    server = _server(tmp_path, run_commands="yes")
+    server = _server(tmp_path, run_commands="allow")
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
         return results.ExecResult(
@@ -471,7 +471,7 @@ def test_every_published_schema_type_is_one_the_checker_validates(tmp_path: path
             found |= _types(schema["items"])
         return found
 
-    server = _server(tmp_path, run_commands="yes")
+    server = _server(tmp_path, run_commands="allow")
     for name, spec in server._tools.items():  # pyright: ignore[reportPrivateUsage]
         unchecked = _types(spec.input_schema) - checked_types
         assert not unchecked, f"{name} publishes type(s) {unchecked} the checker skips"
@@ -487,7 +487,7 @@ def test_tool_arguments_are_checked_against_the_published_schema(
     missing required field or a wrong scalar type is a -32602 invalid-params error, not a value that
     rides through to the handler and the jail.
     """
-    server = _server(tmp_path, run_commands="yes")
+    server = _server(tmp_path, run_commands="allow")
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
         raise AssertionError("handler must not run on a schema-invalid call")
@@ -530,7 +530,7 @@ def test_tool_arguments_are_checked_against_the_published_schema(
 def test_apply_patch_runs_verify_after(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    server = _server(tmp_path, run_commands="yes")
+    server = _server(tmp_path, run_commands="allow")
     calls: list[str] = []
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
@@ -567,7 +567,7 @@ def test_apply_patch_runs_verify_after(
 def test_apply_patch_surfaces_tool_error(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    server = _server(tmp_path, run_commands="yes")
+    server = _server(tmp_path, run_commands="allow")
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
         raise errors.ToolError("patch did not apply")
@@ -600,7 +600,7 @@ def test_unexecutable_operator_command_surfaces_as_iserror(
     it), but the MCP server's contract is isError results; letting it escape kills the whole `agent6
     mcp serve` process, and every later client call dies on a broken pipe.
     """
-    server = _server(tmp_path, run_commands="yes")
+    server = _server(tmp_path, run_commands="allow")
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
         raise errors.OperatorCommandUnexecutableError("verify command not found on the jail PATH")
@@ -630,7 +630,7 @@ def test_unexecutable_operator_command_surfaces_as_iserror(
 
 @pytest.mark.parametrize(
     ("configured", "offered"),
-    [("ask", False), ("yes", True), ("no", False)],
+    [("ask", False), ("allow", True), ("deny", False)],
 )
 def test_no_one_to_ask_withdraws_rather_than_breaks(configured: str, offered: bool) -> None:
     """With no one to ask, the asking tools are withdrawn rather than offered and broken.
@@ -644,7 +644,7 @@ def test_no_one_to_ask_withdraws_rather_than_breaks(configured: str, offered: bo
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": configured}, "harness": {"verify_command": ["true"]}}
     )
-    assert (ui_mcp_server._no_one_to_ask(cfg).sandbox.run_commands == "yes") is offered
+    assert (ui_mcp_server._no_one_to_ask(cfg).sandbox.run_commands == "allow") is offered
 
 
 def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: pathlib.Path) -> None:

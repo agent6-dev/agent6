@@ -56,7 +56,7 @@ config_version = 1
 [sandbox]
 isolation = "auto"
 network = "session"
-run_commands = "yes"
+run_commands = "allow"
 protect_git = "on"
 
 [git]

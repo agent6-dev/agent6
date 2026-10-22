@@ -127,7 +127,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
     """Add the per-invocation sandbox and approval override flags every paid command carries.
 
     `--disable-sandbox` is a one-off `sandbox.isolation = "none"`.
-    `--auto-approve` changes `sandbox.run_commands` from `ask` to `yes` and leaves `no` as it is.
+    `--auto-approve` sets `sandbox.run_commands` to `allow` unless it is `deny`.
 
     Args:
         parser: The verb's parser.
@@ -148,7 +148,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help=(
             "Approve every sandboxed command for this session without prompting. Changes"
-            " sandbox.run_commands from `ask` to `yes`, but never overrides `no` or changes"
+            " sandbox.run_commands from `ask` to `allow`, but never overrides `deny` or changes"
             " sandbox.isolation. With --disable-sandbox, this gives the agent"
             " unprompted host access."
         ),
@@ -158,7 +158,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help=(
             "Do not let this session run commands: no run_command, verify gate, or background"
-            " commands. Sets sandbox.run_commands to `no`. This is also how /btw runs its side"
+            " commands. Sets sandbox.run_commands to `deny`. This is also how /btw runs its side"
             " question."
         ),
     )

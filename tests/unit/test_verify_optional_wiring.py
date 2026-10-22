@@ -144,7 +144,7 @@ def test_a_execution_that_cannot_run_commands_is_gateless_wherever_it_starts(
         "-q",
     )
     withheld = Config.model_validate(
-        {"harness": {"verify_command": ["pytest", "-q"]}, "sandbox": {"run_commands": "no"}}
+        {"harness": {"verify_command": ["pytest", "-q"]}, "sandbox": {"run_commands": "deny"}}
     )
     assert (
         preflight.drop_gate_if_unrunnable(
@@ -194,7 +194,7 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: pathlib.P
         ),
     )
     wf.dispatcher = mock.MagicMock()
-    wf.dispatcher.command_policy.return_value = "no"  # denied mid-run
+    wf.dispatcher.command_policy.return_value = "deny"  # denied mid-run
     state = mock.MagicMock(spec=_loop_state.LoopState)
     state.verify = _verify_verdict.VerifyVerdict(last_ok=False, edited_since=False)
 
@@ -202,7 +202,7 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: pathlib.P
 
 
 def test_a_deny_mid_run_takes_the_gate_with_it(tmp_path: pathlib.Path) -> None:
-    """An effective policy of "no" under a configured gate keeps the gate, loses the tool, ends red.
+    """A mid-run "deny" under a configured gate withholds the tool and ends red.
 
     `deny for the rest of the run` and an away-mode of deny both flip it.
     """
@@ -215,7 +215,7 @@ def test_a_deny_mid_run_takes_the_gate_with_it(tmp_path: pathlib.Path) -> None:
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     assert "run_verify_command" in d.available_tool_names()
     ipc.set_away_mode(session_dir, "deny")
-    assert d.command_policy() == "no"
+    assert d.command_policy() == "deny"
     assert "run_verify_command" not in d.available_tool_names()
 
 
@@ -225,7 +225,7 @@ def test_a_gate_is_never_adopted_when_the_worker_cannot_run_one(tmp_path: pathli
 
     session_dir = tmp_path / "run"
     session_dir.mkdir()
-    cfg = Config.model_validate({"sandbox": {"run_commands": "no"}})
+    cfg = Config.model_validate({"sandbox": {"run_commands": "deny"}})
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     assert d.adopt_verify_command(("/bin/true",)) is False
     assert d._config.harness.verify_command == ()  # pyright: ignore[reportPrivateUsage]
@@ -340,7 +340,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
         ),
         encoding="utf-8",
     )
-    cfg = _role_cfg({"sandbox": {"run_commands": "yes"}})
+    cfg = _role_cfg({"sandbox": {"run_commands": "allow"}})
     effective = layer.EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _effective(*_a: object, **_k: object) -> layer.EffectiveConfig:
@@ -418,7 +418,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
         ),
         encoding="utf-8",
     )
-    cfg = _role_cfg({"sandbox": {"run_commands": "no"}})
+    cfg = _role_cfg({"sandbox": {"run_commands": "deny"}})
     monkeypatch.setenv("K", "test-key")
 
     def _none(*_a: object, **_k: object) -> None:
@@ -484,7 +484,7 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
     monkeypatch.setenv("K", "test-key")
     cfg = _role_cfg(
         {
-            "sandbox": {"run_commands": "no"},
+            "sandbox": {"run_commands": "deny"},
             "harness": {"verify_command": ["pytest", "-q"]},
             "git": {"branch_per_run": False},
         }
@@ -641,7 +641,7 @@ def test_model_git_rule_does_not_offer_a_withheld_run_command(tmp_path: pathlib.
     cfg = Config.model_validate(
         {
             "git": {"control": "model"},
-            "sandbox": {"run_commands": "no", "protect_git": "off"},
+            "sandbox": {"run_commands": "deny", "protect_git": "off"},
         }
     )
     prompt = _prompt_blocks.build_system_prompt(
@@ -958,7 +958,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
         encoding="utf-8",
     )
     harness = {"verify_command": list(gate)} if configured else {}
-    cfg = _role_cfg({"sandbox": {"run_commands": "no"}, "harness": harness})
+    cfg = _role_cfg({"sandbox": {"run_commands": "deny"}, "harness": harness})
     effective = layer.EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _effective(*_a: object, **_k: object) -> layer.EffectiveConfig:

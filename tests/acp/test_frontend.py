@@ -171,7 +171,7 @@ def test_the_unsandboxed_prompt_fires_only_when_it_is_true() -> None:
     assert front.confirm_unconfined_autorun("full", Config()) is True
     assert asked == [], "a confined run is not dangerous and must not prompt"
 
-    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "yes"}})
+    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "allow"}})
     assert front.confirm_unconfined_autorun("none", dangerous) is True
     assert len(asked) == 1 and "UNSANDBOXED" in asked[0][0]
 
@@ -179,7 +179,7 @@ def test_the_unsandboxed_prompt_fires_only_when_it_is_true() -> None:
 def test_an_unsandboxed_autorun_still_needs_a_human() -> None:
     from agent6.config import Config
 
-    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "yes"}})
+    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "allow"}})
     mute, _ = _frontend(can_ask=False)
     assert mute.confirm_unconfined_autorun("none", dangerous) is False
     denied, _ = _frontend(reply="deny")

@@ -463,7 +463,7 @@ def headless_approval_refusal(
         away: The `AGENT6_DETACHED_AWAY` value.
         can_ask: The front-end's own declaration that it can ask; the tty is not tested
             here, since `agent6 acp` asks over its protocol pipe.
-        clamped: Whether this session kind clamps a standing `yes` to `ask`, so the
+        clamped: Whether this session kind clamps a standing `allow` to `ask`, so the
             remedy names the flag rather than the config value.
 
     Returns:
@@ -480,15 +480,16 @@ def headless_approval_refusal(
     if tui_enabled or can_ask or away:
         return None
     unattended = (
-        "--auto-approve (this session kind clamps a standing sandbox.run_commands = 'yes' to 'ask')"
+        "--auto-approve (this session kind clamps a standing"
+        " sandbox.run_commands = 'allow' to 'ask')"
         if clamped
-        else "sandbox.run_commands = 'yes' (or --auto-approve)"
+        else "sandbox.run_commands = 'allow' (or --auto-approve)"
     )
     gate = "" if clamped else ", the verify gate included,"
     return (
         "sandbox.run_commands = 'ask' needs someone to answer, and this run has no"
         f" TUI and no away-mode. Every command{gate} would wait forever.\n"
-        f"  - unattended: {unattended}, or 'no' to withhold commands entirely\n"
+        f"  - unattended: {unattended}, or 'deny' to withhold commands entirely\n"
         "  - attended: start it from a terminal, or set an away-mode"
         f" (AGENT6_DETACHED_AWAY={'|'.join(ipc.AWAY_MODES)}) so an absent operator's "
         "intent is known"
@@ -500,7 +501,7 @@ def headless_parking_note(
 ) -> str | None:
     """Note that a fetch or MCP approval would park a run nobody can answer.
 
-    Commands are settled by `yes` or `no`, but a fetch outside `sandbox.fetch_approved_hosts`
+    Commands are settled by `allow` or `deny`, but a fetch outside `sandbox.fetch_approved_hosts`
     or an MCP call still asks, and that approval parks the run until a front-end
     attaches.
 
@@ -579,7 +580,7 @@ def drop_gate_if_unrunnable(
 ) -> Config:
     """Empty the verify command when this execution cannot run one.
 
-    Every command tool is withheld when the effective policy is `no`, and the gate is
+    Every command tool is withheld when the effective policy is `deny`, and the gate is
     a command; keeping it would make the execution unwinnable. Decided once per
     execution, last at its start, because the system prompt is frozen from the same
     config; a deny that lands mid-execution withdraws the tools without unmaking a
@@ -593,7 +594,7 @@ def drop_gate_if_unrunnable(
     Returns:
         The config, gateless when commands are withheld.
     """
-    if ipc.effective_run_commands(cfg.sandbox.run_commands, session_dir) != "no":
+    if ipc.effective_run_commands(cfg.sandbox.run_commands, session_dir) != "deny":
         return cfg
     if cfg.harness.verify_command:
         reporter.note(

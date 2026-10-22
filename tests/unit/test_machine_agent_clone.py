@@ -245,7 +245,7 @@ def test_tool_clone_runs_setup_before_reading_environment(
 
     origin = _origin(tmp_path)
     command = "echo broken >&2; exit 7" if fail_setup else "echo ready > environment.txt"
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}}).with_setup_command(
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}}).with_setup_command(
         ("sh", "-c", command)
     )
     expected_setup = cfg.workspace.setup_command
@@ -347,7 +347,7 @@ def test_a_tool_states_setup_runs_without_its_pass_env(
     from agent6.app.machine import run as machine_run
 
     origin = _origin(tmp_path)
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}}).with_setup_command(
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}}).with_setup_command(
         ("sh", "-c", "true")
     )
     states = {"check": StateConfig(cfg, "none")}
@@ -430,7 +430,9 @@ def test_tool_setup_logs_share_numeric_state_log_pruning(
     from agent6.app.machine import run as machine_run
 
     origin = _origin(tmp_path)
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}}).with_setup_command(("true",))
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}}).with_setup_command(
+        ("true",)
+    )
 
     def execute(policy: kinds.JailPolicy) -> kinds.CommandResult:
         return kinds.CommandResult(
@@ -473,7 +475,7 @@ def test_tool_setup_routes_its_outcome_without_checking_a_session_gate(
     origin = _origin(tmp_path)
     cfg = Config.model_validate(
         {
-            "sandbox": {"run_commands": "yes"},
+            "sandbox": {"run_commands": "allow"},
             "workspace": {"setup_command": ["setup"]},
             "harness": {"verify_command": [".missing-gate"]},
         }
@@ -657,7 +659,7 @@ def _state_in_a_clone(
         cwd=origin,
         root=clone,
         overlay={
-            "sandbox": {"isolation": "none", "run_commands": "yes"},
+            "sandbox": {"isolation": "none", "run_commands": "allow"},
             "models": {"worker": {"provider": "p", "model": "m"}},
             "providers": {
                 "p": {

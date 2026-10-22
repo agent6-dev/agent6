@@ -165,7 +165,7 @@ def test_unset_last_leaf_drops_the_empty_table(iso: pathlib.Path) -> None:
     # Unsetting a section's only key leaves no dangling [sandbox] header; a sibling keeps it.
 
     _run(["config", "set", "git.dirty_tree", "stash"])
-    _run(["config", "set", "sandbox.run_commands", "yes"])
+    _run(["config", "set", "sandbox.run_commands", "allow"])
     assert _run(["config", "unset", "sandbox.run_commands"]) == 0
     text = paths.global_config_path().read_text(encoding="utf-8")
     assert "[sandbox]" not in text
@@ -421,8 +421,8 @@ def test_machine_overlay_write_leaves_a_widening_the_file_already_held(
     assert (
         _run(["config", "set", "review.trigger", "on_verify_fail", "--machine-file", str(mf)]) == 0
     )
-    assert _run(["config", "set", "sandbox.run_commands", "no", "--machine-file", str(mf)]) == 0
-    assert _run(["config", "set", "sandbox.run_commands", "yes", "--machine-file", str(mf)]) == 2
+    assert _run(["config", "set", "sandbox.run_commands", "deny", "--machine-file", str(mf)]) == 0
+    assert _run(["config", "set", "sandbox.run_commands", "allow", "--machine-file", str(mf)]) == 2
     err = capsys.readouterr().err
     assert "sandbox.run_commands" in err and "sandbox.protect_git" not in err
 
@@ -432,7 +432,7 @@ def test_machine_overlay_takes_a_sandbox_value_within_the_operators(
 ) -> None:
     """Narrowing is written, and so is a grant your own layers or `--config FILE` cover."""
     mf = _machine_file(iso)
-    assert _run(["config", "set", "sandbox.run_commands", "no", "--machine-file", str(mf)]) == 0
+    assert _run(["config", "set", "sandbox.run_commands", "deny", "--machine-file", str(mf)]) == 0
     assert _run(["config", "add", "--repo", "sandbox.extra_read_paths", "/srv/in"]) == 0
     sub = ["config", "set", "sandbox.extra_read_paths", '["/srv/in/sub"]', "--machine-file"]
     assert _run([*sub, str(mf)]) == 0
@@ -444,7 +444,7 @@ def test_machine_overlay_takes_a_sandbox_value_within_the_operators(
     assert _run(["--config", str(ops), *out]) == 0
     sandbox = tomllib.loads(mf.read_text(encoding="utf-8"))["config"]["sandbox"]
     assert sandbox == {
-        "run_commands": "no",
+        "run_commands": "deny",
         "extra_read_paths": ["/srv/in/sub"],
         "extra_write_paths": ["/srv/out"],
     }

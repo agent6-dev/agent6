@@ -825,7 +825,7 @@ def test_the_unsandboxed_gate_is_never_offered_as_remember_me() -> None:
     from agent6.config import Config
 
     front, asked = _acp_front(reply="allow once")
-    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "yes"}})
+    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "allow"}})
     assert front.confirm_unconfined_autorun("none", dangerous) is True
     assert asked[-1][2] is False, "the sandbox-off gate must not be a standing approval"
 

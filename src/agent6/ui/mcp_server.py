@@ -143,7 +143,7 @@ def _no_one_to_ask(config: Config) -> Config:
         config: The server's effective config.
 
     Returns:
-        The config, with `[sandbox].run_commands` "ask" replaced by "no".
+        The config, with `[sandbox].run_commands` "ask" replaced by "deny".
     """
     if config.sandbox.run_commands != "ask":
         return config
@@ -179,7 +179,7 @@ class MCPServer:
         self._stdout = stdout
         self._dispatcher = dispatch.ToolDispatcher(root=self._root, config=_no_one_to_ask(config))
         # Absent from tools/list either way; `_call_tool` names the reason to a client anyway.
-        self._commands_withdrawn = config.sandbox.run_commands in ("ask", "no")
+        self._commands_withdrawn = config.sandbox.run_commands in ("ask", "deny")
         self._gate_missing = not config.harness.verify_command
         specs = self._build_tools()
         if self._commands_withdrawn:
@@ -234,8 +234,8 @@ class MCPServer:
                 name="run_in_sandbox",
                 description=(
                     "Run an arbitrary argv inside the agent6 jail (Landlock + seccomp"
-                    " + user namespace). Requires [sandbox].run_commands = 'yes' in"
-                    " your config; 'ask' and 'no' are refused at the MCP boundary"
+                    " + user namespace). Requires [sandbox].run_commands = 'allow' in"
+                    " your config; 'ask' and 'deny' are refused at the MCP boundary"
                     " because there is no operator to prompt."
                 ),
                 input_schema={

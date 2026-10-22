@@ -70,7 +70,7 @@ def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: pa
     said: list[str] = []
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     _execution.detach_to_background(
         frontend=_frontend(calls, spawn_err="agent6 exe not found"),
         cfg=cfg,
@@ -79,7 +79,7 @@ def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: pa
         flags=[],
         reporter=reporter.Reporter(out=said.append, err=said.append),
     )
-    assert [c[0] for c in calls] == ["spawn"]  # yes-policy: nothing to ask
+    assert [c[0] for c in calls] == ["spawn"]  # allow-policy: nothing to ask
     assert said == ["[agent6] agent6 exe not found"]
 
 
@@ -158,7 +158,7 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pa
     calls: list[tuple[str, Any]] = []
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
-    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     process.write_worker_pid(layout.session_dir, os.getpid())
 
     _execution.detach_to_background(

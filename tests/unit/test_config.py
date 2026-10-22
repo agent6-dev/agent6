@@ -99,10 +99,10 @@ def test_with_sandbox_overrides_disable_forces_none() -> None:
 def test_with_sandbox_overrides_auto_approve_upgrades_ask_only() -> None:
     ask = Config()
     assert ask.sandbox.run_commands == "ask"
-    assert ask.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "yes"
+    assert ask.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "allow"
     # A per-invocation flag must not resurrect a withheld capability.
-    withheld = Config.model_validate({"sandbox": {"run_commands": "no"}})
-    assert withheld.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "no"
+    withheld = Config.model_validate({"sandbox": {"run_commands": "deny"}})
+    assert withheld.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "deny"
 
 
 def test_with_sandbox_overrides_noop_returns_self() -> None:
@@ -114,6 +114,29 @@ def test_invalid_enum_literal(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace('isolation = "auto"', 'isolation = "lax"')
     with pytest.raises(ConfigError, match=r"sandbox\.isolation"):
         load_config(_write(tmp_path, body))
+
+
+@pytest.mark.parametrize(
+    ("table", "leaf", "old", "new"),
+    [
+        ("sandbox", "run_commands", "yes", "allow"),
+        ("sandbox", "run_commands", "no", "deny"),
+        ("mcp.servers.files", "approve", "yes", "allow"),
+    ],
+)
+def test_permission_values_refuse_old_spellings(
+    tmp_path: pathlib.Path, table: str, leaf: str, old: str, new: str
+) -> None:
+    """Permission values accept allow and deny, with no yes or no aliases."""
+    body = f'[{table}]\n{leaf} = "{old}"\n'
+    if table.startswith("mcp."):
+        body += 'command = ["true"]\n'
+    with pytest.raises(ConfigError, match=rf"{table}\.{leaf}"):
+        load_config(_write(tmp_path, body))
+    cfg = load_config(_write(tmp_path, body.replace(f'"{old}"', f'"{new}"')))
+    assert (
+        cfg.sandbox.run_commands if table == "sandbox" else cfg.mcp.servers["files"].approve
+    ) == new
 
 
 def test_auto_merge_works_without_branch_per_run(tmp_path: pathlib.Path) -> None:

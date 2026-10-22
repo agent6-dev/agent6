@@ -119,7 +119,7 @@ def _spelled_under(path: str, trees: Iterable[str]) -> bool:
 
 
 _ISOLATION_RANK = {"none": 0, "partial": 1, "full": 2}
-_RUN_COMMANDS_RANK = {"no": 0, "ask": 1, "yes": 2}
+_RUN_COMMANDS_RANK = {"deny": 0, "ask": 1, "allow": 2}
 _PROTECT_GIT_RANK = {"off": 0, "auto": 1, "on": 2}
 _HOME_RANK = {"cache": 0, "auto": 1, "tmp": 2}
 

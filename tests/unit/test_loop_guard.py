@@ -587,7 +587,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: pathlib.Path) -
     assert "nothing edited yet" in notices[0]
     assert "verify" not in notices[0]
 
-    # A gate the policy withholds is not a gate either: `run_commands = "no"` takes it away.
+    # A gate the policy withholds is not a gate either: `run_commands = "deny"` takes it away.
     denied = mock.MagicMock()
     denied.call.side_effect = itertools.chain(
         [_resp_with_tool("read_file", {"path": "x.txt"}, tu_id="d1")],
@@ -595,7 +595,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: pathlib.Path) -
     )
     no_commands = mock.MagicMock(operator_wait_s=0.0)
     no_commands.dispatch.return_value = results.RawResult({"content": "x"})
-    no_commands.command_policy.return_value = "no"
+    no_commands.command_policy.return_value = "deny"
     wf3 = _build_wf(repo, denied, no_commands)
     wf3.config.harness.verify_command = ("true",)
     wf3.config = _knobs(wf3.config, stagnation_notice_after_s=1e-9)
@@ -686,7 +686,7 @@ def test_stagnation_ignores_the_start_gates_time(
 
     dispatcher = mock.MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "x"})
-    dispatcher.command_policy.return_value = "yes"
+    dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.side_effect = run_verify
     wf = _build_wf(repo, provider, dispatcher)
     wf.config.harness.verify_command = ("true",)

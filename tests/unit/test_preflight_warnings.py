@@ -36,7 +36,7 @@ def test_a_run_that_cannot_be_asked_refuses_instead_of_hanging(
 
 
 def test_a_clamped_session_kind_names_the_flag_not_the_config_value() -> None:
-    """Plan and ask clamp a standing run_commands = "yes" to ask.
+    """Plan and ask clamp a standing run_commands = "allow" to ask.
 
     The remedy names --auto-approve and the clamp, never the value that is already set.
     """
@@ -44,8 +44,8 @@ def test_a_clamped_session_kind_names_the_flag_not_the_config_value() -> None:
         _ask_cfg(), tui_enabled=False, away="", can_ask=False, clamped=True
     )
     assert refusal is not None
-    assert "clamps a standing sandbox.run_commands = 'yes'" in refusal
-    assert "sandbox.run_commands = 'yes' (or --auto-approve)" not in refusal
+    assert "clamps a standing sandbox.run_commands = 'allow'" in refusal
+    assert "sandbox.run_commands = 'allow' (or --auto-approve)" not in refusal
 
 
 @pytest.mark.parametrize(
@@ -54,8 +54,8 @@ def test_a_clamped_session_kind_names_the_flag_not_the_config_value() -> None:
         (True, "", "ask", False),  # a TUI can answer
         (False, "wait", "ask", False),  # an away-mode says what an absent operator meant
         (False, "deny", "ask", False),  # ... including "deny", which a btw uses
-        (False, "", "yes", False),  # nothing to approve
-        (False, "", "no", False),  # commands withheld entirely
+        (False, "", "allow", False),  # nothing to approve
+        (False, "", "deny", False),  # commands withheld entirely
         (False, "", "ask", True),  # the front-end asks out of band (a terminal, ACP)
     ],
 )
@@ -138,7 +138,7 @@ def test_a_misspelled_away_mode_refuses_even_where_a_person_could_answer() -> No
     )
 
 
-@pytest.mark.parametrize("commands", ["yes", "no"])
+@pytest.mark.parametrize("commands", ["allow", "deny"])
 def test_a_misspelled_away_mode_refuses_when_commands_are_settled(commands: str) -> None:
     """A misspelled away mode refuses when commands are settled.
 
@@ -186,8 +186,8 @@ def test_a_headless_run_with_settled_commands_is_told_what_still_parks_it() -> N
     parks until a front-end attaches. The start says so and names the away mode that auto-denies;
     a run that can be asked, or one with an away mode, gets no note.
     """
-    yes = Config.model_validate({"sandbox": {"run_commands": "yes"}})
-    note = app_preflight.headless_parking_note(yes, tui_enabled=False, away="", can_ask=False)
+    allowed = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    note = app_preflight.headless_parking_note(allowed, tui_enabled=False, away="", can_ask=False)
     assert note is not None
     assert "parks the run" in note and "AGENT6_DETACHED_AWAY=deny" in note
     assert (
@@ -195,14 +195,16 @@ def test_a_headless_run_with_settled_commands_is_told_what_still_parks_it() -> N
         is None
     )
     assert (
-        app_preflight.headless_parking_note(yes, tui_enabled=False, away="deny", can_ask=False)
+        app_preflight.headless_parking_note(allowed, tui_enabled=False, away="deny", can_ask=False)
         is None
     )
     assert (
-        app_preflight.headless_parking_note(yes, tui_enabled=False, away="", can_ask=True) is None
+        app_preflight.headless_parking_note(allowed, tui_enabled=False, away="", can_ask=True)
+        is None
     )
     assert (
-        app_preflight.headless_parking_note(yes, tui_enabled=True, away="", can_ask=False) is None
+        app_preflight.headless_parking_note(allowed, tui_enabled=True, away="", can_ask=False)
+        is None
     )
 
 

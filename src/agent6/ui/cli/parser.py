@@ -30,7 +30,7 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
     "history": ("search", frozenset({"search"})),
     "skills": ("list", frozenset({"install", "update", "list", "enable", "disable", "remove"})),
     "memory": ("list", frozenset({"add", "list", "show", "rm", "decisions"})),
-    "mcp": ("list", frozenset({"connect", "list", "remove", "serve"})),
+    "mcp": ("list", frozenset({"add", "list", "remove", "serve"})),
     "config": (
         "show",
         frozenset(
@@ -455,7 +455,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help=(
             "Run agent6 as an MCP stdio server over the cwd's agent6 config:"
             " query_dag and list_sessions always, run_in_sandbox only where"
-            ' sandbox.run_commands = "yes" (the default "ask" withholds it: nothing'
+            ' sandbox.run_commands = "allow" (the default "ask" withholds it: nothing'
             " here can answer an approval), and run_verify and apply_patch_in_sandbox"
             " where it also sets a verify command. Speaks line-delimited"
             " JSON-RPC on stdin/stdout; configure an MCP-aware client to spawn"

@@ -10,24 +10,24 @@ from agent6.ui.cli import _common, completers
 
 
 def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Add `connect`, `remove` and `list` to the `mcp` group beside `serve`."""
-    connect = _common._sub(
+    """Add `add`, `remove` and `list` to the `mcp` group beside `serve`."""
+    add = _common._sub(
         mcp_sub,
-        "connect",
+        "add",
         help=(
             "Add an MCP server. agent6 starts it and shows its tools before saving it. If"
             " sandboxing is unavailable, a server started by a command is saved without testing"
             " it and gets a warning."
         ),
     )
-    connect.add_argument(
+    add.add_argument(
         "name",
         help=(
             "Server name. Use letters, numbers, hyphens, or underscores, but never two"
             " underscores in a row. Its tools appear as mcp__NAME__TOOL."
         ),
     )
-    connect.add_argument(
+    add.add_argument(
         # A positional's name is its dest, and the root parser's verb already owns args.command.
         "server_command",
         nargs="*",
@@ -37,7 +37,7 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
             " options reach the server. Give either a command or a URL, not both."
         ),
     )
-    connect.add_argument(
+    add.add_argument(
         "--url",
         default="",
         metavar="URL",
@@ -46,7 +46,7 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
             " https://. Give either a URL or a command, not both."
         ),
     )
-    connect.add_argument(
+    add.add_argument(
         "--token-env",
         dest="token_env",
         default="",
@@ -56,7 +56,7 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
             " agent6 saves the variable name, not the token."
         ),
     )
-    connect.add_argument(
+    add.add_argument(
         "--pass-env",
         dest="pass_env",
         action="append",
@@ -68,7 +68,7 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
             " environment, which excludes model-provider API keys."
         ),
     )
-    connect.add_argument(
+    add.add_argument(
         "--repo",
         dest="to_repo",
         action="store_true",

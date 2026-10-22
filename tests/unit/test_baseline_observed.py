@@ -46,7 +46,7 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
         ),
     )
     # Gate presence reads the command policy first: a gate someone may run.
-    wf.dispatcher = types.SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
+    wf.dispatcher = types.SimpleNamespace(command_policy=lambda: "allow")  # pyright: ignore[reportAttributeAccessIssue]
     return wf
 
 
@@ -96,7 +96,7 @@ def test_the_worker_is_told_when_it_inherited_a_red_gate(monkeypatch: pytest.Mon
 
 
 def _start_wf(
-    rc: int, *, policy: str = "yes", when: str = "finish"
+    rc: int, *, policy: str = "allow", when: str = "finish"
 ) -> tuple[loop.Harness, mock.MagicMock]:
     wf = _wf()
     wf.mode = "run"
@@ -137,12 +137,12 @@ def test_the_gate_runs_before_the_first_turn_and_records_the_baseline(
 
 
 @pytest.mark.parametrize(
-    ("policy", "when"), [("yes", "never"), ("no", "finish")], ids=["never", "commands-off"]
+    ("policy", "when"), [("allow", "never"), ("deny", "finish")], ids=["never", "commands-off"]
 )
 def test_no_gate_runs_at_start_when_the_harness_may_not_run_one(
     policy: str, when: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`verify_when = "never"` and `run_commands = "no"` keep the harness off the gate."""
+    """`verify_when = "never"` and `run_commands = "deny"` keep the harness off the gate."""
     state, (wf, dispatcher) = _state(), _start_wf(1, policy=policy, when=when)
     _patch_git(monkeypatch, wf)
     assert wf.gate.start_baseline(state) == []
@@ -163,7 +163,7 @@ def test_a_red_start_gate_past_the_base_reaches_the_model_and_records_no_baselin
     wf.mode = "run"
     wf.config.harness.verify_when = "finish"  # pyright: ignore[reportAttributeAccessIssue]
     dispatcher = mock.MagicMock()
-    dispatcher.command_policy.return_value = "yes"
+    dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = _verify(1)
     wf.dispatcher = dispatcher
     _patch_git(monkeypatch, wf)
@@ -314,7 +314,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
             verify_infer=True,
         ),
     )
-    wf.dispatcher = types.SimpleNamespace(command_policy=lambda: "yes")  # pyright: ignore[reportAttributeAccessIssue]
+    wf.dispatcher = types.SimpleNamespace(command_policy=lambda: "allow")  # pyright: ignore[reportAttributeAccessIssue]
     state = _state()
     state.verify.baseline_ok = False
     state.verify.last_ok = False
