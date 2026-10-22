@@ -232,7 +232,7 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: pathlib.Pa
     """The stranded predicate reads the commit record, not the branch name.
 
     Keyed on the branch name, `branch_per_run = false` exited 0 with no warning over a commit
-    that never landed, and `commit_per_step = false` exited 5 over a commit nothing attempted.
+    that never landed, and `commit_per_turn = false` exited 5 over a commit nothing attempted.
     It reads `commits_ref` (the branch, else the chain ref) and the manifest's commit stamp; a
     run with no chain to commit to (a plan, `[git].control = "model"`) never strands.
     """
@@ -282,7 +282,7 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: pathlib.Pa
                 "session_id": "n1",
                 "user_task": "t",
                 "run_branch": "agent6/n1",
-                "policy": {"commit_per_step": False},
+                "policy": {"commit_per_turn": False},
             },
         )
         assert (

@@ -181,7 +181,7 @@ def test_bench_container_config_template_validates() -> None:
     cases = (
         stub,
         {**stub, "AGENT6_SB_EFFORT": "medium"},
-        {**stub, "AGENT6_SB_VERIFY_WHEN": "step"},
+        {**stub, "AGENT6_SB_VERIFY_WHEN": "turn"},
         {**stub, "AGENT6_SB_MAX_PLAN_POINTS": "40"},
         {
             **stub,
@@ -204,7 +204,7 @@ def test_bench_container_config_template_validates() -> None:
         if env.get("AGENT6_SB_EFFORT"):
             assert data["models"]["worker"]["effort"] == "medium"
         if env.get("AGENT6_SB_VERIFY_WHEN"):
-            assert data["harness"]["verify_when"] == "step"
+            assert data["harness"]["verify_when"] == "turn"
         if env.get("AGENT6_SB_MAX_PLAN_POINTS"):
             assert data["budget"]["max_plan_points"] == 40
         if env.get("AGENT6_SB_REVIEWERS"):

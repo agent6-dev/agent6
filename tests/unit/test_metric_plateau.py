@@ -75,7 +75,7 @@ def test_the_auto_metric_says_it_runs_after_each_committed_edit() -> None:
     """The log line, the docstring and the config text said "after a green verify".
 
     The harness samples after every step that commits, verified or a checkpoint: under
-    `verify_when = "finish"` no per-step verify exists to wait for.
+    `verify_when = "finish"` no per-turn verify exists to wait for.
     """
     from unittest import mock
 

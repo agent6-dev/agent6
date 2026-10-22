@@ -6,7 +6,7 @@ Each end records the tree the run left (`session.end.tree`). At the next start, 
 whose content differs from that tree changed outside the run: they are the operator's and
 follow `[git].dirty_tree`. "Differs from the chain tip" is not the test, because a run's own
 work can be uncommitted after a clean end: an operator stop skips the final checkpoint, and
-`commit_per_step = false`, `git.control = "model"` and a failed commit all leave it in the
+`commit_per_turn = false`, `git.control = "model"` and a failed commit all leave it in the
 tree. A run killed before it could record a tree (SIGKILL, a crash) leaves only the chain tip
 to go by: what differs from it and no tool of the run wrote follows the policy too, since
 nothing says whose it is.

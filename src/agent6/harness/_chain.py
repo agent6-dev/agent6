@@ -40,7 +40,7 @@ def commit_identity(commit: GitCommitConfig, trailer: str | None) -> git_ops.Com
 class RunChain:
     """The run's commit line in the repository at `root`.
 
-    Per-step commits land on `ref` through a temp index: HEAD, the operator's
+    Per-turn commits land on `ref` through a temp index: HEAD, the operator's
     index and the checkout are never touched, so git activity mid-run cannot
     collide with the run's own record.
 
@@ -56,7 +56,7 @@ class RunChain:
             relative: the operator's, so no commit records them and no dirty check
             counts them; a file the model creates is committed.
         identity: The author and trailer of every commit; None leaves it to git.
-        per_step: `[git].commit_per_step`; False keeps the work in the worktree only,
+        per_turn: `[git].commit_per_turn`; False keeps the work in the worktree only,
             and resume-from-git, `sessions diff`, `merge` and a `/parallel` dispatch
             from a changed tree degrade.
         base_sha: Where the run's un-landed work starts, the base of the review diff and
@@ -69,7 +69,7 @@ class RunChain:
     fallback_parent: str | None = None
     untracked_at_start: frozenset[str] = frozenset()
     identity: git_ops.CommitIdentity | None = None
-    per_step: bool = True
+    per_turn: bool = True
     base_sha: str = ""
 
     def commit(self, subject: str) -> str:
@@ -106,7 +106,7 @@ class RunChain:
             The paths git ignores, then the paths untracked when the run started; both
             empty when the run never commits, and the first empty when git cannot say.
         """
-        if self.ref is None or not self.per_step:
+        if self.ref is None or not self.per_turn:
             return (), ()
         untracked = tuple(p for p in paths if p in self.untracked_at_start)
         rest = tuple(p for p in paths if p not in self.untracked_at_start)

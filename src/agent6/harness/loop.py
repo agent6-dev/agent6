@@ -1132,8 +1132,8 @@ class Harness:
         if unjudged_changed:
             # The idle-stop net needs this where no green verify fires per step.
             state.settled.gateless_ever_edited = True
-        if not self.chain.per_step:
-            # `commit_per_step` governs the commit only; the metric block is promised regardless.
+        if not self.chain.per_turn:
+            # `commit_per_turn` governs the commit only; the metric block is promised regardless.
             return self._sample_metric(state, turn, sha="")
         commit_subject = self.checkpoints.subject(
             turn, fallback="checkpoint" if unjudged_changed else "verify passed"

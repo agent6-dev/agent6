@@ -36,7 +36,7 @@ from agent6.tools import errors, results
 # The `[git]` surface the loop reads, empty as a real Config carries it unset.
 _GIT_STUB = types.SimpleNamespace(
     control="agent6",
-    commit_per_step=True,
+    commit_per_turn=True,
     commit=types.SimpleNamespace(
         checkpoint=types.SimpleNamespace(message="agent6"), name="", email="", trailer=""
     ),

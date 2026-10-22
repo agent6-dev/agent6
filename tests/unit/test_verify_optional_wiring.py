@@ -779,11 +779,11 @@ def test_the_decline_line_prints_when_its_reason_changes(
     assert "the sandbox has no `cargo`" in declined[1]
 
 
-def test_prompt_says_nothing_commits_under_commit_per_step_off(tmp_path: pathlib.Path) -> None:
-    """With `[git].commit_per_step = false` the prompt never promises a commit after a green."""
+def test_prompt_says_nothing_commits_under_commit_per_turn_off(tmp_path: pathlib.Path) -> None:
+    """With `[git].commit_per_turn = false` the prompt never promises a commit after a green."""
     repo = _repo(tmp_path)
     cfg = Config.model_validate(
-        {"harness": {"verify_command": ["true"]}, "git": {"commit_per_step": False}}
+        {"harness": {"verify_command": ["true"]}, "git": {"commit_per_turn": False}}
     )
     out = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
     assert "Nothing commits automatically" in out

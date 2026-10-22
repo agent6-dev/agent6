@@ -414,7 +414,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                         cfg.git.commit.trailer, models=(session.rm_role.model,)
                     ),
                 ),
-                per_step=cfg.git.commit_per_step,
+                per_turn=cfg.git.commit_per_turn,
                 base_sha=inputs.base_sha,
             ),
             config=cfg,

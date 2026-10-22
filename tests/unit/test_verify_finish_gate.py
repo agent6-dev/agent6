@@ -246,7 +246,7 @@ def test_a_read_only_command_over_uncommitted_work_keeps_the_verify_pass(
     """The edited check asks whether the command changed the tree, not whether it is uncommitted.
 
     Over work the chain had not recorded, every `rg` through run_command re-marked the tree
-    edited, so `step` mode re-ran the gate on identical bytes.
+    edited, so `turn` mode re-ran the gate on identical bytes.
     """
     _git_seed(tmp_path)
     (tmp_path / "a.txt").write_text("uncommitted\n", encoding="utf-8")
@@ -490,8 +490,8 @@ def test_a_tree_the_model_already_certified_is_not_judged_twice() -> None:
     dispatcher2.run_verify.assert_not_called()
 
 
-def test_step_mode_judges_every_editing_turn_and_finish_mode_does_not() -> None:
-    for when, calls in (("step", 1), ("finish", 0), ("never", 0)):
+def test_turn_mode_judges_every_editing_turn_and_finish_mode_does_not() -> None:
+    for when, calls in (("turn", 1), ("finish", 0), ("never", 0)):
         wf, dispatcher = _harness_wf(when)
         dispatcher.run_verify.return_value = _exec(0)
         state = _loop_state.LoopState(original_task="t", tool_calls=0)
@@ -576,7 +576,7 @@ def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
 
     assert "The harness runs it when finish_session is called" in block("finish")
     assert "returns to you 1 time(s)" in block("finish")
-    assert "after every turn that edits the tree" in block("step")
+    assert "after every turn that edits the tree" in block("turn")
     assert "The harness never runs it; only your run_verify_command calls do." in block("never")
     # plan and ask never run the gate, whatever the knob says
     assert "The harness never runs it" in block("finish", mode="plan")
@@ -587,8 +587,8 @@ def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
 
 
 def test_a_verify_followed_by_an_edit_in_one_turn_is_judged_again() -> None:
-    """Under `step` an edit after a green gate in the same turn makes the harness run it again."""
-    wf, dispatcher = _harness_wf("step")
+    """Under `turn` an edit after a green gate in the same turn makes the harness run it again."""
+    wf, dispatcher = _harness_wf("turn")
     dispatcher.run_verify.return_value = _exec(0)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(edited=True)
@@ -868,7 +868,7 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     wf = loop.Harness(
         chain=_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate(
-            {"harness": {"verify_command": ["true"], "verify_when": "step", "verify_retries": 2}}
+            {"harness": {"verify_command": ["true"], "verify_when": "turn", "verify_retries": 2}}
         ),
         provider=mock.MagicMock(),
         dispatcher=dispatcher,

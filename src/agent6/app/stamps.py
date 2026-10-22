@@ -40,7 +40,7 @@ def _policy_stamp(cfg: Config, isolation: str) -> manifest.PolicyStamp:
         run_commands=cfg.sandbox.run_commands,
         isolation=isolation or str(cfg.sandbox.isolation),
         network=tools_policy.resolve_network(cfg, level) if level is not None else "",
-        commit_per_step=cfg.git.commit_per_step,
+        commit_per_turn=cfg.git.commit_per_turn,
     )
 
 

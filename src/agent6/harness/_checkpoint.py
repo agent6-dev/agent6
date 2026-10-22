@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The run's checkpoints: the per-step commit on its chain.
+"""The run's checkpoints: the per-turn commit on its chain.
 
 The subject follows `[git.commit.checkpoint].message`; the events are what
-every fold counts a commit by. The loop decides when a step commits.
+every fold counts a commit by. The loop decides when a turn commits.
 """
 
 from __future__ import annotations
@@ -136,14 +136,14 @@ class Checkpoints:
     def final(self, *, turn: int) -> None:
         """Commit a dirty tree at a successful exit, best-effort.
 
-        A run_command-authored edit after the last green verify, which the per-step
+        A run_command-authored edit after the last green verify, which the per-turn
         commit never saw, stays in git history where resume, the diff viewer and
         the scorers read.
 
         Args:
             turn: The loop turn the checkpoint names.
         """
-        if not self.enabled or not self.chain.per_step or not self.chain.dirty():
+        if not self.enabled or not self.chain.per_turn or not self.chain.dirty():
             return
         try:
             self.commit(f"checkpoint (turn {turn})", turn=turn, label="final checkpoint")

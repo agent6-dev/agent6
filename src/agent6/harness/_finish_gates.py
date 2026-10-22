@@ -187,7 +187,7 @@ def task_finish_nudge(open_tasks: Sequence[tuple[str, str]], gates: FinishGates)
 
 
 def red_gate_returns(
-    verify_when: Literal["finish", "step", "never"],
+    verify_when: Literal["finish", "turn", "never"],
     verify_retries: int,
     verify: _verify_verdict.VerifyVerdict,
     used: int,

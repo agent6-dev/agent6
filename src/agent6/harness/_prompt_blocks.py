@@ -212,7 +212,7 @@ def _plan_budget_line(config: Config) -> str:
 def _commit_rule(config: Config, *, has_gate: bool, commands_allowed: bool) -> str:
     """Return the commit fact the run prompt states.
 
-    Under `[git].control = "model"` nothing commits automatically; with `commit_per_step` off
+    Under `[git].control = "model"` nothing commits automatically; with `commit_per_turn` off
     nothing commits at all. Under agent6 control the chain commits each passing verify when a
     gate judges each step, else each editing step.
 
@@ -226,7 +226,7 @@ def _commit_rule(config: Config, *, has_gate: bool, commands_allowed: bool) -> s
     """
     if config.git.control == "model":
         return loop.MODEL_GIT_RULE if commands_allowed else loop.MODEL_GIT_RULE_NO_COMMANDS
-    if not config.git.commit_per_step:
+    if not config.git.commit_per_turn:
         return loop.NO_AUTO_COMMIT_RULE
     if has_gate and config.harness.verify_when != "finish":
         return loop.AUTO_COMMIT_RULE

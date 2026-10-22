@@ -309,11 +309,11 @@ class HarnessConfig(pydantic.BaseModel):
             "honoured. A round that lands work resets the streak."
         ),
     )
-    verify_when: Literal["finish", "step", "never"] = pydantic.Field(
+    verify_when: Literal["finish", "turn", "never"] = pydantic.Field(
         default="finish",
         description=(
             "When the harness runs `verify_command` itself: `finish` (when the model calls "
-            "`finish_session` and the tree changed since the last green run), `step` (also after "
+            "`finish_session` and the tree changed since the last green run), `turn` (also after "
             "every turn that edits the tree), `never` (only the model's own `run_verify_command` "
             "calls run it). The tool stays available in every mode; a run with no verify command "
             "has no gate to run."

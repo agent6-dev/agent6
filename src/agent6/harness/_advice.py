@@ -85,7 +85,7 @@ class TurnContext:
     verify_settled_stop_after: int
     stagnation_notice_after_s: float
     # `[harness].verify_when` and `verify_retries`, read by the red-gate return rule.
-    verify_when: Literal["finish", "step", "never"]
+    verify_when: Literal["finish", "turn", "never"]
     verify_retries: int
     # A machine agent state's finish contract: the problems with a payload; None gates nothing.
     finish_validator: Callable[[dict[str, Any] | None], list[str]] | None

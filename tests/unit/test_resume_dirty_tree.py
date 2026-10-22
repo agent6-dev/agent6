@@ -445,7 +445,7 @@ def test_resume_stash_refusal_restores_work_the_run_never_committed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With no run commit, the refusal's restore command uses the recorded end tree."""
-    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\ncommit_per_step = false\n')
+    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\ncommit_per_turn = false\n')
     session_id = "tree-UNDO02"
     monkeypatch.setattr(
         providers, "build_role_provider", _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()]))
@@ -536,9 +536,9 @@ def test_resume_keeps_the_runs_own_uncommitted_work(
     """A run stopped over work it never committed resumes with that work in place.
 
     "Any difference from the chain tip after a clean end is the operator's" would stash the
-    run's own edits here: with `commit_per_step = false` nothing of the run is committed.
+    run's own edits here: with `commit_per_turn = false` nothing of the run is committed.
     """
-    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\ncommit_per_step = false\n')
+    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\ncommit_per_turn = false\n')
     _stopped_run(repo, monkeypatch, "tree-OWN001", _edit("a.py", "x = 5  # the run\n"))
     asked = _answering_frontend(monkeypatch, "cancel")
     capsys.readouterr()

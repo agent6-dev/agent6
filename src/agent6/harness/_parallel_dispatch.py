@@ -436,7 +436,7 @@ class ParallelDispatcher:
     def ensure_clean(self, turn: int) -> bool:
         """Chain-commit a changed tree so lanes cut from the tip see current work.
 
-        With `commit_per_step` off a changed tree cannot be captured, and dispatch is refused.
+        With `commit_per_turn` off a changed tree cannot be captured, and dispatch is refused.
 
         Args:
             turn: The turn just completed, for the checkpoint subject.
@@ -446,7 +446,7 @@ class ParallelDispatcher:
         """
         if not self.chain.dirty():
             return True
-        if not self.chain.per_step:
+        if not self.chain.per_turn:
             return False
         try:
             subject = f"checkpoint before /parallel dispatch (turn {turn})"

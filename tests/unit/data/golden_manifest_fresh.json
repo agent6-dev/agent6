@@ -32,7 +32,7 @@
     "run_commands": "",
     "isolation": "",
     "network": "",
-    "commit_per_step": true
+    "commit_per_turn": true
   },
   "budget": {
     "max_usd": null,

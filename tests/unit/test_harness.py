@@ -48,7 +48,7 @@ from tests.unit.turn_context import turn_context
 # The `[git]` surface the loop reads, empty as a real Config carries it unset.
 _GIT_STUB = types_.SimpleNamespace(
     control="agent6",
-    commit_per_step=True,
+    commit_per_turn=True,
     commit=types_.SimpleNamespace(
         checkpoint=types_.SimpleNamespace(message="agent6"), name="", email="", trailer=""
     ),
@@ -107,7 +107,7 @@ def _wf(
     ref: str | None = "refs/agent6/test",
     fallback_parent: str | None = None,
     branch: str | None = None,
-    per_step: bool = True,
+    per_turn: bool = True,
     base_sha: str = "",
     **kw: Any,
 ) -> loop.Harness:
@@ -131,7 +131,7 @@ def _wf(
             ref=ref,
             branch=branch,
             fallback_parent=fallback_parent,
-            per_step=per_step,
+            per_turn=per_turn,
             base_sha=base_sha,
         ),
         "config": mock.MagicMock(
@@ -906,7 +906,7 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
             verify_infer=True,
         ),
     )
-    wf = _wf(root=repo, config=config, dispatcher=_Dispatcher(), per_step=False)
+    wf = _wf(root=repo, config=config, dispatcher=_Dispatcher(), per_turn=False)
     state = _state()
 
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # the run's edit
@@ -921,9 +921,9 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
     assert calls == ["run_metric_command", "run_metric_command"]
 
 
-@pytest.mark.parametrize("commit_per_step", [True, False])
+@pytest.mark.parametrize("commit_per_turn", [True, False])
 def test_drive_loop_auto_runs_metric_after_verify_pass(
-    tmp_path: pathlib.Path, commit_per_step: bool
+    tmp_path: pathlib.Path, commit_per_turn: bool
 ) -> None:
     """After a green verify the harness runs the metric itself and injects a history block."""
 
@@ -1002,8 +1002,8 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
         provider=provider,
         dispatcher=dispatcher,
         max_turns=4,
-        # `[git].commit_per_step` governs the commit, not the measurement the prompt promises.
-        per_step=commit_per_step,
+        # `[git].commit_per_turn` governs the commit, not the measurement the prompt promises.
+        per_turn=commit_per_turn,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
@@ -7752,7 +7752,7 @@ def test_tier2_growth_floor_prevents_zero_growth_refire(tmp_path: pathlib.Path) 
 def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: pathlib.Path) -> None:
     """A green verify with no new edits emits no commit event: chain_commit returns ""."""
     events: list[dict[str, Any]] = []
-    wf = _wf(root=tmp_path, mode="run", per_step=True)
+    wf = _wf(root=tmp_path, mode="run", per_turn=True)
 
     def _capture(_type: str, **f: Any) -> None:
         events.append({"type": _type, **f})
@@ -7773,7 +7773,7 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: pathlib.Path) -> 
     from agent6 import errors
 
     events: list[dict[str, Any]] = []
-    wf = _wf(root=tmp_path, mode="run", per_step=True)
+    wf = _wf(root=tmp_path, mode="run", per_turn=True)
 
     def _capture(_type: str, **f: Any) -> None:
         events.append({"type": _type, **f})
@@ -8358,12 +8358,12 @@ def _metric_repo(repo: pathlib.Path) -> str:
 
 
 def _metric_wf(
-    repo: pathlib.Path, base: str, dispatcher: mock.MagicMock, *, commit_per_step: bool = True
+    repo: pathlib.Path, base: str, dispatcher: mock.MagicMock, *, commit_per_turn: bool = True
 ) -> loop.Harness:
     """A gateless run with an operator metric on a chain."""
     return loop.Harness(
         chain=_chain.RunChain(
-            repo, ref="refs/agent6/metric-run/head", fallback_parent=base, per_step=commit_per_step
+            repo, ref="refs/agent6/metric-run/head", fallback_parent=base, per_turn=commit_per_turn
         ),
         config=Config.model_validate(
             {
@@ -8421,7 +8421,7 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: path
         return _metric_result(42.0)
 
     dispatcher.dispatch.side_effect = dispatch
-    wf = _metric_wf(repo, base, dispatcher, commit_per_step=False)
+    wf = _metric_wf(repo, base, dispatcher, commit_per_turn=False)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _edited_turn(1)
     (repo / "x.txt").write_text("an improvement\n", encoding="utf-8")
@@ -8495,21 +8495,21 @@ def _settles_at(
 
 
 @pytest.mark.parametrize("gated", [True, False])
-def test_the_settled_stop_still_fires_without_per_step_commits(
+def test_the_settled_stop_still_fires_without_per_turn_commits(
     tmp_path: pathlib.Path, gated: bool
 ) -> None:
-    """With `[git].commit_per_step = false` progress is a changed tree; an edit step seeds.
+    """With `[git].commit_per_turn = false` progress is a changed tree; an editing turn seeds.
 
     The chain never advances, so a dirty worktree is not progress and a gateless run still settles.
     """
 
-    def wf_for(repo: pathlib.Path, base: str, *, commit_per_step: bool) -> loop.Harness:
+    def wf_for(repo: pathlib.Path, base: str, *, commit_per_turn: bool) -> loop.Harness:
         return loop.Harness(
             chain=_chain.RunChain(
                 repo,
                 ref="refs/agent6/settled-run/head",
                 fallback_parent=base,
-                per_step=commit_per_step,
+                per_turn=commit_per_turn,
             ),
             config=Config.model_validate(
                 {"harness": {"verify_command": ["true"] if gated else []}}
@@ -8521,14 +8521,14 @@ def test_the_settled_stop_still_fires_without_per_step_commits(
         )
 
     repo = tmp_path / "repo"
-    on = wf_for(repo, _metric_repo(repo), commit_per_step=True)
+    on = wf_for(repo, _metric_repo(repo), commit_per_turn=True)
     baseline = _settles_at(
         on, repo, _loop_state.LoopState(original_task="t", tool_calls=0), gated=gated
     )
     assert baseline is not None
 
     repo2 = tmp_path / "repo2"
-    off = wf_for(repo2, _metric_repo(repo2), commit_per_step=False)
+    off = wf_for(repo2, _metric_repo(repo2), commit_per_turn=False)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
 
     assert _settles_at(off, repo2, state, gated=gated) == baseline
@@ -8927,7 +8927,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
 def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pathlib.Path) -> None:
     """`run_commands = "deny"` withholds the verify gate from the harness and the model alike.
 
-    Gate presence has one owner, so under `verify_when = "step"` editing turns still commit.
+    Gate presence has one owner, so under `verify_when = "turn"` editing turns still commit.
     """
 
     class ProviderStub:
@@ -8964,7 +8964,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
             loop_guard_kill_threshold=10,
             verify_settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="step",
+            verify_when="turn",
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
@@ -9042,7 +9042,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
         {
             "harness": {
                 "verify_command": ["configured-gate"],
-                "verify_when": "step",
+                "verify_when": "turn",
                 "verify_infer": True,
             }
         }

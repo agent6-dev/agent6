@@ -1381,7 +1381,7 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     )
     turn = [
         wide,
-        _verify_gate.harness_verify_notice(gate, "step"),
+        _verify_gate.harness_verify_notice(gate, "turn"),
         _panel.review_notice("\u6f22" * 10_000),
         _nudges.STAGNATION_NUDGE,
         _nudges.RUN_BUDGET_NUDGE,

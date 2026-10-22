@@ -734,8 +734,8 @@ def test_prune_removes_the_worktree_of_a_run_that_committed_nothing(
 def test_uncommitted_edits_are_named_in_the_worktree_and_survive_prune(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With `commit_per_step = false`, "the working tree" in the footer would name the checkout."""
-    repo = _repo(tmp_path, monkeypatch, config=_CONFIG + "\n[git]\ncommit_per_step = false\n")
+    """With `commit_per_turn = false`, "the working tree" in the footer would name the checkout."""
+    repo = _repo(tmp_path, monkeypatch, config=_CONFIG + "\n[git]\ncommit_per_turn = false\n")
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
     assert cli_main(["run", "--worktree", "--session-id", "wt-NOCM01", "add new.txt"]) == 0
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-NOCM01")).worktree

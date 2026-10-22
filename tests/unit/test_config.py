@@ -75,6 +75,26 @@ def test_extra_key_forbidden(tmp_path: pathlib.Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+@pytest.mark.parametrize(
+    ("body", "field"),
+    [
+        ("[git]\ncommit_per_step = false\n", r"git\.commit_per_step"),
+        ('[harness]\nverify_when = "step"\n', r"harness\.verify_when"),
+    ],
+)
+def test_turn_boundary_config_refuses_step_spellings(
+    tmp_path: pathlib.Path, body: str, field: str
+) -> None:
+    """Turn-boundary settings reject the step spellings when loading a config file."""
+    with pytest.raises(ConfigError, match=field):
+        load_config(_write(tmp_path, body))
+    cfg = load_config(
+        _write(tmp_path, '[git]\ncommit_per_turn = false\n[harness]\nverify_when = "turn"\n')
+    )
+    assert cfg.git.commit_per_turn is False
+    assert cfg.harness.verify_when == "turn"
+
+
 def test_workspace_base_dir_replaces_parallel_workdir() -> None:
     """Workspace placement accepts the workspace key and refuses the parallel key."""
     with pytest.raises(pydantic.ValidationError, match=r"parallel\.workdir") as exc:

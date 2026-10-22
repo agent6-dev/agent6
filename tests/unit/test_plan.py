@@ -370,7 +370,7 @@ def test_run_commands_deny_withholds_the_command_tools_and_every_rule_about_them
     p = tmp_path / "agent6.toml"
     p.write_text(
         _VALID_TOML.replace(  # carries run_commands = "deny" and a verify_command
-            'verify_command = ["true"]', 'verify_command = ["true"]\nverify_when = "step"'
+            'verify_command = ["true"]', 'verify_command = ["true"]\nverify_when = "turn"'
         )
         + '\n[harness.metric]\ncommand = ["python3", "bench.py"]\n'
         + 'pattern = "CYCLES: (\\\\d+)"\ngoal = "minimize"\n',
@@ -590,7 +590,7 @@ def _wf(
     ref: str | None = None,
     fallback_parent: str | None = None,
     branch: str | None = None,
-    per_step: bool = True,
+    per_turn: bool = True,
     base_sha: str = "",
     **kw: Any,
 ) -> loopmod.Harness:
@@ -600,7 +600,7 @@ def _wf(
             ref=ref,
             branch=branch,
             fallback_parent=fallback_parent,
-            per_step=per_step,
+            per_turn=per_turn,
             base_sha=base_sha,
         ),
         "config": mock.MagicMock(

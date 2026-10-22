@@ -17,14 +17,14 @@ from agent6.config import _base
 
 
 class GitCommitCheckpointConfig(pydantic.BaseModel):
-    """Message style for the per-step commits a run makes on its branch."""
+    """Message style for the per-turn commits a run makes on its branch."""
 
     model_config = _base.MODEL_CONFIG
 
     message: Literal["agent6", "conventional", "model"] = pydantic.Field(
         default="agent6",
         description=(
-            "The message of each per-step commit: `agent6` (`agent6 turn N: <summary>`), "
+            "The message of each per-turn commit: `agent6` (`agent6 turn N: <summary>`), "
             "`conventional` (a `type(scope): subject` derived from the diff, no model call), or "
             "`model` (the model writes it from the git facts, falling back to `agent6` with a "
             "warning on any failure)."
@@ -163,10 +163,10 @@ class GitConfig(pydantic.BaseModel):
     control: Literal["agent6", "model"] = pydantic.Field(
         default="agent6",
         description=(
-            "Who manages git during a run: `agent6` records every step on the run's own commit "
-            "chain and branch, never touching HEAD; `model` hands git to the model: no per-step "
-            "chain, no run branch, the model's own commits and branches are the record, and "
-            "`sessions diff`/`merge`, `/undo`, and `fork` refuse for such runs. "
+            "Who manages git during a run: `agent6` records each editing turn on the run's own "
+            "commit chain and branch, never touching HEAD; `model` hands git to the model: no "
+            "per-turn chain, no run branch, the model's own commits and branches are the record, "
+            "and `sessions diff`/`merge`, `/undo`, and `fork` refuse for such runs. "
             '`sandbox.protect_git = "auto"` turns off for it; `"on"` is refused beside it.'
         ),
     )
@@ -179,10 +179,10 @@ class GitConfig(pydantic.BaseModel):
         ),
     )
     # Off, resume still works from snapshots; the step-history surfaces degrade.
-    commit_per_step: bool = pydantic.Field(
+    commit_per_turn: bool = pydantic.Field(
         default=True,
         description=(
-            "Commit each editing step onto the run's detached chain (a temp index; HEAD never "
+            "Commit each editing turn onto the run's detached chain (a temp index; HEAD never "
             "moves, and your index and working tree are touched only when the run's own branch "
             "is the one checked out). `false`: agent6 never commits; the work stays only in the "
             "worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch "
@@ -194,7 +194,7 @@ class GitConfig(pydantic.BaseModel):
         description=(
             "How `agent6 sessions merge` lands a run on its base: `squash` (one commit), `merge` "
             "(a merge commit keeping the per-step history), or `ff_only` (fast-forward only). "
-            "Consolidation only; per-step commits always land on the run's chain."
+            "Consolidation only; per-turn commits always land on the run's chain."
         ),
     )
     # With auto_stash_pop the merge lands first, then the stash goes back on top.

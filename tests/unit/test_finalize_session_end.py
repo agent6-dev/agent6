@@ -580,7 +580,7 @@ def test_end_banner_of_a_merged_branchless_run_says_merged(
 def test_end_banner_of_a_run_that_never_commits_by_design_is_no_warning(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`commit_per_step = false` leaves every edit in the tree by design, not as a failed commit."""
+    """`commit_per_turn = false` leaves every edit in the tree by design, not as a failed commit."""
     repo = _seeded_repo(tmp_path)
     monkeypatch.chdir(repo)
     (repo / "work.txt").write_text("agent work\n", encoding="utf-8")
@@ -588,11 +588,11 @@ def test_end_banner_of_a_run_that_never_commits_by_design_is_no_warning(
         "session_id": "nocommit",
         "run_branch": "agent6/nocommit",
         "base_branch": "main",
-        "policy": {"commit_per_step": False},
+        "policy": {"commit_per_turn": False},
     }
     out = _end_footer(tmp_path, repo, "nocommit", manifest, capsys)
     assert "WARNING" not in out and "commit failed" not in out
-    assert "commit_per_step" in out and "working tree" in out
+    assert "commit_per_turn" in out and "working tree" in out
 
 
 def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(

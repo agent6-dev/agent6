@@ -56,7 +56,8 @@ Largest first; each unit is bounded by the one above it.
 | turn | one model call and everything the harness does with its answer: the tool dispatch, the advisors, the gates, the notices; a prose-only answer is a turn too; `turn` is its index | one provider call |
 | tool call | one tool the model asked for inside a turn; a finish is the last one executed | one dispatch |
 
-A step is not a loop unit: it is a commit on the session's chain, taken after a turn that changed the tree (a verified step or an un-gated checkpoint), the unit `commit_per_step` and the diff pane's step picker count.
+A step is a commit on the session's chain, taken after a turn that changed the tree (a verified step or an un-gated checkpoint).
+`git.commit_per_turn` controls whether editing turns commit; the diff pane's step picker counts those commits.
 `run` is the mode beside `plan` and `ask`, and the command that opens a session.
 
 ## The run lifecycle
@@ -77,7 +78,7 @@ A run keeps one message history with one provider and one model.
 - under `api_format = "claude_code"` the provider keeps one `claude` process per execution and replays that history as text whenever a call is not a continuation of its last round ([Config](config.md))
 
 `harness/loop.py` holds the turn: the request, the model call, the tool dispatch, what the tools did, and the ends.
-What the turn leans on sits beside it, one module each: `_chain` (the run's commit chain), `_operator` (the operator's callables, the steer verbs, the pin cap, and what a steer's text means), `_advice` (what an advisor answers with, a nudge, a stop or a refusal, and the turn's context it reads), `_guards` (the advisors, one function per heuristic with its counters: no progress, settled, stagnation, the memory flip, the loop guard, the tool-error ladder, reachability, focus, the budget nudges), `_metric` (a metric run's plateau, ceiling and early-finish rules) and `_metric_sampler` (the readings a run takes), `_quiet_turns` (the nudges an empty or prose-only turn draws), `_finish_gates` (what a finish call declares, what it must satisfy and what an end is called), `_standing` (the standing goal's re-entry), `_operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`), `_parallel_dispatch` (the `/parallel` fan-out), `_checkpoint` (the per-step commit and the final one), `_compactor` (the compaction driver over `_compaction`'s rules), `_memory_touch` (what a tool call did to the memory store), and the settings each sibling owns (`_review`, `_compaction`, `_provider_call`, `_prompt_revision`).
+What the turn leans on sits beside it, one module each: `_chain` (the run's commit chain), `_operator` (the operator's callables, the steer verbs, the pin cap, and what a steer's text means), `_advice` (what an advisor answers with, a nudge, a stop or a refusal, and the turn's context it reads), `_guards` (the advisors, one function per heuristic with its counters: no progress, settled, stagnation, the memory flip, the loop guard, the tool-error ladder, reachability, focus, the budget nudges), `_metric` (a metric run's plateau, ceiling and early-finish rules) and `_metric_sampler` (the readings a run takes), `_quiet_turns` (the nudges an empty or prose-only turn draws), `_finish_gates` (what a finish call declares, what it must satisfy and what an end is called), `_standing` (the standing goal's re-entry), `_operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`), `_parallel_dispatch` (the `/parallel` fan-out), `_checkpoint` (the per-turn commit and the final one), `_compactor` (the compaction driver over `_compaction`'s rules), `_memory_touch` (what a tool call did to the memory store), and the settings each sibling owns (`_review`, `_compaction`, `_provider_call`, `_prompt_revision`).
 The loop runs the advisors and the gates in a declared order and applies each answer; a heuristic is one function and one test file.
 
 Drawn by hand against `harness/loop.py`, the turn as a state machine:
@@ -121,7 +122,7 @@ A resume after a death there runs none of the turn's calls again: the model gets
 **The harness runs the gate** (`[harness].verify_when`, default `finish`).
 When `finish_session` arrives over a tree no verify verdict covers (green or red, nothing edited since), the loop runs `verify_command` itself, through the same dispatcher path as the model's `run_verify_command`, approvals included.
 A denied approval withholds the gate for the rest of the run, and the run ends unverified.
-`step` also runs it after every editing turn; `never` leaves every run to the model.
+`turn` also runs it after every editing turn; `never` leaves every run to the model.
 A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run, or the model's own unless `verify_when = "never"`) re-runs scoped to the tests nearest the run's diff.
 It stays scoped until a full run of the gate passes.
 The notice lists the selected files, `session.end` carries `scoped`, and a `finish_session` over a scoped green reads `passed · scoped gate` on every surface.
@@ -133,9 +134,9 @@ A verify run is neutral; an edit, a commit, a memory write, a tree change or an 
 Over a green gate the stop reads `finished · settled` and exits 0, since the worker called no `finish_session`.
 Over a red gate it returns under the same cap, counted apart from the model's own finishes.
 
-**Per-step commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
+**Per-turn commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
 
-- a step no gate judged commits as a checkpoint: a gateless run, a gate nobody may run (under `run_commands = "deny"`, or after a denial), or `verify_when = "finish"` between the model's own gate runs
+- a turn no gate judged commits as a checkpoint: a gateless run, a gate nobody may run (under `run_commands = "deny"`, or after a denial), or `verify_when = "finish"` between the model's own gate runs
 - `branch_per_run` also advances a visible `agent6/<id>` branch
 - HEAD never moves; when the run's own branch is the checked-out one, the index and the working tree are brought forward for the paths the commit changed, each only where it still matches the old tip
 - consolidation is chosen at `sessions merge` time (`git.merge_method`: `squash`, `merge`, `ff_only`)

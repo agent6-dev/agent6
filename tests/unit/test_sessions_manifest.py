@@ -501,7 +501,7 @@ def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: path
         {
             "models": {"worker": {"provider": "anthropic", "model": "new-model"}},
             "sandbox": {"run_commands": "ask"},
-            "git": {"commit_per_step": False},
+            "git": {"commit_per_turn": False},
         }
     )
 
@@ -510,7 +510,7 @@ def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: path
     m = sessions_manifest.read_manifest(tmp_path)
     assert m.policy.isolation == "full"
     assert m.policy.run_commands == "ask"
-    assert m.policy.commit_per_step is False
+    assert m.policy.commit_per_turn is False
     assert m.models.driver is not None and m.models.driver.model == "new-model"
 
 
@@ -545,6 +545,25 @@ def test_the_stamp_records_the_network_the_commands_join(tmp_path: pathlib.Path)
     # A coordinator stamps no level, so it knows no network either.
     stamps.stamp_execution(layout.session_dir, cfg, "run", "")
     assert sessions_manifest.read_manifest(layout.session_dir).policy.network == ""
+
+
+def test_a_manifest_keeps_its_commit_policy_under_the_old_key(tmp_path: pathlib.Path) -> None:
+    """A manifest's `policy.commit_per_step` stamp is read as `commit_per_turn`.
+
+    `extra="ignore"` dropped it silently, so a resumed no-commit run read the default True.
+    """
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 5,
+                "session_id": "old-run-AAAAAA",
+                "mode": "run",
+                "policy": {"commit_per_step": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert sessions_manifest.read_manifest(tmp_path).policy.commit_per_turn is False
 
 
 def test_a_manifest_keeps_its_plan_cap_under_the_old_key(tmp_path: pathlib.Path) -> None:

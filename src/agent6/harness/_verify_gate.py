@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Run the verify gate the harness owes a turn, per `[harness].verify_when`.
 
-`finish` certifies the tree a run ends on; `step` also judges every editing turn; `never`
-leaves every gate run to the model. Under `finish` and `step` a fresh run also runs the gate once
+`finish` certifies the tree a run ends on; `turn` also judges every editing turn; `never`
+leaves every gate run to the model. Under `finish` and `turn` a fresh run also runs the gate once
 before its first turn, which records the baseline. A tree the run already holds a verdict for is
 never judged twice. `VerifyGate` runs the gate and its scoped follow-up and keeps the verdict
 bookkeeping.
@@ -30,8 +30,8 @@ from agent6.tools import errors as tool_errors
 if TYPE_CHECKING:
     from agent6.harness import _loop_state
 
-VerifyWhen = Literal["finish", "step", "never"]
-HarnessVerifyWhy = Literal["finish", "step", "start"]
+VerifyWhen = Literal["finish", "turn", "never"]
+HarnessVerifyWhy = Literal["finish", "turn", "start"]
 
 # Characters of gate output the model sees, from the end.
 VERIFY_TAIL_CHARS = 2000
@@ -55,14 +55,14 @@ def harness_verify_due(
         finishing: Whether the run is ending.
 
     Returns:
-        `step` after an editing turn, `finish` when the run ends over an unjudged tree, else None.
+        `turn` after an editing turn, `finish` when the run ends over an unjudged tree, else None.
     """
     if when == "never" or not gate_present or tree_judged:
         return None
     if finishing:
         return "finish"
-    if when == "step" and changed_this_turn:
-        return "step"
+    if when == "turn" and changed_this_turn:
+        return "turn"
     return None
 
 
@@ -195,7 +195,7 @@ class VerifyGate:
     """
 
     configured: tuple[str, ...]
-    when: Literal["finish", "step", "never"]
+    when: Literal["finish", "turn", "never"]
     at_start: bool
     retries: int
     timeout_s: float
@@ -401,7 +401,7 @@ class VerifyGate:
             verdict: The run's verify bookkeeping.
 
         Returns:
-            The one answer the harness gate, the per-step commit, the nudges and the prompt read.
+            The one answer the harness gate, the per-turn commit, the nudges and the prompt read.
         """
         return bool(self.command(verdict)) and self.may_run(withheld=verdict.withheld)
 

@@ -458,7 +458,7 @@ def run_one(
                     cfg.git.commit.trailer, models=(rm.model if rm is not None else "",)
                 ),
             ),
-            per_step=cfg.git.commit_per_step,
+            per_turn=cfg.git.commit_per_turn,
         ),
         config=cfg,
         max_turns=cfg.harness.max_turns,

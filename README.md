@@ -1,7 +1,7 @@
 # agent6
 
 **A coding agent that jails every command and leaves your branch untouched.**
-Each command the model runs goes through a sandbox, each step commits to the run's own hidden ref, and a verify gate certifies the tree before a run may finish.
+Each command the model runs goes through a sandbox, each editing turn commits to the run's own hidden ref, and a verify gate certifies the tree before a run may finish.
 
 **Documentation: [agent6.dev](https://agent6.dev)**
 
@@ -37,7 +37,7 @@ Linux (x86_64/aarch64) with Python 3.12+; other platforms run without the sandbo
 ## Why agent6
 
 - **Jailed commands.** Every command the model asks to run goes through a jail that bounds what it reads, writes and reaches on the network; `auto` picks the strongest level the host allows ([Security](https://agent6.dev/security/)).
-- **Your branch stays yours.** Each step commits to the run's own ref, so HEAD, the index and your branch are untouched until `sessions merge` lands the work using [`git.merge_method`](docs/config.md#git); `resume` continues a run and `fork` branches it at any turn.
+- **Your branch stays yours.** Each editing turn commits to the run's own ref, so HEAD, the index and your branch are untouched until `sessions merge` lands the work using [`git.merge_method`](docs/config.md#git); `resume` continues a run and `fork` branches it at any turn.
 - **A verify gate.** The repo's test command, inferred when unset, certifies the tree before a run may finish, and every surface shows the same green or red.
 - **One run, four front-ends.** The CLI, the TUI, a [browser](https://agent6.dev/web/) on a desktop or phone, and an [editor over ACP](https://agent6.dev/acp/) all drive the same runs; `attach` follows one live and `steer` queues an instruction from a script or a cron job.
 - **State machines for long work.** `.asm.toml` files you review, edit, run, watch and replay, with waits, operator input and steering built in ([State machines](https://agent6.dev/state-machines/)).

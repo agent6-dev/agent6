@@ -40,7 +40,7 @@ def _workflow(curator: graph_curator.GraphCurator, sink: event_log.EventSink) ->
     """A loop with only what the drain reads wired: the graph and the journal."""
     return loop.Harness(
         chain=_chain.RunChain(
-            pathlib.Path("/tmp"), ref=None, branch=None, fallback_parent=None, per_step=False
+            pathlib.Path("/tmp"), ref=None, branch=None, fallback_parent=None, per_turn=False
         ),
         config=mock.MagicMock(),
         provider=mock.MagicMock(),

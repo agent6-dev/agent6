@@ -60,7 +60,7 @@ def _wf(
     ref: str | None = None,
     fallback_parent: str | None = None,
     branch: str | None = None,
-    per_step: bool = True,
+    per_turn: bool = True,
     base_sha: str = "",
     **kw: Any,
 ) -> loop.Harness:
@@ -70,7 +70,7 @@ def _wf(
             ref=ref,
             branch=branch,
             fallback_parent=fallback_parent,
-            per_step=per_step,
+            per_turn=per_turn,
             base_sha=base_sha,
         ),
         "config": mock.MagicMock(

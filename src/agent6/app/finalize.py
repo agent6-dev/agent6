@@ -93,7 +93,7 @@ def stranded_edits(
         return False
     if manifest.mode != "run" or manifest.git_control == "model":
         return False
-    if not manifest.policy.commit_per_step:
+    if not manifest.policy.commit_per_turn:
         return False
     merged = manifest.merged is not None and git_ops.merge_stamp_holds(
         cwd, manifest.session_id, manifest.run_branch or "", manifest.merged.tip
@@ -440,10 +440,10 @@ def _print_run_branch_footer(
             current = git_ops.status(cwd).branch
         if run_branch and current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
-    elif result.completed and manifest is not None and not manifest.policy.commit_per_step:
+    elif result.completed and manifest is not None and not manifest.policy.commit_per_turn:
         where = f"the worktree {manifest.worktree}" if manifest.worktree else "the working tree"
         reporter.out(
-            "\nnothing was committed ([git].commit_per_step = false): the run's edits are in"
+            "\nnothing was committed ([git].commit_per_turn = false): the run's edits are in"
             f" {where}"
         )
     elif result.completed and (manifest is None or manifest.mode not in ("plan", "ask")):

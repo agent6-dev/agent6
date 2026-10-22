@@ -64,7 +64,7 @@ AUTO_COMMIT_RULE_GATELESS = """- The harness commits each editing turn automatic
   commit is optional.
 """
 
-NO_AUTO_COMMIT_RULE = """- Nothing commits automatically in this run (`[git].commit_per_step` is
+NO_AUTO_COMMIT_RULE = """- Nothing commits automatically in this run (`[git].commit_per_turn` is
   off): your work stays in the worktree, uncommitted, for the operator.
 """
 
@@ -256,7 +256,7 @@ V2_VERIFY_WHEN = {
         " to you {retries} time(s) with its output, then the run ends red; a"
         " gate already red on the untouched base is not returned."
     ),
-    "step": (
+    "turn": (
         "The harness runs it after every turn that edits the tree, and when"
         " finish_session is called over a tree no verdict covers. A red finish"
         " attributable to this run returns to you {retries} time(s) with its"

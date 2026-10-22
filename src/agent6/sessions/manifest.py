@@ -66,7 +66,7 @@ class PolicyStamp(pydantic.BaseModel):
         isolation: `[sandbox].isolation` at launch.
         network: The network the run's commands join, `session` or `host`; "" when the stamp
             names no level. A manifest an older agent6 wrote holds the configured word.
-        commit_per_step: `[git].commit_per_step` for the live execution; False means a dirty
+        commit_per_turn: `[git].commit_per_turn` for the live execution; False means a dirty
             tree at the end is the deliverable, never a stranded commit.
     """
 
@@ -75,7 +75,7 @@ class PolicyStamp(pydantic.BaseModel):
     run_commands: str = ""
     isolation: str = ""
     network: str = ""
-    commit_per_step: bool = True
+    commit_per_turn: bool = True
 
 
 class HarnessStamp(pydantic.BaseModel):
@@ -402,6 +402,9 @@ def read_manifest(session_dir: pathlib.Path) -> SessionManifest:
     budget = data.get("budget")
     if isinstance(budget, dict) and "max_plan_points" not in budget and "max_percent" in budget:
         budget["max_plan_points"] = budget.pop("max_percent")  # the cap's key through version 5
+    policy = data.get("policy")
+    if isinstance(policy, dict) and "commit_per_turn" not in policy and "commit_per_step" in policy:
+        policy["commit_per_turn"] = policy.pop("commit_per_step")  # the key through version 5
     try:
         return SessionManifest.model_validate(data)
     except pydantic.ValidationError as exc:
