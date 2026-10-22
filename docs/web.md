@@ -93,7 +93,7 @@ Buttons do what the CLI command of the same name does, and prompts are answered 
     - the graph walks every branch, remote-tracking branch and tag plus HEAD, newest first in topological order, 200 commits a page with **Load more** for the next page; lanes are drawn per commit and merges join their parents
     - **Refs ▾** filters the walk: tick a whole group (branches, remotes, tags, agent6 run refs) or single refs; the `refs/agent6/*` chain refs are off until ticked
     - click a commit for its message, author, committer, parents and the files it changed from its first parent (a merge shows its diff from the first parent, a root commit its files against the empty tree), each file with its status (A, M, D, R `old → new`) and line counts, or `binary`
-    - click a file for its unified diff; a patch over 256 KiB is cut at that size and says so, a binary file says so
+    - click a file and its unified diff fills the page: **‹ files** returns to the list, **‹** and **›** step through the files; a patch over 256 KiB is cut at that size and says so, a binary file says so
     - **Compare** takes two revisions, base and head, each from a picker that searches branch and tag names, commit shas and commit messages as you type (Enter keeps free text as the revision for the server to verify); **⇄** swaps them
     - the compare lists the files that differ between the two, as `git diff base head` does, so a commit against its parent reads like that commit's own diff; a commit's **Set as base** and **Set as head** put it in the pickers
     - limits: 500 commits a page at most, 2000 files a list, 256 KiB a patch, 30 refs and 30 commits a search; each list says when it was cut

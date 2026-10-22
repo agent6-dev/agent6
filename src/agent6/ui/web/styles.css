@@ -493,7 +493,6 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .gf-note { font-size: 12px; margin: 4px 0; }
 .gf { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-top: 1px solid var(--border); cursor: pointer; }
 @media (hover: hover) { .gf:hover { background: var(--surface2); } }
-.gf.open { background: var(--surface2); }
 .gf-st { flex: none; font-family: var(--mono); font-weight: 700; font-size: 12px; width: 1.6em; text-align: center; border-radius: 4px; border: 1px solid var(--border); }
 .gf-st.st-A { color: var(--ok); border-color: var(--ok); }
 .gf-st.st-M { color: var(--warn); border-color: var(--warn); }
@@ -502,7 +501,13 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .gf-path { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
 .gf-counts { flex: none; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
 .gf-counts .add { color: var(--ok); } .gf-counts .del { color: var(--err); }
-.gf-diff { margin: 2px 0 8px; padding: 6px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.git-diff { display: none; }
+.git-body.diffing > .git-graph, .git-body.diffing > .git-side { display: none; }
+.git-body.diffing > .git-diff { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; }
+.git-diff-head { flex: none; flex-wrap: wrap; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+.git-diff-head .gf-path { flex: 1 1 200px; }
+.git-diff-pos { font-size: 12px; white-space: nowrap; }
+.git-diff-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px; }
 .gcmp-pick { display: flex; gap: 8px; align-items: center; margin: 8px 0 4px; }
 .gcmp-pick button.mini { flex: none; min-height: 42px; }
 .gcmp-sum { font-size: 12px; margin: 10px 0 8px; overflow-wrap: anywhere; }
@@ -533,7 +538,6 @@ button.active { border-color: var(--accent); color: var(--accent); }
   .git-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
   .git-graph { flex: 1 1 55%; min-width: 0; overflow: auto; }
   .git-side { flex: 1 1 45%; min-width: 0; overflow: auto; border-left: 1px solid var(--border); }
-  .gf-patch { max-height: 60vh; overflow: auto; }
 }
 @media (max-width: 780px) {
   .gc-author { display: none; }
@@ -545,6 +549,10 @@ button.active { border-color: var(--accent); color: var(--accent); }
     background: var(--bg);
   }
   .git-back { display: inline-block; }
+  .git-body.diffing > .git-diff {
+    position: fixed; left: 0; right: 0; z-index: 16; background: var(--bg);
+    top: calc(var(--hdr-h) + env(safe-area-inset-top)); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  }
   .gref { max-width: 140px; }
   /* base beside the swap button, head on its own row under them */
   .gcmp-pick { display: grid; grid-template-columns: 1fr auto; }

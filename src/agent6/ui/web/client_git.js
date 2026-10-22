@@ -82,53 +82,38 @@ function statusBadge(status) {
 }
 function shortLabel(c) { return c.short + ' ' + c.subject; }
 
-// A changed-file list shared by the commit view and the compare view: a row per file,
-// its diff (one fetch, kept) unfolding under it.
-function fileList(base, head, files, truncated) {
+// A changed-file list shared by the commit view and the compare view: a row per file;
+// a click opens the file's diff over the whole tab.
+function fileList(files, truncated, open) {
   const root = el('div', 'gfiles');
   const count = el('div', 'muted gf-count', files.length === 1 ? '1 file changed' : files.length + ' files changed');
   root.appendChild(count);
   if (truncated) root.appendChild(el('div', 'err gf-note', 'the list is cut: more files changed than are shown'));
   if (!files.length) root.appendChild(el('div', 'muted gf-note', 'no files differ'));
-  for (const f of files) {
+  files.forEach((f, i) => {
     const row = el('div', 'gf');
     row.appendChild(statusBadge(f.status));
-    const p = el('span', 'gf-path');
-    if (f.old_path) { p.appendChild(el('span', 'muted', f.old_path + ' → ')); }
-    p.appendChild(document.createTextNode(f.path));
-    row.appendChild(p);
-    const counts = el('span', 'gf-counts');
-    if (f.binary) counts.appendChild(el('span', 'muted', 'binary'));
-    else {
-      counts.appendChild(el('span', 'add', '+' + f.additions));
-      counts.appendChild(el('span', 'del', ' −' + f.deletions));
-    }
-    row.appendChild(counts);
-    const box = el('div', 'gf-diff'); box.style.display = 'none';
-    let loaded = null;
-    const toggle = async () => {
-      const open = box.style.display === 'none';
-      row.classList.toggle('open', open);
-      box.style.display = open ? '' : 'none';
-      if (!open || loaded) return;
-      loaded = 'loading';
-      box.appendChild(el('div', 'muted', 'loading…'));
-      try {
-        const q = '?base=' + encodeURIComponent(base) + '&head=' + encodeURIComponent(head)
-          + '&path=' + encodeURIComponent(f.path) + '&old_path=' + encodeURIComponent(f.old_path || '');
-        const d = await getJSON('/api/git/diff' + q);
-        box.innerHTML = '';
-        // The states come first, above the scrolling patch, so a cut patch reads as cut.
-        if (d.binary) box.appendChild(el('div', 'muted gf-note', 'binary file: no text diff'));
-        if (d.truncated) box.appendChild(el('div', 'err gf-note', 'the patch is cut at ' + Math.round(d.max_bytes / 1024) + ' KiB; the rest is not shown'));
-        const patch = el('div', 'gf-patch'); patch.appendChild(renderDiff(d.patch || '')); box.appendChild(patch);
-        loaded = d;
-      } catch (e) { box.innerHTML = ''; box.appendChild(el('div', 'err', e.message)); loaded = null; }
-    };
-    actionable(row, toggle, f.status + ' ' + f.path);
-    root.appendChild(row); root.appendChild(box);
-  }
+    row.appendChild(filePath(f));
+    row.appendChild(fileCounts(f));
+    actionable(row, () => open(i), f.status + ' ' + f.path);
+    root.appendChild(row);
+  });
   return root;
+}
+function filePath(f) {
+  const p = el('span', 'gf-path');
+  if (f.old_path) p.appendChild(el('span', 'muted', f.old_path + ' → '));
+  p.appendChild(document.createTextNode(f.path));
+  return p;
+}
+function fileCounts(f) {
+  const counts = el('span', 'gf-counts');
+  if (f.binary) counts.appendChild(el('span', 'muted', 'binary'));
+  else {
+    counts.appendChild(el('span', 'add', '+' + f.additions));
+    counts.appendChild(el('span', 'del', ' −' + f.deletions));
+  }
+  return counts;
 }
 
 // A compare picker: typed text searched as you type (/api/git/search lists matching
@@ -202,6 +187,51 @@ async function renderGit(gen) {
   const graph = el('div', 'git-graph'); body.appendChild(graph);
   const side = el('div', 'git-side'); body.appendChild(side);
 
+  // -- a file's diff: it takes the whole body; the list is one step back --------------
+  const diffView = el('div', 'git-diff'); body.appendChild(diffView);
+  const diffs = new Map();
+  const closeDiff = () => { body.classList.remove('diffing'); diffView.innerHTML = ''; delete diffView.dataset.key; };
+  const showDiff = async (ctx, i) => {
+    const f = ctx.files[i];
+    const key = ctx.base + '|' + ctx.head + '|' + f.path;
+    diffView.dataset.key = key;
+    diffView.innerHTML = '';
+    body.classList.add('diffing');
+    const head = el('div', 'git-diff-head row');
+    const back = el('button', 'mini', '‹ files'); back.onclick = closeDiff;
+    head.appendChild(back);
+    head.appendChild(statusBadge(f.status));
+    head.appendChild(filePath(f));
+    head.appendChild(fileCounts(f));
+    head.appendChild(el('span', 'muted git-diff-pos', (i + 1) + ' / ' + ctx.files.length));
+    const prev = el('button', 'mini', '‹'); prev.title = 'previous file'; prev.disabled = i === 0;
+    prev.onclick = () => showDiff(ctx, i - 1);
+    const next = el('button', 'mini', '›'); next.title = 'next file'; next.disabled = i === ctx.files.length - 1;
+    next.onclick = () => showDiff(ctx, i + 1);
+    head.appendChild(prev); head.appendChild(next);
+    diffView.appendChild(head);
+    const box = el('div', 'git-diff-body'); diffView.appendChild(box);
+    let d = diffs.get(key);
+    if (!d) {
+      box.appendChild(el('div', 'muted', 'loading…'));
+      try {
+        const q = '?base=' + encodeURIComponent(ctx.base) + '&head=' + encodeURIComponent(ctx.head)
+          + '&path=' + encodeURIComponent(f.path) + '&old_path=' + encodeURIComponent(f.old_path || '');
+        d = await getJSON('/api/git/diff' + q);
+      } catch (e) {
+        if (diffView.dataset.key === key) { box.innerHTML = ''; box.appendChild(el('div', 'err', e.message)); }
+        return;
+      }
+      diffs.set(key, d);
+      if (diffView.dataset.key !== key || !diffView.isConnected) return; // superseded
+      box.innerHTML = '';
+    }
+    // The states come first, above the patch, so a cut patch reads as cut.
+    if (d.binary) box.appendChild(el('div', 'muted gf-note', 'binary file: no text diff'));
+    if (d.truncated) box.appendChild(el('div', 'err gf-note', 'the patch is cut at ' + Math.round(d.max_bytes / 1024) + ' KiB; the rest is not shown'));
+    const patch = el('div', 'gf-patch'); patch.appendChild(renderDiff(d.patch || '')); box.appendChild(patch);
+  };
+
   // -- the graph -------------------------------------------------------------------
   let commits = [], hasMore = false, selected = null, loading = 0;
   const graphUrl = (skip) => {
@@ -262,6 +292,7 @@ async function renderGit(gen) {
   const openSide = () => side.classList.add('open');
   const setCompare = (which, v) => { gitState.compare[which] = v; showCompare(); };
   const showCommit = async (sha) => {
+    closeDiff();
     selected = sha; gitState.side = 'commit';
     graph.querySelectorAll('.gc-row').forEach(r => r.classList.toggle('sel', r.dataset.sha === sha));
     side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'muted page-pad', 'loading…'));
@@ -300,11 +331,12 @@ async function renderGit(gen) {
     acts.appendChild(asBase); acts.appendChild(asHead);
     pad.appendChild(acts);
     if (c.body) pad.appendChild(el('pre', 'gd-body', c.body));
-    pad.appendChild(fileList(c.base, c.sha, c.files, c.truncated));
+    pad.appendChild(fileList(c.files, c.truncated, (i) => showDiff({ base: c.base, head: c.sha, files: c.files }, i)));
   };
 
   let compareRun = 0;
   const showCompare = () => {
+    closeDiff();
     gitState.side = 'compare';
     selected = null;
     graph.querySelectorAll('.gc-row.sel').forEach(r => r.classList.remove('sel'));
@@ -326,7 +358,7 @@ async function renderGit(gen) {
         sum.appendChild(el('span', 'mono', d.base.short)); sum.appendChild(el('span', null, ' ' + d.base.subject + '  →  '));
         sum.appendChild(el('span', 'mono', d.head.short)); sum.appendChild(el('span', null, ' ' + d.head.subject));
         result.appendChild(sum);
-        result.appendChild(fileList(d.base.sha, d.head.sha, d.files, d.truncated));
+        result.appendChild(fileList(d.files, d.truncated, (i) => showDiff({ base: d.base.sha, head: d.head.sha, files: d.files }, i)));
       } catch (e) { if (n === compareRun) { result.innerHTML = ''; result.appendChild(el('div', 'err', e.message)); } }
     };
     const listHost = el('div', 'gpick-host');
