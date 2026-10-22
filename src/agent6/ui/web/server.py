@@ -19,6 +19,7 @@ import pathlib
 import socket
 import sys
 import threading
+from collections.abc import Callable
 from http import server as http_server
 from typing import Any, Literal
 from urllib import parse
@@ -751,38 +752,67 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         def arg(name: str) -> str:
             return (q.get(name) or [""])[0]
 
+        cwd = self.cwd
+        # One `refs=` per ref; present and blank is an empty selection, absent the default walk.
+        refs = [r for r in q["refs"] if r] if "refs" in q else None
+        reads: dict[str, Callable[[], dict[str, Any]]] = {
+            "compare": lambda: git_model.compare_payload(cwd, arg("base"), arg("head")),
+            "diff": lambda: git_model.diff_payload(
+                cwd,
+                arg("base"),
+                arg("head"),
+                arg("path"),
+                arg("old_path"),
+                whole=arg("whole") == "1",
+            ),
+            "graph": lambda: git_model.graph_payload(
+                cwd, refs, limit=arg("limit"), skip=arg("skip")
+            ),
+            "refs": lambda: git_model.refs_payload(cwd),
+            "search": lambda: git_model.search_payload(cwd, arg("q")),
+            "text": lambda: git_model.text_payload(
+                cwd, arg("rev"), arg("path"), whole=arg("whole") == "1"
+            ),
+            "tree": lambda: git_model.tree_payload(cwd, arg("rev")),
+            "worktree": lambda: git_model.worktree_payload(cwd),
+        }
         try:
-            if sub == "refs":
-                payload = git_model.refs_payload(self.cwd)
-            elif sub == "graph":
-                # One `refs=` per ref; present and blank is an empty selection, absent the
-                # default walk.
-                refs = [r for r in q["refs"] if r] if "refs" in q else None
-                payload = git_model.graph_payload(
-                    self.cwd, refs, limit=arg("limit"), skip=arg("skip")
-                )
-            elif sub.startswith("commit/"):
-                payload = git_model.commit_payload(self.cwd, sub.removeprefix("commit/"))
-            elif sub == "compare":
-                payload = git_model.compare_payload(self.cwd, arg("base"), arg("head"))
-            elif sub == "diff":
-                payload = git_model.diff_payload(
-                    self.cwd,
-                    arg("base"),
-                    arg("head"),
-                    arg("path"),
-                    arg("old_path"),
-                    whole=arg("whole") == "1",
-                )
-            elif sub == "search":
-                payload = git_model.search_payload(self.cwd, arg("q"))
+            if sub.startswith("commit/"):
+                payload = git_model.commit_payload(cwd, sub.removeprefix("commit/"))
+            elif sub == "blob":
+                self._send_blob(git_model.blob_payload(cwd, arg("rev"), arg("path")))
+                return
+            elif sub in reads:
+                payload = reads[sub]()
             else:
                 self._send_json({"error": f"not found: /api/git/{sub}"}, status=404)
                 return
+        except git_model.BlobTooLargeError as exc:
+            self._send_json({"error": str(exc)}, status=413)
+            return
         except (git_model.GitRequestError, errors.GitError) as exc:
             self._send_json({"error": str(exc)}, status=422)
             return
         self._send_json(payload)
+
+    def _send_blob(self, blob: git_model.BlobResponse) -> None:
+        """Send a repository file's bytes so the browser can render them only as an image.
+
+        The sandbox CSP gives a blob opened as a document (an SVG with a script) no origin,
+        so it can never read the page's token; `nosniff` keeps the declared type.
+
+        Args:
+            blob: The bytes and the type they are served under.
+        """
+        headers = [("X-Content-Type-Options", "nosniff")]
+        if blob.attachment:
+            headers.append(("Content-Disposition", "attachment"))
+        self._send_bytes(
+            blob.data,
+            blob.content_type,
+            headers=tuple(headers),
+            csp="sandbox; default-src 'none'; frame-ancestors 'none'",
+        )
 
     def _target_kind(self) -> str:
         """Return the view the CLI target deep-links to, resolved per request.
@@ -912,16 +942,25 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         *,
         status: int = 200,
         headers: tuple[tuple[str, str], ...] = (),
+        csp: str = "frame-ancestors 'none'",
     ) -> None:
-        """Send one uncached response that no other page may frame."""
+        """Send one uncached response that no other page may frame.
+
+        Args:
+            body: The response bytes.
+            ctype: The Content-Type.
+            status: The status code.
+            headers: More headers, name and value.
+            csp: The Content-Security-Policy; a page another local server serves could
+                otherwise frame the signed-in UI.
+        """
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         for name, value in headers:
             self.send_header(name, value)
-        # A page another local server serves could otherwise frame the signed-in UI.
-        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        self.send_header("Content-Security-Policy", csp)
         self.send_header("X-Frame-Options", "DENY")
         if self.close_connection:
             # Without the header a keep-alive client reuses the socket about to shut.

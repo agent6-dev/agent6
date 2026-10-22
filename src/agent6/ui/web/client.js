@@ -75,9 +75,15 @@ function authHeaders(extra) {
   return h;
 }
 function saveToken(login) { localStorage.setItem(TOKEN_KEY, login.token); }
+// Per-viewer conveniences (a view, a diff mode) kept in this browser; the page works without storage.
+function recall(key, fallback) { try { return localStorage.getItem(key) ?? fallback; } catch (_) { return fallback; } }
+function remember(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
 // A 401 is the server asking for its secret: every API call brings up the sign-in form.
 function signedOut(r) { if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); } return r; }
-async function getJSON(url) { const r = signedOut(await fetch(url, { headers: authHeaders() })); if (!r.ok) throw new Error((await r.json().catch(()=>({error:r.statusText}))).error || r.statusText); return r.json(); }
+// Every GET: the token on the request, a 401 to the sign-in form, the server's error text thrown.
+async function getResponse(url) { const r = signedOut(await fetch(url, { headers: authHeaders() })); if (!r.ok) throw new Error((await r.json().catch(()=>({error:r.statusText}))).error || r.statusText); return r; }
+async function getJSON(url) { return (await getResponse(url)).json(); }
+async function getBlob(url) { return (await getResponse(url)).blob(); }
 async function postJSON(url, body) {
   const r = signedOut(await fetch(url, { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body || {}) }));
   const data = await r.json().catch(() => ({}));
@@ -248,6 +254,7 @@ async function route() {
     else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines', gen); }
     else if (parts[0] === 'config') { setTab('config'); await renderConfig(gen); }
     else if (parts[0] === 'git') { setTab('git'); await renderGit(gen); }
+    else if (parts[0] === 'files') { setTab('files'); await renderFiles(gen); }
     else if (parts[0] === 'session' && parts[1]) { setTab('hub'); await renderRun(decodeURIComponent(parts[1]), undefined, gen); }
     else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); await renderMachine(decodeURIComponent(parts[1]), gen); }
     else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); await renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }, gen); }

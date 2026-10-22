@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Read the repository's history for display: refs, the log, a commit, its files, a patch.
+"""Read the repository for display: refs, the log, a commit, its files, a patch, the working tree.
 
 The web Git tab's reads. Every rev these take comes from the operator; `--end-of-options`
 keeps a flag-shaped one from reaching git as an option, and a path follows `--`. Nothing
@@ -10,17 +10,35 @@ here writes.
 from __future__ import annotations
 
 import dataclasses
+import os
 import pathlib
 import re
+import stat
 from collections.abc import Sequence
 
 from agent6 import errors
 from agent6.vcs import _git_command, git_ops
 
+# The revision that names the working tree as the head of a diff or compare.
+WORKTREE = "WORKTREE"
 
-def tree_has_blob(path: pathlib.Path, rev: str, name: str) -> bool:
-    """Return whether the tree at the rev holds the name as a file or symlink, not a directory."""
-    return " blob " in git_ops.tree_entry(path, rev, name)
+
+def tree_has_entry(path: pathlib.Path, rev: str, name: str) -> bool:
+    """Return whether the tree at the rev holds the name as an entry a diff can show.
+
+    A file, a symlink or a submodule pointer (whose patch is the pointer move), not a
+    directory.
+
+    Args:
+        path: The repository.
+        rev: The commit or tree.
+        name: The entry's path in the tree.
+
+    Returns:
+        True for a blob or a gitlink entry.
+    """
+    metadata = git_ops.tree_entry(path, rev, name)
+    return " blob " in metadata or " commit " in metadata
 
 
 # Every rev these take comes from the operator; `--end-of-options` keeps a flag-shaped one
@@ -287,11 +305,23 @@ class ChangedFile:
     binary: bool
 
 
-def _numstat(path: pathlib.Path, base: str, head: str) -> dict[str, tuple[int, int] | None]:
+# The diff command for two trees, and for the working tree against one tree.
+_TREES = ("diff-tree", "-r")
+_WORKTREE = ("diff",)
+
+
+def _listing(
+    path: pathlib.Path, cmd: tuple[str, ...], what: str, revs: tuple[str, ...]
+) -> list[str]:
+    """Return the NUL-separated fields of a `--name-status` or `--numstat` diff listing."""
+    return _git_command.nul_fields(path, *cmd, "-M", "-z", what, "--end-of-options", *revs)
+
+
+def _numstat(
+    path: pathlib.Path, cmd: tuple[str, ...], revs: tuple[str, ...]
+) -> dict[str, tuple[int, int] | None]:
     """Return each changed path's line counts, None for a binary file."""
-    fields = _git_command.nul_fields(
-        path, "diff-tree", "-r", "-M", "-z", "--numstat", "--end-of-options", base, head
-    )
+    fields = _listing(path, cmd, "--numstat", revs)
     counts: dict[str, tuple[int, int] | None] = {}
     i = 0
     while i < len(fields) and fields[i]:
@@ -306,24 +336,12 @@ def _numstat(path: pathlib.Path, base: str, head: str) -> dict[str, tuple[int, i
     return counts
 
 
-def changed_files(path: pathlib.Path, base: str, head: str) -> tuple[ChangedFile, ...]:
-    """Return the files that differ between two trees, renames detected.
-
-    Args:
-        path: The repository.
-        base: The older commit or tree; `EMPTY_TREE` lists a root commit's files.
-        head: The newer commit or tree.
-
-    Returns:
-        One row per changed path; a rename is one row carrying `old_path`.
-
-    Raises:
-        GitError: A rev cannot be read.
-    """
-    fields = _git_command.nul_fields(
-        path, "diff-tree", "-r", "-M", "-z", "--name-status", "--end-of-options", base, head
-    )
-    counts = _numstat(path, base, head)
+def _changed(
+    path: pathlib.Path, cmd: tuple[str, ...], revs: tuple[str, ...]
+) -> tuple[ChangedFile, ...]:
+    """Return the files a diff listing names, renames detected, with their counts."""
+    fields = _listing(path, cmd, "--name-status", revs)
+    counts = _numstat(path, cmd, revs)
     rows: list[ChangedFile] = []
     i = 0
     while i < len(fields) and fields[i]:
@@ -346,6 +364,127 @@ def changed_files(path: pathlib.Path, base: str, head: str) -> tuple[ChangedFile
             )
         )
     return tuple(rows)
+
+
+def changed_files(path: pathlib.Path, base: str, head: str) -> tuple[ChangedFile, ...]:
+    """Return the files that differ between two trees, renames detected.
+
+    Args:
+        path: The repository.
+        base: The older commit or tree; `EMPTY_TREE` lists a root commit's files.
+        head: The newer commit or tree.
+
+    Returns:
+        One row per changed path; a rename is one row carrying `old_path`.
+
+    Raises:
+        GitError: A rev cannot be read.
+    """
+    return _changed(path, _TREES, (base, head))
+
+
+# git calls a file binary on a NUL in its first 8000 bytes.
+_BINARY_PROBE = 8000
+
+
+def looks_binary(data: bytes) -> bool:
+    """Return whether git would call the bytes binary: a NUL in the first 8000."""
+    return b"\0" in data[:_BINARY_PROBE]
+
+
+def _added_counts(full: pathlib.Path) -> tuple[int | None, bool]:
+    """Return an untracked file's line count and whether git calls it binary.
+
+    A symlink is its one-line target, as `git diff` shows it; a file that is neither a
+    symlink nor a regular file gets no counts.
+
+    Args:
+        full: The file's path on disk.
+
+    Returns:
+        The lines `git diff --no-index` would add, or None with True for a binary file.
+
+    Raises:
+        OSError: The file cannot be read.
+    """
+    if full.is_symlink():
+        return 1, False
+    if not full.is_file():
+        return None, True
+    with full.open("rb") as fh:
+        chunk = fh.read(_BINARY_PROBE)
+        if looks_binary(chunk):
+            return None, True
+        lines, tail = 0, b""
+        while chunk:
+            lines += chunk.count(b"\n")
+            tail = chunk[-1:]
+            chunk = fh.read(1 << 16)
+    return lines + (1 if tail and tail != b"\n" else 0), False
+
+
+def worktree_files(path: pathlib.Path, base: str) -> tuple[ChangedFile, ...]:
+    """Return the files the working tree changes against a tree, then its untracked files.
+
+    Tracked changes, staged or not, come from `git diff <base>` with git's letters and
+    counts. Untracked files honour `.gitignore` (`ls-files --others --exclude-standard`)
+    and read `A`, with their line count or `binary`.
+
+    Args:
+        path: The repository.
+        base: The commit or tree to diff against; `EMPTY_TREE` on an unborn branch.
+
+    Returns:
+        One row per changed or untracked path; a file gone before it was read is left out.
+
+    Raises:
+        GitError: The base cannot be read.
+    """
+    rows = list(_changed(path, _WORKTREE, (base,)))
+    names = _git_command.nul_fields(path, "ls-files", "-z", "--others", "--exclude-standard")
+    for name in names:
+        if not name:
+            continue
+        try:
+            added, binary = _added_counts(path / name)
+        except OSError:
+            continue
+        rows.append(ChangedFile("A", name, "", added, None if binary else 0, binary))
+    return tuple(rows)
+
+
+def worktree_entry(path: pathlib.Path, name: str) -> str:
+    """Return "tracked" or "untracked" when the working tree holds the path as a file, else "".
+
+    `ls-files -t` tags an index entry `H` (`S` skip-worktree, `M` unmerged) and an
+    untracked, unignored file `?`; an ignored file, a directory, and a path outside the
+    repository or through a symlink get no entry.
+
+    Args:
+        path: The repository.
+        name: The repository-relative path.
+
+    Returns:
+        "tracked", "untracked" or "".
+    """
+    fields = _git_command.nul_fields(
+        path,
+        "ls-files",
+        "-z",
+        "-t",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--",
+        name,
+        check=False,
+        env_extra=git_ops.LITERAL_PATHSPECS,
+    )
+    for entry in fields:
+        tag, _, found = entry.partition(" ")
+        if found == name:
+            return "untracked" if tag == "?" else "tracked"
+    return ""
 
 
 _BINARY_DIFF_RE = re.compile(r"^Binary files .* differ$", re.MULTILINE)
@@ -379,8 +518,64 @@ def file_patch(
     """
     specs = (old_name, name) if old_name else (name,)
     args = ("diff", "-M", "--no-color", "--end-of-options", base, head, "--", *specs)
+    return _patch(path, args, ok=(0,), max_bytes=max_bytes)
+
+
+def worktree_patch(
+    path: pathlib.Path,
+    base: str,
+    name: str,
+    old_name: str = "",
+    *,
+    untracked: bool = False,
+    max_bytes: int | None,
+) -> tuple[str, bool]:
+    """Return one working-tree file's unified diff against a tree, cut at a cap.
+
+    Args:
+        path: The repository.
+        base: The commit or tree to diff against.
+        name: The file's path in the working tree (the tree's for a deletion).
+        old_name: The tree's path when renamed, so the rename shows as one.
+        untracked: The file is not in the index: it diffs against `/dev/null`.
+        max_bytes: Where the patch is cut, at the last line boundary before it; None keeps
+            every byte.
+
+    Returns:
+        The patch text and whether it was cut.
+
+    Raises:
+        GitError: The base cannot be read or the file cannot be diffed.
+    """
+    if untracked:
+        # `--no-index` exits 1 when the two sides differ, as a new file always does.
+        args = ("diff", "--no-color", "--no-index", "--", "/dev/null", name)
+        return _patch(path, args, ok=(0, 1), max_bytes=max_bytes)
+    specs = (old_name, name) if old_name else (name,)
+    args = ("diff", "-M", "--no-color", "--end-of-options", base, "--", *specs)
+    return _patch(path, args, ok=(0,), max_bytes=max_bytes)
+
+
+def _patch(
+    path: pathlib.Path, args: tuple[str, ...], *, ok: tuple[int, ...], max_bytes: int | None
+) -> tuple[str, bool]:
+    """Run a diff and return its text, cut at a cap.
+
+    Args:
+        path: The repository.
+        args: The diff command, `diff` first.
+        ok: The exit codes that are not failures.
+        max_bytes: Where the text is cut, at the last line boundary before it; None keeps
+            every byte.
+
+    Returns:
+        The text and whether it was cut.
+
+    Raises:
+        GitError: git exited with another code.
+    """
     _argv, rc, out, err = _git_command.spawn(path, args, git_ops.LITERAL_PATHSPECS, None)
-    if rc != 0:
+    if rc not in ok:
         raise errors.GitError(
             _git_command.failure(
                 args, rc, out.decode(errors="replace"), err.decode(errors="replace")
@@ -395,3 +590,157 @@ def file_patch(
 def is_binary_patch(patch: str) -> bool:
     """Return whether a `file_patch` says the file is binary."""
     return _BINARY_DIFF_RE.search(patch) is not None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Blob:
+    """A file's bytes, or only its size when it is over the reader's cap.
+
+    Attributes:
+        size: The file's size in bytes.
+        data: The bytes; None when the size is over the cap.
+    """
+
+    size: int
+    data: bytes | None
+
+
+def blob_at(path: pathlib.Path, rev: str, name: str, *, max_bytes: int) -> Blob | None:
+    """Return a regular file's bytes at a commit or tree.
+
+    Args:
+        path: The repository.
+        rev: The commit or tree.
+        name: The file's path in the tree.
+        max_bytes: The most bytes read; a larger file comes back as its size only.
+
+    Returns:
+        The blob, or None when the tree holds no regular file there (a symlink or a
+        directory is none).
+
+    Raises:
+        GitError: The rev cannot be read.
+    """
+    metadata = git_ops.tree_entry(path, rev, name)
+    if not metadata.startswith(("100644 blob ", "100755 blob ")):
+        return None
+    sha = metadata.split()[2]
+    size = int(_git_command.run(path, "cat-file", "-s", sha).stdout)
+    if size > max_bytes:
+        return Blob(size, None)
+    args = ("cat-file", "blob", sha)
+    _argv, rc, out, err = _git_command.spawn(path, args, None, None)
+    if rc != 0:
+        raise errors.GitError(
+            _git_command.failure(
+                args, rc, out.decode(errors="replace"), err.decode(errors="replace")
+            )
+        )
+    return Blob(size, out)
+
+
+def worktree_blob(path: pathlib.Path, name: str, *, max_bytes: int) -> Blob | None:
+    """Return a working-tree file's bytes, read from disk.
+
+    Only a path `worktree_entry` names is opened, through a descriptor that follows no
+    symlink, and only a regular file is read.
+
+    Args:
+        path: The repository.
+        name: The repository-relative path.
+        max_bytes: The most bytes read; a larger file comes back as its size only.
+
+    Returns:
+        The blob, or None when git lists no file there or it is not a regular file.
+    """
+    if not worktree_entry(path, name):
+        return None
+    try:
+        fd = os.open(path / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        return None
+    with os.fdopen(fd, "rb") as fh:
+        st = os.fstat(fh.fileno())
+        if not stat.S_ISREG(st.st_mode):
+            return None
+        if st.st_size > max_bytes:
+            return Blob(st.st_size, None)
+        data = fh.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        return Blob(len(data), None)
+    return Blob(len(data), data)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class TreeFile:
+    """One entry of a tree listing.
+
+    Attributes:
+        path: The repository-relative path.
+        size: The size in bytes; a symlink's is its target's length, a submodule's 0.
+        kind: "file", "symlink" or "submodule".
+    """
+
+    path: str
+    size: int
+    kind: str
+
+
+def tree_files(path: pathlib.Path, rev: str) -> tuple[TreeFile, ...]:
+    """Return every file of a commit or tree, in git's order.
+
+    Args:
+        path: The repository.
+        rev: The commit or tree.
+
+    Returns:
+        The entries with their size and kind.
+
+    Raises:
+        GitError: The rev cannot be read.
+    """
+    fields = _git_command.nul_fields(path, "ls-tree", "-r", "-z", "-l", "--end-of-options", rev)
+    rows: list[TreeFile] = []
+    for entry in fields:
+        meta, _, name = entry.partition("\t")
+        parts = meta.split()
+        if len(parts) != 4:
+            continue
+        mode, kind, _sha, size = parts
+        if kind == "commit":
+            rows.append(TreeFile(name, 0, "submodule"))
+        elif mode == "120000":
+            rows.append(TreeFile(name, int(size), "symlink"))
+        else:
+            rows.append(TreeFile(name, int(size), "file"))
+    return tuple(rows)
+
+
+def worktree_tree_files(path: pathlib.Path) -> tuple[TreeFile, ...]:
+    """Return the working tree's files: the index plus untracked files `.gitignore` keeps.
+
+    Args:
+        path: The repository.
+
+    Returns:
+        The entries on disk with their size and kind, sorted by path; a tracked file gone
+        from disk is left out.
+    """
+    names = _git_command.nul_fields(
+        path, "ls-files", "-z", "--cached", "--others", "--exclude-standard"
+    )
+    rows: list[TreeFile] = []
+    for name in names:
+        if not name:
+            continue
+        try:
+            st = os.lstat(path / name)
+        except OSError:
+            continue
+        if stat.S_ISREG(st.st_mode):
+            rows.append(TreeFile(name, st.st_size, "file"))
+        elif stat.S_ISLNK(st.st_mode):
+            rows.append(TreeFile(name, st.st_size, "symlink"))
+        elif stat.S_ISDIR(st.st_mode):
+            rows.append(TreeFile(name, 0, "submodule"))
+    return tuple(sorted(rows, key=lambda f: f.path))

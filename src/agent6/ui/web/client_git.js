@@ -1,16 +1,23 @@
 // --- git ---------------------------------------------------------------------
-// The Git tab: the commit graph over the refs the filter keeps, a commit's files with
-// each file's diff, and a compare of any two revisions. The server lists, verifies and
-// caps (/api/git/*); this file lays out the lanes and paints. Filter and compare state
-// outlive a visit to another tab; the graph itself is fetched again on return.
+// The Git tab: the commit graph over the refs the filter keeps, the working tree's
+// uncommitted files on top when there are any, a commit's files with each file's diff,
+// and a compare of any two revisions. The server lists, verifies and caps (/api/git/*);
+// this file lays out the lanes and paints. Filter and compare state outlive a visit to
+// another tab; the graph and the working tree are fetched again on return, and on ↻.
 const GIT_LANE_W = 14, GIT_ROW_H = 30, GIT_LANES_MAX = 16;
+// The server's sentinel revision for the working tree, a diff or compare head.
+const GIT_WORKTREE = 'WORKTREE';
+// How a file's diff is shown; the choice is kept per browser.
+const DIFF_MODE_KEY = 'a6-diff-mode';
+const DIFF_MODES = ['inline', 'split', 'old', 'new'];
+const GIT_WORKTREE_PICK = { rev: GIT_WORKTREE, label: 'working tree' };
 const GIT_LANE_COLORS = ['#6ea8fe', '#4ec9a5', '#e2c08d', '#f07178', '#b48ead', '#56b6c2', '#d19a66', '#98c379'];
 const GIT_KIND_TITLE = { branch: 'branch', remote: 'remote-tracking branch', tag: 'tag', agent6: 'agent6 run ref', head: 'HEAD' };
 const gitState = {
   groupOn: { branch: true, remote: true, tag: true, agent6: false }, // agent6 chain refs are off until asked for
   refOff: new Set(),                 // refs unticked one by one, by full name
   compare: { base: null, head: null }, // each { rev, label } or null
-  side: 'commit',                    // what the side panel shows: 'commit' or 'compare'
+  side: 'commit',                    // what the side panel shows: 'commit', 'worktree' or 'compare'
 };
 
 // Lanes: each slot waits for one sha. A commit takes the slot waiting for it (or a free
@@ -70,6 +77,19 @@ function gitLanesSvg(lay, cols, isMerge, isHead) {
   return svg;
 }
 
+function gitWorktreeSvg(cols) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('width', cols * GIT_LANE_W); svg.setAttribute('height', GIT_ROW_H);
+  svg.setAttribute('class', 'gc-lanes');
+  const dot = document.createElementNS(NS, 'circle');
+  dot.setAttribute('cx', GIT_LANE_W / 2); dot.setAttribute('cy', GIT_ROW_H / 2); dot.setAttribute('r', 4);
+  dot.setAttribute('stroke', GIT_LANE_COLORS[0]);
+  dot.setAttribute('class', 'gc-dot wt');
+  svg.appendChild(dot);
+  return svg;
+}
+
 function refBadge(r) {
   const b = el('span', 'gref ' + esc(r.kind) + (r.head ? ' head' : ''), r.name);
   b.title = GIT_KIND_TITLE[r.kind] || r.kind;
@@ -81,29 +101,94 @@ function statusBadge(status) {
   return s;
 }
 function shortLabel(c) { return c.short + ' ' + c.subject; }
+function fmtBytes(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KiB' : (n / 1048576).toFixed(1) + ' MiB'; }
 
-// A changed-file list shared by the commit view and the compare view: a row per file;
-// a click opens the file's diff over the whole tab.
+// An image's diff shows the file before and after, above git's "Binary files differ"
+// line. The server types a blob by these extensions and sandboxes every blob response.
+const IMAGE_EXTS = new Set(['avif', 'bmp', 'gif', 'ico', 'jpeg', 'jpg', 'png', 'svg', 'webp']);
+function isImagePath(p) { const dot = p.lastIndexOf('.'); return dot >= 0 && IMAGE_EXTS.has(p.slice(dot + 1).toLowerCase()); }
+
+// Fetch a blob with the token and show it in an <img> through a data: URL. A blob: URL
+// would open under the page's origin, where the token lives, so an SVG's script opened
+// from one could read it; a data: document has no origin.
+async function blobImage(rev, path, fig, cap) {
+  const blob = await getBlob('/api/git/blob?rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(path));
+  const url = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => rej(fr.error); fr.readAsDataURL(blob); });
+  if (!fig.isConnected) return;
+  const img = el('img'); img.alt = path;
+  const size = cap.dataset.label + ' · ' + fmtBytes(blob.size);
+  img.onload = () => { cap.textContent = size + ' · ' + img.naturalWidth + '\u00d7' + img.naturalHeight; };
+  img.onerror = () => { cap.textContent = size + ' · the browser cannot show this image'; };
+  img.src = url;
+  fig.appendChild(img);
+}
+
+// The pair: "before" at the base unless the file was added, "after" at the head unless it
+// was deleted; a rename's "before" is the old path.
+function imagePair(ctx, f) {
+  const wrap = el('div', 'git-img');
+  const sides = [];
+  if (f.status !== 'A') sides.push(['before', ctx.base, f.old_path || f.path]);
+  if (f.status !== 'D') sides.push(['after', ctx.head, f.path]);
+  for (const [label, rev, path] of sides) {
+    const fig = el('figure', 'git-img-side');
+    const cap = el('figcaption', 'muted'); cap.dataset.label = label; cap.textContent = label + ' · loading…';
+    fig.appendChild(cap);
+    wrap.appendChild(fig);
+    blobImage(rev, path, fig, cap).catch(e => { cap.textContent = label + ' · ' + e.message; cap.classList.add('err'); });
+  }
+  return wrap;
+}
+
+// A changed-file list shared by the commit, working-tree and compare views, as a flat
+// list or a folder tree (the choice kept per browser): a row per file, reachable by
+// `data-path`; a click opens the file's diff over the whole tab.
+const FILES_VIEW_KEY = 'a6-files-view';
 function fileList(files, truncated, open) {
   const root = el('div', 'gfiles');
-  const count = el('div', 'muted gf-count', files.length === 1 ? '1 file changed' : files.length + ' files changed');
-  root.appendChild(count);
+  const head = el('div', 'row gf-head'); root.appendChild(head);
+  head.appendChild(el('div', 'muted gf-count', fileCount(files.length) + ' changed'));
+  const view = el('span', 'gview'); head.appendChild(view);
   if (truncated) root.appendChild(el('div', 'err gf-note', 'the list is cut: more files changed than are shown'));
-  if (!files.length) root.appendChild(el('div', 'muted gf-note', 'no files differ'));
-  files.forEach((f, i) => {
+  const body = el('div'); root.appendChild(body);
+  let mode = recall(FILES_VIEW_KEY, 'list');
+  const fileRow = (f, short) => {
     const row = el('div', 'gf');
+    row.dataset.path = f.path;
     row.appendChild(statusBadge(f.status));
-    row.appendChild(filePath(f));
+    row.appendChild(filePath(f, short));
     row.appendChild(fileCounts(f));
-    actionable(row, () => open(i), f.status + ' ' + f.path);
-    root.appendChild(row);
-  });
+    actionable(row, () => open(files.indexOf(f)), f.status + ' ' + f.path);
+    return row;
+  };
+  const folderNote = (d) => {
+    const under = treeFiles(d);
+    let add = 0, del = 0;
+    for (const f of under) if (!f.binary) { add += f.additions; del += f.deletions; }
+    return fileCount(under.length) + ' · +' + add + ' −' + del;
+  };
+  const paint = () => {
+    body.innerHTML = '';
+    for (const b of view.children) b.classList.toggle('active', b.textContent === mode);
+    if (!files.length) { body.appendChild(el('div', 'muted gf-note', 'no files differ')); return; }
+    if (mode === 'tree') body.appendChild(treeView(buildTree(files), (f) => fileRow(f, true), folderNote, false));
+    else for (const f of files) body.appendChild(fileRow(f, false));
+  };
+  for (const m of ['list', 'tree']) {
+    const b = el('button', 'mini', m); b.title = m === 'tree' ? 'the files under their folders' : 'every file on one row';
+    b.onclick = () => { mode = m; remember(FILES_VIEW_KEY, m); paint(); };
+    view.appendChild(b);
+  }
+  paint();
   return root;
 }
-function filePath(f) {
+// The path, or in a tree the file's own name; a rename keeps its old path, shortened too
+// when it sat in the same folder.
+function filePath(f, short) {
   const p = el('span', 'gf-path');
-  if (f.old_path) p.appendChild(el('span', 'muted', f.old_path + ' → '));
-  p.appendChild(document.createTextNode(f.path));
+  const dir = (s) => s.slice(0, s.lastIndexOf('/') + 1), base = (s) => s.slice(s.lastIndexOf('/') + 1);
+  if (f.old_path) p.appendChild(el('span', 'muted', (short && dir(f.old_path) === dir(f.path) ? base(f.old_path) : f.old_path) + ' → '));
+  p.appendChild(document.createTextNode(short ? base(f.path) : f.path));
   return p;
 }
 function fileCounts(f) {
@@ -119,8 +204,9 @@ function fileCounts(f) {
 // A compare picker: typed text searched as you type (/api/git/search lists matching
 // branches, tags and commits), one picked by click or Enter; Enter on free text keeps it
 // as the revision for the server to verify. The results render into `listHost`, a
-// full-width strip under the picker row the two pickers share.
-function gitPicker(name, initial, onPick, listHost) {
+// full-width strip under the picker row the two pickers share. `fixed` choices (the
+// working tree) come first whenever the text matches their label.
+function gitPicker(name, initial, onPick, listHost, fixed) {
   const root = el('div', 'gpick');
   const input = el('input', 'field');
   input.placeholder = name + ': branch, tag, sha, message…';
@@ -128,6 +214,8 @@ function gitPicker(name, initial, onPick, listHost) {
   input.autocomplete = 'off';
   let value = initial || null;
   if (value) input.value = value.label;
+  // The text is a search only once typed: a picked label opens the full list again.
+  const query = () => value ? '' : input.value.trim();
   const list = el('div', 'gpick-list');
   let items = [], active = -1, request = 0, timer = null;
   // Closing drops the search still pending or in flight, so neither can reopen the list.
@@ -135,6 +223,8 @@ function gitPicker(name, initial, onPick, listHost) {
   const choose = (v) => { value = v; input.value = v.label; close(); onPick(v); };
   const paint = (d) => {
     list.innerHTML = ''; items = [];
+    const q = query().toLowerCase();
+    for (const f of fixed || []) if (f.label.includes(q)) items.push({ rev: f.rev, label: f.label, node: (() => { const o = el('div', 'ac-item'); o.appendChild(el('span', 'gref wt', f.label)); return o; })() });
     for (const r of d.refs) items.push({ rev: r.full, label: r.name, node: (() => { const o = el('div', 'ac-item'); o.appendChild(refBadge(r)); o.appendChild(el('span', 'muted mono', ' ' + r.sha.slice(0, 7))); return o; })() });
     for (const c of d.commits) items.push({ rev: c.sha, label: shortLabel(c), node: (() => { const o = el('div', 'ac-item'); o.appendChild(el('span', 'mono', c.short)); o.appendChild(el('span', null, ' ' + c.subject)); o.appendChild(el('span', 'muted', ' · ' + c.when)); return o; })() });
     items.forEach((it, i) => { it.node.classList.toggle('on', i === active); it.node.onmousedown = (e) => { e.preventDefault(); choose(it); }; list.appendChild(it.node); });
@@ -145,7 +235,7 @@ function gitPicker(name, initial, onPick, listHost) {
   const search = async () => {
     const n = ++request;
     let d;
-    try { d = await getJSON('/api/git/search?q=' + encodeURIComponent(input.value.trim())); }
+    try { d = await getJSON('/api/git/search?q=' + encodeURIComponent(query())); }
     catch (e) { if (n === request) { list.innerHTML = ''; list.appendChild(el('div', 'ac-item err', e.message)); listHost.innerHTML = ''; listHost.appendChild(list); } return; }
     if (n !== request || !root.isConnected) return;
     active = -1; paint(d);
@@ -169,19 +259,21 @@ function gitPicker(name, initial, onPick, listHost) {
 
 async function renderGit(gen) {
   setCrumb('git');
-  const refsData = await getJSON('/api/git/refs');
+  const [refsData, wtData] = await Promise.all([getJSON('/api/git/refs'), getJSON('/api/git/worktree')]);
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
   const app = el('div', 'git-app'); view.appendChild(app);
-  const refs = refsData.refs, head = refsData.head;
+  let refs = refsData.refs, head = refsData.head, wt = wtData;
   const selectedRefs = () => refs.filter(r => gitState.groupOn[r.kind] && !gitState.refOff.has(r.full));
 
-  // -- toolbar: the ref filter, the compare toggle, the counts ------------------------
+  // -- toolbar: the ref filter, the compare toggle, the refresh, the counts -----------
   const bar = el('div', 'git-bar page-pad row wrap'); app.appendChild(bar);
   const refsBtn = el('button', null, 'Refs ▾');
   const compareBtn = el('button', null, 'Compare');
+  const reloadBtn = el('button', null, '↻'); reloadBtn.title = 'refresh: re-read the refs, the graph and the working tree';
+  reloadBtn.setAttribute('aria-label', 'refresh');
   const counts = el('span', 'muted git-counts');
-  bar.appendChild(refsBtn); bar.appendChild(compareBtn); bar.appendChild(counts);
+  bar.appendChild(refsBtn); bar.appendChild(compareBtn); bar.appendChild(reloadBtn); bar.appendChild(counts);
 
   const body = el('div', 'git-body'); app.appendChild(body);
   const graph = el('div', 'git-graph'); body.appendChild(graph);
@@ -209,6 +301,16 @@ async function renderGit(gen) {
     const next = el('button', 'mini', '›'); next.title = 'next file'; next.disabled = i === ctx.files.length - 1;
     next.onclick = () => showDiff(ctx, i + 1);
     head.appendChild(prev); head.appendChild(next);
+    let mode = recall(DIFF_MODE_KEY, 'inline');
+    if (!DIFF_MODES.includes(mode)) mode = 'inline';
+    const modes = el('span', 'gview');
+    for (const m of DIFF_MODES) {
+      const b = el('button', 'mini' + (m === mode ? ' active' : ''), m);
+      b.title = { inline: 'the unified patch', split: 'old and new side by side', old: 'the file at the base, deletions marked', new: 'the file at the head, additions marked' }[m];
+      b.onclick = () => { remember(DIFF_MODE_KEY, m); showDiff(ctx, i, whole); };
+      modes.appendChild(b);
+    }
+    head.appendChild(modes);
     diffView.appendChild(head);
     const box = el('div', 'git-diff-body'); diffView.appendChild(box);
     let d = diffs.get(key);
@@ -223,18 +325,55 @@ async function renderGit(gen) {
         if (diffView.dataset.key === key) { box.innerHTML = ''; box.appendChild(el('div', 'err', e.message)); }
         return;
       }
-      diffs.set(key, d);
+      if (ctx.head !== GIT_WORKTREE) diffs.set(key, d); // the working tree changes under the tab
       if (diffView.dataset.key !== key || !diffView.isConnected) return; // superseded
       box.innerHTML = '';
     }
     // The states come first, above the patch, so a cut patch reads as cut.
+    if (isImagePath(f.path)) box.appendChild(imagePair(ctx, f));
     if (d.binary) box.appendChild(el('div', 'muted gf-note', 'binary file: no text diff'));
     if (d.truncated) {
       const note = el('div', 'err gf-note', 'the patch is cut at ' + Math.round(d.max_bytes / 1024) + ' KiB ');
       const all = el('button', 'mini', 'Show the whole patch'); all.onclick = () => showDiff(ctx, i, true);
       note.appendChild(all); box.appendChild(note);
     }
-    const patch = el('div', 'gf-patch'); patch.appendChild(renderDiff(d.patch || '')); box.appendChild(patch);
+    const patch = el('div', 'gf-patch'); box.appendChild(patch);
+    const parsed = parseUnifiedDiff(d.patch || '');
+    const file = parsed[0] || { preamble: [], hunks: [], binary: d.binary };
+    if (mode === 'split' && window.matchMedia('(max-width: 780px)').matches) {
+      patch.appendChild(el('div', 'muted gf-note', 'split needs a wider screen: showing inline'));
+      mode = 'inline';
+    }
+    if (mode === 'inline') patch.appendChild(renderUnified(parsed, true));
+    else if (mode === 'split') patch.appendChild(renderSplit(file));
+    else await showSide(patch, ctx, f, file, mode, key, whole, () => showDiff(ctx, i, true));
+  };
+  // The file at one side of a diff, its changed lines marked: the deletions on the old
+  // side, the additions on the new. The text comes highlighted from /api/git/text.
+  const showSide = async (host, ctx, f, file, side, key, whole, openWhole) => {
+    if ((side === 'old' && f.status === 'A') || (side === 'new' && f.status === 'D')) {
+      host.appendChild(el('div', 'muted gf-note', 'no ' + side + ' side: the file ' + (side === 'old' ? 'was added' : 'was deleted')));
+      return;
+    }
+    const rev = side === 'old' ? ctx.base : ctx.head, path = side === 'old' ? (f.old_path || f.path) : f.path;
+    host.appendChild(el('div', 'muted', 'loading…'));
+    let t;
+    try { t = await getJSON('/api/git/text?rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(path) + (whole ? '&whole=1' : '')); }
+    catch (e) { if (diffView.dataset.key === key) { host.innerHTML = ''; host.appendChild(el('div', 'err', e.message)); } return; }
+    if (diffView.dataset.key !== key || !host.isConnected) return;
+    host.innerHTML = '';
+    if (t.binary) { host.appendChild(el('div', 'muted gf-note', 'binary file: no text')); return; }
+    if (t.truncated) {
+      const note = el('div', 'err gf-note', 'the file is cut at ' + Math.round(t.max_bytes / 1024) + ' KiB ');
+      const all = el('button', 'mini', 'Show the whole file'); all.onclick = openWhole;
+      note.appendChild(all); host.appendChild(note);
+    }
+    const marks = new Set();
+    for (const h of file.hunks) for (const l of h.lines) {
+      if (side === 'old' && l.kind === 'del') marks.add(l.old);
+      if (side === 'new' && l.kind === 'add') marks.add(l.new);
+    }
+    host.appendChild(renderLines(splitLines(t.text), t.spans, marks));
   };
 
   // -- the graph -------------------------------------------------------------------
@@ -251,6 +390,17 @@ async function renderGit(gen) {
     let cols = 1;
     for (const l of lays) cols = Math.max(cols, l.before.length, l.after.length, l.lane + 1);
     cols = Math.min(cols, GIT_LANES_MAX);
+    if (wt.files.length) {
+      const row = el('div', 'gc-row gc-wt' + (selected === GIT_WORKTREE ? ' sel' : ''));
+      row.dataset.sha = GIT_WORKTREE;
+      row.appendChild(gitWorktreeSvg(cols));
+      const n = wt.files.length + (wt.truncated ? '+' : '');
+      const subj = el('div', 'gc-subj');
+      subj.appendChild(el('span', 'gc-text', 'Working tree · ' + n + (wt.files.length === 1 && !wt.truncated ? ' uncommitted file' : ' uncommitted files')));
+      row.appendChild(subj);
+      actionable(row, showWorktree, 'working tree, ' + n + ' uncommitted files');
+      graph.appendChild(row);
+    }
     commits.forEach((c, i) => {
       const row = el('div', 'gc-row' + (c.sha === selected ? ' sel' : ''));
       row.dataset.sha = c.sha;
@@ -285,6 +435,18 @@ async function renderGit(gen) {
     } catch (e) { if (n === loading) toast(e.message, true); }
     paintGraph();
   };
+  // ↻: the refs, the working tree and the graph again; an open commit panel stays, an
+  // open working-tree panel is painted afresh.
+  const reload = async () => {
+    let r, w;
+    try { [r, w] = await Promise.all([getJSON('/api/git/refs'), getJSON('/api/git/worktree')]); }
+    catch (e) { toast(e.message, true); return; }
+    if (!app.isConnected) return;
+    refs = r.refs; head = r.head; wt = w;
+    if (gitState.side === 'worktree') showWorktree();
+    await loadGraph(true);
+  };
+  reloadBtn.onclick = reload;
 
   // -- the side panel: a commit, or the compare --------------------------------------
   const sideHead = (title) => {
@@ -296,6 +458,32 @@ async function renderGit(gen) {
   };
   const openSide = () => side.classList.add('open');
   const setCompare = (which, v) => { gitState.compare[which] = v; showCompare(); };
+  // The working tree's panel: no message; HEAD is the base every file diffs against.
+  const showWorktree = () => {
+    closeDiff();
+    selected = GIT_WORKTREE; gitState.side = 'worktree';
+    graph.querySelectorAll('.gc-row').forEach(r => r.classList.toggle('sel', r.dataset.sha === GIT_WORKTREE));
+    side.innerHTML = '';
+    side.appendChild(sideHead('Working tree'));
+    const pad = el('div', 'gd page-pad'); side.appendChild(pad);
+    pad.appendChild(el('div', 'gd-subject', 'Uncommitted changes'));
+    const kv = el('div', 'kv gd-meta');
+    kv.appendChild(el('span', 'k', 'base'));
+    const base = el('span', 'v');
+    if (head.sha) {
+      const b = el('button', 'mini mono', wt.base.slice(0, 7)); b.title = wt.base;
+      b.onclick = () => showCommit(wt.base);
+      base.appendChild(b); base.appendChild(el('span', 'muted', 'HEAD' + (head.branch ? ' (' + head.branch + ')' : '')));
+    } else base.appendChild(el('span', 'muted', 'the empty tree: no commits yet'));
+    kv.appendChild(base);
+    pad.appendChild(kv);
+    const acts = el('div', 'row wrap gd-actions');
+    const asHead = el('button', 'mini', 'Set as head'); asHead.onclick = () => setCompare('head', GIT_WORKTREE_PICK);
+    acts.appendChild(asHead);
+    pad.appendChild(acts);
+    pad.appendChild(fileList(wt.files, wt.truncated, (i) => showDiff({ base: wt.base, head: GIT_WORKTREE, files: wt.files }, i)));
+    openSide();
+  };
   const showCommit = async (sha) => {
     closeDiff();
     selected = sha; gitState.side = 'commit';
@@ -368,7 +556,7 @@ async function renderGit(gen) {
     };
     const listHost = el('div', 'gpick-host');
     const pickBase = gitPicker('base', gitState.compare.base, (v) => { gitState.compare.base = v; run(); }, listHost);
-    const pickHead = gitPicker('head', gitState.compare.head, (v) => { gitState.compare.head = v; run(); }, listHost);
+    const pickHead = gitPicker('head', gitState.compare.head, (v) => { gitState.compare.head = v; run(); }, listHost, [GIT_WORKTREE_PICK]);
     const swap = el('button', 'mini', '⇄'); swap.title = 'swap base and head';
     swap.onclick = () => { const { base, head: h } = gitState.compare; gitState.compare = { base: h, head: base }; pickBase.set(h); pickHead.set(base); run(); };
     const row = el('div', 'gcmp-pick');
@@ -429,7 +617,7 @@ async function renderGit(gen) {
   refsBtn.onclick = openFilter;
 
   if (gitState.side === 'compare' && (gitState.compare.base || gitState.compare.head)) showCompare();
+  else if (gitState.side === 'worktree' && wt.files.length) showWorktree();
   else side.appendChild(el('div', 'empty', 'click a commit for its files and diff, or Compare for any two revisions'));
   await loadGraph(true);
 }
-boot();

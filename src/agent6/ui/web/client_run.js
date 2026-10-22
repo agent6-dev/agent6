@@ -622,13 +622,5 @@ function paintRun(cards, s) {
 }
 
 function renderDiff(text) {
-  const box = el('pre', 'diff');
-  for (const line of text.split('\n')) {
-    let cls = null;
-    if (line.startsWith('+') && !line.startsWith('+++')) cls = 'add';
-    else if (line.startsWith('-') && !line.startsWith('---')) cls = 'del';
-    else if (line.startsWith('@@')) cls = 'hunk';
-    const span = el('span', cls); span.textContent = line + '\n'; box.appendChild(span);
-  }
-  return box;
+  return renderUnified(parseUnifiedDiff(text), false);
 }

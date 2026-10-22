@@ -18,7 +18,7 @@ import pytest
 
 from agent6 import paths
 from agent6.ui.web import server as web_server
-from tests.unit.test_git_history import build_history
+from tests.unit.test_git_history import build_history, make_dirty
 from tests.web import signin
 
 if TYPE_CHECKING:
@@ -61,6 +61,24 @@ def port(tmp_path: pathlib.Path) -> Iterator[int]:
 def git_port(tmp_path: pathlib.Path) -> Iterator[int]:
     """A server reading a repository with a merge, a rename, a binary file and tags."""
     build_history(tmp_path)
+    yield from _serve(tmp_path)
+
+
+@pytest.fixture
+def dirty_git_port(tmp_path: pathlib.Path) -> Iterator[int]:
+    """A server reading that repository with five uncommitted files, the PNG among them."""
+    build_history(tmp_path)
+    make_dirty(tmp_path)
+    yield from _serve(tmp_path)
+
+
+@pytest.fixture
+def files_port(tmp_path: pathlib.Path) -> Iterator[int]:
+    """The dirty repository with an untracked Python file under `src/`."""
+    build_history(tmp_path)
+    make_dirty(tmp_path)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "tool.py").write_text('def f(x):\n    return "hi"\n', encoding="utf-8")
     yield from _serve(tmp_path)
 
 
@@ -126,6 +144,8 @@ def test_a_files_diff_fills_the_git_tab(
     """
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    assert page.locator(".gc-wt").count() == 0  # a clean tree has no working-tree row
     page.locator(".gc-row").first.click()
     page.locator(".gf").first.click()
     page.wait_for_selector(".git-diff .diff")
@@ -136,4 +156,138 @@ def test_a_files_diff_fills_the_git_tab(
     page.locator(".git-diff-head button").first.click()  # the "files" back button
     assert "diffing" not in (body.get_attribute("class") or "")
     assert page.locator(".git-graph").is_visible()
+    assert errors == [], errors
+
+
+def test_the_working_tree_row_opens_its_uncommitted_files(
+    open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
+) -> None:
+    """A dirty tree tops the graph with a row that opens its files like a commit's."""
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git")
+    row = page.locator(".gc-wt")
+    row.wait_for()
+    assert "Working tree" in row.inner_text() and "5 uncommitted files" in row.inner_text()
+    row.click()
+    page.wait_for_selector(".git-side .gf")
+    assert page.locator(".git-side .gf").count() == 5
+    page.locator(".git-side .gf", has_text="new.txt").click()
+    page.wait_for_selector(".git-diff .diff")
+    assert "+hello" in page.locator(".git-diff .diff").inner_text()
+    assert errors == [], errors
+
+
+def test_an_images_diff_shows_it_before_and_after(
+    open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
+) -> None:
+    """A changed PNG shows both versions above git's binary line, each with its dimensions."""
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git")
+    page.locator(".gc-wt").click()
+    page.locator(".git-side .gf", has_text="logo.png").click()
+    page.wait_for_function("() => document.querySelectorAll('.git-img img').length === 2")
+    page.wait_for_function("() => document.body.innerText.includes('2\u00d72')")
+    text = page.locator(".git-img").inner_text()
+    assert "before" in text and "1\u00d71" in text and "after" in text and "2\u00d72" in text
+    assert "Binary files" in page.locator(".git-diff .diff").inner_text()
+    assert errors == [], errors
+
+
+def test_a_changed_file_list_reads_as_a_tree_that_folds(
+    open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
+) -> None:
+    """The list | tree toggle groups the files under their folders.
+
+    A folder folds on a click, the choice is kept in the browser, and a file in the tree
+    opens its diff as in the list.
+    """
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git")
+    page.locator(".gc-wt").click()
+    page.wait_for_selector(".git-side .gf")
+    page.locator(".git-side .gview button", has_text="tree").click()
+    folder = page.locator(".git-side .gtree-dir", has_text="dir")
+    folder.wait_for()
+    assert "1 file" in folder.inner_text()
+    leaf = page.locator(".git-side [data-path='dir/g.txt']")
+    assert leaf.is_visible()
+    folder.click()
+    assert not leaf.is_visible()
+    folder.click()
+    leaf.click()
+    page.wait_for_selector(".git-diff .diff")
+    assert "rename from dir/f.txt" in page.locator(".git-diff .diff").inner_text()
+    assert page.evaluate("localStorage.getItem('a6-files-view')") == "tree"
+    assert errors == [], errors
+
+
+def test_the_diff_view_switches_between_inline_split_old_and_new(
+    open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
+) -> None:
+    """Every rendered line carries its numbers; split pairs the sides; new marks the changes.
+
+    The choice is kept in the browser.
+    """
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git")
+    page.locator(".gc-wt").click()
+    page.locator(".git-side [data-path='b.txt']").click()
+    page.wait_for_selector(".git-diff .diff")
+    assert page.locator(".git-diff .diff .dl.add[data-new='4']").count() == 1
+    assert page.locator(".git-diff .diff .dl[data-old='3'][data-new='3']").count() == 1
+    page.locator(".git-diff .gview button", has_text="split").click()
+    page.wait_for_selector(".git-diff .ds-row")
+    added = page.locator(".git-diff .ds-row[data-new='4']")
+    assert added.count() == 1
+    assert added.locator(".ds-cell").nth(0).inner_text().strip() == ""
+    assert "four" in added.locator(".ds-cell").nth(1).inner_text()
+    ctx = page.locator(".git-diff .ds-row[data-old='3']")
+    assert "three" in ctx.locator(".ds-cell").nth(0).inner_text()
+    assert "three" in ctx.locator(".ds-cell").nth(1).inner_text()
+    # The gutter is drawn by the stylesheet, so a blank line still has a height.
+    drawn = page.evaluate(
+        "getComputedStyle(document.querySelector(\".ds-row[data-old='3'] .ds-cell .g\"),"
+        " '::before').content"
+    )
+    assert drawn == '"3"', drawn
+    page.locator(".git-diff .gview button", has_text="new").click()
+    page.wait_for_selector(".git-diff .src .sl[data-line='4']")
+    assert page.locator(".git-diff .src .sl").count() == 4
+    assert "changed" in (
+        page.locator(".git-diff .src .sl[data-line='4']").get_attribute("class") or ""
+    )
+    assert "changed" not in (
+        page.locator(".git-diff .src .sl[data-line='1']").get_attribute("class") or ""
+    )
+    assert page.evaluate("localStorage.getItem('a6-diff-mode')") == "new"
+    page.locator(".git-diff .gview button", has_text="old").click()
+    page.wait_for_selector(".git-diff .src .sl[data-line='3']")
+    assert page.locator(".git-diff .src .sl").count() == 3
+    assert errors == [], errors
+
+
+def test_the_files_tab_opens_a_file_highlighted(
+    open_page: Callable[[int], tuple[Page, list[str]]], files_port: int
+) -> None:
+    """The Files tab lists the working tree's files as a tree and shows one with its spans.
+
+    HEAD is the revision to start; the picker's "working tree" lists the untracked file
+    too, and the filter narrows the tree.
+    """
+    page, errors = open_page(files_port)
+    page.goto(f"http://127.0.0.1:{files_port}/#/files")
+    page.wait_for_selector(".files-tree [data-path='b.txt']")
+    assert page.locator(".files-tree [data-path='src/tool.py']").count() == 0  # not at HEAD
+    page.locator(".files-bar .gpick input").click()
+    page.locator(".gpick-list .ac-item", has_text="working tree").click()
+    page.wait_for_selector(".files-tree [data-path='src/tool.py']")
+    assert page.locator(".files-tree .gtree-dir[data-path='src']").count() == 1
+    page.locator(".files-bar input.filter").fill("tool")
+    assert page.locator(".files-tree [data-path='b.txt']").count() == 0
+    page.locator(".files-tree [data-path='src/tool.py']").click()
+    page.wait_for_selector(".files-view .src .sl[data-line='2']")
+    first = page.locator(".files-view .src .sl[data-line='1']")
+    assert "def" in first.inner_text() and first.locator(".hl-keyword").count() >= 1
+    assert page.locator(".files-view .src .sl").count() == 2
+    assert "python" in page.locator(".files-view").inner_text()
     assert errors == [], errors

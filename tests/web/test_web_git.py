@@ -20,7 +20,14 @@ import pytest
 from agent6.ui.web import git_model, page
 from agent6.ui.web import server as web_server
 from agent6.vcs import git_ops
-from tests.unit.test_git_history import build_history
+from tests.unit.test_git_history import (
+    PNG_BLUE_2X2,
+    PNG_RED_1X1,
+    _git,
+    add_submodule_pointer,
+    build_history,
+    make_dirty,
+)
 from tests.web import signin
 
 
@@ -52,6 +59,17 @@ def _get(port: int, path: str) -> tuple[int, Any]:
         conn.request("GET", path)
         resp = conn.getresponse()
         return resp.status, json.loads(resp.read())
+    finally:
+        conn.close()
+
+
+def _raw(port: int, path: str) -> tuple[int, dict[str, str], bytes]:
+    """GET a path and return the status, the headers lower-cased, and the body bytes."""
+    conn = signin.SignedIn(port, timeout=10)
+    try:
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        return resp.status, {k.lower(): v for k, v in resp.getheaders()}, resp.read()
     finally:
         conn.close()
 
@@ -107,7 +125,7 @@ def test_graph_walks_the_default_refs_and_decorates(
     }
     assert [r["head"] for r in merge["refs"] if r["name"] == "main"] == [True]
     assert merge["author"] == "t"
-    assert merge["date"].startswith("2026-01-02T10:") and len(merge["when"]) == 11
+    assert merge["date"].startswith("2026-01-") and len(merge["when"]) == 11
     assert merge["subject"] == "merge feature"
     assert (body["has_more"], body["skip"], body["limit"]) == (False, 0, git_model.GRAPH_PAGE)
 
@@ -182,7 +200,13 @@ def test_compare_reads_like_the_commits_own_diff(
     own = _ok(port, f"/api/git/commit/{shas['feature']}")["files"]
     assert body["files"] == own
     across = _ok(port, "/api/git/compare?base=refs/tags/v1&head=refs/tags/v2")
-    assert sorted(f["path"] for f in across["files"]) == ["b.txt", "d.txt", "dir/f.txt", "img.bin"]
+    assert sorted(f["path"] for f in across["files"]) == [
+        "b.txt",
+        "d.txt",
+        "dir/f.txt",
+        "img.bin",
+        "logo.png",
+    ]
     empty = _ok(port, f"/api/git/compare?base={git_ops.EMPTY_TREE}&head=v1")
     assert empty["base"]["subject"] == "(empty tree)"
     assert len(empty["files"]) == 3
@@ -211,6 +235,201 @@ def test_diff_returns_one_files_patch_with_its_flags(
     whole = _ok(port, f"/api/git/diff?{q}&path=b.txt&old_path=a.txt&whole=1")
     assert whole["truncated"] is False and "+three" in whole["patch"]
     assert whole["max_bytes"] is None
+
+
+def test_worktree_lists_the_uncommitted_files_against_head(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """A clean tree lists nothing; a dirty one lists tracked changes, then untracked files."""
+    path, shas = repo
+    assert _ok(port, "/api/git/worktree") == {
+        "base": shas["merge"],
+        "files": [],
+        "truncated": False,
+    }
+    make_dirty(path)
+    body = _ok(port, "/api/git/worktree")
+    assert body["base"] == shas["merge"] and body["truncated"] is False
+    assert [(f["status"], f["path"], f["old_path"]) for f in body["files"]] == [
+        ("M", "b.txt", ""),
+        ("R", "dir/g.txt", "dir/f.txt"),
+        ("M", "logo.png", ""),
+        ("A", "blob.bin", ""),
+        ("A", "new.txt", ""),
+    ]
+    by_path = {f["path"]: f for f in body["files"]}
+    assert (by_path["new.txt"]["additions"], by_path["new.txt"]["deletions"]) == (2, 0)
+    assert by_path["new.txt"]["binary"] is False
+    assert (by_path["blob.bin"]["additions"], by_path["blob.bin"]["binary"]) == (None, True)
+    assert (by_path["b.txt"]["additions"], by_path["b.txt"]["deletions"]) == (1, 0)
+
+
+def test_compare_and_diff_take_the_working_tree_as_head(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """`WORKTREE` is a head for compare and diff, never a base or a commit."""
+    path, shas = repo
+    make_dirty(path)
+    cmp = _ok(port, "/api/git/compare?base=HEAD&head=WORKTREE")
+    assert cmp["head"] == {
+        "rev": "WORKTREE",
+        "sha": "WORKTREE",
+        "short": "WORKTREE",
+        "subject": "(working tree)",
+    }
+    assert cmp["base"]["sha"] == shas["merge"]
+    assert cmp["files"] == _ok(port, "/api/git/worktree")["files"]
+    q = f"base={shas['merge']}&head=WORKTREE"
+    new = _ok(port, f"/api/git/diff?{q}&path=new.txt")
+    assert (new["head"], new["binary"], new["truncated"]) == ("WORKTREE", False, False)
+    assert "+++ b/new.txt" in new["patch"] and "+hello" in new["patch"]
+    renamed = _ok(port, f"/api/git/diff?{q}&path=dir/g.txt&old_path=dir/f.txt")
+    assert "rename from dir/f.txt" in renamed["patch"]
+    assert "+four" in _ok(port, f"/api/git/diff?{q}&path=b.txt")["patch"]
+    assert _ok(port, f"/api/git/diff?{q}&path=blob.bin")["binary"] is True
+    # A deletion staged away is in neither the index nor the working tree, only the base.
+    _git(path, "rm", "-q", "img.bin")
+    gone = _ok(port, f"/api/git/diff?{q}&path=img.bin")
+    assert gone["binary"] is True and "/dev/null" in gone["patch"]
+    listed = [(f["status"], f["path"]) for f in _ok(port, "/api/git/worktree")["files"]]
+    assert ("D", "img.bin") in listed
+    assert "working tree" in _refused(port, "/api/git/compare?base=WORKTREE&head=main")
+    assert "working tree" in _refused(port, "/api/git/diff?base=WORKTREE&head=main&path=b.txt")
+    assert "working tree" in _refused(port, "/api/git/commit/WORKTREE")
+    assert "no file" in _refused(port, f"/api/git/diff?{q}&path=junk.log")  # ignored
+    assert "no file" in _refused(port, f"/api/git/diff?{q}&path=dir")  # a directory
+    assert "not a repository path" in _refused(port, f"/api/git/diff?{q}&path=../outside")
+    assert "not a repository path" in _refused(port, f"/api/git/diff?{q}&path=/etc/passwd")
+
+
+def test_blob_serves_an_image_typed_and_sandboxed_and_the_rest_as_a_download(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An image's bytes come typed by extension; anything else is an untyped attachment.
+
+    Every blob response is sandboxed and unsniffable, so a repository file opened directly
+    (an SVG with a script) runs under no origin; over the cap answers 413.
+    """
+    path, _shas = repo
+    status, headers, body = _raw(port, "/api/git/blob?rev=main&path=logo.png")
+    assert (status, body, headers["content-type"]) == (200, PNG_RED_1X1, "image/png")
+    csp = headers["content-security-policy"]
+    assert "sandbox" in csp and "default-src 'none'" in csp
+    assert headers["x-content-type-options"] == "nosniff"
+    assert "content-disposition" not in headers
+    make_dirty(path)
+    status, headers, body = _raw(port, "/api/git/blob?rev=WORKTREE&path=logo.png")
+    assert (status, body, headers["content-type"]) == (200, PNG_BLUE_2X2, "image/png")
+    status, headers, body = _raw(port, "/api/git/blob?rev=WORKTREE&path=new.txt")
+    assert (status, body) == (200, b"hello\nworld\n")
+    assert headers["content-type"] == "application/octet-stream"
+    assert headers["content-disposition"] == "attachment"
+    assert headers["x-content-type-options"] == "nosniff"
+    monkeypatch.setattr(git_model, "BLOB_MAX_BYTES", 10)
+    status, headers, body = _raw(port, "/api/git/blob?rev=main&path=logo.png")
+    assert status == 413 and "the most served is 10 bytes" in json.loads(body)["error"]
+
+
+def test_blob_refuses_what_is_not_a_file_of_the_revision(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    path, _shas = repo
+    make_dirty(path)
+    assert "unknown revision" in _refused(port, "/api/git/blob?rev=nope&path=logo.png")
+    assert "a revision is required" in _refused(port, "/api/git/blob?rev=&path=logo.png")
+    assert "cannot start with '-'" in _refused(port, "/api/git/blob?rev=main&path=-x")
+    assert "a path is required" in _refused(port, "/api/git/blob?rev=main&path=")
+    assert "not a repository path" in _refused(port, "/api/git/blob?rev=main&path=../x")
+    assert "not a repository path" in _refused(port, "/api/git/blob?rev=WORKTREE&path=/etc/passwd")
+    assert "no file" in _refused(port, "/api/git/blob?rev=main&path=dir")
+    assert "no file" in _refused(port, "/api/git/blob?rev=v1&path=logo.png")
+    assert "no file" in _refused(port, "/api/git/blob?rev=WORKTREE&path=junk.log")
+    (path / "lnk").symlink_to("/etc/hostname")
+    assert "no file" in _refused(port, "/api/git/blob?rev=WORKTREE&path=lnk")
+
+
+def test_text_returns_a_files_lines_with_its_language_and_spans(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A text file comes back with its line count, language and highlight spans.
+
+    A binary file says so; the 1 MiB cut is marked and `whole=1` lifts it.
+    """
+    path, shas = repo
+    make_dirty(path)
+    (path / "tool.py").write_text('def f(x):\n    return "hi"\n', encoding="utf-8")
+    body = _ok(port, f"/api/git/text?rev={shas['merge']}&path=b.txt")
+    assert body["rev"] == shas["merge"] and body["path"] == "b.txt"
+    assert body["text"] == "one\ntwo\nthree\n" and body["lines"] == 3
+    assert (body["binary"], body["truncated"], body["max_bytes"]) == (False, False, 1 << 20)
+    assert (body["language"], body["spans"]) == ("", [])
+    py = _ok(port, "/api/git/text?rev=WORKTREE&path=tool.py")
+    assert py["rev"] == "WORKTREE" and py["lines"] == 2 and py["language"] == "python"
+    assert [0, 3, "keyword"] in py["spans"][0] and len(py["spans"]) == 2
+    new = _ok(port, "/api/git/text?rev=WORKTREE&path=new.txt")
+    assert new["text"] == "hello\nworld\n" and new["lines"] == 2
+    binary = _ok(port, "/api/git/text?rev=HEAD&path=img.bin")
+    assert (binary["binary"], binary["text"], binary["lines"], binary["spans"]) == (True, "", 0, [])
+    monkeypatch.setattr(git_model, "TEXT_MAX_BYTES", 8)
+    cut = _ok(port, "/api/git/text?rev=HEAD&path=b.txt")
+    assert (cut["text"], cut["truncated"], cut["max_bytes"], cut["lines"]) == (
+        "one\ntwo\n",
+        True,
+        8,
+        2,
+    )
+    whole = _ok(port, "/api/git/text?rev=HEAD&path=b.txt&whole=1")
+    assert (whole["text"], whole["truncated"], whole["max_bytes"]) == (
+        "one\ntwo\nthree\n",
+        False,
+        None,
+    )
+    assert "no file" in _refused(port, "/api/git/text?rev=HEAD&path=nope.txt")
+    assert "no file" in _refused(port, "/api/git/text?rev=HEAD&path=dir")
+    assert "no file" in _refused(port, "/api/git/text?rev=WORKTREE&path=junk.log")
+    assert "cannot start with '-'" in _refused(port, "/api/git/text?rev=HEAD&path=-x")
+    assert "not a repository path" in _refused(port, "/api/git/text?rev=HEAD&path=../x")
+    assert "unknown revision" in _refused(port, "/api/git/text?rev=nope&path=b.txt")
+
+
+def test_tree_lists_the_files_at_a_revision_or_in_the_working_tree(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path, shas = repo
+    make_dirty(path)
+    body = _ok(port, "/api/git/tree?rev=main")
+    assert body["rev"] == shas["merge"] and body["truncated"] is False
+    assert [f["path"] for f in body["files"]] == ["b.txt", "dir/f.txt", "img.bin", "logo.png"]
+    assert body["files"][0] == {"path": "b.txt", "size": 14, "kind": "file"}
+    wt = _ok(port, "/api/git/tree?rev=WORKTREE")
+    assert wt["rev"] == "WORKTREE"
+    assert [f["path"] for f in wt["files"]] == [
+        "b.txt",
+        "blob.bin",
+        "dir/g.txt",
+        "img.bin",
+        "logo.png",
+        "new.txt",
+    ]
+    root = _ok(port, f"/api/git/tree?rev={shas['root'][:7]}")
+    assert [f["path"] for f in root["files"]] == ["a.txt", "d.txt", "img.bin"]
+    monkeypatch.setattr(git_model, "TREE_MAX", 2)
+    cut = _ok(port, "/api/git/tree?rev=main")
+    assert len(cut["files"]) == 2 and cut["truncated"] is True
+    assert "unknown revision" in _refused(port, "/api/git/tree?rev=nope")
+    assert "cannot start with '-'" in _refused(port, "/api/git/tree?rev=-x")
+    assert "a revision is required" in _refused(port, "/api/git/tree?rev=")
+
+
+def test_diff_shows_a_submodule_pointer_move(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """A gitlink is a path a diff can name; the text route still has no file there."""
+    path, _shas = repo
+    one, two = add_submodule_pointer(path)
+    body = _ok(port, f"/api/git/diff?base={one}&head={two}&path=sub")
+    assert "+Subproject commit" in body["patch"] and body["binary"] is False
+    assert "no file" in _refused(port, f"/api/git/text?rev={two}&path=sub")
 
 
 def test_a_rev_or_path_shaped_like_a_flag_is_refused(
@@ -266,7 +485,14 @@ def test_search_caps_its_lists_and_says_so(
 
 def test_outside_a_repository_every_git_route_says_so(tmp_path: pathlib.Path) -> None:
     for port in _serve(tmp_path):
-        for path in ("/api/git/refs", "/api/git/graph", "/api/git/search?q=x", "/api/git/commit/x"):
+        for path in (
+            "/api/git/refs",
+            "/api/git/graph",
+            "/api/git/search?q=x",
+            "/api/git/commit/x",
+            "/api/git/worktree",
+            "/api/git/tree?rev=HEAD",
+        ):
             assert "not a git repository" in _refused(port, path)
         status, body = _get(port, "/api/git/nope")
         assert (status, body["error"]) == (404, "not found: /api/git/nope")

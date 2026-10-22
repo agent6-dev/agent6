@@ -5,15 +5,18 @@
 Every revision and path arrives from the operator's browser and is still checked before
 git sees it: a value starting with `-` is refused, a revision resolves through
 `git rev-parse --verify --end-of-options <rev>^{commit}` before any other call, a ref name
-must be one `git for-each-ref` listed, and a file must be in one of the two trees. Nothing
-here writes. Each list is capped and says when it was cut.
+must be one `git for-each-ref` listed, and a file must be in one of the two trees. The one
+revision that is not a commit is `WORKTREE`, the working tree, taken as a `head` only.
+Nothing here writes. Each list is capped and says when it was cut.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 from typing import Any
 
+from agent6.ui.web import highlight
 from agent6.vcs import git_history, git_ops
 from agent6.viewmodel import format
 
@@ -26,10 +29,48 @@ FILES_MAX = 2000
 DIFF_MAX_BYTES = 256 * 1024
 # Refs and commits a search answers, each.
 SEARCH_MAX = 30
+# The largest file `/api/git/blob` and `/api/git/text` serve.
+BLOB_MAX_BYTES = 20 * 1024 * 1024
+# Where a file's text is cut.
+TEXT_MAX_BYTES = 1024 * 1024
+# Files listed for one tree before the list is cut.
+TREE_MAX = 20000
+# The content types a blob is served under, by extension; every other file is an untyped
+# download, so the browser never renders a repository file as a document.
+IMAGE_TYPES = {
+    "avif": "image/avif",
+    "bmp": "image/bmp",
+    "gif": "image/gif",
+    "ico": "image/x-icon",
+    "jpeg": "image/jpeg",
+    "jpg": "image/jpeg",
+    "png": "image/png",
+    "svg": "image/svg+xml",
+    "webp": "image/webp",
+}
 
 
 class GitRequestError(Exception):
     """A Git tab request the server refuses: a malformed or unknown revision, ref or path."""
+
+
+class BlobTooLargeError(GitRequestError):
+    """A file over `BLOB_MAX_BYTES`, which the server answers 413."""
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class BlobResponse:
+    """A file's bytes with the type the browser may read them as.
+
+    Attributes:
+        content_type: An image type by extension, else `application/octet-stream`.
+        attachment: Whether the response downloads: true for everything but an image.
+        data: The bytes.
+    """
+
+    content_type: str
+    attachment: bool
+    data: bytes
 
 
 def _repo(repo: pathlib.Path) -> None:
@@ -59,21 +100,46 @@ def _check_shape(value: str, what: str) -> str:
     return value
 
 
-def _resolve(repo: pathlib.Path, rev: str, *, tree_ok: bool = False) -> str:
+def _check_path(value: str) -> str:
+    """Return the value when it is shaped like a repository-relative path.
+
+    Args:
+        value: The path as the browser sent it.
+
+    Returns:
+        The value unchanged.
+
+    Raises:
+        GitRequestError: The value fails `_check_shape`, is absolute, or has a `..` part.
+    """
+    _check_shape(value, "path")
+    if value.startswith("/") or ".." in value.split("/"):
+        raise GitRequestError(f"not a repository path: {value!r}")
+    return value
+
+
+def _resolve(
+    repo: pathlib.Path, rev: str, *, tree_ok: bool = False, worktree_ok: bool = False
+) -> str:
     """Return the full sha a revision names.
 
     Args:
         repo: The repository.
         rev: The revision as the browser sent it.
         tree_ok: Accept `git_ops.EMPTY_TREE`, the base a root commit diffs against.
+        worktree_ok: Accept `git_history.WORKTREE`, the working tree as a head.
 
     Returns:
-        The full sha, or the empty tree's own.
+        The full sha, or the empty tree's own, or `WORKTREE`.
 
     Raises:
         GitRequestError: The revision is malformed, unknown, or not a commit.
     """
     _check_shape(rev, "revision")
+    if rev == git_history.WORKTREE:
+        if worktree_ok:
+            return rev
+        raise GitRequestError(f"{rev} names the working tree: it is only a diff or compare head")
     if rev == git_ops.EMPTY_TREE:
         if tree_ok:
             return rev
@@ -108,8 +174,11 @@ def _file_row(f: git_history.ChangedFile) -> dict[str, Any]:
 
 
 def _files(repo: pathlib.Path, base: str, head: str) -> tuple[list[dict[str, Any]], bool]:
-    """Return the changed files between two trees, cut at `FILES_MAX`, and whether they were."""
-    rows = git_history.changed_files(repo, base, head)
+    """Return the files that differ from the base, cut at `FILES_MAX`, and whether they were."""
+    if head == git_history.WORKTREE:
+        rows = git_history.worktree_files(repo, base)
+    else:
+        rows = git_history.changed_files(repo, base, head)
     return [_file_row(f) for f in rows[:FILES_MAX]], len(rows) > FILES_MAX
 
 
@@ -223,12 +292,32 @@ def commit_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
     }
 
 
+def worktree_payload(repo: pathlib.Path) -> dict[str, Any]:
+    """Return the working tree's uncommitted files, tracked changes first.
+
+    Args:
+        repo: The repository.
+
+    Returns:
+        `base` (HEAD's sha, the empty tree on an unborn branch), `files` and `truncated`.
+    """
+    _repo(repo)
+    sha, _branch = git_history.head_commit(repo)
+    base = sha or git_ops.EMPTY_TREE
+    files, truncated = _files(repo, base, git_history.WORKTREE)
+    return {"base": base, "files": files, "truncated": truncated}
+
+
 def _endpoint(repo: pathlib.Path, rev: str, sha: str) -> dict[str, Any]:
     """Return one side of a compare: the rev as sent, the sha it names, and its subject."""
-    subject = (
-        "(empty tree)" if sha == git_ops.EMPTY_TREE else git_history.commit_info(repo, sha).subject
-    )
-    return {"rev": rev, "sha": sha, "short": sha[:7], "subject": subject}
+    if sha == git_history.WORKTREE:
+        subject = "(working tree)"
+    elif sha == git_ops.EMPTY_TREE:
+        subject = "(empty tree)"
+    else:
+        subject = git_history.commit_info(repo, sha).subject
+    short = sha if sha == git_history.WORKTREE else sha[:7]
+    return {"rev": rev, "sha": sha, "short": short, "subject": subject}
 
 
 def compare_payload(repo: pathlib.Path, base: str, head: str) -> dict[str, Any]:
@@ -237,7 +326,7 @@ def compare_payload(repo: pathlib.Path, base: str, head: str) -> dict[str, Any]:
     Args:
         repo: The repository.
         base: The older revision as the browser sent it; the empty tree is accepted.
-        head: The newer revision as the browser sent it.
+        head: The newer revision as the browser sent it; `WORKTREE` is the working tree.
 
     Returns:
         `base` and `head` as sent and resolved, then `files` and `truncated`.
@@ -247,7 +336,7 @@ def compare_payload(repo: pathlib.Path, base: str, head: str) -> dict[str, Any]:
     """
     _repo(repo)
     base_sha = _resolve(repo, base, tree_ok=True)
-    head_sha = _resolve(repo, head)
+    head_sha = _resolve(repo, head, worktree_ok=True)
     files, truncated = _files(repo, base_sha, head_sha)
     return {
         "base": _endpoint(repo, base, base_sha),
@@ -271,7 +360,7 @@ def diff_payload(
     Args:
         repo: The repository.
         base: The older revision; the empty tree is accepted.
-        head: The newer revision.
+        head: The newer revision; `WORKTREE` is the working tree.
         path: The file's path in `head` (in `base` for a deletion).
         old_path: Its path in `base` when renamed, so the patch reads as a rename.
         whole: Keep every byte instead of cutting at `DIFF_MAX_BYTES`: the page is the one
@@ -282,25 +371,31 @@ def diff_payload(
         `max_bytes` facts.
 
     Raises:
-        GitRequestError: A revision or path is malformed, or the path is in neither tree.
+        GitRequestError: A revision or path is malformed, the path is absolute or climbs out
+            of the repository, or it is in neither tree.
     """
     _repo(repo)
     base_sha = _resolve(repo, base, tree_ok=True)
-    head_sha = _resolve(repo, head)
-    _check_shape(path, "path")
+    head_sha = _resolve(repo, head, worktree_ok=True)
+    _check_path(path)
     if old_path:
-        _check_shape(old_path, "path")
-    if not (
-        git_history.tree_has_blob(repo, head_sha, path)
-        or git_history.tree_has_blob(repo, base_sha, path)
-    ):
+        _check_path(old_path)
+    worktree = head_sha == git_history.WORKTREE
+    entry = git_history.worktree_entry(repo, path) if worktree else ""
+    in_head = bool(entry) if worktree else git_history.tree_has_entry(repo, head_sha, path)
+    if not (in_head or git_history.tree_has_entry(repo, base_sha, path)):
         raise GitRequestError(f"no file {path!r} in either revision")
-    if old_path and not git_history.tree_has_blob(repo, base_sha, old_path):
+    if old_path and not git_history.tree_has_entry(repo, base_sha, old_path):
         raise GitRequestError(f"no file {old_path!r} in the base revision")
     cap = None if whole else DIFF_MAX_BYTES
-    patch, truncated = git_history.file_patch(
-        repo, base_sha, head_sha, path, old_path, max_bytes=cap
-    )
+    if worktree:
+        patch, truncated = git_history.worktree_patch(
+            repo, base_sha, path, old_path, untracked=entry == "untracked", max_bytes=cap
+        )
+    else:
+        patch, truncated = git_history.file_patch(
+            repo, base_sha, head_sha, path, old_path, max_bytes=cap
+        )
     return {
         "base": base_sha,
         "head": head_sha,
@@ -343,3 +438,128 @@ def search_payload(repo: pathlib.Path, query: str) -> dict[str, Any]:
         "commits": [_log_row(c) for c in commits[:SEARCH_MAX]],
         "truncated": truncated,
     }
+
+
+def _read(repo: pathlib.Path, rev: str, path: str) -> tuple[str, bytes]:
+    """Return a regular file's bytes at a revision or in the working tree.
+
+    Args:
+        repo: The repository.
+        rev: The revision as the browser sent it; `WORKTREE` reads the file from disk.
+        path: The file's repository-relative path.
+
+    Returns:
+        The resolved revision (`WORKTREE` for the working tree) and the bytes.
+
+    Raises:
+        GitRequestError: The revision or path is malformed, or no regular file is there.
+        BlobTooLargeError: The file is over `BLOB_MAX_BYTES`.
+    """
+    sha = _resolve(repo, rev, worktree_ok=True)
+    _check_path(path)
+    if sha == git_history.WORKTREE:
+        blob = git_history.worktree_blob(repo, path, max_bytes=BLOB_MAX_BYTES)
+        where = "the working tree"
+    else:
+        blob = git_history.blob_at(repo, sha, path, max_bytes=BLOB_MAX_BYTES)
+        where = rev
+    if blob is None:
+        raise GitRequestError(f"no file {path!r} in {where}")
+    if blob.data is None:
+        raise BlobTooLargeError(
+            f"{path!r} is {blob.size} bytes; the most served is {BLOB_MAX_BYTES} bytes"
+            f" ({BLOB_MAX_BYTES >> 20} MiB)"
+        )
+    return sha, blob.data
+
+
+def blob_payload(repo: pathlib.Path, rev: str, path: str) -> BlobResponse:
+    """Return a file's bytes at a revision or in the working tree.
+
+    Args:
+        repo: The repository.
+        rev: The revision as the browser sent it; `WORKTREE` reads the file from disk.
+        path: The file's repository-relative path.
+
+    Returns:
+        The bytes, typed by extension for an image, an attachment otherwise.
+
+    Raises:
+        GitRequestError: The revision or path is malformed, or no regular file is there.
+        BlobTooLargeError: The file is over `BLOB_MAX_BYTES`.
+    """
+    _repo(repo)
+    _sha, data = _read(repo, rev, path)
+    ext = path.rpartition("/")[2].rpartition(".")[2].lower()
+    ctype = IMAGE_TYPES.get(ext)
+    return BlobResponse(ctype or "application/octet-stream", ctype is None, data)
+
+
+def _line_count(text: str) -> int:
+    """Return the lines in a text, as the page splits it: a final newline starts none."""
+    return text.count("\n") + (0 if not text or text.endswith("\n") else 1)
+
+
+def text_payload(repo: pathlib.Path, rev: str, path: str, *, whole: bool = False) -> dict[str, Any]:
+    """Return a file's text at a revision or in the working tree, with its highlight spans.
+
+    Args:
+        repo: The repository.
+        rev: The revision as the browser sent it; `WORKTREE` reads the file from disk.
+        path: The file's repository-relative path.
+        whole: Keep every byte instead of cutting at `TEXT_MAX_BYTES`.
+
+    Returns:
+        `rev` resolved, `path`, `text` ("" for a binary file), `lines`, `binary`,
+        `truncated`, `max_bytes`, `language` (the pack's name, "" when none) and `spans`
+        (per line `[start, end, class]`, empty when nothing is highlighted).
+
+    Raises:
+        GitRequestError: The revision or path is malformed, or no regular file is there.
+        BlobTooLargeError: The file is over `BLOB_MAX_BYTES`.
+    """
+    _repo(repo)
+    sha, data = _read(repo, rev, path)
+    binary = git_history.looks_binary(data)
+    cap = None if whole else TEXT_MAX_BYTES
+    truncated = False
+    if not binary and cap is not None and len(data) > cap:
+        data = data[: data.rfind(b"\n", 0, cap) + 1]
+        truncated = True
+    text = "" if binary else data.decode("utf-8", errors="replace")
+    language = highlight.language_of(path)
+    return {
+        "rev": sha,
+        "path": path,
+        "text": text,
+        "lines": _line_count(text),
+        "binary": binary,
+        "truncated": truncated,
+        "max_bytes": cap,
+        "language": language,
+        "spans": highlight.spans(text, language) if text else [],
+    }
+
+
+def tree_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
+    """Return the files at a revision or in the working tree.
+
+    Args:
+        repo: The repository.
+        rev: The revision as the browser sent it; `WORKTREE` lists the index plus the
+            untracked files `.gitignore` keeps.
+
+    Returns:
+        `rev` resolved, `files` as `{path, size, kind}` cut at `TREE_MAX`, and `truncated`.
+
+    Raises:
+        GitRequestError: The revision is malformed or unknown.
+    """
+    _repo(repo)
+    sha = _resolve(repo, rev, worktree_ok=True)
+    if sha == git_history.WORKTREE:
+        rows = git_history.worktree_tree_files(repo)
+    else:
+        rows = git_history.tree_files(repo, sha)
+    files = [{"path": f.path, "size": f.size, "kind": f.kind} for f in rows[:TREE_MAX]]
+    return {"rev": sha, "files": files, "truncated": len(rows) > TREE_MAX}

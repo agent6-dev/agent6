@@ -92,17 +92,33 @@ Buttons do what the CLI command of the same name does, and prompts are answered 
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions; it reads the repository `agent6 web` was started in and writes nothing
     - the graph walks every branch, remote-tracking branch and tag plus HEAD, newest first in topological order, 200 commits a page with **Load more** for the next page; lanes are drawn per commit and merges join their parents
     - **Refs ▾** filters the walk: tick a whole group (branches, remotes, tags, agent6 run refs) or single refs; the `refs/agent6/*` chain refs are off until ticked
+    - a **Working tree · N uncommitted files** row tops the graph while the tree is dirty: tracked changes against HEAD, staged or not, plus untracked files `.gitignore` does not exclude; click it for the list, each file opening its diff like a commit's
+    - the page reads the repository once per visit; **↻** re-reads the refs, the graph and the working-tree row, and nothing polls
     - click a commit for its message, author, committer, parents and the files it changed from its first parent (a merge shows its diff from the first parent, a root commit its files against the empty tree), each file with its status (A, M, D, R `old → new`) and line counts, or `binary`
+    - **list | tree** above every file list: the tree groups the files under their folders, a folder row showing how many files it holds with their summed counts and folding them on a click; the choice is kept per browser
     - click a file and its unified diff fills the page: **‹ files** returns to the list, **‹** and **›** step through the files; a patch over 256 KiB is cut at that size and offers the whole patch on a click, a binary file says so
-    - **Compare** takes two revisions, base and head, each from a picker that searches branch and tag names, commit shas and commit messages as you type (Enter keeps free text as the revision for the server to verify); **⇄** swaps them
+    - the diff header offers four modes, the choice kept per browser: **inline** (the unified patch), **split** (old and new side by side, a deletion beside the addition that replaces it, context on both sides; at phone width it shows inline and says so), **old** and **new** (the file at the base or the head, highlighted, with its deleted or added lines marked); every line carries its line numbers
+    - an image (`png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `bmp`, `ico`, `avif`) shows **before** and **after** side by side above git's binary line, each with its size and dimensions; at phone width the two stack
+    - **Compare** takes two revisions, base and head, each from a picker that searches branch and tag names, commit shas and commit messages as you type (Enter keeps free text as the revision for the server to verify); the head picker offers **working tree** first; **⇄** swaps them
     - the compare lists the files that differ between the two, as `git diff base head` does, so a commit against its parent reads like that commit's own diff; a commit's **Set as base** and **Set as head** put it in the pickers
-    - limits: 500 commits a page at most, 2000 files a list, 256 KiB a patch unless opened whole, 30 refs and 30 commits a search; each list says when it was cut
+    - limits: 500 commits a page at most, 2000 files a list, 256 KiB a patch unless opened whole, 20 MiB an image, 30 refs and 30 commits a search; each list says when it was cut
+- **Files page**: the files at one revision, read-only; it reads the repository `agent6 web` was started in and writes nothing
+    - the revision picker at the top is the compare pickers' search, with **working tree** as its first choice; HEAD to start (the working tree in a repository with no commits yet)
+    - the files as a folder tree with a filter box: a folder row shows how many files it holds and their size and folds them on a click; a tree over 200 files starts folded; at a commit the committed files, in the working tree the tracked files plus untracked ones `.gitignore` does not exclude
+    - click a file: text with line numbers and highlighting (cut at 1 MiB, the whole file on a click), an image as itself, a binary file as its size; a symlink or submodule entry says so
+    - limits: 20000 files a tree, 1 MiB of text unless opened whole, 20 MiB a file; the tree says when it was cut
 
 Start a machine on the Machines page and watch the current state stream, answering its approvals and questions in place:
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/web-machine.webm" type="video/webm">
 </video>
+
+## Highlighting
+
+Source text on the Git and Files pages is highlighted with the tree-sitter language pack agent6 ships (371 languages).
+A language's grammar downloads into `~/.cache/tree-sitter-language-pack/` the first time a file in it is shown, as the outline tools do; offline, a file in a language not yet cached shows as plain text.
+A plain text file, a file over 512 KiB, or one whose parse runs past a second shows uncoloured.
 
 ## Layout
 
@@ -136,8 +152,13 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 - sign-in: `POST` `/api/login` with `{"secret": "<secret>"}` answers the token; a wrong secret answers `403`
 - every other `/api/...` route answers `401` with `{"error": ..., "login": true}` without the token
 - reads: `/api/meta`, `/api/hub`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>` , `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?step=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
-- git reads, all of the repository the server runs in: `/api/git/refs`, `/api/git/graph` (`?refs=<full ref name>` repeated, `&limit=&skip=`), `/api/git/commit/<rev>`, `/api/git/compare?base=&head=`, `/api/git/diff?base=&head=&path=&old_path=`, `/api/git/search?q=`
+- git reads, all of the repository the server runs in: `/api/git/refs`, `/api/git/graph` (`?refs=<full ref name>` repeated, `&limit=&skip=`), `/api/git/commit/<rev>`, `/api/git/compare?base=&head=`, `/api/git/diff?base=&head=&path=&old_path=`, `/api/git/search?q=`, `/api/git/worktree`
     - a revision is a branch, tag, full ref name, sha prefix or expression git resolves to a commit; the empty tree sha is accepted as a `base`
+    - `WORKTREE` names the working tree as the `head` of a compare or diff (an untracked file diffs against nothing); as a `base` or a commit it answers `422`
+    - `/api/git/worktree` lists the uncommitted files against HEAD (`base`, `files`, `truncated`): tracked changes with git's letters and counts, then untracked files as `A` with their line count, `.gitignore` honoured
+    - `/api/git/tree?rev=` lists the files at a revision or in the working tree (`rev` resolved, `files` as `{path, size, kind}` with `kind` one of `file`, `symlink` and `submodule`, `truncated`), 20000 files at most; the working tree is the index plus the untracked files `.gitignore` keeps, a tracked file gone from disk left out
+    - `/api/git/text?rev=&path=` returns a file's text at a revision or in the working tree (`rev` resolved, `path`, `text`, `lines`, `binary`, `truncated`, `max_bytes`, `language`, `spans`): the text is cut at 1 MiB on a line boundary unless `whole=1`, a binary file has `text` empty and `binary` true, a file over 20 MiB answers `413`; `language` is the tree-sitter language pack's name for the path ("" when it has none) and `spans` its highlight spans per line as `[start, end, class]`, empty when the text is over 512 KiB, the grammar is not cached and cannot be fetched, or the parse ran past a second
+    - `/api/git/blob?rev=&path=` serves a file's bytes at a revision, or from disk for `WORKTREE` (a regular file git lists, never through a symlink); an image is typed by extension, anything else is `application/octet-stream` with `Content-Disposition: attachment`; every blob response carries `Content-Security-Policy: sandbox; default-src 'none'` and `X-Content-Type-Options: nosniff`, so a repository file opened directly runs under no origin; a file over 20 MiB answers `413`
     - a revision or path starting with `-`, an unknown revision, a ref not in `/api/git/refs`, or a path in neither tree answers `422`
 - writes, small JSON `POST`s: `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,review,stop,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/entry`, `/api/config/entry/remove`, `/api/config/reviewer`, `/api/config/reviewer/remove`, `/api/machine/{create,run}`
 - roster writes: `/api/config/reviewer` takes the five form fields as strings (only `focus` is required) and `repo` (default `false`); `/api/config/reviewer/remove` takes a zero-based integer `index` and `repo`
