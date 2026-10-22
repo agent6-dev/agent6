@@ -26,7 +26,7 @@ from agent6.ui.acp import session as acp_session
 PROTOCOL_VERSION = 1
 # 4 MiB, the MCP server's cap; past it the payload is dropped, not buffered.
 MAX_LINE_BYTES = 1 << 22
-# How long EOF waits for a turn to reach its next boundary: a verify's length, not a wedged run's.
+# How long EOF waits for an execution to reach a boundary: a verify's length, not a wedged run's.
 EOF_GRACE_S = 30.0
 
 # A handler's result when a worker thread replies later, so the read loop stays free for a cancel.
@@ -93,10 +93,10 @@ class ACPServer:
         while True:
             line = self.stdin.readline(MAX_LINE_BYTES + 1)
             if not line:
-                # EOF: a live turn stops at a boundary rather than mid-git holding the locks.
+                # EOF: a live execution stops at a boundary rather than mid-git holding the locks.
                 self.abandon_pending()
                 if self.sessions is not None:
-                    self.sessions.wait_for_turns(timeout_s=EOF_GRACE_S)
+                    self.sessions.wait_for_executions(timeout_s=EOF_GRACE_S)
                 return
             if len(line) > MAX_LINE_BYTES:
                 # The payload is drained in bounded chunks and dropped; its id went with it.
@@ -310,7 +310,7 @@ class ACPServer:
         sessions = self._sessions()
         session = sessions.get(params)
         text = acp_session.prompt_text(params)
-        sessions.start_turn(
+        sessions.start_execution(
             session,
             text,
             finish=lambda reason: self.reply(req_id, result={"stopReason": reason}),

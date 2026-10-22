@@ -29,7 +29,7 @@ ACP carries a tool call as two messages.
 - built-in calls carry their ACP kind, and an edit result carries each journaled path as an absolute follow-along location
 - a call waiting on an approval or an `ask_user` answer is updated to `pending` while its prompt is open, and back to `in_progress` once answered
 - a long verify shows as in progress while it runs; a call the run never returned from settles as `failed` when the run's `session.end` is written, or when the tail ends without one (a worker killed mid-call)
-- `toolCallId` is `<run id>:<turn>:<call>`, unique for the life of the session; a turn's call numbers start at 1
+- `toolCallId` is `<run id>:<execution>:<call>`, unique for the life of the session; each prompt's execution numbers its calls from 1
 
 Worker text and thinking arrive as they stream; side-role output stays out of the conversation.
 Everything agent6 says carries `[agent6]`, the model's final summary arrives bare, and the cost receipt goes to stderr.
@@ -57,16 +57,16 @@ The prompt and its answer go through the same gate every front-end answers throu
 A session is one conversation in one directory.
 
 - `session/new` carries an absolute `cwd`, a git repository, whose own layered config applies
-- the first prompt starts an `agent6 run`; every later prompt resumes it with the text as its steering instruction (a turn that died before its first checkpoint starts a new run, and the editor is told)
-- a busy session refuses a prompt rather than queueing it; one connection runs one prompt at a time across its sessions, and a prompt on another session waits its turn and says for which session
+- the first prompt starts an `agent6 run`; every later prompt resumes it with the text as its steering instruction (an execution that died before its first checkpoint leaves nothing to resume: the next prompt starts a new run, and the editor is told)
+- a busy session refuses a prompt rather than queueing it; one connection runs one prompt at a time across its sessions, and a prompt on another session queues and says for which session it waits
 - `session/cancel` cuts a model call in flight and ends a running foreground command at once, without waiting for or signalling the worker (the ACP server itself).
   The prompt answers `cancelled` (ACP's word) and the run's record reads `stopped`, as every operator stop does; what it had not yet committed stays in the tree for the next prompt, which resumes it.
-  A prompt still waiting its turn answers `cancelled` at once.
+  A prompt still queued answers `cancelled` at once.
 
 ## Not implemented
 
 - `session/load`: ACP v2 reorganises it, and resume carries agent6's own semantics (`agent6 resume`, `agent6 fork`), so `initialize` reports the capability as absent.
-- Mid-run steering: ACP has no message for a prompt while a turn is running.
+- Mid-run steering: ACP has no message for a prompt while the previous prompt is running.
   A session's follow-up is the next prompt, which resumes the run with that text as its first steering instruction.
 - `fs/*` and `terminal/*`: ACP lets the client own the filesystem and the terminal, and agent6 keeps both behind the jail the operator configured.
 - Free-text `ask_user` answers: the editor gets option buttons only.

@@ -209,18 +209,18 @@ def _tool_locations(paths: tuple[str, ...], cwd: pathlib.Path) -> list[dict[str,
     return [{"path": str(path)} for path in dict.fromkeys(resolved)]
 
 
-def wire_call_id(session_id: str, turn: int, within_execution: str) -> str:
-    """Return a tool call's wire id, `<run>:<turn>:<call>`, unique for the ACP session.
+def wire_call_id(session_id: str, execution: int, within_execution: str) -> str:
+    """Return a tool call's wire id, `<run>:<execution>:<call>`, unique for the ACP session.
 
     Args:
         session_id: The run id; "" leaves the stamp bare.
-        turn: The turn.
-        within_execution: The dispatcher's stamp, a counter that restarts every turn.
+        execution: The execution's number within the run.
+        within_execution: The dispatcher's stamp, a counter that restarts every execution.
 
     Returns:
         The `toolCallId` the call's announcement, updates and permission request carry.
     """
-    return f"{session_id}:{turn}:{within_execution}" if session_id else within_execution
+    return f"{session_id}:{execution}:{within_execution}" if session_id else within_execution
 
 
 def _execution_call_id(item: transcript.TranscriptItem) -> str:
@@ -228,9 +228,9 @@ def _execution_call_id(item: transcript.TranscriptItem) -> str:
     return item.call_id or (f"{item.name}:{item.arg}" if item.arg else item.name)
 
 
-def tool_call_id(item: transcript.TranscriptItem, session_id: str, turn: int) -> str:
+def tool_call_id(item: transcript.TranscriptItem, session_id: str, execution: int) -> str:
     """Return the wire id for a fold item."""
-    return wire_call_id(session_id, turn, _execution_call_id(item))
+    return wire_call_id(session_id, execution, _execution_call_id(item))
 
 
 def _tool_call(item: transcript.TranscriptItem, wire_id: str) -> dict[str, Any]:

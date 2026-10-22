@@ -239,9 +239,9 @@ def test_parallel_lanes_are_not_spawned_into_a_single_pane() -> None:
 
 
 def test_the_ask_repl_is_refused_rather_than_faked() -> None:
-    """Two turn loops reading the same stdin is not something to paper over."""
+    """Two prompt loops reading the same stdin is not something to paper over."""
     front, _asked = _frontend()
-    with pytest.raises(RuntimeError, match="drives its own turns"):
+    with pytest.raises(RuntimeError, match="the editor prompts"):
         front.run_ask_repl(None, None, None, "q")  # pyright: ignore[reportArgumentType]
 
 

@@ -307,10 +307,10 @@ def test_two_identical_tool_calls_do_not_share_an_id() -> None:
     assert len(ids) == 2, f"the two calls collided on {ids}"
 
 
-def test_a_tool_call_id_is_unique_across_a_sessions_turns() -> None:
-    """The tool call id carries the turn, since a resumed dispatcher restarts its ids at 1.
+def test_a_tool_call_id_is_unique_across_a_runs_executions() -> None:
+    """The tool call id carries the execution, since a resumed dispatcher restarts its ids at 1.
 
-    Keyed on the run id alone, turn 2's first call overwrote turn 1's in the editor.
+    Keyed on the run id alone, execution 2's first call overwrote execution 1's in the editor.
     """
     item = transcript.TranscriptItem(
         kind="tool", name="run_command", arg="ls", ok=True, call_id="1"

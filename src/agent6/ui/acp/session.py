@@ -22,25 +22,26 @@ from agent6.sessions import id, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.acp import rpc
 
-# What ACP is told a turn ended as; `cancelled` is the operator's act, not a failure.
+# What a prompt answers; `cancelled` is the operator's act, not a failure.
 StopReason = str
-# Every ACP turn is an `agent6 run`; the editor cannot ask for another mode.
+# Every ACP session is an `agent6 run`; the editor cannot ask for another mode.
 ACP_MODE = "run"
 
 
 @dataclasses.dataclass(slots=True)
 class Session:
-    """One ACP session: a working directory, and at most one live turn.
+    """One ACP session: a working directory, and at most one live execution.
 
     Attributes:
         acp_id: ACP's id for the conversation, minted by `session/new`.
         cwd: The working directory.
         session_id: agent6's run id; "" until the first prompt mints it, then every
             later prompt resumes the same run.
-        turn: The turn in progress, 1-based: one execution of the run.
-        thread: The turn's worker.
-        cancelled: The operator cancelled the turn.
-        turn_live: Cleared before the turn answers, since the thread is still alive
+        execution: The execution in progress, 1-based: the first prompt starts the run and
+            each later prompt resumes it.
+        thread: The execution's worker.
+        cancelled: The operator cancelled the execution.
+        execution_live: Cleared before the prompt answers, since the thread is still alive
             while `finish` runs and an editor may prompt again the instant it reads
             the reply.
     """
@@ -48,17 +49,17 @@ class Session:
     acp_id: str
     cwd: pathlib.Path
     session_id: str = ""
-    turn: int = 0
+    execution: int = 0
     thread: threading.Thread | None = None
     cancelled: bool = False
-    turn_live: bool = False
+    execution_live: bool = False
 
     def is_running(self) -> bool:
-        """Return whether a turn is in flight."""
-        return self.turn_live
+        """Return whether an execution is in flight."""
+        return self.execution_live
 
     def layout(self, state_dir: pathlib.Path) -> sessions_layout.SessionLayout:
-        """Return the turn's agent6 session dir, under ACP's own bucket."""
+        """Return the run's agent6 session dir, under ACP's own bucket."""
         return sessions_layout.SessionLayout(
             state_dir=state_dir, session_id=self.session_id, subdir=kinds.session_bucket(ACP_MODE)
         )
@@ -141,7 +142,7 @@ class Sessions:
             raise rpc.RpcError(rpc.INVALID_PARAMS, f"no session {acp_session_id!r}")
         return session
 
-    def start_turn(
+    def start_execution(
         self, session: Session, text: str, *, finish: Callable[[StopReason], None]
     ) -> None:
         """Run the prompt on a worker, and answer when it ends.
@@ -153,34 +154,34 @@ class Sessions:
                 a cancel whatever the run returned.
 
         Raises:
-            RpcError: The session has a turn in flight.
+            RpcError: The session has an execution in flight.
             RuntimeError: The worker thread could not start.
         """
         if session.is_running():
-            raise rpc.RpcError(rpc.INVALID_PARAMS, "that session already has a turn in flight")
+            raise rpc.RpcError(rpc.INVALID_PARAMS, "that session already has a prompt in flight")
         session.cancelled = False
 
         def _work() -> None:
             try:
                 reason = self.run(session, text)
-            except Exception:  # a run that dies must still end the turn
+            except Exception:  # a run that dies must still end the execution
                 reason = "refusal"
             answer = "cancelled" if session.cancelled else reason
-            session.turn_live = False
+            session.execution_live = False
             finish(answer)
 
-        session.turn_live = True
+        session.execution_live = True
         session.thread = threading.Thread(target=_work, name=f"acp-{session.acp_id}", daemon=True)
         try:
             session.thread.start()
         except RuntimeError:
             # A thread that never ran would leave the session busy and EOF's join raising.
-            session.turn_live = False
+            session.execution_live = False
             session.thread = None
             raise
 
-    def wait_for_turns(self, *, timeout_s: float) -> None:
-        """Cancel live turns and let them finish before the process goes.
+    def wait_for_executions(self, *, timeout_s: float) -> None:
+        """Cancel live executions and let them finish before the process goes.
 
         A daemon worker torn down mid-git holds the repo locks and the run-dir pid.
 
@@ -202,7 +203,7 @@ class Sessions:
         the ACP server, so the cancel never waits for or signals it.
 
         Args:
-            session: The session to cancel; nothing happens when no turn is in flight.
+            session: The session to cancel; nothing happens when no execution is in flight.
         """
         if not session.is_running():
             return
@@ -212,7 +213,7 @@ class Sessions:
         session_dir = session.layout(self.state_dir_for(session.cwd)).session_dir
         out = stop.stop_session(session_dir, request_only=True)
         if not out.ok:
-            # The turn is live before the lifecycle records its worker; the marker survives startup.
+            # Live before the lifecycle records its worker; the marker survives startup.
             if (
                 out.how == "not_live"
                 and session.is_running()

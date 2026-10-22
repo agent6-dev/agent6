@@ -200,13 +200,13 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
     def _no_repl(
         _session_dir: pathlib.Path, _budget: budget.BudgetTracker, _task: str, _mcp: object
     ) -> Callable[[int, str], kinds.AutoCommitDirective]:
-        # ACP has its own turn loop; a REPL inside it would be a second reader of stdin.
+        # ACP has its own prompt loop; a REPL inside it would be a second reader of stdin.
         return lambda _turn, _summary: "continue"
 
     def _no_ask_repl(
         _wf: loop.Harness, _budget: budget.BudgetTracker, _layout: layout.SessionLayout, _task: str
     ) -> _snapshot.SessionResult:
-        raise RuntimeError("an ACP session drives its own turns; the ask REPL is not used")
+        raise RuntimeError("the editor prompts an ACP session; the ask REPL is not used")
 
     return frontend.SessionFrontend(
         capabilities=capabilities,

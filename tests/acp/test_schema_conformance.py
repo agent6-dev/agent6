@@ -151,8 +151,10 @@ def test_a_permission_request_is_one_a_client_can_answer() -> None:
         return {}
 
     bridge.server.request = _capture  # pyright: ignore[reportAttributeAccessIssue]
-    session = acp_session.Session(acp_id="s", cwd=pathlib.Path("/x"), session_id="run-x", turn=1)
-    announced = runner.Announced(turn=1)
+    session = acp_session.Session(
+        acp_id="s", cwd=pathlib.Path("/x"), session_id="run-x", execution=1
+    )
+    announced = runner.Announced(execution=1)
     announced.add("run-x:1:7")
     four = ("allow", "allow all", "deny", "deny all")  # a scoped approval's answers
     bridge.ask(session, announced, "Allow run_command: ls", four, True, 7)

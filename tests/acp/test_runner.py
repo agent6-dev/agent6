@@ -173,7 +173,9 @@ def test_a_cancel_reaches_the_run_it_names(
         wire.close()
 
 
-def test_a_cancelled_turn_says_so(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_cancelled_execution_says_so(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(stop, "stop_session", _ignore)
     monkeypatch.chdir(tmp_path)
     started, release = threading.Event(), threading.Event()
@@ -271,12 +273,12 @@ def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
     assert "RuntimeError: the provider client exploded" in capsys.readouterr().err
 
 
-def test_a_resumed_turns_own_failure_does_not_borrow_a_stale_end_reason(
+def test_a_resumes_own_failure_does_not_borrow_a_stale_end_reason(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A turn's stop reason comes from its own `session.end`, never an earlier execution's.
+    """An execution's stop reason comes from its own `session.end`, never an earlier one's.
 
-    `session.start` and `loop.resume.start` never clear `end_reason`, so a turn that appended
+    `session.start` and `loop.resume.start` never clear `end_reason`, so an execution that appended
     only a `loop.resume.start` before dying inherited an earlier execution's reason.
     """
     from agent6 import paths
@@ -410,7 +412,7 @@ def test_an_approval_round_trips_through_the_editor() -> None:
     assert (
         bridge.ask(
             session,
-            runner.Announced(turn=1),
+            runner.Announced(execution=1),
             "Allow run_command: ls",
             ("allow", "deny"),
             True,
@@ -440,7 +442,7 @@ def test_only_an_option_we_offered_is_an_answer(answer: dict[str, Any]) -> None:
     assert (
         bridge.ask(
             session,
-            runner.Announced(turn=1),
+            runner.Announced(execution=1),
             "Allow run_command: rm -rf /",
             ("allow", "deny"),
             True,
@@ -457,7 +459,7 @@ def test_an_option_id_has_to_match_the_offered_id_exactly() -> None:
     assert (
         bridge.ask(
             session,
-            runner.Announced(turn=1),
+            runner.Announced(execution=1),
             "Allow run_command: rm -rf /",
             ("allow", "deny"),
             True,
@@ -505,7 +507,7 @@ def test_the_stop_reason_is_one_acp_defines() -> None:
 
 
 def test_an_operator_stop_is_cancelled_not_a_refusal() -> None:
-    """`agent6 stop` on an editor's turn exited 1, which ACP was told as a refusal."""
+    """`agent6 stop` on an editor's execution exited 1, which ACP was told as a refusal."""
     from agent6.app import finalize
     from agent6.harness import _snapshot
 
@@ -516,7 +518,7 @@ def test_an_operator_stop_is_cancelled_not_a_refusal() -> None:
 
 
 def test_the_turn_cap_uses_acps_specific_stop_reason() -> None:
-    """The turn cap is ACP's maximum agent requests between user turns, not a refusal."""
+    """The turn cap is ACP's `max_turn_requests`, not a refusal."""
     assert runner.stop_reason(1, end_reason="max_turns") == "max_turn_requests"
 
 
@@ -543,13 +545,13 @@ def test_an_editor_driven_run_is_not_refused_for_lack_of_a_terminal() -> None:
     )
 
 
-def test_a_turn_cancelled_while_queued_never_starts(
+def test_a_prompt_cancelled_while_queued_never_starts(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Runs are serialised, so a second turn can wait minutes for the lock.
+    """Runs are serialised, so a second prompt can wait minutes for the lock.
 
     Minting the run id inside the lock left that whole window addressing
-    nothing: the cancel wrote no stop marker, the queued turn then ran to
+    nothing: the cancel wrote no stop marker, the queued prompt then ran to
     completion spending budget and making commits, and the editor was told
     "cancelled" the entire time.
     """
@@ -578,10 +580,10 @@ def test_a_turn_cancelled_while_queued_never_starts(
         release.set()
         answers: dict[int, str] = {}
         while len(answers) < 2:
-            reply = wire.until("")  # replies, past the queued turn's own notice
+            reply = wire.until("")  # replies, past the queued prompt's own notice
             if "result" in reply:
                 answers[reply["id"]] = reply["result"]["stopReason"]
-        assert len(ran) == 1, f"the cancelled turn started anyway: {ran}"
+        assert len(ran) == 1, f"the cancelled prompt started anyway: {ran}"
         assert answers[4] == "cancelled", answers
         assert answers[3] == "end_turn", answers
     finally:
@@ -688,7 +690,7 @@ def test_a_request_started_after_the_editor_left_returns_at_once() -> None:
     assert answered == [{}], "the request waited for an editor already known to be gone"
 
 
-def test_cancelling_while_permission_is_open_releases_the_turn() -> None:
+def test_cancelling_while_permission_is_open_releases_the_execution() -> None:
     """A cancel marker releases the ACP permission wait."""
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
     waiting = threading.Event()
@@ -702,11 +704,13 @@ def test_cancelling_while_permission_is_open_releases_the_turn() -> None:
         return {}
 
     bridge.server.request = _wait  # pyright: ignore[reportAttributeAccessIssue]
-    session = session_mod.Session(acp_id="s", cwd=pathlib.Path("/x"), turn_live=True)
+    session = session_mod.Session(acp_id="s", cwd=pathlib.Path("/x"), execution_live=True)
     answered: list[str | None] = []
     asker = threading.Thread(
         target=lambda: answered.append(
-            bridge.ask(session, runner.Announced(turn=1), "Theme?", ("dark", "light"), None, None)
+            bridge.ask(
+                session, runner.Announced(execution=1), "Theme?", ("dark", "light"), None, None
+            )
         ),
         daemon=True,
     )
@@ -733,12 +737,14 @@ def test_a_question_with_no_buttons_is_not_put_to_the_editor() -> None:
     bridge.server.request = _record  # pyright: ignore[reportAttributeAccessIssue]
     session = session_mod.Session(acp_id="s", cwd=pathlib.Path("/x"))
     assert (
-        bridge.ask(session, runner.Announced(turn=1), "What should the theme be?", (), None, None)
+        bridge.ask(
+            session, runner.Announced(execution=1), "What should the theme be?", (), None, None
+        )
         is None
     )
     assert sent == [], "an unanswerable prompt was still shown"
     assert (
-        bridge.ask(session, runner.Announced(turn=1), "Theme?", ("dark", "light"), None, None)
+        bridge.ask(session, runner.Announced(execution=1), "Theme?", ("dark", "light"), None, None)
         is None
     )
     assert len(sent) == 1, "a question WITH options still goes out"
@@ -757,7 +763,7 @@ def test_an_approval_closes_the_tool_call_it_announced() -> None:
     assert (
         bridge.ask(
             session,
-            runner.Announced(turn=1),
+            runner.Announced(execution=1),
             "Allow run_command: ls",
             ("allow", "deny"),
             True,
@@ -807,7 +813,7 @@ def test_the_approval_dialog_is_scrubbed_too() -> None:
     session = session_mod.Session(acp_id="s", cwd=pathlib.Path("/x"))
     bridge.ask(
         session,
-        runner.Announced(turn=1),
+        runner.Announced(execution=1),
         "Allow run_command: \x1b]0;PWNED\x07ls",
         ("allow\x1b[2J", "deny"),
         True,
@@ -893,10 +899,10 @@ def test_a_second_prompt_resumes_the_same_run(
     assert calls[1] == ("resume", "run-AAAA11", "and now this")
 
 
-def test_a_refused_second_turn_does_not_inherit_the_first_turns_reason(
+def test_a_refused_second_prompt_does_not_inherit_the_first_executions_reason(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A resume refused before its own session.end does not report the first turn's end.
+    """A resume refused before its own session.end does not report the first execution's end.
 
     A first execution that hit max_turns made a refused resume report max_turn_requests.
     """
@@ -935,10 +941,10 @@ def test_a_refused_second_turn_does_not_inherit_the_first_turns_reason(
     assert bridge.run(session, "and now this") == "refusal"
 
 
-def test_a_fault_on_a_resumed_turn_still_reaches_the_editor(
+def test_a_fault_on_a_resume_still_reaches_the_editor(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The previous turn's session.end must not hide a fault in the resumed turn's preflight."""
+    """The previous execution's session.end must not hide a fault in the resume's preflight."""
     monkeypatch.chdir(tmp_path)
 
     def _state_dir(_cwd: pathlib.Path) -> pathlib.Path:
@@ -1060,7 +1066,7 @@ def test_a_request_waits_for_the_announcement_only_while_the_tail_reads() -> Non
     """The wait ends on the announcement, the tail's close or a cancel, never on a clock."""
     import time
 
-    announced = runner.Announced(turn=1)
+    announced = runner.Announced(execution=1)
     abandoned = threading.Event()
     returned: list[float] = []
 
@@ -1077,7 +1083,7 @@ def test_a_request_waits_for_the_announcement_only_while_the_tail_reads() -> Non
     waiter.join(timeout=5.0)
     assert returned, "the announcement did not release the wait"
 
-    closing = runner.Announced(turn=1)
+    closing = runner.Announced(execution=1)
     closer = threading.Thread(
         target=lambda: closing.wait_for("run-x:1:2", abandoned=lambda: False), daemon=True
     )
@@ -1086,20 +1092,20 @@ def test_a_request_waits_for_the_announcement_only_while_the_tail_reads() -> Non
     closer.join(timeout=5.0)
     assert not closer.is_alive(), "a closed register must release every wait"
 
-    cancelled = runner.Announced(turn=1)
+    cancelled = runner.Announced(execution=1)
     quitter = threading.Thread(
         target=lambda: cancelled.wait_for("run-x:1:3", abandoned=abandoned.is_set), daemon=True
     )
     quitter.start()
     abandoned.set()
     quitter.join(timeout=5.0)
-    assert not quitter.is_alive(), "a cancelled turn must release the wait"
+    assert not quitter.is_alive(), "a cancelled execution must release the wait"
 
 
-def test_a_tool_call_id_is_unique_across_a_sessions_turns(
+def test_a_tool_call_id_is_unique_across_a_runs_executions(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The tool call id carries the turn, since a resumed dispatcher restarts its ids at 1."""
+    """The tool call id carries the execution, since a resumed dispatcher restarts its ids at 1."""
     from agent6 import event_log
 
     monkeypatch.chdir(tmp_path)
@@ -1146,13 +1152,13 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns(
                 elif message.get("id") == req_id:
                     break
         assert len(announced) == 2, announced
-        assert announced[0] != announced[1], f"turn 2's first call reused {announced[0]}"
+        assert announced[0] != announced[1], f"execution 2's first call reused {announced[0]}"
     finally:
         wire.close()
 
 
-def test_a_late_tail_keeps_its_own_turn(tmp_path: pathlib.Path) -> None:
-    """A tail that outlives its turn's join keeps its turn; the next turn does not restamp it."""
+def test_a_late_tail_keeps_its_own_execution(tmp_path: pathlib.Path) -> None:
+    """A tail outliving its execution's join keeps its number; the next one does not restamp it."""
     import time
 
     from agent6 import event_log
@@ -1161,17 +1167,17 @@ def test_a_late_tail_keeps_its_own_turn(tmp_path: pathlib.Path) -> None:
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
     bridge = runner.RunBridge(server=server)
-    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", turn=1)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", execution=1)
     log = tmp_path / "logs.jsonl"
     log.write_text("", encoding="utf-8")
     done = threading.Event()
     tail = threading.Thread(
         target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
-        args=(session, log, done.is_set, False, runner.Announced(turn=1)),
+        args=(session, log, done.is_set, False, runner.Announced(execution=1)),
         daemon=True,
     )
     tail.start()
-    session.turn = 2  # the next turn began while this tail still reads
+    session.execution = 2  # the next execution began while this tail still reads
     event_log.EventSink(log).emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
     for _ in range(100):
         if sent:
@@ -1214,7 +1220,7 @@ def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
 
     bridge._stream(  # pyright: ignore[reportPrivateUsage]
-        session, tmp_path / "logs.jsonl", lambda: True, 0, runner.Announced(turn=1)
+        session, tmp_path / "logs.jsonl", lambda: True, 0, runner.Announced(execution=1)
     )
 
     chunks = [
@@ -1246,7 +1252,7 @@ def test_a_dead_workers_open_tool_call_is_settled(tmp_path: pathlib.Path) -> Non
     )
 
     bridge._stream(  # pyright: ignore[reportPrivateUsage]
-        session, log, lambda: True, False, runner.Announced(turn=1)
+        session, log, lambda: True, False, runner.Announced(execution=1)
     )
 
     statuses = [message["params"]["update"]["status"] for message in sent]
@@ -1383,7 +1389,7 @@ def test_the_editor_gets_each_ending_fact_once(
 def _two_sessions_one_blocked(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[_Wire, str, str, threading.Event]:
-    """Two sessions on one connection, the first's turn holding the run lock."""
+    """Two sessions on one connection, the first's execution holding the run lock."""
     monkeypatch.setattr(stop, "stop_session", _ignore)
     monkeypatch.chdir(tmp_path)
     first_started, release = threading.Event(), threading.Event()
@@ -1410,7 +1416,7 @@ def test_a_queued_prompt_says_what_it_waits_for(
 ) -> None:
     """Runs are serialised on the connection, so a second session's prompt can wait for minutes.
 
-    It waited in silence: the editor saw a turn that had started and said nothing.
+    It waited in silence: the editor saw a prompt that had started and said nothing.
     """
     wire, first, second, release = _two_sessions_one_blocked(tmp_path, monkeypatch)
     try:
@@ -1426,7 +1432,7 @@ def test_a_queued_prompt_says_what_it_waits_for(
 def test_a_cancel_of_a_queued_prompt_answers_at_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A queued turn blocked on the run lock notices its cancel at once."""
+    """A queued prompt blocked on the run lock notices its cancel at once."""
     wire, _first, _second, release = _two_sessions_one_blocked(tmp_path, monkeypatch)
     try:
         wire.send(method="session/cancel", params={"sessionId": _second})
@@ -1550,7 +1556,7 @@ def test_an_answer_file_ends_the_editors_pending_request(tmp_path: pathlib.Path)
 
 
 def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathlib.Path) -> None:
-    """The turn's ending reaches the editor after the tail's last items.
+    """The execution's ending reaches the editor after the tail's last items.
 
     The lifecycle speaks from the run thread while the tail projects the journal a poll behind.
     """
@@ -1562,7 +1568,7 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
     bridge = runner.RunBridge(server=server)
-    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", turn=1)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", execution=1)
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
     events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
@@ -1575,7 +1581,7 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
     done = threading.Event()
     tail = threading.Thread(
         target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
-        args=(session, log, done.is_set, False, runner.Announced(turn=1), order),
+        args=(session, log, done.is_set, False, runner.Announced(execution=1), order),
         daemon=True,
     )
     tail.start()
@@ -1591,7 +1597,7 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
     assert all(s["params"]["update"].get("status") == "failed" for s in sent[3:])
 
 
-def test_a_turn_that_cannot_choose_its_run_says_why(
+def test_a_prompt_that_cannot_choose_its_run_says_why(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A global config that cannot be read is reported, not a bare refusal.
@@ -1635,10 +1641,10 @@ def test_an_internal_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch) -> 
         wire.close()
 
 
-def test_a_cancel_before_the_turn_starts_leaves_no_marker_for_the_next(
+def test_a_cancel_before_the_execution_starts_leaves_no_marker_for_the_next(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A queued cancel leaves neither a stop marker nor an abort steer for the next turn."""
+    """A queued cancel leaves neither a stop marker nor an abort steer for the next prompt."""
     from agent6.sessions import ipc
 
     monkeypatch.chdir(tmp_path)
@@ -1661,13 +1667,13 @@ def test_a_cancel_before_the_turn_starts_leaves_no_marker_for_the_next(
     assert not ipc.steer_answer_written(session_dir)
 
 
-def test_a_second_prompt_after_a_recorded_turn_with_no_snapshot_starts_a_new_run(
+def test_a_second_prompt_after_a_recorded_execution_with_no_snapshot_starts_a_new_run(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A first turn that died before its first checkpoint goes on under a new run.
+    """A first execution that died before its first checkpoint goes on under a new run.
 
     The lifecycle refuses to start that run again and cannot resume it, and the editor is told;
-    a turn that recorded nothing starts under the same id.
+    an execution that recorded nothing starts under the same id.
     """
     minted = iter(("run-AAAA11", "run-BBBB22"))
     calls: list[str] = []
@@ -1720,7 +1726,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
     bridge = runner.RunBridge(server=server)
-    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", turn=1)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", execution=1)
     log = tmp_path / "logs.jsonl"
     sink = event_log.EventSink(log)
     sink.emit("tool.call", name="apply_edit", args={"path": "src/x.py"}, call_id=1)
@@ -1728,7 +1734,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
     sink.emit("session.end", reason="finish_session", turns=1, all_passed=True)
 
     bridge._stream(  # pyright: ignore[reportPrivateUsage]
-        session, log, lambda: True, 0, runner.Announced(turn=1)
+        session, log, lambda: True, 0, runner.Announced(execution=1)
     )
 
     updates = [m["params"]["update"] for m in sent]
@@ -1738,10 +1744,10 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
     assert located and located[0]["locations"] == [{"path": str((tmp_path / "src/x.py").resolve())}]
 
 
-def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
+def test_a_cancel_during_the_lifecycles_startup_stops_the_execution(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Startup preserves a turn's cancel marker and abort steer instead of sweeping them away."""
+    """Startup keeps an execution's cancel marker and abort steer instead of sweeping them away."""
     from agent6 import paths
     from agent6.app import _execution as app__execution
     from agent6.sessions import ipc
@@ -1762,13 +1768,13 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
         encoding="utf-8",
     )
     monkeypatch.chdir(repo)
-    session = session_mod.Session(acp_id="s", cwd=repo, turn_live=True)
+    session = session_mod.Session(acp_id="s", cwd=repo, execution_live=True)
     seen: list[tuple[bool, bool, bool]] = []
     real_run_task = run.run_task
 
     def _cancelled_while_starting(cfg: Config, text: str, **kw: Any) -> int:
         bridge.sessions().cancel(session)
-        time.sleep(2 * ipc.TIMESTAMP_SLACK_S)  # the lifecycle's entry is not the turn's start
+        time.sleep(2 * ipc.TIMESTAMP_SLACK_S)  # the lifecycle's entry is not the execution's start
         return real_run_task(cfg, text, **kw)
 
     def _execution(*_a: object, **_k: object) -> app__execution.ExecutionEnd:
@@ -1790,10 +1796,10 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_turn(
     assert seen == [(True, True, True)]
 
 
-def test_a_missing_provider_key_refuses_the_turn_before_any_state(
+def test_a_missing_provider_key_refuses_the_prompt_before_any_state(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A turn whose provider has no key is refused before any state exists.
+    """A prompt whose provider has no key is refused before any state exists.
 
     The key preflight was the CLI's alone, so the run's state was built and died at its first
     call; the refusal names `agent6 connect`.

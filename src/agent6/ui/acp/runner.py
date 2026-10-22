@@ -37,7 +37,7 @@ from agent6.viewmodel import tail as viewmodel_tail
 
 # Bounds the join on a tail wedged on a filesystem; `_stop` ends it one read pass after the run.
 DRAIN_S = 5.0
-# How often a queued turn checks for its own cancel while another turn holds the run lock.
+# How often a queued prompt checks for its own cancel while another execution holds the run lock.
 QUEUE_POLL_S = 0.1
 
 
@@ -51,7 +51,7 @@ class ProseOrder:
     """Queue the lifecycle's lines for the journal tail to emit in order.
 
     The tail projects the journal a poll behind the run thread, so a line sent as
-    said would land before the turn's last tool calls. Each line is stamped with
+    said would land before the execution's last tool calls. Each line is stamped with
     the journal's size when said, and emitted once the tail has read past it.
 
     Attributes:
@@ -160,7 +160,7 @@ def stop_reason(code: int, *, end_reason: str = "") -> acp_session.StopReason:
 
     Args:
         code: The exit code.
-        end_reason: The journal's end reason for this turn, or "".
+        end_reason: The journal's end reason for this execution, or "".
 
     Returns:
         `cancelled` for an operator stop (exit 130) and `max_turn_requests` for a run that
@@ -204,18 +204,18 @@ def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
 
 
 class Announced:
-    """Register one turn's number and the tool calls the editor has been told about.
+    """Register one execution's number and the tool calls the editor has been told about.
 
     A permission request waits here until the call it names is announced, so the
     editor never hears of a call first through its approval. The wait ends on
     liveness, never a clock: the tail closes the register when it stops reading.
 
     Attributes:
-        turn: The turn's number.
+        execution: The execution's number within the run.
     """
 
-    def __init__(self, turn: int) -> None:
-        self.turn = turn
+    def __init__(self, execution: int) -> None:
+        self.execution = execution
         self._ids: set[str] = set()
         self._closed = False
         self._changed = threading.Condition()
@@ -237,7 +237,7 @@ class Announced:
             self._changed.notify_all()
 
     def wait_for(self, tool_call_id: str, *, abandoned: Callable[[], bool]) -> None:
-        """Wait until the call is announced, the register closes or the turn is abandoned."""
+        """Wait until the call is announced, the register closes or the execution is abandoned."""
         with self._changed:
             while tool_call_id not in self._ids and not self._closed and not abandoned():
                 self._changed.wait(0.5)  # abandonment is polled; add and close wake at once
@@ -264,7 +264,7 @@ class RunBridge:
     config_paths: tuple[pathlib.Path, ...] = ()
     # One run at a time: the chdir in `_run` is process-global.
     _runs: threading.Lock = dataclasses.field(default_factory=threading.Lock)
-    _running: acp_session.Session | None = None  # the turn holding `_runs`, named to a queued one
+    _running: acp_session.Session | None = None  # under `_runs`; named to a queued prompt
     _asks: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _asked: int = 0
 
@@ -295,7 +295,7 @@ class RunBridge:
 
         Args:
             session: The session.
-            announced: The turn's register of announced calls.
+            announced: The execution's register of announced calls.
             prompt: The text.
             options: The choices, in order.
             standing: Whether "always" may be offered; None for a question.
@@ -308,7 +308,7 @@ class RunBridge:
         if not options:
             return None
         if call_id is not None:
-            gated = updates.wire_call_id(session.session_id, announced.turn, str(call_id))
+            gated = updates.wire_call_id(session.session_id, announced.execution, str(call_id))
             announced.wait_for(gated, abandoned=lambda: session.cancelled)
             if session.cancelled or gated not in announced:
                 return None
@@ -397,7 +397,7 @@ class RunBridge:
         return session.layout(agent6_paths.state_dir(session.cwd)).manifest_path.exists()
 
     def _cancelled_unstarted(self, session: acp_session.Session) -> acp_session.StopReason:
-        """Clear a queued cancel's requests so the next turn starts without them.
+        """Clear a queued cancel's requests so the next execution starts without them.
 
         Args:
             session: The cancelled session.
@@ -418,7 +418,7 @@ class RunBridge:
         return session.layout(agent6_paths.state_dir(session.cwd)).logs_path.exists()
 
     def run(self, session: acp_session.Session, text: str) -> acp_session.StopReason:
-        """Run one prompt as a turn, queued behind another session's turn.
+        """Run one prompt as one execution of the session's run, queued behind another session's.
 
         Args:
             session: The session the prompt came on.
@@ -428,7 +428,7 @@ class RunBridge:
         Returns:
             ACP's stop reason.
         """
-        started_at = time.time()  # a cancel written from here on is this turn's to honor
+        started_at = time.time()  # a cancel written from here on is this execution's to honor
         # The id is minted before the queue, so a cancel during the wait has a run to address.
         try:
             resuming = self._resumable(session)
@@ -455,7 +455,7 @@ class RunBridge:
             self.server.notify_raw(
                 updates.message_update(
                     session.acp_id,
-                    f"waiting: {who} is running a turn; this prompt starts when it ends",
+                    f"waiting: {who} is running a prompt; this prompt starts when it ends",
                 )
             )
             while not self._runs.acquire(timeout=QUEUE_POLL_S):
@@ -491,15 +491,15 @@ class RunBridge:
     def _run(
         self, session: acp_session.Session, text: str, *, resuming: bool, started_at: float
     ) -> acp_session.StopReason:
-        """Run the turn under the run lock, with a tail projecting its journal.
+        """Run the execution under the run lock, with a tail projecting its journal.
 
         Args:
             session: The session the prompt came on.
             text: The prompt: a new run's task, or the resumed run's first steering
                 instruction.
-            resuming: Resume the run from its snapshot, the tail skipping the turns the
+            resuming: Resume the run from its snapshot, the tail skipping the journal the
                 editor already rendered; False starts a new run.
-            started_at: When the prompt arrived; a cancel written since is this turn's to
+            started_at: When the prompt arrived; a cancel written since is this execution's to
                 honor.
 
         Returns:
@@ -507,11 +507,11 @@ class RunBridge:
         """
         layout = session.layout(agent6_paths.state_dir(session.cwd))
         os.chdir(session.cwd)
-        session.turn += 1
+        session.execution += 1
         journal_before = viewmodel_tail.journal_size(layout.logs_path)
 
         said: list[str] = []
-        announced = Announced(turn=session.turn)
+        announced = Announced(execution=session.execution)
         ended, drained = threading.Event(), threading.Event()
 
         def _stop() -> bool:
@@ -567,7 +567,7 @@ class RunBridge:
             self.server.notify_raw(
                 updates.message_update(session.acp_id, f"the run stopped (exit {code})")
             )
-        # Only a journal that grew and ended this execution carries a reason of this turn.
+        # Only a journal that grew and ended in this execution carries its end reason.
         grown = viewmodel_tail.journal_size(layout.logs_path) > journal_before
         scan = _session_log.scan_session_log(layout.logs_path)
         end_reason = scan.end_reason if grown and scan.finished else ""
@@ -591,9 +591,9 @@ class RunBridge:
             session: The session.
             logs_path: The journal.
             stop: Polled by the tail; True ends it.
-            journal_before: Where to start on a resumed run, whose earlier turns the
+            journal_before: Where to start on a resumed run, whose earlier executions the
                 editor already rendered; None replays the whole journal.
-            announced: The turn's register of announced calls.
+            announced: The execution's register of announced calls.
             order: The lifecycle's queued lines.
         """
         fold = transcript.TranscriptFold()
@@ -631,7 +631,7 @@ class RunBridge:
                     if item.kind in streamed:
                         continue
                     wire_id = (
-                        updates.tool_call_id(item, session.session_id, announced.turn)
+                        updates.tool_call_id(item, session.session_id, announced.execution)
                         if item.kind == "tool"
                         else ""
                     )
@@ -661,7 +661,7 @@ class RunBridge:
         finally:
             announced.close()
             for item in fold.settle_open_calls("the run died"):
-                wire_id = updates.tool_call_id(item, session.session_id, announced.turn)
+                wire_id = updates.tool_call_id(item, session.session_id, announced.execution)
                 for body in updates.updates_for(
                     item,
                     acp_session_id=session.acp_id,

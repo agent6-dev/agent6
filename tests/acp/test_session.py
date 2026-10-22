@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Turns: new, prompt, cancel.
+"""Prompts: new, prompt, cancel.
 
 A prompt runs on a worker, so the read loop is free to receive the cancel
-that ACP requires to work DURING a turn.
+that ACP requires to work DURING a prompt.
 """
 
 from __future__ import annotations
@@ -141,7 +141,7 @@ def test_a_prompt_runs_and_answers_with_its_stop_reason() -> None:
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
     payload = _msg(2, "session/prompt", sessionId="s1", prompt=[{"type": "text", "text": "fix it"}])
-    # The reply is written by the turn thread, so reading before its join raced it.
+    # The reply is written by the execution's thread, so reading before its join raced it.
     out = io.BytesIO()
     acp_server.ACPServer(stdin=io.BytesIO(payload + b"\n"), stdout=out, sessions=sessions).serve()
     if session.thread is not None:
@@ -151,7 +151,7 @@ def test_a_prompt_runs_and_answers_with_its_stop_reason() -> None:
     assert [r["result"]["stopReason"] for r in replies if r.get("id") == 2] == ["end_turn"]
 
 
-def test_the_read_loop_stays_free_while_a_turn_runs() -> None:
+def test_the_read_loop_stays_free_while_an_execution_runs() -> None:
     """THE property.
 
     Answering a prompt inline would block reading for the whole run, so the cancel an editor sends
@@ -182,15 +182,15 @@ def test_the_read_loop_stays_free_while_a_turn_runs() -> None:
             + b"\n"
         )
         writer.flush()
-        assert started.wait(timeout=5), "the turn never started"
-        # The turn is still running. If the loop were blocked, this never lands.
+        assert started.wait(timeout=5), "the execution never started"
+        # The execution is still running. If the loop were blocked, this never lands.
         writer.write(_msg(3, "session/cancel", sessionId="s1") + b"\n")
         writer.flush()
         for _ in range(100):
             if session.cancelled:
                 break
             time.sleep(0.02)
-        assert session.cancelled, "the cancel could not reach a running turn"
+        assert session.cancelled, "the cancel could not reach a running execution"
     finally:
         release.set()
         writer.close()
@@ -198,7 +198,7 @@ def test_the_read_loop_stays_free_while_a_turn_runs() -> None:
     assert cancelled_during == [True]
 
 
-def test_a_turn_cancelled_while_it_runs_reports_itself_as_cancelled() -> None:
+def test_an_execution_cancelled_while_it_runs_reports_itself_as_cancelled() -> None:
     """The operator's own act, not a failure."""
     started = threading.Event()
     release = threading.Event()
@@ -211,7 +211,7 @@ def test_a_turn_cancelled_while_it_runs_reports_itself_as_cancelled() -> None:
     sessions = _sessions(_slow)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     seen: list[str] = []
-    sessions.start_turn(session, "go", finish=seen.append)
+    sessions.start_execution(session, "go", finish=seen.append)
     assert started.wait(timeout=5)
     sessions.cancel(session)
     release.set()
@@ -220,15 +220,15 @@ def test_a_turn_cancelled_while_it_runs_reports_itself_as_cancelled() -> None:
     assert seen == ["cancelled"]
 
 
-def test_a_stale_cancel_does_not_kill_the_next_turn() -> None:
-    """The flag belongs to the turn it cancelled.
+def test_a_stale_cancel_does_not_kill_the_next_execution() -> None:
+    """The flag belongs to the execution it cancelled.
 
     Carrying it forward would make the following prompt end before it began.
     """
     sessions = _sessions(_ends)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"), cancelled=True)
     seen: list[str] = []
-    sessions.start_turn(session, "go", finish=seen.append)
+    sessions.start_execution(session, "go", finish=seen.append)
     if session.thread is not None:
         session.thread.join(timeout=5)
     assert seen == ["end_turn"]
@@ -237,7 +237,9 @@ def test_a_stale_cancel_does_not_kill_the_next_turn() -> None:
 def test_a_cancel_while_the_run_starts_reaches_its_first_boundary(tmp_path: pathlib.Path) -> None:
     """A cancel before the worker is recorded writes both urgent requests startup keeps."""
     sessions = _sessions(_ends)
-    session = acp_session.Session(acp_id="s1", cwd=tmp_path, session_id="run-1", turn_live=True)
+    session = acp_session.Session(
+        acp_id="s1", cwd=tmp_path, session_id="run-1", execution_live=True
+    )
 
     sessions.cancel(session)
 
@@ -252,7 +254,9 @@ def test_a_cancel_aborts_the_model_call_without_waiting_or_signalling(
 ) -> None:
     """A live ACP cancel writes the abort steer without waiting for or signalling its server."""
     sessions = _sessions(_ends)
-    session = acp_session.Session(acp_id="s1", cwd=tmp_path, session_id="run-1", turn_live=True)
+    session = acp_session.Session(
+        acp_id="s1", cwd=tmp_path, session_id="run-1", execution_live=True
+    )
     session_dir = session.layout(tmp_path / ".state").session_dir
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text(
@@ -278,7 +282,7 @@ def test_a_cancel_aborts_the_model_call_without_waiting_or_signalling(
     assert ipc.steer_interrupt_pending(session_dir)
 
 
-def test_a_cancel_while_idle_does_not_poison_the_next_turn(
+def test_a_cancel_while_idle_does_not_poison_the_next_execution(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An idle cancel leaves no stop marker for the next resume to inherit."""
@@ -300,7 +304,7 @@ def test_a_cancel_while_idle_does_not_poison_the_next_turn(
     assert session.cancelled is False
 
 
-def test_a_run_that_dies_still_ends_the_turn() -> None:
+def test_a_run_that_dies_still_ends_the_execution() -> None:
     """An editor waiting forever on a prompt is worse than a refusal."""
 
     def _boom(_session: acp_session.Session, _text: str) -> str:
@@ -309,13 +313,13 @@ def test_a_run_that_dies_still_ends_the_turn() -> None:
     sessions = _sessions(_boom)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     seen: list[str] = []
-    sessions.start_turn(session, "go", finish=seen.append)
+    sessions.start_execution(session, "go", finish=seen.append)
     if session.thread is not None:
         session.thread.join(timeout=5)
     assert seen == ["refusal"]
 
 
-def test_a_second_turn_on_a_busy_session_is_refused() -> None:
+def test_a_second_prompt_on_a_busy_session_is_refused() -> None:
     """Two runs in one workspace is what the repo lock exists to prevent."""
     release = threading.Event()
 
@@ -326,9 +330,9 @@ def test_a_second_turn_on_a_busy_session_is_refused() -> None:
     sessions = _sessions(_slow)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     try:
-        sessions.start_turn(session, "one", finish=lambda _r: None)
-        with pytest.raises(Exception, match="already has a turn"):
-            sessions.start_turn(session, "two", finish=lambda _r: None)
+        sessions.start_execution(session, "one", finish=lambda _r: None)
+        with pytest.raises(Exception, match="already has a prompt"):
+            sessions.start_execution(session, "two", finish=lambda _r: None)
     finally:
         release.set()
         if session.thread is not None:
@@ -372,13 +376,13 @@ def test_the_next_prompt_is_not_refused_by_the_reply_it_just_read() -> None:
     def _finish(_reason: str) -> None:
         seen.append(session.is_running())
 
-    sessions.start_turn(session, "one", finish=_finish)
+    sessions.start_execution(session, "one", finish=_finish)
     if session.thread is not None:
         session.thread.join(timeout=5)
-    assert seen == [False], "the turn was still 'in flight' as it answered"
+    assert seen == [False], "the execution was still 'in flight' as it answered"
 
 
-def test_eof_lets_a_live_turn_reach_a_boundary() -> None:
+def test_eof_lets_a_live_execution_reach_a_boundary() -> None:
     """Closing the editor is the ordinary way EOF arrives.
 
     A daemon worker torn down mid-git holds the repo and worker locks and the run-dir pid.
@@ -406,13 +410,13 @@ def test_eof_lets_a_live_turn_reach_a_boundary() -> None:
     )
     writer.flush()
     assert started.wait(timeout=5)
-    writer.close()  # the editor goes away mid-turn
+    writer.close()  # the editor goes away mid-execution
     loop.join(timeout=10)
-    assert finished.is_set(), "the turn was cut off instead of reaching a boundary"
+    assert finished.is_set(), "the execution was cut off instead of reaching a boundary"
 
 
 def test_a_prompt_sent_as_a_notification_is_refused() -> None:
-    """A turn's reply carries its stopReason under the request's id, never a null id."""
+    """A prompt's reply carries its stopReason under the request's id, never a null id."""
     sessions = _sessions(_ends)
     sessions._by_id["s1"] = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))  # pyright: ignore[reportPrivateUsage]
     payload = json.dumps(
@@ -449,10 +453,10 @@ def test_eof_grace_is_one_deadline_across_sessions() -> None:
     for i in range(3):
         s = acp_session.Session(acp_id=f"s{i}", cwd=pathlib.Path("/repo"))
         held._by_id[s.acp_id] = s  # pyright: ignore[reportPrivateUsage]
-        held.start_turn(s, "go", finish=lambda _r: None)
+        held.start_execution(s, "go", finish=lambda _r: None)
     start = time.monotonic()
     try:
-        held.wait_for_turns(timeout_s=0.5)
+        held.wait_for_executions(timeout_s=0.5)
         elapsed = time.monotonic() - start
         assert elapsed < 1.2, f"three sessions waited {elapsed:.2f}s; the bound is 0.5s total"
     finally:
