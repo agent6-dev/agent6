@@ -12,7 +12,7 @@ import os
 import pathlib
 import stat
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
 from agent6 import kinds, paths
 from agent6.config import Config
@@ -52,6 +52,22 @@ def host_network_reads() -> tuple[pathlib.Path, ...]:
     return tuple(out)
 
 
+def jail_home_kind(config: Config, isolation: kinds.IsolationLevel) -> Literal["tmp", "cache"]:
+    """Return which HOME a jailed command gets: `auto` is `tmp` under `full`, `cache` elsewhere.
+
+    Args:
+        config: The run's config.
+        isolation: The resolved isolation level.
+
+    Returns:
+        `tmp` or `cache`.
+    """
+    word = config.sandbox.home
+    if word == "auto":
+        return "tmp" if isolation == "full" else "cache"
+    return word
+
+
 def persistent_jail_home(
     config: Config,
     isolation: kinds.IsolationLevel,
@@ -77,7 +93,7 @@ def persistent_jail_home(
     Returns:
         The repository's persistent HOME, or None.
     """
-    if isolation == "full" and config.sandbox.home == "tmp":
+    if jail_home_kind(config, isolation) == "tmp":
         return None
     if worktree_git_dir is not None and worktree_git_dir.name == ".git":
         return paths.jail_cache_home(worktree_git_dir.parent)
@@ -481,7 +497,7 @@ def jail_policy(
     # the host. `full` re-binds `.git` read-only, which needs a mount namespace; `partial` has only
     # Landlock, whose recursive root grant cannot exclude `.git` without costing every top-level
     # write. The in-process edit tools refuse `.git` writes at every level.
-    if config.sandbox.protect_git and isolation == "full":
+    if config.protects_git and isolation == "full":
         protect_paths.append((root / ".git").resolve())
     protect_paths.extend(extra_protect_paths)
     policy_kwargs: dict[str, Any] = {}

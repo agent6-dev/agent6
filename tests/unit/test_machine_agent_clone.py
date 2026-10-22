@@ -222,7 +222,7 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
         origin,
         "m1",
         tmp_path / "clones",
-        {"check": StateConfig(Config(), frozenset(), "none")},
+        {"check": StateConfig(Config(), "none")},
         reporter.STDIO_REPORTER,
         tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
     )
@@ -269,7 +269,7 @@ def test_tool_clone_runs_setup_before_reading_environment(
         origin,
         "m1",
         tmp_path / "clones",
-        {"check": StateConfig(cfg, frozenset(), "none")},
+        {"check": StateConfig(cfg, "none")},
         reporter.STDIO_REPORTER,
         tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
     )
@@ -350,7 +350,7 @@ def test_a_tool_states_setup_runs_without_its_pass_env(
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}}).with_setup_command(
         ("sh", "-c", "true")
     )
-    states = {"check": StateConfig(cfg, frozenset(), "none")}
+    states = {"check": StateConfig(cfg, "none")}
     factory = machine_run.machine_tool_policy_factory(
         states, origin, protect_paths=(), data_dir=None, shared_writes=()
     )
@@ -412,7 +412,7 @@ def test_tool_clone_host_failure_aborts_the_machine(
             origin,
             "m1",
             tmp_path / "clones",
-            {"check": StateConfig(Config(), frozenset(), "none")},
+            {"check": StateConfig(Config(), "none")},
             reporter.STDIO_REPORTER,
             tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
         ),
@@ -445,7 +445,7 @@ def test_tool_setup_logs_share_numeric_state_log_pruning(
             origin,
             "m1",
             tmp_path / "clones",
-            {"check": StateConfig(cfg, frozenset(), "none")},
+            {"check": StateConfig(cfg, "none")},
             reporter.STDIO_REPORTER,
             tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
         ),
@@ -498,7 +498,7 @@ def test_tool_setup_routes_its_outcome_without_checking_a_session_gate(
         origin,
         "m1",
         tmp_path / "clones",
-        {"check": StateConfig(cfg, frozenset(), "none")},
+        {"check": StateConfig(cfg, "none")},
         reporter.STDIO_REPORTER,
         tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
     )

@@ -36,10 +36,10 @@ def test_the_clamp_only_ever_tightens(setting: str) -> None:
 
 def test_the_clamp_leaves_the_rest_of_the_config_alone() -> None:
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "yes", "protect_git": True}, "preset": "quick"}
+        {"sandbox": {"run_commands": "yes", "protect_git": "on"}, "preset": "quick"}
     )
     clamped = cfg.with_run_commands_clamped()
-    assert clamped.sandbox.protect_git is True
+    assert clamped.sandbox.protect_git == "on"
     assert clamped.preset == "quick"
     assert cfg.sandbox.run_commands == "yes"  # the operator's config is untouched
 

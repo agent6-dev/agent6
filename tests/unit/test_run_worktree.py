@@ -601,7 +601,7 @@ def test_model_controlled_git_refuses(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A linked worktree's `.git` is read-only in the jail, so the model could not commit there."""
-    model_git = _CONFIG.replace('run_commands = "no"', 'run_commands = "no"\nprotect_git = false')
+    model_git = _CONFIG.replace('run_commands = "no"', 'run_commands = "no"\nprotect_git = "off"')
     repo = _repo(tmp_path, monkeypatch, config=model_git + '\n[git]\ncontrol = "model"\n')
 
     assert cli_main(["run", "--worktree", "--session-id", "wt-MODL01", "task"]) == 2

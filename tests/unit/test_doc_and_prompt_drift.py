@@ -129,7 +129,7 @@ def test_readme_quoted_security_defaults_match_config() -> None:
     for quoted, actual in (
         ('network = "auto"', cfg.sandbox.network),
         ('run_commands = "ask"', cfg.sandbox.run_commands),
-        ("protect_git = true", cfg.sandbox.protect_git),
+        ('protect_git = "auto"', cfg.sandbox.protect_git),
     ):
         assert quoted in readme, f"README no longer quotes {quoted!r}"
         want = quoted.split("= ")[1].strip('"')

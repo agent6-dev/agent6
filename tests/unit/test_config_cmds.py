@@ -161,7 +161,7 @@ def test_config_set_refuses_a_target_that_does_not_parse(
     from agent6.ui.cli import cli_main
 
     cfg = tmp_path / "config.toml"
-    cfg.write_text("[sandbox\nprotect_git = true\n", encoding="utf-8")  # missing ]
+    cfg.write_text('[sandbox\nprotect_git = "on"\n', encoding="utf-8")  # missing ]
 
     def _global_path(*_a: object, **_k: object) -> pathlib.Path:
         return cfg
@@ -174,7 +174,7 @@ def test_config_set_refuses_a_target_that_does_not_parse(
     assert rc == 2, "a target that does not parse must not report success"
     assert "Set sandbox.run_commands" not in out.out
     # And the file is untouched: no surgery appended into a file we cannot read.
-    assert cfg.read_text(encoding="utf-8") == "[sandbox\nprotect_git = true\n"
+    assert cfg.read_text(encoding="utf-8") == '[sandbox\nprotect_git = "on"\n'
 
 
 def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: pathlib.Path) -> None:
@@ -530,9 +530,9 @@ def test_config_set_bool_error_speaks_human(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    rc = main(["config", "set", "sandbox.protect_git", "notabool"])
+    rc = main(["config", "set", "git.auto_merge", "notabool"])
     assert rc == 2
-    assert "sandbox.protect_git: expected true or false, got 'notabool'" in capsys.readouterr().err
+    assert "git.auto_merge: expected true or false, got 'notabool'" in capsys.readouterr().err
 
 
 def test_config_set_global_keeps_a_valid_write_shadowed_by_a_stale_repo_layer(
@@ -965,7 +965,7 @@ def test_config_set_names_the_flag_file_that_shadows_the_write(
     assert rc == 0
     assert f"--config {flag} overrides sandbox.run_commands" in out
     # A key the flag file does not set carries no note.
-    rc = main(["--config", str(flag), "config", "set", "sandbox.protect_git", "true"])
+    rc = main(["--config", str(flag), "config", "set", "sandbox.protect_git", "on"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "overrides sandbox.protect_git" not in out
@@ -1000,7 +1000,7 @@ def test_config_set_shadow_note_names_the_last_file_setting_the_key(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     first = tmp_path / "first.toml"
     second = tmp_path / "second.toml"
-    first.write_text('[sandbox]\nrun_commands = "yes"\nprotect_git = true\n', encoding="utf-8")
+    first.write_text('[sandbox]\nrun_commands = "yes"\nprotect_git = "on"\n', encoding="utf-8")
     second.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
     both = ["--config", str(first), "--config", str(second)]
     assert main([*both, "config", "set", "sandbox.run_commands", "no"]) == 0
@@ -1008,7 +1008,7 @@ def test_config_set_shadow_note_names_the_last_file_setting_the_key(
     assert f"--config {second} overrides sandbox.run_commands" in out
     assert str(first) not in out
     # A key only the first file sets is shadowed by the first file.
-    assert main([*both, "config", "set", "sandbox.protect_git", "false"]) == 0
+    assert main([*both, "config", "set", "sandbox.protect_git", "off"]) == 0
     assert f"--config {first} overrides sandbox.protect_git" in capsys.readouterr().out
 
 

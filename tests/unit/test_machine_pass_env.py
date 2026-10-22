@@ -104,7 +104,7 @@ def test_the_jail_gets_only_the_declared_variables_that_are_set(
     monkeypatch.delenv("X_REGION", raising=False)
     monkeypatch.setenv("OTHER_SECRET", "no")
     factory = run.machine_tool_policy_factory(
-        {"fetch": StateConfig(Config(), frozenset(), "full")},
+        {"fetch": StateConfig(Config(), "full")},
         tmp_path,
         protect_paths=(),
         data_dir=None,

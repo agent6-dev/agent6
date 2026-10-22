@@ -1775,7 +1775,7 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
     cfg_home = tmp_path / "cfg"
     (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)
     (cfg_home / "agent6" / "config.toml").write_text(
-        "[sandbox]\nprotect_git = true\n", encoding="utf-8"
+        '[sandbox]\nprotect_git = "on"\n', encoding="utf-8"
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

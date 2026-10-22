@@ -74,7 +74,6 @@ def select_isolation(
     cwd: pathlib.Path,
     confirm_unconfined: Callable[[kinds.IsolationLevel, Config], bool],
     reporter: app_reporter.Reporter,
-    explicit_leaves: frozenset[str] = frozenset(),
     worktree_git_dir: pathlib.Path | None = None,
 ) -> kinds.IsolationLevel:
     """Pick the sandbox isolation and refuse what it cannot honor.
@@ -87,7 +86,6 @@ def select_isolation(
         cwd: The workspace.
         confirm_unconfined: Confirms an unconfined autorun with the operator.
         reporter: Where the refusals go.
-        explicit_leaves: The config leaves the operator wrote, which refuse rather than degrade.
         worktree_git_dir: The linked worktree's git dir, when the run is in one.
 
     Returns:
@@ -103,9 +101,7 @@ def select_isolation(
         reporter.refuse(str(exc))
         raise preflight.SessionRefusedError(2) from exc
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
-    cfg_err = confine.config_refusal(
-        cfg, selected, cwd, explicit_leaves=explicit_leaves, worktree_git_dir=worktree_git_dir
-    )
+    cfg_err = confine.config_refusal(cfg, selected, cwd, worktree_git_dir=worktree_git_dir)
     if cfg_err is not None:
         reporter.refuse(cfg_err)
         raise preflight.SessionRefusedError(2)

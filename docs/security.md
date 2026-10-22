@@ -246,7 +246,7 @@ Every path they take resolves through `Workspace`:
     - `list_dir` drops the entry and reports `hidden: N`
     - the jail masks the path instead (empty dir, empty file; [Sandbox](#2-sandbox))
 - The symbol index skips a hidden file (an indexed one leaks symbol names and line numbers through `find_definition`)
-- Under `sandbox.protect_git` (the default, and off only where `git.control = "model"` requires it) the edit tools refuse a write into the project's own `.git`, raw or symlink-resolved, at every isolation level
+- While `sandbox.protect_git` is on (`auto`, the default, is on except where `git.control = "model"` needs a writable `.git`) the edit tools refuse a write into the project's own `.git`, raw or symlink-resolved, at every isolation level
     - the name matches case-folded on every platform (macOS and Windows open `.GIT/config` as `.git/config`; macOS runs unsandboxed)
     - a `pyvenv.cfg` dir, a `site-packages` ancestor, and an operator protect path (a machine bundle's `.asm.toml` and `scripts/`) refuse the same way, whatever `protect_git` says
 - Rewriting an editable-install `.pth` corrupts a venv invisibly (venvs are gitignored), so those writes refuse
@@ -430,14 +430,14 @@ Under `none` isolation nothing is enforced or refused.
 
 **A `git` the model runs through `run_command`** is bounded by the sandbox, and its argv is not screened.
 
-- `protect_git` (default on) requires `full` `sandbox.isolation` to bind-remount `.git` as read-only
+- `protect_git = "on"` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only; `auto` (the default) binds under `full` and keeps the edit tools' refusal at every level
     - a mount nested under `.git` stays visible and read-only
     - a rewrite fails; `push` has no egress
     - a grant that contains the workspace does not lift it ([Sandbox](#2-sandbox))
-- Under `partial`, `protect_git` left at its default degrades with a warning, and an explicit `true` refuses to run
+- Under `partial`, `protect_git = "auto"` degrades with a warning and `"on"` refuses to run
     - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`; agent6's own auto-commit (a temp-index `git add -A` on the host) blanks every driver the repo defines unless `git.run_repo_filters` is set
     - Landlock cannot express the exclusion: a directory grant is recursive and stacked rulesets intersect, so denying `.git` means not granting the workspace root either
-- `git.control = "agent6"` is enforced by the sandbox; without it, an explicit setting refuses to run and the default warns that a commit the model runs lands on the checkout's branch.
+- `git.control = "agent6"` is enforced by the sandbox; without it the run warns that a commit the model runs lands on the checkout's branch.
 - The protected scope is the project's own `.git` at every isolation level (the in-process edit tools refuse writes under it; [File access](#3-file-access))
     - a nested `.git` (a vendored repo's, a submodule's) is workspace content, writable like any other file
 

@@ -90,11 +90,12 @@ def warn_sandbox_gaps(
             " root-only files in the system dirs it is granted (/etc/shadow, /etc/sudoers, the"
             " host's ssh private keys). Run as your normal user."
         )
-    if isolation == "partial" and cfg.sandbox.protect_git:
+    if isolation == "partial" and cfg.protects_git:
         reporter.warn(
-            "sandbox.protect_git = true requires sandbox.isolation = 'full' to bind-remount .git"
-            " read-only, but this run resolved to 'partial', so jailed commands can write .git."
-            " Set sandbox.protect_git = false to accept that, or sandbox.isolation = 'full'."
+            "sandbox.protect_git = 'auto' resolves to off: bind-remounting .git read-only needs"
+            " sandbox.isolation = 'full', but this run resolved to 'partial', so jailed commands"
+            " can write .git. Set sandbox.protect_git = 'off' to accept that silently, or"
+            " sandbox.isolation = 'full'."
         )
     persistent = tools_policy.persistent_jail_home(cfg, isolation, root, worktree_git_dir)
     if persistent is not None and isolation != "none":
@@ -310,28 +311,25 @@ def check_workspace_outside_hidden_paths(cfg: Config, root: pathlib.Path) -> str
     return None
 
 
-def check_protect_git_support(
-    cfg: Config, isolation: kinds.IsolationLevel, *, explicitly_set: bool
-) -> str | None:
-    """Return the refusal when an explicit `protect_git` cannot be honored here, else None.
+def check_protect_git_support(cfg: Config, isolation: kinds.IsolationLevel) -> str | None:
+    """Return the refusal when `protect_git = "on"` cannot be honored here, else None.
 
-    `protect_git` requires `full` `sandbox.isolation` to bind-remount `.git` read-only. The
-    default degrades with a warning instead.
+    `on` requires `full` `sandbox.isolation` to bind-remount `.git` read-only; `auto` degrades
+    with a warning instead.
 
     Args:
         cfg: The resolved config.
         isolation: The resolved isolation level.
-        explicitly_set: Whether the operator's config wrote `sandbox.protect_git`.
 
     Returns:
-        The refusal for an explicit `protect_git = true` on `partial`, else None.
+        The refusal for `on` off `full`, else None.
     """
-    if isolation != "partial" or not (cfg.sandbox.protect_git and explicitly_set):
+    if isolation == "full" or cfg.sandbox.protect_git != "on":
         return None
     return (
-        "sandbox.protect_git = true requires sandbox.isolation = 'full' to bind-remount .git"
-        " read-only, but this run resolved to 'partial'. Set sandbox.protect_git = false, or"
-        " sandbox.isolation = 'full'."
+        "sandbox.protect_git = 'on' requires sandbox.isolation = 'full' to bind-remount .git"
+        f" read-only, but this run resolved to {isolation!r}. Set sandbox.protect_git = 'auto'"
+        " to run without it where 'full' is unavailable, or sandbox.isolation = 'full'."
     )
 
 
@@ -340,35 +338,33 @@ def check_jail_home(
     isolation: kinds.IsolationLevel,
     workspace: pathlib.Path,
     worktree_git_dir: pathlib.Path | None = None,
-    *,
-    explicitly_set: bool,
 ) -> str | None:
     """Return the refusal when the jail's HOME cannot be what the config says, else None.
 
-    `home = "tmp"` requires `full` `sandbox.isolation` to put HOME on a private /tmp. Under
-    another level the default degrades to the repository's cache dir with a warning, and an
-    explicit one refuses. A persistent dir the policy builder could not make agent6's own
-    refuses too, without creating anything.
+    `home = "tmp"` requires `full` `sandbox.isolation` to put HOME on a private /tmp and refuses
+    under another level, where `auto` degrades to the repository's cache dir with a warning. A
+    persistent dir the policy builder could not make agent6's own refuses too, without creating
+    anything.
 
     Args:
         cfg: The resolved config.
         isolation: The resolved isolation level.
         workspace: The workspace.
         worktree_git_dir: The linked worktree's git dir, when the run is in one.
-        explicitly_set: Whether the operator's config wrote `sandbox.home`.
 
     Returns:
         The refusal, or None.
     """
+    if isolation != "full" and cfg.sandbox.home == "tmp":
+        persistent = paths.jail_cache_home(paths.checkout_root(workspace))
+        return (
+            "sandbox.home = 'tmp' requires sandbox.isolation = 'full' to put HOME on a private"
+            f" /tmp, but this run resolved to {isolation!r}. Set sandbox.home = 'auto' to use"
+            f" the persistent HOME {str(persistent)!r} there, or sandbox.isolation = 'full'."
+        )
     persistent = tools_policy.persistent_jail_home(cfg, isolation, workspace, worktree_git_dir)
     if persistent is None:
         return None
-    if isolation != "full" and explicitly_set and cfg.sandbox.home == "tmp":
-        return (
-            "sandbox.home = 'tmp' requires sandbox.isolation = 'full' to put HOME on a private"
-            f" /tmp, but this run resolved to {isolation!r}. Set sandbox.home = 'cache' to use"
-            f" the persistent HOME {str(persistent)!r}, or sandbox.isolation = 'full'."
-        )
     return tools_policy.jail_home_refusal(persistent)
 
 
@@ -546,7 +542,6 @@ def config_refusal(
     isolation: kinds.IsolationLevel,
     workspace: pathlib.Path,
     *,
-    explicit_leaves: frozenset[str] = frozenset(),
     worktree_git_dir: pathlib.Path | None = None,
 ) -> str | None:
     """Return the first refusal for a config this host cannot honor, else None.
@@ -558,34 +553,20 @@ def config_refusal(
         cfg: The resolved config.
         isolation: The resolved isolation level.
         workspace: The workspace.
-        explicit_leaves: The config leaves the operator wrote, which refuse rather than degrade.
         worktree_git_dir: The linked worktree's git dir, when the run is in one.
 
     Returns:
         The refusal, or None when every check passes.
     """
-    if isolation == "none" and cfg.git.control == "agent6" and "git.control" in explicit_leaves:
-        return (
-            'git.control = "agent6" cannot be enforced without the sandbox; '
-            'keep the sandbox or set git.control = "model".'
-        )
     checks: tuple[Callable[[], str | None], ...] = (
         # The HOME check first: `check_hide_paths_support` builds the policy, which creates HOME.
-        lambda: check_jail_home(
-            cfg,
-            isolation,
-            workspace,
-            worktree_git_dir,
-            explicitly_set="sandbox.home" in explicit_leaves,
-        ),
+        lambda: check_jail_home(cfg, isolation, workspace, worktree_git_dir),
         lambda: check_mcp_network_support(cfg, isolation),
         # Before `check_hide_paths_support`, so a workspace under an entry gets its own refusal.
         lambda: check_workspace_outside_hidden_paths(cfg, workspace),
         lambda: check_hide_paths_support(cfg, isolation, workspace, worktree_git_dir),
         lambda: check_workspace_outside_private_dirs(workspace),
-        lambda: check_protect_git_support(
-            cfg, isolation, explicitly_set="sandbox.protect_git" in explicit_leaves
-        ),
+        lambda: check_protect_git_support(cfg, isolation),
     )
     for check in checks:
         try:

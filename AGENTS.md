@@ -83,7 +83,7 @@
 - Plain punctuation: commas, colons, parentheses, periods.
   An em dash marks an overstuffed sentence to recast.
 - Concrete over abstract: name the command, the field, the number ("retries twice, then fails the run").
-  A value names its setting: "`protect_git` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only".
+  A value names its setting: "`protect_git = "on"` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only".
 - Statements: a docstring, heading or comment asserts ("X does Y").
 - Prose that names code is a claim to verify: every symbol, default and behaviour matches the source; when the two disagree, decide which side is wrong.
   Prose someone acts on (a tool description, help text, an error, a refusal) is an interface: it states what is accepted and returned, and names the resolved fact ("default: detected zsh").

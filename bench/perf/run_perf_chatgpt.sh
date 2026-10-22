@@ -128,7 +128,7 @@ effort = "low"
 isolation = "auto"
 network = "session"
 run_commands = "yes"
-protect_git = true
+protect_git = "on"
 
 [git]
 dirty_tree = "ask"

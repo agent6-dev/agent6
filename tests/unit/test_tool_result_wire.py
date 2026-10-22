@@ -48,7 +48,7 @@ model = "x"
 [sandbox]
 isolation = "auto"
 run_commands = "yes"
-protect_git = true
+protect_git = "on"
 [git]
 dirty_tree = "ask"
 branch_per_run = true

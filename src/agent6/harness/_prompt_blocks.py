@@ -297,7 +297,7 @@ def build_system_prompt(
     )
     base = base.replace("__PARTIAL_FS_RULE__", partial_rule if carved else "")
     # `.git` is read-only under `full` with protect_git, and in a linked worktree under any jail.
-    git_read_only = (isolation == "full" and config.sandbox.protect_git) or (
+    git_read_only = (isolation == "full" and config.protects_git) or (
         isolation != "none" and (repo.root / ".git").is_file()
     )
     base = base.replace("__GIT_PROTECT_RULE__", loop.GIT_PROTECT_RULE if git_read_only else "")

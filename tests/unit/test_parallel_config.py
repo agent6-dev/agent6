@@ -52,14 +52,12 @@ def test_parallel_override_via_repo_config(repo: pathlib.Path) -> None:
     assert cfg.parallel.workdir == "/tmp/lanes"
 
 
-@pytest.mark.parametrize("explicit_protect_git", [False, True])
-def test_lane_config_preserves_protect_git_provenance(
-    repo: pathlib.Path, explicit_protect_git: bool
-) -> None:
-    """A lane under `partial` degrades default protect_git but refuses an explicit demand."""
+@pytest.mark.parametrize("word", ["auto", "on"])
+def test_lane_config_carries_the_protect_git_word(repo: pathlib.Path, word: str) -> None:
+    """A lane under `partial` degrades `auto` and refuses `on`, as the origin run would."""
     toml = '[sandbox]\nisolation = "partial"\n'
-    if explicit_protect_git:
-        toml += "protect_git = true\n"
+    if word == "on":
+        toml += "protect_git = 'on'\n"
     _write_repo_config(repo, toml)
     origin = layer.load_effective(repo)
     spec = subrun.LaneSpec(
@@ -72,13 +70,11 @@ def test_lane_config_preserves_protect_git_provenance(
     lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
 
     assert lane.config.sandbox.isolation == "partial"
-    assert lane.config.sandbox.protect_git is True
-    assert ("sandbox.protect_git" in lane.explicit_leaves) is explicit_protect_git
+    assert lane.config.sandbox.protect_git == word
+    assert ("sandbox.protect_git" in lane.explicit_leaves) is (word == "on")
     assert "sandbox.home" not in lane.explicit_leaves
-    refusal = confine.check_protect_git_support(
-        lane.config, "partial", explicitly_set="sandbox.protect_git" in lane.explicit_leaves
-    )
-    if explicit_protect_git:
+    refusal = confine.check_protect_git_support(lane.config, "partial")
+    if word == "on":
         assert refusal is not None and "requires sandbox.isolation = 'full'" in refusal
     else:
         assert refusal is None
@@ -88,8 +84,8 @@ def test_lane_config_keeps_an_explicit_reset_to_default(repo: pathlib.Path) -> N
     """A repo's reset to default beats the global value when a lane reloads it."""
     global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True, exist_ok=True)
-    global_path.write_text("[sandbox]\nprotect_git = false\n", encoding="utf-8")
-    _write_repo_config(repo, "[sandbox]\nprotect_git = true\n")
+    global_path.write_text("[sandbox]\nprotect_git = 'off'\n", encoding="utf-8")
+    _write_repo_config(repo, "[sandbox]\nprotect_git = 'on'\n")
     origin = layer.load_effective(repo)
     spec = subrun.LaneSpec(
         lane=1, session_id="fan-l1", workdir=repo.parent / "lanes" / "lane-1", route=None
@@ -101,8 +97,8 @@ def test_lane_config_keeps_an_explicit_reset_to_default(repo: pathlib.Path) -> N
     written = tomllib.loads(config_path.read_text(encoding="utf-8"))
     lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
 
-    assert written["sandbox"]["protect_git"] is True
-    assert lane.config.sandbox.protect_git is True
+    assert written["sandbox"]["protect_git"] == "on"
+    assert lane.config.sandbox.protect_git == "on"
     assert lane.sources["sandbox.protect_git"] == f"flag ({config_path})"
 
 

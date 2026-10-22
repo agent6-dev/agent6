@@ -47,11 +47,9 @@ def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
     checks: list[kinds.DoctorCheck] = []
     # Every section needs the config: the sandbox probes run under the isolation it selects.
     cfg: Config | None = None
-    explicit_leaves: frozenset[str] = frozenset()
     load_error: str | None = None
     try:
-        effective = layer.load_effective(pathlib.Path.cwd(), config_paths)
-        cfg, explicit_leaves = effective.config, effective.explicit_leaves
+        cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
     except (ConfigError, OSError) as exc:
         load_error = str(exc)
 
@@ -61,7 +59,7 @@ def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
 
     if cfg is not None and section in {"all", "sandbox"}:
         print("== sandbox ==")
-        checks.extend(_check_sandbox.check_sandbox_section(cfg, explicit_leaves))
+        checks.extend(_check_sandbox.check_sandbox_section(cfg))
         print()
 
     if cfg is not None and section in {"all", "config"}:

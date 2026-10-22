@@ -26,10 +26,8 @@ def dispatched(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Record what the dispatcher hands `exec_new` and `exec_in_session`."""
     calls: dict[str, Any] = {}
 
-    def _exec_new(
-        cfg: Any, explicit_leaves: frozenset[str], cwd: pathlib.Path, argv: tuple[str, ...]
-    ) -> int:
-        calls.update(form="new", argv=argv, leaves=explicit_leaves)
+    def _exec_new(cfg: Any, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
+        calls.update(form="new", argv=argv)
         return 0
 
     def _exec_in_session(layout: Any, cfg: Any, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
@@ -54,7 +52,6 @@ def test_new_takes_the_command_verbatim(dispatched: dict[str, Any]) -> None:
     assert dispatched == {
         "form": "new",
         "argv": ("ls", "-la"),
-        "leaves": frozenset({"sandbox.home"}),
     }
 
 
@@ -166,7 +163,7 @@ def test_new_builds_the_policy_a_runs_command_gets(
         }
     )
     argv = ("ls", "-la")
-    assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, argv) == 5
+    assert exec_cmds.exec_new(cfg, tmp_path, argv) == 5
     want = tools_policy.jail_policy(tmp_path, cfg, "full", argv, timeout_s=0.0)
     assert host["policy"] == want
     assert (want.isolation, want.network, want.timeout_s) == ("full", "session", 0.0)
@@ -179,7 +176,7 @@ def test_new_on_the_host_network_opens_no_session_network(
     tmp_path: pathlib.Path, host: dict[str, Any]
 ) -> None:
     cfg = Config.model_validate({"sandbox": {"isolation": "full", "network": "host"}})
-    assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ("true",)) == 5
+    assert exec_cmds.exec_new(cfg, tmp_path, ("true",)) == 5
     assert host["policy"].network == "host"
     assert host["session_net"] is None and host["nets"] == []
 
@@ -193,7 +190,7 @@ def test_new_names_the_shell_and_the_isolation(
     shell = _shell_on_path(tmp_path, monkeypatch, "zsh")
     monkeypatch.setenv("SHELL", shell)
     cfg = Config.model_validate({"sandbox": {"isolation": "full", "network": "host"}})
-    assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ()) == 5
+    assert exec_cmds.exec_new(cfg, tmp_path, ()) == 5
     assert host["policy"].argv == (shell,)
     assert f"[agent6] {shell} in a fresh sandbox, isolation full." in capsys.readouterr().err
 
@@ -203,7 +200,7 @@ def test_new_refuses_what_a_run_refuses(
 ) -> None:
     """An explicit network the level cannot give refuses as a run does, before any spawn."""
     cfg = Config.model_validate({"sandbox": {"isolation": "partial", "network": "session"}})
-    assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ("true",)) == 2
+    assert exec_cmds.exec_new(cfg, tmp_path, ("true",)) == 2
     err = capsys.readouterr().err
     assert "REFUSING: sandbox.network = 'session' requires sandbox.isolation = 'full'" in err
     assert "policy" not in host
@@ -216,7 +213,7 @@ def test_new_refuses_a_workspace_under_a_hidden_path(
     workspace = tmp_path / "repo"
     workspace.mkdir()
     cfg = Config.model_validate({"sandbox": {"isolation": "full", "hide_paths": [str(tmp_path)]}})
-    assert exec_cmds.exec_new(cfg, frozenset(), workspace, ("true",)) == 2
+    assert exec_cmds.exec_new(cfg, workspace, ("true",)) == 2
     err = capsys.readouterr().err
     assert f"REFUSING: the workspace {str(workspace)!r} is under {str(tmp_path)!r}" in err
     assert "policy" not in host
@@ -235,7 +232,7 @@ def test_new_warns_about_a_grant_of_the_home_directory(
     cfg = Config.model_validate(
         {"sandbox": {"isolation": "full", "extra_write_paths": [str(tmp_path)]}}
     )
-    assert exec_cmds.exec_new(cfg, frozenset(), workspace, ("true",)) == 5
+    assert exec_cmds.exec_new(cfg, workspace, ("true",)) == 5
     err = capsys.readouterr().err
     assert f"[agent6] WARNING: sandbox.extra_write_paths grants {str(tmp_path)!r}" in err
     assert "your home directory: the run's commands and file tools can read and write" in err
@@ -252,7 +249,7 @@ def test_new_refuses_a_level_the_host_lacks(
 
     monkeypatch.setattr(detect, "resolve_isolation", _unavailable)
     cfg = Config.model_validate({"sandbox": {"isolation": "full"}})
-    assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ("true",)) == 2
+    assert exec_cmds.exec_new(cfg, tmp_path, ("true",)) == 2
     assert "REFUSING: full is not available here" in capsys.readouterr().err
     assert "policy" not in host
 
@@ -261,7 +258,7 @@ def test_new_unsandboxed_says_nothing_is_confined(
     tmp_path: pathlib.Path, host: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
     cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
-    assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ("true",)) == 5
+    assert exec_cmds.exec_new(cfg, tmp_path, ("true",)) == 5
     assert host["policy"].isolation == "none" and host["nets"] == []
     assert "running UNSANDBOXED (sandbox.isolation = none)" in capsys.readouterr().err
 
@@ -274,7 +271,7 @@ def test_new_unsandboxed_gets_the_env_an_unsandboxed_command_gets(
     monkeypatch.setenv("EXEC_NEW_KEY", "secret")
     monkeypatch.setattr("agent6.child_env._provider_key_env", {"EXEC_NEW_KEY"})
     cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
-    assert exec_cmds.exec_new(cfg, frozenset(), tmp_path, ("true",)) == 5
+    assert exec_cmds.exec_new(cfg, tmp_path, ("true",)) == 5
     plain = tools_policy.jail_policy(tmp_path, cfg, "none", ("true",), timeout_s=0.0)
     want = child_env.without_provider_keys({**os.environ, **dict(plain.env)})
     assert dict(host["policy"].env) == want

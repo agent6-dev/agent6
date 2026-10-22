@@ -16,7 +16,7 @@ def test_writers_go_through_atomic_write_and_never_truncate(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = tmp_path / "config.toml"
-    original = "[sandbox]\nprotect_git = true\n"
+    original = '[sandbox]\nprotect_git = "on"\n'
     cfg.write_text(original, encoding="utf-8")
 
     def boom(_path: pathlib.Path, _text: str) -> None:

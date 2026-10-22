@@ -569,7 +569,7 @@ def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: pathlib.Pa
     repo = _repo(tmp_path)
     on = _cfg(verify=True)
     off = Config.model_validate(
-        {"harness": {"verify_command": ["true"]}, "sandbox": {"protect_git": False}}
+        {"harness": {"verify_command": ["true"]}, "sandbox": {"protect_git": "off"}}
     )
     marker = ".git/` is read-only inside the jail"
     for isolation, cfg, expect in (
@@ -607,7 +607,7 @@ def test_prompt_git_rules_match_git_control(tmp_path: pathlib.Path) -> None:
         {
             "harness": {"verify_command": ["true"]},
             "git": {"control": "model"},
-            "sandbox": {"protect_git": False},
+            "sandbox": {"protect_git": "off"},
         }
     )
     agent6_prompt = _prompt_blocks.build_system_prompt(
@@ -622,7 +622,7 @@ def test_prompt_git_rules_match_git_control(tmp_path: pathlib.Path) -> None:
     assert "You own git" in model_prompt
 
     gateless_cfg = Config.model_validate(
-        {"git": {"control": "model"}, "sandbox": {"protect_git": False}}
+        {"git": {"control": "model"}, "sandbox": {"protect_git": "off"}}
     )
     gateless = _prompt_blocks.build_system_prompt(
         config=gateless_cfg,
@@ -641,7 +641,7 @@ def test_model_git_rule_does_not_offer_a_withheld_run_command(tmp_path: pathlib.
     cfg = Config.model_validate(
         {
             "git": {"control": "model"},
-            "sandbox": {"run_commands": "no", "protect_git": False},
+            "sandbox": {"run_commands": "no", "protect_git": "off"},
         }
     )
     prompt = _prompt_blocks.build_system_prompt(

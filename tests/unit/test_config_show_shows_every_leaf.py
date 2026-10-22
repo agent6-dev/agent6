@@ -80,7 +80,7 @@ def test_the_new_mcp_network_knob_is_among_them() -> None:
         ("sandbox.run_commands", "ask"),
         ("sandbox.network", "auto"),
         ("sandbox.isolation", "auto"),
-        ("sandbox.protect_git", True),
+        ("sandbox.protect_git", "auto"),
         ("mcp.enabled", False),
     ],
 )

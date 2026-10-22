@@ -218,7 +218,7 @@ class Config(pydantic.BaseModel):
 
     @pydantic.model_validator(mode="after")
     def _model_git_control_needs_git_writes(self) -> Config:
-        """Refuse `git.control = "model"` beside `sandbox.protect_git`: the model must write .git.
+        """Refuse `git.control = "model"` beside `protect_git = "on"`: the model must write .git.
 
         Returns:
             The model unchanged.
@@ -226,12 +226,18 @@ class Config(pydantic.BaseModel):
         Raises:
             ValueError: Both are set.
         """
-        if self.git.control == "model" and self.sandbox.protect_git:
+        if self.git.control == "model" and self.sandbox.protect_git == "on":
             raise ValueError(
                 'git.control = "model" needs the model to write .git;'
-                ' set sandbox.protect_git = false (or keep control = "agent6").'
+                ' set sandbox.protect_git = "auto" or "off" (or keep control = "agent6").'
             )
         return self
+
+    @property
+    def protects_git(self) -> bool:
+        """Whether `.git` is kept from the model: `on`, or `auto` unless the model controls git."""
+        word = self.sandbox.protect_git
+        return word == "on" or (word == "auto" and self.git.control != "model")
 
     @pydantic.model_validator(mode="after")
     def _pass_env_excludes_provider_keys(self) -> Config:

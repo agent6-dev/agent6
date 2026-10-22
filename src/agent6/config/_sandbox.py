@@ -75,29 +75,30 @@ class SandboxConfig(pydantic.BaseModel):
         ),
     )
     # A read-only bind-remount; the harness's own commits run outside the jail and are unaffected.
-    protect_git: bool = pydantic.Field(
-        default=True,
+    protect_git: Literal["auto", "on", "off"] = pydantic.Field(
+        default="auto",
         description=(
             "Keep `.git/` unwritable by jailed commands, so a command cannot plant a git filter "
-            "that agent6's host-side commits would execute. Requires `full` `sandbox.isolation` "
-            "to bind-remount `.git` read-only. Under `partial` the default `true` degrades with "
-            "a warning and an explicit `true` refuses to start. The in-process edit tools "
-            "refuse `.git` writes at every isolation level."
+            "that agent6's host-side commits would execute. `on` requires `full` "
+            "`sandbox.isolation` to bind-remount `.git` read-only and refuses to start elsewhere; "
+            'it is refused beside `git.control = "model"`. `auto`: the bind under `full`, a '
+            "warning below it, and off where the model controls git. `off`: writable. Under "
+            "`on` and `auto` the in-process edit tools refuse `.git` writes at every level."
         ),
     )
     # The cache dir is paths.jail_cache_home, keyed on the repository.
-    home: Literal["tmp", "cache"] = pydantic.Field(
-        default="tmp",
+    home: Literal["auto", "tmp", "cache"] = pydantic.Field(
+        default="auto",
         description=(
-            "The HOME jailed commands get under `full`: `tmp` is `/tmp/agent6-home` inside the "
-            "run's private tmpfs, gone with the run; `cache` is the persistent "
-            "`$XDG_CACHE_HOME/agent6/homes/<repo-id>`, one directory per repository (created "
-            "`0700`, refused once loosened), bind-mounted read-write at its real path. `partial` "
-            "and `none` have no private tmpfs and always use that directory; an explicit `tmp` "
-            "refuses to start there. Persistence is a cross-run channel inside the jail's world: "
-            "a poisoned cache or a `~/.gitconfig` alias written by one run reaches the next "
-            "jailed run in the same repository, never another repository's runs and never your "
-            "own tools."
+            "The HOME jailed commands get: `tmp` is `/tmp/agent6-home` inside the run's private "
+            "tmpfs, gone with the run, and needs `full` `sandbox.isolation` (it refuses to start "
+            "elsewhere); `cache` is the persistent `$XDG_CACHE_HOME/agent6/homes/<repo-id>`, one "
+            "directory per repository (created `0700`, refused once loosened), bind-mounted "
+            "read-write at its real path; `auto` is `tmp` under `full` and `cache` under "
+            "`partial` or `none`, which have no private tmpfs. Persistence is a cross-run "
+            "channel inside the jail's world: a poisoned cache or a `~/.gitconfig` alias written "
+            "by one run reaches the next jailed run in the same repository, never another "
+            "repository's runs and never your own tools."
         ),
     )
     # RLIMIT_DATA rather than RLIMIT_AS so V8, the JVM and ASAN, which reserve address space

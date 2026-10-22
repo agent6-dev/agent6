@@ -193,7 +193,7 @@ reason = "fail"
 
 def _one_state(cfg: Config, isolation: kinds.IsolationLevel) -> dict[str, machine.StateConfig]:
     """The resolved-config map of a world whose tool calls name no state."""
-    return {"": machine.StateConfig(cfg, frozenset(), isolation)}
+    return {"": machine.StateConfig(cfg, isolation)}
 
 
 # A terminal's `notify` template that references an absent optional field raises at render.

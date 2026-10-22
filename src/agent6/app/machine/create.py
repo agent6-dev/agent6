@@ -201,7 +201,6 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
             cwd=cwd,
             confirm_unconfined=lambda _isolation, _cfg: True,
             reporter=reporter,
-            explicit_leaves=eff.explicit_leaves,
         )
     except preflight.SessionRefusedError as refusal:
         return refusal.rc

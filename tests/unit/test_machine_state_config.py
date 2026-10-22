@@ -366,7 +366,7 @@ def test_a_key_with_no_rule_must_equal_the_operators(monkeypatch: pytest.MonkeyP
         ({"network": "auto"}, {"network": "session"}),
         ({"memory_limit_mb": 0}, {"memory_limit_mb": 512}),
         ({"memory_limit_mb": 1024}, {"memory_limit_mb": 512}),
-        ({"protect_git": False}, {"protect_git": True}),
+        ({"protect_git": "off"}, {"protect_git": "on"}),
         ({"home": "cache"}, {"home": "tmp"}),
         ({"fetch_hosts": ["*"]}, {"fetch_hosts": ["docs.python.org"]}),
         ({"fetch_hosts": ["a.example", "b.example"]}, {"fetch_hosts": ["a.example"]}),
@@ -404,7 +404,7 @@ def test_an_overlay_may_narrow(operator: dict[str, Any], state: dict[str, Any]) 
         ({"network": "session"}, {"network": "host"}, "network"),
         ({"memory_limit_mb": 512}, {"memory_limit_mb": 0}, "memory_limit_mb"),
         ({"memory_limit_mb": 512}, {"memory_limit_mb": 1024}, "memory_limit_mb"),
-        ({"protect_git": True}, {"protect_git": False}, "protect_git"),
+        ({"protect_git": "on"}, {"protect_git": "off"}, "protect_git"),
         ({"home": "tmp"}, {"home": "cache"}, "home"),
         ({"fetch_hosts": ["a.example"]}, {"fetch_hosts": ["*"]}, "fetch_hosts"),
         ({}, {"fetch_hosts": ["a.example"]}, "fetch_hosts"),
@@ -428,9 +428,9 @@ def test_an_overlay_may_not_widen(
         ),
         (
             {},
-            {"protect_git": False},
-            "sandbox.protect_git = false, wider than your config's true",
-            "`agent6 config set --repo sandbox.protect_git false`",
+            {"protect_git": "off"},
+            'sandbox.protect_git = "off", wider than your config\'s "auto"',
+            "`agent6 config set --repo sandbox.protect_git off`",
         ),
         (
             {"memory_limit_mb": 512},
@@ -498,6 +498,15 @@ def test_isolation_is_compared_by_the_level_it_resolves_to() -> None:
     assert sandbox_widening(op, "full", st, "full") == {}
     assert "isolation" in sandbox_widening(op, "full", st, "partial")
     assert "isolation" in sandbox_widening(_cfg(), "full", _cfg(isolation="none"), "none")
+
+
+def test_protect_git_is_compared_by_what_it_resolves_to() -> None:
+    """A machine's `git.control = "model"` under the operator's `auto` turned protection off."""
+    state = Config.model_validate({"git": {"control": "model"}})
+    problems = sandbox_widening(_cfg(), "full", state, "full")
+    assert "protect_git" in problems and "git.control" in problems["protect_git"]
+    assert sandbox_widening(_cfg(protect_git="off"), "full", state, "full") == {}
+    assert sandbox_widening(state, "full", Config(), "full") == {}
 
 
 def test_network_is_compared_by_what_it_resolves_to() -> None:
@@ -957,14 +966,14 @@ def test_check_and_run_report_every_tables_widening(
     _operator(OPERATOR.partition("[sandbox]")[0])
     mfile = _write(
         tmp_path,
-        MACHINE.replace("[config.sandbox]\n", "[config.sandbox]\nprotect_git = false\n")
-        + "\n[states.store.config.sandbox]\nprotect_git = false\n",
+        MACHINE.replace("[config.sandbox]\n", "[config.sandbox]\nprotect_git = 'off'\n")
+        + "\n[states.store.config.sandbox]\nprotect_git = 'off'\n",
     )
     expected = [
-        "the machine's [config] sets sandbox.protect_git = false,",
+        'the machine\'s [config] sets sandbox.protect_git = "off",',
         '[states.scan.config] sets sandbox.extra_read_paths = ["/srv/inbox"],',
         # `store` sets the key itself; `scan` and `judge` only carry the machine's value.
-        "[states.store.config] sets sandbox.protect_git = false,",
+        '[states.store.config] sets sandbox.protect_git = "off",',
         '[states.judge.config] sets sandbox.extra_write_paths = ["/srv/outbox"],',
     ]
     assert main(["machine", "check", str(mfile)]) == 1

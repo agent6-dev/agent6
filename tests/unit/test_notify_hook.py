@@ -203,7 +203,7 @@ model = "claude-opus-4-5"
 [sandbox]
 isolation = "auto"
 run_commands = "ask"
-protect_git = true
+protect_git = "on"
 
 [git]
 

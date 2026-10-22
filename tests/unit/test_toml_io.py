@@ -42,13 +42,13 @@ def test_table_header_lookup_tolerates_a_trailing_comment(tmp_path: pathlib.Path
     appended a second table, making the file unparseable.
     """
     p = tmp_path / "c.toml"
-    p.write_text("[sandbox]  # the jail\nprotect_git = true\n", encoding="utf-8")
+    p.write_text('[sandbox]  # the jail\nprotect_git = "on"\n', encoding="utf-8")
 
     io.upsert_toml_leaf(p, "sandbox.run_commands", "yes")
     text = p.read_text(encoding="utf-8")
     assert text.count("[sandbox]") == 1, "a second table was appended"
     parsed = tomllib.loads(text)
-    assert parsed["sandbox"] == {"protect_git": True, "run_commands": "yes"}
+    assert parsed["sandbox"] == {"protect_git": "on", "run_commands": "yes"}
 
     assert io.remove_toml_leaf(p, "sandbox.protect_git") is True
     assert tomllib.loads(p.read_text(encoding="utf-8"))["sandbox"] == {"run_commands": "yes"}
@@ -377,7 +377,7 @@ def test_upsert_toml_leaf_replaces_a_whole_multiline_string(tmp_path: pathlib.Pa
 
 
 def test_no_writer_deletes_a_top_level_inline_table(tmp_path: pathlib.Path) -> None:
-    """`sandbox = { protect_git = false, ... }` is legal TOML.
+    """`sandbox = { protect_git = "off", ... }` is legal TOML.
 
     The bare-key drop exists for the SCALAR-vs-[table] conflict (`profile` vs `[profile]`), but its
     regex matching a table-valued key too would delete the whole line (every sibling setting in it)
@@ -385,7 +385,7 @@ def test_no_writer_deletes_a_top_level_inline_table(tmp_path: pathlib.Path) -> N
     add`/`remove` and the engine-level writers behind the TUI, connect and init cannot skip it.
     """
     p = tmp_path / "c.toml"
-    body = 'sandbox = { protect_git = false, run_commands = "yes", memory_limit_mb = 8000 }\n'
+    body = 'sandbox = { protect_git = "off", run_commands = "yes", memory_limit_mb = 8000 }\n'
     p.write_text(body, encoding="utf-8")
 
     with pytest.raises(ConfigError, match="not a plain \\[table\\]"):
@@ -406,10 +406,10 @@ def test_remove_toml_leaf_refuses_an_undeclared_table_ancestor(tmp_path: pathlib
     `config get` showed the leaf set.
     """
     p = tmp_path / "c.toml"
-    p.write_text('sandbox = { protect_git = false, run_commands = "yes" }\n', encoding="utf-8")
+    p.write_text('sandbox = { protect_git = "off", run_commands = "yes" }\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="cannot be unset on its own"):
         io.remove_toml_leaf(p, "sandbox.protect_git")
-    p.write_text("sandbox.protect_git = false\n", encoding="utf-8")  # the dotted-key shape
+    p.write_text('sandbox.protect_git = "off"\n', encoding="utf-8")  # the dotted-key shape
     with pytest.raises(ConfigError, match="cannot be unset on its own"):
         io.remove_toml_leaf(p, "sandbox.protect_git")
     # A genuinely absent leaf under a DECLARED header keeps the quiet False.
@@ -464,11 +464,11 @@ def test_remove_toml_table_drops_an_array_of_tables_subtable(tmp_path: pathlib.P
     """
     p = tmp_path / "c.toml"
     p.write_text(
-        '[cli]\nx = 1\n\n[[cli.aliases]]\nname = "a"\n\n[sandbox]\nprotect_git = true\n',
+        '[cli]\nx = 1\n\n[[cli.aliases]]\nname = "a"\n\n[sandbox]\nprotect_git = "on"\n',
         encoding="utf-8",
     )
     assert io.remove_toml_table(p, "cli") is True
     out = p.read_text(encoding="utf-8")
     assert "cli" not in tomllib.loads(out)
     assert "aliases" not in out  # the subtable went with its parent
-    assert tomllib.loads(out)["sandbox"] == {"protect_git": True}  # sibling preserved
+    assert tomllib.loads(out)["sandbox"] == {"protect_git": "on"}  # sibling preserved

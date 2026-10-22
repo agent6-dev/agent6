@@ -320,7 +320,7 @@ def _region_end(lines: list[str], region: int) -> int:
 def _find_leaf_line(lines: list[str], region: int, end: int, leaf: str) -> int | None:
     """Return the index of the line assigning the leaf within `[region, end)`, or None.
 
-    The quoted spelling (`"protect_git" = true`) names the same leaf and matches too;
+    The quoted spelling (`"protect_git" = "on"`) names the same leaf and matches too;
     unmatched, the surgery would append a duplicate key. Multi-line value interiors are
     skipped as in `_region_end`.
 

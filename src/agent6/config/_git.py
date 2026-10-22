@@ -166,8 +166,8 @@ class GitConfig(pydantic.BaseModel):
             "Who manages git during a run: `agent6` records every step on the run's own commit "
             "chain and branch, never touching HEAD; `model` hands git to the model: no per-step "
             "chain, no run branch, the model's own commits and branches are the record, and "
-            "`sessions diff`/`merge`, `/undo`, and `fork` refuse for such runs. Requires "
-            "`sandbox.protect_git = false`."
+            "`sessions diff`/`merge`, `/undo`, and `fork` refuse for such runs. "
+            '`sandbox.protect_git = "auto"` turns off for it; `"on"` is refused beside it.'
         ),
     )
     branch_per_run: bool = pydantic.Field(

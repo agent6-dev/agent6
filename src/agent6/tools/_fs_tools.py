@@ -232,7 +232,7 @@ def refuse_protected_writes(
     Raises:
         ToolError: The path lies in a protected location.
     """
-    if config.sandbox.protect_git:
+    if config.protects_git:
         _refuse_protected_write(path, ".git", why="git history/metadata", resolved=resolved)
     if resolved is not None:
         _refuse_env_write(path, resolved)

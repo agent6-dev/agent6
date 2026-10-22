@@ -34,7 +34,7 @@ model = "x"
 [sandbox]
 isolation = "auto"
 run_commands = "no"
-protect_git = true
+protect_git = "on"
 [git]
 dirty_tree = "ask"
 branch_per_run = true
@@ -398,7 +398,7 @@ def test_apply_edit_allows_git_write_when_protect_git_false(tmp_path: pathlib.Pa
     from agent6.config import load_config
 
     p = tmp_path / "agent6-nogit.toml"
-    p.write_text(_VALID_TOML.replace("protect_git = true", "protect_git = false"), encoding="utf-8")
+    p.write_text(_VALID_TOML.replace('protect_git = "on"', 'protect_git = "off"'), encoding="utf-8")
     cfg = load_config(p)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
@@ -2034,7 +2034,7 @@ def test_git_reaches_the_jail_as_a_protect_path_only_under_full(
     directory is recursive and stacked rulesets only intersect, so denying
     `.git` means not granting the workspace root either -- which denied every
     `touch`/`mkdir` at the root. `partial` warns instead, and an explicitly-set
-    `protect_git = true` refuses to run there.
+    `protect_git = "on"` refuses to run there.
     """
     (tmp_path / ".git").mkdir()
     captured: list[object] = []

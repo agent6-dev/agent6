@@ -23,7 +23,7 @@ def test_a_jailed_git_var_reads_the_configured_identity(tmp_path: pathlib.Path) 
     cfg = config.Config.model_validate(
         {
             "git": {"control": "model", "commit": {"name": "Eric Lesiuta", "email": "e@x.io"}},
-            "sandbox": {"protect_git": False},
+            "sandbox": {"protect_git": "off"},
         }
     )
     policy = tools_policy.jail_policy(

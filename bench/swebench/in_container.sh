@@ -144,7 +144,7 @@ model = "$MODEL"
 isolation = "none"
 network = "session"
 run_commands = "yes"
-protect_git = false
+protect_git = "off"
 extra_read_paths = ["/opt/miniconda3", "/opt/conda"]
 
 [git]

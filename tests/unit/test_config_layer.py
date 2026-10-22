@@ -591,7 +591,7 @@ def test_materialize_distinguishes_explicit_defaults_from_unset_leaves(
     assert ("home" in written.get("sandbox", {})) is writes_home
     assert written["budget"]["max_usd"] == 3.5
     if writes_protect_git:
-        assert written["sandbox"]["protect_git"] is True
+        assert written["sandbox"]["protect_git"] == "auto"
 
 
 def test_materialize_selective_keeps_named_models_and_dict_values() -> None:
@@ -869,7 +869,7 @@ def test_engine_writers_refuse_a_write_into_an_unparseable_target(
     The CLI gives the same refusal.
     """
     gcfg = tmp_path / "g" / "agent6" / "config.toml"
-    gcfg.write_text("[sandbox\nprotect_git = true\n", encoding="utf-8")  # missing ]
+    gcfg.write_text('[sandbox\nprotect_git = "on"\n', encoding="utf-8")  # missing ]
     before = gcfg.read_text(encoding="utf-8")
 
     with pytest.raises(ConfigError):

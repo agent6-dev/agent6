@@ -143,7 +143,7 @@ def test_boundaries_report_covers_every_actor(
     assert "jailed commands" in out
     assert f"    rw  {pathlib.Path.cwd()}  (the workspace)" in out
     assert (
-        f"    ro  {pathlib.Path.cwd() / '.git'}  (re-bound read-only: sandbox.protect_git = true)"
+        f"    ro  {pathlib.Path.cwd() / '.git'}  (re-bound read-only: sandbox.protect_git = 'auto')"
         in out
     )
     for p in _check_sandbox.FULL_SYSTEM_BINDS:
@@ -418,7 +418,7 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
     _check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert grant not in out
-    assert f"    ro  {git_dir}  (re-bound read-only: sandbox.protect_git = true)" in out
+    assert f"    ro  {git_dir}  (re-bound read-only: sandbox.protect_git = 'auto')" in out
 
 
 def test_boundaries_report_says_withheld_rather_than_unapproved(

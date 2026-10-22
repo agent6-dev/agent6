@@ -219,9 +219,7 @@ def run_attached(policy: kinds.JailPolicy, session_net: jail.SessionNetwork | No
             _common.error(jail.survivors_message(left))
 
 
-def exec_new(
-    cfg: Config, explicit_leaves: frozenset[str], cwd: pathlib.Path, argv: tuple[str, ...]
-) -> int:
+def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
     """Run a command, or the operator's shell, in a fresh sandbox built from the config.
 
     No session: the policy a run's commands get (mounts, hidden paths, network, isolation
@@ -229,7 +227,6 @@ def exec_new(
 
     Args:
         cfg: The effective config.
-        explicit_leaves: The config leaves the operator wrote, which refuse rather than degrade.
         cwd: The workspace.
         argv: The command; empty opens the shell `resolve_shell` names.
 
@@ -240,7 +237,7 @@ def exec_new(
         env = _setup.detect_env()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
         refusal = confine.check_network_support(cfg, isolation) or confine.config_refusal(
-            cfg, isolation, cwd, explicit_leaves=explicit_leaves
+            cfg, isolation, cwd
         )
         if refusal is not None:
             _common.refuse(refusal)

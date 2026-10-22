@@ -528,7 +528,7 @@ def _dispatch_exec_new(args: argparse.Namespace) -> int:
         _common.error(f"{exc}")
         return 2
     argv = tuple(rest[1:] if rest[:1] == ["--"] else rest)
-    return exec_cmds.exec_new(eff.config, eff.explicit_leaves, pathlib.Path.cwd(), argv)
+    return exec_cmds.exec_new(eff.config, pathlib.Path.cwd(), argv)
 
 
 def _dispatch_exec(args: argparse.Namespace) -> int:

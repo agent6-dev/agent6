@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`protect_git` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only.
+"""`protect_git = "on"` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only.
 
 Landlock has no deny rules: protecting `.git` on `partial` meant not granting
 the workspace ROOT, because a grant is recursive and granting the root its own
@@ -26,14 +26,8 @@ def _said() -> tuple[app_reporter.Reporter, list[str]]:
     return app_reporter.Reporter(out=lines.append, err=lines.append), lines
 
 
-def test_a_default_degrades_with_a_warning(tmp_path: pathlib.Path) -> None:
-    """A default degrades with a warning.
-
-    `protect_git` defaults to true, and a default this host cannot honour must still run, loudly,
-    never silently ineffective.
-    """
-    reporter, lines = _said()
-    env = detect.Environment(
+def _env_without_namespaces() -> detect.Environment:
+    return detect.Environment(
         in_container=False,
         container_signals=(),
         kernel=detect.KernelInfo(raw="7.0.0", major=7, minor=0),
@@ -42,27 +36,52 @@ def test_a_default_degrades_with_a_warning(tmp_path: pathlib.Path) -> None:
         seccomp_arch_supported=True,
         sandbox_available=True,
     )
-    confine.warn_sandbox_gaps("partial", env, Config(), reporter=reporter, root=tmp_path)
+
+
+def test_auto_degrades_with_a_warning(tmp_path: pathlib.Path) -> None:
+    """`auto` is the default, and a default this host cannot honour runs loudly, never silently."""
+    reporter, lines = _said()
+    confine.warn_sandbox_gaps(
+        "partial", _env_without_namespaces(), Config(), reporter=reporter, root=tmp_path
+    )
     assert any("jailed commands can write .git" in line for line in lines)
-    assert confine.check_protect_git_support(Config(), "partial", explicitly_set=False) is None
+    assert confine.check_protect_git_support(Config(), "partial") is None
 
 
-def test_a_value_the_operator_wrote_down_refuses(tmp_path: pathlib.Path) -> None:
-    """They asked for something specific; running without it would be a lie."""
-    message = confine.check_protect_git_support(Config(), "partial", explicitly_set=True)
+@pytest.mark.parametrize("isolation", ["partial", "none"])
+def test_on_refuses_where_it_cannot_be_honoured(isolation: str) -> None:
+    """`on` asks for something specific; running without it would be a lie.
+
+    The value carries the demand, so a config written by `config fill` or by hand behaves the
+    same: nothing depends on which layer the word came from.
+    """
+    on = Config.model_validate({"sandbox": {"protect_git": "on"}})
+    message = confine.check_protect_git_support(on, isolation)  # pyright: ignore[reportArgumentType]
     assert message is not None
     assert "requires sandbox.isolation = 'full'" in message
-    assert "sandbox.protect_git = false" in message  # names the fix
+    assert "sandbox.protect_git = 'auto'" in message  # names the fix
 
 
-def test_full_provides_it_either_way(tmp_path: pathlib.Path) -> None:
-    for explicit in (True, False):
-        assert confine.check_protect_git_support(Config(), "full", explicitly_set=explicit) is None
+def test_full_provides_it_for_auto_and_on() -> None:
+    for word in ("auto", "on"):
+        cfg = Config.model_validate({"sandbox": {"protect_git": word}})
+        assert confine.check_protect_git_support(cfg, "full") is None
 
 
-def test_opting_out_never_refuses(tmp_path: pathlib.Path) -> None:
-    off = Config.model_validate({"sandbox": {"protect_git": False}})
-    assert confine.check_protect_git_support(off, "partial", explicitly_set=True) is None
+def test_off_never_refuses() -> None:
+    off = Config.model_validate({"sandbox": {"protect_git": "off"}})
+    assert confine.check_protect_git_support(off, "partial") is None
+
+
+def test_auto_resolves_off_when_the_model_controls_git(tmp_path: pathlib.Path) -> None:
+    """`git.control = "model"` needs a writable .git; `auto` yields to it and `on` is refused."""
+    from agent6.tools import policy
+
+    (tmp_path / ".git").mkdir()
+    model = Config.model_validate({"git": {"control": "model"}})
+    assert policy.jail_policy(tmp_path, model, "full", ("true",)).extra_protect_paths == ()
+    with pytest.raises(ValueError, match="protect_git"):
+        Config.model_validate({"git": {"control": "model"}, "sandbox": {"protect_git": "on"}})
 
 
 def test_only_full_carves_git_out_of_the_jail(tmp_path: pathlib.Path) -> None:
@@ -99,26 +118,3 @@ def test_a_new_top_level_entry_can_be_created_on_partial(tmp_path: pathlib.Path)
         )
     )
     assert "made-them" in res.stdout, res.stdout + res.stderr
-
-
-def test_the_default_reaches_the_check_as_a_default(tmp_path: pathlib.Path) -> None:
-    """The default reaches the check as a default.
-
-    `effective.sources` holds every leaf with its layer, so reading it for the explicit leaves makes
-    a default read as operator intent: on a host without user namespaces (auto -> partial) `agent6
-    run` and `ask` would refuse to start at all, against a config nobody had written.
-    """
-    from agent6.config import layer
-
-    effective = layer.load_effective(tmp_path, ())
-    assert effective.config.sandbox.protect_git is True
-    assert effective.sources["sandbox.protect_git"] == "default"
-    assert "sandbox.protect_git" not in effective.explicit_leaves
-    assert (
-        confine.check_protect_git_support(
-            effective.config,
-            "partial",
-            explicitly_set="sandbox.protect_git" in effective.explicit_leaves,
-        )
-        is None
-    )

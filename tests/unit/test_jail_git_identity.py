@@ -25,7 +25,7 @@ _IDENTITY = {
 
 def _model_control(**commit: str) -> config.Config:
     return config.Config.model_validate(
-        {"git": {"control": "model", "commit": commit}, "sandbox": {"protect_git": False}}
+        {"git": {"control": "model", "commit": commit}, "sandbox": {"protect_git": "off"}}
     )
 
 

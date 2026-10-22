@@ -176,7 +176,6 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
                 reporter=reporter,
-                explicit_leaves=explicit_leaves,
             )
         except preflight.SessionRefusedError as refusal:
             return refusal.rc
@@ -291,7 +290,6 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
                 reporter=reporter,
-                explicit_leaves=explicit_leaves,
                 worktree_git_dir=worktree_git_dir,
             )
         assert isolation is not None  # selected before the git preflight, or on the worktree

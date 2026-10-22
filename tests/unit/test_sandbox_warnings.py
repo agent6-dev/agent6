@@ -41,21 +41,13 @@ def _cfg(tool_network: str = "auto", isolation: str = "auto") -> Config:
 def test_git_control_without_sandbox(
     control: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Unconfined git control warns by default, refuses when explicit, and permits model control."""
-    cfg = Config(
-        git=GitConfig(control=control),  # type: ignore[arg-type]
-        sandbox=SandboxConfig(protect_git=control != "model"),
-    )
+    """Unconfined agent6 git control warns and runs; the word names who manages history.
+
+    Whether the model can also commit is the sandbox's business, so the warning rides the
+    `none` banner and nothing refuses: the same config behaves the same however it was written.
+    """
+    cfg = Config(git=GitConfig(control=control))  # type: ignore[arg-type]
     assert confine.config_refusal(cfg, "none", tmp_path) is None
-    refusal = confine.config_refusal(
-        cfg, "none", tmp_path, explicit_leaves=frozenset({"git.control"})
-    )
-    if control == "agent6":
-        assert refusal is not None
-        assert 'git.control = "agent6"' in refusal
-        assert 'keep the sandbox or set git.control = "model"' in refusal
-    else:
-        assert refusal is None
     confine.warn_sandbox_gaps("none", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
     warning = (
@@ -63,49 +55,6 @@ def test_git_control_without_sandbox(
         "a commit the model runs lands on the checkout's branch."
     )
     assert err.count(warning) == (1 if control == "agent6" else 0)
-
-
-def test_the_run_entry_refuses_explicit_git_control_before_it_warns(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Under `none`, explicit git control exits 2 with no warning first; the default warns and runs.
-
-    `select_isolation` is the preflight run, resume, fork and `machine run` share.
-    """
-    from agent6.app import _session, _setup, preflight
-    from agent6.app import reporter as app_reporter
-
-    def _detected() -> detect.Environment:
-        return _env(4)
-
-    def _confirmed(_level: str, _cfg: Config) -> bool:
-        return True
-
-    monkeypatch.setattr(_setup, "detect_env", _detected)
-    cfg = _cfg(isolation="none")
-    said: list[str] = []
-    reporter = app_reporter.Reporter(out=said.append, err=said.append)
-    with pytest.raises(preflight.SessionRefusedError) as info:
-        _session.select_isolation(
-            cfg,
-            cwd=tmp_path,
-            confirm_unconfined=_confirmed,
-            reporter=reporter,
-            explicit_leaves=frozenset({"git.control"}),
-        )
-    assert info.value.rc == 2
-    assert said == [
-        'REFUSING: git.control = "agent6" cannot be enforced without the sandbox; '
-        'keep the sandbox or set git.control = "model".'
-    ]
-    said.clear()
-    selected = _session.select_isolation(
-        cfg, cwd=tmp_path, confirm_unconfined=_confirmed, reporter=reporter
-    )
-    assert selected == "none"
-    (line,) = (line for line in said if "git.control = 'agent6' is not enforced" in line)
-    assert line.startswith("[agent6] WARNING: running UNSANDBOXED")
-    assert not any(line.startswith("REFUSING") for line in said)
 
 
 def test_none_warns_unsandboxed(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -241,15 +190,15 @@ def test_partial_warning_names_shared_tmp_and_persistent_home(
     `full` gives each run a private /tmp tmpfs with HOME (/tmp/agent6-home) inside it, gone when the
     run ends; `partial` has no mount namespace, so /tmp is the host's and HOME is the persistent
     cache dir. The HOME warning stands on its own rather than riding the .git warning, which
-    `protect_git = false` removes.
+    `protect_git = "off"` removes.
     """
-    for cfg in (_cfg(), Config(sandbox=SandboxConfig(protect_git=False))):
+    for cfg in (_cfg(), Config(sandbox=SandboxConfig(protect_git="off"))):
         confine.warn_sandbox_gaps("partial", _env(4), cfg, root=tmp_path)
         err = capsys.readouterr().err
         assert str(paths.jail_cache_home(tmp_path)) in err
         assert "/tmp/agent6-home" not in err
         assert "persists across runs" in err and "executable" in err
-        assert ("jailed commands can write .git" in err) == cfg.sandbox.protect_git
+        assert ("jailed commands can write .git" in err) == cfg.protects_git
 
 
 def test_full_cache_home_warns_naming_the_cost(
@@ -419,7 +368,7 @@ def test_a_plain_partial_run_neither_warns_nor_refuses(
     ws.mkdir()
     monkeypatch.chdir(ws)
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
-    cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
+    cfg = Config(sandbox=SandboxConfig(network="host", protect_git="off"))
     confine.warn_sandbox_gaps("partial", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
     # `partial`'s persistent HOME is the one notice every such run carries;
@@ -444,7 +393,7 @@ def test_partial_warns_when_private_state_sits_in_a_granted_region(
     ws.mkdir()
     monkeypatch.chdir(ws)
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
-    cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
+    cfg = Config(sandbox=SandboxConfig(network="host", protect_git="off"))
     confine.warn_sandbox_gaps("partial", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
     assert str(tmp_path).startswith("/tmp"), "the fixture premise: pytest tmp lives under /tmp"
@@ -464,7 +413,7 @@ def test_partial_names_the_workspace_when_it_sits_inside_a_private_dir(
     ws.mkdir(parents=True)
     monkeypatch.chdir(ws)
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
-    cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
+    cfg = Config(sandbox=SandboxConfig(network="host", protect_git="off"))
     confine.warn_sandbox_gaps("partial", _env(4), cfg, root=ws)
     err = capsys.readouterr().err
     expected = (
@@ -500,7 +449,7 @@ def test_root_on_partial_names_what_it_costs(
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     monkeypatch.setattr("agent6.paths.is_root", lambda: True)
     confine.warn_sandbox_gaps(
-        "partial", _env(4), Config(sandbox=SandboxConfig(protect_git=False)), root=tmp_path
+        "partial", _env(4), Config(sandbox=SandboxConfig(protect_git="off")), root=tmp_path
     )
     err = capsys.readouterr().err
     assert "running as root" in err
@@ -527,7 +476,7 @@ def test_a_normal_user_on_partial_is_not_told_about_root(
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     monkeypatch.setattr("agent6.paths.is_root", lambda: False)
     confine.warn_sandbox_gaps(
-        "partial", _env(4), Config(sandbox=SandboxConfig(protect_git=False)), root=tmp_path
+        "partial", _env(4), Config(sandbox=SandboxConfig(protect_git="off")), root=tmp_path
     )
     assert "running as root" not in capsys.readouterr().err
 

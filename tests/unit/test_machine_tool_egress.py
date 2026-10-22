@@ -186,7 +186,7 @@ def _world(
 ) -> live_world.LiveWorld:
     """A LiveWorld wired exactly as run_machine wires it, through the shared policy builder."""
     factory = run.machine_tool_policy_factory(
-        {"": StateConfig(cfg or Config(), frozenset(), isolation)},  # type: ignore[arg-type]
+        {"": StateConfig(cfg or Config(), isolation)},  # type: ignore[arg-type]
         tmp_path,
         protect_paths=protect_paths,
         data_dir=data_dir,
@@ -215,7 +215,7 @@ def test_machine_tool_jail_carries_operator_grants_and_protect_git(
                 "extra_read_paths": ["/srv/ro"],
                 "extra_write_paths": ["/srv/rw"],
                 "hide_paths": ["/srv/secret"],
-                "protect_git": True,
+                "protect_git": "on",
             }
         }
     )
@@ -314,7 +314,7 @@ def test_a_bundle_in_a_subdirectory_runs_its_own_scripts(
     bundle = tmp_path / "machines"
     (bundle / "scripts").mkdir(parents=True)
     factory = run.machine_tool_policy_factory(
-        {"": StateConfig(Config(), frozenset(), "full")},
+        {"": StateConfig(Config(), "full")},
         tmp_path,
         protect_paths=(),
         data_dir=None,

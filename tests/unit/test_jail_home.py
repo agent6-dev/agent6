@@ -74,7 +74,7 @@ def test_the_builder_creates_and_grants_the_persistent_home(
 
 def test_the_preflight_check_inspects_without_creating(tmp_path: pathlib.Path) -> None:
     """The refusal check itself writes nothing; creation is the builder's."""
-    assert confine.check_jail_home(Config(), "partial", tmp_path, explicitly_set=False) is None
+    assert confine.check_jail_home(Config(), "partial", tmp_path) is None
     assert confine.config_refusal(Config(), "full", tmp_path) is None
     assert not paths.jail_cache_home(tmp_path).exists()
 
@@ -180,22 +180,22 @@ def test_a_symlinked_ancestor_into_a_private_dir_refuses(
 def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
     tmp_path: pathlib.Path, isolation: str
 ) -> None:
-    """`home = "tmp"` needs `full`'s private tmpfs: written down it refuses, as default degrades."""
-    msg = confine.check_jail_home(Config(), isolation, tmp_path, explicitly_set=True)  # pyright: ignore[reportArgumentType]
+    """`home = "tmp"` needs `full`'s private tmpfs: it refuses elsewhere, while `auto` degrades."""
+    tmp = Config(sandbox=SandboxConfig(home="tmp"))
+    msg = confine.check_jail_home(tmp, isolation, tmp_path)  # pyright: ignore[reportArgumentType]
     assert msg is not None
     assert "requires sandbox.isolation = 'full'" in msg
     assert f"resolved to '{isolation}'" in msg
-    assert "sandbox.home = 'cache'" in msg
-    explicit = frozenset({"sandbox.home"})
-    assert confine.config_refusal(Config(), isolation, tmp_path, explicit_leaves=explicit) == msg  # pyright: ignore[reportArgumentType]
+    assert "sandbox.home = 'auto'" in msg
+    assert confine.config_refusal(tmp, isolation, tmp_path) == msg  # pyright: ignore[reportArgumentType]
     assert confine.config_refusal(Config(), isolation, tmp_path) is None  # pyright: ignore[reportArgumentType]
-    assert confine.config_refusal(Config(), "full", tmp_path, explicit_leaves=explicit) is None
+    assert confine.config_refusal(tmp, "full", tmp_path) is None
 
 
 def test_the_default_degrades_with_a_warning_naming_the_home(tmp_path: pathlib.Path) -> None:
     """`partial`'s start-of-run warning names the persistent HOME whatever `protect_git` says."""
-    assert confine.check_jail_home(Config(), "partial", tmp_path, explicitly_set=False) is None
-    for cfg in (Config(), Config(sandbox=SandboxConfig(protect_git=False))):
+    assert confine.check_jail_home(Config(), "partial", tmp_path) is None
+    for cfg in (Config(), Config(sandbox=SandboxConfig(protect_git="off"))):
         home = str(paths.jail_cache_home(tmp_path))
         lines = [line for line in _warned("partial", cfg, tmp_path) if home in line]
         assert len(lines) == 1, lines

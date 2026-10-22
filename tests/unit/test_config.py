@@ -38,7 +38,7 @@ model = "claude-x"
 [sandbox]
 isolation = "auto"
 run_commands = "ask"
-protect_git = true
+protect_git = "on"
 
 [git]
 dirty_tree = "ask"
@@ -77,9 +77,9 @@ def test_extra_key_forbidden(tmp_path: pathlib.Path) -> None:
 
 def test_security_field_defaults_to_safe_value(tmp_path: pathlib.Path) -> None:
     # protect_git is a security field: omitted, it defaults to the safe value.
-    body = _VALID_TOML.replace("protect_git = true\n", "")
+    body = _VALID_TOML.replace('protect_git = "on"\n', "")
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.sandbox.protect_git is True
+    assert cfg.sandbox.protect_git == "auto"
 
 
 def test_with_sandbox_overrides_disable_forces_none() -> None:
@@ -146,8 +146,8 @@ def test_mcp_server_name_is_ascii_only() -> None:
 
 def test_extra_read_paths_accepts_clean_absolute(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
-        "protect_git = true",
-        'protect_git = true\nextra_read_paths = ["/opt/toolchain", "/usr/local/go"]',
+        'protect_git = "on"',
+        'protect_git = "on"\nextra_read_paths = ["/opt/toolchain", "/usr/local/go"]',
     )
     cfg = load_config(_write(tmp_path, body))
     assert cfg.sandbox.extra_read_paths == ("/opt/toolchain", "/usr/local/go")
@@ -155,7 +155,7 @@ def test_extra_read_paths_accepts_clean_absolute(tmp_path: pathlib.Path) -> None
 
 def test_extra_read_paths_rejects_relative(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
-        "protect_git = true", 'protect_git = true\nextra_read_paths = ["opt/toolchain"]'
+        'protect_git = "on"', 'protect_git = "on"\nextra_read_paths = ["opt/toolchain"]'
     )
     with pytest.raises(ConfigError, match=r"extra_read_paths"):
         load_config(_write(tmp_path, body))
@@ -165,13 +165,13 @@ def test_extra_write_paths_accepts_absolute_rejects_relative_and_traversal(
     tmp_path: pathlib.Path,
 ) -> None:
     body = _VALID_TOML.replace(
-        "protect_git = true", 'protect_git = true\nextra_write_paths = ["/var/cache/shared"]'
+        'protect_git = "on"', 'protect_git = "on"\nextra_write_paths = ["/var/cache/shared"]'
     )
     cfg = load_config(_write(tmp_path, body))
     assert cfg.sandbox.extra_write_paths == ("/var/cache/shared",)
     for bad in ("var/cache", "/var/../etc"):
         body = _VALID_TOML.replace(
-            "protect_git = true", f'protect_git = true\nextra_write_paths = ["{bad}"]'
+            'protect_git = "on"', f'protect_git = "on"\nextra_write_paths = ["{bad}"]'
         )
         with pytest.raises(ConfigError, match=r"extra_write_paths"):
             load_config(_write(tmp_path, body))
@@ -180,7 +180,7 @@ def test_extra_write_paths_accepts_absolute_rejects_relative_and_traversal(
 def test_extra_read_paths_rejects_dotdot_traversal(tmp_path: pathlib.Path) -> None:
     # extra_read_paths are bind-mounted read and execute, so a `..` component is rejected.
     body = _VALID_TOML.replace(
-        "protect_git = true", 'protect_git = true\nextra_read_paths = ["/opt/../etc/shadow"]'
+        'protect_git = "on"', 'protect_git = "on"\nextra_read_paths = ["/opt/../etc/shadow"]'
     )
     with pytest.raises(ConfigError, match=r"extra_read_paths.*'\.\.'"):
         load_config(_write(tmp_path, body))
@@ -196,12 +196,12 @@ def test_memory_limit_defaults_off(tmp_path: pathlib.Path) -> None:
 
 
 def test_memory_limit_accepts_a_cap(tmp_path: pathlib.Path) -> None:
-    body = _VALID_TOML.replace("protect_git = true", "protect_git = true\nmemory_limit_mb = 2048")
+    body = _VALID_TOML.replace('protect_git = "on"', 'protect_git = "on"\nmemory_limit_mb = 2048')
     assert load_config(_write(tmp_path, body)).sandbox.memory_limit_mb == 2048
 
 
 def test_memory_limit_rejects_negative(tmp_path: pathlib.Path) -> None:
-    body = _VALID_TOML.replace("protect_git = true", "protect_git = true\nmemory_limit_mb = -1")
+    body = _VALID_TOML.replace('protect_git = "on"', 'protect_git = "on"\nmemory_limit_mb = -1')
     with pytest.raises(ConfigError, match=r"memory_limit_mb"):
         load_config(_write(tmp_path, body))
 
@@ -528,7 +528,7 @@ model = "claude-x"
 [sandbox]
 isolation = "auto"
 run_commands = "ask"
-protect_git = true
+protect_git = "on"
 
 [git]
 
@@ -645,8 +645,8 @@ def test_budget_flag_override_rejects_non_finite(tmp_path: pathlib.Path) -> None
 
 def test_string_for_bool_rejected(tmp_path: pathlib.Path) -> None:
     # Strict mode: a quoted "true" is a typo, not a bool.
-    body = _VALID_TOML.replace("protect_git = true", 'protect_git = "true"')
-    with pytest.raises(ConfigError, match=r"protect_git.*valid boolean"):
+    body = _VALID_TOML.replace("prompt_caching = true", 'prompt_caching = "true"')
+    with pytest.raises(ConfigError, match=r"prompt_caching.*valid boolean"):
         load_config(_write(tmp_path, body))
 
 
@@ -988,11 +988,11 @@ def test_extra_device_paths_must_live_under_dev() -> None:
 
 
 def test_model_git_control_requires_git_writes(tmp_path: pathlib.Path) -> None:
-    """git.control = "model" with protect_git = true is refused naming both keys."""
+    """git.control = "model" with protect_git = "on" is refused naming both keys."""
     body = _VALID_TOML.replace("[git]\n", '[git]\ncontrol = "model"\n')
     with pytest.raises(ConfigError, match="protect_git"):
         load_config(_write(tmp_path, body))
-    ok = load_config(_write(tmp_path, body.replace("protect_git = true", "protect_git = false")))
+    ok = load_config(_write(tmp_path, body.replace('protect_git = "on"', 'protect_git = "off"')))
     assert ok.git.control == "model"
 
 

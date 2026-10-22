@@ -329,7 +329,7 @@ The detached spawn it drives (`ui.spawn`'s `spawn_and_locate`, the path the web 
 ## Enforcement layering
 
 - `git_ops.py` runs outside the jail, in the agent's own process, so the read-only bind of `.git` stops the worker without stopping the harness's commits.
-- `protect_git` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only
+- `protect_git = "on"` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only; `auto` is on under `full`
 - Run state is out of reach of jailed commands because it lives outside the workspace, at `<state-dir>`, unreachable from the repo cwd.
 
 [security.md](security.md) states which guarantee each layer provides.

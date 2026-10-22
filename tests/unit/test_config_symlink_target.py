@@ -26,7 +26,7 @@ def test_a_symlinked_config_stays_a_symlink(
     link = paths.global_config_path()
     link.symlink_to(real)
 
-    assert write.set_config_value(tmp_path, "sandbox.protect_git", "false") is None
+    assert write.set_config_value(tmp_path, "sandbox.protect_git", "off") is None
 
     assert link.is_symlink(), "the dotfiles symlink was replaced by a regular file"
     assert "protect_git" in real.read_text(encoding="utf-8"), "the write missed the real file"
@@ -57,7 +57,7 @@ def test_a_symlink_to_another_owner_refuses(
 
     monkeypatch.setattr(pathlib.Path, "stat", fake_stat)
     with pytest.raises(errors.OperatorError, match="owned by uid 0"):
-        write.set_config_value(tmp_path, "sandbox.protect_git", "false")
+        write.set_config_value(tmp_path, "sandbox.protect_git", "off")
     monkeypatch.undo()
     assert link.is_symlink() and foreign.read_text(encoding="utf-8") == "[sandbox]\n"
 
@@ -101,7 +101,7 @@ def test_a_symlink_whose_target_does_not_exist_yet_is_created(
     link = paths.global_config_path()
     link.symlink_to(real)
 
-    assert write.set_config_value(tmp_path, "sandbox.protect_git", "false") is None
+    assert write.set_config_value(tmp_path, "sandbox.protect_git", "off") is None
 
     assert link.is_symlink(), "the dangling link was replaced instead of filled"
     assert "protect_git" in real.read_text(encoding="utf-8")

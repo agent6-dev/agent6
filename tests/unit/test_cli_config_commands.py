@@ -102,10 +102,10 @@ def test_config_list_edit_echo_keeps_toml_quotes(
 
 
 def test_set_bool_is_typed_not_string(iso: pathlib.Path) -> None:
-    assert _run(["config", "set", "sandbox.protect_git", "false"]) == 0
-    sandbox = _global_toml(iso)["sandbox"]
-    assert isinstance(sandbox, dict)
-    assert sandbox["protect_git"] is False  # parsed as bool, not the string "false"
+    assert _run(["config", "set", "git.auto_merge", "true"]) == 0
+    git = _global_toml(iso)["git"]
+    assert isinstance(git, dict)
+    assert git["auto_merge"] is True  # parsed as bool, not the string "true"
 
 
 @pytest.mark.parametrize("flag", [["--repo"], []])
@@ -125,7 +125,7 @@ def test_get_default_source_for_unset(
 ) -> None:
     assert _run(["config", "get", "sandbox.protect_git"]) == 0
     out = capsys.readouterr().out
-    assert "sandbox.protect_git = true" in out
+    assert "sandbox.protect_git = auto" in out
     assert "[default]" in out
 
 
@@ -154,7 +154,7 @@ def test_unset_refuses_an_unknown_key(
 
 
 def test_unset_reverts_to_default(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    _run(["config", "set", "sandbox.protect_git", "false"])
+    _run(["config", "set", "sandbox.protect_git", "off"])
     assert _run(["config", "unset", "sandbox.protect_git"]) == 0
     capsys.readouterr()
     _run(["config", "get", "sandbox.protect_git"])
@@ -368,10 +368,10 @@ def test_machine_overlay_refuses_a_sandbox_widening_as_check_does(
     """A value `machine check` would refuse is refused at the write, which leaves the file."""
     mf = _machine_file(iso)
     before = mf.read_text(encoding="utf-8")
-    assert _run(["config", "set", "sandbox.protect_git", "false", "--machine-file", str(mf)]) == 2
+    assert _run(["config", "set", "sandbox.protect_git", "off", "--machine-file", str(mf)]) == 2
     assert (
-        "the machine's [config] sets sandbox.protect_git = false, wider than your config's true."
-        " Grant it in your own config (`agent6 config set --repo sandbox.protect_git false`,"
+        "the machine's [config] sets sandbox.protect_git = \"off\", wider than your config's"
+        ' "auto". Grant it in your own config (`agent6 config set --repo sandbox.protect_git off`,'
     ) in capsys.readouterr().err
     assert mf.read_text(encoding="utf-8") == before
     assert (
@@ -381,10 +381,10 @@ def test_machine_overlay_refuses_a_sandbox_widening_as_check_does(
     assert "`agent6 config add --repo sandbox.extra_read_paths /etc/ssl`" in capsys.readouterr().err
     assert mf.read_text(encoding="utf-8") == before
     # Any spelling of the key is the same write: the section whole, a quoted leaf.
-    whole = ["config", "set", "sandbox", '{ protect_git = false, network = "session" }']
-    for spelled in (whole, ["config", "set", 'sandbox."protect_git"', "false"]):
+    whole = ["config", "set", "sandbox", '{ protect_git = "off", network = "session" }']
+    for spelled in (whole, ["config", "set", 'sandbox."protect_git"', "off"]):
         assert _run([*spelled, "--machine-file", str(mf)]) == 2
-        assert "the machine's [config] sets sandbox.protect_git = false" in capsys.readouterr().err
+        assert 'the machine\'s [config] sets sandbox.protect_git = "off"' in capsys.readouterr().err
         assert mf.read_text(encoding="utf-8") == before
 
 
@@ -394,7 +394,7 @@ def test_machine_overlay_write_leaves_a_widening_the_file_already_held(
     """Only the edit's own widening blocks it; one already in the file is `machine check`'s."""
     mf = _machine_file(iso)
     with mf.open("a", encoding="utf-8") as f:
-        f.write("\n[config.sandbox]\nprotect_git = false\n")
+        f.write('\n[config.sandbox]\nprotect_git = "off"\n')
     assert (
         _run(["config", "set", "review.trigger", "on_verify_fail", "--machine-file", str(mf)]) == 0
     )
@@ -523,16 +523,16 @@ def test_unset_refuses_a_leaf_inside_an_undeclared_table(
 ) -> None:
     """Unset refuses a leaf inside an undeclared table, as set refuses it and fix reports it.
 
-    The shape: `sandbox.protect_git = false` written as a dotted top-level key.
+    The shape: `sandbox.protect_git = "off"` written as a dotted top-level key.
     """
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     cfg = iso / "g" / "agent6" / "config.toml"
-    cfg.write_text("sandbox.protect_git = false\n", encoding="utf-8")
+    cfg.write_text('sandbox.protect_git = "off"\n', encoding="utf-8")
     rc = _refuse(["config", "unset", "sandbox.protect_git"])
     assert rc == 2
     assert "cannot be unset on its own" in capsys.readouterr().err
     # The file is untouched: nothing was silently dropped or rewritten.
-    assert cfg.read_text(encoding="utf-8") == "sandbox.protect_git = false\n"
+    assert cfg.read_text(encoding="utf-8") == 'sandbox.protect_git = "off"\n'
 
 
 def test_add_rejects_a_value_masked_by_a_higher_layer(
@@ -560,7 +560,7 @@ def test_set_warns_when_another_layer_is_still_broken(
     """
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
-    rc = _run(["config", "set", "--repo", "sandbox.protect_git", "false"])
+    rc = _run(["config", "set", "--repo", "sandbox.protect_git", "off"])
     assert rc == 0
     assert "a value this edit did not write" in capsys.readouterr().err
 

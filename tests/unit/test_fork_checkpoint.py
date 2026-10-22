@@ -1660,7 +1660,7 @@ def test_fork_refuses_a_run_the_model_controls_git_in(
     """A fork under `[git].control = "model"` refuses up front: its `.git` is read-only jailed."""
     paths.global_config_dir().mkdir(parents=True, exist_ok=True)
     (paths.global_config_dir() / "config.toml").write_text(
-        '[git]\ncontrol = "model"\n[sandbox]\nprotect_git = false\n', encoding="utf-8"
+        '[git]\ncontrol = "model"\n[sandbox]\nprotect_git = "off"\n', encoding="utf-8"
     )
     repo = tmp_path / "repo"
     head = _git_repo(repo)

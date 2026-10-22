@@ -246,18 +246,19 @@ def _command_rows(
     net = tools_policy.resolve_network(cfg, selected)
     rows = [Row("rw", ws.root, "the workspace")]
     if (ws.root / ".git").exists():
-        if selected == "full" and cfg.sandbox.protect_git:
+        word = cfg.sandbox.protect_git
+        if selected == "full" and cfg.protects_git:
             rows.append(
-                Row("ro", ws.root / ".git", "re-bound read-only: sandbox.protect_git = true")
+                Row("ro", ws.root / ".git", f"re-bound read-only: sandbox.protect_git = {word!r}")
             )
-        elif selected != "full":
-            rows.append(
-                Row(
-                    "rw",
-                    ws.root / ".git",
-                    "writable: sandbox.protect_git requires sandbox.isolation = 'full'",
-                )
-            )
+        else:
+            if word == "off":
+                why = "sandbox.protect_git = 'off'"
+            elif selected != "full":
+                why = "sandbox.protect_git requires sandbox.isolation = 'full'"
+            else:
+                why = "sandbox.protect_git = 'auto' is off under git.control = 'model'"
+            rows.append(Row("rw", ws.root / ".git", f"writable: {why}"))
     if git_grant is not None:
         rows.append(
             Row("ro", git_grant, "the repository's .git, which this linked worktree points into")
@@ -531,16 +532,13 @@ def _probe_checks(
     return [kinds.DoctorCheck(name="sandbox", status="PASS" if ok else "FAIL", detail=detail)]
 
 
-def check_sandbox_section(
-    cfg: Config, explicit_leaves: frozenset[str] = frozenset()
-) -> list[kinds.DoctorCheck]:
+def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
     """Print what the file tools, jailed commands and MCP servers can reach, then probe the jail.
 
     A refusal a run would give is a FAIL row, and a grant of the home directory is a WARN row.
 
     Args:
         cfg: The config.
-        explicit_leaves: The config leaves the operator wrote, which refuse rather than degrade.
 
     Returns:
         The section's summary rows.
@@ -562,7 +560,7 @@ def check_sandbox_section(
     )
     # The same ladder every run applies: an explicit knob this host cannot honour refuses.
     refusal = confine.check_network_support(cfg, selected) or confine.config_refusal(
-        cfg, selected, ws.root, explicit_leaves=explicit_leaves
+        cfg, selected, ws.root
     )
     if refusal is not None:
         detail = f"a run would refuse: {refusal}"

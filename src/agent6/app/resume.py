@@ -491,7 +491,6 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
                 reporter=reporter,
-                explicit_leaves=explicit_leaves,
                 worktree_git_dir=manifest.worktree_git_dir,
             )
         except preflight.SessionRefusedError as refusal:

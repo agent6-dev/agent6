@@ -559,7 +559,7 @@ Unset keys read straight through to the lower layers, so a machine only states w
 | `hide_paths` | every entry of yours, or a directory above it, plus more |
 | `network`, `isolation` | yours or tighter, compared by what the value resolves to on this host |
 | `run_commands` | yours or tighter (`yes`, then `ask`, then `no`) |
-| `protect_git`, `home` | yours, or the tighter value (`true`, `tmp`) |
+| `protect_git`, `home` | yours, or a tighter value (`on` over `auto` over `off`; `tmp` over `auto` over `cache`); `protect_git` is compared by what it resolves to, so `git.control = "model"` under your `auto` is wider |
 | `memory_limit_mb` | a cap no larger than yours; any value when you set none |
 
 ```toml
