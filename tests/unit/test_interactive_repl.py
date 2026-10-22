@@ -482,7 +482,7 @@ def test_init_wizard_ctrl_c_aborts_init_not_the_run(
         os.kill(os.getpid(), signal.SIGINT)  # the operator's Ctrl-C at the y/n question
         return 0
 
-    monkeypatch.setattr("agent6.init.init_workspace", _wizard)
+    monkeypatch.setattr("agent6.ui.cli.init.init_workspace", _wizard)
     answers = iter(["/init", "/continue"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
 

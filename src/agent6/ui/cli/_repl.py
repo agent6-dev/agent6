@@ -14,11 +14,11 @@ if TYPE_CHECKING:
     from agent6.ui.cli import _console_view
 
 from agent6 import budget as agent6_budget
-from agent6 import init, kinds, paths
+from agent6 import kinds, paths
 from agent6.sessions import id
 from agent6.tools import mcp_client
 from agent6.ui import steer as ui_steer
-from agent6.ui.cli import _interact, _steer, plan_watch, sessions_cmds
+from agent6.ui.cli import _interact, _steer, init, plan_watch, sessions_cmds
 from agent6.viewmodel import events, state
 
 REPL_HELP = (

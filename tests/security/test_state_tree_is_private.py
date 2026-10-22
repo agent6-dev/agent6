@@ -16,12 +16,13 @@ from collections.abc import Callable, Iterator
 
 import pytest
 
-from agent6 import event_log, init, memory, paths
+from agent6 import event_log, memory, paths
 from agent6.graph import storage
 from agent6.machine import journal
 from agent6.providers import types
 from agent6.sessions import ipc, layout, process
 from agent6.tools import background
+from agent6.ui.cli import init
 
 
 def _session(state: pathlib.Path) -> pathlib.Path:

@@ -9,8 +9,11 @@ import subprocess
 
 import pytest
 
-from agent6 import init, verify_infer
-from agent6.ui.cli import prompt_cmds  # pyright: ignore[reportPrivateUsage]
+from agent6 import verify_infer
+from agent6.ui.cli import (
+    init,
+    prompt_cmds,  # pyright: ignore[reportPrivateUsage]
+)
 
 _MARKER = "OUTSIDE-MARKER-7f3a"
 

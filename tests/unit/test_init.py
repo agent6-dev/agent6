@@ -8,8 +8,9 @@ import pathlib
 
 import pytest
 
-from agent6 import init, paths, verify_infer
+from agent6 import paths, verify_infer
 from agent6.config import layer
+from agent6.ui.cli import init
 
 
 @pytest.fixture(autouse=True)
@@ -196,7 +197,7 @@ def test_init_asks_about_the_entries_it_would_add(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The .gitignore question names the entries; a repo already carrying them is told, unasked."""
-    from agent6 import init as init_mod
+    from agent6.ui.cli import init as init_mod
 
     asked: list[str] = []
 

@@ -7,9 +7,9 @@ from __future__ import annotations
 import pathlib
 import sys
 
-from agent6 import errors, init, paths
+from agent6 import errors, paths
 from agent6.config import Config, ConfigError, layer
-from agent6.ui.cli import _common
+from agent6.ui.cli import _common, init
 from agent6.vcs import git_ops
 
 _SCAFFOLD_COMMIT_MESSAGE = "chore: scaffold agent6 config"

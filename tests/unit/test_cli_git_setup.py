@@ -11,11 +11,11 @@ from typing import cast
 
 import pytest
 
-from agent6 import errors, init, paths
+from agent6 import errors, paths
 from agent6.app import preflight
 from agent6.config import Config, ConfigError
+from agent6.ui.cli import init, main
 from agent6.ui.cli import init_cmds as ic
-from agent6.ui.cli import main
 from agent6.vcs import git_ops
 
 
@@ -413,8 +413,8 @@ def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
     def _yes(*_a: object, **_k: object) -> bool:
         return True
 
-    monkeypatch.setattr("agent6.init._ask", _yes)
-    monkeypatch.setattr("agent6.init._ask", _yes)
+    monkeypatch.setattr("agent6.ui.cli.init._ask", _yes)
+    monkeypatch.setattr("agent6.ui.cli.init._ask", _yes)
     assert main(["init"]) == 0
 
     head = subprocess.run(
@@ -441,8 +441,8 @@ def test_init_leaves_a_modified_preexisting_file_out_of_a_fresh_repo_commit(
     def _yes(*_a: object, **_k: object) -> bool:
         return True
 
-    monkeypatch.setattr("agent6.init._ask", _yes)
-    monkeypatch.setattr("agent6.init._ask", _yes)
+    monkeypatch.setattr("agent6.ui.cli.init._ask", _yes)
+    monkeypatch.setattr("agent6.ui.cli.init._ask", _yes)
     assert main(["init"]) == 0
 
     head = subprocess.run(

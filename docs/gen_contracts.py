@@ -154,7 +154,7 @@ CONTRACTS: tuple[Contract, ...] = (
 # CONTRACTS; the nodes, edges, and row ordering are derived from tach.toml.
 COLS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("leaves", ("types", "portable", "paths", "directive", "prompts", "secrets", "events",
-                "budget", "init", "verify_infer", "vcs")),
+                "budget", "verify_infer", "vcs")),
     ("state & data", ("config", "models", "runs", "memory", "skills", "graph")),
     ("exec & tools", ("sandbox", "tools", "providers")),
     ("engine", ("harness", "machine")),
