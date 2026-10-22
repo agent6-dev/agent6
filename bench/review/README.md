@@ -1,7 +1,7 @@
 # Adversarial review panel: validation
 
 agent6 can run N reviewer subagents over a diff and aggregate their verdicts. It
-ships two ways: `agent6 review --reviewers N [--personas a,b,c]` (read-only,
+ships two ways: `agent6 review --reviewers N [--focus a,b,c]` (read-only,
 post-hoc) and in-loop via the `[review]` config (the `before_finish` /
 `on_verify_fail` / `periodic` triggers, with `none` / `any` / `model_quorum`
 decisions). The `ultra` profile enables a 3-seat `before_finish` veto panel. The
