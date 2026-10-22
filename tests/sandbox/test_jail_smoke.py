@@ -243,7 +243,7 @@ def test_jail_dev_null_is_writable(jail_bin: pathlib.Path, tmp_path: pathlib.Pat
 def test_jail_memory_limit_caps_child_allocation(
     jail_bin: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
-    """memory_limit_mb turns a runaway allocation into a plain failed command.
+    """memory_limit_mib turns a runaway allocation into a plain failed command.
 
     A child allocating 200 MiB under a 64 MiB cap must die with MemoryError
     (RLIMIT_DATA, applied in run_child and shared by both isolation levels) while the
@@ -262,7 +262,7 @@ def test_jail_memory_limit_caps_child_allocation(
         kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/usr/bin/python3", "-c", alloc),
-            memory_limit_mb=64,
+            memory_limit_mib=64,
             timeout_s=30.0,
         )
     )
@@ -271,7 +271,7 @@ def test_jail_memory_limit_caps_child_allocation(
         kinds.JailPolicy(
             cwd=tmp_path,
             argv=("/usr/bin/python3", "-c", alloc),
-            memory_limit_mb=0,
+            memory_limit_mib=0,
             timeout_s=30.0,
         )
     )

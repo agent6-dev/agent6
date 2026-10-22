@@ -135,9 +135,9 @@ _WITHIN: dict[str, Callable[[_Side, _Side], bool]] = {
         _PROTECT_GIT_RANK[st.sandbox.protect_git] >= _PROTECT_GIT_RANK[op.sandbox.protect_git]
     ),
     "home": lambda op, st: _HOME_RANK[st.sandbox.home] >= _HOME_RANK[op.sandbox.home],
-    "memory_limit_mb": lambda op, st: (
-        op.sandbox.memory_limit_mb == 0
-        or 0 < st.sandbox.memory_limit_mb <= op.sandbox.memory_limit_mb
+    "memory_limit_mib": lambda op, st: (
+        op.sandbox.memory_limit_mib == 0
+        or 0 < st.sandbox.memory_limit_mib <= op.sandbox.memory_limit_mib
     ),
 }
 
@@ -145,7 +145,9 @@ _WITHIN: dict[str, Callable[[_Side, _Side], bool]] = {
 # bound when the operator's sandbox covers each of its entries. `hide_paths` runs the other
 # way, since hiding more is narrower: the overlay's sandbox covers each of the operator's.
 _COVERS: dict[str, Callable[[SandboxConfig, str], bool]] = {
-    "fetch_hosts": lambda sandbox, host: "*" in sandbox.fetch_hosts or host in sandbox.fetch_hosts,
+    "fetch_approved_hosts": lambda sandbox, host: (
+        "*" in sandbox.fetch_approved_hosts or host in sandbox.fetch_approved_hosts
+    ),
     # Write implies read, so a read entry may sit under the write list.
     "extra_read_paths": lambda sandbox, path: _covered(
         path, (*sandbox.extra_read_paths, *sandbox.extra_write_paths)

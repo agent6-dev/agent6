@@ -232,7 +232,11 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     overlay = cfg.model_dump(mode="json")
     overlay.pop("preset", None)  # the overlay layer forbids a preset
     # The execution writes files and nothing else; agent6 runs the validators itself.
-    overlay["sandbox"] = {**overlay.get("sandbox", {}), "run_commands": "no", "fetch_hosts": []}
+    overlay["sandbox"] = {
+        **overlay.get("sandbox", {}),
+        "run_commands": "no",
+        "fetch_approved_hosts": [],
+    }
     overlay["harness"] = {**overlay.get("harness", {}), "metric": None}
     # Resolved on the host: the confined execution cannot read ~/.gitconfig.
     try:

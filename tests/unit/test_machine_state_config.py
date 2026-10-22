@@ -338,9 +338,9 @@ def test_every_sandbox_key_has_a_rule() -> None:
 
 
 def test_a_key_with_no_rule_must_equal_the_operators(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delitem(_states._WITHIN, "memory_limit_mb")
-    assert "sandbox.memory_limit_mb" in _widening(_cfg(), _cfg(memory_limit_mb=64))
-    assert _widening(_cfg(memory_limit_mb=64), _cfg(memory_limit_mb=64)) == ""
+    monkeypatch.delitem(_states._WITHIN, "memory_limit_mib")
+    assert "sandbox.memory_limit_mib" in _widening(_cfg(), _cfg(memory_limit_mib=64))
+    assert _widening(_cfg(memory_limit_mib=64), _cfg(memory_limit_mib=64)) == ""
 
 
 @pytest.mark.parametrize(
@@ -367,12 +367,15 @@ def test_a_key_with_no_rule_must_equal_the_operators(monkeypatch: pytest.MonkeyP
         ({"network": "host"}, {"network": "session"}),
         ({"network": "host"}, {"network": "auto"}),
         ({"network": "auto"}, {"network": "session"}),
-        ({"memory_limit_mb": 0}, {"memory_limit_mb": 512}),
-        ({"memory_limit_mb": 1024}, {"memory_limit_mb": 512}),
+        ({"memory_limit_mib": 0}, {"memory_limit_mib": 512}),
+        ({"memory_limit_mib": 1024}, {"memory_limit_mib": 512}),
         ({"protect_git": "off"}, {"protect_git": "on"}),
         ({"home": "cache"}, {"home": "tmp"}),
-        ({"fetch_hosts": ["*"]}, {"fetch_hosts": ["docs.python.org"]}),
-        ({"fetch_hosts": ["a.example", "b.example"]}, {"fetch_hosts": ["a.example"]}),
+        ({"fetch_approved_hosts": ["*"]}, {"fetch_approved_hosts": ["docs.python.org"]}),
+        (
+            {"fetch_approved_hosts": ["a.example", "b.example"]},
+            {"fetch_approved_hosts": ["a.example"]},
+        ),
         ({"isolation": "auto"}, {"isolation": "full"}),
     ],
 )
@@ -405,12 +408,16 @@ def test_an_overlay_may_narrow(operator: dict[str, Any], state: dict[str, Any]) 
         ({"run_commands": "no"}, {"run_commands": "ask"}, "run_commands"),
         ({"network": "auto"}, {"network": "host"}, "network"),
         ({"network": "session"}, {"network": "host"}, "network"),
-        ({"memory_limit_mb": 512}, {"memory_limit_mb": 0}, "memory_limit_mb"),
-        ({"memory_limit_mb": 512}, {"memory_limit_mb": 1024}, "memory_limit_mb"),
+        ({"memory_limit_mib": 512}, {"memory_limit_mib": 0}, "memory_limit_mib"),
+        ({"memory_limit_mib": 512}, {"memory_limit_mib": 1024}, "memory_limit_mib"),
         ({"protect_git": "on"}, {"protect_git": "off"}, "protect_git"),
         ({"home": "tmp"}, {"home": "cache"}, "home"),
-        ({"fetch_hosts": ["a.example"]}, {"fetch_hosts": ["*"]}, "fetch_hosts"),
-        ({}, {"fetch_hosts": ["a.example"]}, "fetch_hosts"),
+        (
+            {"fetch_approved_hosts": ["a.example"]},
+            {"fetch_approved_hosts": ["*"]},
+            "fetch_approved_hosts",
+        ),
+        ({}, {"fetch_approved_hosts": ["a.example"]}, "fetch_approved_hosts"),
     ],
 )
 def test_an_overlay_may_not_widen(
@@ -436,10 +443,10 @@ def test_an_overlay_may_not_widen(
             "`agent6 config set --repo sandbox.protect_git off`",
         ),
         (
-            {"memory_limit_mb": 512},
-            {"memory_limit_mb": 1024},
-            "sandbox.memory_limit_mb = 1024, wider than your config's 512",
-            "`agent6 config set --repo sandbox.memory_limit_mb 1024`",
+            {"memory_limit_mib": 512},
+            {"memory_limit_mib": 1024},
+            "sandbox.memory_limit_mib = 1024, wider than your config's 512",
+            "`agent6 config set --repo sandbox.memory_limit_mib 1024`",
         ),
         (
             {"extra_read_paths": ["/a"]},
@@ -449,10 +456,10 @@ def test_an_overlay_may_not_widen(
             " `agent6 config add --repo sandbox.extra_read_paths /d`, or",
         ),
         (
-            {"fetch_hosts": ["a.example"]},
-            {"fetch_hosts": ["*"]},
-            'sandbox.fetch_hosts = ["*"], wider than your config\'s ["a.example"]',
-            "(`agent6 config add --repo sandbox.fetch_hosts '*'`, or",
+            {"fetch_approved_hosts": ["a.example"]},
+            {"fetch_approved_hosts": ["*"]},
+            'sandbox.fetch_approved_hosts = ["*"], wider than your config\'s ["a.example"]',
+            "(`agent6 config add --repo sandbox.fetch_approved_hosts '*'`, or",
         ),
     ],
 )

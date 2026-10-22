@@ -18,20 +18,20 @@ def _fields(policy: kinds.JailPolicy) -> dict[str, object]:
 
 
 def test_policy_json_carries_the_uncapped_default_memory_limit(tmp_path: pathlib.Path) -> None:
-    """0 is off, matching [sandbox].memory_limit_mb, so both sides agree on the default."""
+    """0 is off, matching [sandbox].memory_limit_mib, so both sides agree on the default."""
     fields = _fields(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
     assert fields["memory_limit_mb"] == 0
 
 
 def test_policy_json_carries_explicit_and_zero_memory_limit(tmp_path: pathlib.Path) -> None:
     assert (
-        _fields(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",), memory_limit_mb=512))[
+        _fields(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",), memory_limit_mib=512))[
             "memory_limit_mb"
         ]
         == 512
     )
     assert (
-        _fields(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",), memory_limit_mb=0))[
+        _fields(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",), memory_limit_mib=0))[
             "memory_limit_mb"
         ]
         == 0

@@ -763,10 +763,11 @@ class ToolDispatcher:
         # The list is the standing approval; a GET can carry data out, so an unnamed host is the
         # operator's call. Nothing has resolved yet: the DNS query itself carries the name out.
         if not fetch.host_allowed(
-            checked.host, self._config.sandbox.fetch_hosts
+            checked.host, self._config.sandbox.fetch_approved_hosts
         ) and not self._approve(f"Allow fetch: {checked.prompt()}"):
             raise tools_errors.ToolDeniedError(
-                f"fetch not approved for {checked.host} (add it to sandbox.fetch_hosts to allow it)"
+                f"fetch not approved for {checked.host}"
+                " (add it to sandbox.fetch_approved_hosts to allow it)"
             )
         try:
             got = fetch.fetch_url(checked)

@@ -320,19 +320,22 @@ def test_config_profiles_user_shadow_replaces_builtin(
 
 
 def test_repo_list_edits_keep_values_inherited_from_global(iso: pathlib.Path) -> None:
-    assert _run(["config", "set", "sandbox.fetch_hosts", '["one.example", "two.example"]']) == 0
+    assert (
+        _run(["config", "set", "sandbox.fetch_approved_hosts", '["one.example", "two.example"]'])
+        == 0
+    )
 
-    assert _run(["config", "add", "--repo", "sandbox.fetch_hosts", "three.example"]) == 0
+    assert _run(["config", "add", "--repo", "sandbox.fetch_approved_hosts", "three.example"]) == 0
     repo = tomllib.loads((paths.state_dir(iso) / "config.toml").read_text(encoding="utf-8"))
-    assert repo["sandbox"]["fetch_hosts"] == [  # type: ignore[index]
+    assert repo["sandbox"]["fetch_approved_hosts"] == [  # type: ignore[index]
         "one.example",
         "two.example",
         "three.example",
     ]
 
-    assert _run(["config", "remove", "--repo", "sandbox.fetch_hosts", "one.example"]) == 0
+    assert _run(["config", "remove", "--repo", "sandbox.fetch_approved_hosts", "one.example"]) == 0
     repo = tomllib.loads((paths.state_dir(iso) / "config.toml").read_text(encoding="utf-8"))
-    assert repo["sandbox"]["fetch_hosts"] == [  # type: ignore[index]
+    assert repo["sandbox"]["fetch_approved_hosts"] == [  # type: ignore[index]
         "two.example",
         "three.example",
     ]
@@ -498,7 +501,7 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: pathlib.Path) -> N
     import time
     from unittest import mock
 
-    assert _run(["config", "set", "sandbox.memory_limit_mb", "512"]) == 0
+    assert _run(["config", "set", "sandbox.memory_limit_mib", "512"]) == 0
 
     fill_holds_lock = threading.Event()
     release_fill = threading.Event()
@@ -516,7 +519,7 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: pathlib.Path) -> N
 
     def run_set() -> None:
         fill_holds_lock.wait(timeout=5)
-        results["set"] = _run(["config", "set", "sandbox.memory_limit_mb", "1234"])
+        results["set"] = _run(["config", "set", "sandbox.memory_limit_mib", "1234"])
         results["set_done"] = True
 
     tf = threading.Thread(target=run_fill)
@@ -535,7 +538,7 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: pathlib.Path) -> N
     assert results["fill"] == 0 and results["set"] == 0
     sandbox = _global_toml(iso)["sandbox"]
     assert isinstance(sandbox, dict)
-    assert sandbox["memory_limit_mb"] == 1234  # the set survived
+    assert sandbox["memory_limit_mib"] == 1234  # the set survived
 
 
 def test_unset_refuses_a_leaf_inside_an_undeclared_table(
@@ -562,11 +565,11 @@ def test_add_rejects_a_value_masked_by_a_higher_layer(
 
     Under a masking repo overlay too.
     """
-    assert _run(["config", "set", "--repo", "sandbox.fetch_hosts", '["ok.example"]']) == 0
+    assert _run(["config", "set", "--repo", "sandbox.fetch_approved_hosts", '["ok.example"]']) == 0
     capsys.readouterr()
-    rc = _refuse(["config", "add", "sandbox.fetch_hosts", "5"])
+    rc = _refuse(["config", "add", "sandbox.fetch_approved_hosts", "5"])
     assert rc == 2
-    assert "fetch_hosts" in capsys.readouterr().err
+    assert "fetch_approved_hosts" in capsys.readouterr().err
     gcfg = iso / "g" / "agent6" / "config.toml"
     assert not gcfg.is_file() or "5" not in gcfg.read_text(encoding="utf-8")
 
@@ -781,12 +784,12 @@ def _fill_and_read(iso: pathlib.Path) -> dict[str, object]:
 
 def test_fill_never_bakes_the_repo_layer_into_the_global_config(iso: pathlib.Path) -> None:
     """Fill writes the global file from defaults plus global, never this repo's overrides."""
-    assert _run(["config", "set", "--repo", "sandbox.memory_limit_mb", "4321"]) == 0
+    assert _run(["config", "set", "--repo", "sandbox.memory_limit_mib", "4321"]) == 0
     filled = _fill_and_read(iso)
     assert filled["preset"] == "none"
     sandbox = filled["sandbox"]
     assert isinstance(sandbox, dict)
-    assert sandbox["memory_limit_mb"] != 4321, "the repo layer leaked into the global config"
+    assert sandbox["memory_limit_mib"] != 4321, "the repo layer leaked into the global config"
 
 
 def test_fill_keeps_the_preset_selector_and_does_not_bake_its_effects(iso: pathlib.Path) -> None:

@@ -50,7 +50,7 @@ def _session(proc: Any, *, pid_namespaced: bool = True) -> jail_session.JailSess
         _binary=pathlib.Path("/nonexistent"),
         _pid_namespaced=pid_namespaced,
         _interrupt_w=interrupt_w,
-        _memory_limit_mb=0,
+        _memory_limit_mib=0,
     )
 
 

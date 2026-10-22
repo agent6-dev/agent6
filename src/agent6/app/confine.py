@@ -65,7 +65,7 @@ def warn_sandbox_gaps(
             f"running UNSANDBOXED ({_setup.no_jail_cause(cfg, env)}). "
             "Every command runs as a plain subprocess with no filesystem, network, "
             "or syscall confinement: the LLM's run_command, the verify command, and "
-            "any spawned MCP server. sandbox.memory_limit_mb still applies: the "
+            "any spawned MCP server. sandbox.memory_limit_mib still applies: the "
             "launcher enforces it with confinement off. Only the "
             "surrounding environment, a container for instance, bounds what a command "
             "can reach. Use sandbox.isolation = 'auto', 'full', or 'partial' for "

@@ -501,7 +501,7 @@ def headless_parking_note(
 ) -> str | None:
     """Note that a fetch or MCP approval would park a run nobody can answer.
 
-    Commands are settled by `yes` or `no`, but a fetch outside `sandbox.fetch_hosts`
+    Commands are settled by `yes` or `no`, but a fetch outside `sandbox.fetch_approved_hosts`
     or an MCP call still asks, and that approval parks the run until a front-end
     attaches.
 
@@ -517,8 +517,8 @@ def headless_parking_note(
     if cfg.sandbox.run_commands == "ask" or tui_enabled or can_ask or away:
         return None
     return (
-        "no terminal, no front-end and no away-mode: a fetch outside sandbox.fetch_hosts or an"
-        " MCP call parks the run at its approval until `agent6 attach` answers it"
+        "no terminal, no front-end and no away-mode: a fetch outside sandbox.fetch_approved_hosts"
+        " or an MCP call parks the run at its approval until `agent6 attach` answers it"
         " (AGENT6_DETACHED_AWAY=deny auto-denies, =approve grants every scope)."
     )
 

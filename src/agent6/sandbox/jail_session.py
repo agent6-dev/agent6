@@ -104,7 +104,7 @@ class JailSession:
     # request pipe is in lockstep and this side is blocked reading that request's answer.
     _interrupt_w: int
     # Carried on every request: the launcher's own default would ignore the operator's cap.
-    _memory_limit_mb: int
+    _memory_limit_mib: int
     startup_stderr: str = ""
     # What was already ours at open; without a PID namespace, anything beyond it at close is
     # this session's escapee.
@@ -175,7 +175,7 @@ class JailSession:
             _binary=binary,
             _pid_namespaced=pid_namespaced,
             _interrupt_w=interrupt_w,
-            _memory_limit_mb=policy.memory_limit_mb,
+            _memory_limit_mib=policy.memory_limit_mib,
             startup_stderr=startup_stderr,
             _opened_with=frozenset() if pid_namespaced else frozenset(jail.own_children()),
         )
@@ -224,7 +224,8 @@ class JailSession:
                     "timeout_s": timeout_s,
                     "checkin_s": checkin_s,
                     "log_dir": log_dir,
-                    "memory_limit_mb": self._memory_limit_mb,
+                    # The launcher's wire key keeps the old suffix.
+                    "memory_limit_mb": self._memory_limit_mib,
                 },
                 interrupted=interrupted,
             )
@@ -270,7 +271,8 @@ class JailSession:
                 "kind": "background",
                 "argv": list(argv),
                 "env": [list(p) for p in env],
-                "memory_limit_mb": self._memory_limit_mb,
+                # The launcher's wire key keeps the old suffix.
+                "memory_limit_mb": self._memory_limit_mib,
             }
         )
         pid = answer.get("pid")

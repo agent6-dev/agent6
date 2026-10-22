@@ -321,7 +321,7 @@ def policy_spec(policy: kinds.JailPolicy) -> dict[str, Any]:
         policy: The jail policy.
 
     Returns:
-        Each policy field under its own name; `hide_paths` also holds agent6's private dirs.
+        Each policy field under its launcher key; `hide_paths` also holds agent6's private dirs.
     """
     return {
         "isolation": policy.isolation,
@@ -339,7 +339,8 @@ def policy_spec(policy: kinds.JailPolicy) -> dict[str, Any]:
         # secrets and state never enter the jail even under a $HOME-wide grant.
         "hide_paths": sorted({str(p) for p in paths.hidden_paths(policy.hide_paths)}),
         "timeout_s": policy.timeout_s,
-        "memory_limit_mb": policy.memory_limit_mb,
+        # The launcher's wire key keeps the old suffix.
+        "memory_limit_mb": policy.memory_limit_mib,
     }
 
 

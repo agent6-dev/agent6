@@ -317,13 +317,19 @@ def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: pathl
 
 
 def test_written_value_error_catches_an_invalid_container_element(tmp_path: pathlib.Path) -> None:
-    """An error under the written key (`sandbox.fetch_hosts.0`) is the written value's own."""
-    assert write.written_value_error("sandbox.fetch_hosts", [5], repo_root=tmp_path) is not None
+    """An error under `sandbox.fetch_approved_hosts.0` is the written value's own."""
+    assert (
+        write.written_value_error("sandbox.fetch_approved_hosts", [5], repo_root=tmp_path)
+        is not None
+    )
     assert (
         write.written_value_error("providers.x.token_command", [1], repo_root=tmp_path) is not None
     )
     assert (
-        write.written_value_error("sandbox.fetch_hosts", ["ok.example"], repo_root=tmp_path) is None
+        write.written_value_error(
+            "sandbox.fetch_approved_hosts", ["ok.example"], repo_root=tmp_path
+        )
+        is None
     )
     assert (
         write.written_value_error("providers.x.token_command", ["gcloud"], repo_root=tmp_path)

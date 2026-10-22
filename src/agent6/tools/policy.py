@@ -572,6 +572,6 @@ def jail_policy(
         extra_device_paths=tuple(pathlib.Path(p) for p in config.sandbox.extra_device_paths),
         tool_paths=tool_mounts,
         hide_paths=tuple(pathlib.Path(p) for p in config.sandbox.hide_paths),
-        memory_limit_mb=config.sandbox.memory_limit_mb,
+        memory_limit_mib=config.sandbox.memory_limit_mib,
         **policy_kwargs,
     )

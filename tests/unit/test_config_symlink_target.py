@@ -74,15 +74,15 @@ def test_every_writer_keeps_the_link_not_just_config_set(
     monkeypatch.chdir(tmp_path)
     real = tmp_path / "dotfiles" / "agent6.toml"
     real.parent.mkdir()
-    real.write_text('[sandbox]\nfetch_hosts = ["a.example"]\n', encoding="utf-8")
+    real.write_text('[sandbox]\nfetch_approved_hosts = ["a.example"]\n', encoding="utf-8")
     link = paths.global_config_path()
     link.symlink_to(real)
 
-    assert main(["config", "add", "sandbox.fetch_hosts", "b.example"]) == 0
+    assert main(["config", "add", "sandbox.fetch_approved_hosts", "b.example"]) == 0
     assert link.is_symlink(), "`config add` replaced the dotfiles symlink"
     assert "b.example" in real.read_text(encoding="utf-8"), "the write missed the real file"
 
-    assert main(["config", "remove", "sandbox.fetch_hosts", "b.example"]) == 0
+    assert main(["config", "remove", "sandbox.fetch_approved_hosts", "b.example"]) == 0
     assert link.is_symlink(), "`config remove` replaced the dotfiles symlink"
 
     assert main(["config", "fill", "--force"]) == 0

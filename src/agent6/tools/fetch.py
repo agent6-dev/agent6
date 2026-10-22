@@ -65,7 +65,7 @@ def host_allowed(host: str, allowed: tuple[str, ...]) -> bool:
 
     Args:
         host: The parsed host.
-        allowed: The `sandbox.fetch_hosts` entries; `ANY_HOST` allows every host.
+        allowed: The `sandbox.fetch_approved_hosts` entries; `ANY_HOST` allows every host.
 
     Returns:
         True when an entry matches.
@@ -98,9 +98,9 @@ class Checked:
     def prompt(self) -> str:
         """Return the approval line: the parsed host, a port other than 443, the path and query.
 
-        The host shown is the one the connection is proved against and the one `fetch_hosts`
-        would name. A GET carries data out in its query string, so clipping the path or dropping
-        the query is consent to an exfiltration the operator never saw.
+        The host shown is the one the connection is proved against and the one
+        `fetch_approved_hosts` would name. A GET carries data out in its query string, so clipping
+        the path or dropping the query is consent to an exfiltration the operator never saw.
 
         Returns:
             `<host>[:<port>] <path>[?<query>]`, the path "/" when the URL has none.

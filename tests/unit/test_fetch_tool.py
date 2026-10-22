@@ -152,7 +152,7 @@ def test_an_allowed_host_is_never_prompted_for(
         return fetch.Fetched(url=checked.url, status=200, content_type="text/plain", body="hello")
 
     monkeypatch.setattr(fetch, "fetch_url", _fetched)
-    cfg = Config.model_validate({"sandbox": {"fetch_hosts": ["example.com"]}})
+    cfg = Config.model_validate({"sandbox": {"fetch_approved_hosts": ["example.com"]}})
     d = dispatch.ToolDispatcher(
         root=tmp_path, config=cfg, prompts=operator_prompts.OperatorPrompts(approver=_loud)
     )

@@ -182,9 +182,9 @@ def test_a_headless_run_with_settled_commands_is_told_what_still_parks_it() -> N
     """A headless run with settled commands is told what still parks.
 
     `--auto-approve` settles commands, so the refusal lets the run start; a fetch outside
-    `sandbox.fetch_hosts` or an MCP call still asks, and with nobody to answer it the run parks
-    until a front-end attaches. The start says so and names the away mode that auto-denies; a run
-    that can be asked, or one with an away mode, gets no note.
+    `sandbox.fetch_approved_hosts` or an MCP call still asks, and with nobody to answer it the run
+    parks until a front-end attaches. The start says so and names the away mode that auto-denies;
+    a run that can be asked, or one with an away mode, gets no note.
     """
     yes = Config.model_validate({"sandbox": {"run_commands": "yes"}})
     note = app_preflight.headless_parking_note(yes, tui_enabled=False, away="", can_ask=False)

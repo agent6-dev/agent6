@@ -158,7 +158,7 @@ def test_new_builds_the_policy_a_runs_command_gets(
                 "isolation": "full",
                 "hide_paths": [str(tmp_path / "private")],
                 "extra_read_paths": [str(tmp_path / "ro")],
-                "memory_limit_mb": 512,
+                "memory_limit_mib": 512,
             }
         }
     )

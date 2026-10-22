@@ -205,11 +205,11 @@ def test_a_session_command_gets_the_configured_memory_cap(tmp_path: pathlib.Path
     """Every request carries the run policy's memory cap.
 
     Sending only argv would leave every command on the launcher's own default, silently
-    ignoring `[sandbox] memory_limit_mb`.
+    ignoring `[sandbox] memory_limit_mib`.
     """
     session = jail_session.JailSession.open(
         kinds.JailPolicy(
-            cwd=tmp_path, argv=("true",), isolation="full", timeout_s=30.0, memory_limit_mb=256
+            cwd=tmp_path, argv=("true",), isolation="full", timeout_s=30.0, memory_limit_mib=256
         )
     )
     try:
@@ -221,14 +221,14 @@ def test_a_session_command_gets_the_configured_memory_cap(tmp_path: pathlib.Path
 
 
 def test_a_backgrounded_command_gets_the_same_memory_cap(tmp_path: pathlib.Path) -> None:
-    """A backgrounded command honours `[sandbox] memory_limit_mb` like a foreground one.
+    """A backgrounded command honours `[sandbox] memory_limit_mib` like a foreground one.
 
     The detached spawn shares the capture transport's child setup, so the cap does not
     depend on the transport.
     """
     session = jail_session.JailSession.open(
         kinds.JailPolicy(
-            cwd=tmp_path, argv=("true",), isolation="full", timeout_s=30.0, memory_limit_mb=256
+            cwd=tmp_path, argv=("true",), isolation="full", timeout_s=30.0, memory_limit_mib=256
         )
     )
     try:

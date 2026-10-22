@@ -40,7 +40,7 @@ _PRESETS_MARKER = "<!-- presets-table -->"
 _RUNTIME_DEFAULTS = {
     "context.drop_at_chars": "_adaptive_",
     "context.summarise_at_chars": "_adaptive_",
-    "sandbox.memory_limit_mb": "`0` (off)",
+    "sandbox.memory_limit_mib": "`0` (off)",
     "providers.<name>.base_url": "per (format, deployment)",
     "providers.<name>.auth_style": "per (format, deployment)",
 }

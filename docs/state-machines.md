@@ -558,12 +558,12 @@ Unset keys read straight through to the lower layers, so a machine only states w
 | key | an overlay may set |
 |---|---|
 | `extra_read_paths`, `extra_write_paths` | paths at or below one of yours, compared by real path (a symlink that leaves your tree is refused); a read entry may sit under your write list |
-| `extra_device_paths`, `fetch_hosts` | a subset of your list, entry for entry |
+| `extra_device_paths`, `fetch_approved_hosts` | a subset of your list, entry for entry |
 | `hide_paths` | every entry of yours, or a directory above it, plus more |
 | `network`, `isolation` | yours or tighter, compared by what the value resolves to on this host |
 | `run_commands` | yours or tighter (`yes`, then `ask`, then `no`) |
 | `protect_git`, `home` | yours, or a tighter value (`on` over `auto` over `off`; `tmp` over `auto` over `cache`); `protect_git` is compared by what it resolves to, so `git.control = "model"` under your `auto` is wider |
-| `memory_limit_mb` | a cap no larger than yours; any value when you set none |
+| `memory_limit_mib` | a cap no larger than yours; any value when you set none |
 
 ```toml
 # your config: the ceiling

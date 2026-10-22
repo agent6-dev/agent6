@@ -60,14 +60,14 @@ def test_git_control_without_sandbox(
 def test_none_warns_unsandboxed(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """The list of what is absent has to be complete, and the memory cap is not on it.
 
-    Measured with `memory_limit_mb = 64` and isolation `none`: a 400 MB allocation raises
+    Measured with `memory_limit_mib = 64` and isolation `none`: a 400 MB allocation raises
     MemoryError through the run's jail session (the launcher applies the rlimit with confinement
     off), and succeeds only on the one-shot path, which runs a plain subprocess.
     """
     confine.warn_sandbox_gaps("none", _env(4), _cfg(), root=tmp_path)
     err = capsys.readouterr().err
     assert "UNSANDBOXED" in err
-    assert "memory_limit_mb" in err
+    assert "memory_limit_mib" in err
 
 
 def test_full_without_landlock_warns(

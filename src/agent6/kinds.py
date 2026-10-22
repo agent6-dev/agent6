@@ -254,8 +254,8 @@ class JailPolicy:
         hide_paths: The operator's additions to the hidden set, masked last, after
             every bind; agent6's own private dirs are unioned in at serialization.
         timeout_s: The command's deadline.
-        memory_limit_mb: The per-process RLIMIT_DATA cap, inherited by every
-            descendant; 0 disables, since capping costs real builds more than it buys.
+        memory_limit_mib: The per-process data-segment cap (RLIMIT_DATA) in MiB, inherited
+            by every descendant; 0 disables, since capping costs real builds more than it buys.
     """
 
     cwd: pathlib.Path
@@ -271,7 +271,7 @@ class JailPolicy:
     tool_paths: tuple[pathlib.Path, ...] = ()
     hide_paths: tuple[pathlib.Path, ...] = ()
     timeout_s: float = 600.0
-    memory_limit_mb: int = 0
+    memory_limit_mib: int = 0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

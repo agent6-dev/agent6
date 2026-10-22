@@ -63,10 +63,10 @@ class SandboxConfig(pydantic.BaseModel):
     )
     # Hosts, never URL prefixes: a prefix invites `evil.com/docs.python.org`.
     # A GET can encode data in its path, so an unlisted host is asked about.
-    fetch_hosts: _base.StrTuple = pydantic.Field(
+    fetch_approved_hosts: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
-            "Hosts the `fetch` tool reads without asking; any other host prompts, and an absent "
+            "Hosts the `fetch` tool may read without asking; any other host prompts, and an absent "
             'operator is a no. Empty: every fetch prompts. `["*"]`: any host. A leading dot allows '
             "subdomains (`.readthedocs.io`). Each entry is a host, never a URL prefix; the rest of "
             "fetch is fixed (https only, 1 MiB cap, redirects returned, not followed). Hidden when "
@@ -104,13 +104,13 @@ class SandboxConfig(pydantic.BaseModel):
     # RLIMIT_DATA rather than RLIMIT_AS so V8, the JVM and ASAN, which reserve address space
     # without committing it, keep working. A guardrail, never a security control; set before
     # exec at every isolation level.
-    memory_limit_mb: int = pydantic.Field(
+    memory_limit_mib: int = pydantic.Field(
         default=0,
         ge=0,
         description=(
-            "`RLIMIT_DATA` cap in MiB on each jailed process (inherited by its children). `0`: no "
-            "cap. Set one to bound a specific task; a process over it fails as an ordinary command "
-            "error."
+            "`RLIMIT_DATA` per-process data-segment cap in MiB (1024 * 1024 bytes) on each jailed "
+            "process, inherited by its children. `0`: no cap. Set one to bound a specific task; "
+            "a process over it fails as an ordinary command error."
         ),
     )
     # On top of /usr /bin /lib /lib64 /etc /dev and the workspace; no effect under `none`.

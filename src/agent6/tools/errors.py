@@ -17,9 +17,9 @@ class ToolDeniedError(ToolError):
 
     The approval gate did not approve: a human said no, or the ask policy auto-denied an
     unattended run. A command, an MCP server's tool and a `fetch` whose host is outside
-    `sandbox.fetch_hosts` all raise it. Nothing executed, so the loop's sandbox-reachability
-    heuristic must not count it as a tool that fails in the jail, and the repeat-error nudge
-    says "refused, stop retrying" instead of "your call is malformed".
+    `sandbox.fetch_approved_hosts` all raise it. Nothing executed, so the loop's
+    sandbox-reachability heuristic must not count it as a tool that fails in the jail, and the
+    repeat-error nudge says "refused, stop retrying" instead of "your call is malformed".
     """
 
 

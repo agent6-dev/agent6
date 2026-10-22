@@ -391,11 +391,11 @@ def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel
         "none": "no network at all",
     }.get(net, net)
     print(f"  network:   {net} (sandbox.network = {cfg.sandbox.network}): {net_line}")
-    mem = cfg.sandbox.memory_limit_mb
+    mem = cfg.sandbox.memory_limit_mib
     print(
-        f"  memory:    {mem} MiB per command (sandbox.memory_limit_mb)"
+        f"  memory:    {mem} MiB per-process data-segment cap (sandbox.memory_limit_mib)"
         if mem > 0
-        else "  memory:    no cap (sandbox.memory_limit_mb = 0)"
+        else "  memory:    no cap (sandbox.memory_limit_mib = 0)"
     )
 
 

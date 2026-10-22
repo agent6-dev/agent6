@@ -385,7 +385,7 @@ def test_no_writer_deletes_a_top_level_inline_table(tmp_path: pathlib.Path) -> N
     add`/`remove` and the engine-level writers behind the TUI, connect and init cannot skip it.
     """
     p = tmp_path / "c.toml"
-    body = 'sandbox = { protect_git = "off", run_commands = "yes", memory_limit_mb = 8000 }\n'
+    body = 'sandbox = { protect_git = "off", run_commands = "yes", memory_limit_mib = 8000 }\n'
     p.write_text(body, encoding="utf-8")
 
     with pytest.raises(ConfigError, match="not a plain \\[table\\]"):

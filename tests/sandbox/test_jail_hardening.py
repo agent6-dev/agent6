@@ -490,7 +490,7 @@ def test_a_fully_populated_policy_holds_every_invariant(
             extra_protect_paths=(ws / ".git",),
             tool_paths=(tools,),
             timeout_s=30.0,
-            memory_limit_mb=512,
+            memory_limit_mib=512,
         )
     )
     out = res.stdout or ""

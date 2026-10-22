@@ -126,7 +126,7 @@ A diagnostic hands a server the repository to read and writes nothing but the co
 |---|---|
 | `full` | user namespace (one uid, the operator's own) + mount + PID + IPC + UTS namespaces (hostname `agent6`), a network namespace unless `sandbox.network = "host"`, `pivot_root` rootfs, private `/proc` and `/tmp`, curated `/dev`, Landlock where the kernel has it, seccomp, `NO_NEW_PRIVS`, capability drop, timeout |
 | `partial` | Landlock, seccomp, `NO_NEW_PRIVS`, capability drop, timeout. No namespaces, no rootfs |
-| `none` | No confinement: no namespaces, Landlock or seccomp. The timeout and `memory_limit_mb` still apply |
+| `none` | No confinement: no namespaces, Landlock or seccomp. The timeout and `memory_limit_mib` still apply |
 | `auto` *(default)* | The strongest of the three this host supports |
 
 Under `full` a kernel without Landlock skips that layer, warned once per run; under `partial` Landlock is the only filesystem boundary.
@@ -206,7 +206,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - closing the run's channel takes the PID namespace down
     - a launcher that cannot start leaves each command its own
 - The policy arrives as JSON on the launcher's stdin, validated against a strict schema; unknown fields are refused.
-- `[sandbox].memory_limit_mb` (default 0, off): per-process `RLIMIT_DATA`.
+- `[sandbox].memory_limit_mib` (default 0, off): per-process data-segment cap (`RLIMIT_DATA`) in MiB, inherited by children.
 
 **Verify**
 
@@ -320,7 +320,7 @@ While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, re
 **`fetch`** is the model's only direct egress.
 
 - One https URL, GET, no redirects followed, no credential, text only, 1 MiB, 20 s.
-- Hosts on `sandbox.fetch_hosts` are read without asking (empty by default); any other host prompts.
+- Hosts on `sandbox.fetch_approved_hosts` are read without asking (empty by default); any other host prompts.
 - Nothing resolves before that gate: a DNS query delivers the hostname to whoever runs its authoritative server, so an unapproved URL never reaches a resolver.
 - Behind the gate the name resolves, and every address it yields must be global: loopback, the LAN, and `169.254.169.254` are refused, as is a URL naming one literally.
   The request dials the resolved address with the name in SNI and `Host`, so no second lookup can rebind it.
