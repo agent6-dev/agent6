@@ -385,19 +385,20 @@ def test_operator_steer_text_becomes_an_operator_item() -> None:
     assert fold.feed({"type": "loop.steer.injected", "chars": 9}) == []
 
 
-def test_pins_render_once_as_operator_items() -> None:
-    """A pin shows like a steer where it enters the conversation.
+def test_pins_render_once_as_harness_lines() -> None:
+    """A pin shows once as a harness line where it enters the conversation.
 
     The execution-start announcement and each /pin; a resume boundary restating the list adds
-    nothing.
+    nothing. As an operator item the `pinned:` line was the operator's words, which an editor
+    drew as a second user bubble.
     """
     from agent6.viewmodel import transcript
 
     fold = transcript.TranscriptFold()
     items = fold.feed({"type": "loop.pin.restored", "pins": ["never touch tests"], "count": 1})
-    assert [(i.kind, i.body) for i in items] == [("operator", "pinned: never touch tests")]
+    assert [(i.kind, i.body) for i in items] == [("marker", "pinned: never touch tests")]
     items = fold.feed({"type": "loop.pin.added", "text": "keep the API", "chars": 12, "count": 2})
-    assert [(i.kind, i.body) for i in items] == [("operator", "pinned: keep the API")]
+    assert [(i.kind, i.body) for i in items] == [("marker", "pinned: keep the API")]
     restated = {"type": "loop.pin.restored", "pins": ["never touch tests", "keep the API"]}
     assert fold.feed(restated) == []
     assert fold.feed({"type": "loop.pin.restored", "pins": [], "count": 0}) == []

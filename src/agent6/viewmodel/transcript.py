@@ -498,7 +498,7 @@ class TranscriptFold:
         return " · ".join(parts)
 
     def _pin_items(self, event: dict[str, Any], etype: str) -> list[TranscriptItem]:
-        """Return the pins this fold has not shown yet as one operator item.
+        """Return the pins this fold has not shown yet as one marker.
 
         Args:
             event: The pin event.
@@ -514,7 +514,7 @@ class TranscriptFold:
             return []
         self._pins_shown.update(fresh)
         out = self._flush_message()
-        out.append(TranscriptItem("operator", body="pinned: " + " | ".join(fresh)))
+        out.append(TranscriptItem("marker", body="pinned: " + " | ".join(fresh)))
         return out
 
     def feed(self, event: dict[str, Any]) -> list[TranscriptItem]:  # noqa: PLR0911, PLR0912, PLR0915  # one branch per event type
