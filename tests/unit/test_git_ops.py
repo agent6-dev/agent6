@@ -917,7 +917,7 @@ def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: pathli
         tmp_path,
         "main",
         "refs/agent6/r1",
-        strategy="merge",
+        method="merge",
         message="Merge refs/agent6/r1",
         identity=git_ops.CommitIdentity(trailer="Assisted-by: agent6:m1"),
     )
@@ -1000,7 +1000,7 @@ def test_plumb_merge_names_the_files_the_checkout_kept_its_own_version_of(
     )
     (tmp_path / "feat.txt").write_text("a third version, the operator's\n", encoding="utf-8")
 
-    res = git_ops.plumb_merge(tmp_path, "main", "refs/agent6/r1", strategy="squash", message="m")
+    res = git_ops.plumb_merge(tmp_path, "main", "refs/agent6/r1", method="squash", message="m")
 
     assert res.left_behind == ("feat.txt",)
     assert (tmp_path / "feat.txt").read_text(
@@ -1015,7 +1015,7 @@ def test_plumb_merge_names_the_files_the_checkout_kept_its_own_version_of(
     (tmp_path / "next.txt").write_text("y\n", encoding="utf-8")
     assert (
         git_ops.plumb_merge(
-            tmp_path, "main", "refs/agent6/r2", strategy="squash", message="m"
+            tmp_path, "main", "refs/agent6/r2", method="squash", message="m"
         ).left_behind
         == ()
     )
@@ -1086,7 +1086,7 @@ def test_plumb_merge_from_a_linked_worktree_brings_the_main_checkout_forward(
     wt = tmp_path / "wt"
     git_ops.add_worktree(repo, wt, base)
 
-    res = git_ops.plumb_merge(wt, "main", "refs/agent6/r1", strategy="merge", message="Merge")
+    res = git_ops.plumb_merge(wt, "main", "refs/agent6/r1", method="merge", message="Merge")
     assert not res.conflicted
     assert _rev(repo, "main") == res.merged_sha
     assert (repo / "feat.txt").read_text(encoding="utf-8") == "x\n"
@@ -1100,7 +1100,7 @@ def test_plumb_merge_conflict_moves_nothing(tmp_path: pathlib.Path) -> None:
     theirs = _lane_commit(tmp_path, base, "README.md", "run change\n")
     _commit_file(tmp_path, "README.md", "main change\n", "main edit")  # same line
     main_tip = git_ops.status(tmp_path).head_sha
-    res = git_ops.plumb_merge(tmp_path, "main", theirs, strategy="merge", message=None)
+    res = git_ops.plumb_merge(tmp_path, "main", theirs, method="merge", message=None)
     assert res.conflicted
     # The conflicted paths only; merge-tree's informational lines follow a blank line and stay out.
     assert res.conflicts == ("README.md",)
@@ -1108,19 +1108,19 @@ def test_plumb_merge_conflict_moves_nothing(tmp_path: pathlib.Path) -> None:
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == "main change\n"
 
 
-def test_plumb_merge_ff_moves_the_ref_and_refuses_divergence(tmp_path: pathlib.Path) -> None:
+def test_plumb_merge_ff_only_moves_the_ref_and_refuses_divergence(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
     base = git_ops.status(tmp_path).head_sha
     theirs = _lane_commit(tmp_path, base, "feat.txt", "x\n")
     (tmp_path / "feat.txt").write_text("x\n", encoding="utf-8")
-    res = git_ops.plumb_merge(tmp_path, "main", theirs, strategy="ff")
+    res = git_ops.plumb_merge(tmp_path, "main", theirs, method="ff_only")
     assert res.merged_sha == theirs == _rev(tmp_path, "main")
     assert git_ops.status(tmp_path).is_clean
 
     diverged = _lane_commit(tmp_path, base, "other.txt", "y\n")
     with pytest.raises(errors.GitError):
-        git_ops.plumb_merge(tmp_path, "main", diverged, strategy="ff")
-    assert _rev(tmp_path, "main") == theirs  # a refused ff moves nothing
+        git_ops.plumb_merge(tmp_path, "main", diverged, method="ff_only")
+    assert _rev(tmp_path, "main") == theirs  # a refused ff_only moves nothing
 
 
 def test_plumb_merge_squash_is_one_commit_and_noop_when_contained(tmp_path: pathlib.Path) -> None:
@@ -1134,7 +1134,7 @@ def test_plumb_merge_squash_is_one_commit_and_noop_when_contained(tmp_path: path
         tmp_path,
         "main",
         step2,
-        strategy="squash",
+        method="squash",
         message="the task",
         identity=git_ops.CommitIdentity(trailer="Assisted-by: agent6:m1"),
     )
@@ -1148,7 +1148,7 @@ def test_plumb_merge_squash_is_one_commit_and_noop_when_contained(tmp_path: path
     assert parents == [base]  # ONE commit, single parent
     assert git_ops.status(tmp_path).is_clean
     # Landing the same rev again is a clean no-op returning the unchanged tip.
-    again = git_ops.plumb_merge(tmp_path, "main", step2, strategy="squash", message="again")
+    again = git_ops.plumb_merge(tmp_path, "main", step2, method="squash", message="again")
     assert again.merged_sha == res.merged_sha and not again.conflicted
 
 
@@ -1160,7 +1160,7 @@ def test_plumb_merge_preserves_the_operators_own_staging(tmp_path: pathlib.Path)
     (tmp_path / "feat.txt").write_text("x\n", encoding="utf-8")
     (tmp_path / "README.md").write_text("operator wip\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "README.md"], check=True)
-    res = git_ops.plumb_merge(tmp_path, "main", theirs, strategy="squash", message="land")
+    res = git_ops.plumb_merge(tmp_path, "main", theirs, method="squash", message="land")
     assert not res.conflicted
     staged = subprocess.run(
         ["git", "-C", str(tmp_path), "diff", "--cached", "--name-only"],
@@ -1860,7 +1860,7 @@ def test_plumb_merge_survives_a_recorded_but_missing_worktree(tmp_path: pathlib.
     subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", str(gone), "side"], check=True)
     shutil.rmtree(gone)
 
-    res = git_ops.plumb_merge(repo, "side", "refs/agent6/r1", strategy="merge", message="Merge")
+    res = git_ops.plumb_merge(repo, "side", "refs/agent6/r1", method="merge", message="Merge")
     assert not res.conflicted
     assert _rev(repo, "side") == res.merged_sha
 
@@ -1943,9 +1943,7 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
 
     monkeypatch.setattr(_git_command, "run", old_git)
     with pytest.raises(errors.GitError, match=r"git version 2\.39\.0.*git 2\.40 or newer"):
-        git_ops.plumb_merge(
-            tmp_path, "main", theirs, strategy="merge", message=None, merge_base=base
-        )
+        git_ops.plumb_merge(tmp_path, "main", theirs, method="merge", message=None, merge_base=base)
 
 
 def test_remove_worktree_reports_a_tree_it_could_not_delete(tmp_path: pathlib.Path) -> None:

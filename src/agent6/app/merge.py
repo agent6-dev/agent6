@@ -4,7 +4,7 @@
 
 Landing is ref plumbing (`git_ops.plumb_merge`): no checkout and no clean-tree requirement,
 so the worktree carrying the run's own work is never an obstacle. Both callers share the
-strategy dispatch and the manifest record.
+method dispatch and the manifest record.
 """
 
 from __future__ import annotations
@@ -105,7 +105,7 @@ def record_merge_in_manifest(
 
 def dispatch_merge(
     cwd: pathlib.Path,
-    strategy: str,
+    method: str,
     target: str,
     run_branch: str,
     base_sha: str,
@@ -121,14 +121,14 @@ def dispatch_merge(
     merge_base: str | None = None,
     finish_summaries: tuple[str, ...] = (),
 ) -> git_ops.MergeResult:
-    """Run the strategy on the target through `plumb_merge`.
+    """Run the method on the target through `plumb_merge`.
 
     A squash builds its message per `[git.commit.squash].message`; an operator message
     overrides any style.
 
     Args:
         cwd: The repository.
-        strategy: ff, merge or squash.
+        method: ff_only, merge or squash.
         target: The branch to land on.
         run_branch: The run's branch or chain ref.
         base_sha: The commit the run started from.
@@ -147,7 +147,7 @@ def dispatch_merge(
     Returns:
         The plumbing's result.
     """
-    if strategy == "squash" and message is None:
+    if method == "squash" and message is None:
         # The message names what this merge lands: the commits after the landed base.
         message = _squash_message(
             cwd,
@@ -161,13 +161,13 @@ def dispatch_merge(
             events=events,
             warn=warn,
         )
-    if message is None and strategy == "merge":
+    if message is None and method == "merge":
         message = f"Merge {run_branch}"
     return git_ops.plumb_merge(
         cwd,
         target,
         run_branch,
-        strategy=strategy,
+        method=method,
         message=message,
         identity=identity,
         merge_base=merge_base,
@@ -404,7 +404,7 @@ def execute_merge(
     run_branch: str,
     target: str,
     base_sha: str,
-    strategy: str,
+    method: str,
     message: str | None,
     cfg: Config,
     identity: git_ops.CommitIdentity,
@@ -424,7 +424,7 @@ def execute_merge(
         run_branch: The run's branch or chain ref.
         target: The branch to land on.
         base_sha: The commit the run started from.
-        strategy: ff, merge or squash.
+        method: ff_only, merge or squash.
         message: The operator's message, else the style's.
         cfg: The resolved config.
         identity: The committer.
@@ -447,7 +447,7 @@ def execute_merge(
     if refusal is not None:
         return MergeOutcome("error", error=refusal)
     if (
-        strategy == "ff"
+        method == "ff_only"
         and not git_ops.is_ancestor(cwd, target, run_branch)
         and not git_ops.is_ancestor(cwd, run_branch, target)
     ):
@@ -456,11 +456,11 @@ def execute_merge(
             "error",
             error=(
                 f"{target!r} has moved since the run started, so a"
-                " fast-forward is impossible; merge with --strategy merge or"
+                " fast-forward is impossible; merge with --method merge or"
                 " squash instead"
             ),
         )
-    # Every strategy that merges something moves the target; unmoved means nothing to merge.
+    # Every method that merges something moves the target; unmoved means nothing to merge.
     target_tip_before = git_ops.branch_tip_sha(cwd, target) or ""
     try:
         merge_base = landed_base(
@@ -468,7 +468,7 @@ def execute_merge(
         )
         result = dispatch_merge(
             cwd,
-            strategy,
+            method,
             target,
             run_branch,
             base_sha,

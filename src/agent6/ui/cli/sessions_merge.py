@@ -45,7 +45,7 @@ class _MergePlan:
         run_branch: The branch or chain ref holding the work.
         target: The branch to land on.
         base_sha: The commit the run was cut from.
-        strategy: The merge strategy.
+        method: The merge method.
         identity: The committer identity.
         cfg: The effective config.
     """
@@ -55,7 +55,7 @@ class _MergePlan:
     run_branch: str
     target: str
     base_sha: str
-    strategy: str
+    method: str
     identity: git_ops.CommitIdentity
     cfg: Config
 
@@ -89,7 +89,7 @@ def _plan_merge(  # noqa: PLR0911
     cwd: pathlib.Path,
     session_id: str,
     into: str | None,
-    strategy: str | None,
+    method: str | None,
     *,
     config_paths: tuple[pathlib.Path, ...],
 ) -> _MergePlan | int:
@@ -99,7 +99,7 @@ def _plan_merge(  # noqa: PLR0911
         cwd: The repo.
         session_id: The run, or "" for the newest.
         into: The target branch; None takes the branch the run was cut from.
-        strategy: The merge strategy; None takes `git.merge_strategy`.
+        method: The merge method; None takes `git.merge_method`.
         config_paths: The `--config` files in command-line order, if any.
 
     Returns:
@@ -199,7 +199,7 @@ def _plan_merge(  # noqa: PLR0911
         run_branch=run_branch,
         target=target,
         base_sha=manifest.base_sha,
-        strategy=strategy or cfg.git.merge_strategy,
+        method=method or cfg.git.merge_method,
         identity=identity,
         cfg=cfg,
     )
@@ -226,7 +226,7 @@ def _manual_merge_cmd(cwd: pathlib.Path, plan: _MergePlan) -> str:
             steps.append("git stash")
         if st.branch != plan.target:
             steps.append(f"git checkout {plan.target}")
-    squash = " --squash" if plan.strategy == "squash" else ""
+    squash = " --squash" if plan.method == "squash" else ""
     steps.append(f"git merge{squash} {plan.run_branch}")
     return " && ".join(steps)
 
@@ -234,19 +234,19 @@ def _manual_merge_cmd(cwd: pathlib.Path, plan: _MergePlan) -> str:
 def _cmd_merge(
     *,
     session_id: str,
-    strategy: str | None,
+    method: str | None,
     into: str | None,
     message: str | None,
     config_paths: tuple[pathlib.Path, ...],
 ) -> int:
-    """Land a run's work on a target branch with the chosen strategy.
+    """Land a run's work on a target branch with the chosen method.
 
     Ref plumbing only: the checkout, index and worktree are never the medium, so a worktree
     still carrying the run's work is no obstacle.
 
     Args:
         session_id: The run, or "" for the newest.
-        strategy: The merge strategy; None takes `git.merge_strategy`.
+        method: The merge method; None takes `git.merge_method`.
         into: The target branch; None takes the branch the run was cut from.
         message: The merge commit message; None takes the default.
         config_paths: The `--config` files in command-line order, if any.
@@ -255,7 +255,7 @@ def _cmd_merge(
         The exit code: 0 landed or nothing to land, 1 a conflict, 2 a refusal.
     """
     cwd = pathlib.Path.cwd()
-    plan = _plan_merge(cwd, session_id, into, strategy, config_paths=config_paths)
+    plan = _plan_merge(cwd, session_id, into, method, config_paths=config_paths)
     if isinstance(plan, int):
         return plan
     if not git_ops.list_run_commits(cwd, plan.base_sha, plan.run_branch):
@@ -272,7 +272,7 @@ def _cmd_merge(
         run_branch=plan.run_branch,
         target=plan.target,
         base_sha=plan.base_sha,
-        strategy=plan.strategy,
+        method=plan.method,
         message=message,
         cfg=plan.cfg,
         identity=plan.identity,
@@ -301,7 +301,7 @@ def _cmd_merge(
         return 0
     print(
         f"[agent6] merged {plan.run_branch} into {plan.target} "
-        f"({plan.strategy}) -> {outcome.merged_sha[:12]}{note}"
+        f"({plan.method}) -> {outcome.merged_sha[:12]}{note}"
     )
     if kept := merge.left_behind_line(plan.target, outcome):
         print(f"[agent6] {kept}")

@@ -8563,7 +8563,7 @@ def test_a_flat_ask_user_call_records_its_ruling(tmp_path: pathlib.Path) -> None
     """
     from agent6 import memory
 
-    question = "Should the default merge strategy stay squash?"
+    question = "Should the default merge method stay squash?"
     wf = _ruling_wf(tmp_path)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _loop_state.TurnState(
@@ -8660,7 +8660,7 @@ def test_a_steer_answering_a_prose_question_records_after_the_nudge(tmp_path: pa
     from agent6 import memory
     from agent6.harness import _nudges
 
-    question = "Should the default merge strategy stay squash?"
+    question = "Should the default merge method stay squash?"
     wf = _ruling_wf(tmp_path)
     conversation = _conversation.Conversation()
     conversation.notice("TASK: do the thing")
@@ -8681,7 +8681,7 @@ def test_a_steer_answering_an_optioned_question_records_the_question(
     from agent6 import memory
     from agent6.harness import _nudges
 
-    question = "Which merge strategy should remain the default?"
+    question = "Which merge method should remain the default?"
     wf = _ruling_wf(tmp_path)
     conversation = _conversation.Conversation()
     conversation.notice("TASK: do the thing")

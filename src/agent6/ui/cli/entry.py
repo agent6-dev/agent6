@@ -623,7 +623,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.sessions_command == "merge":
         return sessions_merge._cmd_merge(
             session_id=args.session_id,
-            strategy=args.strategy,
+            method=args.method,
             into=args.into,
             message=args.message,
             config_paths=args.config,

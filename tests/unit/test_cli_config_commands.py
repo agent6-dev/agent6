@@ -139,7 +139,7 @@ def test_machine_get_on_malformed_toml_is_clean_error(
     # A malformed --machine-file is a clean ERROR at exit 2, not a TOMLDecodeError traceback.
     bad = tmp_path / "broken.asm.toml"
     bad.write_text("this is = not valid [[[\n", encoding="utf-8")
-    assert _refuse(["config", "get", "git.merge_strategy", "--machine-file", str(bad)]) == 2
+    assert _refuse(["config", "get", "git.merge_method", "--machine-file", str(bad)]) == 2
     err = capsys.readouterr().err
     assert "invalid TOML" in err
     assert "report this" not in err

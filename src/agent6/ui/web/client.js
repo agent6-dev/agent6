@@ -511,7 +511,7 @@ function sessionsCard(sessions) {
   const menu = el('div', 'menu');
   const action = (label, run) => { const b = el('button', 'danger', label); b.onclick = run; menu.appendChild(b); };
   // The CLI's --delete-squashed as its own entry: with the default squash
-  // strategy every merged run's branch is unreachable, so a plain prune
+  // method every merged run's branch is unreachable, so a plain prune
   // reports them and deletes none.
   const prune = async (deleteSquashed) => {
     if (deleteSquashed && !confirm('Force-delete branches and chain refs recorded as squash-merged? Their commits stay in the base; each deletion prints an undelete command.')) return;

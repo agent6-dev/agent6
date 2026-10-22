@@ -397,7 +397,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             modals.ConfirmModal(
                 f"Merge run {session_id}?",
                 "Runs `agent6 sessions merge` to land this run's branch on its base using your "
-                "git.merge_strategy. Ref plumbing only: the checkout never moves.",
+                "git.merge_method. Ref plumbing only: the checkout never moves.",
                 confirm_label="Merge",
             ),
             self._on_merge_confirm(session_id),

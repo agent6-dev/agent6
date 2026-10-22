@@ -1340,7 +1340,7 @@ def plumb_merge(
     target: str,
     merge_rev: str,
     *,
-    strategy: str,
+    method: str,
     message: str | None = None,
     identity: CommitIdentity | None = None,
     merge_base: str | None = None,
@@ -1355,8 +1355,8 @@ def plumb_merge(
         path: The repository.
         target: The branch to land on.
         merge_rev: The commit to land.
-        strategy: "merge" (a two-parent commit), "squash" (a single-parent commit) or
-            "ff" (the ref moves to the rev).
+        method: "merge" (a two-parent commit), "squash" (a single-parent commit) or
+            "ff_only" (the ref moves to the rev).
         message: The merge commit's message.
         identity: The author and committer overrides.
         merge_base: The base instead of the one git would find: a run squash-merged
@@ -1367,7 +1367,7 @@ def plumb_merge(
         conflict moves nothing and lists the paths.
 
     Raises:
-        GitError: The "ff" strategy cannot fast-forward, or the target moved concurrently.
+        GitError: The "ff_only" method cannot fast-forward, or the target moved concurrently.
     """
     ref = f"refs/heads/{target}"
     ours = _git_command.run(path, "rev-parse", "--verify", f"{ref}^{{commit}}").stdout.strip()
@@ -1377,7 +1377,7 @@ def plumb_merge(
     if is_ancestor(path, theirs, ours):
         return MergeResult(ours, False, ())
     ff_able = is_ancestor(path, ours, theirs)
-    if strategy == "ff":
+    if method == "ff_only":
         if not ff_able:
             raise errors.GitError(
                 f"{target!r} has moved; a fast-forward to {merge_rev!r} is impossible"
@@ -1396,7 +1396,7 @@ def plumb_merge(
         trailer = identity.trailer if identity else None
         if trailer and trailer not in text:
             text = f"{text}\n\n{trailer}"
-        parent_args = ["-p", ours] if strategy == "squash" else ["-p", ours, "-p", theirs]
+        parent_args = ["-p", ours] if method == "squash" else ["-p", ours, "-p", theirs]
         sha = _git_command.run(
             path,
             "commit-tree",

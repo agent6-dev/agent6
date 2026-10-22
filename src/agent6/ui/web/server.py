@@ -96,9 +96,9 @@ class AnswerBody(_Body):
 
 
 class MergeBody(_Body):
-    """A merge body; an empty strategy takes the config's."""
+    """A merge body; an empty method takes the config's."""
 
-    strategy: str = ""
+    method: str = ""
 
 
 class PruneBody(_Body):
@@ -531,7 +531,7 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         elif verb == "merge":
             mb = MergeBody.model_validate(self._read_body())
             ok, msg = actions.merge_run(
-                self.cwd, session_id, mb.strategy, config_paths=self.config_paths
+                self.cwd, session_id, mb.method, config_paths=self.config_paths
             )
         elif verb in ("undo", "fork"):
             self._read_body()

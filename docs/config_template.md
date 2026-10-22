@@ -193,6 +193,8 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 
 <!-- config-table: git -->
 
+`agent6 sessions merge --method <method>` overrides `git.merge_method` for that merge.
+
 `git.control = "agent6"` is enforced by the sandbox; without it, an explicit setting refuses to run and the default warns that a commit the model runs lands on the checkout's branch.
 
 ### `[git.commit]`

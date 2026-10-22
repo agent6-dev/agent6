@@ -207,7 +207,7 @@ def test_runs_merge_squash_is_one_commit_and_records_manifest(
             ("b.txt", "b\n", "agent6 iter 2: add b"),
         ],
     )
-    rc = main(["sessions", "merge", "run-AAAA11", "--strategy", "squash"])
+    rc = main(["sessions", "merge", "run-AAAA11", "--method", "squash"])
     assert rc == 0
     assert (tmp_path / "a.txt").exists() and (tmp_path / "b.txt").exists()
     # exactly one new commit on main (the squash), not the two per-step commits
@@ -263,12 +263,12 @@ def test_runs_merge_refuses_while_the_worker_is_alive(
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"
 
 
-def test_runs_merge_strategy_merge_keeps_history(
+def test_runs_merge_method_merge_keeps_history(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-MERG11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    rc = main(["sessions", "merge", "run-MERG11", "--strategy", "merge"])
+    rc = main(["sessions", "merge", "run-MERG11", "--method", "merge"])
     assert rc == 0
     assert (tmp_path / "a.txt").exists()  # the merge landed the work on main
     log = _git(tmp_path, "log", "--oneline")
@@ -280,7 +280,7 @@ def test_runs_merge_squash_honors_message(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-MSG111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    rc = main(["sessions", "merge", "run-MSG111", "--strategy", "squash", "-m", "custom subject"])
+    rc = main(["sessions", "merge", "run-MSG111", "--method", "squash", "-m", "custom subject"])
     assert rc == 0
     assert _git(tmp_path, "log", "-1", "--format=%s", "main") == "custom subject"
 
@@ -423,7 +423,7 @@ def test_runs_merge_without_identity_refuses_with_clean_tree(
     _setup_run(tmp_path, "run-NOID11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     _git(tmp_path, "config", "--unset", "user.name")
     _git(tmp_path, "config", "--unset", "user.email")
-    rc = main(["sessions", "merge", "run-NOID11", "--strategy", "squash"])
+    rc = main(["sessions", "merge", "run-NOID11", "--method", "squash"])
     assert rc == 2
     assert "identity not configured" in capsys.readouterr().err.lower()
     assert _git(tmp_path, "status", "--porcelain") == ""  # nothing staged
@@ -563,38 +563,38 @@ def test_runs_diff_neutralizes_poisoned_diff_external(
     assert "+a" in capfd.readouterr().out  # builtin diff still printed the patch
 
 
-def test_ff_merge_of_a_diverged_base_refuses_with_a_reason(
+def test_ff_only_merge_of_a_diverged_base_refuses_with_a_reason(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The pre-check refuses with the reason and the way out, not git's fast-forward fatal.
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FFDIV1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    # main moves after the branch was cut: ff is now impossible.
+    # main moves after the branch was cut: ff_only is now impossible.
     (tmp_path / "moved.txt").write_text("m\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "main moves on")
-    rc = main(["sessions", "merge", "run-FFDIV1", "--strategy", "ff"])
+    rc = main(["sessions", "merge", "run-FFDIV1", "--method", "ff_only"])
     assert rc == 1
     err = capsys.readouterr().err
     assert "fast-forward is impossible" in err
-    assert "--strategy merge or squash" in err
+    assert "--method merge or squash" in err
     assert "Not possible to fast-forward" not in err  # no raw git spew
 
 
-def test_ff_merge_lands_when_the_base_has_not_moved(
+def test_ff_only_merge_lands_when_the_base_has_not_moved(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Pins is_ancestor's argument order: an unmoved base is an ancestor of the run branch.
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FFOK1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    rc = main(["sessions", "merge", "run-FFOK1", "--strategy", "ff"])
+    rc = main(["sessions", "merge", "run-FFOK1", "--method", "ff_only"])
     assert rc == 0
     assert "fast-forward is impossible" not in capsys.readouterr().err
     # main now points at the run branch tip: a true fast-forward.
     assert _git(tmp_path, "rev-parse", "main") == _git(tmp_path, "rev-parse", "agent6/run-FFOK1")
 
 
-def test_ff_merge_of_an_already_contained_branch_is_a_clean_no_op(
+def test_ff_only_merge_of_an_already_contained_branch_is_a_clean_no_op(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Already-merged commits with a moved main: `--ff-only` says up to date; the pre-check agrees.
@@ -605,7 +605,7 @@ def test_ff_merge_of_an_already_contained_branch_is_a_clean_no_op(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "main moves on")
     before = _git(tmp_path, "rev-parse", "main")
-    rc = main(["sessions", "merge", "run-FFIN1", "--strategy", "ff"])
+    rc = main(["sessions", "merge", "run-FFIN1", "--method", "ff_only"])
     assert rc == 0
     assert "fast-forward is impossible" not in capsys.readouterr().err
     assert _git(tmp_path, "rev-parse", "main") == before  # no-op, nothing rewound
@@ -622,7 +622,7 @@ def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
     """
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-AAAA77", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    assert main(["sessions", "merge", "run-AAAA77", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-AAAA77", "--method", "squash"]) == 0
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-AAAA77"
     )
@@ -635,7 +635,7 @@ def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
     _git(tmp_path, "commit", "-q", "-m", "human: totally unrelated")
     unrelated = _git(tmp_path, "rev-parse", "HEAD")
 
-    assert main(["sessions", "merge", "run-AAAA77", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-AAAA77", "--method", "squash"]) == 0
     out = capsys.readouterr().out
     assert "nothing left to merge" in out
     assert unrelated[:12] not in out
@@ -644,13 +644,13 @@ def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
     assert stamped == real_sha
 
 
-@pytest.mark.parametrize("strategy", ["ff", "merge", "squash"])
+@pytest.mark.parametrize("method", ["ff_only", "merge", "squash"])
 @pytest.mark.parametrize("branch_per_run", [False, True])
 def test_merging_a_pruned_run_reports_its_recorded_merge(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    strategy: str,
+    method: str,
     *,
     branch_per_run: bool,
 ) -> None:
@@ -665,7 +665,7 @@ def test_merging_a_pruned_run_reports_its_recorded_merge(
     _git(tmp_path, "update-ref", git_ops.chain_ref_for("pruned11"), "agent6/pruned11")
     if not branch_per_run:
         _git(tmp_path, "branch", "-D", "agent6/pruned11")
-    assert main(["sessions", "merge", "pruned11", "--strategy", strategy]) == 0
+    assert main(["sessions", "merge", "pruned11", "--method", method]) == 0
     landed = _git(tmp_path, "rev-parse", "main")
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="pruned11"
@@ -745,7 +745,7 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
 
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-RSTP11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    assert main(["sessions", "merge", "run-RSTP11", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-RSTP11", "--method", "squash"]) == 0
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-RSTP11"
     )
@@ -762,7 +762,7 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     main_tip = _git(tmp_path, "rev-parse", "main")
     capsys.readouterr()
 
-    assert main(["sessions", "merge", "run-RSTP11", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-RSTP11", "--method", "squash"]) == 0
     assert "recorded as merged into main" in capsys.readouterr().out
     stamp = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
     assert (stamp["into"], stamp["sha"], stamp["tip"]) == ("main", manifest.NO_MERGE_COMMIT, tip2)
@@ -770,7 +770,7 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     row = summarize_session_dir(layout.session_dir, branch_tips=git_ops.run_ref_tips(tmp_path))
     assert row.unmerged is False
 
-    assert main(["sessions", "merge", "run-RSTP11", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-RSTP11", "--method", "squash"]) == 0
     assert "nothing left to merge" in capsys.readouterr().out
     assert json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"] == stamp
 
@@ -945,7 +945,7 @@ def test_merge_squash_combine_style_uses_gits_own_message(
         "run-CMB111",
         commits=[("a.txt", "a\n", "agent6 iter 1: add a\n\nThe reason for a.")],
     )
-    assert main(["sessions", "merge", "run-CMB111", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-CMB111", "--method", "squash"]) == 0
     msg = _head_message(tmp_path)
     assert "Squashed commit of the following" in msg
     assert "agent6 iter 1: add a" in msg
@@ -962,7 +962,7 @@ def test_merge_squash_conventional_style_derives_the_subject(
         '[git.commit.squash]\nmessage = "conventional"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-CNV111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    assert main(["sessions", "merge", "run-CNV111", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-CNV111", "--method", "squash"]) == 0
     subject = _head_message(tmp_path).splitlines()[0]
     assert subject == "feat: implement the thing"  # an added file, no common scope
 
@@ -980,7 +980,7 @@ def test_merge_squash_default_style_writes_the_run_message(
             ("b.txt", "b\n", "agent6 iter 2: add b"),
         ],
     )
-    assert main(["sessions", "merge", "run-DEF222", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-DEF222", "--method", "squash"]) == 0
     head = _head_message(tmp_path)
     assert head.splitlines()[0] == "implement the thing"
     assert "add a" in head and "add b" in head
@@ -1012,7 +1012,7 @@ def test_merge_squash_body_is_the_finish_summary(
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FIN111", commits=[("a.txt", "a\n", "agent6 iter 6: checkpoint")])
     summary = _write_finish_log(tmp_path, "run-FIN111", end_reason="finish_session")
-    assert main(["sessions", "merge", "run-FIN111", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-FIN111", "--method", "squash"]) == 0
     assert _head_message(tmp_path) == f"implement the thing\n\n{summary}"
 
 
@@ -1023,7 +1023,7 @@ def test_merge_squash_ignores_a_finish_the_run_did_not_end_on(
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FIN222", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     summary = _write_finish_log(tmp_path, "run-FIN222", end_reason="steer_abort")
-    assert main(["sessions", "merge", "run-FIN222", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-FIN222", "--method", "squash"]) == 0
     head = _head_message(tmp_path)
     assert "- add a" in head and summary not in head
 
@@ -1051,10 +1051,35 @@ def test_merge_squash_conventional_cuts_the_task_once(
     )
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     layout.manifest_path.write_text(json.dumps({**manifest, "user_task": task}), encoding="utf-8")
-    assert main(["sessions", "merge", "run-CNV222", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-CNV222", "--method", "squash"]) == 0
     subject = _head_message(tmp_path).splitlines()[0]
     assert len(subject) <= 72 and subject.count("…") == 1
     assert f"feat: {task}".startswith(subject[:-1] + " ")
+
+
+@pytest.mark.parametrize(
+    ("flag", "value", "error"),
+    [
+        ("--method", "ff_only", ""),
+        ("--strategy", "squash", "unrecognized arguments: --strategy"),
+        ("--method", "ff", "invalid choice: 'ff'"),
+    ],
+)
+def test_merge_parser_accepts_method_and_refuses_old_spellings(
+    flag: str, value: str, error: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Merge accepts `--method ff_only` without aliases for the old flag or value."""
+    from agent6.ui.cli import parser as cli_parser
+
+    parser = cli_parser.build_parser()
+    argv = ["sessions", "merge", flag, value]
+    if error:
+        with pytest.raises(SystemExit) as exc:
+            parser.parse_args(argv)
+        assert exc.value.code == 2
+        assert error in capsys.readouterr().err
+    else:
+        assert parser.parse_args(argv).method == "ff_only"
 
 
 def test_merge_help_names_the_default_message(capsys: pytest.CaptureFixture[str]) -> None:
@@ -1087,7 +1112,7 @@ def test_merge_squash_model_style_degrades_on_a_budget_fault(
 
     monkeypatch.setattr(app_providers, "build_role_provider", over)
     _setup_run(tmp_path, "run-BDG111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    assert main(["sessions", "merge", "run-BDG111", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-BDG111", "--method", "squash"]) == 0
     assert "model squash message failed (the ceiling was crossed" in capsys.readouterr().err
     assert _head_message(tmp_path).splitlines()[0] == "implement the thing"
 
@@ -1103,7 +1128,7 @@ def test_merge_squash_model_style_degrades_with_a_warning(
         '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-MDL111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    assert main(["sessions", "merge", "run-MDL111", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-MDL111", "--method", "squash"]) == 0
     assert "model squash message failed" in capsys.readouterr().err
     assert _head_message(tmp_path).splitlines()[0] == "implement the thing"
 
@@ -1130,7 +1155,7 @@ def test_merge_squash_model_style_names_the_providers_failure(
 
     monkeypatch.setattr(app_providers, "build_role_provider", at_limit)
     _setup_run(tmp_path, "run-LIM111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    assert main(["sessions", "merge", "run-LIM111", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-LIM111", "--method", "squash"]) == 0
     err = capsys.readouterr().err
     assert "model squash message failed (You've reached your Fable limit.)" in err
     assert "returned nothing" not in err
@@ -1195,7 +1220,7 @@ def test_model_squash_uses_the_whole_run(
 
     monkeypatch.setattr(app_providers, "build_role_provider", provider)
     monkeypatch.setattr(merge_mod, "call_for_text", draft)
-    assert main(["sessions", "merge", session_id, "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", session_id, "--method", "squash"]) == 0
     assert "+context_window = 200000" in seen["user"]
     assert "+Document the fallback." in seen["user"]
     assert "implement the thing" in seen["user"]
@@ -1227,7 +1252,7 @@ def test_merge_squash_trailer_lands_once(
         '[git.commit]\ntrailer = "Assisted-by: agent6:{model}"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-TRL111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    assert main(["sessions", "merge", "run-TRL111", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-TRL111", "--method", "squash"]) == 0
     assert _head_message(tmp_path).count("Assisted-by: agent6:") == 1
 
 
@@ -1260,7 +1285,7 @@ def test_merge_squash_trailer_names_every_code_writer(
         ),
         encoding="utf-8",
     )
-    assert main(["sessions", "merge", "run-TRL222", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "run-TRL222", "--method", "squash"]) == 0
     head = _head_message(tmp_path)
     assert "Assisted-by: agent6:m-one, m-two" in head
     assert "m-rev" not in head
@@ -1388,7 +1413,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     origin_runs.mkdir(parents=True)
     (origin_runs / "fan-l1").symlink_to(lane_state)
 
-    assert main(["sessions", "merge", "fan-l1", "--strategy", "squash"]) == 0
+    assert main(["sessions", "merge", "fan-l1", "--method", "squash"]) == 0
     out = capsys.readouterr().out
     assert "imported orphaned lane branch agent6/fan-l1" in out
     assert (tmp_path / "work.txt").read_text(encoding="utf-8") == "lane work\n"

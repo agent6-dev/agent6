@@ -259,7 +259,7 @@ def test_auto_prune_deletes_reachable_merge_branch(
     )
     cfg = layer.load_effective(tmp_path, ()).config
     git2 = cfg.git.model_copy(
-        update={"auto_merge": True, "auto_prune": True, "merge_strategy": "merge"}
+        update={"auto_merge": True, "auto_prune": True, "merge_method": "merge"}
     )
     cfg2 = cfg.model_copy(update={"git": git2})
     finmod.finalize_auto_merge(
@@ -285,7 +285,7 @@ def test_auto_prune_follows_a_recorded_noop_merge(
     _git(tmp_path, "update-ref", "refs/heads/main", "agent6/run-AP3333")  # main has it already
     cfg = layer.load_effective(tmp_path, ()).config
     git2 = cfg.git.model_copy(
-        update={"auto_merge": True, "auto_prune": True, "merge_strategy": "squash"}
+        update={"auto_merge": True, "auto_prune": True, "merge_method": "squash"}
     )
     finmod.finalize_auto_merge(
         tmp_path,
@@ -310,7 +310,7 @@ def test_auto_prune_keeps_squash_branch(
     )
     cfg = layer.load_effective(tmp_path, ()).config
     git2 = cfg.git.model_copy(
-        update={"auto_merge": True, "auto_prune": True, "merge_strategy": "squash"}
+        update={"auto_merge": True, "auto_prune": True, "merge_method": "squash"}
     )
     cfg2 = cfg.model_copy(update={"git": git2})
     finmod.finalize_auto_merge(

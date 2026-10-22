@@ -73,7 +73,7 @@ agent6 stop ID --after-step   # finish the current step, then stop
 agent6 sessions show          # status, iteration, elapsed, cost, the gate's word, where the changes are; --json
 agent6 sessions diff          # the git diff the run produced; --stat, --path P
 agent6 sessions commits       # the run's per-step commits
-agent6 sessions merge         # land on the run's starting branch (warns first when the gate did not certify it); --strategy, --into BRANCH
+agent6 sessions merge         # land on the run's starting branch (warns first when the gate did not certify it); --method, --into BRANCH
 agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N, --tools calls|none
 agent6 sessions graph         # the task graph, each line led by the id /retire takes
 agent6 sessions compare <ids> # >=2 runs ranked by the reviewer model (a mechanical ranking when it is unavailable or fails), or a fan-out's saved verdict; --rejudge

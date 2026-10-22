@@ -543,7 +543,7 @@ max_tokens_fallback = 100000
     assert cfg.agent6.config_version == 1
     assert cfg.git.dirty_tree == "ask"
     assert cfg.git.branch_per_run is True
-    assert cfg.git.merge_strategy == "squash"
+    assert cfg.git.merge_method == "squash"
     assert cfg.harness.verify_timeout_s == 600.0
     anthro = cfg.providers["anthropic"]
     from agent6.config import AnthropicProviderEntry

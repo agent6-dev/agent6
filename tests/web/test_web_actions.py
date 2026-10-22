@@ -70,7 +70,7 @@ def test_merge_and_config_argv_end_options_before_values(
 
     monkeypatch.setattr(spawn, "run_cli_capture", _fake_capture)
     actions.merge_run(tmp_path, "-rid", "squash")
-    assert captured[-1][1:] == ["sessions", "merge", "--strategy", "squash", "--", "-rid"]
+    assert captured[-1][1:] == ["sessions", "merge", "--method", "squash", "--", "-rid"]
     actions.set_config(tmp_path, "sandbox.protect_git", "-1", repo=True)
     assert captured[-1][1:] == ["config", "set", "--repo", "--", "sandbox.protect_git", "-1"]
 
@@ -84,7 +84,7 @@ def test_merge_and_config_argv_end_options_before_values(
         ["plan", "--", "-dashy task"],
         ["ask", "--", "-dashy question"],
         ["machine", "create", "--", "-dashy task"],
-        ["sessions", "merge", "--strategy", "squash", "--", "-rid"],
+        ["sessions", "merge", "--method", "squash", "--", "-rid"],
         ["config", "set", "--repo", "--", "sandbox.protect_git", "-1"],
     ],
 )
@@ -693,7 +693,7 @@ def test_spawn_machine_run_takes_the_listed_name_or_path(
 def test_prune_carries_the_squash_opt_in_only_when_asked(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The hub's prune passes the squash flag, or under the default strategy it deletes nothing.
+    """The hub's prune passes the squash flag, or under the default method it deletes nothing.
 
     Every merged run's branch is unreachable from the bare verb and kept.
     """

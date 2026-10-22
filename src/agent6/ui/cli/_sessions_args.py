@@ -97,10 +97,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     )
     _common._add_session_id(sessions_merge, completers._complete_session_ids)
     sessions_merge.add_argument(
-        "--strategy",
-        choices=("squash", "merge", "ff"),
+        "--method",
+        choices=("squash", "merge", "ff_only"),
         default=None,
-        help="Use this strategy. Default: git.merge_strategy from the active config.",
+        help="Use this method. Default: git.merge_method from the active config.",
     )
     sessions_merge.add_argument(
         "--into",

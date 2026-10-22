@@ -597,7 +597,7 @@ def finalize_auto_merge(
     budget: agent6_budget.BudgetTracker | None = None,
     events: event_log.EventSink | None = None,
 ) -> None:
-    """Land the run branch on its base with `git.merge_strategy`, best-effort.
+    """Land the run branch on its base with `git.merge_method`, best-effort.
 
     Ref plumbing only: the checkout is never switched. On a conflict or error the
     run's refs stay intact and the note says how to merge by hand.
@@ -644,7 +644,7 @@ def finalize_auto_merge(
         run_branch=run_branch,
         target=base_branch,
         base_sha=manifest.base_sha,
-        strategy=cfg.git.merge_strategy,
+        method=cfg.git.merge_method,
         message=None,
         cfg=cfg,
         identity=identity,
@@ -655,7 +655,7 @@ def finalize_auto_merge(
     if outcome.status == "merged":
         reporter.note(
             f"auto_merged {run_branch} into {base_branch} "
-            f"({cfg.git.merge_strategy}) -> {outcome.merged_sha[:12]}"
+            f"({cfg.git.merge_method}) -> {outcome.merged_sha[:12]}"
         )
         if kept := merge.left_behind_line(base_branch, outcome):
             reporter.note(kept)

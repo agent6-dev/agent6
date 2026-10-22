@@ -138,7 +138,7 @@ Over a red gate it returns under the same cap, counted apart from the model's ow
 - a step no gate judged commits as a checkpoint: a gateless run, a gate nobody may run (under `run_commands = "no"`, or after a denial), or `verify_when = "finish"` between the model's own gate runs
 - `branch_per_run` also advances a visible `agent6/<id>` branch
 - HEAD never moves; when the run's own branch is the checked-out one, the index and the working tree are brought forward for the paths the commit changed, each only where it still matches the old tip
-- consolidation is chosen at `sessions merge` time (`git.merge_strategy`: `squash`, `merge`, `ff`)
+- consolidation is chosen at `sessions merge` time (`git.merge_method`: `squash`, `merge`, `ff_only`)
 - `[git].control = "model"` turns the block off: no chain, no run branch, the model's own commits are the record, and `sessions diff`/`commits`/`merge`, `/undo` and `fork` refuse for such a run
 
 **The task DAG is a curator-owned side store.** `add_task` and `update_task` write it, with `depends_on` edges, cycle-checked; `list_tasks` reads it back. None of them picks the next tool.
@@ -319,7 +319,7 @@ It refuses when the run also changed one of those paths, since stashing it would
 A resume after a death, a detach or an older session has no recorded tree: its note names the changes no commit has, and the next commit takes them.
 
 A resume whose merge stamp covers everything the run committed, in a checkout whose HEAD holds the landing commit, continues from HEAD (`app/_resume_chain.py`).
-The chain ref and run branch only move forward: to HEAD after a `merge` or `ff` landing, else to a commit that joins the landed tip to HEAD's tree, so the earlier steps stay reachable for `fork --at-turn`.
+The chain ref and run branch only move forward: to HEAD after a `merge` or `ff_only` landing, else to a commit that joins the landed tip to HEAD's tree, so the earlier steps stay reachable for `fork --at-turn`.
 The manifest's `base_sha` and the merge stamp's tip move to that commit, so `sessions diff`, `sessions commits`, the squash message, the review diff and the next merge read only the new work.
 `base_branch` moves to the branch the merge landed on when the checkout has it out.
 Where the workspace's HEAD does not hold the landing commit (a worktree run, a fork of a squash-merged run), the chain stays as it is and a resume moves `base_sha` alone, to the commit the next merge into `base_branch` starts from.

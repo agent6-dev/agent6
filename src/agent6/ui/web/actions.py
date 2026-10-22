@@ -556,7 +556,7 @@ def machine_steer(cwd: pathlib.Path, name: str, text: str, *, state: str = "") -
 def merge_run(
     cwd: pathlib.Path,
     session_id: str,
-    strategy: str = "",
+    method: str = "",
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Merge a run's branch through `agent6 sessions merge`.
@@ -564,15 +564,15 @@ def merge_run(
     Args:
         cwd: The repository.
         session_id: The run.
-        strategy: `squash`, `merge` or `ff`; "" takes `git.merge_strategy`.
+        method: `squash`, `merge` or `ff_only`; "" takes `git.merge_method`.
         config_paths: The `--config` files in command-line order.
 
     Returns:
         Whether the CLI succeeded, and its message.
     """
     argv = [*spawn.agent6_argv(config_paths), "sessions", "merge"]
-    if strategy:
-        argv += ["--strategy", strategy]
+    if method:
+        argv += ["--method", method]
     argv += ["--", session_id]
     return spawn.run_cli_capture(argv, cwd)
 

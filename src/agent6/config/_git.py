@@ -189,11 +189,11 @@ class GitConfig(pydantic.BaseModel):
             "from a changed tree degrade."
         ),
     )
-    merge_strategy: Literal["squash", "merge", "ff"] = pydantic.Field(
+    merge_method: Literal["squash", "merge", "ff_only"] = pydantic.Field(
         default="squash",
         description=(
             "How `agent6 sessions merge` lands a run on its base: `squash` (one commit), `merge` "
-            "(a merge commit keeping the per-step history), or `ff` (fast-forward). "
+            "(a merge commit keeping the per-step history), or `ff_only` (fast-forward only). "
             "Consolidation only; per-step commits always land on the run's chain."
         ),
     )
@@ -213,7 +213,7 @@ class GitConfig(pydantic.BaseModel):
         default=False,
         description=(
             "After an `auto_merge`, delete the run branch when `git branch -d` can (a `merge` or "
-            "`ff` merge). A squash-merged branch is reported with its `-D` line, never "
+            "`ff_only` merge). A squash-merged branch is reported with its `-D` line, never "
             "force-deleted. Requires `auto_merge`; nothing to do without a run branch."
         ),
     )
