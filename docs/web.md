@@ -89,6 +89,15 @@ Buttons do what the CLI command of the same name does, and prompts are answered 
       Removal confirms the position and saves the remaining roster to its source layer (global or repo).
       Removing the last reviewer writes `[]`, so a lower layer's roster stays hidden.
 
+- **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions; it reads the repository `agent6 web` was started in and writes nothing
+    - the graph walks every branch, remote-tracking branch and tag plus HEAD, newest first in topological order, 200 commits a page with **Load more** for the next page; lanes are drawn per commit and merges join their parents
+    - **Refs ▾** filters the walk: tick a whole group (branches, remotes, tags, agent6 run refs) or single refs; the `refs/agent6/*` chain refs are off until ticked
+    - click a commit for its message, author, committer, parents and the files it changed from its first parent (a merge shows its diff from the first parent, a root commit its files against the empty tree), each file with its status (A, M, D, R `old → new`) and line counts, or `binary`
+    - click a file for its unified diff; a patch over 256 KiB is cut at that size and says so, a binary file says so
+    - **Compare** takes two revisions, base and head, each from a picker that searches branch and tag names, commit shas and commit messages as you type (Enter keeps free text as the revision for the server to verify); **⇄** swaps them
+    - the compare lists the files that differ between the two, as `git diff base head` does, so a commit against its parent reads like that commit's own diff; a commit's **Compare with parent**, **Set as base** and **Set as head** fill the pickers
+    - limits: 500 commits a page at most, 2000 files a list, 256 KiB a patch, 30 refs and 30 commits a search; each list says when it was cut
+
 Start a machine on the Machines page and watch the current state stream, answering its approvals and questions in place:
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
@@ -127,6 +136,9 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 - sign-in: `POST` `/api/login` with `{"secret": "<secret>"}` answers the token; a wrong secret answers `403`
 - every other `/api/...` route answers `401` with `{"error": ..., "login": true}` without the token
 - reads: `/api/meta`, `/api/hub`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>` , `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?step=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
+- git reads, all of the repository the server runs in: `/api/git/refs`, `/api/git/graph` (`?refs=<full ref name>` repeated, `&limit=&skip=`), `/api/git/commit/<rev>`, `/api/git/compare?base=&head=`, `/api/git/diff?base=&head=&path=&old_path=`, `/api/git/search?q=`
+    - a revision is a branch, tag, full ref name, sha prefix or expression git resolves to a commit; the empty tree sha is accepted as a `base`
+    - a revision or path starting with `-`, an unknown revision, a ref not in `/api/git/refs`, or a path in neither tree answers `422`
 - writes, small JSON `POST`s: `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,review,stop,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/entry`, `/api/config/entry/remove`, `/api/config/reviewer`, `/api/config/reviewer/remove`, `/api/machine/{create,run}`
 - roster writes: `/api/config/reviewer` takes the five form fields as strings (only `focus` is required) and `repo` (default `false`); `/api/config/reviewer/remove` takes a zero-based integer `index` and `repo`
 - writes use the shared config writer or the same spawn and answer-file contracts as the CLI; machine names and answer ids validate to one path component

@@ -13,8 +13,14 @@ from __future__ import annotations
 from importlib import resources
 
 _ASSETS = resources.files(__package__)
-# One script block, concatenated in declaration order: core and hub, run, machine, config.
-_CLIENT_FILES = ("client.js", "client_run.js", "client_machine.js", "client_config.js")
+# One script block, concatenated in declaration order: core and hub, run, machine, config, git.
+_CLIENT_FILES = (
+    "client.js",
+    "client_run.js",
+    "client_machine.js",
+    "client_config.js",
+    "client_git.js",
+)
 CLIENT_JS = "".join(_ASSETS.joinpath(name).read_text(encoding="utf-8") for name in _CLIENT_FILES)
 STYLES_CSS = _ASSETS.joinpath("styles.css").read_text(encoding="utf-8")
 
@@ -42,6 +48,7 @@ PAGE_HTML = (
     <a href="#/" data-tab="hub" title="Sessions"><span class="ic">▤</span><span>Sessions</span></a>
     <a href="#/machines" data-tab="machines" title="Machines"><span class="ic">◈</span><span>Machines</span></a>
     <a href="#/config" data-tab="config" title="Config"><span class="ic">⚙</span><span>Config</span></a>
+    <a href="#/git" data-tab="git" title="Git"><span class="ic">⎇</span><span>Git</span></a>
   </nav>
   <span class="rail-gap"></span>
   <button onclick="toggleTheme()" title="theme">◐<span class="rail-label"> theme</span></button>
@@ -62,6 +69,7 @@ PAGE_HTML = (
   <a href="#/" data-tab="hub"><span class="ic">▤</span>Sessions</a>
   <a href="#/machines" data-tab="machines"><span class="ic">◈</span>Machines</a>
   <a href="#/config" data-tab="config"><span class="ic">⚙</span>Config</a>
+  <a href="#/git" data-tab="git"><span class="ic">⎇</span>Git</a>
 </nav>
 
 <script>

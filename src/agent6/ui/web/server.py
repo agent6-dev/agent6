@@ -25,12 +25,12 @@ from urllib import parse
 
 import pydantic
 
-from agent6 import __version__, kinds
+from agent6 import __version__, errors, kinds
 from agent6.config import is_loopback_host, write
 from agent6.machine import MachineError
 from agent6.sessions import process
 from agent6.ui import spawn
-from agent6.ui.web import _sse, actions, auth, model, page
+from agent6.ui.web import _sse, actions, auth, git_model, model, page
 from agent6.viewmodel import (
     UnknownStepError,
     machine_snapshot,
@@ -729,6 +729,9 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             key = path.removeprefix("/api/config/suggest/")
             self._send_json({"values": model.config_suggestions(self.cwd, key, self.config_paths)})
             return
+        if path.startswith("/api/git/"):
+            self._route_git(path.removeprefix("/api/git/"))
+            return
         parts = path.strip("/").split("/")
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "session":
             self._route_session(parts[2], parts[3] if len(parts) > 3 else "")
@@ -740,6 +743,41 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             self._route_draft(parts[2], parts[3] if len(parts) > 3 else "")
             return
         self._send_json({"error": f"not found: {path}"}, status=404)
+
+    def _route_git(self, sub: str) -> None:
+        """Dispatch `/api/git/<sub>`; a malformed or unknown rev, ref or path answers 422."""
+        q = parse.parse_qs(parse.urlsplit(self.path).query, keep_blank_values=True)
+
+        def arg(name: str) -> str:
+            return (q.get(name) or [""])[0]
+
+        try:
+            if sub == "refs":
+                payload = git_model.refs_payload(self.cwd)
+            elif sub == "graph":
+                # One `refs=` per ref; present and blank is an empty selection, absent the
+                # default walk.
+                refs = [r for r in q["refs"] if r] if "refs" in q else None
+                payload = git_model.graph_payload(
+                    self.cwd, refs, limit=arg("limit"), skip=arg("skip")
+                )
+            elif sub.startswith("commit/"):
+                payload = git_model.commit_payload(self.cwd, sub.removeprefix("commit/"))
+            elif sub == "compare":
+                payload = git_model.compare_payload(self.cwd, arg("base"), arg("head"))
+            elif sub == "diff":
+                payload = git_model.diff_payload(
+                    self.cwd, arg("base"), arg("head"), arg("path"), arg("old_path")
+                )
+            elif sub == "search":
+                payload = git_model.search_payload(self.cwd, arg("q"))
+            else:
+                self._send_json({"error": f"not found: /api/git/{sub}"}, status=404)
+                return
+        except (git_model.GitRequestError, errors.GitError) as exc:
+            self._send_json({"error": str(exc)}, status=422)
+            return
+        self._send_json(payload)
 
     def _target_kind(self) -> str:
         """Return the view the CLI target deep-links to, resolved per request.

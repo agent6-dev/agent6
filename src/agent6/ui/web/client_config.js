@@ -311,4 +311,3 @@ function editConfig(key, s, tables) {
   };
   field.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
 }
-boot();
