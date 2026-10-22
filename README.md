@@ -29,10 +29,10 @@ Requires **Python 3.12+**, **Git 2.40+**, and access to a model through an API, 
 The sandbox supports **Linux on x86_64 and aarch64**.
 On macOS, commands run without the Linux sandbox; on Windows, use WSL.
 
-Install with [uv](https://docs.astral.sh/uv/getting-started/installation/) or use `pipx install agent6`.
+Install with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/how-to/install-pipx/).
 
 ```sh
-uv tool install agent6
+uv tool install agent6        # or: pipx install agent6
 agent6 completions            # tab completion for your shell
 agent6 connect                # connect a provider
 agent6 model worker           # choose its model interactively
@@ -65,7 +65,7 @@ See [isolated workspaces](https://agent6.dev/usage/#isolated-workspaces) for set
 - **Command sandboxing:** control what model commands can read, write, and reach on the network, with approvals enabled by default and diagnostics that show the effective boundaries ([security](https://agent6.dev/security/)).
 - **Resume and fork:** saved session state, transcripts, and Git checkpoints let you continue interrupted work or branch from an earlier turn into a separate worktree ([recovery](https://agent6.dev/usage/#when-a-run-goes-wrong)).
 - **Project checks:** configure a verification command or let agent6 infer one, then see whether the final work passed, failed, or remains unverified ([verification](https://agent6.dev/usage/#your-first-run)).
-- **Terminal, browser, and editor:** the CLI, [terminal UI](https://agent6.dev/terminal/), [browser UI](https://agent6.dev/web/) on desktop or phone, and [editor integration through the Agent Client Protocol (ACP)](https://agent6.dev/acp/) share the same engine and session records.
+- **Terminal, browser, and editor:** the CLI, [terminal UI](https://agent6.dev/terminal/), [browser UI](https://agent6.dev/web/) on desktop or phone, and [editor integration through the Agent Client Protocol (ACP)](https://agent6.dev/acp/) share the same engine and session records; the browser also shows the repository's commit graph, any two revisions compared, and each file's diff.
 - **Visible context and progress:** inspect the task graph, tool calls, usage, and compaction events; `/pin` preserves an instruction through compaction, `/compact [focus]` requests a summary, and repository memory carries facts across runs ([architecture](https://agent6.dev/architecture/#a-run)).
 - **Parallel attempts:** run the same task in isolated clones with `--parallel N` or a list of models, compare the results in a ranked report, and choose which result to merge ([parallel runs](https://agent6.dev/architecture/#parallel-runs)).
 - **Editable state machines:** compose agent runs, tool calls, waits, and branches in `.asm.toml` files, with validation, offline tests, journaled transitions, and replay from recorded results ([state machines](https://agent6.dev/state-machines/)).
@@ -108,9 +108,9 @@ Choose the model and reasoning effort for the worker, planner, and reviewer sepa
 agent6 treats model output as untrusted.
 The model's tools are a fixed built-in set plus the MCP servers you enable.
 Its Linux sandbox restricts command execution; the main agent process remains trusted and connects to your configured model providers.
-Provider keys stay with the agent process: a command's environment and jail hold neither the keys nor `secrets.toml`.
+Provider keys stay with the agent process: a command's environment and jail hold neither the keys nor `secrets.toml`, except under `sandbox.isolation = "none"`, where nothing is hidden.
 A sandbox around the whole agent would hold them inside it.
-agent6 never pushes, rewrites history or resets a tree, and no config key turns that on.
+agent6's own git never pushes, rewrites history or resets a tree, and no config key turns that on; a command the model runs is bounded by the jail.
 `sandbox.isolation` sets the level: `full` is a namespace-based Linux jail, `partial` is Landlock and seccomp without namespaces, `none` leaves commands unconfined.
 The default, `auto`, selects the strongest available level and warns when it falls back.
 `sandbox.network` is set separately: under `full` it defaults to the run's private network and can use the host network; `partial` and `none` use the host network.
@@ -130,7 +130,7 @@ If you have used Claude Code, Codex, OpenCode or Pi, the shape is familiar: sess
 
 Compared with an agent in a container or a VM, the jail is per command and in place.
 There is no image to build or keep current, the jail sees your installed toolchains read-only, the repository is at its real path, and `agent6 check sandbox` prints the boundary one row per path.
-A jailed command cannot install system packages; it can only install inside the repository, in a venv or a `node_modules`.
+A jailed command cannot install system packages; it can only install into the repository, a venv or a `node_modules` there, its private `/tmp` and `HOME`, or a path you grant.
 Inside a container, `sandbox.isolation = "auto"` resolves to the level that kernel allows, and `agent6 check` says which.
 
 Compared with the command sandboxes other agents offer, agent6's is on by default at the strongest level the host allows, keeps your home directory and credentials out of the jail, gives the run's commands a network of their own under `full`, and jails MCP servers the same way.

@@ -34,7 +34,7 @@ For longer workflows, define the steps in a TOML state machine you can review, t
 
 Requires **Python 3.12+**, **Git 2.40+**, and access to a model through an API, local server, or supported subscription.
 The sandbox supports **Linux on x86_64 and aarch64**; macOS runs without it, and Windows users should use WSL.
-See [installation](installation.md) for platform setup and installing [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/).
+See [installation](installation.md) for platform setup and installing [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/how-to/install-pipx/).
 
 ```sh
 uv tool install agent6        # or: pipx install agent6
