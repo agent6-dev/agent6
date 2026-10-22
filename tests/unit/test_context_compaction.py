@@ -7,6 +7,9 @@ from __future__ import annotations
 import pathlib
 from typing import Any
 
+import pydantic
+import pytest
+
 from agent6.harness import _chain, _compaction, _conversation
 
 
@@ -701,6 +704,81 @@ def test_tier1_dedup_skips_small_and_different_results() -> None:
     stats = _compaction.compact_old_tool_results(conv, max_total_bytes=100, keep_recent=1)
     # "tiny" is under the dedup floor; the 900-char bodies differ: no dedup.
     assert len(stats.deduped_calls) == 0
+
+
+@pytest.mark.parametrize(
+    ("keep_turns", "retained"),
+    [
+        (None, [True, True, True]),
+        (-1, [True, True, True]),
+        (1, [False, False, True]),
+        (2, [False, True, True]),
+        (0, None),
+        (-2, None),
+    ],
+)
+def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
+    tmp_path: pathlib.Path, keep_turns: int | None, retained: list[bool] | None
+) -> None:
+    """Tier 1 keeps all thinking for -1, the newest N for positive N, and refuses other counts."""
+    from unittest import mock
+
+    from agent6.config import Config
+    from agent6.harness import _loop_state, loop
+
+    context = {} if keep_turns is None else {"keep_thinking_turns": keep_turns}
+    if retained is None:
+        with pytest.raises(
+            pydantic.ValidationError, match=r"keep_thinking_turns.*>= 1.*-1.*all thinking"
+        ):
+            Config.model_validate({"context": context})
+        return
+    cfg = Config.model_validate({"context": context})
+    if keep_turns is None:
+        assert cfg.context.keep_thinking_turns == -1
+        assert _compaction.CompactionSettings().keep_thinking_turns == -1
+    wf = loop.Harness(
+        chain=_chain.RunChain(tmp_path),
+        config=cfg,
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(),
+        logger=lambda _m: None,
+        compaction=_compaction.CompactionSettings(
+            drop_at_chars=1500,
+            summarise_at_chars=10**9,
+            keep_thinking_turns=cfg.context.keep_thinking_turns,
+            elision_gists=False,
+        ),
+    )
+    conv = _conversation.Conversation()
+    conv.notice("task")
+    for i, ch in enumerate("abc"):
+        turn = conv.assistant(
+            [
+                {"type": "thinking", "thinking": f"reasoning {i}", "signature": f"sig{i}"},
+                {"type": "tool_use", "id": f"t{i}", "name": "read_file", "input": {"path": ch}},
+            ]
+        )
+        conv.results(
+            [
+                _conversation.ToolResultItem(
+                    tool_use_id=f"t{i}", content=ch * 1000, for_call=turn.tool_uses[0]
+                )
+            ]
+        )
+
+    assert (
+        wf.compactor.compact(conv, _loop_state.LoopState(original_task="task", tool_calls=3))
+        is False
+    )
+    assert "elided" in _result_contents(conv)[0], "tier 1 must fire"
+    assistants = [t for t in conv.turns if isinstance(t, _conversation.AssistantTurn)]
+    assert [any(b["type"] == "thinking" for b in t.raw_content) for t in assistants] == retained
+    assert assistants[-1].raw_content[0] == {
+        "type": "thinking",
+        "thinking": "reasoning 2",
+        "signature": "sig2",
+    }
 
 
 def test_strip_old_thinking_clears_all_but_the_newest_turns() -> None:

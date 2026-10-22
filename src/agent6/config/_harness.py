@@ -309,12 +309,13 @@ class ContextConfig(pydantic.BaseModel):
         ),
     )
     keep_thinking_turns: int = pydantic.Field(
-        ge=0,
-        default=0,
+        default=-1,
         description=(
-            "At tier-1 moments, drop the model's thinking from assistant turns older than this "
-            "many turns. `0` keeps all thinking. Wires that re-send thinking (Anthropic's signed "
-            "blocks, ChatGPT's reasoning items) replay less; the OpenAI wire never re-sends it."
+            "At tier-1 moments, keep the model's thinking only for the newest N assistant turns "
+            "(`N >= 1`). `-1` keeps all thinking. `0` is invalid because an in-flight tool call "
+            "needs the newest turn's signed thinking block. Wires that re-send thinking "
+            "(Anthropic's signed blocks, ChatGPT's reasoning items) replay less; the OpenAI wire "
+            "never re-sends it."
         ),
     )
     summary_max_tokens: int = pydantic.Field(
@@ -336,6 +337,24 @@ class ContextConfig(pydantic.BaseModel):
             "holds). `false`: straight to bare placeholders."
         ),
     )
+
+    @pydantic.field_validator("keep_thinking_turns")
+    @classmethod
+    def _thinking_unlimited_is_exactly_minus_one(cls, v: int) -> int:
+        """Refuse a count that is neither positive nor exactly -1.
+
+        Args:
+            v: The configured count.
+
+        Returns:
+            The count unchanged.
+
+        Raises:
+            ValueError: The count is 0 or below -1.
+        """
+        if v == 0 or v < -1:
+            raise ValueError("keep_thinking_turns is >= 1, or exactly -1 to keep all thinking")
+        return v
 
     @pydantic.model_validator(mode="after")
     def _check_compaction_thresholds(self) -> ContextConfig:

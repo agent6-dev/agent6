@@ -427,8 +427,8 @@ class CompactionSettings:
         tool_result_cap_bytes: The bound on one result before it enters the
             conversation.
         keep_recent_chars: The verbatim tail a restart keeps.
-        keep_thinking_turns: Thinking blocks are dropped from assistant turns
-            older than this many at tier-1 moments; 0 keeps all.
+        keep_thinking_turns: At tier-1 moments, keep thinking for the newest N
+            assistant turns (N >= 1); -1 keeps all.
         elision_gists: A large read decays through a model-written gist first.
         summary_max_tokens: The summariser's output cap.
         summariser: The reviewer role's provider; the worker's when None.
@@ -438,7 +438,7 @@ class CompactionSettings:
     summarise_at_chars: int = SUMMARISE_AT_CHARS
     tool_result_cap_bytes: int = TOOL_RESULT_CAP_BYTES
     keep_recent_chars: int = KEEP_RECENT_CHARS
-    keep_thinking_turns: int = 0
+    keep_thinking_turns: int = -1
     elision_gists: bool = True
     summary_max_tokens: int = 2048
     summariser: Provider | None = None
