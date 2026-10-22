@@ -1314,6 +1314,28 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
     assert not (repo / "fork.txt").exists()
 
 
+def test_a_fork_from_a_turn_before_the_base_moved_starts_at_the_turn(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A turn from before the source's base moved keeps its own commit as the fork's base.
+
+    Between a second merge and its continuation the stamp's tip is the merged tip and the base
+    is the first continuation; a fork at an earlier turn inherited that later base.
+    """
+    repo, turn1, head = _fork_fixture(tmp_path, monkeypatch)
+    state = paths.state_dir(repo)
+    src = sessions_layout.SessionLayout(state_dir=state, session_id="src-AAAA11")
+    manifest = json.loads(src.manifest_path.read_text(encoding="utf-8"))
+    manifest["base_sha"] = head
+    manifest["merged"] = {"into": "main", "sha": head, "tip": turn1}
+    src.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert fork._cmd_fork((), "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+
+    child = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
+    assert json.loads(child.manifest_path.read_text(encoding="utf-8"))["base_sha"] == turn1
+
+
 def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

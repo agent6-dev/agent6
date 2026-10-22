@@ -341,12 +341,12 @@ def _plan_fork(
         from_seed=at_turn == 0 and checkpoint.next_turn != 0,
         forked_from_sha=forked_from_sha,
         # A source whose work landed moved its base to where it continued from; a turn from
-        # before that predates the base, and the fork's own work starts at the turn.
+        # before that predates the base, and the fork's own work starts at the turn. Ancestry
+        # alone decides: a second merge moves the stamp's tip before its continuation moves
+        # the base.
         base_sha=(
             forked_from_sha
-            if sm.merged is not None
-            and sm.merged.tip == sm.base_sha
-            and not git_ops.is_ancestor(cwd, sm.base_sha, forked_from_sha)
+            if sm.merged is not None and not git_ops.is_ancestor(cwd, sm.base_sha, forked_from_sha)
             else sm.base_sha
         ),
         base_branch=sm.base_branch,
