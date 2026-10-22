@@ -103,61 +103,7 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', () => {});
 """
 
-# docs/assets/favicon.svg verbatim (kept in sync), so the tab matches the docs site.
-FAVICON_SVG = r"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="agent6">
-  <defs><linearGradient id="g" x1="6" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7aa2f7"/><stop offset="1" stop-color="#06f5f3"/></linearGradient></defs>
-  <path d="M24 3.5 41.7 13.75 V34.25 L24 44.5 6.3 34.25 V13.75 Z" fill="#161618"/>
-  <path d="M24 3.5 41.7 13.75 V34.25 L24 44.5 6.3 34.25 V13.75 Z" stroke="url(#g)" stroke-width="2.4" stroke-linejoin="round" fill="none"/>
-  <g stroke="url(#g)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <line x1="24.00" y1="24.00" x2="24.00" y2="10.00"/>
-    <line x1="24.00" y1="15.32" x2="19.25" y2="12.35"/>
-    <line x1="24.00" y1="15.32" x2="28.75" y2="12.35"/>
-    <line x1="24.00" y1="24.00" x2="11.88" y2="17.00"/>
-    <line x1="16.48" y1="19.66" x2="11.54" y2="22.29"/>
-    <line x1="16.48" y1="19.66" x2="16.29" y2="14.06"/>
-    <line x1="24.00" y1="24.00" x2="11.88" y2="31.00"/>
-    <line x1="16.48" y1="28.34" x2="16.29" y2="33.94"/>
-    <line x1="16.48" y1="28.34" x2="11.54" y2="25.71"/>
-    <line x1="24.00" y1="24.00" x2="24.00" y2="38.00"/>
-    <line x1="24.00" y1="32.68" x2="28.75" y2="35.65"/>
-    <line x1="24.00" y1="32.68" x2="19.25" y2="35.65"/>
-    <line x1="24.00" y1="24.00" x2="36.12" y2="31.00"/>
-    <line x1="31.52" y1="28.34" x2="36.46" y2="25.71"/>
-    <line x1="31.52" y1="28.34" x2="31.71" y2="33.94"/>
-    <line x1="24.00" y1="24.00" x2="36.12" y2="17.00"/>
-    <line x1="31.52" y1="19.66" x2="31.71" y2="14.06"/>
-    <line x1="31.52" y1="19.66" x2="36.46" y2="22.29"/>
-  </g>
-</svg>
-"""
-
-# The PWA icon: the same glyph inside the safe-area inset a maskable icon needs.
-ICON_SVG = r"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs><linearGradient id="g" x1="6" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7aa2f7"/><stop offset="1" stop-color="#06f5f3"/></linearGradient></defs>
-  <rect width="512" height="512" rx="96" fill="#0e1116"/>
-  <g transform="translate(96 96) scale(6.6667)">
-    <path d="M24 3.5 41.7 13.75 V34.25 L24 44.5 6.3 34.25 V13.75 Z" fill="#161618"/>
-    <path d="M24 3.5 41.7 13.75 V34.25 L24 44.5 6.3 34.25 V13.75 Z" stroke="url(#g)" stroke-width="2.4" stroke-linejoin="round" fill="none"/>
-    <g stroke="url(#g)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none">
-      <line x1="24" y1="24" x2="24" y2="10"/>
-      <line x1="24" y1="15.32" x2="19.25" y2="12.35"/>
-      <line x1="24" y1="15.32" x2="28.75" y2="12.35"/>
-      <line x1="24" y1="24" x2="11.88" y2="17"/>
-      <line x1="16.48" y1="19.66" x2="11.54" y2="22.29"/>
-      <line x1="16.48" y1="19.66" x2="16.29" y2="14.06"/>
-      <line x1="24" y1="24" x2="11.88" y2="31"/>
-      <line x1="16.48" y1="28.34" x2="16.29" y2="33.94"/>
-      <line x1="16.48" y1="28.34" x2="11.54" y2="25.71"/>
-      <line x1="24" y1="24" x2="24" y2="38"/>
-      <line x1="24" y1="32.68" x2="28.75" y2="35.65"/>
-      <line x1="24" y1="32.68" x2="19.25" y2="35.65"/>
-      <line x1="24" y1="24" x2="36.12" y2="31"/>
-      <line x1="31.52" y1="28.34" x2="36.46" y2="25.71"/>
-      <line x1="31.52" y1="28.34" x2="31.71" y2="33.94"/>
-      <line x1="24" y1="24" x2="36.12" y2="17"/>
-      <line x1="31.52" y1="19.66" x2="31.71" y2="14.06"/>
-      <line x1="31.52" y1="19.66" x2="36.46" y2="22.29"/>
-    </g>
-  </g>
-</svg>
-"""
+# docs/assets/favicon.svg verbatim (a test pins the two equal), so the tab matches the docs site.
+FAVICON_SVG = _ASSETS.joinpath("favicon.svg").read_text(encoding="utf-8")
+# The PWA tile: the same mark inside the safe-area inset a maskable icon needs.
+ICON_SVG = _ASSETS.joinpath("icon.svg").read_text(encoding="utf-8")

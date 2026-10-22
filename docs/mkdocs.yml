@@ -32,9 +32,9 @@ exclude_docs: |
 
 theme:
   name: material
-  # Header logo. Alternatives to switch in: assets/logo.png (the full brand mark,
-  # which is detailed for this size) or assets/logo-snowflake.svg (plain snowflake).
-  logo: assets/logo-hybrid.svg
+  # Header logo: the favicon cut of the mark (8 KB gzipped). assets/logo.svg and
+  # assets/logo.png hold the full-detail mark for large uses.
+  logo: assets/favicon.svg
   favicon: assets/favicon.svg
   icon:
     repo: fontawesome/brands/github
