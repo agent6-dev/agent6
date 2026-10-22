@@ -80,7 +80,7 @@ def test_openrouter_config_does_not_double_refresh(monkeypatch: pytest.MonkeyPat
 
 
 def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A seat pinning `persona@prov/model` gets key preflight too.
+    """A seat pinning a provider and model gets key preflight too.
 
     Without it the run starts, mutates state, and dies only when the seat is constructed.
     """

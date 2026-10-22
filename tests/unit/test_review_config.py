@@ -186,4 +186,4 @@ def test_trigger_on_with_no_reviewers_builds_the_one_seat_roster() -> None:
     )
     assert len(seats) == 1
     assert seats[0].model == "o/rm"
-    assert seats[0].persona == "security"
+    assert seats[0].focus == "security"

@@ -76,7 +76,7 @@ class ReviewContext:
         diff: The working-tree delta since the last accepted finish.
         verify_ok: The gate's result; None when none ran (none configured, or `agent6 review`).
         verify_output: The gate's output.
-        persona: The seat's persona text.
+        focus: The seat's focus text.
         prior_findings: Findings already injected, for dedup; they never re-count.
     """
 
@@ -85,7 +85,7 @@ class ReviewContext:
     diff: str = ""
     verify_ok: bool | None = None
     verify_output: str = ""
-    persona: str = ""
+    focus: str = ""
     prior_findings: tuple[Finding, ...] = ()
 
 

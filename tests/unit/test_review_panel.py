@@ -413,7 +413,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
     from agent6.ui.cli import review_cmds
 
     class _Seat:
-        persona = "security"
+        focus = "security"
         scope = "diff"
 
     abstain = harness__panel.ReviewVerdict(
@@ -450,7 +450,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
         diff="d",
         agents_md="",
         reviewers=3,
-        personas="security,correctness,tests",
+        focus="security,correctness,tests",
         transcript_sink=TranscriptSink(tmp_path),
         reviews_dir=tmp_path / "reviews",
         budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
@@ -478,7 +478,7 @@ def test_review_exit_code_is_consistent_across_verdicts(
     from agent6.ui.cli import review_cmds
 
     class _Seat:
-        persona = "security"
+        focus = "security"
         scope = "diff"
 
     block = _seat("m1", _block("security", "foo.py:11"))  # a real gating verdict
@@ -518,7 +518,7 @@ def test_review_exit_code_is_consistent_across_verdicts(
             diff="d",
             agents_md="",
             reviewers=1,
-            personas="security",
+            focus="security",
             transcript_sink=mock.MagicMock(),
             reviews_dir=tmp_path,
             budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),

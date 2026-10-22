@@ -261,7 +261,7 @@ agent6 sessions review <session-id>           # read-only review of a finished r
 agent6 ask "how does the task-graph curator work?"
 ```
 
-- `review --reviewers 3 --personas security,correctness,tests`: build a one-off panel on the resolved reviewer role, with findings checked against the diff.
+- `review --reviewers 3 --focus security,correctness,tests`: build a one-off panel on the resolved reviewer role, with findings checked against the diff.
   Configure [`review.reviewers`](config.md#review) tables to give each reviewer a `focus`, `provider`, `model`, `effort` and `temperature`.
 - `review --reviewers 3 --scope repo`: let the panel read the checkout through read-only tools instead of making one call over the diff (`--scope diff`).
   `review.block_on` sets when grounded findings block; `model_quorum` counts each distinct provider/model route once.

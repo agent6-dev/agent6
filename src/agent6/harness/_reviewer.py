@@ -55,17 +55,17 @@ ReviewDispatch = Callable[[str, dict[str, Any]], results.ToolResult]
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewSeat:
-    """Bind one persona to a provider and model.
+    """Bind one focus to a provider and model.
 
     Attributes:
-        persona: The reviewer's stance.
+        focus: The reviewer's stance.
         model: The model name, for events.
         provider: The provider called.
         scope: `diff` for one call over the diff, `repo` for a read-only tool loop first.
         temperature: The sampling temperature sent on every call.
     """
 
-    persona: str
+    focus: str
     model: str
     provider: Provider
     scope: ReviewScope = "diff"
@@ -190,7 +190,7 @@ def structured_review(
 
     Args:
         provider: The seat's provider.
-        ctx: The review context, with the seat's persona.
+        ctx: The review context, with the seat's focus.
         seat: The seat's name.
         model: The model name, for the verdict.
         max_tokens: The output cap of the call.
@@ -199,7 +199,7 @@ def structured_review(
     Returns:
         The seat's verdict; a provider error or junk output abstains with `error` set.
     """
-    system = review.REVIEW_SYSTEM_PROMPT.format(persona=ctx.persona or "general correctness")
+    system = review.REVIEW_SYSTEM_PROMPT.format(focus=ctx.focus or "general correctness")
     try:
         resp = provider.call(
             system=system,
@@ -253,7 +253,7 @@ def repo_review(
 
     Args:
         provider: The seat's provider.
-        ctx: The review context, with the seat's persona.
+        ctx: The review context, with the seat's focus.
         seat: The seat's name.
         model: The model name, for the verdict.
         tools: The read-only tools offered.
@@ -266,7 +266,7 @@ def repo_review(
     Returns:
         The seat's verdict; a provider error, the deadline or no verdict in time abstains.
     """
-    system = review.REPO_REVIEW_SYSTEM_PROMPT.format(persona=ctx.persona or "general correctness")
+    system = review.REPO_REVIEW_SYSTEM_PROMPT.format(focus=ctx.focus or "general correctness")
     messages: list[dict[str, Any]] = [{"role": "user", "content": _build_user_message(ctx)}]
     start = time.monotonic()
     for i in range(max_iters):
@@ -331,7 +331,7 @@ def run_panel(
 
     Args:
         seats: The seats.
-        ctx: The review context; each seat gets its own persona substituted.
+        ctx: The review context; each seat gets its own focus substituted.
         block_on: The blocking rule.
         min_blocking_models: The distinct blocking routes a `model_quorum` rejection needs.
         panel_id: The panel's id, for the result.
@@ -344,19 +344,19 @@ def run_panel(
     """
 
     def _run(s: ReviewSeat) -> _panel.ReviewVerdict:
-        seat_ctx = dataclasses.replace(ctx, persona=s.persona)
+        seat_ctx = dataclasses.replace(ctx, focus=s.focus)
         if s.scope == "repo" and tools is not None and dispatch is not None:
             return repo_review(
                 s.provider,
                 seat_ctx,
-                seat=s.persona,
+                seat=s.focus,
                 model=s.model,
                 tools=tools,
                 dispatch=dispatch,
                 temperature=s.temperature,
             )
         return structured_review(
-            s.provider, seat_ctx, seat=s.persona, model=s.model, temperature=s.temperature
+            s.provider, seat_ctx, seat=s.focus, model=s.model, temperature=s.temperature
         )
 
     if concurrency > 1 and len(seats) > 1:

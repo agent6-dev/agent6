@@ -355,7 +355,7 @@ def test_upsert_toml_leaf_replaces_a_whole_multiline_value(tmp_path: pathlib.Pat
 
     Rewriting only its opening line orphans the rest, producing unparseable TOML from every config
     writer (`config set`/`add`/`remove`, `connect`, the TUI and web editors); multi-line arrays are
-    the hand-written form for allow_urls, personas, verify_command.
+    the hand-written form for allow_urls, reviewers, verify_command.
     """
     path = tmp_path / "config.toml"
     path.write_text(

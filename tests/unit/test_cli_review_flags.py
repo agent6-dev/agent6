@@ -98,10 +98,10 @@ def test_an_empty_range_is_reported_before_provider_preflight(
     assert captured.err == "(no diff to review: HEAD...HEAD -- src/x.py)\n"
 
 
-def test_personas_without_reviewers_is_said_to_be_ignored(
+def test_focus_without_reviewers_is_said_to_be_ignored(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--personas` without `--reviewers N` prints a note that it is ignored.
+    """`--focus` without `--reviewers N` prints a note that it is ignored.
 
     The sibling `model` command prints the same note for a flag it cannot use.
     """
@@ -112,19 +112,19 @@ def test_personas_without_reviewers_is_said_to_be_ignored(
         raise ConfigError("stop here")
 
     monkeypatch.setattr("agent6.config.layer.load_effective", stop)
-    rc = cli_main(["review", "--personas", "security,tests"])
+    rc = cli_main(["review", "--focus", "security,tests"])
     err = capsys.readouterr().err
     assert rc == 2 and "stop here" in err
-    assert "note: --personas ignored (no --reviewers N" in err
+    assert "note: --focus ignored (no --reviewers N" in err
 
-    rc = cli_main(["review", "--personas", "security,tests", "--reviewers", "2"])
-    assert rc == 2 and "--personas ignored" not in capsys.readouterr().err
+    rc = cli_main(["review", "--focus", "security,tests", "--reviewers", "2"])
+    assert rc == 2 and "--focus ignored" not in capsys.readouterr().err
 
 
-def test_personas_under_configured_reviewers_is_said_to_be_ignored(
+def test_focus_under_configured_reviewers_is_said_to_be_ignored(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--personas` under a configured `[review].reviewers` roster is said to be ignored."""
+    """`--focus` under a configured `[review].reviewers` roster is said to be ignored."""
     import types
 
     from agent6.config import Config
@@ -145,9 +145,9 @@ def test_personas_under_configured_reviewers_is_said_to_be_ignored(
         return types.SimpleNamespace(config=cfg)
 
     monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
-    rc = cli_main(["review", "--personas", "tests", "--reviewers", "2"])
+    rc = cli_main(["review", "--focus", "tests", "--reviewers", "2"])
     err = capsys.readouterr().err
-    assert rc == 2 and "note: --personas ignored ([review].reviewers names the roster)." in err
+    assert rc == 2 and "note: --focus ignored ([review].reviewers names the roster)." in err
 
 
 def _panel_config(*, with_reviewer: bool, reviewers: tuple[dict[str, str], ...] = ()) -> Any:
@@ -368,7 +368,7 @@ def _repo_review(
     def _fake_seats(_cfg: Config, **_k: Any) -> list[_reviewer.ReviewSeat]:
         return [
             _reviewer.ReviewSeat(
-                persona="correctness",
+                focus="correctness",
                 model="fake",
                 provider=None,  # pyright: ignore[reportArgumentType]
                 scope=_cfg.review.scope,
@@ -457,7 +457,7 @@ def test_a_panel_with_an_unpinned_seat_still_requires_the_reviewer_route(
 
     assert (
         review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-            (), base=base, head=head, paths=(), reviewers=2, personas="security"
+            (), base=base, head=head, paths=(), reviewers=2, focus="security"
         )
         == 2
     )
@@ -519,10 +519,10 @@ def test_the_recent_log_survives_a_head_that_is_also_a_path_or_empty(
     assert "RECENT COMMITS:" in provider.last_user.split("\n\nDIFF:", 1)[0]
 
 
-def test_personas_a_configured_roster_ignores_are_not_read(
+def test_focus_values_a_configured_roster_ignores_are_not_read(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Personas a configured roster ignores do not affect its routes."""
+    """Focus values a configured roster ignores do not affect its routes."""
     import types
 
     from agent6.config import Config
@@ -552,7 +552,7 @@ def test_personas_a_configured_roster_ignores_are_not_read(
     monkeypatch.setattr(_setup, "check_provider_keys", _keys)
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        (), base=base, head=head, paths=(), reviewers=1, personas="tests"
+        (), base=base, head=head, paths=(), reviewers=1, focus="tests"
     )
 
     assert rc == 2

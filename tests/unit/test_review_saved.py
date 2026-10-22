@@ -131,7 +131,7 @@ def test_the_panel_verdict_is_saved_too(
     from agent6.harness import _reviewer
 
     seat = _reviewer.ReviewSeat(
-        persona="correctness",
+        focus="correctness",
         provider=_PassingSeatProvider(),  # type: ignore[arg-type]
         model="reviewer",
     )

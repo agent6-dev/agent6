@@ -41,8 +41,8 @@ _NONGATING = (  # grounded but a non-block-eligible category -> downgraded, neve
 )
 
 
-def _seat(provider: Any, persona: str = "security", model: str = "m1") -> _reviewer.ReviewSeat:
-    return _reviewer.ReviewSeat(persona=persona, model=model, provider=provider)
+def _seat(provider: Any, focus: str = "security", model: str = "m1") -> _reviewer.ReviewSeat:
+    return _reviewer.ReviewSeat(focus=focus, model=model, provider=provider)
 
 
 def _disp() -> mock.MagicMock:

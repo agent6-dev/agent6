@@ -33,7 +33,7 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
 
 
 def test_reviewer_family_builders_stamp_their_own_seats() -> None:
-    """The reviser, summariser and a bare-persona seat stamp their own seats.
+    """The reviser, summariser and a bare-focus seat stamp their own seats.
 
     They share the reviewer route; a transcript still tells which actor made a call.
     """

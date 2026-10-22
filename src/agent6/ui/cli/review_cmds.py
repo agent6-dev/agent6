@@ -202,7 +202,7 @@ def _run_review_panel(
     diff: str,
     agents_md: str,
     reviewers: int,
-    personas: str,
+    focus: str,
     transcript_sink: TranscriptSink,
     reviews_dir: pathlib.Path,
     budget: agent6_budget.BudgetTracker,
@@ -222,7 +222,7 @@ def _run_review_panel(
         diff: The diff text.
         agents_md: The repo's AGENTS.md text.
         reviewers: The number of seats.
-        personas: The persona roster.
+        focus: The panel's comma-separated focus list.
         transcript_sink: Where the seats' transcripts go.
         reviews_dir: The `<state-dir>/reviews/` directory.
         budget: The invocation's budget.
@@ -233,14 +233,14 @@ def _run_review_panel(
         finding). 2 stays the refusal before any seat ran, so a script tells "blocked"
         from "not reviewed" from "could not start".
     """
-    persona_tuple = tuple(p.strip() for p in personas.split(",") if p.strip())
+    focus_tuple = tuple(f.strip() for f in focus.split(",") if f.strip())
     try:
         seats = providers.build_review_seats(
             cfg,
             transcript_sink=transcript_sink,
             budget=budget,
             n=reviewers,
-            personas=persona_tuple,
+            focus=focus_tuple,
         )
     except ProviderError as exc:
         _common.error(f"provider init failed: {exc}")
@@ -267,7 +267,7 @@ def _run_review_panel(
         tools, dispatch = _toolset.build_readonly_review_tools(disp)
     print(
         f"[agent6] review panel: {len(seats)} seats"
-        f" ({', '.join(s.persona for s in seats)}) | block_on={cfg.review.block_on}"
+        f" ({', '.join(s.focus for s in seats)}) | block_on={cfg.review.block_on}"
         f" | scope={cfg.review.scope} | range={label}",
         file=sys.stderr,
     )
@@ -408,7 +408,7 @@ def _cmd_review(  # noqa: PLR0911
     paths: tuple[str, ...],
     model: str = "",
     reviewers: int = 0,
-    personas: str = "",
+    focus: str = "",
     scope: ReviewScope | None = None,
 ) -> int:
     """Print a code review of a diff to stdout.
@@ -423,7 +423,7 @@ def _cmd_review(  # noqa: PLR0911
         paths: The pathspecs.
         model: The `[provider/]model` value applied to the reviewer route.
         reviewers: The number of panel seats; 0 for the freeform review.
-        personas: The panel's persona roster.
+        focus: The panel's comma-separated focus list.
         scope: The panel's reading scope; None keeps the config's.
 
     Returns:
@@ -437,9 +437,9 @@ def _cmd_review(  # noqa: PLR0911
             "--head requires --base; without --base, review uses the working tree vs HEAD."
         )
         return 2
-    if personas.strip() and reviewers < 1:
+    if focus.strip() and reviewers < 1:
         print(
-            "note: --personas ignored (no --reviewers N; this is the single freeform review).",
+            "note: --focus ignored (no --reviewers N; this is the single freeform review).",
             file=sys.stderr,
         )
     try:
@@ -447,8 +447,8 @@ def _cmd_review(  # noqa: PLR0911
     except ConfigError as exc:
         _common.error(str(exc))
         return 2
-    if personas.strip() and reviewers >= 1 and cfg.review.reviewers:
-        print("note: --personas ignored ([review].reviewers names the roster).", file=sys.stderr)
+    if focus.strip() and reviewers >= 1 and cfg.review.reviewers:
+        print("note: --focus ignored ([review].reviewers names the roster).", file=sys.stderr)
 
     reviewed = _reviewed_diff(base, head, paths)
     if isinstance(reviewed, int):
@@ -500,7 +500,7 @@ def _cmd_review(  # noqa: PLR0911
             diff=diff,
             agents_md=agents_md,
             reviewers=reviewers,
-            personas=personas,
+            focus=focus,
             transcript_sink=transcript_sink,
             reviews_dir=layout_root,
             budget=budget,

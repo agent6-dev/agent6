@@ -933,7 +933,7 @@ def _dispatch_review(args: argparse.Namespace) -> int:
         paths=tuple(args.paths),
         model=args.model,
         reviewers=args.reviewers,
-        personas=args.personas,
+        focus=args.focus,
         scope=args.scope,
     )
 

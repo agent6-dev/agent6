@@ -142,10 +142,10 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     review_p.add_argument(
-        "--personas",
+        "--focus",
         default="",
         help=(
-            "The panel's seats, comma-separated and cycled over --reviewers: a stance"
+            "The panel's focus values, comma-separated and cycled over --reviewers"
             " ('security,correctness,tests'). Pin models with [review].reviewers tables."
             " Default: a built-in set. Ignored without --reviewers, and when [review].reviewers is"
             " configured."

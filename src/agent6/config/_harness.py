@@ -593,7 +593,7 @@ class ReviewConfig(pydantic.BaseModel):
             "route uses the role-model defaults. Set `provider` and `model` together. "
             "The built-in focuses cycled when empty are `security`, `correctness`, `tests`, "
             "`over-engineering`, `edge-cases`. Empty: one seat when `trigger` is on. "
-            "`agent6 review --reviewers N --personas ...` builds a one-off roster."
+            "`agent6 review --reviewers N --focus ...` builds a one-off roster."
         ),
     )
     concurrency: int = pydantic.Field(

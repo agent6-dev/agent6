@@ -3,7 +3,7 @@
 """The run review's prompt and the review panel seats' prompts.
 
 The run review (`sessions review`) reads a finished session's record; each adversarial seat
-sees the panel prompt, or its repo-scope variant, with a `{persona}` placeholder.
+sees the panel prompt, or its repo-scope variant, with a `{focus}` placeholder.
 `harness.run_review` and `harness._reviewer` own the calls.
 """
 
@@ -41,7 +41,7 @@ line.
 # aggregate_verdicts enforces grounding mechanically; this prompt only guides.
 REVIEW_SYSTEM_PROMPT = """You are one reviewer on an adversarial code-review panel.
 You are shown a DIFF the worker just produced, the task, and (if available) the
-result of the project's verify/test command. Your assigned stance: {persona}.
+result of the project's verify/test command. Your assigned focus: {focus}.
 
 If verify PASSED, the change is presumed correct. Raise a BLOCK only for a
 concrete, test-independent defect you can NAME and CITE at a line in the diff:

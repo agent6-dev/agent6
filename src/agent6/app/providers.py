@@ -490,7 +490,7 @@ def reviewer_seat_provider(
 
 
 # The lenses cycled when no explicit seats are configured.
-_DEFAULT_PERSONAS = ("security", "correctness", "tests", "over-engineering", "edge-cases")
+_DEFAULT_FOCUS = ("security", "correctness", "tests", "over-engineering", "edge-cases")
 
 
 def build_review_seats(
@@ -499,12 +499,12 @@ def build_review_seats(
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     n: int,
-    personas: tuple[str, ...] = (),
+    focus: tuple[str, ...] = (),
     events: event_log.EventSink | None = None,
 ) -> list[_reviewer.ReviewSeat]:
     """Build the review-panel seats, one per roster entry.
 
-    `cfg.review.reviewers` names the roster; otherwise `n` seats cycle the personas.
+    `cfg.review.reviewers` names the roster; otherwise `n` seats cycle the focus values.
     Each entry resolves its route and sampling settings before the provider is built.
 
     Args:
@@ -512,7 +512,7 @@ def build_review_seats(
         transcript_sink: The recorder the seats' round-trips go to.
         budget: The tracker the seats bill.
         n: The seat count when the config names no roster.
-        personas: The personas to cycle; the built-in set when empty.
+        focus: The focus values to cycle; the built-in set when empty.
         events: The sink each seat's events go to; None leaves the seats uninstrumented,
             so their spend reaches no surface.
 
@@ -522,35 +522,37 @@ def build_review_seats(
     Raises:
         ProviderError: An entry has no resolved route or names a missing provider.
     """
-    pool = personas or _DEFAULT_PERSONAS
+    pool = focus or _DEFAULT_FOCUS
     roster = cfg.review.reviewers or tuple(
         ReviewerConfig(focus=pool[i % len(pool)]) for i in range(max(1, n))
     )
     reviewer = cfg.models.resolve("reviewer")
     resolved = [(entry.focus, entry.resolve(reviewer)) for entry in roster]
-    for focus, rm in resolved:
+    for seat_focus, rm in resolved:
         if rm is None:
-            raise ProviderError(f"reviewer {focus!r} has no model; configure [models.reviewer]")
+            raise ProviderError(
+                f"reviewer {seat_focus!r} has no model; configure [models.reviewer]"
+            )
         if rm.provider not in cfg.providers:
             raise ProviderError(
-                f"reviewer {focus!r} names provider {rm.provider!r} but"
+                f"reviewer {seat_focus!r} names provider {rm.provider!r} but"
                 f" [providers.{rm.provider}] is missing"
             )
     seats: list[_reviewer.ReviewSeat] = []
-    for focus, rm in resolved:
+    for seat_focus, rm in resolved:
         assert rm is not None  # every route was checked before constructing any provider
         provider = _provider_from_entry(
             rm.provider,
             cfg.providers[rm.provider],
             rm.model,
             rm.effort,
-            transcript_sink=transcript_sink.for_seat(f"review:{focus}"),
+            transcript_sink=transcript_sink.for_seat(f"review:{seat_focus}"),
             budget=budget,
         )
         if events is not None:
             provider = InstrumentedProvider(
                 inner=provider,
-                role=f"review:{focus}",
+                role=f"review:{seat_focus}",
                 model=rm.model,
                 provider_name=rm.provider,
                 events=events,
@@ -558,7 +560,7 @@ def build_review_seats(
             )
         seats.append(
             _reviewer.ReviewSeat(
-                persona=focus,
+                focus=seat_focus,
                 model=f"{rm.provider}/{rm.model}",
                 provider=provider,
                 scope=cfg.review.scope,

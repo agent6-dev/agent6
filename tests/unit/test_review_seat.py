@@ -187,8 +187,8 @@ def test_finding_text_is_one_line() -> None:
 
 def test_run_panel_distinct_models_quorum_blocks() -> None:
     seats = [
-        _reviewer.ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON)),
-        _reviewer.ReviewSeat(persona="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(focus="security", model="m1", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(focus="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
     ]
     res = _reviewer.run_panel(
         seats, _ctx(), block_on="model_quorum", min_blocking_models=2, panel_id="p"
@@ -197,7 +197,7 @@ def test_run_panel_distinct_models_quorum_blocks() -> None:
 
 
 def test_run_panel_advisory_never_blocks() -> None:
-    seats = [_reviewer.ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON))]
+    seats = [_reviewer.ReviewSeat(focus="security", model="m1", provider=_prov(_BLOCK_JSON))]
     res = _reviewer.run_panel(seats, _ctx(), block_on="none", min_blocking_models=2, panel_id="p")
     assert res.blocked is False
     assert (
@@ -209,9 +209,9 @@ def test_run_panel_concurrent_preserves_order_and_aggregates() -> None:
     # 3 seats, distinct models, concurrency=3: results stay in seat order and the
     # grounded min_blocking_models still blocks (thread pool must not change the verdict).
     seats = [
-        _reviewer.ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON)),
-        _reviewer.ReviewSeat(persona="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
-        _reviewer.ReviewSeat(persona="edge", model="m3", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(focus="security", model="m1", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(focus="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(focus="edge", model="m3", provider=_prov(_BLOCK_JSON)),
     ]
     res = _reviewer.run_panel(
         seats, _ctx(), block_on="model_quorum", min_blocking_models=2, panel_id="p", concurrency=3
@@ -267,7 +267,7 @@ def test_a_routed_reviewer_leaves_pinned_seats_alone(monkeypatch: Any) -> None:
         "anthropic/claude-opus-4-8",
         "anthropic/some-model",
     ]
-    assert [s.persona for s in seats] == ["security", "correctness"]
+    assert [s.focus for s in seats] == ["security", "correctness"]
 
 
 def test_build_review_seats_no_override_keeps_pinned_models(monkeypatch: Any) -> None:
@@ -284,8 +284,8 @@ def test_build_review_seats_no_override_keeps_pinned_models(monkeypatch: Any) ->
     assert seats[0].model == "anthropic/claude-opus-4-8"  # unchanged when no --model
 
 
-def test_a_bare_persona_seat_follows_the_routed_reviewer(monkeypatch: Any) -> None:
-    """A bare-persona seat routes via the reviewer role, so `review --model` reaches it."""
+def test_a_bare_focus_seat_follows_the_routed_reviewer(monkeypatch: Any) -> None:
+    """A bare-focus seat routes via the reviewer role, so `review --model` reaches it."""
     from agent6.app import providers as prov_mod
 
     monkeypatch.setattr(prov_mod, "_provider_from_entry", _stub_seat_provider)
@@ -428,7 +428,7 @@ def test_run_panel_routes_repo_tier_seats() -> None:
         ]
     )
     seat = _reviewer.ReviewSeat(
-        persona="security", model="m1", provider=cast(Provider, prov), scope="repo"
+        focus="security", model="m1", provider=cast(Provider, prov), scope="repo"
     )
     res = _reviewer.run_panel(
         [seat],
@@ -496,7 +496,7 @@ def test_run_panel_concurrent_seats_run_on_daemon_threads() -> None:
 
     seats = [
         _reviewer.ReviewSeat(
-            persona=f"s{i}", model="m", provider=cast(Provider, _ThreadProbeProvider())
+            focus=f"s{i}", model="m", provider=cast(Provider, _ThreadProbeProvider())
         )
         for i in range(3)
     ]
@@ -518,8 +518,8 @@ def test_run_panel_concurrent_seat_crash_propagates() -> None:
             raise RuntimeError("unexpected seat crash")
 
     seats = [
-        _reviewer.ReviewSeat(persona="a", model="m", provider=_prov(_BLOCK_JSON)),
-        _reviewer.ReviewSeat(persona="b", model="m", provider=cast(Provider, _BoomProvider())),
+        _reviewer.ReviewSeat(focus="a", model="m", provider=_prov(_BLOCK_JSON)),
+        _reviewer.ReviewSeat(focus="b", model="m", provider=cast(Provider, _BoomProvider())),
     ]
     with pytest.raises(RuntimeError, match="unexpected seat crash"):
         _reviewer.run_panel(
@@ -548,7 +548,7 @@ def test_run_panel_concurrency_limit_is_honored() -> None:
             return _Resp(_BLOCK_JSON)
 
     seats = [
-        _reviewer.ReviewSeat(persona=f"s{i}", model="m", provider=cast(Provider, _SlowProvider()))
+        _reviewer.ReviewSeat(focus=f"s{i}", model="m", provider=cast(Provider, _SlowProvider()))
         for i in range(6)
     ]
     res = _reviewer.run_panel(
@@ -595,7 +595,7 @@ def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: 
     assert isinstance(seat.provider, providers.InstrumentedProvider)
 
 
-def test_personas_cycle_on_the_resolved_reviewer_route(monkeypatch: Any) -> None:
+def test_focus_values_cycle_on_the_resolved_reviewer_route(monkeypatch: Any) -> None:
     """The one-off roster cycles arbitrary focuses on the resolved reviewer role."""
     from agent6.app import providers as prov_mod
 
@@ -605,9 +605,9 @@ def test_personas_cycle_on_the_resolved_reviewer_route(monkeypatch: Any) -> None
         transcript_sink=cast(Any, mock.MagicMock()),
         budget=cast(Any, None),
         n=3,
-        personas=("security", "runtime cost"),
+        focus=("security", "runtime cost"),
     )
-    assert [(s.persona, s.model) for s in seats] == [
+    assert [(s.focus, s.model) for s in seats] == [
         ("security", "anthropic/reviewer-default"),
         ("runtime cost", "anthropic/reviewer-default"),
         ("security", "anthropic/reviewer-default"),
