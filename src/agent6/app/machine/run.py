@@ -19,7 +19,7 @@ from collections.abc import Callable, Mapping
 
 import pydantic
 
-from agent6 import budget, errors, git_ops, kinds, paths
+from agent6 import budget, errors, kinds, paths
 from agent6.app import _setup, _workdirs, confine, machine_agent, preflight, workspace_setup
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
@@ -51,6 +51,7 @@ from agent6.sandbox import detect, jail
 from agent6.sessions import layout, process
 from agent6.tools import _result_format
 from agent6.tools import policy as tools_policy
+from agent6.vcs import git_ops
 from agent6.viewmodel import machine_state
 
 

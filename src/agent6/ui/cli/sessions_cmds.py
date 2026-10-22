@@ -15,13 +15,14 @@ import shutil
 import subprocess
 import sys
 
-from agent6 import errors, git_ops, git_policy, kinds, portable
+from agent6 import errors, kinds, portable
 from agent6 import paths as agent6_paths
 from agent6.app import fork_worktrees, resume
 from agent6.sessions import id, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common, _steer
+from agent6.vcs import git_ops, git_policy
 from agent6.viewmodel import (
     _session_status,
     format,

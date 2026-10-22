@@ -13,9 +13,10 @@ import subprocess
 
 import pytest
 
-from agent6 import _git_command, child_env, git_ops
+from agent6 import child_env
 from agent6.app import _setup
 from agent6.config import Config
+from agent6.vcs import _git_command, git_ops
 
 
 @pytest.fixture(autouse=True)

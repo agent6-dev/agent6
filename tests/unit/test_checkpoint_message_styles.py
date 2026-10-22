@@ -10,11 +10,11 @@ from unittest import mock
 
 import pytest
 
-from agent6 import git_ops
 from agent6.config import Config
 from agent6.harness import _chain as chain_mod
 from agent6.harness import _loop_state, loop
 from agent6.tools import dispatch
+from agent6.vcs import git_ops
 
 
 def _wf(

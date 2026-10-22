@@ -19,7 +19,7 @@ import subprocess
 
 import pytest
 
-from agent6 import git_ops, paths
+from agent6 import paths
 from agent6.app import _session, _setup
 from agent6.config import (
     Config,
@@ -35,6 +35,7 @@ from agent6.sessions import layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import run
+from agent6.vcs import git_ops
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:

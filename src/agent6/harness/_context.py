@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6 import git_ops, kinds, terminal
+from agent6 import kinds, terminal
 from agent6.tools import _path_safety
+from agent6.vcs import git_ops
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6

@@ -18,7 +18,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from agent6 import git_ops, git_policy
+from agent6.vcs import git_ops, git_policy
 
 
 @pytest.fixture(autouse=True)

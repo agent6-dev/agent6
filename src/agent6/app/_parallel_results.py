@@ -11,7 +11,7 @@ import threading
 from collections.abc import Mapping
 
 from agent6 import budget as agent6_budget
-from agent6 import git_ops, memory, paths
+from agent6 import memory, paths
 from agent6.app import (
     _lane_watch,
     finalize,
@@ -23,6 +23,7 @@ from agent6.harness import judge, subrun
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
+from agent6.vcs import git_ops
 from agent6.viewmodel import _session_log, format, listing, produced_result, summarize_session_dir
 
 

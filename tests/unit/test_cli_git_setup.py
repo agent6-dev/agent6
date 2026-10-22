@@ -11,11 +11,12 @@ from typing import cast
 
 import pytest
 
-from agent6 import errors, git_ops, init, paths
+from agent6 import errors, init, paths
 from agent6.app import preflight
 from agent6.config import Config, ConfigError
 from agent6.ui.cli import init_cmds as ic
 from agent6.ui.cli import main
+from agent6.vcs import git_ops
 
 
 def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -17,12 +17,13 @@ from typing import Any
 
 import pytest
 
-from agent6 import git_ops, paths
+from agent6 import paths
 from agent6.app import _session, providers
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import cli_main, run
+from agent6.vcs import git_ops
 
 _CONFIG = """
 [sandbox]

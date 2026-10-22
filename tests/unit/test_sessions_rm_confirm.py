@@ -16,10 +16,11 @@ import time
 
 import pytest
 
-from agent6 import git_ops, paths, portable
+from agent6 import paths, portable
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import _steer, main
+from agent6.vcs import git_ops
 
 _ID = "dead-run-BBBB22"
 

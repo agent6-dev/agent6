@@ -12,7 +12,7 @@ from __future__ import annotations
 import pathlib
 from collections.abc import Callable, Sequence
 
-from agent6 import directive, errors, git_ops, paths, terminal
+from agent6 import directive, errors, paths, terminal
 from agent6.app import _setup, confine, parallel, preflight
 from agent6.app import lanes as app_lanes
 from agent6.config import Config, ConfigError
@@ -22,6 +22,7 @@ from agent6.sessions import id
 from agent6.ui import spawn as ui_spawn
 from agent6.ui import steer
 from agent6.ui.cli import _common, _compare, _interact
+from agent6.vcs import git_ops
 
 
 def lane_runtime() -> app_lanes.LaneRuntime:

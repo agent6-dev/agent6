@@ -15,7 +15,7 @@ from typing import Any, ClassVar, Literal
 
 import pytest
 
-from agent6 import errors, git_ops
+from agent6 import errors
 from agent6.app import machine_agent as ma
 from agent6.app import providers, reporter
 from agent6.app.machine import StateConfig
@@ -23,6 +23,7 @@ from agent6.config import Config
 from agent6.machine import AgentRequest
 from agent6.providers import ProviderResponse
 from agent6.sandbox import jail as sandbox_jail
+from agent6.vcs import git_ops
 
 BRANCH = "agent6/machine-m1"
 CHAIN = git_ops.chain_ref_for("machine-m1")

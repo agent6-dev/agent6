@@ -290,7 +290,7 @@ def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: pathlib.P
     """
     import subprocess
 
-    from agent6 import git_ops
+    from agent6.vcs import git_ops
 
     repo = tmp_path / "repo"
     repo.mkdir()

@@ -19,7 +19,7 @@ import functools
 import pathlib
 from collections.abc import Sequence
 
-from agent6 import errors, event_log, git_ops, kinds, memory, task_text
+from agent6 import errors, event_log, kinds, memory, task_text
 from agent6.app import (
     _lane_watch,
     _parallel_results,
@@ -38,6 +38,7 @@ from agent6.providers import TranscriptSink
 from agent6.sessions import ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs import git_ops
 
 
 def run_parallel(

@@ -12,11 +12,12 @@ from unittest import mock
 
 import pytest
 
-from agent6 import budget, git_ops, memory
+from agent6 import budget, memory
 from agent6.app import finalize, reporter
 from agent6.harness import _chain, _conversation, _loop_state, _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import results
+from agent6.vcs import git_ops
 from tests.unit import test_harness
 from tests.unit.turn_context import turn_context
 

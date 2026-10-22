@@ -10,8 +10,9 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6 import errors, git_ops
+from agent6 import errors
 from agent6.config import GitCommitConfig
+from agent6.vcs import git_ops
 
 _DIRTY_NOTE_CAP = 500  # paths a dirty-worktree note counts before it says "+"
 

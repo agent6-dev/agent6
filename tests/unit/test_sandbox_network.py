@@ -13,12 +13,13 @@ from typing import Any
 
 import pytest
 
-from agent6 import git_ops, kinds
+from agent6 import kinds
 from agent6.app import confine, machine_agent, providers
 from agent6.config import Config, ConfigError, validate_config
 from agent6.harness import loop as harness_loop
 from agent6.machine import AgentRequest
 from agent6.tools import dispatch
+from agent6.vcs import git_ops
 
 
 def _cfg(network: str = "session") -> Config:

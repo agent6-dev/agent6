@@ -13,9 +13,10 @@ import dataclasses
 import pathlib
 from collections.abc import Sequence
 
-from agent6 import errors, git_ops, paths, terminal
+from agent6 import errors, paths, terminal
 from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs import git_ops
 from agent6.viewmodel import session_dirs
 
 

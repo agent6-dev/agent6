@@ -10,13 +10,14 @@ from __future__ import annotations
 import contextlib
 import pathlib
 
-from agent6 import errors, git_ops, paths
+from agent6 import errors, paths
 from agent6.app import compare
 from agent6.config import layer
 from agent6.harness import judge
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common, _compare, sessions_cmds
+from agent6.vcs import git_ops
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
     died_without_end,

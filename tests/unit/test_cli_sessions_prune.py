@@ -10,11 +10,12 @@ import subprocess
 
 import pytest
 
-from agent6 import git_ops, paths
+from agent6 import paths
 from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import main
+from agent6.vcs import git_ops
 
 
 @pytest.fixture(autouse=True)

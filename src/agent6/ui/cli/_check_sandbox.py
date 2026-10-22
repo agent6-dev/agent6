@@ -11,7 +11,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6 import errors, git_ops, kinds, memory
+from agent6 import errors, kinds, memory
 from agent6 import paths as agent6_paths
 from agent6.app import _setup, confine, fork_worktrees
 from agent6.config import Config
@@ -25,6 +25,7 @@ from agent6.sandbox import (
 )
 from agent6.tools import _path_safety
 from agent6.tools import policy as tools_policy
+from agent6.vcs import git_ops
 
 # Mirrors SYSTEM_BINDS in the jail's main.rs; tests/security pins the two against each other.
 FULL_SYSTEM_BINDS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/alternatives")

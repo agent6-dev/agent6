@@ -15,7 +15,6 @@ import sys
 import time
 
 from agent6 import budget as agent6_budget
-from agent6 import git_ops, git_policy
 from agent6 import paths as agent6_paths
 from agent6.app import _setup, finalize, providers
 from agent6.config import (
@@ -31,6 +30,7 @@ from agent6.providers import (
 )
 from agent6.tools import dispatch as tools_dispatch
 from agent6.ui.cli import _common
+from agent6.vcs import git_ops, git_policy
 
 
 def _reviewed_head(base: str, head: str) -> str:

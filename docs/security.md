@@ -538,8 +538,8 @@ Everything the model can influence runs through `run_in_jail` ([Sandbox](#2-sand
 A fixed set of modules also shells out directly with `subprocess.run` / `Popen`, each with fixed argv depending only on operator input.
 `tests/security/test_subprocess_allowlist.py` pins the file list; audit with `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 
-- `_git_command.py` and `git_ops.py`: agent6's own git operations ([Git](#7-git)).
-- `git_policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
+- `vcs/_git_command.py` and `vcs/git_ops.py`: agent6's own git operations ([Git](#7-git)).
+- `vcs/git_policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `isolation = "none"`.
   An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` level.

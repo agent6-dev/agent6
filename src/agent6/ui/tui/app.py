@@ -34,7 +34,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6 import git_ops, paths
+from agent6 import paths
 from agent6.app import fork, reporter, stop, undo
 from agent6.config import layer
 from agent6.models import choices
@@ -43,6 +43,7 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import background
 from agent6.ui import directives, spawn
 from agent6.ui.tui import composer, conversation, dashboard, modals, prompts, theme
+from agent6.vcs import git_ops
 from agent6.viewmodel import (
     SessionState,
     context_fill,

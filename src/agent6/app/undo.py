@@ -17,7 +17,7 @@ import os
 import pathlib
 from typing import Any
 
-from agent6 import errors, event_log, git_ops, task_text, terminal
+from agent6 import errors, event_log, task_text, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import fork, fork_worktrees, resume
 from agent6.app import reporter as app_reporter
@@ -27,6 +27,7 @@ from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs import git_ops
 from agent6.viewmodel import _session_log
 
 _STEER_NOTICE = "OPERATOR STEERING"

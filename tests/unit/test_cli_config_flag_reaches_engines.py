@@ -13,13 +13,14 @@ from typing import Any
 
 import pytest
 
-from agent6 import git_ops, paths
+from agent6 import paths
 from agent6.app import _setup
 from agent6.config import layer
 from agent6.sandbox import jail
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import sessions_cmds, sessions_merge
+from agent6.vcs import git_ops
 
 
 def test_merge_planner_passes_the_explicit_config_path(

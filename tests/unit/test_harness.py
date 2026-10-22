@@ -1007,7 +1007,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
-    with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -1088,7 +1088,7 @@ def test_drive_loop_tracks_turns_reached(tmp_path: pathlib.Path) -> None:
     assert wf.turns_reached == 0  # untouched before the loop runs
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
 
-    with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -1318,7 +1318,7 @@ def test_the_first_model_call_carries_the_red_start_gate(
     """A fresh run's first request holds the start gate's red verdict and the base-red notice."""
     base = "b" * 40
     monkeypatch.setattr(
-        "agent6.git_ops.status",
+        "agent6.vcs.git_ops.status",
         lambda _root, **_kw: types_.SimpleNamespace(is_clean=True, head_sha=base),  # pyright: ignore[reportUnknownLambdaType]
     )
     provider = mock.MagicMock()
@@ -1490,7 +1490,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
     )
     snapshot = _resume_snapshot()
 
-    with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system=snapshot.system,
             conversation=_conversation.Conversation.from_wire(snapshot.messages),
@@ -1622,7 +1622,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: pathlib
     wf = _wf(root=tmp_path, config=config, provider=provider, dispatcher=dispatcher, max_turns=5)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
-    with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -1694,7 +1694,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     trees = iter(["t1", "t2", "t3"])
     with (
-        mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"),
+        mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"),
         mock.patch.object(_chain.RunChain, "tree_sha", side_effect=lambda: next(trees)),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1797,7 +1797,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
         commits.append(subject)
         return f"sha{len(commits)}"
 
-    with mock.patch("agent6.git_ops.chain_commit", side_effect=_fake_commit):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", side_effect=_fake_commit):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -2029,7 +2029,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: pathlib.Path) -> None:
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch(
-        "agent6.git_ops.chain_commit",
+        "agent6.vcs.git_ops.chain_commit",
         side_effect=["sha1", "sha2", "sha3", "sha4", "sha5", "sha6", "sha7", "sha8"],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2122,7 +2122,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch(
-        "agent6.git_ops.chain_commit",
+        "agent6.vcs.git_ops.chain_commit",
         side_effect=["sha1", "sha2", "sha3", "sha4", "sha5"],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2219,7 +2219,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch(
-        "agent6.git_ops.chain_commit",
+        "agent6.vcs.git_ops.chain_commit",
         side_effect=[f"sha{i}" for i in range(20)],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -2431,7 +2431,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
         max_turns=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -2508,7 +2508,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -2687,7 +2687,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
         max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value=""):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value=""):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -2760,7 +2760,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path
         max_turns=8,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value=""):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value=""):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -2857,7 +2857,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch(
-        "agent6.git_ops.chain_commit",
+        "agent6.vcs.git_ops.chain_commit",
         side_effect=[f"sha{i}" for i in range(1, max_turns + 2)],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -3202,7 +3202,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch(
-        "agent6.git_ops.chain_commit",
+        "agent6.vcs.git_ops.chain_commit",
         side_effect=[f"sha{i}" for i in range(1, 22)],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -4348,7 +4348,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: x"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -4451,7 +4451,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: review"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -5204,7 +5204,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: optimize"}]}]
 
-    with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -5317,7 +5317,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> Non
         max_turns=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -5629,7 +5629,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
         max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -5705,7 +5705,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
         max_turns=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -5790,7 +5790,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: pat
         max_turns=60,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -5851,7 +5851,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
         max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -5919,7 +5919,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
         max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -5999,7 +5999,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
         max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -6066,7 +6066,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: pathli
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nread"}]}]
     conversation = _conversation.Conversation.from_wire(messages)
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=conversation,
@@ -6145,7 +6145,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
         max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nsearch"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -6237,7 +6237,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
         max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nship"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -6309,7 +6309,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
         max_turns=20,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -6493,7 +6493,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
         max_turns=20,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -6566,7 +6566,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -6639,7 +6639,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
         bridge=_operator.OperatorBridge(after_auto_commit=_stop_hook),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -6711,7 +6711,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
         bridge=_operator.OperatorBridge(after_auto_commit=_exit_hook),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -6785,7 +6785,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
         ),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -6865,7 +6865,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
         max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -6932,7 +6932,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
         max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -7874,7 +7874,7 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: pat
         max_turns=3,
         resume_state_path=tmp_path / "loop_state.json",
     )
-    with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=_conversation.Conversation.from_wire(_TASK_WIRE),
@@ -8005,7 +8005,7 @@ def test_a_resume_after_a_death_mid_turn_does_not_run_the_cut_off_call_again(
         max_turns=3,
         resume_state_path=snapshot_path,
     )
-    with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):
         result = wf.resume()
 
     assert result.completed is True
@@ -8909,7 +8909,9 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
 
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     with (
-        mock.patch("agent6.git_ops.chain_commit", side_effect=[f"sha{i}" for i in range(1, 20)]),
+        mock.patch(
+            "agent6.vcs.git_ops.chain_commit", side_effect=[f"sha{i}" for i in range(1, 20)]
+        ),
         mock.patch.object(_reviewer.Reviewer, "critique", fake_panel),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -8982,7 +8984,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
         max_turns=5,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
-    with mock.patch("agent6.git_ops.chain_commit", return_value="sha1") as commit:
+    with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="sha1") as commit:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
@@ -9064,7 +9066,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
     def _next_sha(*_args: object, **_kwargs: object) -> str:
         return next(shas)
 
-    with mock.patch("agent6.git_ops.chain_commit", side_effect=_next_sha):
+    with mock.patch("agent6.vcs.git_ops.chain_commit", side_effect=_next_sha):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),

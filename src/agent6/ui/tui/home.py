@@ -24,7 +24,6 @@ except ImportError as e:  # pragma: no cover
     ) from e
 
 # Reached only once the textual guard above passed.
-from agent6 import git_ops
 from agent6.config import ConfigError, layer
 from agent6.models import choices
 from agent6.sessions import layout
@@ -39,6 +38,7 @@ from agent6.ui.tui import (
     screen_chrome,
     theme,
 )
+from agent6.vcs import git_ops
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
     SessionSummary,

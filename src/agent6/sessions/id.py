@@ -13,10 +13,10 @@ import os
 import pathlib
 from collections.abc import Sequence
 
-from agent6 import git_ops
 from agent6._data import words
 from agent6.graph import ulid
 from agent6.sessions import layout
+from agent6.vcs import git_ops
 
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 

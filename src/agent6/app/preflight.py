@@ -17,7 +17,7 @@ from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, event_log, git_ops, kinds, terminal, verify_infer
+from agent6 import errors, event_log, kinds, terminal, verify_infer
 from agent6.app import _setup, providers
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, plan_metered
@@ -25,6 +25,7 @@ from agent6.models import pricing, validate
 from agent6.providers import TranscriptSink
 from agent6.sessions import ipc, manifest
 from agent6.tools import schema
+from agent6.vcs import git_ops
 from agent6.viewmodel import format, listing
 
 

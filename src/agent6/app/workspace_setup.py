@@ -21,12 +21,13 @@ import shlex
 from collections.abc import Sequence
 from typing import Protocol
 
-from agent6 import git_ops, kinds, verify_infer
+from agent6 import kinds, verify_infer
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import errors as tools_errors
 from agent6.tools import policy as tools_policy
+from agent6.vcs import git_ops
 
 # The lines of the command's output a failure's summary carries.
 _TAIL_LINES = 20

@@ -10,11 +10,12 @@ import subprocess
 
 import pytest
 
-from agent6 import git_ops, paths
+from agent6 import paths
 from agent6.app import finalize as finmod
 from agent6.app import reporter
 from agent6.config import layer
 from agent6.sessions import layout as sessions_layout
+from agent6.vcs import git_ops
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:

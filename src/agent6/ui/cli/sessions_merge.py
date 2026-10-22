@@ -14,7 +14,7 @@ import pathlib
 import sys
 from typing import Literal
 
-from agent6 import commit_message, errors, git_ops, paths
+from agent6 import errors, paths
 from agent6.app import _workdirs, fork_worktrees, merge, resume
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import subrun
@@ -22,6 +22,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
 from agent6.ui.cli import _common, sessions_cmds
+from agent6.vcs import commit_message, git_ops
 from agent6.viewmodel import listing, scan_session_log, tail_events, worker_models
 
 _UNSTARTED_FORK = "unmerged; fork has not started"

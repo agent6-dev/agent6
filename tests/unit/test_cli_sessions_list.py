@@ -351,7 +351,7 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
     """A branch_per_run-off run's hidden chain carries the unmerged mark like a visible branch."""
     import subprocess
 
-    from agent6 import git_ops
+    from agent6.vcs import git_ops
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -407,7 +407,7 @@ def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
     """
     import subprocess
 
-    from agent6 import git_ops
+    from agent6.vcs import git_ops
     from agent6.viewmodel import summarize_session_dir
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

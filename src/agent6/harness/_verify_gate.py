@@ -15,7 +15,7 @@ import dataclasses
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal
 
-from agent6 import errors, git_ops, terminal, verify_infer
+from agent6 import errors, terminal, verify_infer
 from agent6.harness import (
     _chain,
     _conversation,
@@ -26,6 +26,7 @@ from agent6.harness import (
 )
 from agent6.tools import dispatch, results
 from agent6.tools import errors as tool_errors
+from agent6.vcs import git_ops
 
 if TYPE_CHECKING:
     from agent6.harness import _loop_state

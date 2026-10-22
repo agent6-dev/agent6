@@ -10,8 +10,8 @@ import subprocess
 
 import pytest
 
-from agent6 import git_ops
 from agent6.harness import _context, _prompt_blocks
+from agent6.vcs import git_ops
 
 
 def _repo_map(root: pathlib.Path) -> str:

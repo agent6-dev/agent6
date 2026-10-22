@@ -12,9 +12,10 @@ import dataclasses
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
-from agent6 import commit_message, errors, git_ops
+from agent6 import errors
 from agent6.harness import _chain
 from agent6.providers import Provider, ProviderError, call_for_text
+from agent6.vcs import commit_message, git_ops
 
 if TYPE_CHECKING:
     from agent6.harness import _loop_state

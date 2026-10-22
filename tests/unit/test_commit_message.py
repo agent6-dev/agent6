@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6 import commit_message
 from agent6.config import Config
 from agent6.harness import _chain
+from agent6.vcs import commit_message
 
 
 def test_empty_text_falls_back() -> None:

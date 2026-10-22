@@ -10,12 +10,13 @@ import shlex
 import shutil
 from collections.abc import Callable
 
-from agent6 import errors, git_ops, paths
+from agent6 import errors, paths
 from agent6.config import Config, layer
 from agent6.harness import subrun
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
+from agent6.vcs import git_ops
 
 
 def subordinate_workdir_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:

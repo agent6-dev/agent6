@@ -20,7 +20,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import errors, git_ops, paths
+from agent6 import errors, paths
 from agent6.app import _execution as app__execution
 from agent6.app import _session, _setup, stamps
 from agent6.app import run as app_run
@@ -28,6 +28,7 @@ from agent6.config import Config
 from agent6.models import validate
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, manifest
+from agent6.vcs import git_ops
 
 
 def test_repo_writer_second_acquire_refused_and_holder_named(tmp_path: pathlib.Path) -> None:

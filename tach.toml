@@ -25,18 +25,17 @@ depends_on = [
   "agent6",
   "agent6.budget",
   "agent6.child_env",
-  "agent6.commit_message",
   "agent6.config",
   "agent6.config.io",
   "agent6.config.layer",
   "agent6.directive",
   "agent6.errors",
   "agent6.event_log",
-  "agent6.git_ops",
-  "agent6.git_policy",
   "agent6.graph.curator",
   "agent6.graph.replay",
   "agent6.graph.storage",
+  "agent6.harness",
+  "agent6.kinds",
   "agent6.machine",
   "agent6.machine.journal",
   "agent6.memory",
@@ -61,10 +60,11 @@ depends_on = [
   "agent6.tools",
   "agent6.tools.dispatch",
   "agent6.tools.schema",
-  "agent6.kinds",
+  "agent6.vcs.commit_message",
+  "agent6.vcs.git_ops",
+  "agent6.vcs.git_policy",
   "agent6.verify_infer",
   "agent6.viewmodel",
-  "agent6.harness",
 ]
 
 [[modules]]
@@ -74,7 +74,6 @@ depends_on = [
   "agent6.app",
   "agent6.budget",
   "agent6.child_env",  # `exec` unsandboxed gets the environment an unsandboxed run command gets
-  "agent6.commit_message",
   "agent6.config",
   "agent6.config.io",
   "agent6.config.layer",
@@ -83,11 +82,11 @@ depends_on = [
   "agent6.directive",
   "agent6.errors",
   "agent6.event_log",
-  "agent6.git_ops",
-  "agent6.git_policy",
   "agent6.graph.order",
   "agent6.graph.storage",
+  "agent6.harness",
   "agent6.init",
+  "agent6.kinds",
   "agent6.machine",
   "agent6.memory",
   "agent6.models.cache",
@@ -110,7 +109,6 @@ depends_on = [
   "agent6.tools",
   "agent6.tools.dispatch",
   "agent6.tools.schema",
-  "agent6.kinds",
   "agent6.ui.acp",
   "agent6.ui.btw",
   "agent6.ui.directives",
@@ -121,23 +119,24 @@ depends_on = [
   "agent6.ui.steer",
   "agent6.ui.tui",
   "agent6.ui.web",
+  "agent6.vcs.commit_message",
+  "agent6.vcs.git_ops",
+  "agent6.vcs.git_policy",
   "agent6.verify_infer",
   "agent6.viewmodel",
-  "agent6.harness",
 ]
 
 [[modules]]
 path = "agent6.harness"
 depends_on = [
   "agent6.budget",  # loop harness needs BudgetExceededError
-  "agent6.commit_message",
   "agent6.config",
   "agent6.directive",
   "agent6.errors",
-  "agent6.git_ops",
   "agent6.graph.curator",
   "agent6.graph.models",
   "agent6.graph.order",  # the one walk order the frontier and list_tasks share
+  "agent6.kinds",
   "agent6.memory",  # cross-run memories injected into the system prompt
   "agent6.paths",
   "agent6.portable",
@@ -148,10 +147,10 @@ depends_on = [
   "agent6.sandbox.detect",
   # the start-family emitter stamps worker.pid before the event is readable
   "agent6.sessions.ipc",
-  "agent6.sessions.process",
   # subrun lands a finished lane's session dir in the ORIGIN state dir; the
   # bucket layout has one owner rather than a second spelling here.
   "agent6.sessions.layout",
+  "agent6.sessions.process",
   # the agent's own scratchpad, injected beside them
   "agent6.skills",  # operator-installed skills indexed in the system prompt
   "agent6.task_text",  # the session.start headline is the operator's own words
@@ -159,7 +158,8 @@ depends_on = [
   "agent6.tools",
   "agent6.tools.dispatch",
   "agent6.tools.schema",
-  "agent6.kinds",
+  "agent6.vcs.commit_message",
+  "agent6.vcs.git_ops",
   "agent6.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
   "agent6.viewmodel",  # the run review folds a session's record with the one listing scan
 ]
@@ -185,7 +185,7 @@ depends_on = ["agent6.paths"]
 path = "agent6.ui.tui"
 # agent6.app: /undo forks in-process (app.fork), like ui.acp and ui.web.
 # agent6.git_ops: one branch-tips snapshot per hub poll (the unmerged mark).
-depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.git_ops", "agent6.graph.order", "agent6.kinds", "agent6.machine", "agent6.models.cache", "agent6.models.choices", "agent6.paths", "agent6.portable", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.tools", "agent6.ui.directives", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.spawn", "agent6.viewmodel"]
+depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.graph.order", "agent6.kinds", "agent6.machine", "agent6.models.cache", "agent6.models.choices", "agent6.paths", "agent6.portable", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.tools", "agent6.ui.directives", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.spawn", "agent6.vcs.git_ops", "agent6.viewmodel"]
 
 [[modules]]
 # What a composer line does when it is not a steer, for every entry point that
@@ -297,19 +297,18 @@ depends_on = [
   "agent6",
   # The sign-in secret is minted from the session-id wordlist.
   "agent6._data",
-  # The variable naming the operator's own secret, kept out of every child.
-  "agent6.child_env",
-  "agent6.config.io",
   # /undo forks in-process (app.fork), the same direction ui.acp already uses.
   "agent6.app",
+  # The variable naming the operator's own secret, kept out of every child.
+  "agent6.child_env",
   # new-work preflight: refuse a run submission while a live worker holds the
   # checkout, instead of spawning a doomed detached run
     "agent6.config",
+  "agent6.config.io",
   "agent6.config.layer",
   "agent6.config.write",
   "agent6.errors",
-  # One branch-tips snapshot per hub poll (the listing's unmerged mark).
-  "agent6.git_ops",
+  "agent6.kinds",  # the modes an operator starts, for the composer's routes
   "agent6.machine",
   # config-editor value suggestions: the one owner every editor and TAB
   # completion read
@@ -317,12 +316,13 @@ depends_on = [
   "agent6.paths",
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
-  "agent6.sessions.process",
   # run_plan reads the session's mode from its manifest before spawning.
   "agent6.sessions.manifest",
-  "agent6.kinds",  # the modes an operator starts, for the composer's routes
+  "agent6.sessions.process",
   "agent6.ui.directives",
   "agent6.ui.spawn",
+  # One branch-tips snapshot per hub poll (the listing's unmerged mark).
+  "agent6.vcs.git_ops",
   "agent6.viewmodel",
 ]
 
@@ -335,8 +335,8 @@ path = "agent6.viewmodel"
 depends_on = [
   "agent6.budget",
   "agent6.config.layer",
-  "agent6.git_ops",
   "agent6.graph.models",
+  "agent6.kinds",
   "agent6.machine",
   "agent6.machine.journal",
   "agent6.machine.schema",
@@ -350,7 +350,7 @@ depends_on = [
   "agent6.task_text",
   "agent6.terminal",
   "agent6.tools",
-  "agent6.kinds",
+  "agent6.vcs.git_ops",
 ]
 
 [[modules]]
@@ -360,7 +360,7 @@ depends_on = ["agent6.config.layer", "agent6.config.write", "agent6.errors", "ag
 [[modules]]
 # tools: a manifest is read through the workspace containment the file tools use.
 path = "agent6.verify_infer"
-depends_on = ["agent6.git_ops", "agent6.sandbox", "agent6.tools"]
+depends_on = ["agent6.sandbox", "agent6.tools", "agent6.vcs.git_ops"]
 
 
 [[modules]]
@@ -403,19 +403,19 @@ depends_on = ["agent6.graph.models", "agent6.kinds"]
 
 [[modules]]
 # Commit message composition: pure string work, no git.
-path = "agent6.commit_message"
+path = "agent6.vcs.commit_message"
 depends_on = ["agent6.task_text"]  # the squash headline is the task's headline
 
 [[modules]]
-path = "agent6._git_command"
-depends_on = ["agent6.child_env", "agent6.errors", "agent6.git_policy", "agent6.kinds"]
+path = "agent6.vcs._git_command"
+depends_on = ["agent6.child_env", "agent6.errors", "agent6.kinds", "agent6.vcs.git_policy"]
 
 [[modules]]
-path = "agent6.git_ops"
-depends_on = ["agent6._git_command", "agent6.commit_message", "agent6.errors", "agent6.git_policy"]
+path = "agent6.vcs.git_ops"
+depends_on = ["agent6.errors", "agent6.vcs._git_command", "agent6.vcs.commit_message", "agent6.vcs.git_policy"]
 
 [[modules]]
-path = "agent6.git_policy"
+path = "agent6.vcs.git_policy"
 depends_on = ["agent6.errors"]
 
 [[modules]]
@@ -609,7 +609,7 @@ path = "agent6.sessions.id"
 # so the generator and the guard sit together rather than each caller spelling
 # the path out. git_ops: an explicit --session-id must be a valid git branch
 # name (it becomes agent6/<id> and refs/agent6/<id>/head) before state creation.
-depends_on = ["agent6._data", "agent6.git_ops", "agent6.graph.ulid", "agent6.sessions.layout"]
+depends_on = ["agent6._data", "agent6.graph.ulid", "agent6.sessions.layout", "agent6.vcs.git_ops"]
 
 [[modules]]
 path = "agent6._data"

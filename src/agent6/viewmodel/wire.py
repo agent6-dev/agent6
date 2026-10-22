@@ -10,10 +10,11 @@ from __future__ import annotations
 import pathlib
 from typing import Any
 
-from agent6 import budget, git_ops
+from agent6 import budget
 from agent6.machine import MachineJournal, load_machine
 from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs import git_ops
 from agent6.viewmodel import (
     _session_log,
     _session_status,

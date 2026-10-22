@@ -12,8 +12,8 @@ import subprocess
 
 import pytest
 
-from agent6 import git_policy
 from agent6.ui.cli import sessions_cmds  # pyright: ignore[reportPrivateUsage]
+from agent6.vcs import git_policy
 
 
 def test_dirty_worktree_note_hardens_its_git_probes(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, git_ops, kinds, paths
+from agent6 import errors, kinds, paths
 from agent6.app import (
     _session,
     fork_worktrees,
@@ -41,6 +41,7 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli import run as cli_run
+from agent6.vcs import git_ops
 from agent6.viewmodel import listing
 
 

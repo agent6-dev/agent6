@@ -12,11 +12,12 @@ import pathlib
 
 import pytest
 
-from agent6 import budget, errors, git_ops
+from agent6 import budget, errors
 from agent6.app import finalize as _finalize
 from agent6.app import reporter
 from agent6.harness import _advice, _snapshot
 from agent6.sessions import layout as sessions_layout
+from agent6.vcs import git_ops
 
 
 def _layout(

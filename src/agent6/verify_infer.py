@@ -23,10 +23,10 @@ import re
 import shlex
 from collections.abc import Callable
 
-from agent6 import git_ops
 from agent6.sandbox import tool_paths
 from agent6.tools import _path_safety
 from agent6.tools import errors as tools_errors
+from agent6.vcs import git_ops
 
 # A command line with any of these, or a leading assignment, is shell, wrapped in `sh -c`.
 _SHELL_META = re.compile(r"[|&;<>`$*]")

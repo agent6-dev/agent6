@@ -240,8 +240,8 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: pathlib.Pa
     import os
     import subprocess
 
-    from agent6 import git_ops
     from agent6.sessions import layout as sessions_layout
+    from agent6.vcs import git_ops
 
     repo = tmp_path / "repo"
     repo.mkdir()

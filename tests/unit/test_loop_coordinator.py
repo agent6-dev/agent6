@@ -18,7 +18,6 @@ from unittest import mock
 
 import pytest
 
-from agent6 import git_ops
 from agent6.app import lanes
 from agent6.config import Config
 from agent6.graph import curator, models
@@ -27,6 +26,7 @@ from agent6.harness import _operator, _provider_call, loop, subrun
 from agent6.providers import ProviderResponse
 from agent6.tools import results as tools_results
 from agent6.ui.cli import parallel as cli_parallel
+from agent6.vcs import git_ops
 from agent6.viewmodel import transcript as viewmodel_transcript
 
 

@@ -14,7 +14,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import git_ops, kinds, paths
+from agent6 import kinds, paths
 from agent6.app import _execution as app__execution
 from agent6.app import _session as app__session
 from agent6.app import _setup as app__setup
@@ -24,6 +24,7 @@ from agent6.config import Config, layer
 from agent6.harness import _chain, _prompt_blocks, _snapshot, _verify_verdict
 from agent6.sandbox import detect
 from agent6.tools import dispatch
+from agent6.vcs import git_ops
 
 
 def _cfg(*, verify: bool) -> Config:

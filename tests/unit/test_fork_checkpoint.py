@@ -22,7 +22,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import git_ops, kinds, paths
+from agent6 import kinds, paths
 from agent6.app import _execution, _session, _setup
 from agent6.app import fork as app_fork
 from agent6.app import resume as app_resume
@@ -34,6 +34,7 @@ from agent6.ui.cli import (
     main,
     resume,  # pyright: ignore[reportPrivateUsage]
 )
+from agent6.vcs import git_ops
 from agent6.viewmodel import session_state_as_dict
 
 

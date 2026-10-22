@@ -14,11 +14,12 @@ import subprocess as sp
 
 import pytest
 
-from agent6 import errors, git_ops, paths
+from agent6 import errors, paths
 from agent6.app import reporter, undo
 from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, process
+from agent6.vcs import git_ops
 from agent6.viewmodel import _session_log, _session_status
 
 

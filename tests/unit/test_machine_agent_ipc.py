@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6 import git_ops
 from agent6.app import machine_agent
 from agent6.machine import AgentExecResult, AgentRequest, schema
+from agent6.vcs import git_ops
 
 _REQUEST = machine_agent.MachineAgentRequest(
     cwd=pathlib.Path("/work/repo"),

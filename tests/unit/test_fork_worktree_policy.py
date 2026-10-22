@@ -13,11 +13,11 @@ import subprocess
 
 import pytest
 
-from agent6 import git_ops
 from agent6.app import confine  # pyright: ignore[reportPrivateUsage]
 from agent6.config import Config
 from agent6.sandbox import jail
 from agent6.tools import policy as tools_policy
+from agent6.vcs import git_ops
 
 
 def _repo_and_worktree(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:

@@ -31,7 +31,7 @@ from typing import Any
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, errors, event_log, git_ops, kinds, paths
+from agent6 import errors, event_log, kinds, paths
 from agent6.app import _session, _setup, confine, providers, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
@@ -41,6 +41,7 @@ from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import jail
 from agent6.sessions import ipc, process
 from agent6.tools import dispatch, operator_prompts
+from agent6.vcs import commit_message, git_ops
 from agent6.viewmodel import machine_state
 
 

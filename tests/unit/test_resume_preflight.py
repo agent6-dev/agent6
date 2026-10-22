@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from agent6 import git_ops, paths
+from agent6 import paths
 from agent6.app import _execution as app__execution
 from agent6.app import _session, _setup, confine, preflight, providers, run
 from agent6.app import resume as resume_mod
@@ -27,6 +27,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import resume as cli_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli import run as cli_run
+from agent6.vcs import git_ops
 
 
 def _git_repo(path: pathlib.Path) -> None:

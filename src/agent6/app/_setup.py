@@ -16,7 +16,7 @@ from collections.abc import Iterable
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import child_env, event_log, git_policy, kinds, secret_store
+from agent6 import child_env, event_log, kinds, secret_store
 from agent6.app import reporter as app_reporter
 from agent6.config import (
     AnthropicProviderEntry,
@@ -34,6 +34,7 @@ from agent6.providers import claude_code
 from agent6.sandbox import detect, jail, namespaces_work
 from agent6.sessions import manifest
 from agent6.tools import mcp_client, mcp_http, policy
+from agent6.vcs import git_policy
 
 
 def detect_env() -> detect.Environment:

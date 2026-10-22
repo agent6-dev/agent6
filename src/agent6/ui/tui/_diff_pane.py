@@ -15,9 +15,9 @@ import pathlib
 from rich import text
 from textual import app, message, widgets
 
-from agent6 import git_ops
 from agent6.sessions import manifest
 from agent6.ui.tui import forms
+from agent6.vcs import git_ops
 from agent6.viewmodel import SessionState, format
 
 

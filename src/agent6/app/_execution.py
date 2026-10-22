@@ -18,7 +18,7 @@ import sys
 from collections.abc import Callable, Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, errors, event_log, git_ops, kinds, paths
+from agent6 import errors, event_log, kinds, paths
 from agent6.app import _session, _setup, finalize, providers, stamps, workspace_setup
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
@@ -40,6 +40,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, operator_prompts
 from agent6.tools import policy as tools_policy
+from agent6.vcs import commit_message, git_ops
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

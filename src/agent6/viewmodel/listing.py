@@ -13,9 +13,9 @@ import dataclasses
 import pathlib
 from collections.abc import Container, Iterable, Mapping, Sequence
 
-from agent6 import git_ops
 from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs import git_ops
 from agent6.viewmodel import _session_log, _session_status, format
 
 

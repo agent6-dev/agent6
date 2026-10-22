@@ -16,10 +16,11 @@ from typing import TYPE_CHECKING, Literal
 
 import pydantic
 
-from agent6 import directive, errors, git_ops
+from agent6 import directive, errors
 from agent6.graph import curator as graph_curator
 from agent6.graph import models as graph_models
 from agent6.harness import _chain, _dag_focus, subrun
+from agent6.vcs import git_ops
 
 if TYPE_CHECKING:
     from agent6.harness import _conversation, _loop_state

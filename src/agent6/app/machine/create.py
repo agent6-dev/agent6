@@ -13,7 +13,7 @@ import contextlib
 import pathlib
 import shutil
 
-from agent6 import budget, errors, event_log, git_ops, kinds, paths, portable
+from agent6 import budget, errors, event_log, kinds, paths, portable
 from agent6.app import _session, _setup, _workdirs, machine_agent, preflight
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import _bundle, _scriptcheck
@@ -27,6 +27,7 @@ from agent6.machine import (
     load_machine,
 )
 from agent6.sessions import id, layout, process
+from agent6.vcs import git_ops
 
 _CREATE_TIMEOUT_S = 900.0
 

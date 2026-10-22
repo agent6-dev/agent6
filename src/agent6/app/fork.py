@@ -23,7 +23,7 @@ import shutil
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from agent6 import errors, git_ops, kinds, paths, portable
+from agent6 import errors, kinds, paths, portable
 from agent6.app import _setup, _workdirs, fork_worktrees, resume, stamps, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
@@ -32,6 +32,7 @@ from agent6.harness import _snapshot
 from agent6.sandbox import detect
 from agent6.sessions import id, layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs import git_ops
 from agent6.viewmodel import newest_session_dir
 
 # The DAG artifacts copied verbatim when there is no version to rebuild at.

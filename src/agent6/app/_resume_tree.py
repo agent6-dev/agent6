@@ -19,10 +19,11 @@ import pathlib
 import shlex
 from collections.abc import Callable, Collection, Sequence
 
-from agent6 import errors, git_ops, terminal
+from agent6 import errors, terminal
 from agent6.app import preflight
 from agent6.app import reporter as app_reporter
 from agent6.tools import schema
+from agent6.vcs import git_ops
 
 _LISTED = 10
 

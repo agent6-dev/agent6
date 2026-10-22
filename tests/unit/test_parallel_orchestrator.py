@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import directive, git_ops, kinds, memory, paths, portable
+from agent6 import directive, kinds, memory, paths, portable
 from agent6.app import _lane_watch as lane_watch
 from agent6.app import (
     _parallel_results,
@@ -45,6 +45,7 @@ from agent6.sessions import ipc, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main, main
 from agent6.ui.cli import parallel as parallel_cmd
+from agent6.vcs import git_ops
 from agent6.viewmodel import _session_log, _session_status, listing
 
 

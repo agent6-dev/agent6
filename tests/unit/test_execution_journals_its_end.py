@@ -19,7 +19,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import event_log, git_ops, paths
+from agent6 import event_log, paths
 from agent6.app import _execution, _session, _setup, finalize, reporter
 from agent6.app import frontend as app_frontend
 from agent6.app import providers as app_providers
@@ -30,6 +30,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import steer
 from agent6.ui.acp import frontend as acp_frontend
+from agent6.vcs import git_ops
 from agent6.viewmodel import listing
 
 # The preflight accepts this snapshot and Conversation.from_wire rejects it: a result with no call.
@@ -1183,7 +1184,7 @@ def test_an_escape_before_the_harness_exists_records_the_tree_too(
     """
     import subprocess
 
-    from agent6 import git_ops
+    from agent6.vcs import git_ops
 
     repo = tmp_path / "repo"
     repo.mkdir()

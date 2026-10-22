@@ -15,10 +15,10 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6 import git_ops
 from agent6.app import merge
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs import git_ops
 from agent6.viewmodel import wire
 
 

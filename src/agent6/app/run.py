@@ -16,7 +16,7 @@ import shutil
 from collections.abc import Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import directive, errors, event_log, git_ops, kinds, paths
+from agent6 import directive, errors, event_log, kinds, paths
 from agent6.app import (
     _execution,
     _session,
@@ -37,6 +37,7 @@ from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts
+from agent6.vcs import git_ops
 from agent6.viewmodel import listing
 
 

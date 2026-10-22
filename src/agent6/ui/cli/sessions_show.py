@@ -14,12 +14,13 @@ import pathlib
 import time
 from collections.abc import Mapping
 
-from agent6 import git_ops, terminal
+from agent6 import terminal
 from agent6.app import merge, resume
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
 from agent6.ui.cli import _common
+from agent6.vcs import git_ops
 from agent6.viewmodel import (
     LogScan,
     SessionSummary,

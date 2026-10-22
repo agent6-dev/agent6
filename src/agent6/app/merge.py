@@ -17,12 +17,13 @@ from collections.abc import Callable
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import commit_message, errors, event_log, git_ops, harness, secret_store, viewmodel
+from agent6 import errors, event_log, harness, secret_store, viewmodel
 from agent6.app import _setup, providers, stamps
 from agent6.config import Config, ConfigError
 from agent6.providers import ProviderError, TranscriptSink, call_for_text
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs import commit_message, git_ops
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

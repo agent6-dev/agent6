@@ -14,13 +14,14 @@ from typing import Any
 
 import pytest
 
-from agent6 import git_ops, portable
+from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
 from agent6.sessions import process
 from agent6.ui.cli import (
     _common,  # pyright: ignore[reportPrivateUsage]
     sessions_show,  # pyright: ignore[reportPrivateUsage]
 )
+from agent6.vcs import git_ops
 
 
 def _ts(off_s: float) -> str:

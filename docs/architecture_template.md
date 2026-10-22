@@ -14,7 +14,7 @@ An edge is "imports from"; a dashed edge would mark an import climbing the stack
 
 Any layer may also use the shared substrate: <!-- generated: substrate-names -->.
 
-Only `git_ops.py` imports `_git_command.py`.
+The `vcs` package holds agent6's own git operations; only its `git_ops.py` imports `_git_command.py`.
 It runs each git command with a 120-second timeout.
 By default, it switches off the repository's hooks, fsmonitor, external diff, commit signing, and filter and merge drivers.
 `git_policy.py` shares hardening flags and hook/filter policy; `errors.py` owns `GitError`.
@@ -489,7 +489,7 @@ A `run_command` approval publishes as `approval.prompt`.
 | Review pass | [harness/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/code_review.py); the panel is `harness/_panel.py` and `harness/_reviewer.py` |
 | Jail sessions and detached jobs | [sandbox/jail_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_session.py), [sandbox/jail_jobs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_jobs.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
-| Git policy | [git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py) |
+| Git policy | [git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git_ops.py) |
 | Subordinate-run primitive | [harness/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/subrun.py) |
 | Run-dir single-writer lock | [sessions/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lock.py) |
 | Compare judge | [harness/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py) |

@@ -19,7 +19,8 @@ import subprocess
 import tempfile
 from collections.abc import Collection, Sequence
 
-from agent6 import _git_command, commit_message, errors, git_policy
+from agent6 import errors
+from agent6.vcs import _git_command, commit_message, git_policy
 
 # A name handed to git as a pathspec is the file, never a glob: `a*.txt` matches only itself.
 _LITERAL = {"GIT_LITERAL_PATHSPECS": "1"}

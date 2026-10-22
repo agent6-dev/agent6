@@ -16,13 +16,14 @@ import subprocess
 from collections.abc import Callable, Collection, Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import child_env, commit_message, errors, event_log, git_ops, terminal
+from agent6 import child_env, errors, event_log, terminal
 from agent6.app import merge
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, NotifyConfig
 from agent6.harness import _advice, _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs import commit_message, git_ops
 from agent6.viewmodel import (
     _session_status,
     format,

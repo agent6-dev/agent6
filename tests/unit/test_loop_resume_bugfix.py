@@ -1355,7 +1355,7 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pat
     """The snapshot's `head_sha` is the run's chain tip; the carry asks for dirt relative to it."""
     import subprocess
 
-    from agent6 import git_ops
+    from agent6.vcs import git_ops
 
     repo = tmp_path / "repo"
     repo.mkdir()

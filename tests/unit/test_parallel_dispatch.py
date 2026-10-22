@@ -9,10 +9,11 @@ from typing import Any
 
 import pytest
 
-from agent6 import directive, errors, git_ops
+from agent6 import directive, errors
 from agent6.app import parallel, preflight
 from agent6.harness import _parallel_dispatch as pd
 from agent6.harness import subrun
+from agent6.vcs import git_ops
 
 
 def _res(*, ok: bool, error: str = "", branch: str = "agent6/lane-1") -> subrun.LaneResult:

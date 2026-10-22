@@ -426,7 +426,7 @@ def test_session_payload_names_the_ref_holding_the_commits(
     """
     import subprocess as sp
 
-    from agent6 import git_ops
+    from agent6.vcs import git_ops
 
     _srv, port = server
     sp.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
@@ -1808,8 +1808,8 @@ def test_session_api_hub_and_attach_give_one_label(
     merged: bool,
 ) -> None:
     """The run snapshot and attach keep the listing's unmerged mark, including after merge."""
-    from agent6 import git_ops
     from agent6.sessions import manifest
+    from agent6.vcs import git_ops
     from agent6.viewmodel import listing, wire
 
     monkeypatch.chdir(tmp_path)

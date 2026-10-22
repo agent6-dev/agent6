@@ -14,11 +14,12 @@ import pathlib
 import re
 from typing import Any
 
-from agent6 import git_ops, paths
+from agent6 import paths
 from agent6.app import _workdirs, confine
 from agent6.config import ConfigError, io, layer, write
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
+from agent6.vcs import git_ops
 from agent6.viewmodel import (
     MachineSummary,
     NewestExecutionFold,

@@ -9,8 +9,8 @@ import subprocess
 
 import pytest
 
-from agent6 import git_ops
 from agent6.harness import subrun
+from agent6.vcs import git_ops
 
 
 def _git(repo: pathlib.Path, *args: str) -> None:

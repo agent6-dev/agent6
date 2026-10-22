@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 from concurrent import futures as concurrent_futures
 from typing import Protocol
 
-from agent6 import directive, errors, git_ops, kinds, memory, paths
+from agent6 import directive, errors, kinds, memory, paths
 from agent6.app import _lane_watch, _parallel_results, _workdirs
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
@@ -23,6 +23,7 @@ from agent6.models import validate
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs import git_ops
 from agent6.viewmodel import format, produced_result, summarize_session_dir
 
 
