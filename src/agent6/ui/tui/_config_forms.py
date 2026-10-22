@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The config page's form modals: edit one setting, add a provider."""
+"""The config page's form modals: edit one setting, add a named entry."""
 
 from __future__ import annotations
 
@@ -226,8 +226,8 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
             self.action_cancel()
 
 
-class ProviderModal(_FormModal[None]):
-    """Add a `[providers.<name>]` entry through a form.
+class EntryModal(_FormModal[None]):
+    """Add a named entry through a registry-driven form.
 
     Choosers for the fixed-choice fields, inputs for the free ones; a blank field
     writes nothing, so an existing entry keeps its value. Add writes and validates,
@@ -239,67 +239,62 @@ class ProviderModal(_FormModal[None]):
     CSS = (
         forms.FORM_CSS
         + """
-    ProviderModal { align: center middle; }
-    #prov-box {
+    EntryModal { align: center middle; }
+    #entry-box {
         width: 80; height: auto;
         border: round $accent; padding: 1 2; background: $surface;
     }
-    #prov-title { text-style: bold; }
-    #prov-actions { padding: 1 0 0 0; height: auto; }
+    #entry-title { text-style: bold; }
+    #entry-actions { padding: 1 0 0 0; height: auto; }
     """
     )
 
-    def __init__(self, repo_root: pathlib.Path) -> None:
+    def __init__(self, repo_root: pathlib.Path, table: write.EntryTable) -> None:
         super().__init__()
         self._repo = repo_root
+        self._table = table
         self._autofilled_baseurl = ""  # the last prefilled base_url; a typed one is never replaced
 
     def on_mount(self) -> None:
         """Focus the name field."""
-        self.query_one("#prov-name", textual_widgets.Input).focus()
+        self.query_one("#entry-name", textual_widgets.Input).focus()
 
     def compose(self) -> app.ComposeResult:
         """Yield the title, the fields, the target and the actions."""
-        choices = write.provider_choices()
-        with containers.VerticalScroll(id="prov-box"):
-            yield textual_widgets.Static("Add provider", id="prov-title")
-            # Split at the clause: one line is wider than the box.
+        choices = write.entry_choices(self._table)
+        with containers.VerticalScroll(id="entry-box"):
+            yield textual_widgets.Static(f"Add {self._table.label}", id="entry-title")
             yield textual_widgets.Static(
                 text.Text(
-                    "A [providers.<name>] block. A blank field keeps an existing value;\n"
-                    "otherwise base_url/auth default from the format + deployment.",
+                    f"{self._table.path}.<name>\n"
+                    "A blank field keeps an existing value or uses the default.",
                     style="dim",
                 )
             )
             yield textual_widgets.Input(
-                placeholder="name  (e.g. openrouter, my-azure)",
-                id="prov-name",
-                classes="edit-input edit-gap",
+                placeholder="name", id="entry-name", classes="edit-input edit-gap"
             )
-            yield textual_widgets.Static("api_format", classes="edit-label")
-            yield forms.ChoiceField(
-                tuple(choices["api_format"]), choices["api_format"][0], id="prov-format"
-            )
-            yield textual_widgets.Static("deployment", classes="edit-label")
-            deployments = ("blank = unchanged, or direct", *choices["deployment"])
-            yield forms.ChoiceField(deployments, deployments[0], id="prov-deployment")
-            yield textual_widgets.Static("base_url", classes="edit-label")
-            yield textual_widgets.Input(
-                placeholder="blank = unchanged, or the default for the format/deployment",
-                id="prov-baseurl",
-                classes="edit-input",
-            )
-            yield textual_widgets.Static("api_key_env", classes="edit-label")
-            yield textual_widgets.Input(
-                placeholder="blank = unchanged, or secrets.toml by provider name",
-                id="prov-keyenv",
-                classes="edit-input",
-            )
+            for field in self._table.fields:
+                yield textual_widgets.Static(field, classes="edit-label")
+                description = config_view.plain_description(
+                    write.entry_field_description(self._table, field)
+                )
+                if field in choices:
+                    options = tuple(choices[field])
+                    if field not in ("api_format", "state"):
+                        options = ("blank = unchanged, or default", *options)
+                    chooser = forms.ChoiceField(options, options[0], id=f"entry-{field}")
+                    chooser.tooltip = description
+                    yield chooser
+                else:
+                    yield textual_widgets.Input(
+                        placeholder=description, id=f"entry-{field}", classes="edit-input"
+                    )
             yield textual_widgets.Static("save to", classes="edit-label")
             yield forms.ChoiceField(
-                ("global config", "repo config"), "global config", id="prov-target"
+                ("global config", "repo config"), "global config", id="entry-target"
             )
-            with containers.Horizontal(id="prov-actions"):
+            with containers.Horizontal(id="entry-actions"):
                 yield forms.ActionItem("Add", "add")
                 yield forms.ActionItem("Cancel", "cancel")
             yield textual_widgets.Static(
@@ -312,7 +307,7 @@ class ProviderModal(_FormModal[None]):
         """Advance from a text field on Enter, like Tab."""
         forms.focus_neighbor(event.input, 1)
 
-    @textual.on(textual_widgets.Input.Changed, "#prov-name")
+    @textual.on(textual_widgets.Input.Changed, "#entry-name")
     def _prefill_from_preset(self, event: textual_widgets.Input.Changed) -> None:
         """Prefill a known provider's api_format and base_url, as `agent6 connect` does.
 
@@ -321,45 +316,40 @@ class ProviderModal(_FormModal[None]):
         Args:
             event: The edit to the provider name field.
         """
+        if self._table.path != "providers":
+            return
         preset = write.PROVIDER_DEFAULTS.get(event.value.strip())
-        baseurl = self.query_one("#prov-baseurl", textual_widgets.Input)
+        baseurl = self.query_one("#entry-base_url", textual_widgets.Input)
         if preset is None:
             if self._autofilled_baseurl and baseurl.value == self._autofilled_baseurl:
                 baseurl.value = ""
             self._autofilled_baseurl = ""
             return
-        self.query_one("#prov-format", forms.ChoiceField).select_value(preset["api_format"])
+        self.query_one("#entry-api_format", forms.ChoiceField).select_value(preset["api_format"])
         if baseurl.value in ("", self._autofilled_baseurl):
             self._autofilled_baseurl = preset.get("base_url", "")
             baseurl.value = self._autofilled_baseurl
 
     def action_add(self) -> None:
         """Write and validate the entry; an error stays in the form."""
-        name = self.query_one("#prov-name", textual_widgets.Input).value.strip()
-        if not name:
-            self.notify("Enter a provider name.", severity="warning")
-            return
-        api_format = self.query_one("#prov-format", forms.ChoiceField).value
-        fields: dict[str, io.ConfigLeafValue] = {"api_format": api_format}
-        deployment = self.query_one("#prov-deployment", forms.ChoiceField)
-        # Row 0 is the blank row, which writes nothing.
-        if deployment.index > 0:
-            fields["deployment"] = deployment.value
-        base = self.query_one("#prov-baseurl", textual_widgets.Input).value.strip()
-        if base:
-            fields["base_url"] = base
-        keyenv = self.query_one("#prov-keyenv", textual_widgets.Input).value.strip()
-        if keyenv:
-            fields["api_key_env"] = keyenv
-        to_repo = self.query_one("#prov-target", forms.ChoiceField).index == 1
+        name = self.query_one("#entry-name", textual_widgets.Input).value.strip()
+        fields: dict[str, str] = {}
+        choices = write.entry_choices(self._table)
+        for field in self._table.fields:
+            control = self.query_one(f"#entry-{field}")
+            if isinstance(control, forms.ChoiceField):
+                fields[field] = control.value if control.value in choices[field] else ""
+            elif isinstance(control, textual_widgets.Input):
+                fields[field] = control.value
+        to_repo = self.query_one("#entry-target", forms.ChoiceField).index == 1
         try:
-            err = write.set_config_leaves(self._repo, f"providers.{name}", fields, to_repo=to_repo)
+            err = write.add_entry(self._repo, self._table, name, fields, to_repo=to_repo)
         except errors.OperatorError as exc:
             err = str(exc)  # an unwritable config file is a form error, not a crash
         if err:
             self.notify(f"Invalid: {err}", severity="error", timeout=8.0)
             return
-        self.notify(f"Set provider '{name}'.")
+        self.notify(f"Set {self._table.label} '{name}'.")
         self.dismiss(None)
 
     def action_cancel(self) -> None:

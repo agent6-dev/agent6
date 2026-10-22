@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Annotated
 
 import pydantic
+import pydantic.fields
 
 # strict: TOML delivers native types, so a typo must not coerce ("5" is not an int).
 # allow_inf_nan=False: an inf timeout raises OverflowError; an inf or nan budget cap never binds.
@@ -35,3 +36,18 @@ def _argv_elements(v: tuple[str, ...]) -> tuple[str, ...]:
 
 # Command argv fields: an empty element is a typo; an empty tuple means "unset".
 Argv = Annotated[StrTuple, pydantic.AfterValidator(_argv_elements)]
+
+
+def is_argv_field(info: pydantic.fields.FieldInfo) -> bool:
+    """Return whether a field is an `Argv`, by the validator the alias carries.
+
+    Args:
+        info: The field's schema.
+
+    Returns:
+        True for an `Argv` field.
+    """
+    return any(
+        isinstance(meta, pydantic.AfterValidator) and meta.func is _argv_elements
+        for meta in info.metadata
+    )

@@ -38,6 +38,7 @@ It can be empty or absent when the global config supplies a provider and model; 
 - Writes are atomic; failure to take the edit lock does not block the write, but concurrent edits can lose updates.
   An invalid edit without the lock is reported as "kept as written", since rolling it back could erase another writer's update.
   A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
+- The [TUI config page](terminal.md#configuration) adds and removes named provider, MCP server and skill state entries through forms.
 - `agent6 config fill`: materialize defaults + global config into the global file; pass `--force` to replace an existing file.
   The repo layer and any selected preset are left as-is.
 - `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values) from every layer and preset, a global value a repo override masks included, naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.

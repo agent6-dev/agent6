@@ -2,9 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """The config page: a renderer over the shared config view and the shared edit path.
 
-The config logic lives in `viewmodel.config_view` and `config.write`, so this page
-and the web editor never drift. One registry, `CONFIG_ACTIONS`, feeds the footer
-labels and the palette descriptions; the keys are the keymap's.
+The config logic lives in `viewmodel.config_view` and `config.write`.
+One registry, `CONFIG_ACTIONS`, feeds the footer labels and the palette descriptions;
+the keys are the keymap's.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from agent6.app import confine
 from agent6.config import ConfigError, layer, write
 from agent6.models import cache
 from agent6.models import choices as models_choices
-from agent6.ui.tui import _config_forms, menubar, screen_chrome
+from agent6.ui.tui import _config_forms, menubar, modals, screen_chrome
 from agent6.viewmodel import config_view
 
 
@@ -53,7 +53,17 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
     Action("search", "Filter", "Filter settings by name"),
     Action("toggle_modified", "Modified only", "Show only settings a config layer set"),
     Action("edit", "Edit", "Edit the selected setting (dropdown for choices)"),
-    Action("add_provider", "Add provider…", "Add a [providers.<name>] entry via a form"),
+    *(
+        Action(
+            f"add_{table.label.lower().replace(' ', '_')}",
+            f"Add {table.label}…",
+            f"Add a {table.path}.<name> entry via a form",
+        )
+        for table in write.ENTRY_TABLES
+    ),
+    Action(
+        "remove_entry", "Remove entry", "Remove the selected provider, MCP server or skill entry"
+    ),
     # The labels match the home and run footers.
     Action("reset", "Unset", "Unset the selected setting in its source config layer"),
     Action("reload", "Refresh", "Re-read config from disk"),
@@ -165,7 +175,12 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             "Edit",
             (
                 menubar.MenuItem("Edit setting…", "edit"),
-                menubar.MenuItem("Add provider…", "add_provider"),
+                *(
+                    menubar.MenuItem(a.label, a.id)
+                    for a in CONFIG_ACTIONS
+                    if a.id.startswith("add_")
+                ),
+                menubar.MenuItem("Remove entry", "remove_entry"),
                 menubar.MenuItem("Unset override", "reset"),
             ),
         ),
@@ -187,9 +202,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
     )
     # Page actions first, then Help and Back, the order of the home and run footers.
     FOOTER: ClassVar = tuple(
-        (a.id, a.label)
-        for a in CONFIG_ACTIONS
-        if a.id in {"search", "toggle_modified", "edit", "reload", "help", "close"}
+        (a.id, a.label) for a in CONFIG_ACTIONS if a.id not in {"reset", "choose_theme"}
     )
     BINDINGS: ClassVar = menubar.menu_bindings("config", MENUS, footer=FOOTER)
     COMMANDS: ClassVar = textual_screen.Screen.COMMANDS | {screen_chrome.MenuCommands}
@@ -251,9 +264,46 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """Load the effective config and build the view over it."""
         eff = layer.load_effective(self.repo_root, self.config_paths)
         self._eff = eff
-        self._view = config_view.build_config_view(
+        view = config_view.build_config_view(
             eff, resolved=confine.resolved_config_values(eff.config)
         )
+        # The shared view keeps a leaf table whole; the page selects its entries by row.
+        leaf_tables = {t.path: t for t in write.ENTRY_TABLES if t.leaf}
+        settings: list[config_view.ConfigSetting] = []
+        for setting in view.settings:
+            table = leaf_tables.get(setting.key)
+            entries = write.leaf_entries(eff.config, table) if table is not None else {}
+            if table is None or not entries:
+                settings.append(setting)
+                continue
+            for name, state in entries.items():
+                key = f"{table.path}.{name}"
+                source = self._entry_source(key)
+                settings.append(
+                    dataclasses.replace(
+                        setting,
+                        key=key,
+                        value=state,
+                        effective_value=state,
+                        default=None,
+                        source=source,
+                        modified=source != "default",
+                        py_type="choice",
+                        choices=tuple(write.entry_choices(table)[table.fields[0]]),
+                    )
+                )
+        self._view = dataclasses.replace(view, settings=tuple(settings))
+
+    def _entry_source(self, key: str) -> str:
+        """Return the highest layer holding this entry or any of its leaves."""
+        if self._eff is not None:
+            for source in reversed(self._eff.layers):
+                if any(
+                    leaf == key or leaf.startswith(key + ".")
+                    for leaf in layer.flatten_leaves(source.data)
+                ):
+                    return source.source
+        return "default"
 
     def _reload(self) -> bool:
         """Re-read the config and repaint; a config invalid on disk keeps the last-good view.
@@ -523,12 +573,72 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self.dismiss(None)
 
     def action_add_provider(self) -> None:
-        """Open the provider form and reload after it."""
+        """Open the provider form."""
+        self._add_entry("providers")
+
+    def action_add_mcp_server(self) -> None:
+        """Open the MCP server form."""
+        self._add_entry("mcp.servers")
+
+    def action_add_skill(self) -> None:
+        """Open the skill state form."""
+        self._add_entry("skills.state")
+
+    def _add_entry(self, path: str) -> None:
+        """Open the entry form and reload after it."""
+        table = next(t for t in write.ENTRY_TABLES if t.path == path)
 
         def reload_config(_: None) -> None:
             self._reload()
 
-        self.app.push_screen(_config_forms.ProviderModal(self.repo_root), reload_config)
+        self.app.push_screen(_config_forms.EntryModal(self.repo_root, table), reload_config)
+
+    def action_remove_entry(self) -> None:
+        """Confirm removal of the selected entry from its highest config layer."""
+        setting = self._current_setting()
+        entry = write.entry_of(setting.key) if setting is not None else None
+        if entry is None:
+            self.notify(
+                "Select a row of a provider, MCP server or skill first.", severity="warning"
+            )
+            return
+        table, name = entry
+        key = f"{table.path}.{name}"
+        source = self._entry_source(key)
+        if source not in ("global", "repo"):
+            self.notify(
+                f"{key} comes from the {source} layer;"
+                " Remove entry edits only the global and repo config.",
+                severity="warning",
+            )
+            return
+
+        def remove(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            try:
+                result = write.remove_entry(self.repo_root, table, name, to_repo=source == "repo")
+            except errors.OperatorError as exc:
+                self.notify(str(exc), severity="error", timeout=8.0)
+                return
+            if result.error:
+                self.notify(result.error, severity="error", timeout=8.0)
+                return
+            if result.removed:
+                self.notify(f"Removed {key} from {source} config.")
+            else:
+                self.notify(f"{key} is not set in {source} config.")
+            self._reload()
+
+        self.app.push_screen(
+            modals.ConfirmModal(
+                f"Remove {table.label} '{name}'?",
+                f"Remove {key} and all its values from {source} config.\n"
+                "Values from lower layers may become visible.",
+                confirm_label="Remove",
+            ),
+            remove,
+        )
 
     def on_data_table_row_selected(self, _event: textual_widgets.DataTable.RowSelected) -> None:
         """Edit the row on Enter or a double click."""

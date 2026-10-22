@@ -15,15 +15,17 @@ import contextlib
 import dataclasses
 import difflib
 import pathlib
+import shlex
 from collections.abc import Generator, Sequence
-from typing import Any, get_args, get_origin
+from typing import Any, Literal, cast, get_args, get_origin
 
 import pydantic
+import pydantic.fields
 import pydantic_core
 
 from agent6 import errors as agent6_errors
 from agent6 import paths, portable
-from agent6.config import _providers, io, layer
+from agent6.config import _base, _providers, io, layer
 from agent6.config import model as config_model
 
 
@@ -633,16 +635,200 @@ def set_config_table(
         )
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class EntryTable:
+    """A config table of named entries a form adds whole and removes whole.
+
+    Attributes:
+        path: The table's dotted key.
+        label: The entry's name in a form or menu.
+        fields: The leaves the add form offers, in order.
+        leaf: The entry is one leaf whose value is the single form field, not a subtable.
+    """
+
+    path: str
+    label: str
+    fields: tuple[str, ...]
+    leaf: bool = False
+
+
+ENTRY_TABLES: tuple[EntryTable, ...] = (
+    EntryTable("providers", "provider", ("api_format", "deployment", "base_url", "api_key_env")),
+    EntryTable("mcp.servers", "MCP server", ("command", "url", "token_env", "enabled", "approve")),
+    EntryTable("skills.state", "skill", ("state",), leaf=True),
+)
+
+
+def leaf_entries(config: config_model.Config, table: EntryTable) -> dict[str, str]:
+    """Return a leaf table's entries by name, as the effective config holds them.
+
+    Args:
+        config: The effective config.
+        table: A table with `leaf` set.
+
+    Returns:
+        The entry values by name.
+    """
+    node: object = config
+    for part in table.path.split("."):
+        node = getattr(node, part)
+    return {name: str(value) for name, value in cast(dict[str, object], node).items()}
+
+
+def _is_argv(table: EntryTable, field: str) -> bool:
+    """Return whether a form field is an argv, so its line is split with shell quoting."""
+    return any(_base.is_argv_field(info) for info in _entry_fields(table, field))
+
+
+def _entry_fields(table: EntryTable, field: str) -> tuple[pydantic.fields.FieldInfo, ...]:
+    """Return a form field's schema across the entry's model members.
+
+    Args:
+        table: The entry table.
+        field: The form field.
+
+    Returns:
+        The member fields, or the mapping field for a scalar entry such as a skill state.
+    """
+    models: tuple[type[pydantic.BaseModel], ...] = (config_model.Config,)
+    for part in table.path.split("."):
+        resolved = tuple(m for model in models for m in (_models_at(model, part) or ()))
+        if not resolved:
+            return tuple(model.model_fields[part] for model in models)
+        models = resolved
+    return tuple(model.model_fields[field] for model in models if field in model.model_fields)
+
+
+def entry_choices(table: EntryTable) -> dict[str, list[str]]:
+    """Return each fixed-choice form field's values from the entry schema.
+
+    Args:
+        table: The entry table.
+
+    Returns:
+        Literal choices and boolean choices (`true` and `false`), in declaration order.
+    """
+    choices: dict[str, list[str]] = {}
+    for field in table.fields:
+        values: list[str] = []
+        for info in _entry_fields(table, field):
+            annotation = info.annotation
+            if get_origin(annotation) is dict:
+                annotation = get_args(annotation)[1]
+            if annotation is bool:
+                values.extend(("true", "false"))
+            elif get_origin(annotation) is Literal:
+                values.extend(str(value) for value in get_args(annotation))
+        if values:
+            choices[field] = list(dict.fromkeys(values))
+    return choices
+
+
+def entry_field_description(table: EntryTable, field: str) -> str:
+    """Return a form field's description from the entry schema.
+
+    Args:
+        table: The entry table.
+        field: The form field.
+
+    Returns:
+        The first member's description, or an empty string when absent.
+    """
+    return next((info.description or "" for info in _entry_fields(table, field)), "")
+
+
 def provider_choices() -> dict[str, list[str]]:
-    """Return the add-provider form's fixed choices, read from the schema so they never drift.
+    """Return the web add-provider form's fixed choices.
 
     Returns:
         The `api_format` and `deployment` values.
     """
-    formats: list[str] = []
-    for model in PROVIDER_MEMBERS:
-        formats.extend(get_args(model.model_fields["api_format"].annotation))
-    return {"api_format": formats, "deployment": list(get_args(_providers.Deployment))}
+    return entry_choices(next(table for table in ENTRY_TABLES if table.path == "providers"))
+
+
+def add_entry(
+    repo_root: pathlib.Path,
+    table: EntryTable,
+    name: str,
+    fields: dict[str, str],
+    *,
+    to_repo: bool = False,
+) -> str | None:
+    """Add or update a named entry, preserving fields left blank.
+
+    Args:
+        repo_root: The repo.
+        table: The entry table.
+        name: The entry name, stripped; blank is refused.
+        fields: Form values; a command line is split into argv with shell quoting.
+        to_repo: The repo layer instead of the global one.
+
+    Returns:
+        The input or write error, else None.
+
+    Raises:
+        ConfigError: The target does not parse or the surgery refuses a leaf.
+        OperatorError: The target cannot be written.
+    """
+    name = name.strip()
+    if not name:
+        return f"{table.label} name is required"
+    choices = entry_choices(table)
+    values: dict[str, io.ConfigLeafValue] = {}
+    for field, raw in fields.items():
+        value = raw.strip()
+        if not value:
+            continue
+        if _is_argv(table, field):
+            try:
+                values[field] = shlex.split(value)
+            except ValueError as exc:
+                return f"{field}: {exc}"
+        elif choices.get(field) == ["true", "false"] and value in ("true", "false"):
+            values[field] = value == "true"
+        else:
+            values[field] = value
+    if table.leaf:
+        return set_config_leaves(
+            repo_root, table.path, {name: values.get(table.fields[0])}, to_repo=to_repo
+        )
+    return set_config_leaves(repo_root, f"{table.path}.{name}", values, to_repo=to_repo)
+
+
+def remove_entry(
+    repo_root: pathlib.Path, table: EntryTable, name: str, *, to_repo: bool = False
+) -> UnsetResult:
+    """Remove a whole named entry from the chosen layer.
+
+    Args:
+        repo_root: The repo.
+        table: The entry table.
+        name: The entry name.
+        to_repo: The repo layer instead of the global one.
+
+    Returns:
+        Whether the entry was present and any revalidation error.
+    """
+    key = f"{table.path}.{name}"
+    unset = unset_config_value if table.leaf else unset_config_table
+    return unset(repo_root, key, to_repo=to_repo)
+
+
+def entry_of(key: str) -> tuple[EntryTable, str] | None:
+    """Return the named entry a config leaf belongs to, or None.
+
+    Args:
+        key: The dotted leaf key.
+
+    Returns:
+        The entry table and name, including for a leaf in an entry's subtable.
+    """
+    for table in ENTRY_TABLES:
+        if key.startswith(table.path + "."):
+            name, separator, _leaf = key[len(table.path) + 1 :].partition(".")
+            if name and bool(separator) == (not table.leaf):
+                return table, name
+    return None
 
 
 # The well-known names `agent6 connect` and the add-provider form land on the right host;

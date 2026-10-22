@@ -20,7 +20,7 @@ from agent6 import paths
 from agent6.config import ClaudeCodeProviderEntry, OpenAIProviderEntry, layer
 from agent6.models import cache
 from agent6.models import choices as models_choices
-from agent6.ui.tui import _config_forms, config_page, menubar
+from agent6.ui.tui import _config_forms, config_page, forms, menubar, modals
 from agent6.viewmodel import config_view
 
 _GLOBAL = """\
@@ -845,6 +845,10 @@ def test_config_actions_in_command_palette(repo: pathlib.Path) -> None:
                 "Filter",
                 "Modified only",
                 "Edit setting…",
+                "Add provider…",
+                "Add MCP server…",
+                "Add skill…",
+                "Remove entry",
                 "Unset override",
                 "Refresh",
                 "Keys & actions",
@@ -1031,6 +1035,142 @@ def test_arrows_flow_through_section_headers(repo: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(
+    ("action", "section", "leaf", "field", "value"),
+    [
+        ("add_mcp_server", "mcp", "servers.openrouter.url", "url", "https://example.com/mcp"),
+        ("add_skill", "skills", "state.openrouter", "state", "always"),
+    ],
+)
+def test_entry_form_and_remove_selected_entry(
+    repo: pathlib.Path, action: str, section: str, leaf: str, field: str, value: str
+) -> None:
+    """Non-provider forms add entries; Remove confirms and drops the selected entry whole."""
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test(size=(120, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            handler = next(
+                handler
+                for label, handler, _ in screen.palette_commands()
+                if label == ("Add skill…" if section == "skills" else "Add MCP server…")
+            )
+            handler()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, _config_forms.EntryModal)
+            modal.query_one("#entry-name", widgets.Input).value = "openrouter"
+            control = modal.query_one(f"#entry-{field}")
+            if isinstance(control, forms.ChoiceField):
+                control.select_value(value)
+            else:
+                assert isinstance(control, widgets.Input)
+                control.value = value
+            if section == "mcp":
+                modal.query_one("#entry-token_env", widgets.Input).value = "MCP_TOKEN"
+                modal.query_one("#entry-enabled", forms.ChoiceField).select_value("false")
+            modal.query_one("#entry-target", forms.ChoiceField).select_value("repo config")
+            await pilot.pause()
+            modal.action_add()
+            await pilot.pause()
+            assert app.screen is screen
+            cfg = layer.load_effective(repo).config
+            if section == "mcp":
+                assert cfg.mcp.servers["openrouter"].url == value
+                assert cfg.mcp.servers["openrouter"].token_env == "MCP_TOKEN"
+                assert not cfg.mcp.servers["openrouter"].enabled
+            else:
+                assert cfg.skills.state["openrouter"] == value
+            table = screen.query_one(f"#tbl-{section}", widgets.DataTable)
+            row = next(i for i in range(table.row_count) if str(table.get_row_at(i)[0]) == leaf)
+            assert "repo" in str(table.get_row_at(row)[2])
+            table.move_cursor(row=row)
+            table.focus()
+            await pilot.pause()
+            screen.action_remove_entry()
+            await pilot.pause()
+            confirm = app.screen
+            assert isinstance(confirm, modals.ConfirmModal)
+            prompt = str(confirm.query_one("#confirm-box Static", widgets.Static).render())
+            assert "openrouter" in prompt and "repo" in prompt
+            assert ("skills.state" if section == "skills" else "mcp.servers") in prompt
+            await pilot.press("escape")
+            await pilot.pause()
+            assert "openrouter" in paths.repo_config_path(repo).read_text()
+            screen.action_remove_entry()
+            await pilot.pause()
+            await pilot.press("y")
+            await pilot.pause()
+            assert app.screen is screen
+            assert "openrouter" not in paths.repo_config_path(repo).read_text()
+            assert not any(
+                "openrouter" in str(table.get_row_at(i)[0]) for i in range(table.row_count)
+            )
+            footer_actions = {
+                active.binding.action
+                for active in screen.active_bindings.values()
+                if active.binding.show
+            }
+            assert action in footer_actions
+            assert "remove_entry" in footer_actions
+
+    asyncio.run(scenario())
+
+
+def test_remove_entry_from_a_default_leaf(repo: pathlib.Path) -> None:
+    """A default-valued provider leaf still belongs to a removable entry."""
+    from agent6.config import write
+
+    assert write.set_config_leaves(repo, "providers.local", {"api_format": "openai"}) is None
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            table = screen.query_one("#tbl-providers", widgets.DataTable)
+            row = next(
+                i for i in range(table.row_count) if str(table.get_row_at(i)[0]) == "local.base_url"
+            )
+            assert str(table.get_row_at(row)[2]) == "default"
+            table.move_cursor(row=row)
+            table.focus()
+            await pilot.pause()
+            screen.action_remove_entry()
+            await pilot.pause()
+            assert isinstance(app.screen, modals.ConfirmModal)
+            await pilot.press("y")
+            await pilot.pause()
+            assert "local" not in layer.load_effective(repo).config.providers
+            assert "anthropic" in layer.load_effective(repo).config.providers
+
+    asyncio.run(scenario())
+
+
+def test_remove_entry_without_an_entry_row(repo: pathlib.Path) -> None:
+    """Remove on an ordinary setting explains which rows it accepts without opening a dialog."""
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            screen.query_one("#tbl-sandbox", widgets.DataTable).focus()
+            await pilot.pause()
+            screen.action_remove_entry()
+            await pilot.pause()
+            assert app.screen is screen
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert notes[-1] == "Select a row of a provider, MCP server or skill first."
+
+    asyncio.run(scenario())
+
+
 def test_add_provider_via_form_persists(repo: pathlib.Path) -> None:
     """The Add-provider form writes a validated [providers.<name>] block the page reflects."""
 
@@ -1045,9 +1185,9 @@ def test_add_provider_via_form_persists(repo: pathlib.Path) -> None:
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, _config_forms.ProviderModal)
-            modal.query_one("#prov-name", widgets.Input).value = "openrouter"
-            fmt = modal.query_one("#prov-format", forms.ChoiceField)
+            assert isinstance(modal, _config_forms.EntryModal)
+            modal.query_one("#entry-name", widgets.Input).value = "openrouter"
+            fmt = modal.query_one("#entry-api_format", forms.ChoiceField)
             # A chooser round trip (up, down, Space), so the check holds however the union grows.
             fmt.focus()
             await pilot.pause()
@@ -1056,7 +1196,7 @@ def test_add_provider_via_form_persists(repo: pathlib.Path) -> None:
             await pilot.press("space")
             await pilot.pause()
             assert fmt.value == "openai"
-            modal.query_one("#prov-baseurl", widgets.Input).value = "https://openrouter.ai/api/v1"
+            modal.query_one("#entry-base_url", widgets.Input).value = "https://openrouter.ai/api/v1"
             await pilot.pause()
             modal.action_add()  # equivalent to the Add action
             await pilot.pause()
@@ -1092,8 +1232,8 @@ def test_add_provider_preserves_existing_provider_fields(repo: pathlib.Path) -> 
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, _config_forms.ProviderModal)
-            modal.query_one("#prov-name", widgets.Input).value = "anthropic"
+            assert isinstance(modal, _config_forms.EntryModal)
+            modal.query_one("#entry-name", widgets.Input).value = "anthropic"
             await pilot.pause()
             modal.action_add()
             await pilot.pause()
@@ -1122,14 +1262,14 @@ def test_add_provider_prefills_known_preset_base_url(repo: pathlib.Path) -> None
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, _config_forms.ProviderModal)
+            assert isinstance(modal, _config_forms.EntryModal)
             # Type only the name; leave api_format + base_url untouched.
-            modal.query_one("#prov-name", widgets.Input).value = "openrouter"
+            modal.query_one("#entry-name", widgets.Input).value = "openrouter"
             await pilot.pause()
             # Live prefill flipped the format dropdown and filled the URL field.
-            assert modal.query_one("#prov-format", forms.ChoiceField).value == "openai"
+            assert modal.query_one("#entry-api_format", forms.ChoiceField).value == "openai"
             assert (
-                modal.query_one("#prov-baseurl", widgets.Input).value
+                modal.query_one("#entry-base_url", widgets.Input).value
                 == "https://openrouter.ai/api/v1"
             )
             modal.action_add()
@@ -1158,13 +1298,13 @@ def test_add_provider_prefill_keeps_user_typed_base_url(repo: pathlib.Path) -> N
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, _config_forms.ProviderModal)
-            modal.query_one("#prov-baseurl", widgets.Input).value = "https://my.proxy/v1"
+            assert isinstance(modal, _config_forms.EntryModal)
+            modal.query_one("#entry-base_url", widgets.Input).value = "https://my.proxy/v1"
             await pilot.pause()
-            modal.query_one("#prov-name", widgets.Input).value = "openrouter"
+            modal.query_one("#entry-name", widgets.Input).value = "openrouter"
             await pilot.pause()
             # Their URL is preserved (only our own autofill, or a blank, is replaced).
-            assert modal.query_one("#prov-baseurl", widgets.Input).value == "https://my.proxy/v1"
+            assert modal.query_one("#entry-base_url", widgets.Input).value == "https://my.proxy/v1"
 
     asyncio.run(scenario())
 
@@ -1181,9 +1321,9 @@ def test_add_provider_clears_a_stale_preset_base_url(repo: pathlib.Path) -> None
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, _config_forms.ProviderModal)
-            name = modal.query_one("#prov-name", widgets.Input)
-            base_url = modal.query_one("#prov-baseurl", widgets.Input)
+            assert isinstance(modal, _config_forms.EntryModal)
+            name = modal.query_one("#entry-name", widgets.Input)
+            base_url = modal.query_one("#entry-base_url", widgets.Input)
             name.value = "openrouter"
             await pilot.pause()
             assert base_url.value == "https://openrouter.ai/api/v1"
@@ -1218,11 +1358,11 @@ def test_add_provider_writes_a_chosen_direct_over_an_existing_deployment(
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, _config_forms.ProviderModal)
-            modal.query_one("#prov-name", widgets.Input).value = "az"
-            modal.query_one("#prov-format", forms.ChoiceField).select_value("openai")
-            modal.query_one("#prov-deployment", forms.ChoiceField).select_value("direct")
-            modal.query_one("#prov-baseurl", widgets.Input).value = "https://api.openai.com/v1"
+            assert isinstance(modal, _config_forms.EntryModal)
+            modal.query_one("#entry-name", widgets.Input).value = "az"
+            modal.query_one("#entry-api_format", forms.ChoiceField).select_value("openai")
+            modal.query_one("#entry-deployment", forms.ChoiceField).select_value("direct")
+            modal.query_one("#entry-base_url", widgets.Input).value = "https://api.openai.com/v1"
             await pilot.pause()
             modal.action_add()
             await pilot.pause()
@@ -1256,11 +1396,11 @@ def _add_provider_by_form(
             screen.action_add_provider()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, _config_forms.ProviderModal)
-            modal.query_one("#prov-name", widgets.Input).value = name
-            modal.query_one("#prov-format", forms.ChoiceField).select_value(api_format)
+            assert isinstance(modal, _config_forms.EntryModal)
+            modal.query_one("#entry-name", widgets.Input).value = name
+            modal.query_one("#entry-api_format", forms.ChoiceField).select_value(api_format)
             if deployment is not None:
-                modal.query_one("#prov-deployment", forms.ChoiceField).select_value(deployment)
+                modal.query_one("#entry-deployment", forms.ChoiceField).select_value(deployment)
             await pilot.pause()
             modal.action_add()
             await pilot.pause()

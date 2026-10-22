@@ -70,6 +70,24 @@ The View menu's Full log opens the structural events of the run's log, formatted
 The config page shows every setting, its effective value, and the layer that set it: `default`, `preset`, `global`, `repo`, or `flag` (a `--config FILE`).
 `/` filters by name.
 
+The Edit menu and Ctrl+P palette offer entry forms:
+
+- **Add provider…** (`a`): add or update a `[providers.<name>]` entry, with format and URL prefilled for known provider names.
+- **Add MCP server…** (`c`): add or update a `[mcp.servers.<name>]` entry.
+  Enter either a URL or a command line; shell quoting splits the command into argv, without running a shell.
+- **Add skill…** (`s`): set `skills.state.<name>` to `enabled`, `disabled` or `always`.
+  This sets a skill's state; it does not install the skill.
+
+Forms save to global config by default and offer repo config as a target.
+A blank field keeps an existing value or uses the schema default.
+
+**Remove entry** (`x`) confirms the selected entry's name and config layer before removing the whole entry, including its subtables.
+It removes from the highest layer holding the entry, and accepts only global or repo config.
+Values from lower layers may become visible.
+Skill states have individual rows, so Remove drops only the selected skill's state.
+**Unset** (`d`) still drops only the selected leaf.
+`review.reviewers` is a list, not a named-entry table, so these entry actions do not apply to it.
+
 ![The config page](screenshots/out/03-config.png)
 
 ![Filtering the config by name](screenshots/out/04-config-search.png)
