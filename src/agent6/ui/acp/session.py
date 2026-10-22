@@ -108,7 +108,7 @@ class Sessions:
             raise rpc.RpcError(
                 rpc.INVALID_PARAMS,
                 "agent6 does not take MCP servers from the editor: configure them in "
-                "agent6's own config ([mcp.servers], `agent6 mcp connect`) and remove "
+                "agent6's own config ([mcp.servers], `agent6 mcp add`) and remove "
                 "them from this agent's entry.",
             )
         additional = params.get("additionalDirectories")

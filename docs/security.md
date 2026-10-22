@@ -114,9 +114,9 @@ It drops a control sequence inside text the model influenced (a file name, a com
 
 Every tool call that allows the model to run arbitrary commands (`run_command`, `run_verify_command`, backgrounded commands, and MCP servers) runs in a jail at the effective isolation level.
 
-`agent6 check mcp` and `agent6 mcp connect` start a spawned MCP server under that jail with the repository bound read-only.
+`agent6 check mcp` and `agent6 mcp add` start a spawned MCP server under that jail with the repository bound read-only.
 `check mcp` applies the run's refusals first and leaves a server it cannot hold that way unstarted: `unconfined = true`, a write grant (`extra_write_paths`, `sandbox.extra_write_paths`, `sandbox.extra_device_paths`), or no jail at all.
-`mcp connect` probes under the same jail, and skips the probe only when there is no jail at all, saying so.
+`mcp add` probes under the same jail, and skips the probe only when there is no jail at all, saying so.
 It is the operator's own invocation naming the server they are adding.
 A diagnostic hands a server the repository to read and writes nothing but the config it was asked to write.
 

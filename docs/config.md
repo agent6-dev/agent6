@@ -506,13 +506,13 @@ agent6 as an MCP CLIENT; for the other direction (`agent6 mcp serve`, agent6 as 
 MCP servers, spawned (`command`) or connected (`url`); tools appear as `mcp__<name>__<tool>` in run mode only (plan, ask, machine and agent sessions never offer them: agent6 cannot classify an external tool as read-only).
 A spawned server runs as a jailed child by default (its own `[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out) with a curated env (never your provider keys; `pass_env` adds named vars); a `url` server is a process you run and confine yourself.
 The model chooses the arguments, so each call is approved like a command (`approve`); audit each server like a `run_command` allow-list.
-`agent6 mcp connect` saves a spawned server unprobed with a warning when isolation resolves to `none`; otherwise it requires a successful probe before writing the entry.
+`agent6 mcp add` saves a spawned server unprobed with a warning when isolation resolves to `none`; otherwise it requires a successful probe before writing the entry.
 During a run, a server that does not start is skipped with an `mcp.server_unavailable` journal event, never fatal.
 `agent6 check mcp` probes under the run's sandbox with the repository bound read-only and skips a server it cannot hold that way ([the rule](security.md#2-sandbox)).
 
 ```
-agent6 mcp connect files -- npx -y @modelcontextprotocol/server-filesystem .
-agent6 mcp connect browser --url http://127.0.0.1:8931/mcp --token-env PW_TOKEN
+agent6 mcp add files -- npx -y @modelcontextprotocol/server-filesystem .
+agent6 mcp add browser --url http://127.0.0.1:8931/mcp --token-env PW_TOKEN
 agent6 mcp list
 agent6 mcp remove files
 ```
@@ -538,7 +538,7 @@ Anything else that reaches an unconfined process is still a way out, so name the
 | `enabled` | `false` | Master switch for MCP servers: `false` means no `mcp__*` tools reach the model, whatever `[mcp.servers]` lists. |
 | `servers.<name>.command` | `[]` | argv of a stdio MCP server agent6 spawns (jailed like a command, plus `sandbox`). Exactly one of `command` or `url`. |
 | `servers.<name>.url` | `""` | An http(s) MCP endpoint you run yourself; agent6 only connects, owning none of its environment or confinement. Exactly one of `command` or `url`. |
-| `servers.<name>.token_env` | `""` | For a `url` server: the environment variable holding its bearer token, named here and never inlined or logged. Over plaintext `http://` to a non-loopback host the token is readable on the wire: `mcp connect` asks first, and every run that starts it warns. |
+| `servers.<name>.token_env` | `""` | For a `url` server: the environment variable holding its bearer token, named here and never inlined or logged. Over plaintext `http://` to a non-loopback host the token is readable on the wire: `mcp add` asks first, and every run that starts it warns. |
 | `servers.<name>.enabled` | `true` | `false` withholds this server's tools from the model without deleting the entry. |
 | `servers.<name>.pass_env` | `[]` | Environment variables a spawned server needs, by name; everything else is agent6's curated base environment. |
 | `servers.<name>.approve` | `"ask"` | `ask` prompts before each of this server's tool calls, showing the arguments the model chose; `allow` never asks. The session answers are per server: "allow all" covers this server for the run (not the command tools, not a sibling server), "deny all" withdraws its tools from the next turn. `--auto-approve` sets `allow` for the run. There is no `deny`: `enabled = false` is how a server's tools are withheld. |

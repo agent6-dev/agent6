@@ -941,12 +941,12 @@ def _dispatch_review(args: argparse.Namespace) -> int:
 def _dispatch_mcp(args: argparse.Namespace) -> int:
     """Return the exit code of a `agent6 mcp` verb."""
     from agent6.ui import mcp_server
-    from agent6.ui.cli import mcp_connect
+    from agent6.ui.cli import mcp_add
 
     if args.mcp_command == "serve":
         return mcp_server.run_server(args.config)
-    if args.mcp_command == "connect":
-        return mcp_connect.cmd_mcp_connect(
+    if args.mcp_command == "add":
+        return mcp_add.cmd_mcp_add(
             args.name,
             command=args.server_command,
             url=args.url,
@@ -956,8 +956,8 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
             config_paths=args.config,
         )
     if args.mcp_command == "remove":
-        return mcp_connect.cmd_mcp_remove(args.name, to_repo=args.to_repo, config_paths=args.config)
-    return mcp_connect.cmd_mcp_list(args.config)
+        return mcp_add.cmd_mcp_remove(args.name, to_repo=args.to_repo, config_paths=args.config)
+    return mcp_add.cmd_mcp_list(args.config)
 
 
 def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 mcp connect` proves the server works BEFORE writing config.
+"""`agent6 mcp add` proves the server works BEFORE writing config.
 
 A server named in config that turns out not to answer is a run that starts,
 logs "failed to start", and quietly has fewer tools than the operator thinks --
@@ -15,7 +15,7 @@ import sys
 import pytest
 
 from agent6.config import layer
-from agent6.ui.cli import mcp_connect as cli_mcp_connect
+from agent6.ui.cli import mcp_add as cli_mcp_add
 
 # The interpreter a jailed probe can reach: the run's sandbox grants /usr,
 # not the venv (a server there needs `extra_read_paths`, which is the point).
@@ -49,7 +49,7 @@ def test_a_server_that_answers_is_written_with_its_tools_shown(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
-    rc = cli_mcp_connect.cmd_mcp_connect(
+    rc = cli_mcp_add.cmd_mcp_add(
         "browser", command=_server_argv(), url="", token_env="", pass_env=[], to_repo=False
     )
 
@@ -76,7 +76,7 @@ def test_the_enable_hint_names_the_config_the_entry_went_to(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
-    rc = cli_mcp_connect.cmd_mcp_connect(
+    rc = cli_mcp_add.cmd_mcp_add(
         "browser", command=_server_argv(), url="", token_env="", pass_env=[], to_repo=True
     )
 
@@ -84,21 +84,21 @@ def test_the_enable_hint_names_the_config_the_entry_went_to(
     out = capsys.readouterr().out
     assert "written to the repo config" in out
     assert "agent6 config set --repo mcp.enabled true" in out
-    assert cli_mcp_connect.cmd_mcp_list() == 0
+    assert cli_mcp_add.cmd_mcp_list() == 0
     assert "DISABLED (agent6 config set --repo mcp.enabled true)" in capsys.readouterr().out
 
 
-def test_a_second_connect_under_the_same_name_says_it_replaces(
+def test_a_second_add_under_the_same_name_says_it_replaces(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     args: dict[str, object] = {"url": "", "token_env": "", "pass_env": [], "to_repo": False}
 
-    assert cli_mcp_connect.cmd_mcp_connect("browser", command=_server_argv(), **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("browser", command=_server_argv(), **args) == 0  # pyright: ignore[reportArgumentType]
     assert "replacing" not in capsys.readouterr().out
     argv = [*_server_argv(), "--again"]
-    assert cli_mcp_connect.cmd_mcp_connect("browser", command=argv, **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("browser", command=argv, **args) == 0  # pyright: ignore[reportArgumentType]
 
     assert "written to the global config, replacing browser." in capsys.readouterr().out
     assert layer.load_effective(tmp_path).config.mcp.servers["browser"].command == tuple(argv)
@@ -109,25 +109,25 @@ def test_an_entry_in_the_other_layer_is_named_not_called_replaced(
 ) -> None:
     """The merged config is not the layer being written.
 
-    A repo-layer entry plus a global connect leaves the repo entry winning, and the inverse shadows
+    A repo-layer entry plus a global add leaves the repo entry winning, and the inverse shadows
     the global one; each write says which.
     """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     args: dict[str, object] = {"url": "", "token_env": "", "pass_env": []}
 
-    assert cli_mcp_connect.cmd_mcp_connect("b", command=_server_argv(), to_repo=True, **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("b", command=_server_argv(), to_repo=True, **args) == 0  # pyright: ignore[reportArgumentType]
     capsys.readouterr()
     argv = [*_server_argv(), "--global"]
-    assert cli_mcp_connect.cmd_mcp_connect("b", command=argv, to_repo=False, **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("b", command=argv, to_repo=False, **args) == 0  # pyright: ignore[reportArgumentType]
     out = capsys.readouterr().out
     assert "written to the global config; the repo config's entry for b keeps winning." in out
     assert "replacing" not in out
     assert layer.load_effective(tmp_path).config.mcp.servers["b"].command == tuple(_server_argv())
 
-    assert cli_mcp_connect.cmd_mcp_connect("c", command=_server_argv(), to_repo=False, **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("c", command=_server_argv(), to_repo=False, **args) == 0  # pyright: ignore[reportArgumentType]
     capsys.readouterr()
-    assert cli_mcp_connect.cmd_mcp_connect("c", command=argv, to_repo=True, **args) == 0  # pyright: ignore[reportArgumentType]
+    assert cli_mcp_add.cmd_mcp_add("c", command=argv, to_repo=True, **args) == 0  # pyright: ignore[reportArgumentType]
     out = capsys.readouterr().out
     assert "written to the repo config; it shadows the global config's entry for c." in out
     assert layer.load_effective(tmp_path).config.mcp.servers["c"].command == tuple(argv)
@@ -143,7 +143,7 @@ def test_a_binary_missing_on_the_host_is_named_without_a_sandbox_hint(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
-    rc = cli_mcp_connect.cmd_mcp_connect(
+    rc = cli_mcp_add.cmd_mcp_add(
         "dead",
         command=["/nonexistent/agent6-test-server"],
         url="",
@@ -167,7 +167,7 @@ def test_an_existing_file_that_is_not_executable_is_named_as_such(
     script.write_text("print(1)\n", encoding="utf-8")
     script.chmod(0o644)
 
-    rc = cli_mcp_connect.cmd_mcp_connect(
+    rc = cli_mcp_add.cmd_mcp_add(
         "plain", command=[str(script)], url="", token_env="", pass_env=[], to_repo=False
     )
 
@@ -182,7 +182,7 @@ def test_a_server_that_does_not_answer_writes_nothing(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
-    rc = cli_mcp_connect.cmd_mcp_connect(
+    rc = cli_mcp_add.cmd_mcp_add(
         "dead",
         command=["/nonexistent/agent6-test-server"],
         url="",
@@ -206,7 +206,7 @@ def test_a_server_with_no_tools_writes_nothing(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
-    rc = cli_mcp_connect.cmd_mcp_connect(
+    rc = cli_mcp_add.cmd_mcp_add(
         "empty",
         command=_server_argv(tools=False),
         url="",
@@ -244,7 +244,7 @@ def test_a_mismatched_transport_and_env_flag_is_named(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     args: dict[str, object] = {"token_env": "", "pass_env": [], "to_repo": False, **kwargs}
 
-    rc = cli_mcp_connect.cmd_mcp_connect("s", **args)  # pyright: ignore[reportArgumentType]
+    rc = cli_mcp_add.cmd_mcp_add("s", **args)  # pyright: ignore[reportArgumentType]
 
     assert rc == 2
     assert message in capsys.readouterr().err
@@ -263,9 +263,7 @@ def test_an_argv_round_trips_through_config(
     argv = [*_server_argv(), "--flag=a b", 'quote"inside']
 
     assert (
-        cli_mcp_connect.cmd_mcp_connect(
-            "q", command=argv, url="", token_env="", pass_env=[], to_repo=False
-        )
+        cli_mcp_add.cmd_mcp_add("q", command=argv, url="", token_env="", pass_env=[], to_repo=False)
         == 0
     )
     assert layer.load_effective(tmp_path).config.mcp.servers["q"].command == tuple(argv)
@@ -286,7 +284,7 @@ def test_the_listing_says_how_each_server_is_reached(
         encoding="utf-8",
     )
 
-    assert cli_mcp_connect.cmd_mcp_list() == 0
+    assert cli_mcp_add.cmd_mcp_list() == 0
     out = capsys.readouterr().out
     assert "spawn   x -y" in out
     assert "connect https://h/mcp" in out
@@ -301,8 +299,8 @@ def test_the_listing_of_nothing_says_how_to_add_one(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    assert cli_mcp_connect.cmd_mcp_list() == 0
-    assert "agent6 mcp connect" in capsys.readouterr().out
+    assert cli_mcp_add.cmd_mcp_list() == 0
+    assert "agent6 mcp add" in capsys.readouterr().out
 
 
 def test_the_probe_leaves_no_server_running(
@@ -323,9 +321,7 @@ def test_the_probe_leaves_no_server_running(
     argv[2] = f"# {token}\n" + argv[2]
 
     assert (
-        cli_mcp_connect.cmd_mcp_connect(
-            "p", command=argv, url="", token_env="", pass_env=[], to_repo=False
-        )
+        cli_mcp_add.cmd_mcp_add("p", command=argv, url="", token_env="", pass_env=[], to_repo=False)
         == 0
     )
     assert "mcp__p__read_page" in capsys.readouterr().out, "the probe really did start it"
@@ -376,7 +372,7 @@ def test_a_passed_secret_is_redacted_from_a_server_failure(
 
 
 def test_direct_config_also_refuses_a_provider_key_in_pass_env() -> None:
-    """The invariant lives in Config, not only `mcp connect`.
+    """The invariant lives in Config, not only `mcp add`.
 
     A direct TOML edit naming a provider's api_key_env in a server's pass_env is rejected at load,
     so it cannot hand a third-party server a provider API key.
@@ -392,17 +388,17 @@ def test_direct_config_also_refuses_a_provider_key_in_pass_env() -> None:
         )
 
 
-def test_connect_confirms_a_plaintext_nonloopback_token_and_no_is_the_default(
+def test_add_confirms_a_plaintext_nonloopback_token_and_no_is_the_default(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Connect confirms a plaintext non-loopback token, and no is the default.
+    """Add confirms a plaintext non-loopback token, and no is the default.
 
     A url and token_env over plaintext http to a non-loopback host is connectable (a VPN or internal
     endpoint is a real case) but confirmed first, naming the cost. Declining probes nothing and
     writes nothing.
     """
     from agent6.tools import mcp_client
-    from agent6.ui.cli import mcp_connect
+    from agent6.ui.cli import mcp_add
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -414,12 +410,12 @@ def test_connect_confirms_a_plaintext_nonloopback_token_and_no_is_the_default(
     def _no_probe(
         spec: mcp_client.MCPServerSpec,
     ) -> tuple[tuple[mcp_client.MCPToolDescriptor, ...], str]:
-        pytest.fail("declined connect must not probe")
+        pytest.fail("declined add must not probe")
 
     monkeypatch.setattr(sys, "stdin", _Tty())
     monkeypatch.setattr("builtins.input", lambda _prompt="": "")
-    monkeypatch.setattr(mcp_connect, "_probe", _no_probe)
-    rc = cli_mcp_connect.cmd_mcp_connect(
+    monkeypatch.setattr(mcp_add, "_probe", _no_probe)
+    rc = cli_mcp_add.cmd_mcp_add(
         "corp",
         command=[],
         url="http://mcp.corp.internal/mcp",
@@ -433,17 +429,17 @@ def test_connect_confirms_a_plaintext_nonloopback_token_and_no_is_the_default(
     assert not (tmp_path / "cfg" / "agent6" / "config.toml").exists()
 
 
-def test_connect_headless_warns_and_proceeds_on_plaintext_nonloopback(
+def test_add_headless_warns_and_proceeds_on_plaintext_nonloopback(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With no terminal to ask, the connect proceeds with the same loud warning (warn, never refuse.
+    """With no terminal to ask, the add proceeds with the same loud warning (warn, never refuse.
 
     The config is explicit).
     """
     import io
 
     from agent6.tools import mcp_client
-    from agent6.ui.cli import mcp_connect
+    from agent6.ui.cli import mcp_add
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -461,8 +457,8 @@ def test_connect_headless_warns_and_proceeds_on_plaintext_nonloopback(
             "",
         )
 
-    monkeypatch.setattr(mcp_connect, "_probe", _fake_probe)
-    rc = cli_mcp_connect.cmd_mcp_connect(
+    monkeypatch.setattr(mcp_add, "_probe", _fake_probe)
+    rc = cli_mcp_add.cmd_mcp_add(
         "corp",
         command=[],
         url="http://mcp.corp.internal/mcp",
@@ -477,24 +473,24 @@ def test_connect_headless_warns_and_proceeds_on_plaintext_nonloopback(
     assert written.url == "http://mcp.corp.internal/mcp" and written.token_env == "TOK"
 
 
-def test_mcp_connect_argv_does_not_clobber_the_dispatch_verb() -> None:
-    """The `mcp connect` argv does not clobber the dispatch verb.
+def test_mcp_add_argv_does_not_clobber_the_dispatch_verb() -> None:
+    """The `mcp add` argv does not clobber the dispatch verb.
 
-    A `connect` positional sharing its dest with the root subparser's command verb makes the
-    `--`-separated argv dispatch on a list and crash (unhashable dict key) before any of connect's
+    An `add` positional sharing its dest with the root subparser's command verb makes the
+    `--`-separated argv dispatch on a list and crash (unhashable dict key) before any of add's
     own validation.
     """
     from agent6.ui.cli import parser
 
-    args = parser.build_parser().parse_args(["mcp", "connect", "files", "--", "npx", "-y", "srv"])
+    args = parser.build_parser().parse_args(["mcp", "add", "files", "--", "npx", "-y", "srv"])
     assert args.command == "mcp"
     assert args.server_command == ["npx", "-y", "srv"]
 
 
-def test_mcp_connect_without_a_transport_refuses_cleanly(
+def test_mcp_add_without_a_transport_refuses_cleanly(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`mcp connect x` reached the dispatch table with args.command rebound to an empty list.
+    """`mcp add x` reached the dispatch table with args.command rebound to an empty list.
 
     "unexpected TypeError", a crash log, exit 1.
     """
@@ -503,13 +499,13 @@ def test_mcp_connect_without_a_transport_refuses_cleanly(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
-    assert cli_main(["mcp", "connect", "x"]) == 2
+    assert cli_main(["mcp", "add", "x"]) == 2
     err = capsys.readouterr().err
     assert "exactly one" in err
     assert "unexpected" not in err
 
 
-def test_connect_probes_a_spawned_server_under_the_runs_sandbox(
+def test_add_probes_a_spawned_server_under_the_runs_sandbox(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The handshake proves the server the run will spawn.
@@ -517,7 +513,7 @@ def test_connect_probes_a_spawned_server_under_the_runs_sandbox(
     A spawned server is probed with the run's jail policy, a --url server with none.
     """
     from agent6.tools import mcp_client
-    from agent6.ui.cli import mcp_connect
+    from agent6.ui.cli import mcp_add
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -529,15 +525,15 @@ def test_connect_probes_a_spawned_server_under_the_runs_sandbox(
         seen.append(spec)
         return (), "did not start"
 
-    monkeypatch.setattr(mcp_connect, "_probe", _fake_probe)
+    monkeypatch.setattr(mcp_add, "_probe", _fake_probe)
     assert (
-        cli_mcp_connect.cmd_mcp_connect(
+        cli_mcp_add.cmd_mcp_add(
             "calc", command=["python3", "s.py"], url="", token_env="", pass_env=[], to_repo=False
         )
         == 1
     )
     assert (
-        cli_mcp_connect.cmd_mcp_connect(
+        cli_mcp_add.cmd_mcp_add(
             "web",
             command=[],
             url="http://127.0.0.1:1/mcp",
@@ -555,18 +551,18 @@ def test_connect_probes_a_spawned_server_under_the_runs_sandbox(
 def test_remove_drops_the_entry_from_the_layer_that_declares_it(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`mcp remove` is the inverse of connect: the entry goes as a unit."""
+    """`mcp remove` is the inverse of add: the entry goes as a unit."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     assert (
-        cli_mcp_connect.cmd_mcp_connect(
+        cli_mcp_add.cmd_mcp_add(
             "browser", command=_server_argv(), url="", token_env="", pass_env=[], to_repo=False
         )
         == 0
     )
     capsys.readouterr()
 
-    assert cli_mcp_connect.cmd_mcp_remove("browser") == 0
+    assert cli_mcp_add.cmd_mcp_remove("browser") == 0
 
     assert "browser" not in layer.load_effective(tmp_path).config.mcp.servers
     assert "removed browser from the global config" in capsys.readouterr().out
@@ -582,14 +578,14 @@ def test_remove_names_the_other_layer_rather_than_removing_nothing(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     assert (
-        cli_mcp_connect.cmd_mcp_connect(
+        cli_mcp_add.cmd_mcp_add(
             "browser", command=_server_argv(), url="", token_env="", pass_env=[], to_repo=False
         )
         == 0
     )
     capsys.readouterr()
 
-    assert cli_mcp_connect.cmd_mcp_remove("browser", to_repo=True) == 2
+    assert cli_mcp_add.cmd_mcp_remove("browser", to_repo=True) == 2
 
     err = capsys.readouterr().err
     assert "agent6 mcp remove browser" in err
@@ -615,7 +611,7 @@ def test_remove_refuses_an_entry_it_cannot_rewrite_instead_of_claiming_success(
         encoding="utf-8",
     )
 
-    assert cli_mcp_connect.cmd_mcp_remove("dotted") == 2
+    assert cli_mcp_add.cmd_mcp_remove("dotted") == 2
 
     assert "not written as a [mcp.servers.dotted] table" in capsys.readouterr().err
     assert "dotted" in layer.load_effective(tmp_path).config.mcp.servers, "nothing was removed"

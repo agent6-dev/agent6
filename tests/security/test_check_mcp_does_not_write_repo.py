@@ -2,11 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """A diagnostic never starts a server outside a run's confinement, and writes only the config asked.
 
-`agent6 check mcp` and the `mcp connect` handshake start each server in the repository
+`agent6 check mcp` and the `mcp add` handshake start each server in the repository
 (so a script that lives there resolves, as in a run) under the run's sandbox with the
 workspace bound read-only. A server a run would refuse is a FAIL row, never started. A
 server the read-only probe cannot hold (`unconfined = true`, any write grant, no jail at
-all) is a WARN row naming the leaf, never started; with no jail `mcp connect` writes the
+all) is a WARN row naming the leaf, never started; with no jail `mcp add` writes the
 entry unproved and says so.
 """
 
@@ -21,7 +21,7 @@ from agent6.app import _setup
 from agent6.config import Config, layer
 from agent6.sandbox import detect
 from agent6.tools import mcp_client
-from agent6.ui.cli import check_cmds, mcp_connect
+from agent6.ui.cli import check_cmds, mcp_add
 
 # The interpreter a jailed probe can reach: the run's sandbox grants /usr,
 # not the venv.
@@ -122,12 +122,12 @@ def test_the_workspace_is_read_only_under_partial_too(
 
 
 @pytest.mark.needs_namespaces
-def test_mcp_connect_probes_read_only_too(
+def test_mcp_add_probes_read_only_too(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The handshake is proved, the repo stays as it was."""
     repo = _repo_with_server(tmp_path, monkeypatch)
-    rc = mcp_connect.cmd_mcp_connect(
+    rc = mcp_add.cmd_mcp_add(
         "notes",
         command=[_JAIL_PYTHON, "server.py"],
         url="",
@@ -139,7 +139,7 @@ def test_mcp_connect_probes_read_only_too(
     assert sorted(p.name for p in repo.iterdir()) == ["server.py"]
 
 
-def test_mcp_connect_with_no_jail_writes_the_entry_unproved(
+def test_mcp_add_with_no_jail_writes_the_entry_unproved(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With no jail the server is not run; the entry is written and the unproved part is named.
@@ -150,7 +150,7 @@ def test_mcp_connect_with_no_jail_writes_the_entry_unproved(
     repo = _repo_with_server(tmp_path, monkeypatch)
     monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
     _never_started(monkeypatch)
-    rc = mcp_connect.cmd_mcp_connect(
+    rc = mcp_add.cmd_mcp_add(
         "notes",
         command=[_JAIL_PYTHON, "server.py"],
         url="",

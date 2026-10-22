@@ -387,7 +387,7 @@ banned-from = [
     "agent6.ui.cli.machine_agent",
     "agent6.ui.cli.machine_check",
     "agent6.ui.cli.machine_cmds",
-    "agent6.ui.cli.mcp_connect",
+    "agent6.ui.cli.mcp_add",
     "agent6.ui.cli.memory_cmds",
     "agent6.ui.cli.model",
     "agent6.ui.cli.net_cmds",

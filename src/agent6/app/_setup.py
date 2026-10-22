@@ -489,7 +489,7 @@ def mcp_server_spec(
         isolation: The isolation level.
         name: The server's name.
         srv: The server's config block.
-        readonly: Bind the workspace read-only, for the `check mcp` and `mcp connect` probes.
+        readonly: Bind the workspace read-only, for the `check mcp` and `mcp add` probes.
 
     Returns:
         The spec the manager starts the server from.

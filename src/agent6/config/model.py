@@ -217,7 +217,7 @@ class Config(pydantic.BaseModel):
     def _pass_env_excludes_provider_keys(self) -> Config:
         """Refuse a `pass_env` naming a provider's `api_key_env`.
 
-        The invariant lives here so a direct config edit cannot bypass it; `mcp connect`
+        The invariant lives here so a direct config edit cannot bypass it; `mcp add`
         pre-checks the same rule for an earlier refusal.
 
         Returns:

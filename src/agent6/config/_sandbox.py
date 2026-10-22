@@ -389,7 +389,7 @@ class MCPServerEntry(pydantic.BaseModel):
         description=(
             "For a `url` server: the environment variable holding its bearer token, named here and "
             "never inlined or logged. Over plaintext `http://` to a non-loopback host the token is "
-            "readable on the wire: `mcp connect` asks first, and every run that starts it warns."
+            "readable on the wire: `mcp add` asks first, and every run that starts it warns."
         ),
     )
     enabled: bool = pydantic.Field(
@@ -527,7 +527,7 @@ def mcp_server_name_refusal(name: str) -> str:
     """Return why the name cannot be an MCP server key, or "".
 
     Routing splits `mcp__<name>__<tool>` on the first `__` after the prefix, so the key is
-    identifier-shaped and `__`-free. `agent6 mcp connect` refuses on this before it writes:
+    identifier-shaped and `__`-free. `agent6 mcp add` refuses on this before it writes:
     the name becomes a TOML table header, and one carrying `]` and a newline could open a
     table of its own choosing.
 

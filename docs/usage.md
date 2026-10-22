@@ -318,7 +318,7 @@ agent6 memory add|list|show|rm                       # the index renders each fa
 agent6 memory decisions                              # the operator rulings the harness recorded
 agent6 skills install|update|list                    # skills from a repo, a directory or a SKILL.md URL
 agent6 skills enable NAME [--always]                 # a skill the model may use, or one it always gets; disable, remove
-agent6 mcp connect NAME [--url URL | -- COMMAND...]  # an MCP server; --pass-env VAR passes an environment variable to a local server; list, remove, serve
+agent6 mcp add NAME [--url URL | -- COMMAND...]  # an MCP server; --pass-env VAR passes an environment variable to a local server; list, remove, serve
 agent6 machine ...                                   # state machines over runs (see state-machines.md)
 agent6 system apparmor install                       # the AppArmor profile that full isolation needs on some hosts; status, remove
 agent6 completions bash|zsh|fish|xonsh [--print]

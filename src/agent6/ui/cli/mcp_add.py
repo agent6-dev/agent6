@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 mcp connect`: add an MCP server after proving it works.
+"""`agent6 mcp add`: add an MCP server after proving it works.
 
 The order is the point: handshake, list the tools, show them, and only then write
 config. A server named in config that does not answer is a run that starts, logs
@@ -36,7 +36,7 @@ from agent6.tools import mcp_client
 from agent6.ui.cli import _common
 
 # Long enough for a cold `npx` to fetch and boot a server; the per-run default stays 10s.
-_CONNECT_TIMEOUT_S = 60.0
+_PROBE_TIMEOUT_S = 60.0
 
 
 def _probe(spec: mcp_client.MCPServerSpec) -> tuple[tuple[mcp_client.MCPToolDescriptor, ...], str]:
@@ -77,9 +77,9 @@ def _refuse_bad_flags(
     if bool(command) == bool(url):
         return (
             "give exactly one of a command to spawn or --url to connect to.\n"
-            "  spawn:   agent6 mcp connect files -- npx -y"
+            "  spawn:   agent6 mcp add files -- npx -y"
             " @modelcontextprotocol/server-filesystem .\n"
-            "  connect: agent6 mcp connect browser --url http://127.0.0.1:8931/mcp"
+            "  connect: agent6 mcp add browser --url http://127.0.0.1:8931/mcp"
         )
     if token_env and not url:
         return "--token-env is for --url servers; a spawned one uses --pass-env"
@@ -122,7 +122,7 @@ def _cleartext_token_go_ahead(url: str, token_env: str) -> bool:
     )
     if not sys.stdin.isatty():
         return True
-    return input("Connect anyway? [y/N]: ").strip().lower() in ("y", "yes")
+    return input("Add anyway? [y/N]: ").strip().lower() in ("y", "yes")
 
 
 def _describe(spec: mcp_client.MCPServerSpec) -> str:
@@ -167,7 +167,7 @@ def _report_no_answer(
     print("       nothing was written to config.", file=sys.stderr)
 
 
-def cmd_mcp_connect(
+def cmd_mcp_add(
     name: str,
     *,
     command: list[str],
@@ -210,7 +210,7 @@ def cmd_mcp_connect(
                 "url": url,
                 "token_env": token_env,
                 "pass_env": pass_env,
-                "startup_timeout_s": _CONNECT_TIMEOUT_S,
+                "startup_timeout_s": _PROBE_TIMEOUT_S,
             }
         )
     except pydantic.ValidationError as exc:
@@ -347,7 +347,7 @@ def cmd_mcp_remove(
 ) -> int:
     """Drop `[mcp.servers.<name>]` from the global (or `--repo`) config.
 
-    The inverse of `connect`, and the only way to drop a server: the entry is a table, so
+    The inverse of `add`, and the only way to drop a server: the entry is a table, so
     `config unset` cannot name it, and unsetting its `command` or `url` is refused because
     an entry needs exactly one of them.
 
@@ -404,7 +404,7 @@ def cmd_mcp_list(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     effective = config_layer.load_effective(pathlib.Path.cwd(), config_paths)
     cfg = effective.config
     if not cfg.mcp.servers:
-        print("no MCP servers configured. Add one with `agent6 mcp connect <name> ...`.")
+        print("no MCP servers configured. Add one with `agent6 mcp add <name> ...`.")
         return 0
     # The switch goes where the servers are: a repo-only setup never enables every repository.
     layers = {

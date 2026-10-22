@@ -98,12 +98,12 @@ def _complete_mcp_servers(prefix: str, **kw: object) -> list[str]:
     """Return the configured MCP server names."""
     effective = layer.load_effective(pathlib.Path.cwd(), _explicit_config(kw))
     target = "repo" if getattr(kw.get("parsed_args"), "to_repo", False) else "global"
-    from agent6.ui.cli import mcp_connect  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.ui.cli import mcp_add  # noqa: PLC0415  # noqa: PLC0415
 
     return sorted(
         name
         for name in effective.config.mcp.servers
-        if name.startswith(prefix) and target in mcp_connect._layers_holding(effective, name)
+        if name.startswith(prefix) and target in mcp_add._layers_holding(effective, name)
     )
 
 
