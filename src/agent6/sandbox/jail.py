@@ -62,23 +62,25 @@ def die_with_parent(parent_pid: int, sig: int = signal.SIGTERM) -> Callable[[], 
     return _setup
 
 
-def _tied_to_agent(controlling_terminal: bool) -> Callable[[], None]:
-    """Return the `preexec_fn` of a child in its own session that dies with this process.
+def _tied_to_agent(controlling_terminal: bool, memory_limit_mib: int = 0) -> Callable[[], None]:
+    """Return the `preexec_fn` of an unconfined child: the parent tie and the memory cap.
 
     Args:
-        controlling_terminal: Make the terminal on stdin the new session's controlling
-            terminal, so its signals and job control reach the child's foreground group.
+        controlling_terminal: Make the terminal on stdin the child's new session's
+            controlling terminal, so its signals and job control reach the foreground group.
+        memory_limit_mib: The RLIMIT_DATA cap in MiB; 0 is no cap.
 
     Returns:
-        The function to run in the child before exec, after it started its session.
+        The function to run in the child before exec.
     """
     tie = die_with_parent(os.getpid(), sig=signal.SIGKILL)
-    if not controlling_terminal:
-        return tie
+    cap = memory_cap(memory_limit_mib)
 
     def _setup() -> None:
         tie()
-        fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+        cap()
+        if controlling_terminal:
+            fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
     return _setup
 
@@ -363,26 +365,6 @@ def memory_cap(memory_limit_mib: int) -> Callable[[], None]:
     return _setup
 
 
-def _unsandboxed_setup(parent_pid: int, memory_limit_mib: int) -> Callable[[], None]:
-    """Return the `preexec_fn` of a one-shot `none` command: the parent tie and the memory cap.
-
-    Args:
-        parent_pid: The parent whose death ends the child.
-        memory_limit_mib: The RLIMIT_DATA cap in MiB; 0 is no cap.
-
-    Returns:
-        The function to run in the child before exec.
-    """
-    tie = die_with_parent(parent_pid, sig=signal.SIGKILL)
-    cap = memory_cap(memory_limit_mib)
-
-    def _setup() -> None:
-        tie()
-        cap()
-
-    return _setup
-
-
 def _run_unsandboxed(policy: kinds.JailPolicy) -> kinds.CommandResult:
     """Run the policy's argv as a plain subprocess, with no confinement.
 
@@ -407,7 +389,7 @@ def _run_unsandboxed(policy: kinds.JailPolicy) -> kinds.CommandResult:
             env=env,
             capture_output=True,
             check=False,
-            preexec_fn=_unsandboxed_setup(os.getpid(), policy.memory_limit_mib),
+            preexec_fn=_tied_to_agent(False, policy.memory_limit_mib),
             # <= 0 is no wall-clock kill (`agent6 exec`, a command whose check-in replaces it).
             timeout=policy.timeout_s if policy.timeout_s > 0 else None,
         )
@@ -789,7 +771,7 @@ def spawn_in_jail(
                 env=dict(policy.env),
                 cwd=policy.cwd,
                 start_new_session=True,
-                preexec_fn=_tied_to_agent(controlling_terminal),  # noqa: PLW1509
+                preexec_fn=_tied_to_agent(controlling_terminal, policy.memory_limit_mib),  # noqa: PLW1509
             )
             # In its own session, so unregistered a sibling handle's close would sweep it.
             live_launchers.add(proc.pid)
