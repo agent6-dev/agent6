@@ -544,6 +544,7 @@ def config_refusal(
     workspace: pathlib.Path,
     *,
     worktree_git_dir: pathlib.Path | None = None,
+    mcp_network: bool = True,
 ) -> str | None:
     """Return the first refusal for a config this host cannot honor, else None.
 
@@ -555,6 +556,8 @@ def config_refusal(
         isolation: The resolved isolation level.
         workspace: The workspace.
         worktree_git_dir: The linked worktree's git dir, when the run is in one.
+        mcp_network: Include each MCP server's network refusal; the MCP diagnostics leave
+            it out, since they report that one per server.
 
     Returns:
         The refusal, or None when every check passes.
@@ -562,7 +565,7 @@ def config_refusal(
     checks: tuple[Callable[[], str | None], ...] = (
         # The HOME check first: `check_hide_paths_support` builds the policy, which creates HOME.
         lambda: check_jail_home(cfg, isolation, workspace, worktree_git_dir),
-        lambda: check_mcp_network_support(cfg, isolation),
+        lambda: check_mcp_network_support(cfg, isolation) if mcp_network else None,
         # Before `check_hide_paths_support`, so a workspace under an entry gets its own refusal.
         lambda: check_workspace_outside_hidden_paths(cfg, workspace),
         lambda: check_hide_paths_support(cfg, isolation, workspace, worktree_git_dir),

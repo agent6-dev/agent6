@@ -75,6 +75,37 @@ def test_an_http_only_mcp_check_does_not_create_a_command_network(
     assert [(check.name, check.status) for check in checks] == [("mcp.remote", "PASS")]
 
 
+def test_mcp_check_applies_the_runs_config_refusals_before_a_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A config a run refuses (`home = "tmp"` below `full`) is reported, and no server starts.
+
+    The check probed under a policy the run would never build: the server got a cache HOME
+    while the run refuses to start.
+    """
+
+    def _partial(_requested: str, _env: object) -> str:
+        return "partial"
+
+    def _unexpected_start(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("the check started a server under a config a run refuses")
+
+    monkeypatch.setattr(_setup, "detect_env", object)
+    monkeypatch.setattr(detect, "resolve_isolation", _partial)
+    monkeypatch.setattr(mcp_client.MCPManager, "start", staticmethod(_unexpected_start))
+    cfg = Config.model_validate(
+        {
+            "sandbox": {"home": "tmp"},
+            "mcp": {"enabled": True, "servers": {"files": {"command": ["server"]}}},
+        }
+    )
+
+    checks = check_cmds._doctor_check_mcp(cfg)  # pyright: ignore[reportPrivateUsage]
+
+    assert [(check.name, check.status) for check in checks] == [("mcp", "FAIL")]
+    assert "sandbox.home = 'tmp' requires sandbox.isolation = 'full'" in checks[0].detail
+
+
 def test_mcp_check_reports_a_session_network_refusal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

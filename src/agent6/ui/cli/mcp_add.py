@@ -20,7 +20,7 @@ import sys
 import pydantic
 
 from agent6 import kinds, paths
-from agent6.app import _setup
+from agent6.app import _setup, confine
 from agent6.config import (
     Config,
     MCPServerEntry,
@@ -229,6 +229,11 @@ def cmd_mcp_add(
             f"{name} not probed: no jail ({_setup.no_jail_cause(cfg, env)}); a run starts "
             "it unconfined."
         )
+    elif command and (
+        refusal := confine.config_refusal(cfg, isolation, pathlib.Path.cwd(), mcp_network=False)
+    ):
+        # A run would refuse this config, so no probe runs under a policy the run never builds.
+        _common.warn(f"{name} not probed: a run would refuse: {refusal}")
     else:
         rc = _prove(cfg, name, entry, isolation)
         if rc is not None:
