@@ -530,7 +530,7 @@ class RunBridge:
         tail = threading.Thread(
             target=self._stream,
             args=(session, layout.logs_path, _stop, start_at, announced, order),
-            kwargs={"info": info},
+            kwargs={"info": info, "prompt": text},
             name=f"acp-tail-{session.acp_id}",
             daemon=True,
         )
@@ -585,6 +585,7 @@ class RunBridge:
         announced: Announced,
         order: ProseOrder | None = None,
         info: updates.RunInfo | None = None,
+        prompt: str = "",
     ) -> None:
         """Project the run's journal into `session/update` as it is written.
 
@@ -600,6 +601,7 @@ class RunBridge:
             announced: The execution's register of announced calls.
             order: The lifecycle's queued lines.
             info: The title, commands and usage projection; None sends none.
+            prompt: The prompt this execution runs; the journal's echo of it is not sent back.
         """
         fold = transcript.TranscriptFold()
         streamed: set[str] = set()
@@ -642,7 +644,7 @@ class RunBridge:
                         self.server.notify_raw(body)
                 for item in items:
                     if item.kind not in streamed:
-                        self._send_item(session, item, announced, paths, "".join(spoken))
+                        self._send_item(session, item, announced, paths, "".join(spoken), prompt)
                 if event_type == "role.result":
                     streamed.clear()
                 if order is not None:
@@ -669,6 +671,7 @@ class RunBridge:
         announced: Announced,
         paths: tuple[str, ...],
         spoken: str,
+        prompt: str,
     ) -> None:
         """Send one fold item's updates; the ending also goes to stderr.
 
@@ -679,7 +682,11 @@ class RunBridge:
             paths: The paths the tool result named.
             spoken: The last message streamed; an end summary repeating it is not sent
                 again, and the status line keeps its own paragraph.
+            prompt: The prompt this execution runs; the editor shows it already, so its
+                echo as steering is not sent, while a steer from another front-end is.
         """
+        if item.kind == "operator" and item.body.strip() == prompt.strip():
+            return
         wire_id = (
             updates.tool_call_id(item, session.session_id, announced.execution)
             if item.kind == "tool"

@@ -1920,3 +1920,43 @@ def test_a_streamed_final_answer_is_not_sent_again_as_the_end_summary(
     joined = "".join(texts)
     assert joined.count("Appended the line.") == 1, texts
     assert "DONE\n\n[agent6] Session" in joined, texts  # the status line keeps its own paragraph
+
+
+def test_the_editors_own_prompt_is_not_echoed_back_as_a_user_message(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resumed run journals its prompt as steering; the editor already shows that prompt.
+
+    Zed drew every later prompt twice, its own bubble and then the journal's echo. A steer
+    from another front-end is news to the editor and still arrives.
+    """
+    events = [
+        {"type": "loop.steer.injected", "text": "Now reply PING.", "chars": 15},
+        {"type": "loop.steer.injected", "text": "keep the API", "chars": 12},
+    ]
+    sent: list[dict[str, Any]] = []
+    server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+
+    def _events(*_args: object, **_kwargs: object) -> Iterator[dict[str, Any]]:
+        yield from events
+
+    monkeypatch.setattr(viewmodel_tail, "tail_events", _events)
+    bridge = runner.RunBridge(server=server)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
+
+    bridge._stream(  # pyright: ignore[reportPrivateUsage]
+        session,
+        tmp_path / "logs.jsonl",
+        lambda: True,
+        0,
+        runner.Announced(execution=1),
+        prompt="Now reply PING.",
+    )
+
+    said = [
+        update["content"]["text"]
+        for message in sent
+        if (update := message["params"]["update"])["sessionUpdate"] == "user_message_chunk"
+    ]
+    assert said == ["keep the API"], sent
