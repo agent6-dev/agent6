@@ -14,6 +14,8 @@ import re
 import subprocess
 import tomllib
 
+import pytest
+
 from agent6 import directive
 from agent6.app import confine
 from agent6.prompts import loop as prompts
@@ -137,6 +139,39 @@ def test_readme_quoted_security_defaults_match_config() -> None:
         assert str(actual).lower() == want, (
             f"README quotes {quoted!r} but the Config default is {actual!r}"
         )
+
+
+def _demo_configs() -> list[tuple[str, str]]:
+    """Return every config the docs demos write: the seed's string and each script's heredoc."""
+    seed = (REPO / "docs" / "screenshots" / "seed.py").read_text()
+    m = re.search(r'DEMO_CONFIG = """\\\n(.*?)"""', seed, re.S)
+    assert m is not None, "DEMO_CONFIG not found in seed.py"
+    out = [("seed.py", m.group(1))]
+    for script in sorted((REPO / "docs" / "screenshots").glob("*.sh")):
+        blocks = re.finditer(
+            r'cat > "\$XDG_CONFIG_HOME/agent6/config\.toml" <<EOF\n(.*?)\nEOF\n',
+            script.read_text(),
+            re.S,
+        )
+        for block in blocks:
+            # A shell expansion inside the heredoc (a port, a path) is one value for the parse.
+            body = re.sub(r"\$\{?[A-Za-z_][A-Za-z_0-9]*\}?", "8080", block.group(1))
+            out.append((script.name, body))
+    return out
+
+
+@pytest.mark.parametrize(
+    ("source", "toml_text"), _demo_configs(), ids=[s for s, _ in _demo_configs()]
+)
+def test_the_docs_demo_configs_validate(source: str, toml_text: str) -> None:
+    """Every config a docs demo writes loads through Config.
+
+    A renamed key or value fails here instead of on the pages build: the tri-state
+    `protect_git` refused the demos' `true` when the web tour's server started.
+    """
+    from agent6.config import Config
+
+    Config.model_validate(tomllib.loads(toml_text))
 
 
 def test_bench_container_config_template_validates() -> None:

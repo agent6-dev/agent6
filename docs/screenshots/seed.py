@@ -43,7 +43,7 @@ preset = "none"
 isolation = "auto"
 network = "session"
 run_commands = "ask"
-protect_git = true
+protect_git = "auto"
 
 [git]
 dirty_tree = "ask"

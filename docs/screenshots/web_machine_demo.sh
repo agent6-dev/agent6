@@ -48,7 +48,7 @@ cat > "$XDG_CONFIG_HOME/agent6/config.toml" <<EOF
 [sandbox]
 network = "session"
 run_commands = "allow"
-protect_git = true
+protect_git = "auto"
 [git]
 dirty_tree = "ask"
 branch_per_run = true
