@@ -16,12 +16,12 @@ from agent6.harness import _chain, _compaction, _conversation
 def _add_exchange(
     conv: _conversation.Conversation, *calls: tuple[str, dict[str, Any], str]
 ) -> None:
-    """One assistant turn of (tool name, input, result content) calls plus its results turn.
+    """One assistant message of (tool name, input, result content) calls plus its results message.
 
     Ids are unique per conversation position.
     """
     base = len(conv)
-    turn = conv.assistant(
+    message = conv.assistant(
         [
             {"type": "tool_use", "id": f"t{base}-{i}", "name": name, "input": tool_input}
             for i, (name, tool_input, _content) in enumerate(calls)
@@ -30,7 +30,7 @@ def _add_exchange(
     conv.results(
         [
             _conversation.ToolResultItem(tool_use_id=tu.id, content=content, for_call=tu)
-            for tu, (_name, _input, content) in zip(turn.tool_uses, calls, strict=True)
+            for tu, (_name, _input, content) in zip(message.tool_uses, calls, strict=True)
         ]
     )
 
@@ -44,9 +44,9 @@ def _reads(conv: _conversation.Conversation, *contents: str, name: str = "read_f
 def _result_contents(conv: _conversation.Conversation) -> list[str]:
     return [
         item.content
-        for turn in conv.turns
-        if isinstance(turn, _conversation.UserTurn)
-        for item in turn.items
+        for message in conv.messages
+        if isinstance(message, _conversation.UserMessage)
+        for item in message.items
         if isinstance(item, _conversation.ToolResultItem)
     ]
 
@@ -95,7 +95,7 @@ def test_context_chars_counts_text_tool_use_and_tool_results() -> None:
     # The tier-2 trigger sees content tier-1 does not cap: assistant prose and tool_use inputs.
     conv = _conversation.Conversation()
     conv.notice("abcd")  # 4
-    turn = conv.assistant(
+    message = conv.assistant(
         [
             {"type": "text", "text": "hello"},  # 5
             {"type": "tool_use", "id": "t1", "name": "grep", "input": {"q": "x"}},
@@ -104,7 +104,7 @@ def test_context_chars_counts_text_tool_use_and_tool_results() -> None:
     conv.results(
         [
             _conversation.ToolResultItem(
-                tool_use_id="t1", content="RESULT", for_call=turn.tool_uses[0]
+                tool_use_id="t1", content="RESULT", for_call=message.tool_uses[0]
             )
         ]  # 6
     )
@@ -119,7 +119,7 @@ def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
 
     tiny = "x" * 50  # smaller than the placeholder, so eliding it would grow the context
     big = "y" * 5000
-    # Oldest first; keep_recent=2 and the exempt final turn leave the first turn's blocks eligible.
+    # keep_recent=2 and the exempt final message leave the first message eligible.
     conv = _conversation.Conversation()
     _add_exchange(conv, ("grep", {}, tiny), ("grep", {}, big))
     _add_exchange(conv, ("grep", {}, big), ("grep", {}, big))
@@ -256,10 +256,10 @@ def test_compact_idempotent_on_already_elided() -> None:
     assert len(e2.elided_calls) == 0  # no further work needed on second pass
 
 
-def test_compact_never_elides_unseen_results_in_final_turn() -> None:
-    """Compaction never elides the final turn's results, which the model has not seen yet.
+def test_compact_never_elides_unseen_results_in_final_message() -> None:
+    """Compaction never elides the final message's results, which the model has not seen yet.
 
-    It runs at top-of-turn, before the provider call that delivers them.
+    It runs at top-of-message, before the provider call that delivers them.
     """
     big = "x" * 10_000
     conv = _conversation.Conversation()
@@ -270,8 +270,8 @@ def test_compact_never_elides_unseen_results_in_final_turn() -> None:
     assert _result_contents(conv) == [big, big, big]
 
 
-def test_compact_elides_seen_results_but_protects_final_turn() -> None:
-    # Results the model has consumed stay eligible; only the undelivered final turn is exempt.
+def test_compact_elides_seen_results_but_protects_final_message() -> None:
+    # Results the model has consumed stay eligible; only the undelivered final message is exempt.
     seen = [(f"s{i}" * 5_000) for i in range(3)]  # distinct: dedup must not fire
     fresh = [(f"f{i}" * 5_000) for i in range(3)]
     conv = _conversation.Conversation()
@@ -286,9 +286,9 @@ def test_compact_elides_seen_results_but_protects_final_turn() -> None:
 
 
 def test_compact_never_elides_undelivered_results_behind_a_steer_message() -> None:
-    """Undelivered results behind a trailing steer turn are exempt too.
+    """Undelivered results behind a trailing steer message are exempt too.
 
-    The exemption tracks the last tool_result-bearing turn, not the final index.
+    The exemption tracks the last tool_result-bearing message, not the final index.
     """
     big = "x" * 10_000
     conv = _conversation.Conversation()
@@ -399,12 +399,12 @@ def test_recently_edited_paths_extraction() -> None:
     assert got == frozenset(
         {"edited.py", "explicit.py", "pkg/mod.py", "pkg/other.py", "pkg/v4a.py"}
     )
-    # The window is per assistant TURN: an edit older than last_turns drops out.
+    # The window is per assistant TURN: an edit older than last_messages drops out.
     conv2 = _conversation.Conversation()
     _add_exchange(conv2, ("apply_edit", {"path": "old.py", "edits": []}, "ok"))
     _add_exchange(conv2, ("read_file", {"path": "a"}, "ok"))
     _add_exchange(conv2, ("read_file", {"path": "b"}, "ok"))
-    assert _compaction.recently_edited_paths(conv2, last_turns=2) == frozenset()
+    assert _compaction.recently_edited_paths(conv2, last_messages=2) == frozenset()
 
 
 def test_compact_elides_protected_reads_last_but_bound_still_holds() -> None:
@@ -514,7 +514,7 @@ def test_stats_carry_elided_identities() -> None:
 def test_context_chars_counts_a_reasoning_model_s_thinking() -> None:
     """Context chars count a reasoning model's thinking blocks.
 
-    `Conversation.to_wire` sends an assistant turn's raw blocks verbatim, so the thinking is in
+    `Conversation.to_wire` sends an assistant message's raw blocks verbatim, so the thinking is in
     every later request; the tier-2 trigger has to measure it.
     """
     conv = _conversation.Conversation()
@@ -539,7 +539,7 @@ def test_recent_tail_start_respects_cap_and_boundaries() -> None:
     conv = _conversation.Conversation()
     conv.notice("task")
     conv.assistant([{"type": "tool_use", "id": "t1", "name": "read_file", "input": {"path": "a"}}])
-    last = conv.turns[-1]
+    last = conv.messages[-1]
     conv.results(
         [
             _conversation.ToolResultItem(
@@ -550,18 +550,18 @@ def test_recent_tail_start_respects_cap_and_boundaries() -> None:
         ]
     )
     conv.assistant([{"type": "text", "text": "y" * 100}])
-    turns = conv.turns
+    messages = conv.messages
 
-    # Cap covering only the final text turn: the tail starts there.
-    assert _compaction.recent_tail_start(turns, 150) == 3
-    # A results-turn start is unsafe (its call was summarised away), so the cap advances past it.
-    assert _compaction.recent_tail_start(turns, 210) == 3
+    # Cap covering only the final text message: the tail starts there.
+    assert _compaction.recent_tail_start(messages, 150) == 3
+    # A results-message start is unsafe (its call was summarised away), so the cap advances past it.
+    assert _compaction.recent_tail_start(messages, 210) == 3
     # Cap covering the balanced call+result+text triple keeps all three.
-    assert _compaction.recent_tail_start(turns, 100_000) == 1
+    assert _compaction.recent_tail_start(messages, 100_000) == 1
     # Cap 0 keeps nothing.
-    assert _compaction.recent_tail_start(turns, 0) == len(turns)
+    assert _compaction.recent_tail_start(messages, 0) == len(messages)
     # A cap smaller than the newest exchange keeps that exchange: its results may be undelivered.
-    assert _compaction.recent_tail_start(turns, 50) == 3
+    assert _compaction.recent_tail_start(messages, 50) == 3
 
 
 def _conv_with_repeated_reads(payload: str) -> _conversation.Conversation:
@@ -571,7 +571,7 @@ def _conv_with_repeated_reads(payload: str) -> _conversation.Conversation:
         conv.assistant(
             [{"type": "tool_use", "id": tid, "name": "read_file", "input": {"path": "a.py"}}]
         )
-        last = conv.turns[-1]
+        last = conv.messages[-1]
         conv.results(
             [
                 _conversation.ToolResultItem(
@@ -591,10 +591,12 @@ def test_tier1_dedupes_identical_results_keeping_the_newest() -> None:
     stats = _compaction.compact_old_tool_results(conv, max_total_bytes=1_500, keep_recent=1)
     # Both older copies dedupe; only the newest (t3) keeps the bytes.
     assert len(stats.deduped_calls) == 2
-    result_turns = [t for t in conv.turns if isinstance(t, _conversation.UserTurn) and t.items]
+    result_messages = [
+        t for t in conv.messages if isinstance(t, _conversation.UserMessage) and t.items
+    ]
     contents = [
         item.content
-        for t in result_turns
+        for t in result_messages
         for item in t.items
         if isinstance(item, _conversation.ToolResultItem)
     ]
@@ -612,8 +614,8 @@ def test_a_duplicate_marker_claims_no_copy_the_same_pass_elides() -> None:
     calls += [(f"c{i}", "run_command", {"command": f"echo {i}"}) for i in range(3)]
     for tid, name, args in calls:
         conv.assistant([{"type": "tool_use", "id": tid, "name": name, "input": args}])
-        last = conv.turns[-1]
-        assert isinstance(last, _conversation.AssistantTurn)
+        last = conv.messages[-1]
+        assert isinstance(last, _conversation.AssistantMessage)
         conv.results(
             [
                 _conversation.ToolResultItem(
@@ -624,10 +626,12 @@ def test_a_duplicate_marker_claims_no_copy_the_same_pass_elides() -> None:
     # The duplicated read is older than the kept tail, so its newest copy is eligible too.
     _compaction.compact_old_tool_results(conv, max_total_bytes=9_000, keep_recent=2)
 
-    result_turns = [t for t in conv.turns if isinstance(t, _conversation.UserTurn) and t.items]
+    result_messages = [
+        t for t in conv.messages if isinstance(t, _conversation.UserMessage) and t.items
+    ]
     contents = [
         item.content
-        for t in result_turns
+        for t in result_messages
         for item in t.items
         if isinstance(item, _conversation.ToolResultItem)
     ]
@@ -645,8 +649,8 @@ def test_a_duplicate_marker_never_grows_the_result_it_replaces() -> None:
         conv.assistant(
             [{"type": "tool_use", "id": tid, "name": "read_file", "input": {"path": "a.py"}}]
         )
-        last = conv.turns[-1]
-        assert isinstance(last, _conversation.AssistantTurn)
+        last = conv.messages[-1]
+        assert isinstance(last, _conversation.AssistantMessage)
         conv.results(
             [
                 _conversation.ToolResultItem(
@@ -656,9 +660,9 @@ def test_a_duplicate_marker_never_grows_the_result_it_replaces() -> None:
         )
     before = sum(
         len(item.content)
-        for turn in conv.turns
-        if isinstance(turn, _conversation.UserTurn)
-        for item in turn.items
+        for message in conv.messages
+        if isinstance(message, _conversation.UserMessage)
+        for item in message.items
         if isinstance(item, _conversation.ToolResultItem)
     )
 
@@ -666,9 +670,9 @@ def test_a_duplicate_marker_never_grows_the_result_it_replaces() -> None:
 
     after = sum(
         len(item.content)
-        for turn in conv.turns
-        if isinstance(turn, _conversation.UserTurn)
-        for item in turn.items
+        for message in conv.messages
+        if isinstance(message, _conversation.UserMessage)
+        for item in message.items
         if isinstance(item, _conversation.ToolResultItem)
     )
     assert after <= before, f"compaction grew the conversation: {before} -> {after}"
@@ -691,7 +695,7 @@ def test_tier1_dedup_skips_small_and_different_results() -> None:
         conv.assistant(
             [{"type": "tool_use", "id": tid, "name": "read_file", "input": {"path": "b.py"}}]
         )
-        last = conv.turns[-1]
+        last = conv.messages[-1]
         conv.results(
             [
                 _conversation.ToolResultItem(
@@ -707,7 +711,7 @@ def test_tier1_dedup_skips_small_and_different_results() -> None:
 
 
 @pytest.mark.parametrize(
-    ("keep_turns", "retained"),
+    ("keep_messages", "retained"),
     [
         (None, [True, True, True]),
         (-1, [True, True, True]),
@@ -718,7 +722,7 @@ def test_tier1_dedup_skips_small_and_different_results() -> None:
     ],
 )
 def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
-    tmp_path: pathlib.Path, keep_turns: int | None, retained: list[bool] | None
+    tmp_path: pathlib.Path, keep_messages: int | None, retained: list[bool] | None
 ) -> None:
     """Tier 1 keeps all thinking for -1, the newest N for positive N, and refuses other counts."""
     from unittest import mock
@@ -726,7 +730,7 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
     from agent6.config import Config
     from agent6.harness import _loop_state, loop
 
-    context = {} if keep_turns is None else {"keep_thinking_turns": keep_turns}
+    context = {} if keep_messages is None else {"keep_thinking_turns": keep_messages}
     if retained is None:
         with pytest.raises(
             pydantic.ValidationError, match=r"keep_thinking_turns.*>= 1.*-1.*all thinking"
@@ -734,7 +738,7 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
             Config.model_validate({"context": context})
         return
     cfg = Config.model_validate({"context": context})
-    if keep_turns is None:
+    if keep_messages is None:
         assert cfg.context.keep_thinking_turns == -1
         assert _compaction.CompactionSettings().keep_thinking_turns == -1
     wf = loop.Harness(
@@ -753,7 +757,7 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
     conv = _conversation.Conversation()
     conv.notice("task")
     for i, ch in enumerate("abc"):
-        turn = conv.assistant(
+        message = conv.assistant(
             [
                 {"type": "thinking", "thinking": f"reasoning {i}", "signature": f"sig{i}"},
                 {"type": "tool_use", "id": f"t{i}", "name": "read_file", "input": {"path": ch}},
@@ -762,7 +766,7 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
         conv.results(
             [
                 _conversation.ToolResultItem(
-                    tool_use_id=f"t{i}", content=ch * 1000, for_call=turn.tool_uses[0]
+                    tool_use_id=f"t{i}", content=ch * 1000, for_call=message.tool_uses[0]
                 )
             ]
         )
@@ -772,7 +776,7 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
         is False
     )
     assert "elided" in _result_contents(conv)[0], "tier 1 must fire"
-    assistants = [t for t in conv.turns if isinstance(t, _conversation.AssistantTurn)]
+    assistants = [t for t in conv.messages if isinstance(t, _conversation.AssistantMessage)]
     assert [any(b["type"] == "thinking" for b in t.raw_content) for t in assistants] == retained
     assert assistants[-1].raw_content[0] == {
         "type": "thinking",
@@ -781,8 +785,8 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
     }
 
 
-def test_strip_old_thinking_clears_all_but_the_newest_turns() -> None:
-    """Old assistant turns lose their thinking blocks.
+def test_strip_old_thinking_clears_all_but_the_newest_messages() -> None:
+    """Old assistant messages lose their thinking blocks.
 
     The newest keep_thinking_turns keep theirs.
     """
@@ -795,13 +799,13 @@ def test_strip_old_thinking_clears_all_but_the_newest_turns() -> None:
                 {"type": "text", "text": f"answer {i}"},
             ]
         )
-    n_turns, n_chars = _compaction.strip_old_thinking(conv, keep_turns=1)
-    assert n_turns == 2 and n_chars > 200
-    assistants = [t for t in conv.turns if isinstance(t, _conversation.AssistantTurn)]
+    n_messages, n_chars = _compaction.strip_old_thinking(conv, keep_messages=1)
+    assert n_messages == 2 and n_chars > 200
+    assistants = [t for t in conv.messages if isinstance(t, _conversation.AssistantMessage)]
     kinds = [[b["type"] for b in t.raw_content] for t in assistants]
     assert kinds == [["text"], ["text"], ["thinking", "text"]]
-    # Idempotent: nothing left to strip on the older turns.
-    assert _compaction.strip_old_thinking(conv, keep_turns=1) == (0, 0)
+    # Idempotent: nothing left to strip on the older messages.
+    assert _compaction.strip_old_thinking(conv, keep_messages=1) == (0, 0)
 
 
 def test_strip_thinking_preserves_tool_use_pairing() -> None:
@@ -813,7 +817,7 @@ def test_strip_thinking_preserves_tool_use_pairing() -> None:
             {"type": "tool_use", "id": "t1", "name": "read_file", "input": {"path": "a"}},
         ]
     )
-    last = conv.turns[-1]
+    last = conv.messages[-1]
     conv.results(
         [_conversation.ToolResultItem(tool_use_id="t1", content="body", for_call=last.tool_uses[0])]  # type: ignore[union-attr]
     )

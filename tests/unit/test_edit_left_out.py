@@ -94,9 +94,9 @@ def _dispatch_edit(
     )
     wf.state_dir = state_dir
     turn = _loop_state.TurnState(
-        turn=3,
+        number=3,
         resp=test_harness._resp(""),  # pyright: ignore[reportPrivateUsage]
-        assistant=_conversation.AssistantTurn(
+        assistant=_conversation.AssistantMessage(
             raw_content=(),
             tool_uses=(
                 _conversation.ToolUse(id="tu1", name="apply_edit", input={"path": tool_path}),

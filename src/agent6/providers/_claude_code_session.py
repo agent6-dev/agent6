@@ -133,7 +133,7 @@ def continuation(s: Session, messages: Sequence[Mapping[str, Any]]) -> Tail | No
     """Apply the one rule for keeping the process: the history extends what it produced.
 
     The consumed prefix keeps its skeleton; after it comes the last round's
-    assistant turn (or nothing, when the loop popped a quiet one), then user turns
+    assistant message (or nothing, when the loop popped a quiet one), then user messages
     only: the pending tool results first, text blocks after.
 
     Args:

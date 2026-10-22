@@ -16,7 +16,7 @@ from tests.unit.turn_context import turn_context
 
 def _finishing(turn: int = 4) -> _loop_state.TurnState:
     turn_state = _loop_state.TurnState(
-        turn=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        number=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
     )
     turn_state.finish = _finish_gates.FinishCall("finish_session", "done")
     return turn_state

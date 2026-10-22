@@ -394,14 +394,14 @@ def metric_plateau(
             verdict="grounded",
         )
 
-    log = f"LOOP: metric_plateau at turn {turn.turn}"
+    log = f"LOOP: metric_plateau at turn {turn.number}"
     if guard.at_ceiling():
         return _advice.Stop(
             end,
             soft="metric_plateau",
             declared="metric_plateau",
             event="loop.metric_ceiling.stop",
-            fields={"turn": turn.turn},
+            fields={"turn": turn.number},
             log=log,
         )
     if in_final_slice and guard.plateau_nudges_used >= METRIC_PLATEAU_PATIENCE:
@@ -414,12 +414,12 @@ def metric_plateau(
         metric_plateau_nudge(remaining),
         event="loop.metric_plateau.nudge",
         fields={
-            "turn": turn.turn,
+            "turn": turn.number,
             "nudges_used": guard.plateau_nudges_used,
             "budget_remaining": remaining,
         },
         log=(
-            f"  metric_plateau notice at turn {turn.turn} (budget {budget_note};"
+            f"  metric_plateau notice at turn {turn.number} (budget {budget_note};"
             f" final-slice patience {guard.plateau_nudges_used}/{METRIC_PLATEAU_PATIENCE})"
         ),
     )
@@ -456,13 +456,13 @@ def metric_early_finish(
         METRIC_FINISH_NUDGE,
         event="loop.metric_early_finish.rejected",
         fields={
-            "turn": turn.turn,
+            "turn": turn.number,
             "nudges_used": used,
             "budget_remaining": remaining,
             **({"trigger": trigger} if trigger else {}),
         },
         log=(
             f"  metric early-finish{' (silent)' if trigger else ''} rejected #{used}"
-            f" at turn {turn.turn} (budget {remaining:.0%} left)"
+            f" at turn {turn.number} (budget {remaining:.0%} left)"
         ),
     )

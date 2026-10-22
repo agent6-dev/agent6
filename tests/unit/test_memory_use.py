@@ -40,7 +40,7 @@ def _state() -> _loop_state.LoopState:
 
 def _turn() -> _loop_state.TurnState:
     return _loop_state.TurnState(
-        turn=1, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        number=1, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
     )
 
 

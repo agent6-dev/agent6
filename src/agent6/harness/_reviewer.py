@@ -76,7 +76,7 @@ class ReviewSeat:
 class ReviewSettings:
     """Hold the in-loop review panel's settings, from `[review]`.
 
-    The findings return to the model on the next user turn whatever the blocking rule.
+    The findings return to the model on the next user message whatever the blocking rule.
 
     Attributes:
         trigger: When the panel sits: after a verify failure, before a finish, or periodically.
@@ -489,15 +489,15 @@ class Reviewer:
             and turn.verify_just_failed
             and self.available()
         ):
-            critique = self.critique(state, trigger="verify_failed", turn=turn.turn)
+            critique = self.critique(state, trigger="verify_failed", turn=turn.number)
             if critique is not None:
                 turn.review_text = critique.text
         elif (
             self.settings.trigger == "periodic"
             and self.available()
-            and turn.turn % max(1, self.settings.interval_turns) == 0
+            and turn.number % max(1, self.settings.interval_turns) == 0
         ):
-            critique = self.critique(state, trigger="periodic", turn=turn.turn)
+            critique = self.critique(state, trigger="periodic", turn=turn.number)
             if critique is not None:
                 turn.review_text = critique.text
 
@@ -526,23 +526,23 @@ class Reviewer:
     ) -> bool:
         if not (self.settings.trigger == "before_finish" and self.available()):
             return False
-        critique = self.critique(state, trigger="before_finish", turn=turn.turn)
+        critique = self.critique(state, trigger="before_finish", turn=turn.number)
         if critique is None:
             return False
         if not critique.satisfied:
             state.gates.review_rejections += 1
-            self.log(f"  review rejected {ending} at turn {turn.turn}")
-            self.emit("loop.review.rejected_finish", turn=turn.turn, ending=ending)
+            self.log(f"  review rejected {ending} at turn {turn.number}")
+            self.emit("loop.review.rejected_finish", turn=turn.number, ending=ending)
             turn.review_text = REVIEW_REJECTED[ending] + critique.text
             return True
         if critique.capped:
             self.log(
-                f"  review rejected {ending} at turn {turn.turn} but the rejection cap"
+                f"  review rejected {ending} at turn {turn.number} but the rejection cap"
                 f" ({self.settings.max_review_rejections}) is reached: the end stands"
             )
             self.emit(
                 "loop.review.rejection_cap_reached",
-                turn=turn.turn,
+                turn=turn.number,
                 rejections=state.gates.review_rejections,
             )
             turn.review_text = (

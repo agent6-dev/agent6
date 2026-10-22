@@ -138,7 +138,7 @@ def test_before_finish_panel_revokes_finish_and_injects_findings() -> None:
     """A NEEDS-WORK panel verdict on finish_session revokes the finish and injects the findings.
 
     The tool_result still returns so the call is not half-applied; the findings ride into the next
-    user turn under [review].
+    user message under [review].
     """
     worker = mock.MagicMock()
     worker.call.side_effect = [
@@ -494,14 +494,14 @@ def _settled_state() -> Any:
 def _idle_turn() -> Any:
     from agent6.harness import _loop_state
 
-    return _loop_state.TurnState(turn=9, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    return _loop_state.TurnState(number=9, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
 
 def _settle(wf: loop.Harness, state: Any, turn: Any) -> Any:
     """The settled advisor's answer, applied through the loop (a stop runs the end gates)."""
     from agent6.harness import _guards
 
-    ctx = wf._turn_context(state, turn=turn.turn, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     return wf._take(state, turn, ctx, _guards.verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
@@ -718,7 +718,7 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     state.verify.note_edit()  # green once, edited since: stale
     conv = _conversation.Conversation()
     with mock.patch.object(_reviewer.Reviewer, "critique", panel):
-        turn = _loop_state.TurnState(turn=5, resp=_resp("Done."), assistant=mock.MagicMock())
+        turn = _loop_state.TurnState(number=5, resp=_resp("Done."), assistant=mock.MagicMock())
         ctx = wf._turn_context(state, turn=5, execution_start=1)  # pyright: ignore[reportPrivateUsage]
         assert wf._handle_silent_finish("Done.", conv, state, turn, ctx) is None  # pyright: ignore[reportPrivateUsage]
         texts = [b["text"] for m in conv.to_wire() for b in m["content"] if b.get("type") == "text"]
@@ -726,7 +726,7 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
         assert any("the next red finish ends the run" in t for t in texts)
         assert panel.calls == 0  # a red gate returns the end before the panel sits
         # The return is spent: the next silent finish stands, the panel sits and approves.
-        turn = _loop_state.TurnState(turn=6, resp=_resp("Done."), assistant=mock.MagicMock())
+        turn = _loop_state.TurnState(number=6, resp=_resp("Done."), assistant=mock.MagicMock())
         ended = wf._handle_silent_finish("Done.", conv, state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
     assert ended.verified == "failed"

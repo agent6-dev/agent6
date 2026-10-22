@@ -83,7 +83,7 @@ def _exec(rc: int) -> results.ExecResult:
 
 
 def _turn(turn: int) -> _loop_state.TurnState:
-    return _loop_state.TurnState(turn=turn, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    return _loop_state.TurnState(number=turn, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
 
 def _edit(

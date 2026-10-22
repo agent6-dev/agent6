@@ -3,7 +3,7 @@
 """went_quiet nudge-and-retry instead of immediate run termination.
 
 Weak open-weights models (observed live with Kimi K2.6) sometimes emit a
-single empty assistant turn (no text, no tool_use) mid-run. The
+single empty assistant message (no text, no tool_use) mid-run. The
 harness would terminate the run on the first such turn, throwing away
 the work done so far and the budget that produced it. injects a
 short synthetic user prompt and retries up to ``went_quiet_max_nudges``
@@ -200,8 +200,8 @@ def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: pathli
     assert any("whole output budget" in n for n in nudges)
 
 
-def test_went_quiet_drops_empty_assistant_turn(tmp_path: pathlib.Path) -> None:
-    """The empty assistant turn is popped before the nudge, or Anthropic rejects the next call."""
+def test_went_quiet_drops_empty_assistant_message(tmp_path: pathlib.Path) -> None:
+    """The empty message is popped before the nudge, or Anthropic rejects the next call."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
@@ -221,7 +221,7 @@ def test_went_quiet_drops_empty_assistant_turn(tmp_path: pathlib.Path) -> None:
     # content (we popped the empty one before injecting the nudge).
     for msg in final_messages:
         if msg.get("role") == "assistant":
-            assert msg.get("content"), f"empty assistant turn leaked: {msg}"
+            assert msg.get("content"), f"empty assistant message leaked: {msg}"
 
 
 def test_went_quiet_exhausts_nudges_then_fails(tmp_path: pathlib.Path) -> None:
@@ -392,7 +392,7 @@ def test_unrunnable_signature_names_only_the_adopted_runner() -> None:
 
 
 def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: pathlib.Path) -> None:
-    """The empty assistant turn is popped on the park path too, not only on the nudge path.
+    """The empty assistant message is popped on the park path too, not only on the nudge path.
 
     Sent as `{"role": "assistant", "content": []}` on every later call, Anthropic rejected it.
     """
@@ -429,4 +429,4 @@ def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: pathlib.Pa
     assert provider.call.call_count >= 2, "the steer did not resume the parked run"
     after_park: list[dict[str, Any]] = provider.call.call_args_list[1].kwargs["messages"]
     empty = [m for m in after_park if m.get("role") == "assistant" and not m.get("content")]
-    assert empty == [], f"the dead assistant turn was re-sent: {after_park}"
+    assert empty == [], f"the dead assistant message was re-sent: {after_park}"

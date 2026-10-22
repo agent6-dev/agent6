@@ -333,10 +333,10 @@ def _standing_set_body(event: dict[str, Any]) -> str:
 
 
 def _compact_done_body(event: dict[str, Any]) -> str:
-    """Return the line for a tier-2 compaction: the summary's size and the turns kept."""
+    """Return the line for a tier-2 compaction: the summary's size and the messages kept."""
     chars = viewmodel_events.as_int(event.get("summary_chars"))
-    kept = viewmodel_events.as_int(event.get("kept_turns"))
-    return f"context compacted: {chars:,}-char summary, {kept} recent turns kept verbatim"
+    kept = viewmodel_events.as_int(event.get("kept_messages"))
+    return f"context compacted: {chars:,}-char summary, {kept} recent messages kept verbatim"
 
 
 def _request_refused_body(event: dict[str, Any]) -> str:

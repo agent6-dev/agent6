@@ -18,13 +18,13 @@ def _add_call(
     conv: _conversation.Conversation, name: str, tool_input: dict[str, Any], content: str
 ) -> None:
     """One (assistant tool_use, result) exchange."""
-    turn = conv.assistant(
+    message = conv.assistant(
         [{"type": "tool_use", "id": f"t{len(conv)}", "name": name, "input": tool_input}]
     )
     conv.results(
         [
             _conversation.ToolResultItem(
-                tool_use_id=turn.tool_uses[0].id, content=content, for_call=turn.tool_uses[0]
+                tool_use_id=message.tool_uses[0].id, content=content, for_call=message.tool_uses[0]
             )
         ]
     )
@@ -38,9 +38,9 @@ def _add_read(conv: _conversation.Conversation, path: str, text: str) -> None:
 def _contents(conv: _conversation.Conversation) -> list[str]:
     return [
         item.content
-        for turn in conv.turns
-        if isinstance(turn, _conversation.UserTurn)
-        for item in turn.items
+        for message in conv.messages
+        if isinstance(message, _conversation.UserMessage)
+        for item in message.items
         if isinstance(item, _conversation.ToolResultItem)
     ]
 
@@ -320,7 +320,7 @@ def test_gist_placeholder_identity_matches_bare_for_a_ranged_read() -> None:
         conv, max_total_bytes=1800, keep_recent=2, gister=_SpyGister({"a.py": "the gist " * 10})
     )
 
-    text = str(conv.turns[1].items[0].content)  # pyright: ignore[reportAttributeAccessIssue]
+    text = str(conv.messages[1].items[0].content)  # pyright: ignore[reportAttributeAccessIssue]
     assert text.startswith(_compaction.ELISION_GIST_PREFIX)
     ident = re.compile(r": the result of (.+?) was replaced")
     got = ident.search(text)

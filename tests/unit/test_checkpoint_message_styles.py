@@ -31,7 +31,9 @@ def _wf(
 
 
 def _turn(text: str) -> _loop_state.TurnState:
-    return _loop_state.TurnState(turn=3, resp=mock.MagicMock(text=text), assistant=mock.MagicMock())
+    return _loop_state.TurnState(
+        number=3, resp=mock.MagicMock(text=text), assistant=mock.MagicMock()
+    )
 
 
 def test_agent6_style_is_the_default_and_unchanged(tmp_path: pathlib.Path) -> None:

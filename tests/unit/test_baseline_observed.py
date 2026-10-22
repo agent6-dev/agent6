@@ -72,7 +72,7 @@ def _verify(rc: int, *, duration_s: float = 5.0) -> results.ExecResult:
 
 
 def _turn() -> _loop_state.TurnState:
-    return _loop_state.TurnState(turn=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    return _loop_state.TurnState(number=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
 
 @pytest.mark.parametrize("rc", [0, 1])
@@ -385,7 +385,7 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: path
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.last_ok = False
     state.verify.baseline_ok = False
-    turn = _loop_state.TurnState(turn=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(number=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
     turn.finish = _finish_gates.FinishCall("finish_session", "done")
 
     ctx = turn_context(tree_green=lambda: False, gate_present=lambda: True)

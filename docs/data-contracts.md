@@ -12,9 +12,9 @@ Every card is generated from the module and class docstrings, so edit those rath
 
 [`agent6.harness._conversation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/_conversation.py) &middot; mutable container + 5 frozen turn types
 
-The loop-owned conversation: typed turns over the provider wire.
+The loop-owned conversation: typed messages over the provider wire.
 
-**Conversation** &mdash; The history as frozen turns plus the rolling cache-mark pair.
+**Conversation** &mdash; The history as frozen messages plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
 - **Read by:** harness/{_compaction, _compactor, _loop_resume, _loop_state, _loop_steer, _operator, _parallel_dispatch, _snapshot, _standing, _verify_gate}

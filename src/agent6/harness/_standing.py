@@ -107,7 +107,7 @@ class Standing:
         soft = next((stop.soft for stop in turn.stops if stop.soft), None)
         if soft is None or any(not stop.soft for stop in turn.stops):
             return
-        nudge = self.absorb(state, reason=soft, turn=turn.turn)
+        nudge = self.absorb(state, reason=soft, turn=turn.number)
         if nudge is None:
             return
         turn.stops = [stop for stop in turn.stops if not stop.soft]

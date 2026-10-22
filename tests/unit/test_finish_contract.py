@@ -64,7 +64,7 @@ def _wf(validator: Any) -> loop.Harness:
 
 
 def _finishing_turn(payload: dict[str, Any] | None) -> _loop_state.TurnState:
-    turn = _loop_state.TurnState(turn=3, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(number=3, resp=mock.MagicMock(), assistant=mock.MagicMock())
     turn.finish = _finish_gates.FinishCall("finish_session", "done", payload)
     return turn
 

@@ -33,7 +33,7 @@ from tests.unit.turn_context import turn_context
 
 def _turn(turn: int, **kw: bool) -> _loop_state.TurnState:
     turn_state = _loop_state.TurnState(
-        turn=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        number=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
     )
     for name, value in kw.items():
         setattr(turn_state, name, value)

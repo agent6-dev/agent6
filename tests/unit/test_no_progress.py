@@ -16,7 +16,7 @@ from tests.unit.turn_context import turn_context
 
 def _failed_turn(turn: int) -> _loop_state.TurnState:
     turn_state = _loop_state.TurnState(
-        turn=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        number=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
     )
     turn_state.verify_just_failed = True
     return turn_state
@@ -55,7 +55,7 @@ def test_a_turn_whose_verify_passed_or_a_metric_run_climbs_nothing() -> None:
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.fail_streak = _nudges.NO_PROGRESS_STOP_AFTER
     quiet = _loop_state.TurnState(
-        turn=3, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        number=3, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
     )
     assert _guards.no_progress(quiet, state, turn_context()) is None
     for facts in ({"metric": True}, {"mode": "plan"}):

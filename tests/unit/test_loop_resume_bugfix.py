@@ -811,7 +811,7 @@ def test_snapshot_written_after_tool_dispatch_advances_turn(tmp_path: pathlib.Pa
     post = [s for s in end_of_turn_saves if s["next_turn"] == 2]
     assert post, "end-of-turn snapshot must advance next_turn to 2"
     msgs = post[0]["messages"]
-    assert any(m.get("role") == "assistant" for m in msgs), "assistant turn must be snapshotted"
+    assert any(m.get("role") == "assistant" for m in msgs), "assistant message must be snapshotted"
     has_tool_result = any(
         m.get("role") == "user"
         and isinstance(m.get("content"), list)

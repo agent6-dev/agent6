@@ -111,14 +111,15 @@ class Compactor:
             or _compaction.context_chars(conversation) > self.settings.drop_at_chars
         ):
             # As with dedup: only at tier-1 pressure, never as a rolling per-turn rewrite.
-            n_turns, n_chars = _compaction.strip_old_thinking(
-                conversation, keep_turns=self.settings.keep_thinking_turns
+            n_messages, n_chars = _compaction.strip_old_thinking(
+                conversation, keep_messages=self.settings.keep_thinking_turns
             )
-            if n_turns:
+            if n_messages:
                 self.log(
-                    f"LOOP: compaction dropped thinking from {n_turns} old turns ({n_chars} chars)"
+                    f"LOOP: compaction dropped thinking from {n_messages} old messages"
+                    f" ({n_chars} chars)"
                 )
-                self.emit("loop.compact.thinking_dropped", turns=n_turns, chars=n_chars)
+                self.emit("loop.compact.thinking_dropped", messages=n_messages, chars=n_chars)
         if n_deduped:
             self.log(f"LOOP: compaction deduplicated {n_deduped} identical tool results")
             self.emit("loop.compact.deduped", n=n_deduped, calls=list(stats.deduped_calls))
@@ -139,7 +140,7 @@ class Compactor:
         # The whole request: tier 1 bounded the results alone, and the window bounds the
         # prefix too.
         total = _compaction.context_chars(conversation) + prefix_chars
-        # Below four turns a restart loses more than it saves; a forced compaction skips
+        # Below four messages a restart loses more than it saves; a forced compaction skips
         # the growth floor.
         over = total > self.settings.summarise_at_chars and total >= state.tier2_floor_chars
         if (forced is not None or over) and len(conversation) > 3:
@@ -207,14 +208,14 @@ class Compactor:
             where the tier-1-elided context is kept.
         """
         provider = self.settings.summariser or self.provider
-        turns = conversation.turns
+        messages = conversation.messages
         # The verbatim tail survives the restart; the summary covers only what is dropped.
-        tail_start = _compaction.recent_tail_start(turns, self.settings.keep_recent_chars)
+        tail_start = _compaction.recent_tail_start(messages, self.settings.keep_recent_chars)
         if tail_start <= 1:
             # A tail holding the whole history would grow the context; keep nothing.
-            tail_start = len(turns)
+            tail_start = len(messages)
         transcript = _conversation.format_transcript_tail(
-            turns[1:tail_start], max_messages=len(conversation), max_chars=60_000
+            messages[1:tail_start], max_messages=len(conversation), max_chars=60_000
         )
         # The summariser checks off finished tasks and surfaces new ones, so task state
         # stays accurate without the worker calling update_task.
@@ -246,8 +247,8 @@ class Compactor:
         # The previous summary heads the history, which the clipped transcript drops
         # first, so it is carried out-of-band like pins.
         prior_req = ""
-        for turn in conversation.turns:
-            for item in getattr(turn, "items", ()):
+        for message in conversation.messages:
+            for item in getattr(message, "items", ()):
                 if isinstance(item, _conversation.Notice) and (
                     prior := revision.progress_summary_from_notice(item.text)
                 ):
@@ -296,7 +297,7 @@ class Compactor:
                 dag_available=self.dag_available,
             )
             + summary,
-            keep=turns[tail_start:],
+            keep=messages[tail_start:],
         )
         # Measured as the trigger is, prefix included, or tier 2 re-fires next turn.
         state.tier2_floor_chars = int(
@@ -306,7 +307,7 @@ class Compactor:
             "loop.compact.summarise.done",
             summary_chars=len(summary),
             summary=summary,
-            kept_turns=len(turns) - tail_start,
+            kept_messages=len(messages) - tail_start,
         )
         return True
 

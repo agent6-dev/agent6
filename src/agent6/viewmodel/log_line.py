@@ -152,7 +152,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
                 salient += f": {_cut(named, 160)}"
         case "loop.compact.thinking_dropped":
             salient = (
-                f"dropped thinking from {event.get('turns')} old turns ({event.get('chars')} chars)"
+                f"dropped thinking from {event.get('messages')} old messages"
+                f" ({event.get('chars')} chars)"
             )
         case "loop.compact.gists":
             parts = []

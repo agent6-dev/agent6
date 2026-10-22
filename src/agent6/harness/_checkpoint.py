@@ -54,7 +54,7 @@ class Checkpoints:
             The subject line.
         """
         text = turn.resp.text or ""
-        default = commit_message.agent6_subject(text, turn.turn, fallback=fallback)
+        default = commit_message.agent6_subject(text, turn.number, fallback=fallback)
         if self.style == "agent6":
             return default
         summary = commit_message.first_prose_line(text, fallback=fallback)

@@ -45,9 +45,9 @@ def _state(**kw: Any) -> _loop_state.LoopState:
 
 def _turn(turn: int = 1, **kw: Any) -> _loop_state.TurnState:
     return _loop_state.TurnState(
-        turn=turn,
+        number=turn,
         resp=mock.MagicMock(),
-        assistant=_conversation.AssistantTurn((), ()),
+        assistant=_conversation.AssistantMessage((), ()),
         **kw,
     )
 
@@ -72,7 +72,7 @@ def _flip(
     wf: loop.Harness, state: _loop_state.LoopState, turn: _loop_state.TurnState
 ) -> str | None:
     """The flip advisory's text for this turn, as the advisor answers it."""
-    ctx = wf._turn_context(state, turn=turn.turn, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     nudge = _guards.memory_flip(turn, state, ctx)
     return None if nudge is None else nudge.text
 

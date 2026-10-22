@@ -98,7 +98,7 @@ def _build_wf(
 
 
 def _loop_guard_blocks(messages: list[dict[str, Any]]) -> list[str]:
-    """Extract the text of every [loop-guard] block injected into user turns."""
+    """Extract the text of every [loop-guard] block injected into user messages."""
     out: list[str] = []
     for msg in messages:
         if msg.get("role") != "user":
@@ -538,7 +538,7 @@ def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: path
 
 
 def _stagnation_blocks(messages: list[dict[str, Any]]) -> list[str]:
-    """Every [stagnation] block injected into user turns."""
+    """Every [stagnation] block injected into user messages."""
     out: list[str] = []
     for msg in messages:
         if msg.get("role") != "user":
@@ -795,9 +795,9 @@ def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_turn() -> None:
 
     def turn(turn: int) -> _loop_state.TurnState:
         return _loop_state.TurnState(
-            turn=turn,
+            number=turn,
             resp=mock.MagicMock(),
-            assistant=_conversation.AssistantTurn((), ()),
+            assistant=_conversation.AssistantMessage((), ()),
         )
 
     for _ in range(2):
@@ -825,7 +825,7 @@ def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
 
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _loop_state.TurnState(
-        turn=5, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        number=5, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
     )
     ctx = turn_context(loop_guard_kill_threshold=5)
     for _ in range(4):

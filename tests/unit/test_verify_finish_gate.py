@@ -396,7 +396,7 @@ def _harness_wf(
 
 
 def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
-    turn = _loop_state.TurnState(turn=3, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(number=3, resp=mock.MagicMock(), assistant=mock.MagicMock())
     if finishing:
         turn.finish = _finish_gates.FinishCall("finish_session", "done")
     if edited:
@@ -407,7 +407,7 @@ def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
 
 def _verify_gate(wf: loop.Harness, state: _loop_state.LoopState, turn: Any) -> None:
     """The verify gate's answer over *turn*, applied through the loop."""
-    ctx = wf._turn_context(state, turn=turn.turn, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._refuse(state, turn, _finish_gates.verify_finish(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
@@ -840,12 +840,12 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_edit()
     state.verify.note_fail("sig")
-    turn = _loop_state.TurnState(turn=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(number=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
     wf._end_gates(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
-        wf._turn_context(state, turn=turn.turn, execution_start=1),  # pyright: ignore[reportPrivateUsage]
+        wf._turn_context(state, turn=turn.number, execution_start=1),  # pyright: ignore[reportPrivateUsage]
         ending="silent_finish",
         gates=_finish_gates.SILENT_END_GATES,
     )
@@ -880,12 +880,12 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     state.verify.note_fail("sig")
     state.verify.withheld = withheld
     state.verify.note_edit()
-    turn = _loop_state.TurnState(turn=7, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(number=7, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
     wf._end_gates(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
-        wf._turn_context(state, turn=turn.turn, execution_start=1),  # pyright: ignore[reportPrivateUsage]
+        wf._turn_context(state, turn=turn.number, execution_start=1),  # pyright: ignore[reportPrivateUsage]
         ending="silent_finish",
         gates=_finish_gates.SILENT_END_GATES,
     )

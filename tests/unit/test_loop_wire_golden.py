@@ -203,7 +203,7 @@ def _config() -> Any:
 
 
 _RESPONSES = [
-    # turn 1: prose, a read and a broken verify, with a [harness] notice inside the same user turn.
+    # turn 1: prose, a read and a broken verify, with a [harness] notice in the user message.
     _resp(
         thinking="scan the repo first",
         text="Reading a.md and running verify.",
@@ -213,7 +213,7 @@ _RESPONSES = [
         ),
         stop_reason="tool_use",
     ),
-    # turn 2: went quiet; the empty assistant turn is popped and a [harness] nudge appended.
+    # turn 2: went quiet; the empty assistant message is popped and a [harness] nudge appended.
     _resp(thinking="pondering silently"),
     # turn 3: another large read (feeds tier-1 pressure).
     _resp(tool_uses=(("tu-3", "read_file", {"path": "b.md"}),), stop_reason="tool_use"),
@@ -325,9 +325,9 @@ def test_scenario_exercises_the_shaping_paths(tmp_path: pathlib.Path) -> None:
     got = _run_scenario(tmp_path)
     calls = [json.loads(c["messages"]) for c in got["worker_calls"]]
     # The broken-verify text rides after the results: a text block ahead of a tool_result 400s.
-    results_turn = calls[1][2]["content"]
-    assert [b["type"] for b in results_turn] == ["tool_result", "tool_result", "text"]
-    # The went-quiet turn is thinking-only, so every surviving assistant turn must be substantive.
+    results_message = calls[1][2]["content"]
+    assert [b["type"] for b in results_message] == ["tool_result", "tool_result", "text"]
+    # The thinking-only message is popped, so every surviving assistant message is substantive.
     assert "focus on the parser first" in json.dumps(calls[2])
     assert "pondering silently" not in json.dumps(calls[2])
     assert all(

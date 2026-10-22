@@ -16,7 +16,7 @@ from tests.unit.turn_context import turn_context
 
 def _tie(turn: int) -> _loop_state.TurnState:
     turn_state = _loop_state.TurnState(
-        turn=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        number=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
     )
     turn_state.metric_plateau_finish = "score plateaued at 10"
     return turn_state
@@ -65,7 +65,7 @@ def test_a_ceiling_stops_at_once_with_its_event() -> None:
 
 def test_a_turn_without_a_tie_is_quiet() -> None:
     turn = _loop_state.TurnState(
-        turn=1, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        number=1, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
     )
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     assert _metric.metric_plateau(turn, state, turn_context(metric=True)) is None

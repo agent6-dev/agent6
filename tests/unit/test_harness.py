@@ -209,7 +209,7 @@ def test_ask_silent_finish_ends_as_answered_not_silent_finish() -> None:
         "The answer is 42.",
         _conversation.Conversation(),
         _state(),
-        _turn(turn=2),
+        _turn(number=2),
         _ctx(wf, _state()),
     )
     assert result is not None
@@ -225,7 +225,7 @@ def test_run_silent_finish_stays_silent_finish() -> None:
         "Done.",
         _conversation.Conversation(),
         _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True)),
-        _turn(turn=5),
+        _turn(number=5),
         _ctx(wf, _state()),
     )
     assert result is not None
@@ -268,7 +268,7 @@ def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
         _state(
             ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True, last_ok=False)
         ),
-        _turn(turn=5),
+        _turn(number=5),
         _ctx(wf, _state()),
     )
     assert result is not None and result.reason == "silent_finish"
@@ -289,7 +289,7 @@ def test_run_silent_finish_over_green_verify_stays_passed() -> None:
                 ever_passed=True, last_ok=True, edited_since=False
             ),
         ),
-        _turn(turn=5),
+        _turn(number=5),
         _ctx(wf, _state()),
     )
     ends = [e for e in ev.events if e["type"] == "session.end"]
@@ -304,7 +304,7 @@ def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
         "READY",
         _conversation.Conversation(),
         _state(ever_edited=True),
-        _turn(turn=5),
+        _turn(number=5),
         _ctx(wf, _state()),
     )
     assert result is not None and result.reason == "silent_finish"
@@ -321,9 +321,9 @@ def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
 def _turn(**kw: Any) -> Any:
     """A bare TurnState for direct turn-phase method tests."""
     defaults: dict[str, Any] = {
-        "turn": 1,
+        "number": 1,
         "resp": _resp(""),
-        "assistant": _conversation.AssistantTurn((), ()),
+        "assistant": _conversation.AssistantMessage((), ()),
     }
     defaults.update(kw)
     return _loop_state.TurnState(**defaults)
@@ -343,7 +343,7 @@ def _plateau_stop() -> _advice.Stop:
 
 def _settle(wf: loop.Harness, state: Any, turn: Any) -> Any:
     """The settled advisor's answer, applied through the loop; a stop runs the end gates at once."""
-    ctx = _ctx(wf, state, turn.turn)
+    ctx = _ctx(wf, state, turn.number)
     return wf._take(state, turn, ctx, _guards.verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
@@ -910,13 +910,13 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
     state = _state()
 
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # the run's edit
-    wf._sample_metric(state, _turn(turn=1), sha="")  # pyright: ignore[reportPrivateUsage]
-    wf._sample_metric(state, _turn(turn=2), sha="")  # pyright: ignore[reportPrivateUsage]
+    wf._sample_metric(state, _turn(number=1), sha="")  # pyright: ignore[reportPrivateUsage]
+    wf._sample_metric(state, _turn(number=2), sha="")  # pyright: ignore[reportPrivateUsage]
 
     assert calls == ["run_metric_command"], "a read-only turn re-ran the benchmark"
 
     (repo / "a.py").write_text("x = 3\n", encoding="utf-8")  # a new state of the tree
-    wf._sample_metric(state, _turn(turn=3), sha="")  # pyright: ignore[reportPrivateUsage]
+    wf._sample_metric(state, _turn(number=3), sha="")  # pyright: ignore[reportPrivateUsage]
 
     assert calls == ["run_metric_command", "run_metric_command"]
 
@@ -1389,8 +1389,8 @@ def test_a_call_the_providers_front_end_refused_is_an_error_result_not_a_dispatc
     dispatcher.dispatch.assert_not_called()
     results = [
         it
-        for turn in conversation.turns
-        for it in getattr(turn, "items", ())
+        for message in conversation.messages
+        for it in getattr(message, "items", ())
         if isinstance(it, _conversation.ToolResultItem)
     ]
     assert results and "InputValidationError: bad input" in results[0].content
@@ -6336,7 +6336,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: pathlib.Path) -> None:
         dispatcher=mock.MagicMock(),
     )
     st = _state()
-    turn = _turn(turn=1)
+    turn = _turn(number=1)
     # dead verify: instant, "No module named pytest"
     wf.gate.note_result(
         st,
@@ -6354,7 +6354,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: pathlib.Path) -> None:
     assert st.verify.broken_warned is True
 
     # a second dead verify does not re-warn
-    turn2 = _turn(turn=2)
+    turn2 = _turn(number=2)
     wf.gate.note_result(
         st,
         turn2,
@@ -6382,7 +6382,7 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: pathlib.Path) -
         dispatcher=mock.MagicMock(),
     )
     st = _state()
-    turn = _turn(turn=1)
+    turn = _turn(number=1)
     # a real test failure: took real time, ordinary assertion output
     wf.gate.note_result(
         st,
@@ -6422,7 +6422,7 @@ def test_a_test_module_import_error_is_not_a_dead_verify(
         dispatcher=mock.MagicMock(),
     )
     st = _state()
-    turn = _turn(turn=1)
+    turn = _turn(number=1)
     wf.gate.note_result(
         st,
         turn,
@@ -7115,9 +7115,9 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
     )
     wf = _wf(mode="run", dispatcher=dispatcher)
     turn = _loop_state.TurnState(
-        turn=1,
+        number=1,
         resp=_resp(""),
-        assistant=_conversation.AssistantTurn(
+        assistant=_conversation.AssistantMessage(
             raw_content=(),
             tool_uses=(
                 _conversation.ToolUse(
@@ -7142,9 +7142,9 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
     wf = _wf(mode="run", dispatcher=dispatcher)
     state = _state()
     turn = _loop_state.TurnState(
-        turn=1,
+        number=1,
         resp=_resp(""),
-        assistant=_conversation.AssistantTurn(
+        assistant=_conversation.AssistantMessage(
             raw_content=(),
             tool_uses=(
                 _conversation.ToolUse(id="tu1", name="finish_session", input={"summary": "done"}),
@@ -7155,9 +7155,9 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
     assert state.ok_tool_calls == 0  # a control verb is not work
 
     worked = _loop_state.TurnState(
-        turn=2,
+        number=2,
         resp=_resp(""),
-        assistant=_conversation.AssistantTurn(
+        assistant=_conversation.AssistantMessage(
             raw_content=(),
             tool_uses=(_conversation.ToolUse(id="tu2", name="read_file", input={"path": "x"}),),
         ),
@@ -7236,9 +7236,9 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=pathlib.Path("/tmp"))
     turn = _loop_state.TurnState(
-        turn=7,
+        number=7,
         resp=_resp(""),
-        assistant=_conversation.AssistantTurn(
+        assistant=_conversation.AssistantMessage(
             raw_content=(),
             tool_uses=(_conversation.ToolUse(id="tu1", name="apply_edit", input={}),),
         ),
@@ -7261,9 +7261,9 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=pathlib.Path("/tmp"))
     turn = _loop_state.TurnState(
-        turn=7,
+        number=7,
         resp=_resp(""),
-        assistant=_conversation.AssistantTurn(
+        assistant=_conversation.AssistantMessage(
             raw_content=(),
             tool_uses=(_conversation.ToolUse(id="tu1", name="run_verify_command", input={}),),
         ),
@@ -7520,21 +7520,21 @@ def test_standing_default_never_self_quits_and_escalates() -> None:
     wf = _wf(mode="run", curator=curator, budget=None)
     conv = _conversation.Conversation()
     state = _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True))
-    first = wf._handle_silent_finish("Done.", conv, state, _turn(turn=3), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    first = wf._handle_silent_finish("Done.", conv, state, _turn(number=3), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
     assert first is None
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
     # Quiet again with no executed call: still absorbed, nudge escalates.
     state.tool_calls += 1  # a REFUSED call is not work
-    second = wf._handle_silent_finish("Done.", conv, state, _turn(turn=4), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    second = wf._handle_silent_finish("Done.", conv, state, _turn(number=4), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
     assert second is None
     text = conv.to_wire()[-1]["content"][0]["text"]
     assert "different approach" in text and "fruitless round 1" in text
-    third = wf._handle_silent_finish("Done.", conv, state, _turn(turn=5), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    third = wf._handle_silent_finish("Done.", conv, state, _turn(number=5), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
     assert third is None
     assert "fruitless round 2" in conv.to_wire()[-1]["content"][0]["text"]
     # Work landing resets the streak: the next absorb is the plain nudge.
     state.ok_tool_calls += 1
-    fourth = wf._handle_silent_finish("Done.", conv, state, _turn(turn=6), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    fourth = wf._handle_silent_finish("Done.", conv, state, _turn(number=6), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
     assert fourth is None
     assert "fruitless" not in conv.to_wire()[-1]["content"][0]["text"]
     assert state.standing.fruitless == 0
@@ -7549,21 +7549,21 @@ def test_standing_patience_bounds_fruitless_reentries() -> None:
     conv = _conversation.Conversation()
     state = _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True))
     ctx = _ctx(wf, state)
-    assert wf._handle_silent_finish("Done.", conv, state, _turn(turn=3), ctx) is None  # pyright: ignore[reportPrivateUsage]
-    assert wf._handle_silent_finish("Done.", conv, state, _turn(turn=4), ctx) is None  # pyright: ignore[reportPrivateUsage]
-    ended = wf._handle_silent_finish("Done.", conv, state, _turn(turn=5), ctx)  # pyright: ignore[reportPrivateUsage]
+    assert wf._handle_silent_finish("Done.", conv, state, _turn(number=3), ctx) is None  # pyright: ignore[reportPrivateUsage]
+    assert wf._handle_silent_finish("Done.", conv, state, _turn(number=4), ctx) is None  # pyright: ignore[reportPrivateUsage]
+    ended = wf._handle_silent_finish("Done.", conv, state, _turn(number=5), ctx)  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
 
     wf0 = _wf(mode="run", curator=curator, budget=None)
     wf0.config.harness.standing_patience = 0
     state0 = _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True))
     ctx0 = _ctx(wf0, state0)
-    quiet = _turn(turn=3)
+    quiet = _turn(number=3)
     assert (
         wf0._handle_silent_finish("Done.", _conversation.Conversation(), state0, quiet, ctx0)
         is None
     )  # pyright: ignore[reportPrivateUsage]
-    quiet = _turn(turn=4)
+    quiet = _turn(number=4)
     ended0 = wf0._handle_silent_finish("Done.", _conversation.Conversation(), state0, quiet, ctx0)  # pyright: ignore[reportPrivateUsage]
     assert ended0 is not None and ended0.reason == "silent_finish"
 
@@ -7573,14 +7573,14 @@ def test_standing_task_gates_finish_session_and_soft_stops() -> None:
     curator.nodes.return_value = _standing_nodes()
     wf = _wf(mode="run", curator=curator, budget=None)
     state = _state()
-    turn = _turn(turn=2)
+    turn = _turn(number=2)
     turn.finish = _finish_gates.FinishCall("finish_session", "all done")
     wf._turn_finish_gates(state, turn, _ctx(wf, state, 2))  # pyright: ignore[reportPrivateUsage]
     assert turn.finish is None  # revoked: the goal continues
     assert any("standing task" in getattr(n, "text", "") for n in turn.tool_results)
     # Soft stop: verify_settled absorbs and clears its streak.
     state.ok_tool_calls += 1
-    turn2 = _turn(turn=3)
+    turn2 = _turn(number=3)
     ctx = _ctx(wf, state, 3)
     turn2.stops.append(_advice.Stop(lambda: _guards.settled_end(state, ctx), soft="verify_settled"))
     state.settled.idle = 9
@@ -7662,7 +7662,7 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
     )
     conv = _conversation.Conversation()
     state = _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True))
-    parked = wf._handle_silent_finish("Done.", conv, state, _turn(turn=4), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    parked = wf._handle_silent_finish("Done.", conv, state, _turn(number=4), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
     assert parked is None  # steered onward, same conversation
     wire = conv.to_wire()
     assert "keep going: also cover sub()" in wire[-1]["content"][0]["text"]
@@ -7679,7 +7679,7 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
         "Done.",
         _conversation.Conversation(),
         _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True)),
-        _turn(turn=4),
+        _turn(number=4),
         _ctx(wf2, _state()),
     )  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "steer_abort"
@@ -7692,7 +7692,7 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
         "Done.",
         _conversation.Conversation(),
         _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True)),
-        _turn(turn=4),
+        _turn(number=4),
         _ctx(wf, _state()),
     )  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
@@ -7705,7 +7705,7 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
         "Done.",
         conv,
         _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True)),
-        _turn(turn=4),
+        _turn(number=4),
         _ctx(wf2, _state()),
     )  # pyright: ignore[reportPrivateUsage]
     assert out is None
@@ -7759,7 +7759,7 @@ def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: pathlib.Path)
 
     wf.events = mock.MagicMock()
     wf.events.emit = _capture  # type: ignore[method-assign]
-    turn = _turn(turn=3)
+    turn = _turn(number=3)
     turn.verify_just_passed = True
     turn.edit_since_verify_pass = False
     with mock.patch.object(_chain.RunChain, "commit", return_value=""):
@@ -7823,7 +7823,7 @@ _TASK_WIRE = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]
 
 
 def _two_call_resp() -> ProviderResponse:
-    """One assistant turn holding two tool calls, `call-a` then `call-b`."""
+    """One assistant message holding two tool calls, `call-a` then `call-b`."""
     blocks = [
         {"type": "tool_use", "id": "call-a", "name": "read_file", "input": {"path": "a"}},
         {"type": "tool_use", "id": "call-b", "name": "run_command", "input": {"argv": ["x"]}},
@@ -8191,7 +8191,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
     )
     st = _state()
     st.verify.adopted = argv
-    turn = _turn(turn=4)
+    turn = _turn(number=4)
     wf.gate.note_result(
         st,
         turn,
@@ -8224,7 +8224,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
         dispatcher=mock.MagicMock(),
     )
     st2 = _state()
-    turn2 = _turn(turn=2)
+    turn2 = _turn(number=2)
     wf2.gate.note_result(
         st2,
         turn2,
@@ -8264,7 +8264,7 @@ def test_operator_answers_become_recorded_rulings(tmp_path: pathlib.Path) -> Non
         ),
     )
     st = _state()
-    turn = _turn(turn=1)
+    turn = _turn(number=1)
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         st,
         turn,
@@ -8397,9 +8397,9 @@ def _metric_result(score: float) -> tools_results.MetricResult:
 
 def _edited_turn(turn: int) -> _loop_state.TurnState:
     turn_state = _loop_state.TurnState(
-        turn=turn,
+        number=turn,
         resp=_resp(""),
-        assistant=_conversation.AssistantTurn(raw_content=(), tool_uses=()),
+        assistant=_conversation.AssistantMessage(raw_content=(), tool_uses=()),
     )
     turn_state.edited = True
     return turn_state
@@ -8434,9 +8434,9 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: path
     assert "not a new best" not in (turn.metric_feedback or "")
     # The next turn reads the same tree: still one reading per state of it.
     later = _loop_state.TurnState(
-        turn=2,
+        number=2,
         resp=_resp(""),
-        assistant=_conversation.AssistantTurn(raw_content=(), tool_uses=()),
+        assistant=_conversation.AssistantMessage(raw_content=(), tool_uses=()),
     )
     wf._turn_auto_commit_and_metric(state, later)  # pyright: ignore[reportPrivateUsage]
     assert dispatched == []
@@ -8483,9 +8483,9 @@ def _settles_at(
     _settle(wf, state, first)
     for i in range(2, 36):
         turn = _loop_state.TurnState(
-            turn=i,
+            number=i,
             resp=_resp(""),
-            assistant=_conversation.AssistantTurn(raw_content=(), tool_uses=()),
+            assistant=_conversation.AssistantMessage(raw_content=(), tool_uses=()),
         )
         wf._turn_auto_commit_and_metric(state, turn)  # pyright: ignore[reportPrivateUsage]
         _settle(wf, state, turn)
@@ -8565,9 +8565,9 @@ def test_a_flat_ask_user_call_records_its_ruling(tmp_path: pathlib.Path) -> None
     wf = _ruling_wf(tmp_path)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _loop_state.TurnState(
-        turn=1,
+        number=1,
         resp=_resp(""),
-        assistant=_conversation.AssistantTurn(raw_content=(), tool_uses=()),
+        assistant=_conversation.AssistantMessage(raw_content=(), tool_uses=()),
     )
     flat = {"question": question, "options": ["yes", "no"]}
 
@@ -8644,9 +8644,9 @@ def test_ask_user_args_the_dispatcher_coerced_still_record_their_ruling(
     wf = _ruling_wf(tmp_path)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _loop_state.TurnState(
-        turn=1,
+        number=1,
         resp=_resp(""),
-        assistant=_conversation.AssistantTurn(raw_content=(), tool_uses=()),
+        assistant=_conversation.AssistantMessage(raw_content=(), tool_uses=()),
     )
     wf._note_tool_effects(state, turn, "ask_user", result, raw)  # pyright: ignore[reportPrivateUsage]
     assert len(state.decisions_recorded) == 1
@@ -8784,9 +8784,9 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: pathlib.Path) -> None:
 
     texts = [
         item.text
-        for turn in conversation.turns
-        if isinstance(turn, _conversation.UserTurn)
-        for item in turn.items
+        for message in conversation.messages
+        if isinstance(message, _conversation.UserMessage)
+        for item in message.items
         if isinstance(item, _conversation.Notice)
     ]
     banner = next(t for t in texts if t.startswith("[harness focus]"))

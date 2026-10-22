@@ -16,9 +16,9 @@ def _tool_use_block(tid: str, name: str = "read_file", **inp: Any) -> dict[str, 
 
 
 def _result(conv: _conversation.Conversation, *contents: str) -> None:
-    """Answer the pending tool_use turn with one result per content string."""
-    last = conv.turns[-1]
-    assert isinstance(last, _conversation.AssistantTurn)
+    """Answer the pending tool_use message with one result per content string."""
+    last = conv.messages[-1]
+    assert isinstance(last, _conversation.AssistantMessage)
     conv.results(
         [
             _conversation.ToolResultItem(tool_use_id=tu.id, content=c, for_call=tu)
@@ -50,8 +50,8 @@ def _rich_conversation() -> _conversation.Conversation:
             _tool_use_block("t2", "run_verify_command"),
         ]
     )
-    last = conv.turns[-1]
-    assert isinstance(last, _conversation.AssistantTurn)
+    last = conv.messages[-1]
+    assert isinstance(last, _conversation.AssistantMessage)
     conv.results(
         [
             _conversation.ToolResultItem(
@@ -78,13 +78,13 @@ def test_wire_round_trip_is_byte_identical() -> None:
 
 def test_from_wire_pairs_results_to_their_calls() -> None:
     conv = _conversation.Conversation.from_wire(_rich_conversation().to_wire())
-    results_turn = conv.turns[2]
-    assert isinstance(results_turn, _conversation.UserTurn)
-    items = [it for it in results_turn.items if isinstance(it, _conversation.ToolResultItem)]
+    results_message = conv.messages[2]
+    assert isinstance(results_message, _conversation.UserMessage)
+    items = [it for it in results_message.items if isinstance(it, _conversation.ToolResultItem)]
     assert [it.for_call.name for it in items] == ["read_file", "run_verify_command"]
     assert items[0].for_call.input == {"path": "a.py"}
     # The notice survives, canonicalized after the results.
-    assert isinstance(results_turn.items[-1], _conversation.Notice)
+    assert isinstance(results_message.items[-1], _conversation.Notice)
 
 
 def test_assistant_raw_blocks_pass_through_verbatim() -> None:
@@ -96,7 +96,7 @@ def test_assistant_raw_blocks_pass_through_verbatim() -> None:
     assert _conversation.Conversation.from_wire(conv.to_wire()).to_wire()[1]["content"] == exotic
 
 
-def test_trailing_tool_use_turn_is_accepted() -> None:
+def test_trailing_tool_use_message_is_accepted() -> None:
     # A crash between the assistant append and its results is transient-legal; from_wire mirrors it.
     conv = _conversation.Conversation()
     conv.notice("t")
@@ -195,15 +195,15 @@ def test_appends_after_an_unanswered_tool_use_raise() -> None:
 def test_results_must_cover_the_call_ids_in_order() -> None:
     conv = _conversation.Conversation()
     conv.notice("t")
-    turn = conv.assistant([_tool_use_block("t1"), _tool_use_block("t2")])
+    message = conv.assistant([_tool_use_block("t1"), _tool_use_block("t2")])
     partial = [
-        _conversation.ToolResultItem(tool_use_id="t1", content="x", for_call=turn.tool_uses[0])
+        _conversation.ToolResultItem(tool_use_id="t1", content="x", for_call=message.tool_uses[0])
     ]
     with pytest.raises(ValueError, match="do not answer"):
         conv.results(partial)
     reordered = [
-        _conversation.ToolResultItem(tool_use_id="t2", content="y", for_call=turn.tool_uses[1]),
-        _conversation.ToolResultItem(tool_use_id="t1", content="x", for_call=turn.tool_uses[0]),
+        _conversation.ToolResultItem(tool_use_id="t2", content="y", for_call=message.tool_uses[1]),
+        _conversation.ToolResultItem(tool_use_id="t1", content="x", for_call=message.tool_uses[0]),
     ]
     with pytest.raises(ValueError, match="do not answer"):
         conv.results(reordered)
@@ -219,15 +219,15 @@ def test_results_without_a_pending_call_raise() -> None:
         conv.results([orphan])
 
 
-def test_pop_quiet_assistant_only_drops_dead_turns() -> None:
+def test_pop_quiet_assistant_only_drops_dead_messages() -> None:
     conv = _conversation.Conversation()
     conv.notice("t")
     conv.assistant([{"type": "thinking", "thinking": "spent the whole budget"}])
     conv.pop_quiet_assistant()
-    assert len(conv) == 1  # thinking-only turn dropped
+    assert len(conv) == 1  # thinking-only message dropped
     conv.assistant([{"type": "text", "text": "real answer"}])
     conv.pop_quiet_assistant()
-    assert len(conv) == 2  # substantive turn kept
+    assert len(conv) == 2  # substantive message kept
     conv.pop_quiet_assistant()
     assert len(conv) == 2  # non-assistant tails are never popped twice
 
@@ -241,16 +241,16 @@ def test_set_result_content_rewrites_in_place() -> None:
     wire = conv.to_wire()
     assert wire[2]["content"][0]["content"] == "<elided>"
     assert wire[2]["content"][0]["tool_use_id"] == "t1"
-    turn = conv.turns[2]
-    assert not isinstance(turn, _conversation.AssistantTurn)
-    item = turn.items[0]
+    message = conv.messages[2]
+    assert not isinstance(message, _conversation.AssistantMessage)
+    item = message.items[0]
     assert isinstance(item, _conversation.ToolResultItem) and item.for_call.name == "read_file"
 
 
-def test_restart_keeps_the_first_turn_and_its_marks() -> None:
+def test_restart_keeps_the_first_message_and_its_marks() -> None:
     conv = _conversation.Conversation()
     conv.notice("TASK")
-    conv.roll_cache_marks()  # marks the task turn
+    conv.roll_cache_marks()  # marks the task message
     conv.assistant([_tool_use_block("t1")])
     _result(conv, "x")
     conv.restart("[restart] summary")
@@ -259,7 +259,7 @@ def test_restart_keeps_the_first_turn_and_its_marks() -> None:
         "TASK",
         "[restart] summary",
     ]
-    assert _marked(wire) == [(0, 0)]  # the kept turn's mark survives; the rest are gone
+    assert _marked(wire) == [(0, 0)]  # the kept message's mark survives; the rest are gone
 
 
 # --- rolling cache marks (ported from the _cache module tests) --------------
@@ -309,7 +309,7 @@ def test_nudges_between_calls_do_not_lose_the_previous_position() -> None:
     assert _marked(conv.to_wire()) == [(0, 0), (4, 0)]
 
 
-def test_roll_is_idempotent_without_new_turns() -> None:
+def test_roll_is_idempotent_without_new_messages() -> None:
     conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()
@@ -334,8 +334,8 @@ def test_roll_survives_the_wire_round_trip() -> None:
     assert _marked(resumed.to_wire()) == _marked(conv.to_wire())
 
 
-def test_roll_skips_a_trailing_assistant_turn() -> None:
-    # The loop always rolls with a user tail; a trailing assistant turn is never stamped.
+def test_roll_skips_a_trailing_assistant_message() -> None:
+    # The loop always rolls with a user tail; a trailing assistant message is never stamped.
     conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.assistant([{"type": "thinking", "thinking": "..."}, _tool_use_block("t1")])
@@ -363,8 +363,8 @@ def test_wire_leads_with_tool_results_never_notice_text() -> None:
     conv = _conversation.Conversation()
     conv.notice("TASK")
     conv.assistant([_tool_use_block("t1", "run_verify_command")])
-    last = conv.turns[-1]
-    assert isinstance(last, _conversation.AssistantTurn)
+    last = conv.messages[-1]
+    assert isinstance(last, _conversation.AssistantMessage)
     conv.results(
         [
             _conversation.Notice("[harness] the gate was already red"),
@@ -396,8 +396,8 @@ def test_wire_leads_with_tool_results_never_notice_text() -> None:
     assert [b["type"] for b in blocks] == ["tool_result", "text"]
 
 
-def test_restart_with_kept_tail_preserves_recent_turns_verbatim() -> None:
-    """A tier-2 restart keeps the most recent turns verbatim after the summary notice."""
+def test_restart_with_kept_tail_preserves_recent_messages_verbatim() -> None:
+    """A tier-2 restart keeps the most recent messages verbatim after the summary notice."""
     conv = _conversation.Conversation()
     conv.notice("the task")
     conv.assistant([{"type": "text", "text": "old thinking"}])
@@ -405,13 +405,16 @@ def test_restart_with_kept_tail_preserves_recent_turns_verbatim() -> None:
     _result(conv, "old file body")
     conv.assistant([_tool_use_block("t2", path="b.py")])
     _result(conv, "fresh file body")
-    tail = conv.turns[-2:]  # the t2 call + its result: a balanced tail
+    tail = conv.messages[-2:]  # the t2 call + its result: a balanced tail
     conv.restart("[restart] summary", keep=tail)
-    turns = conv.turns
-    assert len(turns) == 4  # task, summary, t2 call, t2 result
-    assert isinstance(turns[2], _conversation.AssistantTurn) and turns[2].tool_uses[0].id == "t2"
-    last = turns[3]
-    assert isinstance(last, _conversation.UserTurn)
+    messages = conv.messages
+    assert len(messages) == 4  # task, summary, t2 call, t2 result
+    assert (
+        isinstance(messages[2], _conversation.AssistantMessage)
+        and messages[2].tool_uses[0].id == "t2"
+    )
+    last = messages[3]
+    assert isinstance(last, _conversation.UserMessage)
     item = last.items[0]
     assert isinstance(item, _conversation.ToolResultItem) and item.content == "fresh file body"
 
@@ -425,7 +428,7 @@ def test_restart_refuses_a_tail_leading_with_tool_results() -> None:
     conv.notice("the task")
     conv.assistant([_tool_use_block("t1", path="a.py")])
     _result(conv, "body")
-    orphan_tail = conv.turns[-1:]  # the results turn alone
+    orphan_tail = conv.messages[-1:]  # the results message alone
     with pytest.raises(ValueError, match="kept tail"):
         conv.restart("[restart] summary", keep=orphan_tail)
 
@@ -449,7 +452,7 @@ def test_format_transcript_tail_renders_roles_and_strips_thinking() -> None:
             },
         ]
     )
-    out = _conversation.format_transcript_tail(conversation.turns)
+    out = _conversation.format_transcript_tail(conversation.messages)
     assert "internal reasoning" not in out
     assert "hello" in out
     assert "doing it" in out

@@ -188,7 +188,7 @@ def test_mixed_patch_records_memory_and_workspace_effects(
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_pass()
     turn = _loop_state.TurnState(
-        turn=1, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        number=1, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
     )
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "apply_patch", result, tool_input

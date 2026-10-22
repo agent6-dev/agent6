@@ -15,7 +15,7 @@ from tests.unit.turn_context import turn_context
 
 def _turn(turn: int = 3) -> _loop_state.TurnState:
     return _loop_state.TurnState(
-        turn=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        number=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
     )
 
 

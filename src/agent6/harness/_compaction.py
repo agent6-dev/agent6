@@ -378,23 +378,23 @@ def context_chars(conversation: _conversation.Conversation) -> int:
         conversation: The loop's history.
 
     Returns:
-        The sum over the turns.
+        The sum over the messages.
     """
-    return sum(turn_chars(turn) for turn in conversation.turns)
+    return sum(message_chars(message) for message in conversation.messages)
 
 
-def turn_chars(turn: _conversation.Turn) -> int:
-    """Return one turn's contribution to `context_chars`.
+def message_chars(message: _conversation.Message) -> int:
+    """Return one message's contribution to `context_chars`.
 
     Args:
-        turn: The turn.
+        message: The message.
 
     Returns:
         Its character count, "type" keys excluded.
     """
-    if isinstance(turn, _conversation.AssistantTurn):
+    if isinstance(message, _conversation.AssistantMessage):
         total = 0
-        for item in turn.raw_content:
+        for item in message.raw_content:
             if not isinstance(item, dict):
                 total += len(str(item))
                 continue
@@ -407,7 +407,7 @@ def turn_chars(turn: _conversation.Turn) -> int:
         return total
     return sum(
         len(item.content if isinstance(item, _conversation.ToolResultItem) else item.text)
-        for item in turn.items
+        for item in message.items
     )
 
 
@@ -428,7 +428,7 @@ class CompactionSettings:
             conversation.
         keep_recent_chars: The verbatim tail a restart keeps.
         keep_thinking_turns: At tier-1 moments, keep thinking for the newest N
-            assistant turns (N >= 1); -1 keeps all.
+            assistant messages (N >= 1); -1 keeps all.
         elision_gists: A large read decays through a model-written gist first.
         summary_max_tokens: The summariser's output cap.
         summariser: The reviewer role's provider; the worker's when None.
@@ -445,27 +445,27 @@ class CompactionSettings:
 
 
 def strip_old_thinking(
-    conversation: _conversation.Conversation, *, keep_turns: int
+    conversation: _conversation.Conversation, *, keep_messages: int
 ) -> tuple[int, int]:
-    """Drop thinking blocks from assistant turns older than the newest few.
+    """Drop thinking blocks from assistant messages older than the newest few.
 
     Anthropic requires the signed thinking block of a tool_use still being
     answered, so callers pass at least 1.
 
     Args:
         conversation: The loop's history.
-        keep_turns: How many of the newest assistant turns keep their thinking.
+        keep_messages: How many of the newest assistant messages keep their thinking.
 
     Returns:
-        (turns stripped, chars removed).
+        (messages stripped, chars removed).
     """
     assistant_idxs = [
         i
-        for i, turn in enumerate(conversation.turns)
-        if isinstance(turn, _conversation.AssistantTurn)
+        for i, message in enumerate(conversation.messages)
+        if isinstance(message, _conversation.AssistantMessage)
     ]
     n = chars = 0
-    for idx in assistant_idxs[:-keep_turns]:
+    for idx in assistant_idxs[:-keep_messages]:
         removed = conversation.strip_thinking(idx)
         if removed:
             n += 1
@@ -494,49 +494,51 @@ def request_prefix_chars(system: str, tools: Sequence[types.ToolDefinition]) -> 
     )
 
 
-def recent_tail_start(turns: Sequence[_conversation.Turn], cap_chars: int) -> int:
+def recent_tail_start(messages: Sequence[_conversation.Message], cap_chars: int) -> int:
     """Return the index where a tier-2 restart's verbatim tail begins.
 
-    A safe start is any turn except a user turn carrying tool_results, which
-    answers the assistant turn before it. Turn 0, the task, is never part of
+    A safe start is any message except a user message carrying tool_results, which
+    answers the assistant message before it. Message 0, the task, is never part of
     the tail; the restart keeps it separately.
 
     Args:
-        turns: The conversation's turns.
+        messages: The conversation's messages.
         cap_chars: The tail's size cap.
 
     Returns:
-        The start of the largest tail of whole turns within the cap on a safe
-        boundary; `len(turns)` when nothing is kept.
+        The start of the largest tail of whole messages within the cap on a safe
+        boundary; `len(messages)` when nothing is kept.
     """
     if cap_chars <= 0:
-        return len(turns)
+        return len(messages)
     total = 0
-    start = len(turns)
-    i = len(turns) - 1
+    start = len(messages)
+    i = len(messages) - 1
     while i >= 1:
-        size = turn_chars(turns[i])
+        size = message_chars(messages[i])
         if total + size > cap_chars:
             break
         total += size
         start = i
         i -= 1
-    while start < len(turns) and _starts_with_results(turns[start]):
+    while start < len(messages) and _starts_with_results(messages[start]):
         start += 1
-    if start == len(turns):
+    if start == len(messages):
         # The newest exchange exceeds the cap alone: keep it anyway, since paraphrasing
         # undelivered results away is the one loss the tail exists to prevent.
         assistant_idxs = [
-            i for i in range(1, len(turns)) if isinstance(turns[i], _conversation.AssistantTurn)
+            i
+            for i in range(1, len(messages))
+            if isinstance(messages[i], _conversation.AssistantMessage)
         ]
         if assistant_idxs:
             start = assistant_idxs[-1]
     return start
 
 
-def _starts_with_results(turn: _conversation.Turn) -> bool:
-    return isinstance(turn, _conversation.UserTurn) and any(
-        isinstance(item, _conversation.ToolResultItem) for item in turn.items
+def _starts_with_results(message: _conversation.Message) -> bool:
+    return isinstance(message, _conversation.UserMessage) and any(
+        isinstance(item, _conversation.ToolResultItem) for item in message.items
     )
 
 
@@ -547,9 +549,9 @@ _PATCH_TARGET_RE = re.compile(
 
 
 def recently_edited_paths(
-    conversation: _conversation.Conversation, *, last_turns: int = 8
+    conversation: _conversation.Conversation, *, last_messages: int = 8
 ) -> frozenset[str]:
-    """Return the paths apply_edit and apply_patch targeted in the newest turns.
+    """Return the paths apply_edit and apply_patch targeted in the newest messages.
 
     Tier-1 elision deprioritises these files' reads, since a placeholder there
     triggers a paid re-read before the next edit. An apply_patch without a
@@ -558,20 +560,20 @@ def recently_edited_paths(
 
     Args:
         conversation: The loop's history.
-        last_turns: How many of the newest assistant turns count.
+        last_messages: How many of the newest assistant messages count.
 
     Returns:
         The paths.
     """
     out: set[str] = set()
     seen_assistant = 0
-    for turn in reversed(conversation.turns):
-        if not isinstance(turn, _conversation.AssistantTurn):
+    for message in reversed(conversation.messages):
+        if not isinstance(message, _conversation.AssistantMessage):
             continue
         seen_assistant += 1
-        if seen_assistant > last_turns:
+        if seen_assistant > last_messages:
             break
-        for tu in turn.tool_uses:
+        for tu in message.tool_uses:
             if tu.name not in ("apply_edit", "apply_patch") or not isinstance(tu.input, dict):
                 continue
             path = str(tu.input.get("path", "") or "")
@@ -594,17 +596,17 @@ def _tool_result_pointers(
         conversation: The loop's history.
 
     Returns:
-        ((turn index, item index, size) per result, total size).
+        ((message index, item index, size) per result, total size).
     """
     pointers: list[tuple[int, int, int]] = []
     total = 0
-    for turn_idx, turn in enumerate(conversation.turns):
-        if isinstance(turn, _conversation.AssistantTurn):
+    for message_idx, message in enumerate(conversation.messages):
+        if isinstance(message, _conversation.AssistantMessage):
             continue
-        for item_idx, item in enumerate(turn.items):
+        for item_idx, item in enumerate(message.items):
             if not isinstance(item, _conversation.ToolResultItem):
                 continue
-            pointers.append((turn_idx, item_idx, len(item.content)))
+            pointers.append((message_idx, item_idx, len(item.content)))
             total += len(item.content)
     return pointers, total
 
@@ -622,8 +624,8 @@ def count_elisions(conversation: _conversation.Conversation) -> tuple[int, int]:
         (markers, gists).
     """
     elided = gists = 0
-    for turn in conversation.turns:
-        for item in getattr(turn, "items", ()):
+    for message in conversation.messages:
+        for item in getattr(message, "items", ()):
             body = getattr(item, "content", "")
             if isinstance(body, str) and body.startswith(ELISION_PREFIX):
                 elided += 1
@@ -643,7 +645,7 @@ def compact_old_tool_results(
 
     The walk is oldest-first and stops once the total is back under the bound.
     The newest `keep_recent` results stay, as does every result in the newest
-    result turn until an assistant turn has consumed it: the loop compacts
+    result message until an assistant message has consumed it: the loop compacts
     before the provider call that would deliver it, and a placeholder there
     triggers a paid re-call. Protected reads are elided only after every other
     candidate. With a gister, a large unprotected read decays to a gist
@@ -673,18 +675,18 @@ def compact_old_tool_results(
         if total <= max_total_bytes:
             return CompactionStats(deduped_calls=deduped_calls)
 
-    def _is_protected(turn_idx: int, item_idx: int) -> bool:
-        call = _result_at(conversation, turn_idx, item_idx).for_call
+    def _is_protected(message_idx: int, item_idx: int) -> bool:
+        call = _result_at(conversation, message_idx, item_idx).for_call
         if call.name != "read_file" or not isinstance(call.input, dict):
             return False
         return str(call.input.get("path", "")) in protect_paths
 
-    undelivered_turn = _undelivered_result_turn(conversation, pointers)
+    undelivered_message = _undelivered_result_message(conversation, pointers)
     older = pointers[:-keep_recent] if keep_recent else pointers
     candidates = [
         c
         for c in older
-        if c[0] != undelivered_turn
+        if c[0] != undelivered_message
         and not _is_operator_answer(_result_at(conversation, c[0], c[1]))
     ]
     if protect_paths:
@@ -729,31 +731,31 @@ def _is_operator_answer(item: _conversation.ToolResultItem) -> bool:
 
 
 def _result_at(
-    conversation: _conversation.Conversation, turn_idx: int, item_idx: int
+    conversation: _conversation.Conversation, message_idx: int, item_idx: int
 ) -> _conversation.ToolResultItem:
-    turn = conversation.turns[turn_idx]
-    assert not isinstance(turn, _conversation.AssistantTurn)
-    item = turn.items[item_idx]
+    message = conversation.messages[message_idx]
+    assert not isinstance(message, _conversation.AssistantMessage)
+    item = message.items[item_idx]
     assert isinstance(item, _conversation.ToolResultItem)  # pointers only ever index tool_results
     return item
 
 
-def _undelivered_result_turn(
+def _undelivered_result_message(
     conversation: _conversation.Conversation, pointers: list[tuple[int, int, int]]
 ) -> int | None:
-    """Return the newest result turn when no assistant turn has consumed it yet.
+    """Return the newest result message when no assistant message has consumed it yet.
 
     Args:
         conversation: The loop's history.
         pointers: The result positions from `_tool_result_pointers`.
 
     Returns:
-        The turn index, or None once an assistant turn follows it.
+        The message index, or None once an assistant message follows it.
     """
-    last_result = max(turn_idx for turn_idx, _, _ in pointers)
+    last_result = max(message_idx for message_idx, _, _ in pointers)
     if any(
-        isinstance(turn, _conversation.AssistantTurn)
-        for turn in conversation.turns[last_result + 1 :]
+        isinstance(message, _conversation.AssistantMessage)
+        for message in conversation.messages[last_result + 1 :]
     ):
         return None
     return last_result
@@ -787,12 +789,12 @@ def _dedupe_identical_results(
     """
     if len(pointers) <= keep_recent:
         return ()
-    undelivered_turn = _undelivered_result_turn(conversation, pointers)
+    undelivered_message = _undelivered_result_message(conversation, pointers)
     recent = pointers[-keep_recent:] if keep_recent else []
     exempt = {(t, i) for t, i, _ in recent}
     by_key: dict[tuple[str, str, str], list[tuple[int, int]]] = {}
-    for turn_idx, item_idx, _size in pointers:
-        item = _result_at(conversation, turn_idx, item_idx)
+    for message_idx, item_idx, _size in pointers:
+        item = _result_at(conversation, message_idx, item_idx)
         if (
             item.content.startswith(ELISION_PREFIX)
             or len(item.content) < _DEDUP_MIN_CHARS
@@ -804,13 +806,13 @@ def _dedupe_identical_results(
             input_key = json.dumps(call.input, sort_keys=True, default=str)
         except (TypeError, ValueError):
             continue
-        by_key.setdefault((call.name, input_key, item.content), []).append((turn_idx, item_idx))
+        by_key.setdefault((call.name, input_key, item.content), []).append((message_idx, item_idx))
     labels: list[str] = []
     for locs in by_key.values():
-        for turn_idx, item_idx in locs[:-1]:  # every copy but the newest
-            if turn_idx == undelivered_turn or (turn_idx, item_idx) in exempt:
+        for message_idx, item_idx in locs[:-1]:  # every copy but the newest
+            if message_idx == undelivered_message or (message_idx, item_idx) in exempt:
                 continue
-            item = _result_at(conversation, turn_idx, item_idx)
+            item = _result_at(conversation, message_idx, item_idx)
             label = call_label(item.for_call.name, item.for_call.input)
             marker = (
                 f"{ELISION_PREFIX} (duplicate): {label} returned byte-identical"
@@ -820,7 +822,7 @@ def _dedupe_identical_results(
             if len(marker) >= len(item.content):
                 # A long path can make the marker bigger than the result it replaces.
                 continue
-            conversation.set_result_content(turn_idx, item_idx, marker)
+            conversation.set_result_content(message_idx, item_idx, marker)
             labels.append(label)
     return tuple(labels)
 
@@ -856,8 +858,8 @@ class _Tier1Pass:
     gist_paths: list[str] = dataclasses.field(default_factory=list)
     demoted_paths: list[str] = dataclasses.field(default_factory=list)
 
-    def _item(self, turn_idx: int, item_idx: int) -> _conversation.ToolResultItem:
-        return _result_at(self.conversation, turn_idx, item_idx)
+    def _item(self, message_idx: int, item_idx: int) -> _conversation.ToolResultItem:
+        return _result_at(self.conversation, message_idx, item_idx)
 
     def plan(self) -> None:
         """Pick the victims under bare-placeholder accounting, the maximum shrink.
@@ -865,17 +867,17 @@ class _Tier1Pass:
         Nothing is mutated yet, so the distiller can still read the content.
         """
         planned = self.total
-        for turn_idx, item_idx, size in self.candidates:
+        for message_idx, item_idx, size in self.candidates:
             if planned <= self.max_total_bytes:
                 break
-            item = self._item(turn_idx, item_idx)
+            item = self._item(message_idx, item_idx)
             if item.content.startswith(ELISION_PREFIX):
                 continue
             placeholder = elision_placeholder(item.for_call.name, item.for_call.input)
             if size <= len(placeholder):
                 # Content smaller than the placeholder would grow the total.
                 continue
-            self.victims.append((turn_idx, item_idx, size))
+            self.victims.append((message_idx, item_idx, size))
             planned -= size - len(placeholder)
         # What a gist may add back on top of the bare-placeholder plan.
         self.gist_headroom = self.max_total_bytes - planned
@@ -890,28 +892,28 @@ class _Tier1Pass:
             gister: The distiller.
         """
         newest_by_path: dict[str, tuple[int, int, int]] = {}
-        for turn_idx, item_idx, size in self.victims:
-            call = self._item(turn_idx, item_idx).for_call
+        for message_idx, item_idx, size in self.victims:
+            call = self._item(message_idx, item_idx).for_call
             if call.name != "read_file" or not isinstance(call.input, dict):
                 continue
             path = str(call.input.get("path", ""))
             if not path or path in self.protect_paths or size < GIST_MIN_SOURCE_CHARS:
                 continue
-            newest_by_path[path] = (turn_idx, item_idx, size)  # victims are oldest-first
+            newest_by_path[path] = (message_idx, item_idx, size)  # victims are oldest-first
         batch: list[GistRequest] = []
         keys: dict[str, tuple[int, int]] = {}
         input_budget = GIST_INPUT_CAP_CHARS
         by_size = sorted(newest_by_path.items(), key=lambda kv: kv[1][2], reverse=True)
-        for path, (turn_idx, item_idx, _size) in by_size:
+        for path, (message_idx, item_idx, _size) in by_size:
             if len(batch) >= GIST_MAX_FILES_PER_CALL or input_budget <= 0:
                 break
-            text = read_file_text_from_result(self._item(turn_idx, item_idx).content)
+            text = read_file_text_from_result(self._item(message_idx, item_idx).content)
             if len(text) < GIST_MIN_SOURCE_CHARS:
                 continue
             excerpt = text[: min(GIST_FILE_SLICE_CHARS, input_budget)]
             input_budget -= len(excerpt)
             batch.append(GistRequest(path=path, content=excerpt))
-            keys[path] = (turn_idx, item_idx)
+            keys[path] = (message_idx, item_idx)
         if not batch:
             return
         for path, gist in gister(tuple(batch)).items():
@@ -931,28 +933,28 @@ class _Tier1Pass:
         """
         headroom = max(self.gist_headroom, 0)
         landing: dict[tuple[int, int], str] = {}
-        for turn_idx, item_idx, size in reversed(self.victims):
-            gist = self.gists.get((turn_idx, item_idx))
-            call = self._item(turn_idx, item_idx).for_call
+        for message_idx, item_idx, size in reversed(self.victims):
+            gist = self.gists.get((message_idx, item_idx))
+            call = self._item(message_idx, item_idx).for_call
             if gist is None or not isinstance(call.input, dict):
                 continue
             candidate = elision_gist_placeholder(call_label(call.name, call.input), gist)
             extra = len(candidate) - len(elision_placeholder(call.name, call.input))
             if len(candidate) < size and extra <= headroom:
                 headroom -= extra
-                landing[(turn_idx, item_idx)] = candidate
+                landing[(message_idx, item_idx)] = candidate
         return landing
 
     def apply(self) -> None:
         """Rewrite every victim with its gist or bare placeholder."""
         landing = self._landing_gists()
-        for turn_idx, item_idx, size in self.victims:
-            call = self._item(turn_idx, item_idx).for_call
-            gist_placeholder = landing.get((turn_idx, item_idx))
+        for message_idx, item_idx, size in self.victims:
+            call = self._item(message_idx, item_idx).for_call
+            gist_placeholder = landing.get((message_idx, item_idx))
             placeholder = gist_placeholder or elision_placeholder(call.name, call.input)
             if gist_placeholder is not None and isinstance(call.input, dict):
                 self.gist_paths.append(str(call.input.get("path", "")))
-            self.conversation.set_result_content(turn_idx, item_idx, placeholder)
+            self.conversation.set_result_content(message_idx, item_idx, placeholder)
             self.total -= size - len(placeholder)
             self.elided_calls.append(call_label(call.name, call.input))
 
@@ -960,16 +962,16 @@ class _Tier1Pass:
         """Demote gist placeholders oldest-first to the bare marker while over budget."""
         if self.total <= self.max_total_bytes:
             return
-        for turn_idx, item_idx, _size in self.candidates:
+        for message_idx, item_idx, _size in self.candidates:
             if self.total <= self.max_total_bytes:
                 break
-            item = self._item(turn_idx, item_idx)
+            item = self._item(message_idx, item_idx)
             if not item.content.startswith(ELISION_GIST_PREFIX):
                 continue
             bare = elision_placeholder(item.for_call.name, item.for_call.input)
             if len(item.content) <= len(bare):
                 continue
-            self.conversation.set_result_content(turn_idx, item_idx, bare)
+            self.conversation.set_result_content(message_idx, item_idx, bare)
             self.total -= len(item.content) - len(bare)
             call = item.for_call
             self.demoted_paths.append(

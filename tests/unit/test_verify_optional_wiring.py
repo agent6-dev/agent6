@@ -738,7 +738,7 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: pathlib.Path
         dispatcher=dispatcher,
         logger=lambda _line: None,
     )
-    turn = _loop_state.TurnState(turn=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(number=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
     wf.gate.maybe_adopt(mock.MagicMock(), turn)
     dispatcher.adopt_verify_command.assert_not_called()
     assert wf.gate.command(_verify_verdict.VerifyVerdict()) == ()
@@ -763,7 +763,7 @@ def test_the_decline_line_prints_when_its_reason_changes(
     )
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     for i in (1, 2, 3):
-        turn = _loop_state.TurnState(turn=i, resp=mock.MagicMock(), assistant=mock.MagicMock())
+        turn = _loop_state.TurnState(number=i, resp=mock.MagicMock(), assistant=mock.MagicMock())
         wf.gate.maybe_adopt(state, turn)
     declined = [line for line in lines if "verify inference declined" in line]
     assert len(declined) == 1, lines
@@ -772,7 +772,7 @@ def test_the_decline_line_prints_when_its_reason_changes(
     (tmp_path / "package.json").unlink()
     (jail_bin / "cargo").unlink()
     (tmp_path / "Cargo.toml").write_text('[package]\nname = "x"\n', encoding="utf-8")
-    turn = _loop_state.TurnState(turn=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(number=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
     wf.gate.maybe_adopt(state, turn)
     declined = [line for line in lines if "verify inference declined" in line]
     assert len(declined) == 2, lines

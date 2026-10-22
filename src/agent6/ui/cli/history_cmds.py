@@ -565,7 +565,7 @@ def _cmd_history_transcript(
 
     Args:
         session_id: The session, or "" for the newest with transcripts.
-        as_json: Print the folded turns as JSON.
+        as_json: Print the folded messages as JSON.
         no_thinking: Leave the thinking blocks out.
         tools: How much of each tool call to show.
         seq: The `--seq` call window.
@@ -606,14 +606,14 @@ def _cmd_history_transcript(
         )
         return 2
 
-    # Fold the full set (the per-seq walk needs every call), then window the turns.
-    turns = transcript_render.fold_conversation(transcripts)
+    # Fold the full set (the per-seq walk needs every call), then window the messages.
+    messages = transcript_render.fold_conversation(transcripts)
     if window is not None:
         lo, hi = window
-        turns = [t for t in turns if lo <= t.seq <= hi]
+        messages = [t for t in messages if lo <= t.seq <= hi]
     print(
         transcript_render.render_markdown(
-            turns, session_id=layout.session_id, show_thinking=not no_thinking, tools=tools
+            messages, session_id=layout.session_id, show_thinking=not no_thinking, tools=tools
         ),
         end="",
     )

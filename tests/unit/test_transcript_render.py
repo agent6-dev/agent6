@@ -177,7 +177,7 @@ _RESPONSES = [
                         "arguments": '{"path":"a.py"}',
                     },
                 ],
-                "status": "end_turn",
+                "status": "end_message",
             }
         },
     },
@@ -222,7 +222,7 @@ _RESPONSES = [
                         "content": [{"type": "output_text", "text": "done"}],
                     }
                 ],
-                "status": "end_turn",
+                "status": "end_message",
             }
         },
     },
@@ -230,53 +230,53 @@ _RESPONSES = [
 
 
 def test_fold_and_render_the_responses_shape() -> None:
-    """A ChatGPT (Responses) transcript folds into turns without printing the echo twice.
+    """A ChatGPT (Responses) transcript folds into messages without printing the echo twice.
 
-    `instructions` is the system turn; one model response's reasoning, message and calls make
-    one assistant turn; a call output is labelled with its call's name.
+    `instructions` is the system message; one model response's reasoning, message and calls make
+    one assistant message; a call output is labelled with its call's name.
     """
-    turns = transcript_render.fold_conversation(_RESPONSES)
-    assert [(t.role, t.seq) for t in turns] == [
+    messages = transcript_render.fold_conversation(_RESPONSES)
+    assert [(t.role, t.seq) for t in messages] == [
         ("system", 1),
         ("user", 1),
         ("assistant", 1),
         ("tool", 1),
         ("assistant", 2),
     ]
-    assert turns[0].text == "SYSTEM PROMPT" and turns[1].text == "do X"
-    first = turns[2]
+    assert messages[0].text == "SYSTEM PROMPT" and messages[1].text == "do X"
+    first = messages[2]
     assert first.thinking == "let me think" and first.text == "working on it"
     assert first.tool_calls == [("read_file", '{"path": "a.py"}')]
-    assert turns[3].text == "file body" and turns[3].tool_name == "read_file"
-    assert turns[4].text == "done"
-    md = transcript_render.render_markdown(turns, session_id="s")
+    assert messages[3].text == "file body" and messages[3].tool_name == "read_file"
+    assert messages[4].text == "done"
+    md = transcript_render.render_markdown(messages, session_id="s")
     assert "<thinking>\nlet me think\n</thinking>" in md
     assert md.count("working on it") == 1 and "-> read_file" in md
 
 
 @pytest.mark.parametrize("transcripts", [_OPENAI, _ANTHROPIC], ids=["openai", "anthropic"])
 def test_fold_and_render_both_shapes(transcripts: list[dict[str, Any]]) -> None:
-    turns = transcript_render.fold_conversation(transcripts)
-    roles = [t.role for t in turns]
+    messages = transcript_render.fold_conversation(transcripts)
+    roles = [t.role for t in messages]
     # system, user, assistant(seq1 w/ tool_call), tool result, assistant(seq2)
     assert roles == ["system", "user", "assistant", "tool", "assistant"]
-    a1 = turns[2]
+    a1 = messages[2]
     assert a1.text == "working on it" and a1.thinking == "let me think"
     assert a1.tool_calls and a1.tool_calls[0][0] == "read_file"
     assert "a.py" in a1.tool_calls[0][1]
-    tool = turns[3]
+    tool = messages[3]
     assert tool.tool_name == "read_file"  # resolved from the call id
     assert tool.text == "FULL FILE CONTENTS"  # full result, not a summary
-    assert turns[4].text == "all done"
+    assert messages[4].text == "all done"
 
-    md = transcript_render.render_markdown(turns, session_id="r1", show_thinking=True)
+    md = transcript_render.render_markdown(messages, session_id="r1", show_thinking=True)
     assert "SYSTEM PROMPT" in md and "do X" in md and "all done" in md
     assert "-> read_file(" in md and "FULL FILE CONTENTS" in md
     assert "let me think" in md  # thinking shown
 
 
 def test_an_anthropic_notice_does_not_hide_its_tool_result() -> None:
-    """The loop can append a notice after results in one canonical user turn.
+    """The loop can append a notice after results in one canonical user message.
 
     Rendering that mixed message must keep both the tool output and the later
     notice; treating it as prose discarded the tool I/O promised by the verb.
@@ -286,27 +286,27 @@ def test_an_anthropic_notice_does_not_hide_its_tool_result() -> None:
         {"type": "text", "text": "review found one concern"}
     )
 
-    turns = transcript_render.fold_conversation(transcripts)
+    messages = transcript_render.fold_conversation(transcripts)
 
-    assert [(turn.role, turn.text) for turn in turns[3:]] == [
+    assert [(message.role, message.text) for message in messages[3:]] == [
         ("tool", "FULL FILE CONTENTS"),
         ("user", "review found one concern"),
         ("assistant", "all done"),
     ]
-    rendered = transcript_render.render_markdown(turns, session_id="r1")
+    rendered = transcript_render.render_markdown(messages, session_id="r1")
     assert "FULL FILE CONTENTS" in rendered
     assert "review found one concern" in rendered
 
 
 def test_render_flags_hide_thinking_and_tools() -> None:
-    turns = transcript_render.fold_conversation(_OPENAI)
+    messages = transcript_render.fold_conversation(_OPENAI)
     md = transcript_render.render_markdown(
-        turns, session_id="r1", show_thinking=False, tools="none"
+        messages, session_id="r1", show_thinking=False, tools="none"
     )
     assert "let me think" not in md
     assert "-> read_file" not in md and "FULL FILE CONTENTS" not in md
     # calls-only keeps the call line but drops the result
-    md2 = transcript_render.render_markdown(turns, session_id="r1", tools="calls")
+    md2 = transcript_render.render_markdown(messages, session_id="r1", tools="calls")
     assert "-> read_file(" in md2 and "FULL FILE CONTENTS" not in md2
 
 
@@ -317,8 +317,8 @@ def test_a_tool_result_reads_under_its_calls_seq() -> None:
     request's seq, a window on the call's round lost the result and a window on the next
     round showed the earlier call too.
     """
-    turns = transcript_render.fold_conversation(_OPENAI)
-    assert [(t.role, t.seq) for t in turns] == [
+    messages = transcript_render.fold_conversation(_OPENAI)
+    assert [(t.role, t.seq) for t in messages] == [
         ("system", 1),
         ("user", 1),
         ("assistant", 1),
@@ -340,8 +340,8 @@ def test_a_result_a_forks_first_request_inherits_reads_under_that_request() -> N
             "response": second["response"],
         }
     ]
-    turns = transcript_render.fold_conversation(inherited)
-    assert [(t.role, t.seq) for t in turns] == [
+    messages = transcript_render.fold_conversation(inherited)
+    assert [(t.role, t.seq) for t in messages] == [
         ("system", 1),
         ("user", 1),
         ("assistant", 1),
@@ -361,9 +361,9 @@ def test_provider_retry_does_not_duplicate_history() -> None:
         "response": {"status": 502, "body": "Bad Gateway"},
     }
     retry = {**_OPENAI[1], "seq": 3}
-    turns = transcript_render.fold_conversation([_OPENAI[0], error_attempt, retry])
-    assert [t.role for t in turns] == ["system", "user", "assistant", "tool", "assistant"]
-    assert not any(t.role == "marker" for t in turns)
+    messages = transcript_render.fold_conversation([_OPENAI[0], error_attempt, retry])
+    assert [t.role for t in messages] == ["system", "user", "assistant", "tool", "assistant"]
+    assert not any(t.role == "marker" for t in messages)
 
 
 def test_compaction_restart_shows_marker() -> None:
@@ -385,9 +385,9 @@ def test_compaction_restart_shows_marker() -> None:
             },
         },
     ]
-    turns = transcript_render.fold_conversation(transcripts)
-    assert any(t.role == "marker" for t in turns)
-    assert turns[-1].text == "resumed"
+    messages = transcript_render.fold_conversation(transcripts)
+    assert any(t.role == "marker" for t in messages)
+    assert messages[-1].text == "resumed"
 
 
 _BARE_ELIDED_A = (
@@ -445,19 +445,23 @@ def _anthropic_followup(elided_content: str) -> dict[str, Any]:
 
 def test_tier1_elision_shows_marker_with_identity() -> None:
     """The conversation view says when a later request elided an old tool_result."""
-    turns = transcript_render.fold_conversation([*_ANTHROPIC, _anthropic_followup(_BARE_ELIDED_A)])
-    markers = [t for t in turns if t.role == "marker"]
+    messages = transcript_render.fold_conversation(
+        [*_ANTHROPIC, _anthropic_followup(_BARE_ELIDED_A)]
+    )
+    markers = [t for t in messages if t.role == "marker"]
     assert len(markers) == 1
     assert "elided 1 older tool result" in markers[0].text
     assert "read_file a.py" in markers[0].text
     # The original result stays displayed; history is not re-printed.
-    assert sum(1 for t in turns if t.text == "FULL FILE CONTENTS") == 1
-    assert turns[-1].text == "ok"
+    assert sum(1 for t in messages if t.text == "FULL FILE CONTENTS") == 1
+    assert messages[-1].text == "ok"
 
 
 def test_tier1_elision_marker_flags_kept_gists() -> None:
-    turns = transcript_render.fold_conversation([*_ANTHROPIC, _anthropic_followup(_GIST_ELIDED_A)])
-    markers = [t for t in turns if t.role == "marker"]
+    messages = transcript_render.fold_conversation(
+        [*_ANTHROPIC, _anthropic_followup(_GIST_ELIDED_A)]
+    )
+    markers = [t for t in messages if t.role == "marker"]
     assert len(markers) == 1
     assert "read_file a.py (distilled gist kept)" in markers[0].text
 
@@ -488,8 +492,8 @@ def test_tier1_elision_marker_openai_shape() -> None:
         },
         "response": {"body": {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}},
     }
-    turns = transcript_render.fold_conversation([*_OPENAI, followup])
-    markers = [t for t in turns if t.role == "marker"]
+    messages = transcript_render.fold_conversation([*_OPENAI, followup])
+    markers = [t for t in messages if t.role == "marker"]
     assert len(markers) == 1
     assert "elided 1 older tool result" in markers[0].text
     assert "read_file a.py" in markers[0].text
@@ -499,10 +503,10 @@ def test_gist_demotion_is_not_reported_as_a_fresh_elision() -> None:
     """A gist decaying to the bare marker draws no second 'elided' marker."""
     seq4 = _anthropic_followup(_BARE_ELIDED_A)
     seq4["seq"] = 4
-    turns = transcript_render.fold_conversation(
+    messages = transcript_render.fold_conversation(
         [*_ANTHROPIC, _anthropic_followup(_GIST_ELIDED_A), seq4]
     )
-    markers = [t for t in turns if t.role == "marker"]
+    markers = [t for t in messages if t.role == "marker"]
     assert len(markers) == 1  # the original gist elision only
     assert "distilled gist kept" in markers[0].text
 
@@ -552,14 +556,14 @@ def test_second_same_identity_elision_in_a_later_pass_is_counted() -> None:
         ],
     }
     grow = {"role": "user", "content": [{"type": "text", "text": "next"}]}
-    turns = transcript_render.fold_conversation(
+    messages = transcript_render.fold_conversation(
         [
             call(1, [task, assistant, both]),
             call(2, [task, assistant, one_elided, grow]),
             call(3, [task, assistant, both_elided, grow, grow]),
         ]
     )
-    markers = [t.text for t in turns if t.role == "marker"]
+    markers = [t.text for t in messages if t.role == "marker"]
     assert len(markers) == 2
     assert "elided 1 older tool result" in markers[0]
     assert "elided 1 older tool result" in markers[1]  # the second copy, counted
@@ -685,7 +689,7 @@ def test_history_transcript_skips_sessions_without_a_transcripts_dir(
 
 
 def test_streamed_openai_response_without_a_role_is_the_assistant() -> None:
-    """A streamed OpenAI message with no "role" key renders as the assistant turn it is.
+    """A streamed OpenAI message with no "role" key renders as the assistant message it is.
 
     Fallen through to the generic branch, the model's words printed under '## user', tool_calls
     and reasoning were dropped, and every later result went unlabelled.
@@ -742,21 +746,21 @@ def test_streamed_openai_response_without_a_role_is_the_assistant() -> None:
             "response": {"body": {"choices": [{"message": {"content": "all done"}}]}},
         },
     ]
-    turns = transcript_render.fold_conversation(streamed)
-    assert [t.role for t in turns] == ["user", "assistant", "tool", "assistant"]
-    a1 = turns[1]
+    messages = transcript_render.fold_conversation(streamed)
+    assert [t.role for t in messages] == ["user", "assistant", "tool", "assistant"]
+    a1 = messages[1]
     assert a1.thinking == "let me think"
     assert a1.tool_calls and a1.tool_calls[0][0] == "read_file"
-    assert turns[2].tool_name == "read_file"  # the call id resolved to a name
-    md = transcript_render.render_markdown(turns, session_id="r1", show_thinking=True)
+    assert messages[2].tool_name == "read_file"  # the call id resolved to a name
+    md = transcript_render.render_markdown(messages, session_id="r1", show_thinking=True)
     assert "## assistant" in md and "-> read_file(" in md
 
 
-def test_a_compaction_side_call_is_not_a_conversation_turn(tmp_path: pathlib.Path) -> None:
+def test_a_compaction_side_call_is_not_a_conversation_message(tmp_path: pathlib.Path) -> None:
     """Only the worker seat is the conversation; a side call's one-message request is no restart.
 
     The gist distiller and the tier-2 summariser share the sink; the fold printed a phantom
-    "context summarised" marker and rendered the scratch prompt as a user turn.
+    "context summarised" marker and rendered the scratch prompt as a user message.
     """
     import json
 
@@ -794,10 +798,10 @@ def test_a_compaction_side_call_is_not_a_conversation_turn(tmp_path: pathlib.Pat
         "done",
     )
 
-    turns = transcript_render.fold_conversation(transcript_render.load_transcripts(d))
-    body = "\n".join(f"{t.role}:{t.text}" for t in turns)
+    messages = transcript_render.fold_conversation(transcript_render.load_transcripts(d))
+    body = "\n".join(f"{t.role}:{t.text}" for t in messages)
     assert "context summarised" not in body, "a restart that never happened"
-    assert "=== FILE a.py ===" not in body, "the side-call's scratch prompt became a turn"
+    assert "=== FILE a.py ===" not in body, "the side-call's scratch prompt became a message"
     assert body.count("reading") == 1, "the history was re-emitted behind the side-call"
 
 
@@ -874,15 +878,15 @@ def test_a_replayed_message_stripped_of_its_id_is_not_printed_twice() -> None:
     recorded = transcripts[0]["response"]["body"]["output"][1]
     recorded.update({"id": "msg_1", "status": "completed", "phase": "commentary"})
     recorded["content"][0].update({"annotations": [], "logprobs": []})
-    turns = transcript_render.fold_conversation(transcripts)
-    assert [(t.role, t.seq) for t in turns] == [
+    messages = transcript_render.fold_conversation(transcripts)
+    assert [(t.role, t.seq) for t in messages] == [
         ("system", 1),
         ("user", 1),
         ("assistant", 1),
         ("tool", 1),
         ("assistant", 2),
     ]
-    assert transcript_render.render_markdown(turns, session_id="s").count("working on it") == 1
+    assert transcript_render.render_markdown(messages, session_id="s").count("working on it") == 1
 
 
 def test_a_transcript_whose_seq_is_not_a_number_is_kept_and_marked(tmp_path: pathlib.Path) -> None:
@@ -903,8 +907,8 @@ def test_a_transcript_whose_seq_is_not_a_number_is_kept_and_marked(tmp_path: pat
     assert any("unreadable seq 'notanumber'" in m for m in marks)
 
 
-def test_two_text_blocks_in_one_turn_render_as_two_paragraphs() -> None:
-    """A turn's text blocks keep the providers' blank line, a paragraph break in Markdown."""
+def test_two_text_blocks_in_one_message_render_as_two_paragraphs() -> None:
+    """A message's text blocks keep the providers' blank line, a paragraph break in Markdown."""
     anthropic = [
         {
             "seq": 1,
@@ -960,20 +964,22 @@ def test_two_text_blocks_in_one_turn_render_as_two_paragraphs() -> None:
                             "content": [{"type": "output_text", "text": "Second message."}],
                         },
                     ],
-                    "status": "end_turn",
+                    "status": "end_message",
                 }
             },
         }
     ]
     for data in (anthropic, responses):
-        turn = next(t for t in transcript_render.fold_conversation(data) if t.role == "assistant")
-        assert turn.text == "First message.\n\nSecond message."
+        message = next(
+            t for t in transcript_render.fold_conversation(data) if t.role == "assistant"
+        )
+        assert message.text == "First message.\n\nSecond message."
 
 
-def test_a_turn_whose_content_the_flags_hide_prints_no_heading(
+def test_a_message_whose_content_the_flags_hide_prints_no_heading(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions transcript --tools none` printed a bare heading for every tool-only turn."""
+    """`sessions transcript --tools none` printed a bare heading for every tool-only message."""
     from agent6.ui.cli import main
 
     transcripts = json.loads(json.dumps(_OPENAI))

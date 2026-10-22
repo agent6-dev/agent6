@@ -927,7 +927,7 @@ def test_compaction_renders_as_markers_on_the_conversation() -> None:
                 "type": "loop.compact.summarise.done",
                 "summary_chars": 1200,
                 "summary": "...",
-                "kept_turns": 3,
+                "kept_messages": 3,
             },
             {"type": "loop.compact.summarise.failed", "error": "429 rate limited"},
         ]
@@ -936,7 +936,7 @@ def test_compaction_renders_as_markers_on_the_conversation() -> None:
     assert items[0].body == "compaction requested: the parser"
     assert items[1].body == "compaction refused: too little history to summarise"
     assert items[2].body == "compaction requested"
-    assert items[3].body == "context compacted: 1,200-char summary, 3 recent turns kept verbatim"
+    assert items[3].body == "context compacted: 1,200-char summary, 3 recent messages kept verbatim"
     assert items[4].body == "compaction failed: 429 rate limited"
 
 

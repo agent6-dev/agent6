@@ -126,12 +126,12 @@ def no_progress(
         return _advice.Stop(
             lambda: end,
             soft="no_progress",
-            log=f"LOOP: no_progress stop at turn {turn.turn} (streak {streak})",
+            log=f"LOOP: no_progress stop at turn {turn.number} (streak {streak})",
         )
     return _advice.Nudge(
         _nudges.NO_PROGRESS_ESCALATION if rung == "escalate" else _nudges.NO_PROGRESS_NUDGE,
         event="loop.no_progress.nudge",
-        fields={"turn": turn.turn, "streak": streak, "level": Ladder.level(rung)},
+        fields={"turn": turn.number, "streak": streak, "level": Ladder.level(rung)},
     )
 
 
@@ -281,7 +281,7 @@ def verify_settled(
             lambda: settled_end(state, ctx),
             soft="verify_settled",
             declared="settled",
-            log=f"LOOP: verify_settled at turn {turn.turn} (idle {guard.idle})",
+            log=f"LOOP: verify_settled at turn {turn.number} (idle {guard.idle})",
         )
     # The nudge promises that a finish ends the run; while a red gate that is the model's to
     # fix would send a finish back, it stays unspent for a green later in the streak.
@@ -296,7 +296,7 @@ def verify_settled(
         return _advice.Nudge(
             _nudges.verify_settled_nudge(stop_after),
             event="loop.verify_settled.nudge",
-            fields={"turn": turn.turn, "idle": guard.idle},
+            fields={"turn": turn.number, "idle": guard.idle},
         )
     return None
 
@@ -353,7 +353,7 @@ def tool_error_ladder(
             " approach",
         )
         return _advice.Stop(
-            lambda: end, log=f"LOOP: tool_error stop at turn {turn.turn} (streak {streak})"
+            lambda: end, log=f"LOOP: tool_error stop at turn {turn.number} (streak {streak})"
         )
     if state.spiral.last_error_was_denial:
         text = _nudges.TOOL_DENIED_NUDGE
@@ -362,7 +362,7 @@ def tool_error_ladder(
     return _advice.Nudge(
         text,
         event="loop.tool_error.nudge",
-        fields={"turn": turn.turn, "streak": streak, "level": Ladder.level(rung)},
+        fields={"turn": turn.number, "streak": streak, "level": Ladder.level(rung)},
     )
 
 
@@ -385,15 +385,15 @@ def loop_guard_notice(
     spiral = state.spiral
     if not (
         spiral.call_streak >= _nudges.LOOP_GUARD_NOTICE_AFTER
-        and spiral.warned_at_turn < turn.turn - 1
+        and spiral.warned_at_turn < turn.number - 1
     ):
         return None
-    spiral.warned_at_turn = turn.turn
+    spiral.warned_at_turn = turn.number
     tool = (spiral.last_call_sig or "").split(":", 1)[0] or "<unknown>"
     return _advice.Nudge(
         _nudges.loop_guard_words(tool, spiral.call_streak),
         event="loop.loop_guard.triggered",
-        fields={"turn": turn.turn, "tool": tool, "streak": spiral.call_streak},
+        fields={"turn": turn.number, "tool": tool, "streak": spiral.call_streak},
         log=(
             f"  loop guard: {tool} called {spiral.call_streak}x in a row;"
             " the model is told to change course"
@@ -431,7 +431,7 @@ def loop_guard_kill(
     return _advice.Stop(
         lambda: end,
         log=(
-            f"LOOP: loop_guard_killed at turn {turn.turn} - {tool} called {streak}x"
+            f"LOOP: loop_guard_killed at turn {turn.number} - {tool} called {streak}x"
             f" in a row (threshold={threshold})"
         ),
     )
@@ -474,7 +474,7 @@ def stagnation(
     return _advice.Nudge(
         text.format(minutes=minutes),
         event="loop.stagnation.nudged",
-        fields={"turn": turn.turn, "elapsed_s": int(elapsed)},
+        fields={"turn": turn.number, "elapsed_s": int(elapsed)},
         log=(
             f"  stagnation: {minutes}m with no edit and no verify;"
             " the model is reminded the budget is finite"
@@ -559,7 +559,7 @@ def memory_flip(
     return _advice.Nudge(
         _nudges.MEMORY_FLIP_NUDGE,
         event="loop.memory_flip.nudged",
-        fields={"turn": turn.turn},
+        fields={"turn": turn.number},
         log=(
             "  memory: verify flipped green with nothing recorded;"
             " the model is asked to write the rule"

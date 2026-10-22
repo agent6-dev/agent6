@@ -243,7 +243,7 @@ def mark_turn(harness: loop.Harness, turn: _loop_state.TurnState) -> None:
     _snapshot.write_turn_marker(
         harness.resume_state_path.parent / _snapshot.TURN_IN_FLIGHT_NAME,
         _snapshot.TurnInFlight(
-            turn=turn.turn,
+            turn=turn.number,
             assistant=turn.assistant.raw_content,
             results=tuple(
                 item.content

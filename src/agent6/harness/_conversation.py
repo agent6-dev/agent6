@@ -1,23 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The loop-owned conversation: typed turns over the provider wire.
+"""The loop-owned conversation: typed messages over the provider wire.
 
-`Conversation` holds the history as typed turns, one shape for every
+`Conversation` holds the history as typed messages, one shape for every
 consumer, and produces the Anthropic-wire dict list only at the boundary.
 `to_wire` builds the list providers and snapshots take, with `cache_control`
 stamped from the mark positions and assistant blocks verbatim, so thinking
 blocks and unknown block types round-trip. `from_wire` accepts exactly the
 shapes the loop writes and fails loudly on anything else.
 
-Pair safety is structural: a `tool_use` turn can only be followed by
+Pair safety is structural: a `tool_use` message can only be followed by
 `results` covering exactly its ids, `pop_quiet_assistant` removes only a
-turn with no tool calls, `restart` keeps whole turns, and compaction
+message with no tool calls, `restart` keeps whole messages, and compaction
 rewrites result content in place. No operation strands a `tool_use`.
 
 Rolling cache breakpoints: Anthropic bills a request's prefix up to a
 `cache_control` breakpoint at 0.1x once cached (1.25x to write), and the
 conversation dominates input tokens in a long run. The roll keeps two marks,
-the previous call's position (the guaranteed hit) and the last user turn's
+the previous call's position (the guaranteed hit) and the last user message's
 final block (the next write), for four breakpoints with the provider's two
 static ones, Anthropic's per-request maximum. Marks persist into resume
 snapshots; tier-1 elision costs one re-write on the next call. OpenAI-format
@@ -36,7 +36,7 @@ _EPHEMERAL = {"type": "ephemeral"}
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ToolUse:
-    """One tool call from an assistant turn, parsed once from the raw blocks.
+    """One tool call from an assistant message, parsed once from the raw blocks.
 
     Attributes:
         id: The provider's tool_use id.
@@ -68,7 +68,7 @@ class ToolResultItem:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Notice:
-    """Harness or operator text in a user turn.
+    """Harness or operator text in a user message.
 
     The initial task, nudges, critiques, steering and the tier-2 restart summary
     are notices.
@@ -81,7 +81,7 @@ class Notice:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class AssistantTurn:
+class AssistantMessage:
     """One assistant message.
 
     Attributes:
@@ -94,9 +94,9 @@ class AssistantTurn:
     tool_uses: tuple[ToolUse, ...]
 
     def is_substantive(self) -> bool:
-        """Return whether the turn carries visible text or a tool call.
+        """Return whether the message carries visible text or a tool call.
 
-        An empty or thinking-only turn is dead context: Anthropic rejects empty
+        An empty or thinking-only message is dead context: Anthropic rejects empty
         assistant content and strict OpenAI-compatible backends refuse the
         translation.
 
@@ -114,7 +114,7 @@ class AssistantTurn:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class UserTurn:
+class UserMessage:
     """One user message.
 
     Attributes:
@@ -124,7 +124,7 @@ class UserTurn:
     items: tuple[ToolResultItem | Notice, ...]
 
 
-Turn = AssistantTurn | UserTurn
+Message = AssistantMessage | UserMessage
 
 
 def _parse_tool_uses(blocks: Sequence[Any]) -> tuple[ToolUse, ...]:
@@ -135,15 +135,15 @@ def _parse_tool_uses(blocks: Sequence[Any]) -> tuple[ToolUse, ...]:
     )
 
 
-def _result_ids(turn: UserTurn) -> list[str]:
-    return [it.tool_use_id for it in turn.items if isinstance(it, ToolResultItem)]
+def _result_ids(message: UserMessage) -> list[str]:
+    return [it.tool_use_id for it in message.items if isinstance(it, ToolResultItem)]
 
 
 def _results_first[T](items: Sequence[T], *, key: Callable[[T], object] = lambda it: it) -> list[T]:
     """Return the items with tool results first and notices after, each in order.
 
     Args:
-        items: A user turn's items, or pairs the key maps to an item.
+        items: A user message's items, or pairs the key maps to an item.
         key: Reads the item from an element.
 
     Returns:
@@ -153,59 +153,63 @@ def _results_first[T](items: Sequence[T], *, key: Callable[[T], object] = lambda
 
 
 class Conversation:
-    """The history as frozen turns plus the rolling cache-mark pair.
+    """The history as frozen messages plus the rolling cache-mark pair.
 
-    Marks are (turn index, item index) positions into user turns; `to_wire`
+    Marks are (message index, item index) positions into user messages; `to_wire`
     stamps `cache_control` there. They live here rather than on the items
-    because breakpoint placement moves as the tail grows, while the turns are
+    because breakpoint placement moves as the tail grows, while the messages are
     history.
     """
 
-    __slots__ = ("_marks", "_turns")
+    __slots__ = ("_marks", "_messages")
 
     def __init__(self) -> None:
-        self._turns: list[Turn] = []
+        self._messages: list[Message] = []
         self._marks: list[tuple[int, int]] = []
 
     # ---- reads ----------------------------------------------------------
 
     @property
-    def turns(self) -> tuple[Turn, ...]:
-        """The turns, as a copy: no caller appends around the guarded mutators."""
-        return tuple(self._turns)
+    def messages(self) -> tuple[Message, ...]:
+        """The messages, as a copy: no caller appends around the guarded mutators."""
+        return tuple(self._messages)
 
     def __len__(self) -> int:
-        return len(self._turns)
+        return len(self._messages)
 
     # ---- appends (each preserves pair safety) ---------------------------
 
     def _require_no_open_call(self, what: str) -> None:
-        if self._turns and isinstance(prev := self._turns[-1], AssistantTurn) and prev.tool_uses:
+        if (
+            self._messages
+            and isinstance(prev := self._messages[-1], AssistantMessage)
+            and prev.tool_uses
+        ):
             raise ValueError(
                 f"conversation invariant: cannot append {what} after an unanswered"
-                " tool_use turn; append its results first"
+                " tool_use message; append its results first"
             )
 
-    def assistant(self, raw_blocks: Any) -> AssistantTurn:
-        """Append the assistant turn exactly as the provider returned it.
+    def assistant(self, raw_blocks: Any) -> AssistantMessage:
+        """Append the assistant message exactly as the provider returned it.
 
         Args:
             raw_blocks: The provider's content blocks.
 
         Returns:
-            The appended turn.
+            The appended message.
 
         Raises:
-            ValueError: A previous turn's tool calls have no results yet.
+            ValueError: A previous message's tool calls have no results yet.
         """
-        self._require_no_open_call("an assistant turn")
+        self._require_no_open_call("an assistant message")
         blocks = tuple(raw_blocks)
-        turn = AssistantTurn(raw_content=blocks, tool_uses=_parse_tool_uses(blocks))
-        self._turns.append(turn)
-        return turn
+        message = AssistantMessage(raw_content=blocks, tool_uses=_parse_tool_uses(blocks))
+        self._messages.append(message)
+        return message
 
     def results(self, items: Sequence[ToolResultItem | Notice]) -> None:
-        """Append the user turn answering the preceding tool_use turn.
+        """Append the user message answering the preceding tool_use message.
 
         The wire requires a user message to lead with its tool_result blocks, so
         notices are moved after the results here rather than trusted per call
@@ -218,18 +222,18 @@ class Conversation:
         Raises:
             ValueError: The result ids do not answer the pending tool_use ids.
         """
-        prev = self._turns[-1] if self._turns else None
-        want = [tu.id for tu in prev.tool_uses] if isinstance(prev, AssistantTurn) else []
-        turn = UserTurn(items=tuple(_results_first(items)))
-        if _result_ids(turn) != want:
+        prev = self._messages[-1] if self._messages else None
+        want = [tu.id for tu in prev.tool_uses] if isinstance(prev, AssistantMessage) else []
+        message = UserMessage(items=tuple(_results_first(items)))
+        if _result_ids(message) != want:
             raise ValueError(
-                f"conversation invariant: tool_result ids {_result_ids(turn)} do not"
+                f"conversation invariant: tool_result ids {_result_ids(message)} do not"
                 f" answer the pending tool_use ids {want}"
             )
-        self._turns.append(turn)
+        self._messages.append(message)
 
     def notice(self, text: str) -> None:
-        """Append harness or operator text as its own user turn.
+        """Append harness or operator text as its own user message.
 
         Args:
             text: The notice.
@@ -238,99 +242,101 @@ class Conversation:
 
     def _append_notices(self, items: tuple[ToolResultItem | Notice, ...]) -> None:
         self._require_no_open_call("a notice")
-        self._turns.append(UserTurn(items=items))
+        self._messages.append(UserMessage(items=items))
 
     def pop_quiet_assistant(self) -> None:
-        """Drop a trailing non-substantive assistant turn.
+        """Drop a trailing non-substantive assistant message.
 
-        Such a turn has no tool_uses, so no pair can split; any other tail is left
+        Such a message has no tool_uses, so no pair can split; any other tail is left
         alone.
         """
         if (
-            self._turns
-            and isinstance(last := self._turns[-1], AssistantTurn)
+            self._messages
+            and isinstance(last := self._messages[-1], AssistantMessage)
             and not last.is_substantive()
         ):
-            self._turns.pop()
+            self._messages.pop()
 
-    def restart(self, summary_text: str, keep: Sequence[Turn] = ()) -> None:
-        """Replace everything after the initial turn with a summary notice and a tail.
+    def restart(self, summary_text: str, keep: Sequence[Message] = ()) -> None:
+        """Replace everything after the initial message with a summary notice and a tail.
 
-        Marks outside the kept turns are dropped with their blocks.
+        Marks outside the kept messages are dropped with their blocks.
 
         Args:
             summary_text: The restart notice.
-            keep: The most recent turns, already balanced. A tail leading with
-                tool results would answer a turn the restart summarised away.
+            keep: The most recent messages, already balanced. A tail leading with
+                tool results would answer a message the restart summarised away.
 
         Raises:
-            ValueError: The first turn is a tool_use turn, or the tail leads with
+            ValueError: The first message is a tool_use message, or the tail leads with
                 tool results.
         """
-        first = self._turns[0]
-        if isinstance(first, AssistantTurn) and first.tool_uses:
-            raise ValueError("conversation invariant: cannot restart from a tool_use turn")
-        if keep and isinstance(keep[0], UserTurn) and _result_ids(keep[0]):
+        first = self._messages[0]
+        if isinstance(first, AssistantMessage) and first.tool_uses:
+            raise ValueError("conversation invariant: cannot restart from a tool_use message")
+        if keep and isinstance(keep[0], UserMessage) and _result_ids(keep[0]):
             raise ValueError("conversation invariant: a kept tail cannot lead with tool_results")
-        self._turns[:] = [first, UserTurn(items=(Notice(summary_text),)), *keep]
+        self._messages[:] = [first, UserMessage(items=(Notice(summary_text),)), *keep]
         self._marks = [m for m in self._marks if m[0] == 0]
 
-    def strip_thinking(self, turn_idx: int) -> int:
-        """Drop the thinking blocks from one assistant turn, in place.
+    def strip_thinking(self, message_idx: int) -> int:
+        """Drop the thinking blocks from one assistant message, in place.
 
         The tool_use blocks survive verbatim, so pairing is untouched.
 
         Args:
-            turn_idx: The assistant turn's index.
+            message_idx: The assistant message's index.
 
         Returns:
-            The characters removed, 0 when the turn had no thinking.
+            The characters removed, 0 when the message had no thinking.
 
         Raises:
-            ValueError: The index names a user turn.
+            ValueError: The index names a user message.
         """
-        turn = self._turns[turn_idx]
-        if not isinstance(turn, AssistantTurn):
-            raise ValueError("strip_thinking targets an assistant turn")
+        message = self._messages[message_idx]
+        if not isinstance(message, AssistantMessage):
+            raise ValueError("strip_thinking targets an assistant message")
         dropped = [
             b
-            for b in turn.raw_content
+            for b in message.raw_content
             if isinstance(b, dict) and b.get("type") in ("thinking", "redacted_thinking")
         ]
         if not dropped:
             return 0
-        kept = tuple(b for b in turn.raw_content if b not in dropped)
+        kept = tuple(b for b in message.raw_content if b not in dropped)
         removed = sum(
             len(v if isinstance(v, str) else str(v))
             for b in dropped
             for k, v in b.items()
             if k != "type" and v is not None
         )
-        self._turns[turn_idx] = AssistantTurn(raw_content=kept, tool_uses=turn.tool_uses)
+        self._messages[message_idx] = AssistantMessage(
+            raw_content=kept, tool_uses=message.tool_uses
+        )
         return removed
 
-    def set_result_content(self, turn_idx: int, item_idx: int, content: str) -> None:
+    def set_result_content(self, message_idx: int, item_idx: int, content: str) -> None:
         """Rewrite one tool_result's content in place.
 
         The id and pairing are untouched, so the wire stays balanced.
 
         Args:
-            turn_idx: The user turn's index.
-            item_idx: The result's index in the turn.
+            message_idx: The user message's index.
+            item_idx: The result's index in the message.
             content: The new content.
 
         Raises:
-            ValueError: The position is not a tool_result in a user turn.
+            ValueError: The position is not a tool_result in a user message.
         """
-        turn = self._turns[turn_idx]
-        if not isinstance(turn, UserTurn):
-            raise ValueError("set_result_content targets a user turn")
-        item = turn.items[item_idx]
+        message = self._messages[message_idx]
+        if not isinstance(message, UserMessage):
+            raise ValueError("set_result_content targets a user message")
+        item = message.items[item_idx]
         if not isinstance(item, ToolResultItem):
             raise ValueError("set_result_content targets a tool_result")
-        items = list(turn.items)
+        items = list(message.items)
         items[item_idx] = dataclasses.replace(item, content=content)
-        self._turns[turn_idx] = UserTurn(items=tuple(items))
+        self._messages[message_idx] = UserMessage(items=tuple(items))
 
     # ---- rolling cache breakpoints --------------------------------------
 
@@ -338,16 +344,16 @@ class Conversation:
         """Advance the rolling cache-mark pair.
 
         The newest existing mark stays (the previous call's write, the guaranteed hit)
-        and the final item of the newest user turn is marked (the new write).
+        and the final item of the newest user message is marked (the new write).
         Idempotent, so a crash-resume re-issuing the same call keeps its
         positions; positions survive content rewrites.
         """
         target: tuple[int, int] | None = None
-        for t_idx in range(len(self._turns) - 1, -1, -1):
-            turn = self._turns[t_idx]
+        for m_idx in range(len(self._messages) - 1, -1, -1):
+            message = self._messages[m_idx]
             # Assistant raw blocks are verbatim history and are never stamped.
-            if isinstance(turn, UserTurn) and turn.items:
-                target = (t_idx, len(turn.items) - 1)
+            if isinstance(message, UserMessage) and message.items:
+                target = (m_idx, len(message.items) - 1)
                 break
         if target is None:
             self._marks = []
@@ -363,17 +369,17 @@ class Conversation:
         """Return the provider and snapshot message list.
 
         Returns:
-            Fresh dicts for user turns with `cache_control` stamped at the mark
-            positions, the verbatim raw blocks for assistant turns.
+            Fresh dicts for user messages with `cache_control` stamped at the mark
+            positions, the verbatim raw blocks for assistant messages.
         """
         marks = set(self._marks)
         out: list[dict[str, Any]] = []
-        for t_idx, turn in enumerate(self._turns):
-            if isinstance(turn, AssistantTurn):
-                out.append({"role": "assistant", "content": list(turn.raw_content)})
+        for m_idx, message in enumerate(self._messages):
+            if isinstance(message, AssistantMessage):
+                out.append({"role": "assistant", "content": list(message.raw_content)})
                 continue
             blocks: list[dict[str, Any]] = []
-            for i_idx, item in enumerate(turn.items):
+            for i_idx, item in enumerate(message.items):
                 if isinstance(item, ToolResultItem):
                     block: dict[str, Any] = {
                         "type": "tool_result",
@@ -382,7 +388,7 @@ class Conversation:
                     }
                 else:
                     block = {"type": "text", "text": item.text}
-                if (t_idx, i_idx) in marks:
+                if (m_idx, i_idx) in marks:
                     block["cache_control"] = dict(_EPHEMERAL)
                 blocks.append(block)
             out.append({"role": "user", "content": blocks})
@@ -392,7 +398,7 @@ class Conversation:
     def from_wire(cls, messages: Sequence[Any]) -> Conversation:
         """Parse a persisted message list.
 
-        A turn in canonical order round-trips byte-for-byte through `to_wire`; a
+        A message in canonical order round-trips byte-for-byte through `to_wire`; a
         notice ahead of its results is moved after them on load, each mark kept
         on its own block.
 
@@ -407,8 +413,8 @@ class Conversation:
         """
         conv = cls()
         marks: list[tuple[int, int]] = []
-        for t_idx, msg in enumerate(messages):
-            where = f"message {t_idx}"
+        for m_idx, msg in enumerate(messages):
+            where = f"message {m_idx}"
             if not isinstance(msg, dict) or set(msg) != {"role", "content"}:
                 raise ValueError(f"malformed conversation: {where} is not a role/content object")
             role, content = msg["role"], msg["content"]
@@ -419,8 +425,8 @@ class Conversation:
                 continue
             if role != "user":
                 raise ValueError(f"malformed conversation: {where} has role {role!r}")
-            prev = conv._turns[-1] if conv._turns else None
-            pending = list(prev.tool_uses) if isinstance(prev, AssistantTurn) else []
+            prev = conv._messages[-1] if conv._messages else None
+            pending = list(prev.tool_uses) if isinstance(prev, AssistantMessage) else []
             parsed: list[tuple[ToolResultItem | Notice, bool]] = []
             for i_idx, block in enumerate(content):
                 item = _parse_user_block(block, pending, where=f"{where} block {i_idx}")
@@ -429,10 +435,10 @@ class Conversation:
             parsed = _results_first(parsed, key=lambda pair: pair[0])
             for i_idx, (_, marked) in enumerate(parsed):
                 if marked:
-                    marks.append((t_idx, i_idx))
+                    marks.append((m_idx, i_idx))
             items = [item for item, _ in parsed]
             if any(isinstance(it, ToolResultItem) for it in items):
-                conv.results(items)  # validates the pairing against the tool_use turn
+                conv.results(items)  # validates the pairing against the tool_use message
             else:
                 conv._append_notices(tuple(items))
         conv._marks = marks
@@ -460,11 +466,11 @@ def _block_mark(block: dict[str, Any], *, where: str) -> bool:
 
 
 def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> ToolResultItem | Notice:
-    """Return the typed item for one user-turn wire block.
+    """Return the typed item for one user-message wire block.
 
     Args:
         block: The wire block.
-        pending: The preceding assistant turn's unanswered tool_uses; a result
+        pending: The preceding assistant message's unanswered tool_uses; a result
             consumes the first.
         where: The block's position, for the error.
 
@@ -501,24 +507,24 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
 
 
 def format_transcript_tail(
-    turns: Sequence[Turn], *, max_messages: int = 6, max_chars: int = 6000
+    messages: Sequence[Message], *, max_messages: int = 6, max_chars: int = 6000
 ) -> str:
-    """Render the last few turns as a plain-text transcript for a summariser call.
+    """Render the last few messages as a plain-text transcript for a summariser call.
 
     Tool calls and results are clipped, and thinking blocks are skipped.
 
     Args:
-        turns: The turns to render, newest last.
-        max_messages: How many of the newest turns to render.
+        messages: The messages to render, newest last.
+        max_messages: How many of the newest messages to render.
         max_chars: The cap, applied from the end.
 
     Returns:
         The transcript.
     """
     parts: list[str] = []
-    for turn in turns[-max_messages:]:
-        if isinstance(turn, AssistantTurn):
-            for block in turn.raw_content:
+    for message in messages[-max_messages:]:
+        if isinstance(message, AssistantMessage):
+            for block in message.raw_content:
                 if not isinstance(block, dict):
                     continue
                 btype = block.get("type")
@@ -528,7 +534,7 @@ def format_transcript_tail(
                     inp = json.dumps(block.get("input") or {}, ensure_ascii=False)
                     parts.append(f"[assistant:tool_use {block.get('name', '')}] {inp[:800]}")
             continue
-        for item in turn.items:
+        for item in message.items:
             if isinstance(item, Notice):
                 parts.append(f"[user:text] {item.text[:1500]}")
             else:
@@ -540,7 +546,7 @@ def format_transcript_tail(
 
 
 def last_assistant_prose(conversation: Conversation) -> str:
-    """Return the text of the newest assistant turn, for pairing a steer with it.
+    """Return the text of the newest assistant message, for pairing a steer with it.
 
     Harness notices after it do not hide it; a tool result does, since the
     model went on working.
@@ -549,15 +555,15 @@ def last_assistant_prose(conversation: Conversation) -> str:
         conversation: The loop's history.
 
     Returns:
-        The text, "" when a tool result follows the turn or there is none.
+        The text, "" when a tool result follows the message or there is none.
     """
-    for turn in reversed(conversation.turns):
-        if isinstance(turn, AssistantTurn):
+    for message in reversed(conversation.messages):
+        if isinstance(message, AssistantMessage):
             return "".join(
                 str(b.get("text", ""))
-                for b in turn.raw_content
+                for b in message.raw_content
                 if isinstance(b, dict) and b.get("type") == "text"
             )
-        if any(isinstance(item, ToolResultItem) for item in turn.items):
+        if any(isinstance(item, ToolResultItem) for item in message.items):
             return ""
     return ""

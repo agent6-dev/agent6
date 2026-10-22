@@ -146,16 +146,16 @@ NEXT_TURN = NextTurn()
 
 @dataclasses.dataclass(slots=True)
 class TurnState:
-    """Mutable bookkeeping for one assistant turn that dispatched tools.
+    """Mutable bookkeeping for one loop turn that dispatched tools.
 
     The loop creates one per tool-use turn and threads it through the turn
     phases; a field is written in one phase and read in a later one.
     Cross-turn state stays on `LoopState`.
 
     Attributes:
-        turn: The loop turn.
+        number: The loop turn's number, starting at 1.
         resp: The provider response driving this turn.
-        assistant: The response's turn in the conversation; its parsed tool_uses
+        assistant: The response's message in the conversation; its parsed tool_uses
             drive the dispatch.
         finish: The finish_session or finish_planning call dispatched this turn;
             a finish gate may revoke it before the stop checks honour it.
@@ -163,7 +163,7 @@ class TurnState:
             finish_session (a settled stop, a silent finish).
         ending: The end whose gates are running: "finish_session" for the tool
             call, else the name the harness declared ("settled", "silent_finish").
-        tool_results: The user-turn items in dispatch order, with advisory notices
+        tool_results: The user-message items in dispatch order, with advisory notices
             appended after (or, for the broken-verify flag, between them).
         verify_just_passed: Verify went green this turn.
         verify_just_failed: Verify went red this turn.
@@ -187,9 +187,9 @@ class TurnState:
             stop checks honour the first one left after a standing task's absorb.
     """
 
-    turn: int
+    number: int
     resp: ProviderResponse
-    assistant: _conversation.AssistantTurn
+    assistant: _conversation.AssistantMessage
     finish: _finish_gates.FinishCall | None = None
     end_returned: bool = False
     ending: str | None = None

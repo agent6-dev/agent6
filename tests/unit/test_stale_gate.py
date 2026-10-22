@@ -266,10 +266,10 @@ def _finish_call(
 ) -> _loop_state.TurnState:
     """Return the turn after a finish_session went through the capture and the finish gates."""
     turn = _loop_state.TurnState(
-        turn=3, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        number=3, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
     )
     wf._capture_finish(state, turn, "finish_session", tool_input)  # pyright: ignore[reportPrivateUsage]
-    ctx = wf._turn_context(state, turn=turn.turn, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.number, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._turn_finish_gates(state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     return turn
 
