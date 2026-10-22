@@ -64,7 +64,8 @@ class PolicyStamp(pydantic.BaseModel):
     Attributes:
         run_commands: `[sandbox].run_commands` at launch.
         isolation: `[sandbox].isolation` at launch.
-        network: `[sandbox].network` at launch.
+        network: The network the run's commands join, `session` or `host`; "" when the stamp
+            names no level. A manifest an older agent6 wrote holds the configured word.
         commit_per_step: `[git].commit_per_step` for the live execution; False means a dirty
             tree at the end is the deliverable, never a stranded commit.
     """

@@ -512,6 +512,39 @@ def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: path
     assert m.models.driver is not None and m.models.driver.model == "new-model"
 
 
+def test_the_stamp_records_the_network_the_commands_join(tmp_path: pathlib.Path) -> None:
+    """`sandbox.network = "auto"` is a rule, not a network: the stamp holds what it resolved to.
+
+    `agent6 exec` joins the recorded network and every header names it, so a stamp of `auto`
+    would make both guess from today's config.
+    """
+    from agent6.app import stamps
+    from agent6.config import Config
+    from agent6.sessions import layout as sessions_layout
+
+    cfg = Config.model_validate({"sandbox": {"network": "auto"}})
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runs-net-AAAAAA")
+    layout.ensure()
+    stamps.write_session_manifest(
+        layout,
+        session_id=layout.session_id,
+        user_task="t",
+        base_sha="0" * 40,
+        base_branch="main",
+        run_branch=None,
+        cfg=cfg,
+        isolation="partial",
+    )
+    assert sessions_manifest.read_manifest(layout.session_dir).policy.network == "host"
+
+    stamps.stamp_execution(layout.session_dir, cfg, "run", "full")
+    assert sessions_manifest.read_manifest(layout.session_dir).policy.network == "session"
+
+    # A coordinator stamps no level, so it knows no network either.
+    stamps.stamp_execution(layout.session_dir, cfg, "run", "")
+    assert sessions_manifest.read_manifest(layout.session_dir).policy.network == ""
+
+
 def test_a_version_3_manifest_keeps_its_stamp_under_the_old_key(tmp_path: pathlib.Path) -> None:
     """A version-3 manifest's `workflow` stamp is read under the `harness` key.
 

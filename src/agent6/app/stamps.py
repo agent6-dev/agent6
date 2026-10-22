@@ -19,14 +19,27 @@ from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest
+from agent6.tools import policy as tools_policy
+
+_LEVELS: dict[str, kinds.IsolationLevel] = {"full": "full", "partial": "partial", "none": "none"}
 
 
 def _policy_stamp(cfg: Config, isolation: str) -> manifest.PolicyStamp:
-    """Return the policy stamp; `isolation` is the resolved level, since `auto` degrades."""
+    """Return the policy stamp: the resolved level and the network its commands join.
+
+    Args:
+        cfg: The run's config.
+        isolation: The resolved isolation level; "" for a stamp naming no level (a fan-out
+            coordinator's), which then knows no network either.
+
+    Returns:
+        The stamp, holding resolved words since `auto` degrades.
+    """
+    level = _LEVELS.get(isolation)
     return manifest.PolicyStamp(
         run_commands=cfg.sandbox.run_commands,
         isolation=isolation or str(cfg.sandbox.isolation),
-        network=str(cfg.sandbox.network),
+        network=tools_policy.resolve_network(cfg, level) if level is not None else "",
         commit_per_step=cfg.git.commit_per_step,
     )
 
