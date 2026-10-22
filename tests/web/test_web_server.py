@@ -25,6 +25,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import fork
+from agent6.config import io, write
 from agent6.machine import journal as machine_journal
 from agent6.sessions import process
 from agent6.ui import spawn
@@ -2386,28 +2387,151 @@ def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
     assert status == 404
 
 
-def test_the_config_page_adds_a_provider_block(server: tuple[web_server.WebServer, int]) -> None:
-    """The web creates a `[providers.<name>]` block through one POST, as the TUI's form does.
-
-    The choices endpoint serves the form its fixed values.
-    """
+def test_the_config_entry_tables_serve_the_form_schema(
+    server: tuple[web_server.WebServer, int],
+) -> None:
+    """Every entry form gets its fields, choices, descriptions and provider prefill."""
     _srv, port = server
-    status, body, _ = _get(port, "/api/config/provider_choices")
+    status, body, _ = _get(port, "/api/config/entry_tables")
     assert status == 200
-    choices = json.loads(body)
-    assert "openai" in choices["api_format"]
-    assert choices["defaults"]["openrouter"]["api_format"] == "openai"
+    tables = {table["path"]: table for table in json.loads(body)["tables"]}
+    assert set(tables) == {"providers", "mcp.servers", "skills.state"}
+    for path, label, names, choices, described_field, description in (
+        (
+            "providers",
+            "provider",
+            ["api_format", "deployment", "base_url", "api_key_env"],
+            {
+                "api_format": ["anthropic", "openai", "chatgpt", "claude_code"],
+                "deployment": ["direct", "vertex", "azure"],
+            },
+            "base_url",
+            "endpoint",
+        ),
+        (
+            "mcp.servers",
+            "MCP server",
+            ["command", "url", "token_env", "enabled", "approve"],
+            {"enabled": ["true", "false"], "approve": ["ask", "allow"]},
+            "command",
+            "argv",
+        ),
+        (
+            "skills.state",
+            "skill",
+            ["state"],
+            {"state": ["enabled", "disabled", "always"]},
+            "state",
+            "Per-skill state",
+        ),
+    ):
+        table = tables[path]
+        assert table["label"] == label
+        assert table["leaf"] == (path == "skills.state")
+        assert [field["name"] for field in table["fields"]] == names
+        fields = {field["name"]: field for field in table["fields"]}
+        assert {
+            name: field["choices"] for name, field in fields.items() if field["choices"]
+        } == choices
+        assert description in fields[described_field]["description"]
+    assert tables["providers"]["defaults"]["openrouter"] == {
+        "api_format": "openai",
+        "base_url": "https://openrouter.ai/api/v1",
+    }
+
+
+@pytest.mark.parametrize("repo", [False, True])
+@pytest.mark.parametrize(
+    ("table", "fields", "expected"),
+    [
+        (
+            "providers",
+            {"api_format": "openai", "base_url": " https://example.com/v1 "},
+            {"api_format": "openai", "base_url": "https://example.com/v1"},
+        ),
+        (
+            "mcp.servers",
+            {"command": 'server "two words"', "enabled": "false", "approve": "ask", "url": " "},
+            {"command": ["server", "two words"], "enabled": False, "approve": "ask"},
+        ),
+        ("skills.state", {"state": "always"}, "always"),
+    ],
+)
+def test_the_config_page_adds_and_removes_whole_entries(
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    table: str,
+    fields: dict[str, str],
+    expected: object,
+    *,
+    repo: bool,
+) -> None:
+    """Removal drops every leaf and subtable in the chosen layer, leaving siblings intact."""
+    _srv, port = server
+    target = paths.repo_config_path(tmp_path) if repo else paths.global_config_path()
+    for name in ("example", "sibling"):
+        status, data = _post(
+            port,
+            "/api/config/entry",
+            {"table": table, "name": name, "fields": fields, "repo": repo},
+        )
+        assert status == 200 and data["ok"] is True, data
+    doc = io.read_toml_file(target)
+    for part in table.split("."):
+        doc = doc[part]
+    assert doc == {"example": expected, "sibling": expected}
+    if table == "mcp.servers":
+        assert (
+            write.set_config_value(
+                tmp_path, "mcp.servers.example.sandbox.network", "none", to_repo=repo
+            )
+            is None
+        )
     status, data = _post(
-        port,
-        "/api/config/provider",
-        {"name": "openrouter", "api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},
+        port, "/api/config/entry/remove", {"table": table, "name": "example", "repo": repo}
     )
     assert status == 200 and data["ok"] is True, data
+    doc = io.read_toml_file(target)
+    for part in table.split("."):
+        doc = doc[part]
+    assert doc == {"sibling": expected}
     status, body, _ = _get(port, "/api/config")
     assert status == 200
-    assert json.loads(body)["providers.openrouter.api_format"]["value"] == "openai"
-    status, data = _post(port, "/api/config/provider", {"name": "", "api_format": "openai"})
-    assert status == 422
+    assert not any(key.startswith(f"{table}.example") for key in json.loads(body))
+    status, data = _post(
+        port, "/api/config/entry/remove", {"table": table, "name": "example", "repo": repo}
+    )
+    assert status == 200 and "not set" in str(data["message"]), data
+
+
+@pytest.mark.parametrize("route", ["/api/config/entry", "/api/config/entry/remove"])
+@pytest.mark.parametrize(
+    ("table", "name", "error"),
+    [("unknown", "example", "unknown entry table"), ("providers", " ", "name is required")],
+)
+def test_the_entry_routes_refuse_unknown_tables_and_empty_names(
+    server: tuple[web_server.WebServer, int], route: str, table: str, name: str, error: str
+) -> None:
+    """A bad table or name cannot write or remove config."""
+    _srv, port = server
+    body: dict[str, object] = {"table": table, "name": name}
+    if route == "/api/config/entry":
+        body["fields"] = {"api_format": "openai"}
+    status, data = _post(port, route, body)
+    assert status == 422 and error in str(data["error"]), data
+    assert not paths.global_config_path().exists()
+
+
+def test_the_entry_route_refuses_unknown_fields(server: tuple[web_server.WebServer, int]) -> None:
+    """A misspelled scalar entry field is refused rather than silently omitted."""
+    _srv, port = server
+    status, data = _post(
+        port,
+        "/api/config/entry",
+        {"table": "skills.state", "name": "example", "fields": {"stat": "always"}},
+    )
+    assert status == 422 and "stat" in str(data["error"]), data
+    assert not paths.global_config_path().exists()
 
 
 def test_re_adding_a_provider_keeps_its_other_keys(
@@ -2417,14 +2541,22 @@ def test_re_adding_a_provider_keeps_its_other_keys(
     _srv, port = server
     status, data = _post(
         port,
-        "/api/config/provider",
-        {"name": "openrouter", "api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},
+        "/api/config/entry",
+        {
+            "table": "providers",
+            "name": "openrouter",
+            "fields": {"api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},
+        },
     )
     assert status == 200 and data["ok"] is True, data
     status, data = _post(
         port,
-        "/api/config/provider",
-        {"name": "openrouter", "api_format": "openai", "api_key_env": "OPENROUTER_KEY"},
+        "/api/config/entry",
+        {
+            "table": "providers",
+            "name": "openrouter",
+            "fields": {"api_format": "openai", "api_key_env": "OPENROUTER_KEY", "base_url": " "},
+        },
     )
     assert status == 200 and data["ok"] is True, data
     status, body, _ = _get(port, "/api/config")
@@ -2448,12 +2580,15 @@ def test_the_provider_form_writes_a_chosen_direct_over_an_existing_deployment(
     )
     status, data = _post(
         port,
-        "/api/config/provider",
+        "/api/config/entry",
         {
+            "table": "providers",
             "name": "az",
-            "api_format": "openai",
-            "deployment": "direct",
-            "base_url": "https://api.openai.com/v1",
+            "fields": {
+                "api_format": "openai",
+                "deployment": "direct",
+                "base_url": "https://api.openai.com/v1",
+            },
         },
     )
     assert status == 200 and data["ok"] is True, data
@@ -2475,7 +2610,9 @@ def test_the_provider_form_keeps_an_existing_deployment_when_left_blank(
         encoding="utf-8",
     )
     status, data = _post(
-        port, "/api/config/provider", {"name": "az", "api_format": "openai", "deployment": ""}
+        port,
+        "/api/config/entry",
+        {"table": "providers", "name": "az", "fields": {"api_format": "openai", "deployment": ""}},
     )
     assert status == 200 and data["ok"] is True, data
     status, body, _ = _get(port, "/api/config")
@@ -2488,7 +2625,13 @@ def test_the_provider_form_takes_claude_code_with_a_blank_deployment(
     """A `claude_code` provider adds with the deployment select left on its blank option."""
     _srv, port = server
     status, data = _post(
-        port, "/api/config/provider", {"name": "cc", "api_format": "claude_code", "deployment": ""}
+        port,
+        "/api/config/entry",
+        {
+            "table": "providers",
+            "name": "cc",
+            "fields": {"api_format": "claude_code", "deployment": ""},
+        },
     )
     assert status == 200 and data["ok"] is True, data
     status, body, _ = _get(port, "/api/config")
@@ -2502,8 +2645,12 @@ def test_the_provider_form_refuses_a_deployment_for_claude_code(
     _srv, port = server
     status, data = _post(
         port,
-        "/api/config/provider",
-        {"name": "cc", "api_format": "claude_code", "deployment": "direct"},
+        "/api/config/entry",
+        {
+            "table": "providers",
+            "name": "cc",
+            "fields": {"api_format": "claude_code", "deployment": "direct"},
+        },
     )
     assert status == 422 and data["ok"] is False and "deployment" in str(data["error"]), data
 

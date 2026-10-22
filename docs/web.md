@@ -70,7 +70,18 @@ Buttons do what the CLI command of the same name does, and prompts are answered 
     - buttons: stop now or after the step, compact, fork (a new run at the latest checkpoint, started from its composer), merge, delete history, run a finished plan (`run --from`), and review (`sessions review`, minutes; refused while the run is live)
     - "Allow all" on a prompt appears only where it would grant more than the one call
 - **Machine view**: the state overview, the path taken and the current agent state's conversation; the entry submits as **Steer** (into the current state) or **Message** (a `poke` a waiting machine's next tool reads); **Stop** parks the instance at its next transition and `machine run` resumes it
-- **Config page**: every setting with value and source, filterable; click a row to set it, with the choices an enum or a provider's model listing offers; Add provider… adds or updates a `[providers.<name>]` block; secrets never shown
+- **Config page**: every setting with value and source, filterable; click a row to set it, with the choices an enum or a provider's model listing offers; secrets never shown
+    - **Add provider…** adds or updates a `[providers.<name>]` entry, with format and URL prefilled for known provider names.
+    - **Add MCP server…** adds or updates a `[mcp.servers.<name>]` entry.
+      Enter either a URL or a command line; shell quoting splits the command into argv, without running a shell.
+    - **Add skill…** sets `skills.state.<name>` to `enabled`, `disabled` or `always`; it does not install the skill.
+    - Forms save to global config by default and offer repo config as a target.
+      A blank field keeps an existing value or uses the schema default.
+    - **Remove provider**, **Remove MCP server** or **Remove skill** in an entry row's editor confirms its name and config layer, then removes the whole entry, including its subtables.
+      Removal targets the highest layer holding the entry and accepts only global or repo config.
+      Values from lower layers may become visible.
+    - Skill states have individual rows, so Remove drops only the selected skill's state.
+      **Unset** still drops only the selected leaf.
 
 Start a machine on the Machines page and watch the current state stream, answering its approvals and questions in place:
 
@@ -109,9 +120,9 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 
 - sign-in: `POST` `/api/login` with `{"secret": "<secret>"}` answers the token; a wrong secret answers `403`
 - every other `/api/...` route answers `401` with `{"error": ..., "login": true}` without the token
-- reads: `/api/meta`, `/api/hub`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>` and `/provider_choices`, `/api/session/<id>` (what `attach --json` prints; `?step=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
-- writes, small JSON `POST`s: `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,review,stop,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/provider`, `/api/machine/{create,run}`
-- every write goes through the same spawn and answer-file contracts as the CLI; machine names and answer ids validate to one path component
+- reads: `/api/meta`, `/api/hub`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>` and `/entry_tables`, `/api/session/<id>` (what `attach --json` prints; `?step=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
+- writes, small JSON `POST`s: `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,review,stop,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/entry`, `/api/config/entry/remove`, `/api/machine/{create,run}`
+- writes use the shared config writer or the same spawn and answer-file contracts as the CLI; machine names and answer ids validate to one path component
 - the page and its PWA assets, served without the token (they hold no state): `/`, `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/favicon.svg`
 
 Session snapshots and streams use the hub's status label, including the mode and the `unmerged` mark on ended runs.

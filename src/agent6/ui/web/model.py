@@ -16,7 +16,7 @@ from typing import Any
 
 from agent6 import git_ops, paths
 from agent6.app import _workdirs, confine
-from agent6.config import ConfigError, io, layer
+from agent6.config import ConfigError, io, layer, write
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
 from agent6.viewmodel import (
@@ -381,15 +381,46 @@ def config_payload(
         config_paths: The `--config` files in command-line order.
 
     Returns:
-        Each leaf's `agent6 config show --json` fields, plus `input`, the value's
-        round-trippable editor text. No secret is included.
+        Each leaf's display fields, round-trippable `input`, and named `entry` when present.
+        Scalar entry tables get individual rows. No secret is included.
     """
     eff = layer.load_effective(cwd, config_paths)
     resolved = confine.resolved_config_values(eff.config)
     payload: dict[str, Any] = json.loads(
         config_view.render_show(eff, as_json=True, resolved=resolved)
     )
-    for setting in payload.values():
+    entry_sources: dict[tuple[str, str], str] = {}
+    for source in eff.layers:
+        for key in layer.flatten_leaves(source.data):
+            if entry := write.entry_of(key):
+                table, name = entry
+                entry_sources[table.path, name] = source.source
+    for table in write.ENTRY_TABLES:
+        if not table.leaf or not (entries := write.leaf_entries(eff.config, table)):
+            continue
+        parent = payload.pop(table.path)
+        for name, value in entries.items():
+            source_name = entry_sources.get((table.path, name), "default")
+            payload[f"{table.path}.{name}"] = {
+                **parent,
+                "value": value,
+                "effective": value,
+                "default": None,
+                "source": source_name,
+                "modified": source_name != "default",
+                "type": "choice",
+                "choices": write.entry_choices(table)[table.fields[0]],
+                "display": config_view.format_value(value),
+                "default_display": config_view.format_value(None),
+            }
+    for key, setting in payload.items():
+        if entry := write.entry_of(key):
+            table, name = entry
+            setting["entry"] = {
+                "table": table.path,
+                "name": name,
+                "source": entry_sources.get((table.path, name), "default"),
+            }
         value = setting["value"]
         setting["input"] = (
             ""

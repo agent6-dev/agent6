@@ -140,14 +140,20 @@ class MachinePokeBody(_Body):
     data: Any = None
 
 
-class ProviderBody(_Body):
-    """The add-provider form's fields."""
+class EntryBody(_Body):
+    """The add-entry form's table, name and string fields."""
 
+    table: str
     name: str
-    api_format: str
-    deployment: str = ""
-    base_url: str = ""
-    api_key_env: str = ""
+    fields: dict[str, str]
+    repo: bool = False
+
+
+class EntryRemoveBody(_Body):
+    """The entry and config layer to remove it from."""
+
+    table: str
+    name: str
     repo: bool = False
 
 
@@ -456,30 +462,8 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             )
             self._ok_or_err(ok, {"message": msg}, msg)
             return
-        if path == "/api/config/provider":
-            pb = ProviderBody.model_validate(self._read_body())
-            ok, msg = actions.add_provider(
-                self.cwd,
-                pb.name,
-                api_format=pb.api_format,
-                deployment=pb.deployment,
-                base_url=pb.base_url,
-                api_key_env=pb.api_key_env,
-                repo=pb.repo,
-            )
-            self._ok_or_err(ok, {"message": msg}, msg)
-            return
-        if path == "/api/config":
-            body = ConfigSetBody.model_validate(self._read_body())
-            if body.unset:
-                ok, msg = actions.unset_config(
-                    self.cwd, body.key, repo=body.repo, config_paths=self.config_paths
-                )
-            else:
-                ok, msg = actions.set_config(
-                    self.cwd, body.key, body.value, repo=body.repo, config_paths=self.config_paths
-                )
-            self._ok_or_err(ok, {"message": msg}, msg)
+        if path in ("/api/config", "/api/config/entry", "/api/config/entry/remove"):
+            self._route_config_post(path)
             return
         if path == "/api/machine/create":
             body = MachineCreateBody.model_validate(self._read_body())
@@ -498,6 +482,28 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             self._route_machine_post(parts[2], parts[3])
             return
         self._post_not_found(f"not found: {path}")
+
+    def _route_config_post(self, path: str) -> None:
+        """Dispatch config leaf and entry writes."""
+        if path == "/api/config/entry":
+            body = EntryBody.model_validate(self._read_body())
+            ok, msg = actions.add_entry(
+                self.cwd, body.table, body.name, body.fields, repo=body.repo
+            )
+        elif path == "/api/config/entry/remove":
+            body = EntryRemoveBody.model_validate(self._read_body())
+            ok, msg = actions.remove_entry(self.cwd, body.table, body.name, repo=body.repo)
+        else:
+            body = ConfigSetBody.model_validate(self._read_body())
+            if body.unset:
+                ok, msg = actions.unset_config(
+                    self.cwd, body.key, repo=body.repo, config_paths=self.config_paths
+                )
+            else:
+                ok, msg = actions.set_config(
+                    self.cwd, body.key, body.value, repo=body.repo, config_paths=self.config_paths
+                )
+        self._ok_or_err(ok, {"message": msg}, msg)
 
     def _login(self) -> None:
         """Answer a sign-in: the token for the server's secret, 403 for any other."""
@@ -656,12 +662,34 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         if path == "/api/routes":
             self._send_routes()
             return
-        if path in ("/api/config", "/api/config/provider_choices"):
-            # The add-provider form's choices come from the schema the TUI form reads.
+        if path == "/api/config":
+            self._send_json(model.config_payload(self.cwd, self.config_paths))
+            return
+        if path == "/api/config/entry_tables":
             self._send_json(
-                model.config_payload(self.cwd, self.config_paths)
-                if path == "/api/config"
-                else {**write.provider_choices(), "defaults": write.PROVIDER_DEFAULTS}
+                {
+                    "tables": [
+                        {
+                            "path": table.path,
+                            "label": table.label,
+                            "leaf": table.leaf,
+                            "fields": [
+                                {
+                                    "name": field,
+                                    "choices": write.entry_choices(table).get(field, []),
+                                    "description": write.entry_field_description(table, field),
+                                }
+                                for field in table.fields
+                            ],
+                            **(
+                                {"defaults": write.PROVIDER_DEFAULTS}
+                                if table.path == "providers"
+                                else {}
+                            ),
+                        }
+                        for table in write.ENTRY_TABLES
+                    ]
+                }
             )
             return
         if path.startswith("/api/config/suggest/"):

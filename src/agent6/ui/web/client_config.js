@@ -1,17 +1,20 @@
 // --- config ------------------------------------------------------------------
 async function renderConfig(gen) {
   setCrumb('config');
-  const data = await getJSON('/api/config');
+  const [data, registry] = await Promise.all([getJSON('/api/config'), getJSON('/api/config/entry_tables')]);
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
   const card = el('div', 'card');
   card.appendChild(el('h2', null, 'Config'));
-  // The filter and the one action share a row, in the TUI config page's words.
+  // The filter and entry actions share a row, in the TUI config page's words.
   const bar = el('div', 'row cfg-bar');
   const filter = el('input', 'filter'); filter.placeholder = 'filter settings…'; filter.type = 'search';
-  const addBtn = el('button', null, 'Add provider…');
-  addBtn.onclick = () => addProvider();
-  bar.appendChild(filter); bar.appendChild(addBtn);
+  bar.appendChild(filter);
+  for (const table of registry.tables) {
+    const addBtn = el('button', null, 'Add ' + table.label + '…');
+    addBtn.onclick = () => addEntry(table);
+    bar.appendChild(addBtn);
+  }
   card.appendChild(bar);
   const tbl = el('table', 'cfg');
   const head = el('tr'); ['setting','value','source'].forEach(h => head.appendChild(el('th', null, h))); tbl.appendChild(head);
@@ -27,7 +30,7 @@ async function renderConfig(gen) {
     // per-key payload the editor overlay shows it in.
     tr.title = s.description ? plainDescription(s.description) : 'click to edit';
     tr.style.cursor = 'pointer';
-    actionable(tr, () => editConfig(k, s), 'edit ' + k);
+    actionable(tr, () => editConfig(k, s, registry.tables), 'edit ' + k);
     tbl.appendChild(tr); rows.push([k.toLowerCase(), tr]);
   }
   card.appendChild(tbl);
@@ -47,37 +50,47 @@ function descriptionNode(text) {
   return frag;
 }
 
-// The TUI's add-provider form: a [providers.<name>] block in one write, where a blank field
-// writes nothing. Typing a known name prefills its format and base_url, as `agent6 connect` would.
-async function addProvider() {
-  let choices = { api_format: [], deployment: [], defaults: {} };
-  try { choices = await getJSON('/api/config/provider_choices'); } catch (e) { toast(e.message, true); return; }
+// A blank field writes nothing, preserving an existing entry's value.
+function addEntry(table) {
   const back = el('div', 'overlay');
   const opener = document.activeElement;
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
   box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-label', 'add provider');
-  const title = el('h2', null, 'Add provider'); title.style.textTransform = 'none';
+  box.setAttribute('aria-label', 'add ' + table.label);
+  const title = el('h2', null, 'Add ' + table.label); title.style.textTransform = 'none';
   box.appendChild(title);
-  box.appendChild(el('div', 'sub muted', 'A [providers.<name>] block. A blank field keeps an existing value; otherwise base_url and auth default from the format and deployment.'));
-  const labelled = (text, field) => { const l = el('label', 'sub muted', text); l.style.display = 'block'; l.style.marginTop = '8px'; box.appendChild(l); box.appendChild(field); return field; };
-  const name = labelled('name', el('input', 'field')); name.placeholder = 'e.g. openrouter, my-azure';
-  const select = (values, blank) => { const s = el('select', 'field'); for (const v of values) { const o = el('option', null, v || blank); o.value = v; s.appendChild(o); } return s; };
-  const format = labelled('api_format', select(choices.api_format || []));
-  const deployment = labelled('deployment', select(['', ...(choices.deployment || [])], 'blank = unchanged, or direct'));
-  const baseUrl = labelled('base_url', el('input', 'field')); baseUrl.placeholder = 'blank = unchanged, or the default for the format/deployment';
-  const keyEnv = labelled('api_key_env', el('input', 'field')); keyEnv.placeholder = 'blank = unchanged, or secrets.toml by provider name';
-  let autofilled = '';
-  name.oninput = () => {
-    const preset = (choices.defaults || {})[name.value.trim()];
-    if (!preset) {
-      if (autofilled && baseUrl.value === autofilled) baseUrl.value = '';
-      autofilled = '';
-      return;
+  box.appendChild(el('div', 'sub muted', table.path + '.<name>. A blank field keeps an existing value or uses the default.'));
+  const labelled = (text, field) => { const l = el('label', 'sub muted', text); l.style.display = 'block'; l.style.marginTop = '8px'; field.name = text; l.appendChild(field); box.appendChild(l); return field; };
+  const name = labelled('name', el('input', 'field'));
+  const fields = {};
+  for (const spec of table.fields) {
+    const field = el(spec.choices.length ? 'select' : 'input', 'field');
+    if (spec.choices.length) {
+      const values = ['api_format', 'state'].includes(spec.name) ? spec.choices : ['', ...spec.choices];
+      for (const value of values) {
+        const option = el('option', null, value || 'blank = unchanged, or default');
+        option.value = value; field.appendChild(option);
+      }
+    } else {
+      field.placeholder = plainDescription(spec.description);
     }
-    format.value = preset.api_format;
-    if (baseUrl.value === '' || baseUrl.value === autofilled) { autofilled = preset.base_url || ''; baseUrl.value = autofilled; }
-  };
+    field.title = plainDescription(spec.description);
+    fields[spec.name] = labelled(spec.name, field);
+  }
+  if (table.path === 'providers') {
+    const format = fields.api_format, baseUrl = fields.base_url;
+    let autofilled = '';
+    name.oninput = () => {
+      const preset = Object.hasOwn(table.defaults, name.value.trim()) ? table.defaults[name.value.trim()] : null;
+      if (!preset) {
+        if (autofilled && baseUrl.value === autofilled) baseUrl.value = '';
+        autofilled = '';
+        return;
+      }
+      format.value = preset.api_format;
+      if (baseUrl.value === '' || baseUrl.value === autofilled) { autofilled = preset.base_url || ''; baseUrl.value = autofilled; }
+    };
+  }
   const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px'; repoRow.style.cursor = 'pointer';
   const repoCb = el('input'); repoCb.type = 'checkbox';
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
@@ -99,11 +112,12 @@ async function addProvider() {
   add.onclick = async () => {
     add.disabled = true;
     try {
-      const d = await postJSON('/api/config/provider', {
-        name: name.value, api_format: format.value, deployment: deployment.value,
-        base_url: baseUrl.value, api_key_env: keyEnv.value, repo: repoCb.checked,
+      const d = await postJSON('/api/config/entry', {
+        table: table.path, name: name.value,
+        fields: Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value])),
+        repo: repoCb.checked,
       });
-      toast(d.message || 'added'); close(); renderConfig();
+      toast(d.message || 'added'); close(); await renderConfig();
     } catch (e) { toast(e.message, true); add.disabled = false; }
   };
 }
@@ -111,7 +125,7 @@ async function addProvider() {
 // A proper editor overlay (not a browser prompt): choices and booleans get a
 // select, everything else a text field, with the default, source, and type
 // shown; "set for this repo" writes the per-repo config instead of the global.
-function editConfig(key, s) {
+function editConfig(key, s, tables) {
   const cur = s.input;
   const back = el('div', 'overlay');
   const opener = document.activeElement;
@@ -172,6 +186,17 @@ function editConfig(key, s) {
     unsetBtn.title = 'remove from the ' + s.source + ' config; the next layer below takes over';
     row.appendChild(unsetBtn);
   }
+  const entry = s.entry;
+  const table = entry && tables.find(t => t.path === entry.table);
+  let removeBtn = null;
+  if (table) {
+    removeBtn = el('button', null, 'Remove ' + table.label);
+    removeBtn.disabled = !['global', 'repo'].includes(entry.source);
+    removeBtn.title = removeBtn.disabled
+      ? 'This entry comes from ' + entry.source + '; Remove edits only global and repo config.'
+      : 'Remove ' + entry.table + '.' + entry.name + ' and all its values from ' + entry.source + ' config';
+    row.appendChild(removeBtn);
+  }
   row.appendChild(cancel); box.appendChild(row);
   back.appendChild(box); document.body.appendChild(back);
   const close = () => {
@@ -201,6 +226,14 @@ function editConfig(key, s) {
       const d = await postJSON('/api/config', { key, unset: true, repo: s.source === 'repo' });
       toast(d.message || 'unset ' + key); close(); renderConfig();
     } catch (e) { toast(e.message, true); unsetBtn.disabled = false; }
+  };
+  if (removeBtn) removeBtn.onclick = async () => {
+    if (!confirm('Remove ' + table.label + " '" + entry.name + "' (" + entry.table + '.' + entry.name + ') and all its values from ' + entry.source + ' config? Values from lower layers may become visible.')) return;
+    removeBtn.disabled = true;
+    try {
+      const d = await postJSON('/api/config/entry/remove', {table: entry.table, name: entry.name, repo: entry.source === 'repo'});
+      toast(d.message || 'removed'); close(); await renderConfig();
+    } catch (e) { toast(e.message, true); removeBtn.disabled = false; }
   };
   field.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
 }

@@ -20,7 +20,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "41c0ef25acec1d4900058130768a0a4abb39ce1eda85ad858d4314deac29c08b"
+PAGE_SHA256 = "3c53ebb6afcacb78def6b5c40368bf4bbdabd507bd580e6bd8c43bc69fc1022e"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -120,15 +120,6 @@ def test_a_tool_call_clips_its_args_instead_of_breaking_words() -> None:
     assert "break-word" not in rule
 
 
-def test_the_config_filter_and_its_action_share_a_row_in_the_tuis_words() -> None:
-    """The Add provider button keeps a gap from the filter, and the page says "setting"."""
-    cfg = resources.files("agent6.ui.web").joinpath("client_config.js").read_text(encoding="utf-8")
-    assert "const bar = el('div', 'row cfg-bar');" in cfg
-    assert "bar.appendChild(filter); bar.appendChild(addBtn);" in cfg
-    assert "filter.placeholder = 'filter settings…'" in cfg
-    assert "['setting','value','source']" in cfg
-
-
 def test_native_controls_take_the_page_theme() -> None:
     """The page declares its colour scheme per theme, so checkboxes and dropdowns follow it."""
     css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
@@ -209,20 +200,6 @@ async function check(text, wanted, caret = text.length, replacement = null) {
         [node, "-e", suggest + scenario], check=False, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_the_provider_forms_deployment_select_opens_on_a_blank_option() -> None:
-    """The deployment select opens on a '' option; it opened on `direct`, read as a blank."""
-    config = resources.files("agent6.ui.web").joinpath("client_config.js")
-    assert "select(['', ...(choices.deployment || [])], " in config.read_text(encoding="utf-8")
-
-
-def test_add_provider_does_not_keep_another_names_autofilled_url() -> None:
-    config = resources.files("agent6.ui.web").joinpath("client_config.js")
-    text = config.read_text(encoding="utf-8")
-    prefill = text[text.index("name.oninput") : text.index("const repoRow")]
-    assert "baseUrl.value === autofilled" in prefill
-    assert "autofilled = '';" in prefill
 
 
 def test_the_config_editor_keeps_a_list_as_toml_on_an_untouched_save() -> None:

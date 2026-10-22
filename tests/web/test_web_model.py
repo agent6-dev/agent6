@@ -453,7 +453,56 @@ def test_config_payload_carries_round_trippable_editor_values(tmp_path: pathlib.
     payload = model.config_payload(tmp_path, (cfg,))
 
     assert payload["harness.verify_command"]["input"] == '["uv", "run", "pytest"]'
-    assert payload["skills.state"]["input"] == '{ alpha = "always" }'
+    assert payload["skills.state.alpha"]["input"] == "always"
+    assert payload["skills.state.alpha"]["choices"] == ["enabled", "disabled", "always"]
+    assert payload["skills.state.alpha"]["type"] == "choice"
+    assert payload["skills.state.alpha"]["display"] == "always"
+    assert "skills.state" not in payload
+
+
+def test_config_entry_rows_name_the_whole_entrys_highest_layer(tmp_path: pathlib.Path) -> None:
+    """Removal targets the entry's layer even from a default leaf or a nested sandbox row."""
+    global_config = paths.global_config_path()
+    global_config.parent.mkdir(parents=True, exist_ok=True)
+    global_config.write_text(
+        '[providers.o]\napi_format = "openai"\n'
+        '[skills.state]\nalpha = "always"\nbeta = "enabled"\n',
+        encoding="utf-8",
+    )
+    repo_config = paths.repo_config_path(tmp_path)
+    repo_config.parent.mkdir(parents=True, exist_ok=True)
+    repo_config.write_text(
+        '[providers.o]\nbase_url = "https://example.com/v1"\n'
+        '[mcp.servers.local]\ncommand = ["server"]\n'
+        '[mcp.servers.local.sandbox]\nnetwork = "none"\n'
+        '[skills.state]\nalpha = "disabled"\n',
+        encoding="utf-8",
+    )
+    payload = model.config_payload(tmp_path)
+    assert payload["providers.o.http_timeout_s"]["source"] == "default"
+    assert payload["providers.o.http_timeout_s"]["entry"] == {
+        "table": "providers",
+        "name": "o",
+        "source": "repo",
+    }
+    assert payload["mcp.servers.local.sandbox.network"]["entry"] == {
+        "table": "mcp.servers",
+        "name": "local",
+        "source": "repo",
+    }
+    assert payload["skills.state.alpha"]["source"] == "repo"
+    assert payload["skills.state.alpha"]["entry"] == {
+        "table": "skills.state",
+        "name": "alpha",
+        "source": "repo",
+    }
+    assert payload["skills.state.beta"]["source"] == "global"
+    assert payload["skills.state.beta"]["entry"] == {
+        "table": "skills.state",
+        "name": "beta",
+        "source": "global",
+    }
+    assert "entry" not in payload["sandbox.network"]
 
 
 def test_config_suggestions_providers_and_models(

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Drive a run or a machine from the browser.
 
-Every mutation is either the answer-file contract (`agent6.sessions.ipc`) or the
+Mutations use the answer-file contract (`agent6.sessions.ipc`), the config writer or the
 same `agent6` CLI a user would run (`agent6.ui.spawn`) with fixed argv: the task
 is one argv element, the quick ops shell fixed subcommands, nothing executes
 arbitrary input. The browser is trusted as far as the operator behind the bind.
@@ -19,7 +19,7 @@ from agent6 import errors
 from agent6 import paths as agent6_paths
 from agent6.app import fork, stop, undo
 from agent6.app import reporter as app_reporter
-from agent6.config import io, write
+from agent6.config import ConfigError, write
 from agent6.machine import (
     JournalError,
     MachineError,
@@ -680,49 +680,71 @@ def set_config(
     return spawn.run_cli_capture(argv, cwd)
 
 
-def add_provider(
+def add_entry(
     cwd: pathlib.Path,
+    table: str,
     name: str,
+    fields: dict[str, str],
     *,
-    api_format: str,
-    deployment: str = "",
-    base_url: str = "",
-    api_key_env: str = "",
     repo: bool = False,
 ) -> tuple[bool, str]:
-    """Add or update `[providers.<name>]` through the shared config writer.
-
-    An existing block keeps its other keys; a blank optional field leaves its key as it is.
+    """Add or update a named entry through the shared config writer.
 
     Args:
         cwd: The repository.
-        name: The provider's name, stripped; blank is refused.
-        api_format: The wire format.
-        deployment: The URL profile.
-        base_url: The endpoint's host and path prefix.
-        api_key_env: The environment variable holding the API key.
+        table: The registry table's path.
+        name: The entry's name, stripped; blank is refused.
+        fields: Form values; blank fields keep their existing values.
         repo: Write to the per-repo config instead of the global one.
 
     Returns:
         Whether the write landed, and the note or the refusal.
     """
-    name = name.strip()
-    if not name:
-        return False, "a provider name is required"
-    fields: dict[str, io.ConfigLeafValue] = {"api_format": api_format}
-    if deployment:
-        fields["deployment"] = deployment
-    if base_url.strip():
-        fields["base_url"] = base_url.strip()
-    if api_key_env.strip():
-        fields["api_key_env"] = api_key_env.strip()
+    entry_table = next((t for t in write.ENTRY_TABLES if t.path == table), None)
+    if entry_table is None:
+        return False, f"unknown entry table: {table}"
+    if unknown := fields.keys() - set(entry_table.fields):
+        return False, f"unknown fields for {table}: {', '.join(sorted(unknown))}"
     try:
-        err = write.set_config_leaves(cwd, f"providers.{name}", fields, to_repo=repo)
-    except errors.OperatorError as exc:
+        err = write.add_entry(cwd, entry_table, name, fields, to_repo=repo)
+    except (ConfigError, errors.OperatorError) as exc:
         return False, str(exc)
     if err:
         return False, err
-    return True, f"set [providers.{name}]"
+    key = f"{table}.{name.strip()}"
+    return True, f"set {key}" if entry_table.leaf else f"set [{key}]"
+
+
+def remove_entry(
+    cwd: pathlib.Path, table: str, name: str, *, repo: bool = False
+) -> tuple[bool, str]:
+    """Remove a whole named entry from the chosen config layer.
+
+    Args:
+        cwd: The repository.
+        table: The registry table's path.
+        name: The entry's name, stripped; blank is refused.
+        repo: Remove from the per-repo config instead of the global one.
+
+    Returns:
+        Whether the write succeeded, and the note or the refusal.
+    """
+    entry_table = next((t for t in write.ENTRY_TABLES if t.path == table), None)
+    if entry_table is None:
+        return False, f"unknown entry table: {table}"
+    name = name.strip()
+    if not name:
+        return False, f"{entry_table.label} name is required"
+    try:
+        result = write.remove_entry(cwd, entry_table, name, to_repo=repo)
+    except (ConfigError, errors.OperatorError) as exc:
+        return False, str(exc)
+    if result.error:
+        return False, result.error
+    key, source = f"{table}.{name}", "repo" if repo else "global"
+    if result.removed:
+        return True, f"removed {key} from {source} config"
+    return True, f"{key} is not set in {source} config"
 
 
 def unset_config(

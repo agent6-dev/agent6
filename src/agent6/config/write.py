@@ -737,15 +737,6 @@ def entry_field_description(table: EntryTable, field: str) -> str:
     return next((info.description or "" for info in _entry_fields(table, field)), "")
 
 
-def provider_choices() -> dict[str, list[str]]:
-    """Return the web add-provider form's fixed choices.
-
-    Returns:
-        The `api_format` and `deployment` values.
-    """
-    return entry_choices(next(table for table in ENTRY_TABLES if table.path == "providers"))
-
-
 def add_entry(
     repo_root: pathlib.Path,
     table: EntryTable,
