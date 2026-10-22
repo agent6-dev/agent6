@@ -191,9 +191,9 @@ async function renderGit(gen) {
   const diffView = el('div', 'git-diff'); body.appendChild(diffView);
   const diffs = new Map();
   const closeDiff = () => { body.classList.remove('diffing'); diffView.innerHTML = ''; delete diffView.dataset.key; };
-  const showDiff = async (ctx, i) => {
+  const showDiff = async (ctx, i, whole) => {
     const f = ctx.files[i];
-    const key = ctx.base + '|' + ctx.head + '|' + f.path;
+    const key = ctx.base + '|' + ctx.head + '|' + f.path + (whole ? '|whole' : '');
     diffView.dataset.key = key;
     diffView.innerHTML = '';
     body.classList.add('diffing');
@@ -216,7 +216,8 @@ async function renderGit(gen) {
       box.appendChild(el('div', 'muted', 'loading…'));
       try {
         const q = '?base=' + encodeURIComponent(ctx.base) + '&head=' + encodeURIComponent(ctx.head)
-          + '&path=' + encodeURIComponent(f.path) + '&old_path=' + encodeURIComponent(f.old_path || '');
+          + '&path=' + encodeURIComponent(f.path) + '&old_path=' + encodeURIComponent(f.old_path || '')
+          + (whole ? '&whole=1' : '');
         d = await getJSON('/api/git/diff' + q);
       } catch (e) {
         if (diffView.dataset.key === key) { box.innerHTML = ''; box.appendChild(el('div', 'err', e.message)); }
@@ -228,7 +229,11 @@ async function renderGit(gen) {
     }
     // The states come first, above the patch, so a cut patch reads as cut.
     if (d.binary) box.appendChild(el('div', 'muted gf-note', 'binary file: no text diff'));
-    if (d.truncated) box.appendChild(el('div', 'err gf-note', 'the patch is cut at ' + Math.round(d.max_bytes / 1024) + ' KiB; the rest is not shown'));
+    if (d.truncated) {
+      const note = el('div', 'err gf-note', 'the patch is cut at ' + Math.round(d.max_bytes / 1024) + ' KiB ');
+      const all = el('button', 'mini', 'Show the whole patch'); all.onclick = () => showDiff(ctx, i, true);
+      note.appendChild(all); box.appendChild(note);
+    }
     const patch = el('div', 'gf-patch'); patch.appendChild(renderDiff(d.patch || '')); box.appendChild(patch);
   };
 

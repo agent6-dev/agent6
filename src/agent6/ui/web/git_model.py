@@ -258,7 +258,13 @@ def compare_payload(repo: pathlib.Path, base: str, head: str) -> dict[str, Any]:
 
 
 def diff_payload(
-    repo: pathlib.Path, base: str, head: str, path: str, old_path: str = ""
+    repo: pathlib.Path,
+    base: str,
+    head: str,
+    path: str,
+    old_path: str = "",
+    *,
+    whole: bool = False,
 ) -> dict[str, Any]:
     """Return one file's unified diff between two revisions.
 
@@ -268,6 +274,8 @@ def diff_payload(
         head: The newer revision.
         path: The file's path in `head` (in `base` for a deletion).
         old_path: Its path in `base` when renamed, so the patch reads as a rename.
+        whole: Keep every byte instead of cutting at `DIFF_MAX_BYTES`: the page is the one
+            place that shows a whole patch.
 
     Returns:
         The resolved shas, the paths, the patch, and the `binary`, `truncated` and
@@ -289,8 +297,9 @@ def diff_payload(
         raise GitRequestError(f"no file {path!r} in either revision")
     if old_path and not git_history.tree_has_blob(repo, base_sha, old_path):
         raise GitRequestError(f"no file {old_path!r} in the base revision")
+    cap = None if whole else DIFF_MAX_BYTES
     patch, truncated = git_history.file_patch(
-        repo, base_sha, head_sha, path, old_path, max_bytes=DIFF_MAX_BYTES
+        repo, base_sha, head_sha, path, old_path, max_bytes=cap
     )
     return {
         "base": base_sha,
@@ -300,7 +309,7 @@ def diff_payload(
         "patch": patch,
         "binary": git_history.is_binary_patch(patch),
         "truncated": truncated,
-        "max_bytes": DIFF_MAX_BYTES,
+        "max_bytes": cap,
     }
 
 

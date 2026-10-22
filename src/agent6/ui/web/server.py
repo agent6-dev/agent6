@@ -767,7 +767,12 @@ class _Handler(http_server.BaseHTTPRequestHandler):
                 payload = git_model.compare_payload(self.cwd, arg("base"), arg("head"))
             elif sub == "diff":
                 payload = git_model.diff_payload(
-                    self.cwd, arg("base"), arg("head"), arg("path"), arg("old_path")
+                    self.cwd,
+                    arg("base"),
+                    arg("head"),
+                    arg("path"),
+                    arg("old_path"),
+                    whole=arg("whole") == "1",
                 )
             elif sub == "search":
                 payload = git_model.search_payload(self.cwd, arg("q"))

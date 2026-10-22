@@ -207,6 +207,10 @@ def test_diff_returns_one_files_patch_with_its_flags(
     cut = _ok(port, f"/api/git/diff?{q}&path=b.txt&old_path=a.txt")
     assert cut["truncated"] is True and len(cut["patch"].encode()) <= 40
     assert cut["max_bytes"] == 40
+    # The page is the one place that shows every byte: `whole=1` lifts the cap.
+    whole = _ok(port, f"/api/git/diff?{q}&path=b.txt&old_path=a.txt&whole=1")
+    assert whole["truncated"] is False and "+three" in whole["patch"]
+    assert whole["max_bytes"] is None
 
 
 def test_a_rev_or_path_shaped_like_a_flag_is_refused(

@@ -352,7 +352,13 @@ _BINARY_DIFF_RE = re.compile(r"^Binary files .* differ$", re.MULTILINE)
 
 
 def file_patch(
-    path: pathlib.Path, base: str, head: str, name: str, old_name: str = "", *, max_bytes: int
+    path: pathlib.Path,
+    base: str,
+    head: str,
+    name: str,
+    old_name: str = "",
+    *,
+    max_bytes: int | None,
 ) -> tuple[str, bool]:
     """Return one file's unified diff between two trees, cut at a cap.
 
@@ -362,7 +368,8 @@ def file_patch(
         head: The newer commit or tree.
         name: The file's path in the newer tree (the older one's for a deletion).
         old_name: The older tree's path when renamed, so the rename shows as one.
-        max_bytes: Where the patch is cut, at the last line boundary before it.
+        max_bytes: Where the patch is cut, at the last line boundary before it; None keeps
+            every byte.
 
     Returns:
         The patch text (a binary file's says `Binary files ... differ`) and whether it was cut.
@@ -379,7 +386,7 @@ def file_patch(
                 args, rc, out.decode(errors="replace"), err.decode(errors="replace")
             )
         )
-    if len(out) <= max_bytes:
+    if max_bytes is None or len(out) <= max_bytes:
         return out.decode(errors="replace"), False
     cut = out.rfind(b"\n", 0, max_bytes) + 1
     return out[:cut].decode(errors="replace"), True
