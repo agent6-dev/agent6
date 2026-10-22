@@ -8,9 +8,20 @@ For longer workflows, define the steps in a TOML state machine you can review, t
 
 [Documentation](https://agent6.dev/) · [Quick start](#quick-start) · [Security model](https://agent6.dev/security/)
 
-[![agent6's terminal UI showing a coding task, command approval, verification, and the resulting changes](https://agent6.dev/screenshots/out/hero-tui.gif)](https://agent6.dev/screenshots/out/hero-tui.gif)
+<table>
+  <tr>
+    <td align="center" width="50%" valign="top">
+      <a href="https://agent6.dev/screenshots/out/hero-tui.gif"><img src="https://agent6.dev/screenshots/out/hero-tui.gif" alt="the terminal UI: a coding task, a command approval, verification and the resulting changes"></a>
+      <br><sub><b>the terminal UI</b></sub>
+    </td>
+    <td align="center" width="50%" valign="top">
+      <a href="https://agent6.dev/screenshots/out/hero-web.gif"><img src="https://agent6.dev/screenshots/out/hero-web.gif" alt="the web UI: the hub, a session with its tool detail, the sandbox config"></a>
+      <br><sub><b>the web UI</b></sub>
+    </td>
+  </tr>
+</table>
 
-More demos: [CLI](https://agent6.dev/screenshots/out/hero-cli.gif) · [Web UI](https://agent6.dev/screenshots/out/hero-web.gif)
+The [CLI](https://agent6.dev/screenshots/out/hero-cli.gif) streams the same run in any terminal.
 
 ## Quick start
 
@@ -19,7 +30,6 @@ The sandbox supports **Linux on x86_64 and aarch64**.
 On macOS, commands run without the Linux sandbox; on Windows, use WSL.
 
 Install with [uv](https://docs.astral.sh/uv/getting-started/installation/) or use `pipx install agent6`.
-Replace `your-repo` and the example task with your project and the change you want:
 
 ```sh
 uv tool install agent6
@@ -28,7 +38,7 @@ agent6 connect                # connect a provider
 agent6 model worker           # choose its model interactively
 cd your-repo
 agent6 check                  # check provider config and sandbox support
-agent6 run "add a --json output mode to the CLI"
+agent6 run "your task here"
 ```
 
 For a subscription, use `agent6 connect chatgpt` or `agent6 connect claude` in place of `agent6 connect`.
@@ -98,19 +108,32 @@ Choose the model and reasoning effort for the worker, planner, and reviewer sepa
 agent6 treats model output as untrusted.
 The model's tools are a fixed built-in set plus the MCP servers you enable.
 Its Linux sandbox restricts command execution; the main agent process remains trusted and connects to your configured model providers.
+Provider keys stay with the agent process: a command's environment and jail hold neither the keys nor `secrets.toml`.
+A sandbox around the whole agent would hold them inside it.
+agent6 never pushes, rewrites history or resets a tree, and no config key turns that on.
 `sandbox.isolation` sets the level: `full` is a namespace-based Linux jail, `partial` is Landlock and seccomp without namespaces, `none` leaves commands unconfined.
 The default, `auto`, selects the strongest available level and warns when it falls back.
 `sandbox.network` is set separately: under `full` it defaults to the run's private network and can use the host network; `partial` and `none` use the host network.
 Run `agent6 check sandbox` to inspect file and command access by path, network and approval settings, and live probe results.
 Read the [security model](https://agent6.dev/security/) for the boundaries and host requirements at each level.
 
-By default, a fresh run executes an available, permitted verification command before editing.
-A verification pass means the selected checks passed for the tested tree and scope.
-Runs can end with failed or unverified work, and scoped checks are identified in the result.
-Review that result and the diff before merging.
+A fresh run runs the verification command before it edits anything, when one is set or inferred.
+A run ends passed, failed or unverified, and a scoped gate says so in the result.
+Read the result and the diff before you merge.
 
 The defaults are `sandbox.network = "auto"`, `sandbox.run_commands = "ask"` and `sandbox.protect_git = "auto"`.
 agent6 has eight runtime dependencies, no telemetry and no automatic updates.
+
+## How it compares
+
+If you have used Claude Code, Codex, OpenCode or Pi, the shape is familiar: sessions you resume, skills in the shared SKILL.md format, MCP servers, an editor over ACP, several front-ends on one run.
+
+Compared with an agent in a container or a VM, the jail is per command and in place.
+There is no image to build or keep current, the jail sees your installed toolchains read-only, the repository is at its real path, and `agent6 check sandbox` prints the boundary one row per path.
+A jailed command cannot install system packages; it can only install inside the repository, in a venv or a `node_modules`.
+Inside a container, `sandbox.isolation = "auto"` resolves to the level that kernel allows, and `agent6 check` says which.
+
+Compared with the command sandboxes other agents offer, agent6's is on by default at the strongest level the host allows, keeps your home directory and credentials out of the jail, gives the run's commands a network of their own under `full`, and jails MCP servers the same way.
 
 ## Development and feedback
 

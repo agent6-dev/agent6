@@ -35,7 +35,6 @@ For longer workflows, define the steps in a TOML state machine you can review, t
 Requires **Python 3.12+**, **Git 2.40+**, and access to a model through an API, local server, or supported subscription.
 The sandbox supports **Linux on x86_64 and aarch64**; macOS runs without it, and Windows users should use WSL.
 See [installation](installation.md) for platform setup and installing [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/).
-Replace `your-repo` and the example task with your project and the change you want:
 
 ```sh
 uv tool install agent6        # or: pipx install agent6
@@ -44,7 +43,7 @@ agent6 connect                # connect a provider
 agent6 model worker           # choose its model interactively
 cd your-repo
 agent6 check                  # check provider config and sandbox support
-agent6 run "add a --json output mode to the CLI"
+agent6 run "your task here"
 ```
 
 For a subscription, replace `agent6 connect` with `agent6 connect chatgpt` or `agent6 connect claude`.
@@ -136,10 +135,9 @@ Review and test the workflow before running it, then inspect or replay its recor
 ## Project checks
 
 Configure a verification command or let agent6 infer one from the repository.
-By default, a fresh run executes an available, permitted verification command before editing.
-The final result distinguishes passed, failed, and unverified work.
-The result also identifies scoped checks; a pass describes the checks that ran.
-See [verification](usage.md#your-first-run) for inference, retries, and runs without a usable gate.
+A fresh run runs it before it edits anything.
+A run ends passed, failed or unverified, and a scoped gate says so in the result.
+See [verification](usage.md#your-first-run) for inference, retries and runs without a usable gate.
 
 ## The terminal UI
 
