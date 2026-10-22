@@ -121,8 +121,27 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 - `/task <text>` adds work to the task graph (the turn in flight never sees it); `/retire <id>` drops a task, by the number `sessions graph` prints
 - `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had
 - `/pin <text>` survives every compaction; `/compact [focus]` compacts now; `/now <text>` interrupts the call in flight
-- `/btw <question>` asks a side question; `/parallel [spec] <task>` fans out lanes ([parallel](config.md#parallel))
+- `/btw <question>` asks a side question; `/parallel [SPEC --] TASK` fans out lanes ([parallel](config.md#parallel))
 - `/undo` takes back the last message: the tree is committed on the run's chain, every tracked path the turn changed is put back (one changed since the run ended stays, named in the notice), the run ends `undone` and an unstarted fork in the same checkout continues it (`agent6 resume <fork> --steer "<the message, edited>"`); `resume` and `sessions merge` refuse the undone run and name the fork; refused while another live run drives the checkout; it acts on a view of the run, so `agent6 steer` refuses it: type it in the TUI or the web, at a `run -i` prompt, or in a live run's pause menu (Ctrl-C)
+
+### Parallel directive
+
+`/parallel [SPEC --] TASK` runs a task in isolated lanes.
+`SPEC` is a positive lane count or a comma-separated list of `[provider/]model` entries, the same as `run --parallel`.
+The spec ends at a whitespace-delimited `--` token.
+Without `--`, the whole segment is task text for one default lane, even if it starts with a path, a number or a model name.
+A bare `--`, a missing task, or a spec over `[parallel].max_lanes` is refused with the reason.
+
+```text
+/parallel src/x.py: add a test
+/parallel 2 -- fix the parser
+/parallel a/b,c -- compare the designs
+/parallel 2 -- task A /parallel 3 -- task B
+```
+
+Repeat the `/parallel` token to batch tasks in one message.
+Each segment has its own optional spec and separator.
+Task text keeps its internal whitespace and newlines, including later `--` tokens.
 
 ## Answer a parked prompt
 

@@ -2,17 +2,17 @@
 # Copyright 2026 Eric Lesiuta
 """Parse the steer directives the harness and the composers share.
 
-    /parallel [spec] <task text> [/parallel [spec] <task text>]...
+    /parallel [SPEC --] TASK [/parallel [SPEC --] TASK]...
     /pin <instruction that must survive context compaction>
     /compact [focus text for the summary]
 
-A message is a directive only when it starts with the exact token; a token
-glued to a word or sitting mid-text is ordinary text, and newlines are task
-characters. A `/parallel` spec is a positive lane count or a comma-separated
-list of `[provider/]model` entries; a segment's first token counts as a spec
-when it holds a comma or a slash, so a task starting with a path parses as a
-model spec (start with a verb). Pure stdlib parsing with no agent6 imports: a
-leaf both layers sit above.
+A message is a directive only when it starts with the exact token.
+A whitespace-delimited `/parallel` token starts each segment.
+A segment's spec is a positive lane count or a comma-separated list of
+`[provider/]model` entries, followed by a whitespace-delimited `--` token.
+Without `--`, the whole segment is task text for one default lane.
+Task text keeps its internal whitespace and newlines, including later `--` tokens.
+Pure stdlib parsing with no agent6 imports: a leaf both layers sit above.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import re
 
 # A whitespace-delimited `/parallel` token; not MULTILINE, so the anchors are the whole string's.
 _SEPARATOR = re.compile(r"(?:\A|(?<=\s))/parallel(?=\s|\Z)", re.IGNORECASE)
+_SPEC_SEPARATOR = re.compile(r"(?:\A|(?<=\s))--(?=\s|\Z)")
 
 
 class DirectiveError(ValueError):
@@ -181,10 +182,6 @@ def parse_now(text: str) -> str | None:
     return text[m.end() :].strip()
 
 
-# The spec token of the last `/parallel` segment still being typed; a following space ends it.
-_SPEC_TAIL = re.compile(r"[^\S\n]+(\S*)\Z")
-
-
 def spec_fragment(text: str) -> str | None:
     """Return the model fragment being typed at the end of a `/parallel` spec, a completion key.
 
@@ -193,18 +190,19 @@ def spec_fragment(text: str) -> str | None:
 
     Returns:
         The fragment after the last comma, or None when the text is not a directive,
-        the caret has left the spec, or the token is a lane count.
+        the segment contains `--`, or the spec is a lane count.
     """
-    matches = list(_SEPARATOR.finditer(text))
+    body = text.lstrip()
+    matches = list(_SEPARATOR.finditer(body))
     if not matches or matches[0].start() != 0:
         return None
-    m = _SPEC_TAIL.match(text, matches[-1].end())
-    if m is None:
+    raw = body[matches[-1].end() :]
+    if not raw or _SPEC_SEPARATOR.search(raw) is not None:
         return None
-    token = m.group(1)
-    if token.isdigit():
+    spec = raw.strip()
+    if spec.isdecimal():
         return None
-    return token.rsplit(",", 1)[-1]
+    return spec.rsplit(",", 1)[-1].strip()
 
 
 # Directives a front-end acts on itself; the loop parses none, so none can start an execution.
@@ -268,7 +266,7 @@ def parse_directive(text: str) -> list[Segment] | None:
         One segment per `/parallel` token, or None when the text is not a directive.
 
     Raises:
-        DirectiveError: A segment has no task; the parse is all or nothing.
+        DirectiveError: A segment has no task or a bare separator; the parse is all or nothing.
     """
     body = text.lstrip()
     matches = list(_SEPARATOR.finditer(body))
@@ -281,11 +279,6 @@ def parse_directive(text: str) -> list[Segment] | None:
     return segments
 
 
-def _is_spec_token(token: str) -> bool:
-    """Return whether a segment's first token is a spec: a count, a comma list or a slash."""
-    return token.isdecimal() or "," in token or "/" in token
-
-
 def _parse_segment(raw: str) -> Segment:
     """Parse one segment's spec and task.
 
@@ -296,21 +289,23 @@ def _parse_segment(raw: str) -> Segment:
         The segment.
 
     Raises:
-        DirectiveError: The segment has no task.
+        DirectiveError: The segment has no task or a bare separator.
     """
     body = raw.strip()
     if not body:
         raise DirectiveError(
-            "/parallel needs a task, e.g. `/parallel fix the bug` or `/parallel 2 fix the bug`"
+            "/parallel needs a task, e.g. `/parallel fix the bug` or `/parallel 2 -- fix the bug`"
         )
-    parts = body.split(None, 1)
-    if _is_spec_token(parts[0]):
-        spec, task = parts[0], (parts[1] if len(parts) > 1 else "")
-    else:
-        spec, task = "", body
+    separator = _SPEC_SEPARATOR.search(body)
+    if separator is None:
+        return Segment(spec="", task=body)
+    spec = body[: separator.start()].strip()
+    task = body[separator.end() :].strip()
+    if not spec:
+        raise DirectiveError("/parallel needs a spec before --, e.g. `/parallel 2 -- fix the bug`")
     if not task:
         raise DirectiveError(
-            f"/parallel {parts[0]} needs a task, e.g. `/parallel {parts[0]} fix the bug`"
+            f"/parallel {spec} needs a task after --, e.g. `/parallel {spec} -- fix the bug`"
         )
     return Segment(spec=spec, task=task)
 
@@ -322,7 +317,9 @@ VIEW_COMMANDS: frozenset[str] = frozenset({"/restate", "/shells", "/undo"})
 STEER_COMMANDS: dict[str, str] = {
     "/pin": "pin an instruction that survives compaction: /pin <text>",
     "/compact": "compact the context now; /compact <focus> steers the summary",
-    "/parallel": "fan out lanes: /parallel [N|models] <task> (repeat to queue more)",
+    "/parallel": (
+        "fan out lanes: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)"
+    ),
     "/restate": "restate the conversation since your last message (local, no model call)",
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
     "/btw": "ask a question beside the run: /btw <question> (answers inline, later)",

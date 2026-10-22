@@ -47,7 +47,7 @@ def test_parse_spec_zero_and_empty_models_raise() -> None:
 
 
 def test_parse_spec_over_limit_refuses_before_allocating() -> None:
-    """`/parallel N` refuses an oversized count before building the list.
+    """`/parallel N -- task` refuses an oversized count before building the list.
 
     Pinned with small values: a test that proves the bound by allocating past it is the bug it tests
     for.
@@ -75,7 +75,7 @@ def test_prefix_lookalike_is_not_a_directive() -> None:
 
 
 def test_leading_whitespace_before_the_token_is_allowed() -> None:
-    assert _segs("  /parallel 2 do it") == [("2", "do it")]
+    assert _segs("  /parallel 2 -- do it") == [("2", "do it")]
 
 
 # --- spec is optional; omitted = one lane ---------------------------------
@@ -87,68 +87,66 @@ def test_omitted_spec_is_one_lane_task_is_whole_segment() -> None:
     assert _segs("/parallel do it now") == [("", "do it now")]
 
 
-def test_int_spec() -> None:
-    assert _segs("/parallel 3 add a greeting") == [("3", "add a greeting")]
-
-
-def test_model_list_spec() -> None:
-    assert _segs("/parallel gpt-5,opus refactor the parser") == [
-        ("gpt-5,opus", "refactor the parser")
-    ]
-
-
-def test_slash_model_id_spec() -> None:
-    # a slash-containing first token is a model spec (provider/model shaped)
-    assert _segs("/parallel moonshotai/kimi-k2.6 fix the flaky test") == [
-        ("moonshotai/kimi-k2.6", "fix the flaky test")
-    ]
-    assert _segs("/parallel a/b,c/d task B") == [("a/b,c/d", "task B")]
+@pytest.mark.parametrize(
+    ("text", "spec", "task", "models"),
+    [
+        ("/parallel src/x.py: add a test", "", "src/x.py: add a test", [None]),
+        ("/parallel 2 -- task", "2", "task", [None, None]),
+        ("/parallel a/b,c -- task", "a/b,c", "task", ["a/b", "c"]),
+        ("/parallel 2 task", "", "2 task", [None]),
+        ("/parallel 2", "", "2", [None]),
+        ("/parallel a/b,c task", "", "a/b,c task", [None]),
+        ("/parallel opus -- task", "opus", "task", ["opus"]),
+        ("/parallel a/b, c -- task", "a/b, c", "task", ["a/b", "c"]),
+    ],
+)
+def test_only_an_explicit_separator_introduces_a_spec(
+    text: str, spec: str, task: str, models: list[str | None]
+) -> None:
+    """Paths, counts and model lists stay task text without `--`."""
+    (seg,) = directive.parse_directive(text) or []
+    assert (seg.spec, seg.task) == (spec, task)
+    assert directive.parse_spec(seg.spec, limit=4) == models
 
 
 def test_bare_model_name_stays_task_text() -> None:
-    # a comma-less slash-less name is indistinguishable from a task word: task text
     assert _segs("/parallel opus fix the bug") == [("", "opus fix the bug")]
 
 
-def test_slash_first_task_word_parses_as_spec_documented_ambiguity() -> None:
-    # A task whose first word is a path parses as a model spec; the lane fails at the provider.
-    assert _segs("/parallel src/foo.py needs a docstring") == [("src/foo.py", "needs a docstring")]
-
-
-def test_slash_spec_without_task_raises() -> None:
-    with pytest.raises(directive.DirectiveError):
-        directive.parse_directive("/parallel moonshotai/kimi-k2.6")
-
-
 def test_task_keeps_internal_spacing() -> None:
-    assert _segs("/parallel 2 fix  the   bug") == [("2", "fix  the   bug")]
+    assert _segs("/parallel 2 -- fix  the   bug") == [("2", "fix  the   bug")]
 
 
 def test_multiline_task_body() -> None:
-    # newlines are ordinary task characters now (no per-line splitting)
-    assert _segs("/parallel 2 line one\nline two\nline three") == [
-        ("2", "line one\nline two\nline three")
+    assert _segs("/parallel 2 -- line one\n  line two\n\n\tline three -- literal") == [
+        ("2", "line one\n  line two\n\n\tline three -- literal")
     ]
+
+
+def test_separator_is_a_whitespace_delimited_token() -> None:
+    assert _segs("/parallel a--b needs a test") == [("", "a--b needs a test")]
+    assert _segs("/parallel 2 --task") == [("", "2 --task")]
+    assert _segs("/parallel\t2\n--\ntask") == [("2", "task")]
 
 
 # --- the /parallel token separates tasks within one message ---------------
 
 
 def test_separator_splits_segments() -> None:
-    assert _segs("/parallel 2 task A /parallel gpt-5,opus task B") == [
+    assert _segs("/parallel 2 -- task A /parallel gpt-5,opus -- task B") == [
         ("2", "task A"),
         ("gpt-5,opus", "task B"),
     ]
 
 
 def test_separator_splits_multiline_segments() -> None:
-    parsed = _segs("/parallel implement X\nwith care\n/parallel 2 implement Y\nkeep it small")
+    parsed = _segs("/parallel implement X\nwith care\n/parallel 2 -- implement Y\nkeep it small")
     assert parsed == [("", "implement X\nwith care"), ("2", "implement Y\nkeep it small")]
 
 
 def test_mid_task_slash_parallel_in_a_path_is_not_a_separator() -> None:
     # /parallel inside a word or path (not whitespace-delimited) stays task text
-    assert _segs("/parallel 2 edit src/parallel/loop.py now") == [
+    assert _segs("/parallel 2 -- edit src/parallel/loop.py now") == [
         ("2", "edit src/parallel/loop.py now")
     ]
     assert _segs("/parallel touch a/parallel.txt") == [("", "touch a/parallel.txt")]
@@ -168,20 +166,41 @@ def test_bare_directive_raises() -> None:
             directive.parse_directive(bad)
 
 
-def test_spec_without_task_raises() -> None:
-    for bad in ("/parallel 2", "/parallel gpt-5,opus", "/parallel 2   "):
-        with pytest.raises(directive.DirectiveError):
-            directive.parse_directive(bad)
+@pytest.mark.parametrize(
+    "text",
+    ["/parallel -- task", "/parallel --", "/parallel \n--\t task"],
+)
+def test_bare_separator_refuses_with_the_reason(text: str) -> None:
+    with pytest.raises(directive.DirectiveError, match="needs a spec before --"):
+        directive.parse_directive(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["/parallel 2 --", "/parallel a/b,c --", "/parallel 2 -- \n\t"],
+)
+def test_spec_without_task_refuses_with_the_reason(text: str) -> None:
+    with pytest.raises(directive.DirectiveError, match="needs a task after --"):
+        directive.parse_directive(text)
+
+
+def test_lane_limit_applies_only_to_an_explicit_spec() -> None:
+    (seg,) = directive.parse_directive("/parallel 5 -- task") or []
+    with pytest.raises(directive.DirectiveError, match=r"requests 5 lanes.*max_lanes = 4"):
+        directive.parse_spec(seg.spec, limit=4)
+    (seg,) = directive.parse_directive("/parallel 5 task") or []
+    assert directive.parse_spec(seg.spec, limit=4) == [None]
+    assert seg.task == "5 task"
 
 
 def test_empty_segment_mid_message_raises() -> None:
     # all-or-nothing: a later empty segment fails the whole parse
     with pytest.raises(directive.DirectiveError):
-        directive.parse_directive("/parallel 2 good task /parallel")
+        directive.parse_directive("/parallel 2 -- good task /parallel")
 
 
 def test_segment_is_a_frozen_dataclass() -> None:
-    (seg,) = directive.parse_directive("/parallel 2 x")  # type: ignore[misc]
+    (seg,) = directive.parse_directive("/parallel 2 -- x")  # type: ignore[misc]
     assert isinstance(seg, directive.Segment)
     with pytest.raises(AttributeError):
         seg.spec = "3"  # type: ignore[misc]
@@ -252,7 +271,7 @@ def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None
     assert directive.steer_problem("/pin") is not None and "pin needs an instruction" in (
         directive.steer_problem("/pin") or ""
     )
-    assert directive.steer_problem("/parallel 2") is not None
+    assert "needs a task after --" in (directive.steer_problem("/parallel 2 --") or "")
     # /now included: the composers parse it and the loop never does.
     for live_only in (
         "/compact",
@@ -268,7 +287,7 @@ def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None
         assert "not an instruction" in problem, live_only
         assert "type it in the composer" in problem, live_only
     assert directive.steer_problem("/pin keep the API stable") is None
-    assert directive.steer_problem("/parallel 2 try the other design") is None
+    assert directive.steer_problem("/parallel 2 -- try the other design") is None
     assert directive.steer_problem("focus on the parser") is None
 
 
@@ -283,13 +302,37 @@ def test_spec_fragment_first_segment() -> None:
 
 def test_spec_fragment_later_segment_under_construction() -> None:
     """A later `/parallel` segment's spec fragment completes like the first one's."""
-    assert directive.spec_fragment("/parallel 2 task A /parallel gp") == "gp"
-    assert directive.spec_fragment("/parallel 2 task A /parallel gpt-5,op") == "op"
+    assert directive.spec_fragment("/parallel 2 -- task A /parallel gp") == "gp"
+    assert directive.spec_fragment("/parallel 2 -- task A /parallel gpt-5,op") == "op"
 
 
-def test_spec_fragment_none_once_the_task_has_started() -> None:
-    assert directive.spec_fragment("/parallel 2 fix the bug") is None
-    assert directive.spec_fragment("/parallel 2 task A /parallel 3 fix it") is None
+@pytest.mark.parametrize(
+    ("text", "fragment"),
+    [
+        ("/parallel gp ", "gp"),
+        ("  /PARALLEL gp", "gp"),
+        ("/parallel gpt-5, ", ""),
+        ("/parallel gpt-5,\n op", "op"),
+        ("/parallel 2 -- task A /parallel gpt-5, op ", "op"),
+    ],
+)
+def test_spec_fragment_keeps_completing_until_separator(text: str, fragment: str) -> None:
+    """Spaces in a comma-separated spec do not end model completion."""
+    assert directive.spec_fragment(text) == fragment
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "/parallel gp --",
+        "/parallel gp -- op",
+        "/parallel 2 -- task A /parallel 3 -- fix it",
+        "/parallel --",
+        "/parallel 2 ",
+    ],
+)
+def test_spec_fragment_none_after_separator_or_for_lane_count(text: str) -> None:
+    assert directive.spec_fragment(text) is None
 
 
 def test_spec_fragment_none_without_a_leading_directive() -> None:

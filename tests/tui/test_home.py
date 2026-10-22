@@ -242,6 +242,12 @@ def test_the_model_hint_dims_its_label_not_the_model_ids(tmp_path: pathlib.Path)
             ids = next(seg.style for seg in segments() if "o/alpha" in seg.text)
             assert label is not None and label.dim
             assert ids is not None and not ids.dim
+            await pilot.press(*"/alpha, ")
+            await wait_for(
+                pilot, lambda: any("o/beta" in seg.text for seg in segments()), "the next model"
+            )
+            await pilot.press(*"o/beta -- ")
+            await wait_for(pilot, lambda: not hint.display, "the task has no model hint")
 
     asyncio.run(scenario())
 

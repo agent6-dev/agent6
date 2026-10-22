@@ -249,7 +249,7 @@ def _run_info_command(
     elif cmd == "/pin":
         _print_pins(session_dir)
     elif cmd == "/parallel":
-        print("[agent6] fan out needs a task: `/parallel [N|models] <task>`")
+        print("[agent6] fan out needs a task: `/parallel [SPEC --] TASK`")
     elif cmd == "/shells":
         _print_shells(session_dir)
     elif cmd == "/restate":

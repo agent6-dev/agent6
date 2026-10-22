@@ -432,7 +432,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
 
 
 def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: pathlib.Path) -> None:
-    """`/parallel m1,m2 <task>` runs one lane per model under a single segment node."""
+    """`/parallel a/b,c -- task` runs one lane per model under a single segment node."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     coord_id = "run-mdl"
@@ -447,7 +447,7 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: pathlib.Path) -
     wf = _build_wf(
         repo,
         provider,
-        steer_text="/parallel kimi,glm refactor the parser",
+        steer_text="/parallel a/b,c -- refactor the parser",
         lane_spawner=spawner,
         graph=graph,
         events=events,
@@ -457,8 +457,8 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: pathlib.Path) -
     # Two lanes, same task, one per model, in list order.
     lanes = spawner.calls[0][0]
     assert [(ln.task, ln.model) for ln in lanes] == [
-        ("refactor the parser", "kimi"),
-        ("refactor the parser", "glm"),
+        ("refactor the parser", "a/b"),
+        ("refactor the parser", "c"),
     ]
     # One DAG node for the segment, passed with a join sha, its note naming both lanes.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
@@ -475,7 +475,7 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: pathlib.Path) -
 
 
 def test_lane_count_spec_expands_to_n_default_lanes(tmp_path: pathlib.Path) -> None:
-    """`/parallel 3 <task>` -> three lanes on the default model, one segment node."""
+    """`/parallel 2 -- task` runs two default lanes under one segment node."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     coord_id = "run-cnt"
@@ -489,16 +489,35 @@ def test_lane_count_spec_expands_to_n_default_lanes(tmp_path: pathlib.Path) -> N
     wf = _build_wf(
         repo,
         provider,
-        steer_text="/parallel 3 tidy the imports",
+        steer_text="/parallel 2 -- tidy the imports",
         lane_spawner=spawner,
         graph=graph,
     )
     wf.run("start")
 
     lanes = spawner.calls[0][0]
-    assert [(ln.task, ln.model) for ln in lanes] == [("tidy the imports", None)] * 3
+    assert [(ln.task, ln.model) for ln in lanes] == [("tidy the imports", None)] * 2
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
-    assert len(steering) == 1  # one node for the segment, not three
+    assert len(steering) == 1  # one node for the segment, not two
+
+
+@pytest.mark.parametrize("task", ["src/x.py: add a test", "2 task", "5 task"])
+def test_task_without_separator_dispatches_one_default_lane(
+    tmp_path: pathlib.Path, task: str
+) -> None:
+    """A task's path or count prefix cannot select a lane model or exceed the lane cap."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    spawner = _FakeGroupSpawner(repo, "run-default", tmp_path / "wt")
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        _resp_tool("read_file", {"path": "README.md"}, "t1"),
+        _resp_tool("read_file", {"path": "README.md"}, "t2"),
+    ]
+    wf = _build_wf(repo, provider, steer_text=f"/parallel {task}", lane_spawner=spawner)
+    wf.run("start")
+
+    assert [(lane.task, lane.model) for lane in spawner.calls[0][0]] == [(task, None)]
 
 
 def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path) -> None:
@@ -638,7 +657,18 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
     assert all(n.status == "failed" for n in steering)
 
 
-def test_bare_parallel_directive_dispatches_nothing(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        ("/parallel", "needs a task"),
+        ("/parallel -- task", "needs a spec before --"),
+        ("/parallel 2 --", "needs a task after --"),
+        ("/parallel 5 -- task", "requests 5 lanes but [parallel].max_lanes = 4"),
+    ],
+)
+def test_invalid_parallel_directive_dispatches_nothing_and_names_the_reason(
+    tmp_path: pathlib.Path, text: str, reason: str
+) -> None:
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "run-x", tmp_path / "wt")
@@ -647,11 +677,11 @@ def test_bare_parallel_directive_dispatches_nothing(tmp_path: pathlib.Path) -> N
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
     ]
-    wf = _build_wf(repo, provider, steer_text="/parallel", lane_spawner=spawner)
+    wf = _build_wf(repo, provider, steer_text=text, lane_spawner=spawner)
     wf.run("start")
     assert spawner.calls == []  # nothing dispatched
     texts = _user_texts(_final_messages(provider))
-    assert any("nothing dispatched" in t for t in texts)
+    assert any("nothing dispatched" in t and reason in t for t in texts)
 
 
 def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) -> None:

@@ -221,10 +221,9 @@ It writes nothing to the repo or the memory: the operator turns a candidate into
 The primitive is a task run as a subordinate isolated run whose branch joins back.
 Three consumers drive it: `run --parallel`, the web and TUI composers' `/parallel` new-work directive, and a live run's `/parallel` steer.
 
-All three share one grammar in [directive.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/directive.py), a pure-stdlib leaf both `harness` and `ui` import.
-The form is `/parallel [spec] <task>`, repeatable; `spec` is an optional lane count or model list, and `parse_spec` maps it to one model per lane.
-A segment's first token counts as a spec when it contains a comma or a slash, since model ids are provider/model shaped.
-A bare name like `opus` stays task text, and a task whose first word is a path parses as a bogus model spec.
+All three share `parse_spec` in [directive.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/directive.py), a pure-stdlib leaf both `harness` and `ui` import.
+It maps a lane count or model list to one model per lane.
+The composers and steering use `parse_directive` to split `/parallel [SPEC --] TASK` segments ([grammar and examples](usage.md#parallel-directive)).
 
 Before any clone, a spec's models are checked against what a lane can run.
 
@@ -303,7 +302,7 @@ One live run-mode worker per checkout is the level above (`sessions/lock.py`, a 
 Run-mode workers share one working tree, so a second would interleave two runs' edits into each other's chain commits.
 A second `agent6 run` parks.
 The submitted task is saved verbatim in the new run's manifest (`parked_task`, with `parked_reason`, shown as "parked · checkout busy" in listings), and `agent6 resume <id>` starts it once the checkout is free.
-The message also offers `agent6 run --worktree "<task>"`, which runs it at once in its own worktree, and a `/parallel 1 <task>` steer that hands it to the live run as an isolated lane.
+The message also offers `agent6 run --worktree "<task>"`, which runs it at once in its own worktree, and a `/parallel 1 -- <task>` steer that hands it to the live run as an isolated lane.
 Plan and ask expose no edit tools and spawn freely; a `run --parallel` fan-out takes no checkout lock, and its lanes work in isolated clones.
 
 The working tree at start is the run's next gate, in the same shape.

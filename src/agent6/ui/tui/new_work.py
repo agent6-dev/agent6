@@ -28,7 +28,8 @@ from agent6.ui.tui import composer, forms, menubar, screen_chrome
 _INTRO = (
     "Describe the task (or the question, for ask). Enter starts it; Ctrl-J adds a line.\n"
     "Tab reaches the mode, preset and model pickers below.\n"
-    "/parallel [N|models] <task> fans out isolated lanes (repeat to queue more)."
+    "/parallel [SPEC --] TASK fans out isolated lanes.\n"
+    "SPEC is a count or comma-separated models; repeat /parallel to queue more."
 )
 
 
@@ -42,7 +43,7 @@ def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> rich_t
 
     Returns:
         The matching routes, prefix matches first; None when the caret is not in a
-        spec token or there is nothing to offer.
+        spec or there is nothing to offer.
     """
     frag = directive.spec_fragment(text)
     if frag is None or not models:

@@ -198,7 +198,7 @@ def test_the_parked_message_offers_a_run_in_its_own_worktree(
     assert rc == 2
     err = capsys.readouterr().err
     assert "PARKED: run 'run-LIVE' is already driving this checkout" in err
-    assert "agent6 resume run-PARKED" in err and "/parallel 1 <the same task>" in err
+    assert "agent6 resume run-PARKED" in err and "/parallel 1 -- <the same task>" in err
     assert 'agent6 run --worktree "<the same task>"' in err
 
 
@@ -354,7 +354,7 @@ def test_hub_new_work_fans_out_while_checkout_busy(
     state = paths.state_dir(repo)
     holder_fd = lock.acquire_repo_writer(state, repo, "run-LIVE")
     try:
-        session_dir, err = spawn.spawn_new_work(repo, "run", "/parallel 2 another task")
+        session_dir, err = spawn.spawn_new_work(repo, "run", "/parallel 2 -- another task")
     finally:
         lock.release_single_writer(holder_fd)
     assert (session_dir, err) == (repo / "run-P", "")

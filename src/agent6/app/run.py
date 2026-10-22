@@ -422,7 +422,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                         "or run it now in its own worktree, beside the live run:\n"
                         '    agent6 run --worktree "<the same task>"\n'
                         f"or hand it to the live run as an isolated lane by steering"
-                        f" {holder!r} with:\n    /parallel 1 <the same task>"
+                        f" {holder!r} with:\n    /parallel 1 -- <the same task>"
                     ),
                 )
             # Settle the operator's uncommitted changes before the first commit can sweep them up.

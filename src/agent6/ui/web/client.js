@@ -261,7 +261,7 @@ window.addEventListener('hashchange', route);
 
 // --- hub ---------------------------------------------------------------------
 // /parallel model-id autocomplete for the new-work composer. When the task text
-// starts with `/parallel ` and the caret sits in the spec token, offer the known
+// starts with `/parallel ` and the caret sits before `--`, offer the known
 // model ids (GET /api/config/suggest/parallel.models, exactly the set
 // run --parallel accepts) filtered by the comma-fragment under the caret; click,
 // Enter, or ↑/↓+Enter inserts it. The web analogue of the config editor's
@@ -276,22 +276,26 @@ function attachParallelSuggest(task, root) {
   };
   const frag = () => {          // the comma-fragment under the caret, or null
     const v = task.value, caret = task.selectionStart;
-    const markers = [...v.matchAll(/(^|\s)\/parallel(?=\s|$)/g)].map(m => ({
+    const markers = [...v.matchAll(/(^|\s)\/parallel(?=\s|$)/gi)].map(m => ({
       start: m.index + m[1].length,
       end: m.index + m[0].length,
     }));
     if (!markers.length || v.slice(0, markers[0].start).trim()) return null;
     const marker = markers.filter(m => m.end < caret).pop();
     if (!marker || !/\s/.test(v[marker.end])) return null;
+    const segmentEnd = markers.find(m => m.start > marker.start)?.start ?? v.length;
+    const separator = /(^|\s)--(?=\s|$)/.exec(v.slice(marker.end, segmentEnd));
+    const end = separator ? marker.end + separator.index + separator[1].length : segmentEnd;
     let start = marker.end;
-    while (start < v.length && /\s/.test(v[start])) start++;
-    let end = start;
-    while (end < v.length && !/\s/.test(v[end])) end++;
-    if (caret < start || caret > end) return null;   // caret outside the spec token
-    const fragStart = start + v.slice(start, caret).lastIndexOf(',') + 1;
+    while (start < end && /\s/.test(v[start])) start++;
+    if (caret < start || caret > end) return null;
+    if (/^\p{Decimal_Number}+$/u.test(v.slice(start, end).trim())) return null;
+    let fragStart = start + v.slice(start, caret).lastIndexOf(',') + 1;
     let fragEnd = caret;
     while (fragEnd < end && v[fragEnd] !== ',') fragEnd++;
-    return { fragStart, fragEnd, text: v.slice(fragStart, caret) };
+    while (fragStart < fragEnd && /\s/.test(v[fragStart])) fragStart++;
+    while (fragEnd > fragStart && /\s/.test(v[fragEnd - 1])) fragEnd--;
+    return { fragStart, fragEnd, text: v.slice(fragStart, Math.min(caret, fragEnd)) };
   };
   const close = () => { if (box) { box.remove(); box = null; } items = []; active = -1; };
   const insert = (model) => {
@@ -405,7 +409,7 @@ function newWorkDock(presets, presetDefault) {
   root.appendChild(pickerRow([['mode', mode], ['preset', preset], ['model', model]]));
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask · Shift+Enter newline · '
-    + '/parallel [N|models] <task> fans out lanes (repeat to queue more)'));
+    + '/parallel [SPEC --] TASK fans out lanes (SPEC: count or models; repeat to queue more)'));
   return root;
 }
 
@@ -823,7 +827,7 @@ function highlightCmd(text) {
 const STEER_COMMANDS = [
   ['/pin', 'pin an instruction that survives compaction: /pin <text>'],
   ['/compact', 'compact the context now; /compact <focus> steers the summary'],
-  ['/parallel', 'fan out lanes: /parallel [N|models] <task> (repeat to queue more)'],
+  ['/parallel', 'fan out lanes: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)'],
   ['/restate', 'restate the conversation since your last message (local, no model call)'],
   ['/undo', 'fork back to before your last message (the text returns to edit and resend)'],
   ['/btw', 'ask a question beside the run: /btw <question> (answers inline, later)'],
@@ -994,7 +998,7 @@ function makeComposer(id) {
   let needsWork = false;
   let busy = false;
   const suggest = attachCommandSuggest(ta, root, () => finished === false);
-  const models = attachParallelSuggest(ta, root); // the spec token after `/parallel `
+  const models = attachParallelSuggest(ta, root); // the spec before `--`
   const apply = () => {
     ta.disabled = busy;
     presetRow.style.display = finished ? '' : 'none';

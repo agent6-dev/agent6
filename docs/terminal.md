@@ -19,6 +19,9 @@ Below 100 columns `updated` keeps only the time for today's runs and only the da
 - Space: expand or fold a fan-out's lanes (one row with its lane count otherwise)
 - `c`: the config page; `M`: the machines screen; `r`: refresh; `?`: the keys; `q`: quit
 
+The new-work composer accepts `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
+Its model hints stay active until the `--` separator.
+
 ![The hub](screenshots/out/01-hub.png)
 
 ## Conversation

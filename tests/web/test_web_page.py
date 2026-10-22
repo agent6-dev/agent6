@@ -11,12 +11,16 @@ it.
 from __future__ import annotations
 
 import hashlib
+import shutil
+import subprocess
 from importlib import resources
+
+import pytest
 
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "234aaff5d90871012bf19deb83387806d7582fd0bf1b6e6c2228134a5dcc8fb5"
+PAGE_SHA256 = "1ed7fc5a386d2a91a07242f4d617e9dcbdf22081713c82e73e9c0d97300e63cc"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -148,13 +152,63 @@ def test_the_resume_row_asks_what_a_bare_resume_runs_under() -> None:
 
 
 def test_parallel_model_completion_handles_each_whole_fragment() -> None:
-    """A repeated `/parallel` segment completes, replacing the whole fragment around the caret."""
+    """Model completion replaces a comma fragment before `--`, never task text after it."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is needed to exercise the web composer")
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     suggest = client[
         client.index("function attachParallelSuggest") : client.index("// The new-work composer")
     ]
-    assert "v.matchAll(/(^|\\s)\\/parallel(?=\\s|$)/g)" in suggest
-    assert "while (fragEnd < end && v[fragEnd] !== ',') fragEnd++;" in suggest
+    scenario = r"""
+const assert = require('node:assert/strict');
+const getJSON = async () => ({values: ['o/alpha', 'o/beta']});
+function el(tag, cls, text = '') {
+  return {
+    text, children: [], removed: false,
+    set textContent(value) { this.text = value; this.children = []; },
+    appendChild(child) { this.children.push(child); },
+    remove() { this.removed = true; },
+  };
+}
+async function check(text, wanted, caret = text.length, replacement = null) {
+  const listeners = {};
+  const task = {
+    value: text, selectionStart: caret,
+    addEventListener(name, fn) { listeners[name] = fn; },
+    setSelectionRange(start) { this.selectionStart = start; },
+    focus() {},
+  };
+  const root = el('div');
+  attachParallelSuggest(task, root);
+  listeners.input();
+  await Promise.resolve();
+  const rows = root.children.filter(box => !box.removed).flatMap(box => box.children);
+  assert.deepEqual(rows.map(row => row.text), wanted, text);
+  if (replacement !== null) {
+    rows[0].onmousedown({preventDefault() {}});
+    assert.equal(task.value, replacement);
+  }
+}
+(async () => {
+  await check('/parallel o/alpha, ', ['o/alpha', 'o/beta']);
+  await check('/parallel o/alpha,\n o/b', ['o/beta']);
+  await check('/parallel o/beta -- o/', []);
+  await check('/parallel o/beta --', []);
+  await check('/parallel -- ', []);
+  await check('/parallel 2 ', []);
+  await check('/parallel 2 -- task /parallel o/beta', ['o/beta']);
+  const text = '/parallel 2 -- task /parallel o/alpha, o/beTAIL -- task';
+  await check(text, ['o/beta'], text.indexOf('TAIL'), text.replace('o/beTAIL', 'o/beta'));
+  const spaced = '/parallel o/beta -- task';
+  await check(spaced, ['o/beta'], spaced.indexOf(' --') + 1, spaced);
+  await check('  /PARALLEL o/b', ['o/beta']);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+    result = subprocess.run(
+        [node, "-e", suggest + scenario], check=False, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_the_provider_forms_deployment_select_opens_on_a_blank_option() -> None:

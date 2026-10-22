@@ -30,8 +30,8 @@ def test_both_prompts_answer_a_line_the_same_way(
     # The loop's directives travel verbatim, arguments and all, the word
     # lowercased for its case-sensitive parsers.
     assert (
-        cli__steer_menu.pause_line("/parallel 2 fix the tests", tmp_path)
-        == "/parallel 2 fix the tests"
+        cli__steer_menu.pause_line("/parallel 2 -- fix the tests", tmp_path)
+        == "/parallel 2 -- fix the tests"
     )
     assert cli__steer_menu.pause_line("/PIN always gate", tmp_path) == "/pin always gate"
     # Any other line with spaces travels verbatim, case and spacing included.
@@ -214,9 +214,9 @@ def test_pause_menu_parallel_directive_passes_through_verbatim(tmp_path: pathlib
     The loop parses it, which is why mid-run `/parallel` needs no composer change.
     """
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-    assert cli__steer_menu.pause_menu(tmp_path, input_fn=_feed(["/parallel 2 add a greeting"])) == (
-        "/parallel 2 add a greeting"
-    )
+    assert cli__steer_menu.pause_menu(
+        tmp_path, input_fn=_feed(["/parallel 2 -- add a greeting"])
+    ) == ("/parallel 2 -- add a greeting")
 
 
 def test_pause_menu_prefixes_and_word_rule(

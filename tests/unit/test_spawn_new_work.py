@@ -90,7 +90,7 @@ def test_detached_env_streams_and_waits(
 
 def test_parallel_lane_count(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "run", "/parallel 2 add a greeting")
+    spawn.spawn_new_work(tmp_path, "run", "/parallel 2 -- add a greeting")
     assert captured[-1][1:] == ["run", "--parallel", "2", "--", "add a greeting"]
 
 
@@ -112,7 +112,7 @@ def test_parallel_model_list_with_preset(
 ) -> None:
     _configure_worker()
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "run", "/parallel gpt-5,opus refactor", preset="no_review")
+    spawn.spawn_new_work(tmp_path, "run", "/parallel gpt-5,opus -- refactor", preset="no_review")
     assert captured[-1][1:] == [
         "run", "--preset", "no_review", "--parallel", "gpt-5,opus", "--", "refactor",
     ]  # fmt: skip
@@ -172,7 +172,7 @@ def test_parallel_refuses_unknown_model_before_spawn(
     monkeypatch.setattr(layer, "load_effective", _eff)
     captured = _capture_locate(monkeypatch)
     session_dir, err = spawn.spawn_new_work(
-        tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it"
+        tmp_path, "run", "/parallel moonshotai/kimi-k2.7 -- fix it"
     )
     assert session_dir is None
     assert "unknown model 'o/moonshotai/kimi-k2.7'" in err
@@ -212,7 +212,7 @@ def test_parallel_validation_uses_the_picked_model_provider(
     monkeypatch.setattr(layer, "load_effective", _eff)
     monkeypatch.setattr(models_validate, "_fresh_listing", _listing)
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "run", "/parallel q-lane,q-lane fix it", model="q/q-default")
+    spawn.spawn_new_work(tmp_path, "run", "/parallel q-lane,q-lane -- fix it", model="q/q-default")
     assert captured[-1][1:] == [
         "run",
         "--model",
@@ -237,7 +237,7 @@ def test_parallel_unknown_model_no_cache_proceeds(
 
     monkeypatch.setattr(layer, "load_effective", _eff)
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "run", "/parallel made-up/model fix it")
+    spawn.spawn_new_work(tmp_path, "run", "/parallel made-up/model -- fix it")
     assert captured[-1][1:] == ["run", "--parallel", "made-up/model", "--", "fix it"]
 
 
@@ -246,8 +246,8 @@ def test_parallel_only_for_run_mode(
 ) -> None:
     # plan/ask cannot fan out: the text is a literal task (rides behind `--`).
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "plan", "/parallel 2 add a greeting")
-    assert captured[-1][1:] == ["plan", "--", "/parallel 2 add a greeting"]
+    spawn.spawn_new_work(tmp_path, "plan", "/parallel 2 -- add a greeting")
+    assert captured[-1][1:] == ["plan", "--", "/parallel 2 -- add a greeting"]
 
 
 def test_parallel_omitted_spec_is_one_lane(
@@ -264,7 +264,7 @@ def test_parallel_multi_segment_spawns_one_fanout_per_segment(
 ) -> None:
     _configure_worker()
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "run", "/parallel 2 task A /parallel gpt-5,opus task B")
+    spawn.spawn_new_work(tmp_path, "run", "/parallel 2 -- task A /parallel gpt-5,opus -- task B")
     assert [c[1:] for c in captured] == [
         ["run", "--parallel", "2", "--", "task A"],
         ["run", "--parallel", "gpt-5,opus", "--", "task B"],
@@ -304,7 +304,7 @@ def test_parallel_partial_spawn_failure_surfaces(
 
     monkeypatch.setattr(validate, "directive_model_refusal", no_refusal)
     session_dir, err = spawn.spawn_new_work(
-        tmp_path, "run", "/parallel 2 task A /parallel 3 task B"
+        tmp_path, "run", "/parallel 2 -- task A /parallel 3 -- task B"
     )
     assert session_dir is None
     assert "boom" in err and "task B" in err
@@ -318,7 +318,7 @@ def test_multi_segment_malformed_spawns_nothing(
 ) -> None:
     # all-or-nothing: a later empty segment refuses the whole message, no spawn.
     captured = _capture_locate(monkeypatch)
-    session_dir, err = spawn.spawn_new_work(tmp_path, "run", "/parallel 2 good task /parallel")
+    session_dir, err = spawn.spawn_new_work(tmp_path, "run", "/parallel 2 -- good task /parallel")
     assert session_dir is None and "/parallel" in err
     assert captured == []
 
@@ -359,7 +359,7 @@ def test_detached_resume_refuses_a_malformed_steer_before_spawning(
     err = spawn.spawn_detached_resume(tmp_path, "runny-one-AAAAAA", steer="/pin")
     assert "pin needs an instruction" in err
     assert "needs a task" in spawn.spawn_detached_resume(
-        tmp_path, "runny-one-AAAAAA", steer="/parallel 3"
+        tmp_path, "runny-one-AAAAAA", steer="/parallel 3 --"
     )
 
 
@@ -381,7 +381,7 @@ def test_argv_carries_the_model_route(
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "plan", "t", preset="no_review", model="o/m")
     assert captured[-1][1:] == ["plan", "--preset", "no_review", "--model", "o/m", "--", "t"]
-    spawn.spawn_new_work(tmp_path, "run", "/parallel 2 t", model="o/m")
+    spawn.spawn_new_work(tmp_path, "run", "/parallel 2 -- t", model="o/m")
     assert captured[-1][1:] == ["run", "--model", "o/m", "--parallel", "2", "--", "t"]
 
 
