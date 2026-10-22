@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Share git hardening flags and the operator's hook and filter policy."""
+"""Share git hardening flags and the operator's hook and driver policy."""
 
 from __future__ import annotations
 
@@ -59,13 +59,13 @@ def set_repo_hook_policy(honor: bool) -> None:
 
 
 # A driver in `.git/config` is a host command, an RCE vector for a cloned poisoned repo;
-# honoring them is the Git-LFS opt-in. Set once from `git.run_repo_filters` at startup.
-_filter_policy: dict[str, bool] = {"honor_repo_filters": False}
+# honoring them is the Git-LFS opt-in. Set once from `git.run_repo_drivers` at startup.
+_driver_policy: dict[str, bool] = {"honor_repo_drivers": False}
 
 
-def set_repo_filter_policy(honor: bool) -> None:
+def set_repo_driver_policy(honor: bool) -> None:
     """Configure whether agent6's git ops honor the repo's own content drivers."""
-    _filter_policy["honor_repo_filters"] = honor
+    _driver_policy["honor_repo_drivers"] = honor
 
 
 # The config keys that name a driver command.
@@ -86,7 +86,7 @@ def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
     Returns:
         The flags; empty when the policy honors drivers or the repo defines none.
     """
-    if _filter_policy["honor_repo_filters"]:
+    if _driver_policy["honor_repo_drivers"]:
         return ()
     try:
         proc = subprocess.run(

@@ -435,7 +435,7 @@ Under `none` isolation nothing is enforced or refused.
     - a rewrite fails; `push` has no egress
     - a grant that contains the workspace does not lift it ([Sandbox](#2-sandbox))
 - Under `partial`, `protect_git = "auto"` degrades with a warning and `"on"` refuses to run
-    - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`; agent6's own auto-commit (a temp-index `git add -A` on the host) blanks every driver the repo defines unless `git.run_repo_filters` is set
+    - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`; agent6's own auto-commit (a temp-index `git add -A` on the host) blanks every driver the repo defines unless `git.run_repo_drivers` is set
     - Landlock cannot express the exclusion: a directory grant is recursive and stacked rulesets intersect, so denying `.git` means not granting the workspace root either
 - `git.control = "agent6"` is enforced by the sandbox; without it the run warns that a commit the model runs lands on the checkout's branch.
 - The protected scope is the project's own `.git` at every isolation level (the in-process edit tools refuse writes under it; [File access](#3-file-access))
@@ -445,7 +445,7 @@ Under `none` isolation nothing is enforced or refused.
 
 - `core.fsmonitor` and `diff.external` are always off.
 - `.git/hooks/*` run only under `git.run_repo_hooks = true` (default false); `core.hooksPath` points away, so a hook cannot fire on agent6's auto-commit.
-- Content drivers (`filter.<n>.clean` / `smudge` / `process`, `merge.<n>.driver`) are off by default (`git.run_repo_filters`), neutralized per name
+- Content drivers (`filter.<n>.clean` / `smudge` / `process`, `merge.<n>.driver`) are off by default (`git.run_repo_drivers`), neutralized per name
     - the clean filter runs on the auto-commit's `git add`, the merge driver on the chain merge's `merge-tree`: a cloned poisoned repo fires one without any model action
     - `true` honors them (the Git-LFS opt-in)
 
@@ -540,7 +540,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 `tests/security/test_subprocess_allowlist.py` pins the file list; audit with `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 
 - `_git_command.py` and `git_ops.py`: agent6's own git operations ([Git](#7-git)).
-- `git_policy.py`: shared hardening flags and hook/filter policy; its fixed git config query enumerates repo content drivers.
+- `git_policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `isolation = "none"`.
   An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` level.

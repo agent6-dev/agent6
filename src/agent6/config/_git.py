@@ -228,10 +228,10 @@ class GitConfig(pydantic.BaseModel):
         ),
     )
     # A driver in a poisoned `.git/config` runs on the host at every stage or merge.
-    run_repo_filters: bool = pydantic.Field(
+    run_repo_drivers: bool = pydantic.Field(
         default=False,
         description=(
-            "Honor the repo's content drivers (`filter.<name>.clean/smudge/process`, "
+            "Honor the repo's filter and merge drivers (`filter.<name>.clean/smudge/process`, "
             "`merge.<name>.driver`) during agent6's git operations. `false` neutralizes each by "
             "name: a driver defined in `.git/config` is repo-controlled code that would run on "
             "the host at every commit. `true` is what Git LFS needs (its clean/smudge filters "

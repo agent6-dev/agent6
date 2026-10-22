@@ -452,7 +452,7 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "git.run_repo_hooks": (
         "honoring the repo's .git/hooks runs repo-controlled code on the host outside the jail"
     ),
-    "git.run_repo_filters": (
+    "git.run_repo_drivers": (
         "honoring the repo's content drivers runs repo-controlled code on the host outside the jail"
     ),
     "machine.pass_env": (

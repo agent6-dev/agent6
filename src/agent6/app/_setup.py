@@ -240,7 +240,7 @@ def apply_git_ops_policy(cfg: Config) -> None:
         cfg: The resolved config.
     """
     git_policy.set_repo_hook_policy(cfg.git.run_repo_hooks)
-    git_policy.set_repo_filter_policy(cfg.git.run_repo_filters)
+    git_policy.set_repo_driver_policy(cfg.git.run_repo_drivers)
     child_env.set_provider_key_env(
         p.api_key_env
         for p in cfg.providers.values()

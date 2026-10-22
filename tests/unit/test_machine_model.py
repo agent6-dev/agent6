@@ -663,11 +663,11 @@ def test_machine_overlay_cannot_enable_repo_hooks(tmp_path: pathlib.Path) -> Non
     assert any("run_repo_hooks" in p for p in problems)
 
 
-def test_machine_overlay_cannot_enable_repo_filters(tmp_path: pathlib.Path) -> None:
-    # git.run_repo_filters is the same RCE class as run_repo_hooks.
-    body = VALID_MACHINE + "\n[config.git]\nrun_repo_filters = true\n"
+def test_machine_overlay_cannot_enable_repo_drivers(tmp_path: pathlib.Path) -> None:
+    # git.run_repo_drivers is the same RCE class as run_repo_hooks.
+    body = VALID_MACHINE + "\n[config.git]\nrun_repo_drivers = true\n"
     problems = _problems(tmp_path, body)
-    assert any("run_repo_filters" in p for p in problems)
+    assert any("run_repo_drivers" in p for p in problems)
 
 
 def test_machine_overlay_allows_benign_git_commit_identity(tmp_path: pathlib.Path) -> None:
