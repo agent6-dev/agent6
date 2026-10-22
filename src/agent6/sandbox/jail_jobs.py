@@ -291,6 +291,7 @@ def start_in_jail(
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                preexec_fn=jail.memory_cap(policy.memory_limit_mib),  # noqa: PLW1509
             )
             # Unregistered, one stop sweeps every sibling, whose next status then reads as rc 0.
             jail.live_launchers.add(proc.pid)

@@ -18,6 +18,7 @@ import functools
 import json
 import os
 import pathlib
+import resource
 import select
 import shutil
 import signal
@@ -344,15 +345,54 @@ def policy_spec(policy: kinds.JailPolicy) -> dict[str, Any]:
     }
 
 
+def memory_cap(memory_limit_mib: int) -> Callable[[], None]:
+    """Return a `preexec_fn` setting the child's RLIMIT_DATA, as the launcher does under `none`.
+
+    Args:
+        memory_limit_mib: The cap in MiB; 0 is no cap.
+
+    Returns:
+        The function to run in the child before exec.
+    """
+
+    def _setup() -> None:
+        if memory_limit_mib > 0:
+            limit = memory_limit_mib << 20
+            resource.setrlimit(resource.RLIMIT_DATA, (limit, limit))
+
+    return _setup
+
+
+def _unsandboxed_setup(parent_pid: int, memory_limit_mib: int) -> Callable[[], None]:
+    """Return the `preexec_fn` of a one-shot `none` command: the parent tie and the memory cap.
+
+    Args:
+        parent_pid: The parent whose death ends the child.
+        memory_limit_mib: The RLIMIT_DATA cap in MiB; 0 is no cap.
+
+    Returns:
+        The function to run in the child before exec.
+    """
+    tie = die_with_parent(parent_pid, sig=signal.SIGKILL)
+    cap = memory_cap(memory_limit_mib)
+
+    def _setup() -> None:
+        tie()
+        cap()
+
+    return _setup
+
+
 def _run_unsandboxed(policy: kinds.JailPolicy) -> kinds.CommandResult:
     """Run the policy's argv as a plain subprocess, with no confinement.
 
     The `none` isolation. The parent environment, overlaid with the policy's,
     minus agent6's provider keys: a jailed command never sees one. The
-    sandbox-only knobs (network, paths, memory) have no effect here.
+    sandbox-only knobs (network, paths) have no effect here; the memory cap and
+    the timeout apply as they do in the launcher.
 
     Args:
-        policy: The policy; only argv, cwd, env and timeout apply.
+        policy: The policy; only argv, cwd, env, memory cap and timeout apply.
 
     Returns:
         The command's result; a timeout is rc 124, as in the jail.
@@ -367,7 +407,7 @@ def _run_unsandboxed(policy: kinds.JailPolicy) -> kinds.CommandResult:
             env=env,
             capture_output=True,
             check=False,
-            preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),
+            preexec_fn=_unsandboxed_setup(os.getpid(), policy.memory_limit_mib),
             # <= 0 is no wall-clock kill (`agent6 exec`, a command whose check-in replaces it).
             timeout=policy.timeout_s if policy.timeout_s > 0 else None,
         )
