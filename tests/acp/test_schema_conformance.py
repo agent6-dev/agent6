@@ -9,8 +9,8 @@ array rather than the tagged union (which makes a strict client drop the tool
 outcome entirely), a status ACP does not define for an in-flight tool, and a
 permission request that no client could answer.
 
-The schema is vendored (`data/acp-schema.json`, from the protocol's published
-release) so the suite stays offline and a protocol change arrives as a
+The schema is vendored (`data/acp-schema.json`, the protocol's published
+`schema-v1.26.0`) so the suite stays offline and a protocol change arrives as a
 deliberate update rather than a surprise.
 """
 
