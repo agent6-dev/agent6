@@ -295,12 +295,9 @@ async function renderGit(gen) {
     pad.appendChild(kv);
     const acts = el('div', 'row wrap gd-actions');
     const me = { rev: c.sha, label: shortLabel(c) };
-    const parentLabel = c.parents.length ? c.parents[0].slice(0, 7) + ' (parent)' : '(empty tree)';
-    const cmpParent = el('button', 'mini', 'Compare with parent');
-    cmpParent.onclick = () => { gitState.compare = { base: { rev: c.base, label: parentLabel }, head: me }; showCompare(); };
     const asBase = el('button', 'mini', 'Set as base'); asBase.onclick = () => setCompare('base', me);
     const asHead = el('button', 'mini', 'Set as head'); asHead.onclick = () => setCompare('head', me);
-    acts.appendChild(cmpParent); acts.appendChild(asBase); acts.appendChild(asHead);
+    acts.appendChild(asBase); acts.appendChild(asHead);
     pad.appendChild(acts);
     if (c.body) pad.appendChild(el('pre', 'gd-body', c.body));
     pad.appendChild(fileList(c.base, c.sha, c.files, c.truncated));
