@@ -14,7 +14,7 @@ from __future__ import annotations
 import pathlib
 from typing import Any
 
-from agent6 import git_ops
+from agent6.vcs import git_history, git_ops
 from agent6.viewmodel import format
 
 # Commits per graph page, and the most a request may ask for.
@@ -78,13 +78,13 @@ def _resolve(repo: pathlib.Path, rev: str, *, tree_ok: bool = False) -> str:
         if tree_ok:
             return rev
         raise GitRequestError(f"not a commit: {rev}")
-    sha = git_ops.resolve_commit(repo, rev)
+    sha = git_history.resolve_commit(repo, rev)
     if not sha:
         raise GitRequestError(f"unknown revision {rev!r}")
     return sha
 
 
-def _decorations(refs: tuple[git_ops.RefRow, ...]) -> dict[str, list[dict[str, Any]]]:
+def _decorations(refs: tuple[git_history.RefRow, ...]) -> dict[str, list[dict[str, Any]]]:
     """Return the refs at each sha, in listing order."""
     out: dict[str, list[dict[str, Any]]] = {}
     for r in refs:
@@ -92,11 +92,11 @@ def _decorations(refs: tuple[git_ops.RefRow, ...]) -> dict[str, list[dict[str, A
     return out
 
 
-def _ref_row(r: git_ops.RefRow) -> dict[str, Any]:
+def _ref_row(r: git_history.RefRow) -> dict[str, Any]:
     return {"name": r.name, "full": r.full, "kind": r.kind, "sha": r.sha, "head": r.head}
 
 
-def _file_row(f: git_ops.ChangedFile) -> dict[str, Any]:
+def _file_row(f: git_history.ChangedFile) -> dict[str, Any]:
     return {
         "status": f.status,
         "path": f.path,
@@ -109,11 +109,11 @@ def _file_row(f: git_ops.ChangedFile) -> dict[str, Any]:
 
 def _files(repo: pathlib.Path, base: str, head: str) -> tuple[list[dict[str, Any]], bool]:
     """Return the changed files between two trees, cut at `FILES_MAX`, and whether they were."""
-    rows = git_ops.changed_files(repo, base, head)
+    rows = git_history.changed_files(repo, base, head)
     return [_file_row(f) for f in rows[:FILES_MAX]], len(rows) > FILES_MAX
 
 
-def _log_row(c: git_ops.LogCommit) -> dict[str, Any]:
+def _log_row(c: git_history.LogCommit) -> dict[str, Any]:
     return {
         "sha": c.sha,
         "short": c.sha[:7],
@@ -129,10 +129,10 @@ def _log_row(c: git_ops.LogCommit) -> dict[str, Any]:
 def refs_payload(repo: pathlib.Path) -> dict[str, Any]:
     """Return every ref with its kind and tip, and HEAD's sha and branch."""
     _repo(repo)
-    sha, branch = git_ops.head_commit(repo)
+    sha, branch = git_history.head_commit(repo)
     return {
         "head": {"sha": sha, "branch": branch},
-        "refs": [_ref_row(r) for r in git_ops.list_refs(repo)],
+        "refs": [_ref_row(r) for r in git_history.list_refs(repo)],
     }
 
 
@@ -166,8 +166,8 @@ def graph_payload(
     _repo(repo)
     page = min(_whole_number(limit, "limit", GRAPH_PAGE), GRAPH_PAGE_MAX)
     start = _whole_number(skip, "skip", 0)
-    listed = git_ops.list_refs(repo)
-    head_sha, _branch = git_ops.head_commit(repo)
+    listed = git_history.list_refs(repo)
+    head_sha, _branch = git_history.head_commit(repo)
     known = {r.full for r in listed}
     if refs is None:
         revs = [r.full for r in listed if r.kind != "agent6"] + (["HEAD"] if head_sha else [])
@@ -176,7 +176,7 @@ def graph_payload(
             if name != "HEAD" and name not in known:
                 raise GitRequestError(f"no such ref {name!r}")
         revs = [name for name in refs if name != "HEAD" or head_sha]
-    rows = git_ops.log_commits(repo, revs, limit=page + 1, skip=start) if revs else ()
+    rows = git_history.log_commits(repo, revs, limit=page + 1, skip=start) if revs else ()
     decorated = _decorations(listed)
     commits = [{**_log_row(c), "refs": decorated.get(c.sha, [])} for c in rows[:page]]
     return {"commits": commits, "has_more": len(rows) > page, "skip": start, "limit": page}
@@ -200,7 +200,7 @@ def commit_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
     """
     _repo(repo)
     sha = _resolve(repo, rev)
-    info = git_ops.commit_info(repo, sha)
+    info = git_history.commit_info(repo, sha)
     base = info.parents[0] if info.parents else git_ops.EMPTY_TREE
     files, truncated = _files(repo, base, sha)
     return {
@@ -215,7 +215,7 @@ def commit_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
         },
         "subject": info.subject,
         "body": info.body,
-        "refs": _decorations(git_ops.list_refs(repo)).get(sha, []),
+        "refs": _decorations(git_history.list_refs(repo)).get(sha, []),
         "is_merge": len(info.parents) > 1,
         "base": base,
         "files": files,
@@ -226,7 +226,7 @@ def commit_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
 def _endpoint(repo: pathlib.Path, rev: str, sha: str) -> dict[str, Any]:
     """Return one side of a compare: the rev as sent, the sha it names, and its subject."""
     subject = (
-        "(empty tree)" if sha == git_ops.EMPTY_TREE else git_ops.commit_info(repo, sha).subject
+        "(empty tree)" if sha == git_ops.EMPTY_TREE else git_history.commit_info(repo, sha).subject
     )
     return {"rev": rev, "sha": sha, "short": sha[:7], "subject": subject}
 
@@ -283,12 +283,13 @@ def diff_payload(
     if old_path:
         _check_shape(old_path, "path")
     if not (
-        git_ops.tree_has_blob(repo, head_sha, path) or git_ops.tree_has_blob(repo, base_sha, path)
+        git_history.tree_has_blob(repo, head_sha, path)
+        or git_history.tree_has_blob(repo, base_sha, path)
     ):
         raise GitRequestError(f"no file {path!r} in either revision")
-    if old_path and not git_ops.tree_has_blob(repo, base_sha, old_path):
+    if old_path and not git_history.tree_has_blob(repo, base_sha, old_path):
         raise GitRequestError(f"no file {old_path!r} in the base revision")
-    patch, truncated = git_ops.file_patch(
+    patch, truncated = git_history.file_patch(
         repo, base_sha, head_sha, path, old_path, max_bytes=DIFF_MAX_BYTES
     )
     return {
@@ -297,7 +298,7 @@ def diff_payload(
         "path": path,
         "old_path": old_path,
         "patch": patch,
-        "binary": git_ops.is_binary_patch(patch),
+        "binary": git_history.is_binary_patch(patch),
         "truncated": truncated,
         "max_bytes": DIFF_MAX_BYTES,
     }
@@ -321,12 +322,12 @@ def search_payload(repo: pathlib.Path, query: str) -> dict[str, Any]:
     if q.startswith("-"):
         return {"refs": [], "commits": [], "truncated": False}
     needle = q.lower()
-    refs = [r for r in git_ops.list_refs(repo) if needle in r.name.lower()]
-    commits = list(git_ops.search_log(repo, q, limit=SEARCH_MAX + 1))
+    refs = [r for r in git_history.list_refs(repo) if needle in r.name.lower()]
+    commits = list(git_history.search_log(repo, q, limit=SEARCH_MAX + 1))
     if q and all(c in "0123456789abcdef" for c in needle) and len(needle) >= 4:
-        sha = git_ops.resolve_commit(repo, needle)
+        sha = git_history.resolve_commit(repo, needle)
         if sha and all(c.sha != sha for c in commits):
-            commits[:0] = git_ops.log_commits(repo, [sha], limit=1)
+            commits[:0] = git_history.log_commits(repo, [sha], limit=1)
     truncated = len(refs) > SEARCH_MAX or len(commits) > SEARCH_MAX
     return {
         "refs": [_ref_row(r) for r in refs[:SEARCH_MAX]],

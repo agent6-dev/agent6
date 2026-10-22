@@ -322,6 +322,7 @@ depends_on = [
   "agent6.ui.directives",
   "agent6.ui.spawn",
   # One branch-tips snapshot per hub poll (the listing's unmerged mark).
+  "agent6.vcs.git_history",
   "agent6.vcs.git_ops",
   "agent6.viewmodel",
 ]
@@ -409,6 +410,10 @@ depends_on = ["agent6.task_text"]  # the squash headline is the task's headline
 [[modules]]
 path = "agent6.vcs._git_command"
 depends_on = ["agent6.child_env", "agent6.errors", "agent6.kinds", "agent6.vcs.git_policy"]
+
+[[modules]]
+path = "agent6.vcs.git_history"
+depends_on = ["agent6.errors", "agent6.vcs._git_command", "agent6.vcs.git_ops"]
 
 [[modules]]
 path = "agent6.vcs.git_ops"

@@ -443,6 +443,7 @@ banned-from = [
     "agent6.ui.web.server",
     "agent6.vcs._git_command",
     "agent6.vcs.commit_message",
+    "agent6.vcs.git_history",
     "agent6.vcs.git_ops",
     "agent6.vcs.git_policy",
     "agent6.verify_infer",

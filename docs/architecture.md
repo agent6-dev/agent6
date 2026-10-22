@@ -26,7 +26,7 @@ graph TD
 
 Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `config`, `directive`, `errors`, `event_log`, `graph`, `init`, `kinds`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secret_store`, `sessions`, `skills`, `task_text`, `terminal`, `vcs`, `verify_infer`, `viewmodel`.
 
-The `vcs` package holds agent6's own git operations; only its `git_ops.py` imports `_git_command.py`.
+The `vcs` package holds agent6's own git operations; only its modules import the runner, `_git_command.py`.
 It runs each git command with a 120-second timeout.
 By default, it switches off the repository's hooks, fsmonitor, external diff, commit signing, and filter and merge drivers.
 `git_policy.py` shares hardening flags and hook/filter policy; `errors.py` owns `GitError`.

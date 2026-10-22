@@ -17,10 +17,10 @@ from typing import Any
 
 import pytest
 
-from agent6 import git_ops
 from agent6.ui.web import git_model, page
 from agent6.ui.web import server as web_server
-from tests.unit.test_git_ops_history import build_history
+from agent6.vcs import git_ops
+from tests.unit.test_git_history import build_history
 from tests.web import signin
 
 
