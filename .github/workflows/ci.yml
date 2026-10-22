@@ -59,6 +59,15 @@ jobs:
       - name: Sync dev environment
         run: uv sync --all-extras --dev
 
+      - name: Cache Playwright's Chromium (the `browser` tests)
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('uv.lock') }}
+
+      - name: Install Playwright's Chromium
+        run: uv run playwright install --with-deps chromium
+
       - name: Download the built wheel for this arch
         uses: actions/download-artifact@v8
         with:

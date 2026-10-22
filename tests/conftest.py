@@ -16,6 +16,7 @@ import pytest
 import tree_sitter_language_pack
 
 from agent6.sandbox import tool_paths
+from tests.browser_env import require_browser
 from tests.jail_env import require_userns_jail
 
 # Resolved once, with the operator's own environment: the grammars already downloaded.
@@ -71,13 +72,15 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
-    """Make the `needs_namespaces` marker real.
+    """Make the `needs_namespaces` and `browser` markers real.
 
-    Skip, with the host's actual reason, where the userns jail cannot run, instead of failing
-    with JailUnavailableError; the marker alone registers a policy nothing enforces.
+    Skip, with the host's actual reason, where the userns jail or Playwright's Chromium cannot
+    run, instead of failing; a marker alone registers a policy nothing enforces.
     """
     if item.get_closest_marker("needs_namespaces") is not None:
         require_userns_jail()
+    if item.get_closest_marker("browser") is not None:
+        require_browser()
 
 
 @pytest.fixture(autouse=True)

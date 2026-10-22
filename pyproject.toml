@@ -84,6 +84,7 @@ exclude = [
 [dependency-groups]
 dev = [
     "jsonschema>=4",
+    "playwright>=1.47",
     "pyan3>=2.6.2",
     "pyright>=1.1.380",
     "pytest-cov>=5",
@@ -558,6 +559,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra --strict-markers --strict-config -n auto"
 markers = [
+    "browser: drives Playwright's Chromium; skipped when it is not installed (uv run playwright install chromium)",
     "needs_landlock_tcp: requires Linux >=6.7 (Landlock ABI v4)",
     "needs_namespaces: requires unprivileged user namespaces (skipped in restrictive sandboxes)",
     "needs_network: requires real Anthropic API key in ANTHROPIC_API_KEY",

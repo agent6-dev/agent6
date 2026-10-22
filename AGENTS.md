@@ -138,6 +138,7 @@
 - Dogfood the installed binary (`.venv/bin/agent6`) from throwaway git repos outside this one.
 - Run the five-gate in its own systemd unit (`systemd-run --user --collect` with RuntimeMaxSec/MemoryMax caps, the login PATH) and read its `EXIT=` line.
   Certify on a quiet machine, with the tree untouched while the gate runs: contention produces false timing reds.
+- The `browser` tests drive Playwright's Chromium: `uv run playwright install chromium` once; without it they skip.
 - Sandbox tests need unprivileged userns: on Ubuntu 24.04-class machines `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, as CI does.
 - Bench workspaces live on a real disk: tmpfs is RAM-backed and an OOM there kills the session scope.
 - One live single-instance smoke precedes every fleet launch, and any mechanism with two enforcement sites gets one even after unit-green: unit fixtures can pass vacuously.
