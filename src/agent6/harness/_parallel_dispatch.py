@@ -308,7 +308,7 @@ class ParallelDispatcher:
     def dispatch(
         self,
         conversation: _conversation.Conversation,
-        iteration: int,
+        turn: int,
         state: _loop_state.LoopState,
         segments: list[directive.Segment],
     ) -> None:
@@ -322,7 +322,7 @@ class ParallelDispatcher:
 
         Args:
             conversation: The run's conversation.
-            iteration: The iteration just completed.
+            turn: The turn just completed.
             state: The loop state.
             segments: The directive's segments, one DAG node each.
         """
@@ -341,7 +341,7 @@ class ParallelDispatcher:
             return
         lanes = [lane for seg_lanes in per_segment for lane in seg_lanes]
         # Lanes cut from the chain tip only: commit a changed tree first, or refuse stale work.
-        if not self.ensure_clean(iteration):
+        if not self.ensure_clean(turn):
             self.feedback(
                 conversation,
                 "refusing to dispatch: the working tree is not clean and could not be"
@@ -352,7 +352,7 @@ class ParallelDispatcher:
         state.parallel_groups_dispatched += 1
         group = f"p{state.parallel_groups_dispatched}"
         # Persisted before the group blocks: a crash there would reuse this group's id on resume.
-        self.save_snapshot(state, conversation.to_wire(), next_iteration=iteration + 1)
+        self.save_snapshot(state, conversation.to_wire(), next_turn=turn + 1)
         self.log(
             f"PARALLEL: dispatching group {group} "
             f"({len(lanes)} lane(s) across {len(segments)} task(s))"
@@ -433,13 +433,13 @@ class ParallelDispatcher:
             self.emit("loop.parallel.failed", group=group, lanes=failures)
         conversation.notice(summary_text(group, lanes))
 
-    def ensure_clean(self, iteration: int) -> bool:
+    def ensure_clean(self, turn: int) -> bool:
         """Chain-commit a changed tree so lanes cut from the tip see current work.
 
         With `commit_per_step` off a changed tree cannot be captured, and dispatch is refused.
 
         Args:
-            iteration: The iteration just completed, for the checkpoint subject.
+            turn: The turn just completed, for the checkpoint subject.
 
         Returns:
             Whether the chain tip carries the worktree's content.
@@ -449,11 +449,11 @@ class ParallelDispatcher:
         if not self.chain.per_step:
             return False
         try:
-            subject = f"checkpoint before /parallel dispatch (iter {iteration})"
+            subject = f"checkpoint before /parallel dispatch (turn {turn})"
             sha = self.chain.commit(subject)
             if sha:
                 self.log(f"  pre-dispatch checkpoint: {sha[:12]}")
-                self.emit("loop.auto_commit", iteration=iteration, sha=sha, subject=subject)
+                self.emit("loop.auto_commit", turn=turn, sha=sha, subject=subject)
                 self.emit(
                     "diff.updated",
                     sha=sha,

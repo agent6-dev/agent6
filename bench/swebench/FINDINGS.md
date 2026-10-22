@@ -85,7 +85,7 @@ A retry control prices the arms: the same 54 misses on the plain wheel converted
 ## Failure profile
 
 Verified, every scored gpt-5.6-sol draw (211/267 resolved): none of the 56 misses is an empty prediction; every miss is a wrong patch.
-Their newest transcripts: 51 ended `gate_stale`, django 26 of 56; 12 verify-on misses timed out every verify at 240 s (the django suite cannot finish under the cap); 40 of 56 hit a tool error; 47 of 56 ran targeted tests through `run_command` (median 2); median 12 iterations and 20 tool calls; no compactions, so context was never the binding constraint.
+Their newest transcripts: 51 ended `gate_stale`, django 26 of 56; 12 verify-on misses timed out every verify at 240 s (the django suite cannot finish under the cap); 40 of 56 hit a tool error; 47 of 56 ran targeted tests through `run_command` (median 2); median 12 turns and 20 tool calls; no compactions, so context was never the binding constraint.
 
 SWE-rebench 2026_03 misses (a run can be in more than one class): 22 near-miss (some FAIL_TO_PASS passing), 30 zero-F2P (none passing), 14 broke PASS_TO_PASS; 53 of the 55 wrong-patch runs finished under their own power, so the gap is not cap pressure.
 
@@ -127,13 +127,13 @@ SWE-rebench 2026_03 misses (a run can be in more than one class): 22 near-miss (
 
 Arms: the structural `<repo-priors>` block (symbol outline, hot symbols, co-change pairs) on and off; the dev slice (`dev_slice_25.json`, n=25 each, never a headline number); gpt-5.6-sol at effort medium on the ChatGPT plan; verify on; 1 plan point per instance; the same wheel; the official scorer.
 
-| arm | resolved | empty | mean iterations | mean uncached input tokens | session.start to first model call |
+| arm | resolved | empty | mean turns | mean uncached input tokens | session.start to first model call |
 |---|--:|--:|--:|--:|--:|
 | priors on | 22/25 | 1 | 21.3 | 38,376 | 19.9 s (2.8 to 40.1) |
 | priors off | 20/25 | 2 | 21.2 | 35,326 | 0.3 s (0.1 to 0.7) |
 
 - 20 instances resolved in both arms; none only without the priors; two only with them.
-- sympy-13877 without the priors ended `budget_exhausted` at iteration 3: the 1-point cap read as spent when the plan's whole-percent meter ticked over mid-run, not a capability result.
+- sympy-13877 without the priors ended `budget_exhausted` at turn 3: the 1-point cap read as spent when the plan's whole-percent meter ticked over mid-run, not a capability result.
 - django-16950: both arms patched it; the patch without the priors fails the tests.
 - Identical patch bytes on 12 of 25 instances; the same end reason on 19.
 - Replicates of the two disagreeing instances, three per arm: with the priors 6/6, without them 5/6 (sympy-13877 3/3; django-16950 2/3, so 4/4 with the priors and 2/4 without over every run).

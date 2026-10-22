@@ -413,7 +413,7 @@ function paintDetails(cards, s, asOf) {
     tree.appendChild(line);
   }
   cards.tasks.appendChild(tree);
-  if (asOf) for (const c of [cards.budget, cards.tasks]) c.prepend(el('div', 'sub muted', `as of iter ${asOf.iteration} · ${String(asOf.sha).slice(0, 7)}`));
+  if (asOf) for (const c of [cards.budget, cards.tasks]) c.prepend(el('div', 'sub muted', `as of turn ${asOf.turn} · ${String(asOf.sha).slice(0, 7)}`));
 }
 
 function paintRun(cards, s) {

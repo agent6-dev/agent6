@@ -236,7 +236,7 @@ def test_resumed_execution_is_live_and_steers_over_the_bridge(tmp_path: pathlib.
             assert isinstance(screen, conversation.ConversationScreen)
             assert not app.session_controllable()  # finished execution
             with logs.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"type": "loop.resume.start", "iteration": 1}) + "\n")
+                fh.write(json.dumps({"type": "loop.resume.start", "turn": 1}) + "\n")
                 fh.write(json.dumps({"type": "role.call", "role": "worker"}) + "\n")
             (run / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
             await wait_for(pilot, app.session_controllable, "the resumed execution to read live")

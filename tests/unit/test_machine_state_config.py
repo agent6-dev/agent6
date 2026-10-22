@@ -75,7 +75,7 @@ on = { ok = "done", failed = "fail", timeout = "fail", budget_exhausted = "fail"
 extra_write_paths = ["/srv/outbox"]
 
 [states.judge.config.harness]
-max_iterations = 7
+max_turns = 7
 
 [states.done]
 kind = "terminal"
@@ -217,15 +217,13 @@ def working_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
 def test_agent_and_tool_states_take_a_config_table(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path, MACHINE))
     assert spec.states["scan"].config == {"sandbox": {"extra_read_paths": ["/srv/inbox"]}}  # type: ignore[union-attr]
-    assert spec.states["judge"].config["harness"] == {"max_iterations": 7}  # type: ignore[union-attr]
+    assert spec.states["judge"].config["harness"] == {"max_turns": 7}  # type: ignore[union-attr]
     assert spec.states["store"].config == {}  # type: ignore[union-attr]
 
 
 def test_a_state_that_runs_nothing_takes_no_config_table(tmp_path: pathlib.Path) -> None:
     with pytest.raises(MachineError, match="config"):
-        load_machine(
-            _write(tmp_path, MACHINE + "\n[states.done.config.harness]\nmax_iterations = 3\n")
-        )
+        load_machine(_write(tmp_path, MACHINE + "\n[states.done.config.harness]\nmax_turns = 3\n"))
 
 
 @pytest.mark.parametrize(
@@ -311,8 +309,8 @@ def test_a_state_table_cannot_select_a_preset(
         _write(
             tmp_path,
             MACHINE.replace(
-                "max_iterations = 7",
-                'max_iterations = 7\n\n[states.judge.config]\npreset = "review"',
+                "max_turns = 7",
+                'max_turns = 7\n\n[states.judge.config]\npreset = "review"',
             ),
         )
     )
@@ -546,8 +544,8 @@ def test_the_machine_narrows_and_a_state_widens_back_up_to_the_operators(
     assert (
         judge.sandbox.extra_write_paths == ("/srv/outbox",) and judge.sandbox.extra_read_paths == ()
     )
-    assert judge.harness.max_iterations == 7
-    assert configs.machine.config.harness.max_iterations != 7
+    assert judge.harness.max_turns == 7
+    assert configs.machine.config.harness.max_turns != 7
     assert set(configs.states) == {"scan", "store", "judge"}
 
 
@@ -639,7 +637,7 @@ def test_a_config_flag_file_is_part_of_the_ceiling(
     assert ops.resolve() in machine_protect_paths(tmp_path / "m.asm.toml", tmp_path, (ops,))
     assert ops.resolve() not in machine_protect_paths(tmp_path / "m.asm.toml", tmp_path)
     # Every `--config` file is part of the ceiling, so each is read-only.
-    more = _write(tmp_path, "[review]\ninterval_iterations = 7\n", name="more.toml")
+    more = _write(tmp_path, "[review]\ninterval_turns = 7\n", name="more.toml")
     protected = machine_protect_paths(tmp_path / "m.asm.toml", tmp_path, (ops, more))
     assert ops.resolve() in protected and more.resolve() in protected
 
@@ -733,7 +731,7 @@ def test_each_agent_state_gets_its_own_overlay(
     assert built_with["shared_writes"] == (pathlib.Path("/srv/outbox"),)
     sandbox = seen["judge"].overlay["sandbox"]
     assert sandbox["extra_write_paths"] == ["/srv/outbox"] and sandbox["extra_read_paths"] == []
-    assert seen["judge"].overlay["harness"]["max_iterations"] == 7
+    assert seen["judge"].overlay["harness"]["max_turns"] == 7
 
 
 @pytest.mark.usefixtures("working_jail")
@@ -781,7 +779,7 @@ def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env
 
         def run(self, _prompt: str) -> _snapshot.SessionResult:
             return _snapshot.SessionResult(
-                reason="finish_session", completed=True, summary="d", iterations=1, tool_calls=0
+                reason="finish_session", completed=True, summary="d", turns=1, tool_calls=0
             )
 
     captured: dict[str, Any] = {}

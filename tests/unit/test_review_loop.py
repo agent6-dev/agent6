@@ -64,7 +64,7 @@ def _drive(wf: loop.Harness, messages: list[dict[str, Any]]) -> Any:
             system="S",
             conversation=conversation,
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -101,7 +101,7 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
     )
     messages = _begin()
     result = _drive(wf, messages)
-    assert result.reason == "finish_session" and result.iterations == 2
+    assert result.reason == "finish_session" and result.turns == 2
     assert seat_provider.call.call_count == 2  # panel ran at each finish attempt
     # the first (blocked) finish injected the findings for the worker to address
     injected = "".join(
@@ -131,11 +131,11 @@ def test_panel_skipped_when_budget_fraction_low() -> None:
     with mock.patch.object(loop.Harness, "_budget_fraction_remaining", return_value=0.10):
         result = _drive(wf, _begin())
     assert seat_provider.call.call_count == 0  # panel skipped, not run
-    assert result.reason == "finish_session" and result.iterations == 1
+    assert result.reason == "finish_session" and result.turns == 1
 
 
 def test_panel_advisory_does_not_block_finish() -> None:
-    """The SAME grounded block under advisory does not gate -> finish on iter 1."""
+    """The SAME grounded block under advisory does not gate -> finish on turn 1."""
     worker = mock.MagicMock()
     worker.call.side_effect = [_resp_with_tool_use("f1", _finish_tool_use("a", "done"))]
     seat_provider = mock.MagicMock()
@@ -149,14 +149,14 @@ def test_panel_advisory_does_not_block_finish() -> None:
         base_sha="b",
     )
     result = _drive(wf, _begin())
-    assert result.reason == "finish_session" and result.iterations == 1
+    assert result.reason == "finish_session" and result.turns == 1
     assert seat_provider.call.call_count == 1  # panel still ran (events), just didn't gate
 
 
 def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
     """A grounded 'style' block never stalls a finish, even under veto.
 
-    The aggregator downgrades it, so the finish is accepted on the first iteration.
+    The aggregator downgrades it, so the finish is accepted on the first turn.
     """
     worker = mock.MagicMock()
     worker.call.side_effect = [_resp_with_tool_use("f1", _finish_tool_use("a", "done"))]
@@ -171,7 +171,7 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
         base_sha="b",
     )
     result = _drive(wf, _begin())
-    assert result.reason == "finish_session" and result.iterations == 1
+    assert result.reason == "finish_session" and result.turns == 1
 
 
 @pytest.mark.parametrize("cap", [2, 4])
@@ -200,7 +200,7 @@ def test_the_configured_cap_counts_rejected_finishes(cap: int) -> None:
         base_sha="b",
     )
     result = _drive(wf, _begin())
-    assert result.reason == "finish_session" and result.iterations == cap + 1
+    assert result.reason == "finish_session" and result.turns == cap + 1
 
 
 def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
@@ -234,7 +234,7 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
         mock.patch.object(_chain.RunChain, "diff_since_base", return_value=_DIFF),
         mock.patch.object(review_mod, "run_panel", return_value=res),
     ):
-        out = wf.reviewer.critique(state, trigger="periodic", iteration=1)
+        out = wf.reviewer.critique(state, trigger="periodic", turn=1)
     assert out is not None
     assert "inconclusive" in out.text and "abstained" in out.text
     assert "No blocking findings" not in out.text

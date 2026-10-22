@@ -105,7 +105,7 @@ provider = "local"
 model = "test-model"
 
 [harness]
-max_iterations = 17
+max_turns = 17
 """,
         encoding="utf-8",
     )
@@ -129,7 +129,7 @@ max_iterations = 17
 
     code = run_mod.run_machine(mfile, reporter, config_paths=(explicit,))
     assert code == 0, said
-    assert child_overlays[0]["harness"]["max_iterations"] == 17  # type: ignore[index]
+    assert child_overlays[0]["harness"]["max_turns"] == 17  # type: ignore[index]
 
 
 def test_a_states_own_budget_is_judged_before_it_runs(

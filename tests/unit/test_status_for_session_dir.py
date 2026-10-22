@@ -70,7 +70,7 @@ _QUESTION: dict[str, object] = {
 
 
 _ANSWER: dict[str, object] = {"type": "approval.answer", "id": "approval-1", "approved": True}
-_RESUME: dict[str, object] = {"type": "loop.resume.start", "iteration": 2}
+_RESUME: dict[str, object] = {"type": "loop.resume.start", "turn": 2}
 
 
 def _end(reason: str, all_passed: bool = False) -> dict[str, object]:
@@ -355,7 +355,7 @@ def test_resume_clears_orphaned_pending_prompts() -> None:
         _START,
         _APPROVAL,
         _QUESTION,
-        {"type": "loop.resume.start", "iteration": 2},
+        {"type": "loop.resume.start", "turn": 2},
         _APPROVAL,
     ]
     state = viewmodel_state.fold_session(events)

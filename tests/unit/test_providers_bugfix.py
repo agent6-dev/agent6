@@ -651,7 +651,7 @@ def test_anthropic_temperature_400_retries_without_temperature_then_latches() ->
     assert resp.text == "hello"
 
     # The flag latched: a later call omits temperature from the very first request
-    # (no wasted 400 + full-context resend every iteration).
+    # (no wasted 400 + full-context resend every turn).
     bodies2: list[dict[str, Any]] = []
 
     def second_call(*_a: object, **k: object) -> _FakeJSONResponse:

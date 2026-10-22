@@ -219,7 +219,7 @@ def _plan_session_dir(repo: pathlib.Path, session_id: str) -> None:
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
-                "next_iteration": 1,
+                "next_turn": 1,
                 "root_task_id": None,
                 "original_task": "t",
                 "verify_command": [],
@@ -460,7 +460,7 @@ def test_a_resume_after_a_death_mid_turn_asks_nothing_and_keeps_the_record_for_t
         / _snapshot.TURN_IN_FLIGHT_NAME
     )
     flight = _snapshot.TurnInFlight(
-        iteration=1,
+        turn=1,
         assistant=({"type": "tool_use", "id": "c1", "name": "run_command", "input": {}},),
     )
     _snapshot.write_turn_marker(marker, flight)
@@ -521,7 +521,7 @@ def test_a_resume_over_an_in_flight_record_that_does_not_parse_leaves_it_to_the_
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
-                "next_iteration": 1,
+                "next_turn": 1,
                 "root_task_id": None,
                 "original_task": "t",
                 "verify_command": [],
@@ -530,7 +530,7 @@ def test_a_resume_over_an_in_flight_record_that_does_not_parse_leaves_it_to_the_
         encoding="utf-8",
     )
     marker = session_dir / _snapshot.TURN_IN_FLIGHT_NAME
-    marker.write_text('{"iteration": "one"}', encoding="utf-8")
+    marker.write_text('{"turn": "one"}', encoding="utf-8")
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)
@@ -542,7 +542,7 @@ def test_a_resume_over_an_in_flight_record_that_does_not_parse_leaves_it_to_the_
         == 0
     )
     assert "mid-turn" not in capsys.readouterr().err
-    assert marker.read_text(encoding="utf-8") == '{"iteration": "one"}'
+    assert marker.read_text(encoding="utf-8") == '{"turn": "one"}'
 
 
 def _unconfined(*_a: object, **_k: object) -> str:
@@ -696,13 +696,11 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "parked-LEAVES"
     _park_manifest(session_dir, preset="none", from_flag=False)
     cfg_path = tmp_path / "cfg.toml"
-    cfg_path.write_text(_PLANNER_AND_WORKER + "[harness]\nmax_iterations = 7\n", encoding="utf-8")
+    cfg_path.write_text(_PLANNER_AND_WORKER + "[harness]\nmax_turns = 7\n", encoding="utf-8")
     cfg = load_config(cfg_path)
 
     def _load(*_a: object, **_k: object) -> layer.EffectiveConfig:
-        return layer.EffectiveConfig(
-            config=cfg, sources={"harness.max_iterations": "global"}, layers=()
-        )
+        return layer.EffectiveConfig(config=cfg, sources={"harness.max_turns": "global"}, layers=())
 
     monkeypatch.setattr(layer, "load_effective", _load)
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)  # no key in a unit test
@@ -720,7 +718,7 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
         )
         == 0
     )
-    assert seen["explicit_leaves"] == frozenset({"harness.max_iterations"})
+    assert seen["explicit_leaves"] == frozenset({"harness.max_turns"})
 
 
 @pytest.mark.parametrize(
@@ -777,7 +775,7 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
-                "next_iteration": 1,
+                "next_turn": 1,
                 "root_task_id": None,
                 "original_task": "t",
                 "verify_command": [],
@@ -850,7 +848,7 @@ def test_the_resume_note_names_the_files_it_hands_to_the_operator(
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
-                "next_iteration": 1,
+                "next_turn": 1,
                 "root_task_id": None,
                 "original_task": "t",
                 "verify_command": [],
@@ -1159,7 +1157,7 @@ def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
-                "next_iteration": 1,
+                "next_turn": 1,
                 "root_task_id": None,
                 "original_task": "t",
                 "verify_command": [],
@@ -1384,3 +1382,32 @@ def test_a_parked_resume_hands_run_task_the_config_path(
     assert cli_resume._cmd_resume((config_path,), "parked-AAAA11", force=False) == 0
 
     assert seen == [(config_path,)]
+
+
+def test_a_snapshot_written_before_the_turn_rename_refuses_by_version(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A version-4 snapshot (`next_iteration`) refuses with the version message, not a traceback.
+
+    The turn rename changed the persisted shape under the same version, so an older in-flight
+    run failed validation instead of being told to start a new run.
+    """
+    snap = tmp_path / "loop_state.json"
+    snap.write_text(
+        json.dumps(
+            {
+                "version": 4,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_iteration": 1,
+                "root_task_id": None,
+                "original_task": "t",
+                "verify_command": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert _snapshot.SNAPSHOT_VERSION > 4
+    with pytest.raises(ValueError, match="version 4, not"):
+        _snapshot.load_session_snapshot(snap)

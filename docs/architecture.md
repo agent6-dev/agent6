@@ -64,8 +64,8 @@ Largest first; each unit is bounded by the one above it.
 | machine | a state-machine instance; each of its agent states hands one task to the harness | the `.asm.toml` and its journal |
 | fan-out | a `/parallel` group: N sessions on one task, compared and one imported | the coordinator's session |
 | session | one task's durable record: its dir, journal, task graph, chain of commits and memory use | the id; it holds several executions |
-| execution | one continuous run of the harness over a session, from a `run`, `resume` or `fork` to an end | `max_iterations` and the budget cap, re-armed per execution |
-| turn | one model call and everything the harness does with its answer: the tool dispatch, the advisors, the gates, the notices; a prose-only answer is a turn too; `iteration` is its index | one provider call |
+| execution | one continuous run of the harness over a session, from a `run`, `resume` or `fork` to an end | `max_turns` and the budget cap, re-armed per execution |
+| turn | one model call and everything the harness does with its answer: the tool dispatch, the advisors, the gates, the notices; a prose-only answer is a turn too; `turn` is its index | one provider call |
 | tool call | one tool the model asked for inside a turn; a finish is the last one executed | one dispatch |
 
 A step is not a loop unit: it is a commit on the session's chain, taken after a turn that changed the tree (a verified step or an un-gated checkpoint), the unit `commit_per_step` and the diff pane's step picker count.
@@ -198,7 +198,7 @@ Over a red gate it returns under the same cap, counted apart from the model's ow
 
 - only the operator retires it: `/standing` with a new goal, or stopping the run
 - while one exists, the soft out-of-work endings (`finish_session`, the settled family, a quiet turn) convert into re-entry
-- faults, operator verbs, the iteration cap, and a spent budget still end the run
+- faults, operator verbs, the turn cap, and a spent budget still end the run
 - a re-entry round landing no executed tool call escalates the nudge; `[harness].standing_patience` bounds the streak (`-1` default: never self-ends; landed work resets)
 - an interactive run parks the same way on a quiet turn: the conversation waits on the steer bridge; any composer or the pause menu continues it in place
 
@@ -394,7 +394,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `graph/**/*.md` | one markdown file per task node, nested under its parent, rewritten atomically (curator-owned) |
 | `cursor.json` | the curator's current task pointer |
 | `logs.jsonl` | the structured event stream |
-| `loop_state.json` | the latest resume snapshot, written before each LLM call and at iteration end |
+| `loop_state.json` | the latest resume snapshot, written before each LLM call and at turn end |
 | `checkpoints/<NNNN>.json` | per-turn snapshots at the pre-call boundary, carrying the run's chain tip (`head_sha`) and the curator `graph_version` |
 | `turn_in_flight.json` | the turn whose tool calls are dispatching, with each result that returned; gone once the snapshot holds the turn or the execution ends itself |
 | `plan.md` | the plan itself, in plan sessions |
@@ -487,8 +487,8 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | Event | Notable fields |
 | --- | --- |
 | `session.start` | `user_task` |
-| `loop.resume.start` | the execution a `resume` opens: `session_id`, `mode`, `iteration`, `messages` |
-| `loop.resume.interrupted` | the resumed execution found a turn its predecessor died in: `iteration`, and `tools`, the calls that never returned and are not re-run |
+| `loop.resume.start` | the execution a `resume` opens: `session_id`, `mode`, `turn`, `messages` |
+| `loop.resume.interrupted` | the resumed execution found a turn its predecessor died in: `turn`, and `tools`, the calls that never returned and are not re-run |
 | `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail`; a `run_command` ended by an immediate operator stop carries `stopped_by_operator: true` |
 | `verify.start` / `.end` | `cmd`, `exit_code`, `duration_s`, `*_tail` |
 | `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `decisions.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
@@ -515,9 +515,9 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.task.retired` | a task the operator dropped from the graph (`/retire`): `id`, `title` |
 | `loop.request.refused` | a `/task`, `/standing` or `/retire` the run could not apply: `kind`, `text`, `error` |
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.edit.left_out`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.steer.*` |
-| `loop.budget` | per-iteration usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
+| `loop.budget` | per-turn usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
 | `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, block_on, disarmed), `skipped`, and the finish gate's rejections |
-| `session.end` | `reason`, `iterations`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it), `verified` (the gate's word for the final tree, on every end the loop writes: `passed`, `failed`, `unverified` or `not_applicable`; `sessions show` prints it and `sessions merge` warns on `failed` and `unverified`), `tree` (a run's end the loop reached: the tree id of the working tree it left, with no commit made for it); a `setup_command_failed` end also carries `summary` (the failure diagnostic and output tail, including the no-route-out line when it applies); one shape from every exit path |
+| `session.end` | `reason`, `turns`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it), `verified` (the gate's word for the final tree, on every end the loop writes: `passed`, `failed`, `unverified` or `not_applicable`; `sessions show` prints it and `sessions merge` warns on `failed` and `unverified`), `tree` (a run's end the loop reached: the tree id of the working tree it left, with no commit made for it); a `setup_command_failed` end also carries `summary` (the failure diagnostic and output tail, including the no-route-out line when it applies); one shape from every exit path |
 | `session.stranded` | written after `session.end` when a finished run left its edits uncommitted and no commit landed (exit `5`); the status every surface prints then reads `not committed` |
 
 A `run_command` approval publishes as `approval.prompt`.

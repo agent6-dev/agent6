@@ -292,7 +292,7 @@ def test_a_resumed_turns_own_failure_does_not_borrow_a_stale_end_reason(
             json.dumps(e)
             for e in [
                 {"type": "session.start", "mode": "run", "user_task": "t"},
-                {"type": "session.end", "reason": "max_iterations", "all_passed": False},
+                {"type": "session.end", "reason": "max_turns", "all_passed": False},
             ]
         )
         + "\n",
@@ -303,7 +303,7 @@ def test_a_resumed_turns_own_failure_does_not_borrow_a_stale_end_reason(
     def _crashes_after_resuming(*_a: object, **_kw: object) -> int:
         with layout.logs_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({"type": "loop.resume.start"}) + "\n")
-        return 1  # a provider crash this turn, unrelated to any iteration cap
+        return 1  # a provider crash this turn, unrelated to any turn cap
 
     monkeypatch.setattr(resume, "resume_task", _crashes_after_resuming)
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
@@ -312,7 +312,7 @@ def test_a_resumed_turns_own_failure_does_not_borrow_a_stale_end_reason(
     reason = bridge.run(session, "keep going")
 
     assert reason == "refusal", (
-        f"got {reason!r}: the crash borrowed the old execution's max_iterations ending"
+        f"got {reason!r}: the crash borrowed the old execution's max_turns ending"
     )
 
 
@@ -510,14 +510,14 @@ def test_an_operator_stop_is_cancelled_not_a_refusal() -> None:
     from agent6.harness import _snapshot
 
     stopped = _snapshot.SessionResult(
-        completed=False, reason="steer_abort", summary="", iterations=1, tool_calls=1
+        completed=False, reason="steer_abort", summary="", turns=1, tool_calls=1
     )
     assert runner.stop_reason(finalize.session_exit_code(stopped)) == "cancelled"
 
 
-def test_the_iteration_cap_uses_acps_specific_stop_reason() -> None:
-    """The iteration cap is ACP's maximum agent requests between user turns, not a refusal."""
-    assert runner.stop_reason(1, end_reason="max_iterations") == "max_turn_requests"
+def test_the_turn_cap_uses_acps_specific_stop_reason() -> None:
+    """The turn cap is ACP's maximum agent requests between user turns, not a refusal."""
+    assert runner.stop_reason(1, end_reason="max_turns") == "max_turn_requests"
 
 
 def test_a_deliberate_finish_over_a_red_gate_is_end_turn() -> None:
@@ -898,7 +898,7 @@ def test_a_refused_second_turn_does_not_inherit_the_first_turns_reason(
 ) -> None:
     """A resume refused before its own session.end does not report the first turn's end.
 
-    An iteration-capped first turn made a refused second turn report max_turn_requests.
+    A first execution that hit max_turns made a refused resume report max_turn_requests.
     """
     from agent6 import event_log
 
@@ -919,7 +919,7 @@ def test_a_refused_second_turn_does_not_inherit_the_first_turns_reason(
         layout.ensure()
         events = event_log.EventSink(layout.logs_path)
         events.emit("session.start", mode="run", user_task="t")
-        events.emit("session.end", reason="max_iterations", all_passed=False)
+        events.emit("session.end", reason="max_turns", all_passed=False)
         (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
         return 1
 
@@ -1012,7 +1012,7 @@ def test_a_gated_call_reads_pending_on_the_wire(
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         approved = prompts.approve("Allow run_command: ls", scope="command", call_id=1)
         events.emit("tool.result", name="run_command", ok=approved, summary="ok", call_id=1)
-        events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
         return 0
 
     monkeypatch.setattr(run, "run_task", _gated_run)
@@ -1116,16 +1116,16 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns(
         events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         events.emit("tool.result", name="run_command", ok=False, summary="no", call_id=1)
-        events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
         (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
         return 0
 
     def _resume_task(_config_path: object, session_id: str, **_kw: Any) -> int:
         events = event_log.EventSink(_layout(session_id).logs_path)
-        events.emit("loop.resume.start", session_id=session_id, mode="run", iteration=2)
+        events.emit("loop.resume.start", session_id=session_id, mode="run", turn=2)
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         events.emit("tool.result", name="run_command", ok=True, summary="ok", call_id=1)
-        events.emit("session.end", reason="finish_session", iterations=2, all_passed=True)
+        events.emit("session.end", reason="finish_session", turns=2, all_passed=True)
         return 0
 
     monkeypatch.setattr(run, "run_task", _run_task)
@@ -1298,7 +1298,7 @@ def test_the_runs_notices_reach_the_editor(
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = event_log.EventSink(layout.logs_path)
         events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
-        events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
         reporter = kw["reporter"]
         assert isinstance(reporter, app_reporter.Reporter)
         reporter.out("\nchanges are on agent6/run-x")
@@ -1349,7 +1349,7 @@ def test_the_editor_gets_each_ending_fact_once(
         events = event_log.EventSink(layout.logs_path)
         events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
         events.emit("budget.update", usd_total=0.0028)
-        events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
         reporter = kw["reporter"]
         assert isinstance(reporter, app_reporter.Reporter)
         reporter.cost("Token + cost summary:\n  TOTAL: in=839 out=253 cost=$0.0028 of $0.0500")
@@ -1464,7 +1464,7 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
         approved = prompts.approve("Allow run_command: ls", scope="command", call_id=1)
         events.emit("tool.result", name="read_file", ok=True, summary="ok", call_id=2)
         events.emit("tool.result", name="run_command", ok=approved, summary="ok", call_id=1)
-        events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
         return 0
 
     monkeypatch.setattr(run, "run_task", _gated_run)
@@ -1725,7 +1725,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
     sink = event_log.EventSink(log)
     sink.emit("tool.call", name="apply_edit", args={"path": "src/x.py"}, call_id=1)
     sink.emit("tool.result", name="apply_edit", call_id=1, ok=True, paths=["src/x.py", "src/x.py"])
-    sink.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+    sink.emit("session.end", reason="finish_session", turns=1, all_passed=True)
 
     bridge._stream(  # pyright: ignore[reportPrivateUsage]
         session, log, lambda: True, 0, runner.Announced(turn=1)

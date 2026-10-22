@@ -191,7 +191,7 @@ class Compactor:
     ) -> bool:
         """Replace the history with the task plus a model-written summary, in place.
 
-        The loop calls this at the top of an iteration, where every `tool_use`
+        The loop calls this at the top of a turn, where every `tool_use`
         has its `tool_result`, so the restart drops the middle without orphaning
         a pairing.
 
@@ -298,7 +298,7 @@ class Compactor:
             + summary,
             keep=turns[tail_start:],
         )
-        # Measured as the trigger is, prefix included, or tier 2 re-fires next iteration.
+        # Measured as the trigger is, prefix included, or tier 2 re-fires next turn.
         state.tier2_floor_chars = int(
             (_compaction.context_chars(conversation) + prefix_chars) * 1.25
         )

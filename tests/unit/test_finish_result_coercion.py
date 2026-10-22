@@ -27,7 +27,7 @@ def _wf(**kw: Any) -> loop.Harness:
 def _capture(tool_input: dict[str, Any]) -> _finish_gates.FinishCall:
     wf = _wf()
     turn = _loop_state.TurnState(
-        iteration=1, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        turn=1, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
     )
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     wf._capture_finish(state, turn, "finish_session", tool_input)  # pyright: ignore[reportPrivateUsage]

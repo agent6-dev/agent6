@@ -19,8 +19,8 @@ def _mk(d: pathlib.Path) -> None:
     d.mkdir(parents=True)
     events = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "loop.auto_commit", "iteration": 1, "sha": "a" * 40, "subject": "one"},
-        {"type": "loop.auto_commit", "iteration": 2, "sha": "b" * 40, "subject": "two"},
+        {"type": "loop.auto_commit", "turn": 1, "sha": "a" * 40, "subject": "one"},
+        {"type": "loop.auto_commit", "turn": 2, "sha": "b" * 40, "subject": "two"},
         {"type": "session.end", "reason": "finish_session", "all_passed": True},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
@@ -30,7 +30,7 @@ def _no_patch(self: _diff_pane.DiffPane, sha: str) -> str:
     return "(no diff)"  # the diff pane's git read is not under test
 
 
-def test_a_selected_step_relabels_the_details_as_of_that_iteration(
+def test_a_selected_step_relabels_the_details_as_of_that_turn(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     d = tmp_path / "s1"
@@ -45,8 +45,8 @@ def test_a_selected_step_relabels_the_details_as_of_that_iteration(
             dash.diff.step_sel = "a" * 40
             dash.render_state()
             await pilot.pause()
-            assert dash.query_one("#plan", widgets.Tree).border_title == "tasks · as of iter 1"
-            assert "as of iter 1" in str(dash.query_one("#top", widgets.Static).render())
+            assert dash.query_one("#plan", widgets.Tree).border_title == "tasks · as of turn 1"
+            assert "as of turn 1" in str(dash.query_one("#top", widgets.Static).render())
             dash.diff.step_sel = ""
             dash.render_state()
             await pilot.pause()
@@ -68,7 +68,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_step(
             "cursor": "t1",
             "nodes": {"t1": {"title": "first", "parent_id": None, "status": "pending"}},
         },
-        {"type": "loop.auto_commit", "iteration": 1, "sha": "a" * 40, "subject": "one"},
+        {"type": "loop.auto_commit", "turn": 1, "sha": "a" * 40, "subject": "one"},
         {
             "type": "graph.update",
             "cursor": "t2",
@@ -77,7 +77,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_step(
                 "t2": {"title": "second", "parent_id": None, "status": "pending"},
             },
         },
-        {"type": "loop.auto_commit", "iteration": 2, "sha": "b" * 40, "subject": "two"},
+        {"type": "loop.auto_commit", "turn": 2, "sha": "b" * 40, "subject": "two"},
         {"type": "session.end", "reason": "finish_session", "all_passed": True},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
@@ -91,13 +91,13 @@ def test_the_top_line_counts_tasks_as_of_the_selected_step(
             dash.render_state()
             await pilot.pause()
             live = str(dash.query_one("#top", widgets.Static).render())
-            assert "tasks: 1/2" in live and "as of iter" not in live
+            assert "tasks: 1/2" in live and "as of turn" not in live
             dash.diff.step_sel = "a" * 40
             dash.render_state()
             await pilot.pause()
             top = str(dash.query_one("#top", widgets.Static).render())
             assert "tasks: 0/1" in top
-            assert top.index("cost:") < top.index("as of iter 1")
+            assert top.index("cost:") < top.index("as of turn 1")
 
     asyncio.run(scenario())
 

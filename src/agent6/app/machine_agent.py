@@ -461,7 +461,7 @@ def run_one(
             per_step=cfg.git.commit_per_step,
         ),
         config=cfg,
-        max_iterations=cfg.harness.max_iterations,
+        max_turns=cfg.harness.max_turns,
         provider=provider,
         dispatcher=dispatcher,
         logger=reporter.err,

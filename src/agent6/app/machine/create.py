@@ -225,7 +225,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         git_ops.init_repo(workspace)
     except (OSError, errors.GitError) as exc:
         reporter.error(f"could not prepare the drafting workspace {workspace}: {exc}")
-        events.emit("session.end", reason="workspace_failed", iterations=0, all_passed=False)
+        events.emit("session.end", reason="workspace_failed", turns=0, all_passed=False)
         return 1
     # The complete effective config as the overlay: omitting values equal to built-in defaults
     # loses an explicit repo reset when the workspace reloads the operator's global layer.
@@ -245,7 +245,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         )
     except errors.GitError as exc:
         reporter.error(str(exc))
-        events.emit("session.end", reason="no_git_identity", iterations=0, all_passed=False)
+        events.emit("session.end", reason="no_git_identity", turns=0, all_passed=False)
         return 2
     runner = machine_agent.build_machine_agent_runner(
         # The authoring agent is no state: its requests carry the empty name.
@@ -375,9 +375,9 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         output_total=total_out,
         plan_consumed=total_plan,
     )
-    # session.end reasons are tokens: the listing prints one beside "failed". iterations = attempts.
+    # session.end reasons are tokens: the listing prints one beside "failed". turns = attempts.
     if spec is None or valid_path is None:
-        events.emit("session.end", reason="no_valid_machine", iterations=attempt, all_passed=False)
+        events.emit("session.end", reason="no_valid_machine", turns=attempt, all_passed=False)
         reporter.err(f"FAILED: no valid machine after {attempt} attempt(s).")
         if diagnostics:
             reporter.err("Last diagnostics:")
@@ -396,7 +396,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     ]
     # The default path clobbers nothing, scripts included; `-o` replaces existing targets.
     if output is None and existing:
-        events.emit("session.end", reason="output_collision", iterations=attempt, all_passed=False)
+        events.emit("session.end", reason="output_collision", turns=attempt, all_passed=False)
         reporter.err("REFUSING to overwrite existing file(s):")
         for clash in existing:
             reporter.err(f"  {clash}")
@@ -409,7 +409,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         _write_scripts(target.parent, valid_scripts)
         portable.atomic_write(target, payload)
     except OSError as exc:
-        events.emit("session.end", reason="write_failed", iterations=attempt, all_passed=False)
+        events.emit("session.end", reason="write_failed", turns=attempt, all_passed=False)
         reporter.err(f"FAILED: could not write the bundle to {target.parent}: {exc}")
         reporter.err(f"The validated bundle is in {workspace}; it is also on stdout.")
         reporter.out(payload.removesuffix("\n"))
@@ -417,12 +417,12 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     # A pre-existing symlink under scripts/ can make the published bundle differ: check it.
     out_problems = _bundle.validate_bundle(spec, target)
     if out_problems:
-        events.emit("session.end", reason="bundle_invalid", iterations=attempt, all_passed=False)
+        events.emit("session.end", reason="bundle_invalid", turns=attempt, all_passed=False)
         reporter.err(f"FAILED: the bundle written to {target.parent} does not validate:")
         for problem in out_problems:
             reporter.err(f"  - {problem}")
         return 1
-    events.emit("session.end", reason="machine_created", iterations=attempt, all_passed=True)
+    events.emit("session.end", reason="machine_created", turns=attempt, all_passed=True)
     scripts_note = f" + {len(valid_scripts)} script(s)" if valid_scripts else ""
     replaced_note = (
         f"; replaced {', '.join(repr(str(path)) for path in existing)}" if existing else ""

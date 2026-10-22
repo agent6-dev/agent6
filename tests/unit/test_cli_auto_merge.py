@@ -81,8 +81,8 @@ def test_auto_merge_squashes_and_lands_on_base(
         tmp_path,
         "run-AM1111",
         commits=[
-            ("a.txt", "a\n", "agent6 iter 1: add a"),
-            ("b.txt", "b\n", "agent6 iter 2: add b"),
+            ("a.txt", "a\n", "agent6 turn 1: add a"),
+            ("b.txt", "b\n", "agent6 turn 2: add b"),
         ],
         run_branch="agent6/run-AM1111",
     )
@@ -117,7 +117,7 @@ def test_auto_merge_refuses_a_manifest_with_no_base_sha(
     base = _setup_run_on_branch(
         tmp_path,
         "run-NB1111",
-        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        commits=[("a.txt", "a\n", "agent6 turn 1: add a")],
         run_branch="agent6/run-NB1111",
     )
     layout = sessions_layout.SessionLayout(paths.state_dir(tmp_path), "run-NB1111")
@@ -140,7 +140,7 @@ def test_auto_merge_lands_the_hidden_chain_ref(
     base = _setup_run_on_branch(
         tmp_path,
         "run-AMREF1",
-        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        commits=[("a.txt", "a\n", "agent6 turn 1: add a")],
         run_branch=None,
     )
     _git(tmp_path, "update-ref", git_ops.chain_ref_for("run-AMREF1"), "agent6/run-AMREF1")
@@ -171,7 +171,7 @@ def test_auto_merge_noop_without_run_branch(
     base = _setup_run_on_branch(
         tmp_path,
         "run-AM2222",
-        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        commits=[("a.txt", "a\n", "agent6 turn 1: add a")],
         run_branch=None,  # branch_per_run was off
     )
     cfg = layer.load_effective(tmp_path, ()).config
@@ -193,7 +193,7 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     _setup_run_on_branch(
         tmp_path,
         "run-AM3333",
-        commits=[("conflict.txt", "from-run\n", "agent6 iter 1: edit")],
+        commits=[("conflict.txt", "from-run\n", "agent6 turn 1: edit")],
         run_branch="agent6/run-AM3333",
     )
     # Make base diverge so the squash conflicts on the same file.
@@ -213,7 +213,7 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     assert _git(tmp_path, "status", "--porcelain") == ""  # nothing touched, no partial merge
     assert _git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD") == "main"  # never switched
     # The run branch keeps its commit, and the conflicted merge advanced main by nothing.
-    assert "agent6 iter 1: edit" in _git(tmp_path, "log", "--oneline", "agent6/run-AM3333")
+    assert "agent6 turn 1: edit" in _git(tmp_path, "log", "--oneline", "agent6/run-AM3333")
     assert _git(tmp_path, "rev-parse", "main") == diverged
 
 
@@ -224,7 +224,7 @@ def test_auto_merge_skips_when_base_branch_is_gone(
     _setup_run_on_branch(
         tmp_path,
         "run-GONE11",
-        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        commits=[("a.txt", "a\n", "agent6 turn 1: add a")],
         run_branch="agent6/run-GONE11",
     )
     # operator deleted the base branch mid-run (detach first; -D refuses on HEAD)
@@ -254,7 +254,7 @@ def test_auto_prune_deletes_reachable_merge_branch(
     _setup_run_on_branch(
         tmp_path,
         "run-AP1111",
-        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        commits=[("a.txt", "a\n", "agent6 turn 1: add a")],
         run_branch="agent6/run-AP1111",
     )
     cfg = layer.load_effective(tmp_path, ()).config
@@ -279,7 +279,7 @@ def test_auto_prune_follows_a_recorded_noop_merge(
     _setup_run_on_branch(
         tmp_path,
         "run-AP3333",
-        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        commits=[("a.txt", "a\n", "agent6 turn 1: add a")],
         run_branch="agent6/run-AP3333",
     )
     _git(tmp_path, "update-ref", "refs/heads/main", "agent6/run-AP3333")  # main has it already
@@ -305,7 +305,7 @@ def test_auto_prune_keeps_squash_branch(
     _setup_run_on_branch(
         tmp_path,
         "run-AP2222",
-        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        commits=[("a.txt", "a\n", "agent6 turn 1: add a")],
         run_branch="agent6/run-AP2222",
     )
     cfg = layer.load_effective(tmp_path, ()).config

@@ -127,7 +127,7 @@ standing goal** (`run_perf_chatgpt.sh`, official `score.sh`):
 | 2026-09-05 | the same run resumed for a second leg | 1132 | 130.51× | 8 | +99 min | 3.76M / 94k | yes |
 
 Plan-metered, $0 (the second run: 10 points of the plan for its first leg
-and 7 for the resumed one, each leg ending at the 200-iteration cap); the
+and 7 for the resumed one, each leg ending at the 200-turn cap); the
 best of every prior run here is 26.1×, and the upstream tests' eleven-hour
 Opus 4.5 mark is 1487.
 

@@ -54,7 +54,7 @@ class MetricSampler:
         history: list[_metric.MetricSample],
         result: results.MetricResult,
         *,
-        iteration: int,
+        turn: int,
         label: str,
         sha: str,
     ) -> str | None:
@@ -63,7 +63,7 @@ class MetricSampler:
         Args:
             history: The run's samples so far; the new one is appended.
             result: The command's result.
-            iteration: The turn the reading belongs to.
+            turn: The turn the reading belongs to.
             label: The sample's name in the feedback block.
             sha: The commit the reading covers, or "".
 
@@ -91,7 +91,7 @@ class MetricSampler:
         history.append(sample)
         self.emit(
             "loop.metric.sample",
-            iteration=iteration,
+            turn=turn,
             label=label,
             score=score,
             returncode=result.returncode,
@@ -99,9 +99,7 @@ class MetricSampler:
         )
         return _metric.format_metric_feedback(history, goal=goal)
 
-    def auto_feedback(
-        self, state: _loop_state.LoopState, *, iteration: int, sha: str
-    ) -> str | None:
+    def auto_feedback(self, state: _loop_state.LoopState, *, turn: int, sha: str) -> str | None:
         """Take the harness's own reading after a committed edit, verified or a checkpoint.
 
         A failed reading is a sample with its error; a denied one also withholds the automatic
@@ -110,7 +108,7 @@ class MetricSampler:
 
         Args:
             state: The loop state holding the metric history and the denial flag.
-            iteration: The turn the reading belongs to.
+            turn: The turn the reading belongs to.
             sha: The commit the reading covers, or "".
 
         Returns:
@@ -120,8 +118,8 @@ class MetricSampler:
         if not self.active or goal is None:
             return None
         history = state.metric.history
-        self.log(f"LOOP: auto metric after the committed edit at iter {iteration}")
-        self.emit("loop.metric.auto_call", iteration=iteration, sha=sha[:12])
+        self.log(f"LOOP: auto metric after the committed edit at turn {turn}")
+        self.emit("loop.metric.auto_call", turn=turn, sha=sha[:12])
         try:
             result = self.dispatcher.dispatch("run_metric_command", {})
         except errors.ToolError as exc:
@@ -131,19 +129,17 @@ class MetricSampler:
                 error += "; the automatic metric is withheld for the rest of the run"
             history.append(
                 _metric.MetricSample(
-                    label=f"auto iter {iteration}",
+                    label=f"auto turn {turn}",
                     score=None,
                     returncode=None,
                     sha=sha,
                     error=error,
                 )
             )
-            self.emit("loop.metric.auto_failed", iteration=iteration, error=error[:200])
+            self.emit("loop.metric.auto_failed", turn=turn, error=error[:200])
             return _metric.format_metric_feedback(history, goal=goal)
         assert isinstance(result, results.MetricResult)  # run_metric_command's result type
-        return self.record(
-            history, result, iteration=iteration, label=f"auto iter {iteration}", sha=sha
-        )
+        return self.record(history, result, turn=turn, label=f"auto turn {turn}", sha=sha)
 
     def plateau_finish(self, history: list[_metric.MetricSample]) -> str | None:
         """Return the plateau summary for this run, or None when it does not measure."""

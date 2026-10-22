@@ -41,7 +41,7 @@ class OperatorBridge:
     The defaults do nothing: a loop with no operator runs unattended.
 
     Attributes:
-        steer_requested: Polled between iterations; a positive asks `steer_prompt`.
+        steer_requested: Polled between turns; a positive asks `steer_prompt`.
         steer_clear: Consumes the steer request.
         steer_prompt: The operator's instruction, or None.
         steer_reset: Called at each execution entry; disarms a SIGINT stage the prior execution
@@ -49,7 +49,7 @@ class OperatorBridge:
         compact_requested: Polled at the pre-call boundary; a positive forces the tier-2
             summarise-and-restart. The marker travels the same file bridge as steer.
         compact_clear: Consumes the compact request.
-        stop_requested: Polled at each completed-iteration boundary; a positive ends the run
+        stop_requested: Polled at each completed-turn boundary; a positive ends the run
             cleanly there. The mid-turn immediate stop is the steer "abort" answer.
         stop_is_now: Whether the stop marker asks to interrupt the step's running command.
         stop_clear: Consumes the stop request.
@@ -58,7 +58,7 @@ class OperatorBridge:
             so the watchdog ends the turn and the loop reaches its steer boundary at once.
         take_requests: What the operator queued for the graph (`/task`, `/standing`, `/retire`)
             since the last call, oldest first.
-        after_auto_commit: Called with the iteration and sha of each landed auto-commit; "stop"
+        after_auto_commit: Called with the turn and sha of each landed auto-commit; "stop"
             ends the loop as interactive_stop, "undo" takes the `/undo` path, "continue" runs on.
         undo_forker: `/undo`: commits the tree onto the session's ref, forks the session before
             its last operator message and restores that tree; returns the new session id and
@@ -135,19 +135,19 @@ class Steering:
     def handle(
         self,
         conversation: _conversation.Conversation,
-        iteration: int,
+        turn: int,
         state: _loop_state.LoopState,
         *,
         heading: str = "OPERATOR STEERING (a mid-run instruction from the operator):",
     ) -> str | None:
-        """Take the operator's steer between iterations.
+        """Take the operator's steer between turns.
 
-        The boundary is between completed iterations, so a tool_use and tool_result pair is
+        The boundary is between completed turns, so a tool_use and tool_result pair is
         never split.
 
         Args:
             conversation: The run's conversation.
-            iteration: The iteration just completed.
+            turn: The turn just completed.
             state: The loop state.
             heading: The notice introducing the operator's instruction.
 
@@ -158,8 +158,8 @@ class Steering:
         """
         if not self.bridge.steer_requested():
             return None
-        self.emit("loop.steer.requested", iteration=iteration)
-        self.log(f"STEER: operator steering at iter {iteration}")
+        self.emit("loop.steer.requested", turn=turn)
+        self.log(f"STEER: operator steering at turn {turn}")
         try:
             text = self.bridge.steer_prompt()
         finally:
@@ -176,7 +176,7 @@ class Steering:
         # The steer is new work: the idle turns before it say nothing about the turns after.
         state.settled.restart()
         if (
-            self.directive(conversation, iteration, state, steer_text)
+            self.directive(conversation, turn, state, steer_text)
             or self.pin(conversation, state, steer_text)
             or self.skill(conversation, steer_text)
         ):
@@ -263,7 +263,7 @@ class Steering:
     def directive(
         self,
         conversation: _conversation.Conversation,
-        iteration: int,
+        turn: int,
         state: _loop_state.LoopState,
         steer_text: str,
     ) -> bool:
@@ -271,7 +271,7 @@ class Steering:
 
         Args:
             conversation: The run's conversation.
-            iteration: The iteration just completed.
+            turn: The turn just completed.
             state: The loop state.
             steer_text: The steer as typed.
 
@@ -285,5 +285,5 @@ class Steering:
             return True
         if segments is None:
             return False
-        self.parallel().dispatch(conversation, iteration, state, segments)
+        self.parallel().dispatch(conversation, turn, state, segments)
         return True

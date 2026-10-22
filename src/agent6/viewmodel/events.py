@@ -133,7 +133,7 @@ class DiffUpdated:
 class AutoCommit:
     """One per-step commit on the run's chain (`loop.auto_commit`)."""
 
-    iteration: int
+    turn: int
     sha: str
     subject: str
 
@@ -559,7 +559,8 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             return DiffUpdated(patch=str(raw.get("patch", "")), sha=str(raw.get("sha", "")))
         case "loop.auto_commit":
             return AutoCommit(
-                iteration=as_int(raw.get("iteration")),
+                # Journals written before the turn rename stamp `iteration`.
+                turn=as_int(raw.get("turn", raw.get("iteration"))),
                 sha=str(raw.get("sha") or ""),
                 subject=str(raw.get("subject") or ""),
             )

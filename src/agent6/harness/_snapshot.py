@@ -46,7 +46,7 @@ SessionEndReason = Literal[
     "detached",
     "prompt_revision_failed",
     "plan_unreadable",
-    "max_iterations",
+    "max_turns",
     "ask_repl_empty",
     "gate_stale",
     "gate_red_at_base",
@@ -91,7 +91,7 @@ class SessionResult:
         detached: the operator chose detach; the CLI respawns a detached resume.
         prompt_revision_failed: revise_prompt failed before the worker loop.
         plan_unreadable: plan mode could not re-read plan.md (resumable).
-        max_iterations: the iteration cap was hit without a finish.
+        max_turns: the turn cap was hit without a finish.
         ask_repl_empty: an interactive ask session ended with no question (the CLI).
         gate_stale: the worker finished over a red gate it declares stale, with a replacement
             proposed; the gate is unchanged and the run does not pass.
@@ -105,7 +105,7 @@ class SessionResult:
         completed: Whether the model stopped deliberately; never whether the work verified.
         reason: The end reason.
         summary: The end's summary text.
-        iterations: The turns run.
+        turns: The turns run.
         tool_calls: The tool calls made.
         finish_payload: The finish tool's payload, when any.
         stale_gate: The replacement gate the worker last proposed in any finish_session call
@@ -116,7 +116,7 @@ class SessionResult:
     completed: bool
     reason: SessionEndReason
     summary: str
-    iterations: int
+    turns: int
     tool_calls: int
     finish_payload: dict[str, Any] | None = None
     stale_gate: str = ""
@@ -161,9 +161,7 @@ class ResumeError(Exception):
 
 
 # Bump on any change to the persisted shape: an older in-flight run then refuses to resume or fork.
-SNAPSHOT_VERSION = 4
-# Keys a version-4 snapshot on disk may hold that nothing reads; the load drops them.
-_RETIRED_KEYS = ("memory_finish_nudged",)
+SNAPSHOT_VERSION = 5
 
 
 class SessionSnapshot(pydantic.BaseModel):
@@ -180,7 +178,7 @@ class SessionSnapshot(pydantic.BaseModel):
         system: The frozen system prompt.
         messages: The conversation.
         tool_calls: The tool calls made so far.
-        next_iteration: The turn the snapshot's provider call runs.
+        next_turn: The turn the snapshot's provider call runs.
         root_task_id: The task graph's root, when the run has one.
         original_task: The exact task text the run launched with; the manifest holds a
             truncated display twin.
@@ -222,7 +220,7 @@ class SessionSnapshot(pydantic.BaseModel):
     system: str
     messages: list[dict[str, Any]]
     tool_calls: int
-    next_iteration: int
+    next_turn: int
     root_task_id: str | None
     original_task: str
     verify_command: tuple[str, ...]
@@ -294,8 +292,6 @@ def load_session_snapshot(path: pathlib.Path) -> SessionSnapshot:
             f"run-state snapshot at {path} is version {version!r}, not {SNAPSHOT_VERSION}: this "
             "run predates a state-format change and cannot be resumed or forked. Start a new run."
         )
-    for key in _RETIRED_KEYS:
-        raw.pop(key, None)
     try:
         return SessionSnapshot.model_validate(raw)
     except pydantic.ValidationError as exc:
@@ -311,14 +307,14 @@ class TurnInFlight(pydantic.BaseModel):
     """Hold the turn whose tools are dispatching, for a resume after the execution dies in it.
 
     Attributes:
-        iteration: The turn.
+        turn: The turn.
         assistant: The assistant message's content blocks, verbatim.
         results: The result content of each call that returned, in call order.
     """
 
     model_config = pydantic.ConfigDict(frozen=True, extra="forbid")
 
-    iteration: int
+    turn: int
     assistant: tuple[Any, ...]
     results: tuple[str, ...] = ()
 
@@ -408,7 +404,7 @@ def fold_interrupted_turn(
     folded = snapshot.model_copy(
         update={
             "messages": conversation.to_wire(),
-            "next_iteration": flight.iteration + 1,
+            "next_turn": flight.turn + 1,
             "tool_calls": snapshot.tool_calls + returned,
         }
     )

@@ -43,9 +43,9 @@ def _state(**kw: Any) -> _loop_state.LoopState:
     return _loop_state.LoopState(original_task="t", tool_calls=0, **kw)
 
 
-def _turn(iteration: int = 1, **kw: Any) -> _loop_state.TurnState:
+def _turn(turn: int = 1, **kw: Any) -> _loop_state.TurnState:
     return _loop_state.TurnState(
-        iteration=iteration,
+        turn=turn,
         resp=mock.MagicMock(),
         assistant=_conversation.AssistantTurn((), ()),
         **kw,
@@ -72,7 +72,7 @@ def _flip(
     wf: loop.Harness, state: _loop_state.LoopState, turn: _loop_state.TurnState
 ) -> str | None:
     """The flip advisory's text for this turn, as the advisor answers it."""
-    ctx = wf._turn_context(state, iteration=turn.iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.turn, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     nudge = _guards.memory_flip(turn, state, ctx)
     return None if nudge is None else nudge.text
 
@@ -247,7 +247,7 @@ def test_a_finish_after_a_recovery_is_honoured_at_once() -> None:
     _verify(wf, state, _turn(1), rc=1)
     flip = _turn(2, finish=_finish_gates.FinishCall("finish_session", "done"))
     _verify(wf, state, flip, rc=0)
-    ctx = wf._turn_context(state, iteration=2, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=2, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._turn_advisors(state, flip, ctx)  # pyright: ignore[reportPrivateUsage]
     wf._turn_finish_gates(state, flip, ctx)  # pyright: ignore[reportPrivateUsage]
     assert flip.finish is not None
@@ -263,7 +263,7 @@ def test_the_flip_advisory_follows_the_config_key() -> None:
         _verify(wf, state, _turn(1), rc=1)
         flip = _turn(2)
         _verify(wf, state, flip, rc=0)
-        ctx = wf._turn_context(state, iteration=2, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+        ctx = wf._turn_context(state, turn=2, execution_start=1)  # pyright: ignore[reportPrivateUsage]
         wf._turn_advisors(state, flip, ctx)  # pyright: ignore[reportPrivateUsage]
         assert _notice_texts(flip) == sent
         assert state.memory.flip_nudged is bool(sent)

@@ -95,7 +95,7 @@ def test_a_run_can_be_seeded_from_an_ask(
         encoding="utf-8",
     )
     (ask / "logs.jsonl").write_text(
-        json.dumps({"type": "session.end", "reason": "answered", "iterations": 1}) + "\n",
+        json.dumps({"type": "session.end", "reason": "answered", "turns": 1}) + "\n",
         encoding="utf-8",
     )
     composed = cli_run._compose_task("do it", Config(), skills=(), seed_from="quiet-fox-AAAAAA")

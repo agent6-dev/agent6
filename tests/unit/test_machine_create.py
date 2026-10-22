@@ -251,7 +251,7 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
     config_home = tmp_path / "config"
     (config_home / "agent6").mkdir(parents=True)
     (config_home / "agent6" / "config.toml").write_text(
-        "[harness]\nmax_iterations = 7\n", encoding="utf-8"
+        "[harness]\nmax_turns = 7\n", encoding="utf-8"
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
     _stub_preflight(monkeypatch)  # models a repo resetting 7 to the built-in default
@@ -264,7 +264,7 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
         overlay = overlays[""].overlay
-        seen.append(layer.load_effective_with_overlay(root, overlay).config.harness.max_iterations)
+        seen.append(layer.load_effective_with_overlay(root, overlay).config.harness.max_turns)
 
         def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             _write_draft(root, _draft(VALID_MACHINE))
@@ -274,7 +274,7 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
 
     monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user"]) == 0
-    assert seen == [Config().harness.max_iterations]
+    assert seen == [Config().harness.max_turns]
 
 
 def test_create_takes_the_budget_flags_run_takes(
@@ -428,9 +428,9 @@ def test_create_writes_watchable_event_log(
     assert events[0]["type"] == "session.start"
     assert events[0]["user_task"] == "Greet the user"  # the dashboard header
     end = next(e for e in events if e["type"] == "session.end")
-    # session.end carries reason, iterations (authoring attempts) and all_passed.
-    assert {"reason", "iterations", "all_passed"} <= end.keys()
-    assert end["iterations"] == 1
+    # session.end carries reason, turns (authoring attempts) and all_passed.
+    assert {"reason", "turns", "all_passed"} <= end.keys()
+    assert end["turns"] == 1
     assert end["all_passed"] is True
 
 
@@ -723,7 +723,7 @@ def test_create_surfaces_a_reason_per_failed_attempt(
         [
             (
                 {},
-                AgentExecResult(payload=None, reason="max_iterations", usd=0.0),
+                AgentExecResult(payload=None, reason="max_turns", usd=0.0),
             ),  # returned no draft
             (  # a structurally invalid draft
                 _draft(INVALID_MACHINE),
@@ -757,7 +757,7 @@ def test_create_no_payload_gives_diagnostic_and_retries(
     _stub_runner(
         monkeypatch,
         [
-            ({}, AgentExecResult(payload=None, reason="max_iterations", usd=0.0)),
+            ({}, AgentExecResult(payload=None, reason="max_turns", usd=0.0)),
             (
                 _draft(VALID_MACHINE),
                 AgentExecResult(payload=None, reason="finish_session", usd=0.01),
@@ -938,7 +938,7 @@ def test_create_attempts_share_one_budget_ledger(
     logs = next((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
     end = next(e for e in events if e["type"] == "session.end")
-    assert end["iterations"] == 2
+    assert end["turns"] == 2
 
 
 def test_create_writes_script_bundle(
@@ -1195,7 +1195,7 @@ def test_create_failure_end_reason_names_the_failure(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [({}, AgentExecResult(payload=None, reason="max_iterations", usd=0.0))],
+        [({}, AgentExecResult(payload=None, reason="max_turns", usd=0.0))],
     )
     assert main(["machine", "create", "Greet the user", "--max-attempts", "1"]) == 1
 

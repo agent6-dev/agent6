@@ -93,7 +93,7 @@ def _build_wf(
         dispatcher=dispatcher,
         logger=_silent,
         call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
-        max_iterations=10,
+        max_turns=10,
     )
 
 
@@ -223,7 +223,7 @@ def test_loop_guard_does_not_fire_when_args_change(tmp_path: pathlib.Path) -> No
 
 
 def test_loop_guard_does_not_re_fire_back_to_back(tmp_path: pathlib.Path) -> None:
-    """Once notice is emitted at iter N, do not emit again at iter N+1 even if streak continues."""
+    """Once notice is emitted at turn N, do not emit again at turn N+1 even if streak continues."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
@@ -241,7 +241,7 @@ def test_loop_guard_does_not_re_fire_back_to_back(tmp_path: pathlib.Path) -> Non
     last_args = provider.call.call_args_list[-1]
     final_messages: list[dict[str, Any]] = last_args.kwargs.get("messages") or last_args.args[1]
     notices = _loop_guard_blocks(final_messages)
-    # Fires at streak 3, suppressed at iter 4, re-emitted at iter 5: two notices, not one per turn.
+    # Fires at streak 3, suppressed at turn 4, re-emitted at turn 5: two notices, not one per turn.
     assert 1 <= len(notices) <= 2, f"expected 1-2 notices, got {len(notices)}"
 
 
@@ -251,7 +251,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: pathlib.Pat
     _init_repo(repo)
 
     provider = mock.MagicMock()
-    # 12 identical calls. Threshold=5 -> kill at iter 5.
+    # 12 identical calls. Threshold=5 -> kill at turn 5.
     provider.call.side_effect = [
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(12)
     ] + [_resp_text("never reached")]
@@ -279,7 +279,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: pathlib.Pat
         dispatcher=dispatcher,
         logger=_silent,
         call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
-        max_iterations=20,
+        max_turns=20,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=5)
     result = wf.run("loop forever")
@@ -324,7 +324,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: pathlib.Path) ->
         dispatcher=dispatcher,
         logger=_silent,
         call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
-        max_iterations=20,
+        max_turns=20,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     result = wf.run("loop")
@@ -417,16 +417,16 @@ def test_loop_guard_kill_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) 
         repo,
         provider,
         _dirtying_dispatcher(repo),
-        max_iterations=20,
+        max_turns=20,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=5)
     result = wf.run("loop forever")
 
     assert result.reason == "loop_guard_killed"
-    assert "checkpoint (iter 5)" in _git_log(repo)
+    assert "checkpoint (turn 5)" in _git_log(repo)
 
 
-def test_max_iterations_stop_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
+def test_max_turns_stop_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
     """The contract the loop-guard kill has to match."""
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -439,13 +439,13 @@ def test_max_iterations_stop_checkpoints_the_dirty_worktree(tmp_path: pathlib.Pa
         repo,
         provider,
         _dirtying_dispatcher(repo),
-        max_iterations=3,
+        max_turns=3,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     result = wf.run("keep going")
 
-    assert result.reason == "max_iterations"
-    assert "checkpoint (iter 3)" in _git_log(repo)
+    assert result.reason == "max_turns"
+    assert "checkpoint (turn 3)" in _git_log(repo)
 
 
 def test_budget_exhausted_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
@@ -459,10 +459,10 @@ def test_budget_exhausted_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path)
         _resp_with_tool("read_file", {"path": "x.txt"}),
         budget.BudgetExceededError("input cap reached"),
     ]
-    wf = _gated_wf(repo, provider, _dirtying_dispatcher(repo), max_iterations=5)
+    wf = _gated_wf(repo, provider, _dirtying_dispatcher(repo), max_turns=5)
     result = wf.run("do the thing")
     assert result.reason == "budget_exhausted"
-    assert "checkpoint (iter" in _git_log(repo)
+    assert "checkpoint (turn" in _git_log(repo)
 
 
 def test_provider_error_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
@@ -476,10 +476,10 @@ def test_provider_error_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -
         _resp_with_tool("read_file", {"path": "x.txt"}),
         ProviderError("HTTP 401", status_code=401),
     ]
-    wf = _gated_wf(repo, provider, _dirtying_dispatcher(repo), max_iterations=5)
+    wf = _gated_wf(repo, provider, _dirtying_dispatcher(repo), max_turns=5)
     result = wf.run("do the thing")
     assert result.reason == "provider_error"
-    assert "checkpoint (iter" in _git_log(repo)
+    assert "checkpoint (turn" in _git_log(repo)
 
 
 def test_went_quiet_checkpoints_the_dirty_worktree(
@@ -497,12 +497,12 @@ def test_went_quiet_checkpoints_the_dirty_worktree(
         repo,
         provider,
         _dirtying_dispatcher(repo),
-        max_iterations=5,
+        max_turns=5,
     )
     wf.config = _knobs(wf.config, went_quiet_max_nudges=0)
     result = wf.run("do the thing")
     assert result.reason == "went_quiet"
-    assert "checkpoint (iter" in _git_log(repo)
+    assert "checkpoint (turn" in _git_log(repo)
 
 
 def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
@@ -531,10 +531,10 @@ def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: path
         return results.RawResult({"content": "hi\n"})
 
     dispatcher.dispatch.side_effect = dispatch
-    wf = _gated_wf(repo, provider, dispatcher, max_iterations=5)
+    wf = _gated_wf(repo, provider, dispatcher, max_turns=5)
     result = wf.run("do the thing")
     assert result.reason == "verify_command_unexecutable"
-    assert "checkpoint (iter" in _git_log(repo)
+    assert "checkpoint (turn" in _git_log(repo)
 
 
 def _stagnation_blocks(messages: list[dict[str, Any]]) -> list[str]:
@@ -734,8 +734,8 @@ def test_stagnation_notice_zero_disables(tmp_path: pathlib.Path) -> None:
     assert _stagnation_blocks(_final_messages(provider)) == []
 
 
-def test_unlimited_iterations_is_minus_one(tmp_path: pathlib.Path) -> None:
-    """[harness].max_iterations = -1 runs unbounded, not range(start, 0)."""
+def test_unlimited_turns_is_minus_one(tmp_path: pathlib.Path) -> None:
+    """[harness].max_turns = -1 runs unbounded, not range(start, 0)."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = mock.MagicMock()
@@ -747,15 +747,15 @@ def test_unlimited_iterations_is_minus_one(tmp_path: pathlib.Path) -> None:
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)
-    wf.max_iterations = -1
+    wf.max_turns = -1
     result = wf.run("read the files")
 
     assert result.completed is True
     assert provider.call.call_count == 13
 
 
-def test_resume_execution_rearms_the_iteration_allowance(tmp_path: pathlib.Path) -> None:
-    """A resumed execution gets a fresh max_iterations window relative to its own start."""
+def test_resume_execution_rearms_the_turn_allowance(tmp_path: pathlib.Path) -> None:
+    """A resumed execution gets a fresh max_turns window relative to its own start."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = mock.MagicMock()
@@ -764,7 +764,7 @@ def test_resume_execution_rearms_the_iteration_allowance(tmp_path: pathlib.Path)
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)
-    wf.max_iterations = 5
+    wf.max_turns = 5
     wf.resume_state_path = tmp_path / "loop_state.json"
     from agent6.harness import _loop_state
 
@@ -774,7 +774,7 @@ def test_resume_execution_rearms_the_iteration_allowance(tmp_path: pathlib.Path)
         _loop_state.LoopState(original_task="t", tool_calls=0).root_task_id,
     ) = "s", 0, None
     _loop_resume.save_resume_snapshot(
-        wf, _loop_state.LoopState(original_task="t", tool_calls=0), [], next_iteration=6
+        wf, _loop_state.LoopState(original_task="t", tool_calls=0), [], next_turn=6
     )
     result = wf.resume()
 
@@ -782,7 +782,7 @@ def test_resume_execution_rearms_the_iteration_allowance(tmp_path: pathlib.Path)
     assert provider.call.call_count == 1
 
 
-def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_iteration() -> None:
+def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_turn() -> None:
     """The third identical call draws the notice, the next turn is quiet, the one after hears it.
 
     A shorter streak draws nothing.
@@ -793,9 +793,9 @@ def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_iteration() -> None
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     ctx = turn_context()
 
-    def turn(iteration: int) -> _loop_state.TurnState:
+    def turn(turn: int) -> _loop_state.TurnState:
         return _loop_state.TurnState(
-            iteration=iteration,
+            turn=turn,
             resp=mock.MagicMock(),
             assistant=_conversation.AssistantTurn((), ()),
         )
@@ -807,7 +807,7 @@ def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_iteration() -> None
     nudge = _guards.loop_guard_notice(turn(3), state, ctx)
     assert nudge is not None and "`read_file`" in nudge.text and "3 times" in nudge.text
     assert nudge.event == "loop.loop_guard.triggered"
-    assert nudge.fields == {"iteration": 3, "tool": "read_file", "streak": 3}
+    assert nudge.fields == {"turn": 3, "tool": "read_file", "streak": 3}
     state.spiral.note_call('read_file:{"path": "x.txt"}')
     assert _guards.loop_guard_notice(turn(4), state, ctx) is None
     state.spiral.note_call('read_file:{"path": "x.txt"}')
@@ -825,7 +825,7 @@ def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
 
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _loop_state.TurnState(
-        iteration=5, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        turn=5, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
     )
     ctx = turn_context(loop_guard_kill_threshold=5)
     for _ in range(4):
@@ -842,7 +842,7 @@ def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
     )
     assert end.fields == {"tool": "read_file", "streak": 5}
     assert stop.log == (
-        "LOOP: loop_guard_killed at iter 5 - read_file called 5x in a row (threshold=5)"
+        "LOOP: loop_guard_killed at turn 5 - read_file called 5x in a row (threshold=5)"
     )
     off = turn_context(loop_guard_kill_threshold=0)
     assert _guards.loop_guard_kill(turn, state, off) is None

@@ -84,7 +84,7 @@ def test_run_one_returns_finish_payload(
                 reason="finish_session",
                 completed=True,
                 summary="done",
-                iterations=1,
+                turns=1,
                 tool_calls=0,
                 finish_payload={"label": "ok"},
             )
@@ -123,7 +123,7 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
                 reason="finish_session",
                 completed=True,
                 summary="d",
-                iterations=1,
+                turns=1,
                 tool_calls=0,
                 finish_payload={},
             )

@@ -188,7 +188,7 @@ def test_mixed_patch_records_memory_and_workspace_effects(
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_pass()
     turn = _loop_state.TurnState(
-        iteration=1, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        turn=1, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
     )
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "apply_patch", result, tool_input
@@ -203,7 +203,7 @@ def test_mixed_patch_records_memory_and_workspace_effects(
         " run's commits leave it out."
     )
     events.emit.assert_called_once_with(
-        "loop.edit.left_out", iteration=1, ignored=[], untracked=["notes.txt"]
+        "loop.edit.left_out", turn=1, ignored=[], untracked=["notes.txt"]
     )
 
 

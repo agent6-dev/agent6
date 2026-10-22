@@ -285,7 +285,7 @@ def test_a_resumed_execution_drops_the_previous_executions_approval(tmp_path: pa
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             assert await _row_shown(app, pilot)
-            boundary: dict[str, object] = {"type": "loop.resume.start", "iteration": 2}
+            boundary: dict[str, object] = {"type": "loop.resume.start", "turn": 2}
             _append(run, boundary)
             # The withdrawal is an async DOM prune after the boundary; the poll feeds the fold.
             conv = app._conv  # pyright: ignore[reportPrivateUsage]

@@ -689,7 +689,7 @@ def _plan_wf(
         ),
         logger=_silent,
         call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
-        max_iterations=5,
+        max_turns=5,
         mode="plan",
         plan_output_path=plan_path,
         resume_state_path=state_path,
@@ -785,7 +785,7 @@ def test_an_unreadable_plan_parks_the_execution(tmp_path: pathlib.Path) -> None:
             logger=lambda _m: None,
         )
         got = wf._maybe_inject_plan(  # pyright: ignore[reportPrivateUsage]
-            mock.MagicMock(), _loop_state.LoopState(original_task="t", tool_calls=4), iteration=3
+            mock.MagicMock(), _loop_state.LoopState(original_task="t", tool_calls=4), turn=3
         )
     finally:
         plan.chmod(0o600)
@@ -793,7 +793,7 @@ def test_an_unreadable_plan_parks_the_execution(tmp_path: pathlib.Path) -> None:
     assert got.reason == "plan_unreadable" and got.completed is False
     assert "plan.md unreadable" in got.summary
     assert "agent6 resume" in got.summary  # the remedy is in hand
-    assert got.iterations == 3 and got.tool_calls == 4
+    assert got.turns == 3 and got.tool_calls == 4
 
 
 def test_the_decisions_block_renders_when_rulings_exist(tmp_path: pathlib.Path) -> None:

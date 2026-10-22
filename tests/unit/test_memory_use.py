@@ -40,7 +40,7 @@ def _state() -> _loop_state.LoopState:
 
 def _turn() -> _loop_state.TurnState:
     return _loop_state.TurnState(
-        iteration=1, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        turn=1, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
     )
 
 
@@ -252,7 +252,7 @@ def test_a_resumed_execution_starts_its_own_count_with_the_nudge_flags_carried()
         system="s",
         messages=[],
         tool_calls=0,
-        next_iteration=3,
+        next_turn=3,
         root_task_id=None,
         original_task="go",
         verify_command=(),
@@ -282,7 +282,7 @@ def test_finish_records_the_use(tmp_path: pathlib.Path) -> None:
     state = _state()
     state.memory = _guards.MemoryState(read={"quirk": 1})
     end = _snapshot.End(reason="finish_session", summary="done", completed=True, verdict="passed")
-    result = wf.finish(state, end, iteration=3)
+    result = wf.finish(state, end, turn=3)
     assert result.completed is True
     assert memory.read_use(tmp_path)["quirk"].reads == 1
 
@@ -320,7 +320,7 @@ def test_a_record_that_cannot_be_written_logs_and_lets_the_end_stand(
         end = _snapshot.End(
             reason="finish_session", summary="done", completed=True, verdict="passed"
         )
-        result = wf.finish(state, end, iteration=1)
+        result = wf.finish(state, end, turn=1)
     finally:
         tmp_path.chmod(stat.S_IRWXU)
     assert result.completed is True

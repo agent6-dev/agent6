@@ -34,7 +34,7 @@ class SpiralGuard:
         last_call_sig: The last dispatched (tool, args) signature.
         call_streak: How many times that signature ran back to back.
         last_served_content: The bytes most recently served to the model, success or error.
-        warned_at_iteration: When the repeat warning last fired; it re-arms after a quiet turn.
+        warned_at_turn: When the repeat warning last fired; it re-arms after a quiet turn.
         error_sig: The signature of the current error streak.
         error_streak: How many times that error repeated.
         error_ladder: The tool-error ladder the streak climbs.
@@ -44,7 +44,7 @@ class SpiralGuard:
     last_call_sig: str | None = None
     call_streak: int = 0
     last_served_content: str | None = None
-    warned_at_iteration: int = 0
+    warned_at_turn: int = 0
     error_sig: str | None = None
     error_streak: int = 0
     error_ladder: _guards.Ladder = dataclasses.field(default_factory=tool_error_ladder)

@@ -13,9 +13,9 @@ from agent6.harness import _advice, _conversation, _guards, _loop_state, _nudges
 from tests.unit.turn_context import turn_context
 
 
-def _turn(iteration: int = 3) -> _loop_state.TurnState:
+def _turn(turn: int = 3) -> _loop_state.TurnState:
     return _loop_state.TurnState(
-        iteration=iteration, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        turn=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
     )
 
 
@@ -36,7 +36,7 @@ def test_the_ladder_nudges_escalates_then_stops() -> None:
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     nudge, escalation, stop = _climb(state, _nudges.TOOL_ERROR_STOP_AFTER)
     assert isinstance(nudge, _advice.Nudge) and nudge.text == _nudges.TOOL_ERROR_NUDGE
-    assert nudge.fields == {"iteration": 3, "streak": _nudges.TOOL_ERROR_NUDGE_AFTER, "level": 1}
+    assert nudge.fields == {"turn": 3, "streak": _nudges.TOOL_ERROR_NUDGE_AFTER, "level": 1}
     assert (
         isinstance(escalation, _advice.Nudge) and escalation.text == _nudges.TOOL_ERROR_ESCALATION
     )
@@ -45,7 +45,7 @@ def test_the_ladder_nudges_escalates_then_stops() -> None:
     assert isinstance(stop, _advice.Stop) and stop.end().reason == "tool_error_stuck"
     assert stop.soft == "" and stop.declared == ""
     assert f"failed {_nudges.TOOL_ERROR_STOP_AFTER} times" in stop.end().summary
-    assert stop.log == f"LOOP: tool_error stop at iter 3 (streak {_nudges.TOOL_ERROR_STOP_AFTER})"
+    assert stop.log == f"LOOP: tool_error stop at turn 3 (streak {_nudges.TOOL_ERROR_STOP_AFTER})"
 
 
 def test_a_denial_streak_is_named_a_refusal() -> None:

@@ -843,7 +843,7 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: pathlib.Pa
             assert await answer_written(tmp_path, pilot, "approval-1") == "yes"
             app._handle_event(_ev(type="approval.answer", id="approval-1", approved=True))
             # A resumed execution emits only loop.resume.start, never a second session.start.
-            app._handle_event(_ev(type="loop.resume.start", iteration=2, messages=4))
+            app._handle_event(_ev(type="loop.resume.start", turn=2, messages=4))
             # The worker drops a stale answer as it emits the prompt.
             ipc.clear_answer(tmp_path, "approval-1")
             app._handle_event(_ev(type="approval.prompt", id="approval-1", prompt="again?"))
@@ -969,7 +969,7 @@ def test_end_hold_follows_the_resumed_execution(tmp_path: pathlib.Path, monkeypa
         spawned.append((rid, steer))
         (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
         with (tmp_path / "logs.jsonl").open("a", encoding="utf-8") as log:
-            log.write(json.dumps(_ev(type="loop.resume.start", iteration=2)) + "\n")
+            log.write(json.dumps(_ev(type="loop.resume.start", turn=2)) + "\n")
             log.write(json.dumps(_ev(type="role.call", role="worker", model="m")) + "\n")
         return ""
 
@@ -1908,7 +1908,7 @@ def test_dashboard_does_not_call_a_dead_driverless_run_idle(
 
 
 def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: pathlib.Path) -> None:
-    """A long model id pushed "failed · max iterations" onto a line of its own, split mid-phrase.
+    """A long model id pushed "failed · max turns" onto a line of its own, split mid-phrase.
 
     The status leads line 1 and every header line ends in an ellipsis before it would wrap.
     """
@@ -1920,13 +1920,13 @@ def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: pa
             model = "moonshotai/kimi-k2.7-code-20260612-with-a-very-long-suffix"
             app._handle_event(_ev(type="session.start", user_task="t " * 80, mode="run"))
             app._handle_event(_ev(type="role.call", role="worker", model=model, provider="p"))
-            app._handle_event(_ev(type="session.end", all_passed=False, reason="max_iterations"))
+            app._handle_event(_ev(type="session.end", all_passed=False, reason="max_turns"))
             app._tick()
             await pilot.pause()
             await pilot.pause()
             top = app._dash.query_one("#top", widgets.Static)
             lines = str(top.render()).split("\n")
-            assert lines[0].startswith("agent6  failed · max iterations")
+            assert lines[0].startswith("agent6  failed · max turns")
             assert lines[1].startswith("role: worker / moonshotai/kimi")
             assert all(len(line) <= top.content_size.width for line in lines)
             assert lines[1].endswith("…")

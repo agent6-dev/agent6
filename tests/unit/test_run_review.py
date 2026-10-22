@@ -47,7 +47,7 @@ _EVENTS: list[dict[str, Any]] = [
     },
     {"type": "loop.steer.injected", "chars": 20, "text": "do not touch the lexer"},
     {"type": "loop.decision.recorded", "question": "keep the old API?", "answer": "yes"},
-    {"type": "loop.no_progress.nudge", "iteration": 4},
+    {"type": "loop.no_progress.nudge", "turn": 4},
     {
         "type": "verify.end",
         "cmd": ["pytest"],
@@ -67,7 +67,7 @@ _EVENTS: list[dict[str, Any]] = [
     {"type": "role.result", "role": "reviewer", "text": "a side seat's answer"},
     {"type": "role.result", "role": "worker", "text": "Done: the lexer is untouched."},
     {"type": "budget.update", "usd_total": 0.25},
-    {"type": "session.end", "reason": "finish_session", "iterations": 6, "all_passed": True},
+    {"type": "session.end", "reason": "finish_session", "turns": 6, "all_passed": True},
 ]
 
 
@@ -107,7 +107,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
     d = run_review.run_digest(layout)
 
     assert (d.session_id, d.mode, d.task) == ("run-AAAA11", "run", "fix the parser")
-    assert (d.end_reason, d.verify, d.iterations) == ("finish_session", "passed", 6)
+    assert (d.end_reason, d.verify, d.turns) == ("finish_session", "passed", 6)
     assert (d.tool_calls, d.tool_errors, d.cost_usd) == (2, 1, 0.25)
     assert d.steers == ("do not touch the lexer",)
     assert d.decisions == (("keep the old API?", "yes"),)
@@ -125,7 +125,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
     text = d.render()
     assert text.startswith(
         "session run-AAAA11 (run): fix the parser\n"
-        "ended: finish_session; verify passed; 6 iterations, 2 tool calls (1 failed), $0.25"
+        "ended: finish_session; verify passed; 6 turns, 2 tool calls (1 failed), $0.25"
     )
     for heading in (
         "operator steers (1):",
@@ -208,9 +208,7 @@ def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: pathlib.Path) -> 
         for e in _EVENTS
         if e["type"] != "session.end" and not (e["type"] == "verify.end" and e["exit_code"] == 0)
     ]
-    red.append(
-        {"type": "session.end", "reason": "no_progress", "iterations": 9, "all_passed": False}
-    )
+    red.append({"type": "session.end", "reason": "no_progress", "turns": 9, "all_passed": False})
     layout = _write_session(repo, events=red)
     d = run_review.run_digest(layout)
     assert (d.end_reason, d.verify) == ("no_progress", "failed")
@@ -231,7 +229,7 @@ def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: pathlib.Path) -> None:
     """
     plan = [
         {"type": "session.start", "session_id": "plan-1", "mode": "plan", "user_task": "plan it"},
-        {"type": "session.end", "reason": "finish_planning", "iterations": 3, "all_passed": True},
+        {"type": "session.end", "reason": "finish_planning", "turns": 3, "all_passed": True},
     ]
     layout = _write_session(repo, session_id="plan-1", events=plan)
     layout.manifest_path.write_text(
@@ -277,9 +275,9 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
             "stdout_tail": "",
             "stderr_tail": "E boom",
         },
-        {"type": "session.end", "reason": "budget_exhausted", "iterations": 4, "all_passed": False},
+        {"type": "session.end", "reason": "budget_exhausted", "turns": 4, "all_passed": False},
         {"type": "loop.resume.start", "session_id": "r", "mode": "run"},
-        {"type": "session.end", "reason": "finish_session", "iterations": 6, "all_passed": False},
+        {"type": "session.end", "reason": "finish_session", "turns": 6, "all_passed": False},
     ]
     layout = _write_session(repo, session_id="run-resumed", events=resumed)
     d = run_review.run_digest(layout)
@@ -288,7 +286,7 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
 
     never_ran = [
         {"type": "session.start", "session_id": "n", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "iterations": 2, "all_passed": False},
+        {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": False},
     ]
     layout = _write_session(repo, session_id="run-never", events=never_ran)
     assert run_review.run_digest(layout).verify == "unverified"
@@ -309,7 +307,7 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
 
     gateless = [
         {"type": "session.start", "session_id": "g", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "iterations": 2, "all_passed": None},
+        {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": None},
     ]
     layout = _write_session(repo, session_id="run-gateless", events=gateless)
     assert run_review.run_digest(layout).verify == "not gated"

@@ -29,7 +29,7 @@ def _result(
         completed=completed,
         reason=reason,
         summary="",
-        iterations=1,
+        turns=1,
         tool_calls=1,
         verified=verified,
     )
@@ -45,7 +45,7 @@ def test_exit_code_budget_exhausted_is_three() -> None:
 
 
 def test_exit_code_other_failures_are_one() -> None:
-    for reason in ("provider_error", "max_iterations", "went_quiet", "no_progress", "crashed"):
+    for reason in ("provider_error", "max_turns", "went_quiet", "no_progress", "crashed"):
         assert finalize.session_exit_code(_result(completed=False, reason=reason)) == 1
 
 
@@ -155,7 +155,7 @@ def test_auto_merge_needs_a_model_finish_and_a_vouched_for_tree() -> None:
             _result(completed=True, reason="finish_session", verified=bad)  # pyright: ignore[reportArgumentType]
         )
     assert not finalize.auto_merge_eligible(
-        _result(completed=False, reason="max_iterations", verified="passed")
+        _result(completed=False, reason="max_turns", verified="passed")
     )
 
 

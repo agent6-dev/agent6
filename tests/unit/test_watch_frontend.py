@@ -266,7 +266,7 @@ def test_resumed_execution_reuses_prompt_ids_and_is_still_answered(
 
     # The resumed execution restarts the id counters and prompts again, live.
     leg2: tuple[dict[str, object], ...] = (
-        {"type": "loop.resume.start", "iteration": 2},
+        {"type": "loop.resume.start", "turn": 2},
         {"type": "approval.prompt", "id": "approval-1", "prompt": "execution 2 ok?"},
         {"type": "question.prompt", "id": "question-1", "questions": [{"question": "q2?"}]},
     )
@@ -473,7 +473,7 @@ def test_a_prompt_whose_execution_ended_takes_no_answer(
 
     def _late_yes(_prompt: str, *, standing: bool = True, until: object = None) -> str:
         _append_log(log, {"type": "session.end", "reason": "steer_abort"})
-        _append_log(log, {"type": "loop.resume.start", "iteration": 2})
+        _append_log(log, {"type": "loop.resume.start", "turn": 2})
         _append_log(log, {"type": "approval.prompt", "id": "approval-1", "prompt": "rm -rf x"})
         return "yes"
 
@@ -507,7 +507,7 @@ def test_an_older_executions_answer_does_not_close_the_new_prompt(
             {"type": "approval.prompt", "id": "approval-1", "prompt": "execution 1 ok?"},
             {"type": "approval.answer", "id": "approval-1", "approved": False, "source": "stdin"},
             {"type": "session.end", "reason": "steer_abort"},
-            {"type": "loop.resume.start", "iteration": 2},
+            {"type": "loop.resume.start", "turn": 2},
             {"type": "approval.prompt", "id": "approval-1", "prompt": "execution 2 ok?"},
         ],
     )
@@ -597,7 +597,7 @@ def test_attach_follows_on_after_a_prompt_answered_elsewhere(tmp_path: pathlib.P
                     for event in (
                         {**_OPEN_APPROVAL, "type": "approval.answer", "source": "frontend"},
                         {"type": "session.end", "reason": "steer_abort"},
-                        {"type": "loop.resume.start", "iteration": 2},
+                        {"type": "loop.resume.start", "turn": 2},
                         {**_OPEN_APPROVAL, "prompt": "Allow run_command: second"},
                     )
                 )

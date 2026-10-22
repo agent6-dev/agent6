@@ -11,7 +11,7 @@ qwen3-coder-30b, n=3 per cell, bare tier-1 placeholders:
 | task | baseline | window32k | window16k |
 |---|---|---|---|
 | stylebook score | 0.921 ± 0.022 | 0.825 ± 0.033 | 0.425 ± 0.202 |
-| stylebook drops / re-reads / iterations | 0 / 0.3 / 25 | 0.3 / 4.3 / 29 | 65 / 71.7 / 98 |
+| stylebook drops / re-reads / turns | 0 / 0.3 / 25 | 0.3 / 4.3 / 29 | 65 / 71.7 / 98 |
 | relay score | 0.975 ± 0.006 | 0.956 ± 0.025 | 0.994 ± 0.006 |
 
 - A tidy reader keeps its tool-result volume (about 50k chars) under the 58k drop threshold, so window32k is nearly inert; a heavy reader (kimi-k2.6) crosses it on the same task; the shipped adaptive thresholds on large-window models never engage on tasks this size.
@@ -23,7 +23,7 @@ Tier-1 gists (`[context].elision_gists`, default on): a large read result decays
 | stylebook under window16k | qwen gists on | qwen gists off | kimi-k2.6 baseline | kimi gists on | kimi gists off |
 |---|---|---|---|---|---|
 | score | 0.825 ± 0.040 | 0.533 ± 0.264 | 1.000 | 0.983 ± 0.017 | 0.917 ± 0.083 |
-| iterations | 53.7 | 106.0 | 11 | 10 | 103 |
+| turns | 53.7 | 106.0 | 11 | 10 | 103 |
 | drops / tier-2 restarts | 19.3 / 2.7 | 36.7 / 5.0 | 0 | 13.7 | 438 |
 | re-reads | | | 0.7 | 6.0 | 449.7 |
 | cost per session | $0.069 | $0.128 | $0.29 | $0.37 | $0.82 |
@@ -37,11 +37,11 @@ gpt-5.6-sol, n=3 per cell, window16k pinned with keep-recent at half the tier-2 
 | task | baseline | window16k |
 |---|---|---|
 | stylebook score | 1.0 (3/3) | 1.0 (3/3) |
-| stylebook compactions / drops / re-reads / iterations | 0 / 0 / 0 / 4 to 6 | 1 to 5 / 5 to 36 / 0 to 28 / 6 to 17 |
+| stylebook compactions / drops / re-reads / turns | 0 / 0 / 0 / 4 to 6 | 1 to 5 / 5 to 36 / 0 to 28 / 6 to 17 |
 | relay score | 1.0 (3/3) | 1.0 (3/3) |
-| relay compactions / drops / re-reads / iterations | 0 / 0 / 0 / 31 to 39 | 6 to 9 / 0 to 1 / 4 to 16 / 29 to 45 |
+| relay compactions / drops / re-reads / turns | 0 / 0 / 0 / 31 to 39 | 6 to 9 / 0 to 1 / 4 to 16 / 29 to 45 |
 
-A capable model loses no score to the 16k regime on these tasks; it pays in re-reads (relay 4 to 16 per run) and iterations. One baseline stylebook rep scored 0.0 from the grader (the module loaded outside `sys.modules`, a `@dataclass` in the solution); the grader fix regraded it 12 of 12.
+A capable model loses no score to the 16k regime on these tasks; it pays in re-reads (relay 4 to 16 per run) and turns. One baseline stylebook rep scored 0.0 from the grader (the module loaded outside `sys.modules`, a `@dataclass` in the solution); the grader fix regraded it 12 of 12.
 
 ## Cross-run memory
 
@@ -66,13 +66,13 @@ A capable model loses no score to the 16k regime on these tasks; it pays in re-r
   Memory files added per session: 1.00 with both nudges, 0.00 under the rule.
   9 of the 12 sessions start on a red gate (the session's new requirement) and 3 saw no red verify, so no nudge fired under the rule.
   The rule is not adopted.
-- Read-side value is real on a weak model. Orchard's third session re-probes the generated-file rule and the half-up rounding rule with fresh discriminators the shipped tests cannot see (qwen, n=6 per cell): baseline 0.922 ± 0.038 vs fresh_state 0.750 ± 0.097, against a same-wave session-1 calibration delta of -0.019; components rounding 0.78 vs 0.33, api 1.00 vs 0.83, regen 0.91 vs 0.78; trap edits 0.0 vs 0.7 per session; iterations flat (30.8 vs 31.2). Memory buys correctness here, not speed.
+- Read-side value is real on a weak model. Orchard's third session re-probes the generated-file rule and the half-up rounding rule with fresh discriminators the shipped tests cannot see (qwen, n=6 per cell): baseline 0.922 ± 0.038 vs fresh_state 0.750 ± 0.097, against a same-wave session-1 calibration delta of -0.019; components rounding 0.78 vs 0.33, api 1.00 vs 0.83, regen 0.91 vs 0.78; trap edits 0.0 vs 0.7 per session; turns flat (30.8 vs 31.2). Memory buys correctness here, not speed.
 - What the memory says predicts what transfers: a store that spelled out "rounding half-up" in words carried to a 1.0; a store that only encoded the catalog formula (half-up implicit in `(x+50)//100`) carried the generated-file fact and truncated the new computation. A memory records the rule, not the instance.
 - Capable models have no headroom: claude-haiku-4-5 and claude-sonnet-5 score 1.0 on all three orchard sessions in both conditions and rediscover the conventions every session.
 - The ledger campaign on gpt-5.6-sol (3 reps x 3 conditions, 45 sessions): score 1.000 on every session and component in every condition. With the shared store, 1.7 writes and 0.8 reads per session (2.7 memory files by the end); under fresh_state 1.5 writes and 0.2 reads. Memory does not make later sessions cheaper for this model: tokens in 37.9k vs 35.3k on later sessions, tool calls 33.7 vs 31.2, re-reads flat.
 - Poisoned: the score is unchanged (the model verifies the repo over the stale memory every time), later sessions cost +15% tokens in (43.4k), and the planted memories were rewritten in 1 of 12 sessions and never removed. Two confidently wrong memories were observed across waves; no model removed or corrected one.
 
-- One rep of orchard and ledger on gpt-5.6-sol under `baseline` and `poisoned` (16 sessions, `results/r38-plan.jsonl`): score 1.0 on every session, 8 to 20 iterations, no compaction. Under `poisoned` both tasks rewrote a planted memory in the second session (`poison_touched` true) and left the other in place; three more orchard poisoned reps (`r38-poisoned.jsonl`) corrected one planted memory each (session 2 once, session 3 twice), never both, every session 1.0; on orchard the second correction was written to a hallucinated store path (the repo id's `r38-plan-orchard` typed as `r38-plan/orchard`), refused as outside the granted paths, while the index line the model added for a new fact landed without its file. `memory list` names such a line as `no file`.
+- One rep of orchard and ledger on gpt-5.6-sol under `baseline` and `poisoned` (16 sessions, `results/r38-plan.jsonl`): score 1.0 on every session, 8 to 20 turns, no compaction. Under `poisoned` both tasks rewrote a planted memory in the second session (`poison_touched` true) and left the other in place; three more orchard poisoned reps (`r38-poisoned.jsonl`) corrected one planted memory each (session 2 once, session 3 twice), never both, every session 1.0; on orchard the second correction was written to a hallucinated store path (the repo id's `r38-plan-orchard` typed as `r38-plan/orchard`), refused as outside the granted paths, while the index line the model added for a new fact landed without its file. `memory list` names such a line as `no file`.
 
 - One orchard rep under `poisoned` on gpt-6-astra (n=1 sequence, three sessions, `r51-m13-poisoned`, `results/r51-m13-poisoned.jsonl`): score 1.0 on fix, weekend and clearance, with 0 memory reads and 0 memory writes throughout.
   The two planted facts landed as files and rendered from their first lines in session 2's `<memory>` block, with no `MEMORY.md` index file.
@@ -86,7 +86,7 @@ A capable model loses no score to the 16k regime on these tasks; it pays in re-r
 
 ## Provider findings
 
-- The Anthropic SSE idle watchdog killed sonnet-5 on hard tasks: adaptive thinking emits only ping heartbeats for over 45 s, and the 45 s mid-stream budget aborted every long think (stylebook 0/3, provider_error at 3 to 4 iterations). A thinking block now gets a patient idle budget; the same cell runs 3/3 at 1.0 (10 iterations, $0.39, about 205 s). Before and after: `results/sb-sonnet.jsonl`, `results/sb-sonnet-fixed.jsonl`.
+- The Anthropic SSE idle watchdog killed sonnet-5 on hard tasks: adaptive thinking emits only ping heartbeats for over 45 s, and the 45 s mid-stream budget aborted every long think (stylebook 0/3, provider_error at 3 to 4 turns). A thinking block now gets a patient idle budget; the same cell runs 3/3 at 1.0 (10 turns, $0.39, about 205 s). Before and after: `results/sb-sonnet.jsonl`, `results/sb-sonnet-fixed.jsonl`.
 - Anthropic thinking is configured per model family: adaptive thinking on the models that refuse `budget_tokens`.
 
 ## Methodology notes

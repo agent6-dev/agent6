@@ -374,7 +374,7 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
     (repo / "b.txt").write_text("b\n", encoding="utf-8")
     git_ops.chain_commit(
         repo,
-        "agent6 iter 1: work",
+        "agent6 turn 1: work",
         ref=git_ops.chain_ref_for(session_id),
         fallback_parent=base,
     )
@@ -432,7 +432,7 @@ def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
     (repo / "b.txt").write_text("b\n", encoding="utf-8")
     chain = git_ops.chain_commit(
         repo,
-        "agent6 iter 1: work",
+        "agent6 turn 1: work",
         ref=git_ops.chain_ref_for(session_id),
         fallback_parent=base,
         also_branch=branch,

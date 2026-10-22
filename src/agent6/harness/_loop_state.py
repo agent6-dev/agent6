@@ -3,7 +3,7 @@
 """The agent loop's mutable state shapes.
 
 `LoopState` is the per-run bookkeeping threaded through every loop phase,
-`TurnState` the per-turn slice one dispatching iteration accumulates, and
+`TurnState` the per-turn slice one dispatching turn accumulates, and
 `NEXT_TURN` the sentinel for a discarded turn. `restore_completion_state`
 carries a resume snapshot's completion-relevant fields into fresh state.
 The loop's phase methods live in `loop.py`; these are the shapes they take.
@@ -134,7 +134,7 @@ def restore_completion_state(state: LoopState, snap: _snapshot.SessionSnapshot) 
 
 
 class NextTurn:
-    """The sentinel for a discarded turn: the loop starts the next iteration at once.
+    """The sentinel for a discarded turn: the loop starts the next turn at once.
 
     A mid-stream steer that chose continue, or injected an instruction, discards
     the turn.
@@ -148,12 +148,12 @@ NEXT_TURN = NextTurn()
 class TurnState:
     """Mutable bookkeeping for one assistant turn that dispatched tools.
 
-    The loop creates one per tool-use iteration and threads it through the turn
+    The loop creates one per tool-use turn and threads it through the turn
     phases; a field is written in one phase and read in a later one.
-    Cross-iteration state stays on `LoopState`.
+    Cross-turn state stays on `LoopState`.
 
     Attributes:
-        iteration: The loop iteration.
+        turn: The loop turn.
         resp: The provider response driving this turn.
         assistant: The response's turn in the conversation; its parsed tool_uses
             drive the dispatch.
@@ -187,7 +187,7 @@ class TurnState:
             stop checks honour the first one left after a standing task's absorb.
     """
 
-    iteration: int
+    turn: int
     resp: ProviderResponse
     assistant: _conversation.AssistantTurn
     finish: _finish_gates.FinishCall | None = None

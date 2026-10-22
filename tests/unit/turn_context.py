@@ -13,14 +13,14 @@ def _never_rejected(_turn: _loop_state.TurnState, _ending: str) -> bool:
     return False
 
 
-def _no_standing_task(_reason: str, _iteration: int) -> None:
+def _no_standing_task(_reason: str, _turn: int) -> None:
     return None
 
 
 def turn_context(**overrides: Any) -> _advice.TurnContext:
     facts: dict[str, Any] = {
         "mode": "run",
-        "iteration": 1,
+        "turn": 1,
         "execution_start": 1,
         "went_quiet_max_nudges": 4,
         "loop_guard_kill_threshold": 10,

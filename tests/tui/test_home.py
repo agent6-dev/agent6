@@ -1393,7 +1393,7 @@ def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: pathlib.Path
     a6 = tmp_path / ".agent6"
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "implement the parser " * 10},
-        {"type": "session.end", "all_passed": False, "reason": "max_iterations"},
+        {"type": "session.end", "all_passed": False, "reason": "max_turns"},
     ]
     _write_run(a6, "runs", "friendly-crane-1X3ER0", events)
 

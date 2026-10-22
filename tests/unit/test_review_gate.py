@@ -124,7 +124,7 @@ class _PanelScript:
         self.verdicts = list(verdicts)
         self.calls = 0
 
-    def __call__(self, _state: Any, *, trigger: str, iteration: int) -> Any:
+    def __call__(self, _state: Any, *, trigger: str, turn: int) -> Any:
         self.calls += 1
         return self.verdicts.pop(0) if self.verdicts else None
 
@@ -166,11 +166,11 @@ def test_before_finish_panel_revokes_finish_and_injects_findings() -> None:
             system="S",
             conversation=conversation,
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
-    assert result.iterations == 4
+    assert result.turns == 4
     assert result.reason == "silent_finish"
     assert panel.calls == 2
     iter1_user_msg = conversation.to_wire()[2]
@@ -198,13 +198,13 @@ def test_before_finish_panel_satisfied_accepts_finish() -> None:
             system="S",
             conversation=_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
     assert result.completed is True
     assert result.reason == "finish_session"
-    assert result.iterations == 1
+    assert result.turns == 1
     assert panel.calls == 1
 
 
@@ -233,7 +233,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
             system="S",
             conversation=_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -258,7 +258,7 @@ def test_trigger_off_never_runs_a_panel() -> None:
             system="S",
             conversation=_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -304,7 +304,7 @@ def test_silent_finish_panel_revokes_and_continues() -> None:
             system="S",
             conversation=conversation,
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -330,10 +330,10 @@ def _exec(returncode: int, stderr: str = "") -> results.ExecResult:
     )
 
 
-def test_periodic_panel_fires_every_n_iterations() -> None:
-    """`review_trigger=periodic` with `review_period=2` runs the panel on iterations 2 and 4 only.
+def test_periodic_panel_fires_every_n_turns() -> None:
+    """`review_trigger=periodic` with `review_period=2` runs the panel on turns 2 and 4 only.
 
-    The iteration-5 finish_session is not gated under periodic.
+    The turn-5 finish_session is not gated under periodic.
     """
     worker = mock.MagicMock()
     worker.call.side_effect = [
@@ -350,11 +350,11 @@ def test_periodic_panel_fires_every_n_iterations() -> None:
         provider=worker,
         dispatcher=dispatcher,
         review=_reviewer.ReviewSettings(
-            trigger="periodic", interval_iterations=2, reviewers=[mock.MagicMock()]
+            trigger="periodic", interval_turns=2, reviewers=[mock.MagicMock()]
         ),
     )
     # Each verify pass commits real progress (the normal success path), so the
-    # verify-settled detector stays dormant and all 5 iterations run.
+    # verify-settled detector stays dormant and all 5 turns run.
     with (
         mock.patch.object(_reviewer.Reviewer, "critique", panel),
         mock.patch("agent6.git_ops.chain_commit", return_value="sha"),
@@ -363,11 +363,11 @@ def test_periodic_panel_fires_every_n_iterations() -> None:
             system="S",
             conversation=_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
-    assert result.iterations == 5
+    assert result.turns == 5
     assert result.reason == "finish_session"
     assert panel.calls == 2
 
@@ -386,7 +386,7 @@ def test_periodic_panel_injects_text_into_next_user_msg() -> None:
         provider=worker,
         dispatcher=dispatcher,
         review=_reviewer.ReviewSettings(
-            trigger="periodic", interval_iterations=1, reviewers=[mock.MagicMock()]
+            trigger="periodic", interval_turns=1, reviewers=[mock.MagicMock()]
         ),
     )
     conversation = _conversation.Conversation.from_wire(_MSGS)
@@ -395,7 +395,7 @@ def test_periodic_panel_injects_text_into_next_user_msg() -> None:
             system="S",
             conversation=conversation,
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -436,11 +436,11 @@ def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
             system="S",
             conversation=conversation,
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
-    assert result.iterations == 4
+    assert result.turns == 4
     assert result.reason == "finish_session"
     assert panel.calls == 1
     iter2_user_msg = conversation.to_wire()[4]
@@ -449,7 +449,7 @@ def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
 
 
 def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
-    """An iteration with no run_verify_command call never consults the panel under on_verify_fail.
+    """A turn with no run_verify_command call never consults the panel under on_verify_fail.
 
     There is no failure signal.
     """
@@ -472,7 +472,7 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
             system="S",
             conversation=_conversation.Conversation.from_wire(_MSGS),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -494,14 +494,14 @@ def _settled_state() -> Any:
 def _idle_turn() -> Any:
     from agent6.harness import _loop_state
 
-    return _loop_state.TurnState(iteration=9, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    return _loop_state.TurnState(turn=9, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
 
 def _settle(wf: loop.Harness, state: Any, turn: Any) -> Any:
     """The settled advisor's answer, applied through the loop (a stop runs the end gates)."""
     from agent6.harness import _guards
 
-    ctx = wf._turn_context(state, iteration=turn.iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.turn, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     return wf._take(state, turn, ctx, _guards.verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
@@ -549,7 +549,7 @@ def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
     """
     wf = _wf(
         review=_reviewer.ReviewSettings(
-            trigger="periodic", interval_iterations=1, reviewers=[mock.MagicMock()]
+            trigger="periodic", interval_turns=1, reviewers=[mock.MagicMock()]
         )
     )
     wf.mode = "run"
@@ -675,10 +675,10 @@ def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
     )
     gated = [e for e in events.events if e["type"] == "loop.verify_finish.gated"]
     assert gated == [
-        {"type": "loop.verify_finish.gated", "iteration": 9, "nudges_used": 1, "trigger": "settled"}
+        {"type": "loop.verify_finish.gated", "turn": 9, "nudges_used": 1, "trigger": "settled"}
     ]
     # The model's own red finish still has both of its returns.
-    ctx = wf._turn_context(state, iteration=10, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=10, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     finishing = _idle_turn()
     finishing.finish = _finish_gates.FinishCall("finish_session", "done")
     finishing.ending = "finish_session"
@@ -718,15 +718,15 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     state.verify.note_edit()  # green once, edited since: stale
     conv = _conversation.Conversation()
     with mock.patch.object(_reviewer.Reviewer, "critique", panel):
-        turn = _loop_state.TurnState(iteration=5, resp=_resp("Done."), assistant=mock.MagicMock())
-        ctx = wf._turn_context(state, iteration=5, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+        turn = _loop_state.TurnState(turn=5, resp=_resp("Done."), assistant=mock.MagicMock())
+        ctx = wf._turn_context(state, turn=5, execution_start=1)  # pyright: ignore[reportPrivateUsage]
         assert wf._handle_silent_finish("Done.", conv, state, turn, ctx) is None  # pyright: ignore[reportPrivateUsage]
         texts = [b["text"] for m in conv.to_wire() for b in m["content"] if b.get("type") == "text"]
         assert any("[harness verify] finish: verify_command exit 1" in t for t in texts)
         assert any("the next red finish ends the run" in t for t in texts)
         assert panel.calls == 0  # a red gate returns the end before the panel sits
         # The return is spent: the next silent finish stands, the panel sits and approves.
-        turn = _loop_state.TurnState(iteration=6, resp=_resp("Done."), assistant=mock.MagicMock())
+        turn = _loop_state.TurnState(turn=6, resp=_resp("Done."), assistant=mock.MagicMock())
         ended = wf._handle_silent_finish("Done.", conv, state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
     assert ended.verified == "failed"

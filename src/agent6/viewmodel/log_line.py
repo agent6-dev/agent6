@@ -181,7 +181,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case "loop.skills.warning":
             salient = _cut(str(event.get("warning", "")), 160)
         case "loop.resume.start":
-            salient = f"iteration={event.get('iteration')} messages={event.get('messages')}"
+            salient = f"turn={event.get('turn')} messages={event.get('messages')}"
         case "budget.update":
             usd = event.get("usd_total")
             usd_s = f"${usd:.4f}" if isinstance(usd, (int, float)) else f"${usd}"

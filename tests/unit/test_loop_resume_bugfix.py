@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Resume pins: the end-of-iteration snapshot, the completion scalars, the final checkpoint.
+"""Resume pins: the end-of-turn snapshot, the completion scalars, the final checkpoint.
 
 The snapshot never replays executed tools, the completion scalars survive a resume, and the final
 checkpoint commits a dirty worktree on a gated run's success exit.
@@ -139,7 +139,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: pathlib.Path) -> None:
         _metric.MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True)
     )
     state.system, state.tool_calls, state.root_task_id = "s", 2, None
-    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=4)
+    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=4)
     loaded = _snapshot.load_session_snapshot(snap)
     assert loaded.verify_ever_passed is True
     assert loaded.verify_scoped is True
@@ -176,7 +176,7 @@ def test_snapshot_preserves_run_lifetime_memory_state(tmp_path: pathlib.Path) ->
     state.memory.written = True
     state.memory.flip_nudged = True
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=3)
+    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=3)
 
     loaded = _snapshot.load_session_snapshot(snap)
     fresh = _loop_state.LoopState(original_task="t", tool_calls=0)
@@ -187,27 +187,8 @@ def test_snapshot_preserves_run_lifetime_memory_state(tmp_path: pathlib.Path) ->
     assert fresh.memory.flip_nudged is True
 
 
-def test_a_snapshot_with_the_retired_finish_flag_still_loads(tmp_path: pathlib.Path) -> None:
-    """A snapshot on disk that holds `memory_finish_nudged` loads, so its session resumes."""
-    snap = tmp_path / "loop_state.json"
-    current = _snapshot.SessionSnapshot(
-        system="s",
-        messages=[],
-        tool_calls=0,
-        next_iteration=3,
-        root_task_id=None,
-        original_task="go",
-        verify_command=(),
-        memory_flip_nudged=True,
-    )
-    raw = current.model_dump(mode="json")
-    assert "memory_finish_nudged" not in raw
-    snap.write_text(json.dumps({**raw, "memory_finish_nudged": True}), encoding="utf-8")
-    assert _snapshot.load_session_snapshot(snap) == current
-
-
 def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: pathlib.Path) -> None:
-    """A prose turn plus its nudge is a completed iteration, so a stop there resumes after it."""
+    """A prose turn plus its nudge is a completed turn, so a stop there resumes after it."""
     from agent6.providers import ProviderResponse
 
     repo = tmp_path / "repo"
@@ -229,10 +210,10 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: pathl
         provider=provider,
         resume_state_path=snap_path,
         call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
-        max_iterations=5,
+        max_turns=5,
     )
     stopped = _snapshot.SessionResult(
-        completed=False, reason="interactive_stop", summary="", iterations=1, tool_calls=0
+        completed=False, reason="interactive_stop", summary="", turns=1, tool_calls=0
     )
 
     def stop_at_boundary(*_a: object, **_k: object) -> _snapshot.SessionResult:
@@ -242,7 +223,7 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: pathl
         result = wf.run("do the task")
     assert result.reason == "interactive_stop"
     loaded = _snapshot.load_session_snapshot(snap_path)
-    assert loaded.next_iteration == 2  # the prose turn is a COMPLETED iteration
+    assert loaded.next_turn == 2  # the prose turn is a COMPLETED turn
     dumped = json.dumps(loaded.messages)
     assert "answer in prose" in dumped  # the model's turn survives the stop
     assert "[harness]" in dumped  # and so does the nudge that answered it
@@ -277,7 +258,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: pathlib
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.parallel_groups_dispatched = 2
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=4)
+    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=4)
     loaded = _snapshot.load_session_snapshot(snap)
     assert loaded.parallel_groups_dispatched == 2
 
@@ -312,7 +293,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: pathlib.Path) -> None:
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.pins.extend(["never touch schema files", "goal:\nship X"])
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=4)
+    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=4)
     loaded = _snapshot.load_session_snapshot(snap)
     assert loaded.pins == ("never touch schema files", "goal:\nship X")
 
@@ -339,7 +320,7 @@ def test_pre_version_bump_snapshot_refused_loudly(tmp_path: pathlib.Path) -> Non
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
-                "next_iteration": 1,
+                "next_turn": 1,
                 "root_task_id": None,
             }
         ),
@@ -371,7 +352,7 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: pathlib.Path) -> None:
                 "system": "s",
                 "messages": "oops",
                 "tool_calls": 0,
-                "next_iteration": 1,
+                "next_turn": 1,
             }
         ),
         encoding="utf-8",
@@ -383,7 +364,7 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: pathlib.Path) -> None:
 def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatch) -> None:
     """`_drive_loop` restores verify_ever_passed and an at-ceiling metric sample on resume.
 
-    One iteration that finishes at once; the loop saw the restored history, so no early-finish
+    One turn that finishes at once; the loop saw the restored history, so no early-finish
     rejection.
     """
     config = types.SimpleNamespace(
@@ -442,14 +423,14 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
-        start_iteration=3,
+        start_turn=3,
         root_task_id=None,
         original_task="go",
         resume_from=_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
-            next_iteration=3,
+            next_turn=3,
             root_task_id=None,
             original_task="go",
             verify_command=(),
@@ -525,14 +506,14 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
-        start_iteration=3,
+        start_turn=3,
         root_task_id=None,
         original_task="go",
         resume_from=_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
-            next_iteration=3,
+            next_turn=3,
             root_task_id=None,
             original_task="go",
             verify_command=(),
@@ -554,7 +535,7 @@ def test_resume_start_carries_the_execution_identity(tmp_path: pathlib.Path) -> 
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
-            next_iteration=3,
+            next_turn=3,
             root_task_id=None,
             original_task="go",
             verify_command=(),
@@ -670,14 +651,14 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
-        start_iteration=3,
+        start_turn=3,
         root_task_id=None,
         original_task="go",
         resume_from=_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
-            next_iteration=3,
+            next_turn=3,
             root_task_id=None,
             original_task="go",
             verify_command=(),
@@ -690,11 +671,11 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
     assert restored[0]["count"] == 0
 
 
-# --- #3: end-of-iteration snapshot (no replay of executed tools) -----------
+# --- #3: end-of-turn snapshot (no replay of executed tools) -----------
 
 
-def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: pathlib.Path) -> None:
-    """After a full iteration the snapshot advances to the next iteration with the executed turn."""
+def test_snapshot_written_after_tool_dispatch_advances_turn(tmp_path: pathlib.Path) -> None:
+    """After a full turn the snapshot advances to the next turn with the executed turn."""
     repo = tmp_path / "repo"
     _git_repo(repo)
     snap = repo / "loop_state.json"
@@ -718,7 +699,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: pathl
         ),
     )
     provider = mock.MagicMock()
-    # Iter 1: a run_command tool_use (a side effect). Iter 2: finish_session.
+    # Turn 1: a run_command tool_use (a side effect). Turn 2: finish_session.
     provider.call.side_effect = [
         types.SimpleNamespace(
             text="",
@@ -783,7 +764,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: pathl
         events.append(
             {
                 "kind": "save",
-                "next_iteration": kw["next_iteration"],
+                "next_turn": kw["next_turn"],
                 "messages": json.loads(json.dumps(messages)),
             }
         )
@@ -807,28 +788,28 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: pathl
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="go",
     )
     compact_spy.stop()
     save_spy.stop()
 
-    # The snapshot advancing to next_iteration=2 is written at the end of iter 1: no crash window.
+    # The snapshot advancing to next_turn=2 is written at the end of turn 1: no crash window.
     kinds = [ev["kind"] for ev in events]
     first_call = kinds.index("provider_call")
     second_compact = next(i for i, k in enumerate(kinds) if k == "compact" and i > first_call)
-    end_of_iter_saves = [
+    end_of_turn_saves = [
         ev
         for i, ev in enumerate(events)
         if first_call < i < second_compact and ev["kind"] == "save"
     ]
-    assert end_of_iter_saves, (
-        "expected an end-of-iteration snapshot between the 1st provider call"
-        " and iter-2's compaction (the post-tool-dispatch crash window)"
+    assert end_of_turn_saves, (
+        "expected an end-of-turn snapshot between the 1st provider call"
+        " and turn-2's compaction (the post-tool-dispatch crash window)"
     )
-    post = [s for s in end_of_iter_saves if s["next_iteration"] == 2]
-    assert post, "end-of-iteration snapshot must advance next_iteration to 2"
+    post = [s for s in end_of_turn_saves if s["next_turn"] == 2]
+    assert post, "end-of-turn snapshot must advance next_turn to 2"
     msgs = post[0]["messages"]
     assert any(m.get("role") == "assistant" for m in msgs), "assistant turn must be snapshotted"
     has_tool_result = any(
@@ -879,7 +860,7 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: pathlib.
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
 
-    wf.checkpoints.final(iteration=5)
+    wf.checkpoints.final(turn=5)
 
     head_after = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
@@ -942,7 +923,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: pathlib.Path
     ).stdout.strip()
 
     wf_clean = _wf(root=repo, config=config, mode="run")
-    wf_clean.checkpoints.final(iteration=1)
+    wf_clean.checkpoints.final(turn=1)
     assert (
         sp.run(
             ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
@@ -953,7 +934,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: pathlib.Path
     # Dirty tree, but plan mode -> still no commit.
     (repo / "edit.txt").write_text("plan-mode edit\n")
     wf_plan = _wf(root=repo, config=config, mode="plan")
-    wf_plan.checkpoints.final(iteration=1)
+    wf_plan.checkpoints.final(turn=1)
     assert (
         sp.run(
             ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
@@ -1051,14 +1032,14 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
         system="s",
         conversation=restored,
         tool_calls=0,
-        start_iteration=3,
+        start_turn=3,
         root_task_id=None,
         original_task="go",
         resume_from=_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
-            next_iteration=3,
+            next_turn=3,
             root_task_id=None,
             original_task="go",
             verify_command=(),
@@ -1129,7 +1110,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
         system="s",
         conversation=conversation,
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         original_task="go",
         root_task_id=None,
     )
@@ -1201,7 +1182,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
         system="s",
         conversation=conversation,
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         original_task="go",
         root_task_id=None,
     )
@@ -1227,7 +1208,7 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
-            next_iteration=3,
+            next_turn=3,
             root_task_id=None,
             original_task="go",
             verify_command=("pytest", "-q"),
@@ -1302,7 +1283,7 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: pathlib.Path)
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
-            next_iteration=3,
+            next_turn=3,
             root_task_id=None,
             original_task="go",
             verify_command=("pytest", "-q"),  # adopted in execution one; the config names none
@@ -1399,13 +1380,13 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pat
     )
     # Execution one: the worker edits, the gate goes green, the harness chain-commits.
     (repo / "x.txt").write_text("the run's work\n", encoding="utf-8")
-    assert git_ops.chain_commit(repo, "iter 1", ref=chain, fallback_parent=base) is not None
+    assert git_ops.chain_commit(repo, "turn 1", ref=chain, fallback_parent=base) is not None
     snap = _snapshot.SessionSnapshot.model_validate(
         {
             "system": "s",
             "messages": [],
             "tool_calls": 3,
-            "next_iteration": 4,
+            "next_turn": 4,
             "root_task_id": None,
             "original_task": "t",
             "verify_command": ("true",),
@@ -1439,7 +1420,7 @@ def test_a_baseline_verdict_carries_only_onto_the_base_it_describes(
         "system": "s",
         "messages": [],
         "tool_calls": 0,
-        "next_iteration": 2,
+        "next_turn": 2,
         "root_task_id": None,
         "original_task": "t",
         "verify_command": ("true",),
@@ -1475,7 +1456,7 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
-            next_iteration=3,
+            next_turn=3,
             root_task_id=None,
             original_task="go",
             verify_command=("pytest", "-q"),
@@ -1563,7 +1544,7 @@ def test_resume_restates_execution_local_gate_availability(
             system="s",
             messages=messages,
             tool_calls=0,
-            next_iteration=1,
+            next_turn=1,
             root_task_id=None,
             original_task="tidy",
             verify_command=("true",),
@@ -1640,7 +1621,7 @@ def test_baseline_denial_is_saved_as_execution_local_withholding(tmp_path: pathl
     notices = wf.gate.start_baseline(state)
     assert len(notices) == 1
     assert state.verify.withheld is True
-    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=1)
+    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=1)
     saved = _snapshot.load_session_snapshot(path)
     assert saved.verify_withheld is True
     restored = _loop_state.LoopState(original_task="tidy", tool_calls=0)

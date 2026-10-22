@@ -179,7 +179,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             s: The app's live fold.
 
         Returns:
-            The selected step's state and ` · as of iter N`, else the live fold and "".
+            The selected step's state and ` · as of turn N`, else the live fold and "".
         """
         sha = self.diff.step_sel
         if not sha:
@@ -190,7 +190,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
                 return s, ""
             self._step_state = (sha, at)
         at = self._step_state[1]
-        return at, f" · as of iter {at.steps[-1].iteration}"
+        return at, f" · as of turn {at.steps[-1].turn}"
 
     def __init__(
         self,

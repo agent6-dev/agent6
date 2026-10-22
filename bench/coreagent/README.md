@@ -24,7 +24,7 @@ run's `logs.jsonl` + the grader):
 - `compactions` / `drops`: tier-2 / tier-1 compaction events.
 - `redundant_reads` (+ `_post_compact`): read-shaped tool calls repeating an
   earlier `(name,args)`. The primary compaction-quality signal.
-- `iterations`, `usd`, `tokens_in/out`, `wall_s`, `end_reason`, `tampered`.
+- `iterations` (loop turns), `usd`, `tokens_in/out`, `wall_s`, `end_reason`, `tampered`.
 
 ## Tasks (`tasks/<name>/`)
 

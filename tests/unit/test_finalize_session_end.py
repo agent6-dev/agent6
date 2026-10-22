@@ -43,7 +43,7 @@ def test_finish_session_over_red_verify_is_not_headlined_passed(
         completed=True,
         reason="finish_session",
         summary="all tests pass",
-        iterations=3,
+        turns=3,
         tool_calls=5,
     )
     _finalize.print_session_end(
@@ -69,7 +69,7 @@ def test_all_green_finish_is_headlined_passed(tmp_path: pathlib.Path, capsys: ob
         ],
     )
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="done", iterations=2, tool_calls=3
+        completed=True, reason="finish_session", summary="done", turns=2, tool_calls=3
     )
     _finalize.print_session_end(
         result,
@@ -107,8 +107,8 @@ def test_a_budget_stop_prints_its_detail_once(
     result = _snapshot.SessionResult(
         completed=False,
         reason="budget_exhausted",
-        summary=f"{tracker.snapshot().exhausted_reason} (at iter 2)",
-        iterations=2,
+        summary=f"{tracker.snapshot().exhausted_reason} (at turn 2)",
+        turns=2,
         tool_calls=1,
     )
     _finalize.print_session_end(
@@ -140,7 +140,7 @@ def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
         completed=True,
         reason="verify_settled",
         summary="verify passed and the worker stopped making changes",
-        iterations=9,
+        turns=9,
         tool_calls=12,
         verified="passed",
     )
@@ -187,7 +187,7 @@ def test_silent_and_plateau_ends_are_not_headlined_passed(
         ],
     )
     result = _snapshot.SessionResult(
-        completed=True, reason=reason, summary="done", iterations=2, tool_calls=3
+        completed=True, reason=reason, summary="done", turns=2, tool_calls=3
     )
     _finalize.print_session_end(
         result,
@@ -226,7 +226,7 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
         completed=True,
         reason="finish_session",
         summary="",
-        iterations=1,
+        turns=1,
         tool_calls=1,
         verified="failed",
     )
@@ -293,7 +293,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
         completed=True,
         reason="finish_session",
         summary="",
-        iterations=1,
+        turns=1,
         tool_calls=1,
         verified="failed",
     )
@@ -304,7 +304,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
         completed=True,
         reason="finish_session",
         summary="",
-        iterations=1,
+        turns=1,
         tool_calls=1,
         verified="unverified",
     )
@@ -321,7 +321,7 @@ def test_the_stale_gate_proposal_survives_an_unverified_verdict(
         completed=True,
         reason="gate_stale",
         summary="",
-        iterations=1,
+        turns=1,
         tool_calls=1,
         stale_gate="pytest -q tests/",
         verified="unverified",
@@ -378,7 +378,7 @@ def test_end_banner_does_not_claim_merged_from_a_prior_executions_stamp(
         encoding="utf-8",
     )
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
+        completed=True, reason="finish_session", summary="done", turns=1, tool_calls=1
     )
     _finalize.print_session_end(
         result,
@@ -416,7 +416,7 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
         encoding="utf-8",
     )
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
+        completed=True, reason="finish_session", summary="done", turns=1, tool_calls=1
     )
     _finalize.print_session_end(
         result,
@@ -462,7 +462,7 @@ def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
         encoding="utf-8",
     )
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
+        completed=True, reason="finish_session", summary="done", turns=1, tool_calls=1
     )
     _finalize.print_session_end(
         result,
@@ -510,7 +510,7 @@ def _end_footer(
     )
     layout.manifest_path.write_text(json.dumps({"mode": "run", **manifest}), encoding="utf-8")
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
+        completed=True, reason="finish_session", summary="done", turns=1, tool_calls=1
     )
     _finalize.print_session_end(
         result,
@@ -677,7 +677,7 @@ def test_provider_error_is_headlined_failed(tmp_path: pathlib.Path, capsys: obje
         ],
     )
     result = _snapshot.SessionResult(
-        completed=False, reason="provider_error", summary="", iterations=1, tool_calls=0
+        completed=False, reason="provider_error", summary="", turns=1, tool_calls=0
     )
     _finalize.print_session_end(
         result,
@@ -707,8 +707,8 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
     result = _snapshot.SessionResult(
         completed=False,
         reason="provider_error",
-        summary="provider error at iter 1 (HTTP 401) Authentication failed",
-        iterations=1,
+        summary="provider error at turn 1 (HTTP 401) Authentication failed",
+        turns=1,
         tool_calls=0,
         verified="unverified",
     )
@@ -745,7 +745,7 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
     out = outs["r-401"]
     assert "nothing verified the final tree" not in out
     assert "resume and run the gate" not in out
-    assert "failed · provider error\n  provider error at iter 1 (HTTP 401)" in out
+    assert "failed · provider error\n  provider error at turn 1 (HTTP 401)" in out
     assert "resume with:  agent6 resume r-401" in out
     committed = outs["r-401-committed"]
     assert "nothing verified the final tree" in committed
@@ -764,13 +764,13 @@ def test_end_banner_adds_the_run_total_across_resume_executions(
             {"type": "session.start", "session_id": "r7", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.019},
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
-            {"type": "loop.resume.start", "iteration": 4},
+            {"type": "loop.resume.start", "turn": 4},
             {"type": "budget.update", "usd_total": 0.0126},
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="", iterations=5, tool_calls=2
+        completed=True, reason="finish_session", summary="", turns=5, tool_calls=2
     )
     _finalize.print_session_end(
         result,
@@ -799,13 +799,13 @@ def test_end_banner_run_total_carries_plan_points(
             {"type": "session.start", "session_id": "r9", "user_task": "t"},
             {**plan, "plan_consumed": 1.0},
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
-            {"type": "loop.resume.start", "iteration": 4},
+            {"type": "loop.resume.start", "turn": 4},
             {**plan, "plan_consumed": 0.0},
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="", iterations=5, tool_calls=2
+        completed=True, reason="finish_session", summary="", turns=5, tool_calls=2
     )
     _finalize.print_session_end(
         result,
@@ -831,7 +831,7 @@ def test_end_banner_stays_quiet_on_a_single_execution_run(
         ],
     )
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="", iterations=2, tool_calls=1
+        completed=True, reason="finish_session", summary="", turns=2, tool_calls=1
     )
     _finalize.print_session_end(
         result,
@@ -1049,8 +1049,8 @@ def test_a_plan_that_crashed_before_finishing_gets_no_execute_hint(
     result = _snapshot.SessionResult(
         completed=False,
         reason="provider_error",
-        summary="provider error at iter 1",
-        iterations=1,
+        summary="provider error at turn 1",
+        turns=1,
         tool_calls=0,
     )
     _finalize.print_session_end(
@@ -1079,7 +1079,7 @@ def test_a_plan_that_completed_without_finish_planning_gets_no_execute_hint(
     )
     layout.manifest_path.write_text(json.dumps({"mode": "plan"}), encoding="utf-8")
     result = _snapshot.SessionResult(
-        completed=True, reason="silent_finish", summary="done", iterations=1, tool_calls=0
+        completed=True, reason="silent_finish", summary="done", turns=1, tool_calls=0
     )
     _finalize.print_session_end(
         result,
@@ -1113,7 +1113,7 @@ def test_the_end_of_run_block_goes_through_the_reporter(
     said: list[str] = []
     _finalize.print_session_end(
         _snapshot.SessionResult(
-            completed=True, reason="finish_session", summary=forged, iterations=1, tool_calls=1
+            completed=True, reason="finish_session", summary=forged, turns=1, tool_calls=1
         ),
         layout=layout,
         cwd=tmp_path,
@@ -1137,7 +1137,7 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
 
     monkeypatch.setattr(git_ops, "status", _boom)
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="", iterations=1, tool_calls=1
+        completed=True, reason="finish_session", summary="", turns=1, tool_calls=1
     )
     session_id = "run-x"
     layout = _layout(
@@ -1185,8 +1185,8 @@ def test_a_failed_run_keeps_its_reason_on_the_console_stream(
     result = _snapshot.SessionResult(
         completed=False,
         reason="provider_error",
-        summary="provider error at iter 1: HTTP error calling http://127.0.0.1:9/v1 (openai)",
-        iterations=1,
+        summary="provider error at turn 1: HTTP error calling http://127.0.0.1:9/v1 (openai)",
+        turns=1,
         tool_calls=0,
     )
 
@@ -1215,7 +1215,7 @@ def test_a_clean_finish_does_not_repeat_the_summary_the_stream_showed(
         ],
     )
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="fixed it", iterations=1, tool_calls=1
+        completed=True, reason="finish_session", summary="fixed it", turns=1, tool_calls=1
     )
 
     _finalize.print_session_end(
@@ -1249,7 +1249,7 @@ def test_a_silent_finish_does_not_repeat_the_answer_the_stream_showed(
 
     def end_block(summary: str) -> str:
         result = _snapshot.SessionResult(
-            completed=True, reason="silent_finish", summary=summary, iterations=1, tool_calls=0
+            completed=True, reason="silent_finish", summary=summary, turns=1, tool_calls=0
         )
         _finalize.print_session_end(
             result,
@@ -1285,7 +1285,7 @@ def test_the_sandbox_warning_states_its_remedy_once(
         ],
     )
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="", iterations=1, tool_calls=1
+        completed=True, reason="finish_session", summary="", turns=1, tool_calls=1
     )
 
     _finalize.print_session_end(
@@ -1313,7 +1313,7 @@ def test_the_run_total_rides_the_receipt_channel(tmp_path: pathlib.Path) -> None
             {"type": "session.start", "session_id": "r8", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.019},
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
-            {"type": "loop.resume.start", "iteration": 4},
+            {"type": "loop.resume.start", "turn": 4},
             {"type": "budget.update", "usd_total": 0.0126},
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
@@ -1322,7 +1322,7 @@ def test_the_run_total_rides_the_receipt_channel(tmp_path: pathlib.Path) -> None
     receipt: list[str] = []
     _finalize.print_session_end(
         _snapshot.SessionResult(
-            completed=True, reason="finish_session", summary="", iterations=5, tool_calls=2
+            completed=True, reason="finish_session", summary="", turns=5, tool_calls=2
         ),
         layout=layout,
         cwd=tmp_path,
@@ -1353,7 +1353,7 @@ def test_a_plan_ends_without_the_no_commit_footer(
     sp.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
     result = _snapshot.SessionResult(
-        completed=True, reason="finish_planning", summary="planned", iterations=1, tool_calls=1
+        completed=True, reason="finish_planning", summary="planned", turns=1, tool_calls=1
     )
     outs: dict[str, str] = {}
     for mode in ("plan", "run"):
@@ -1393,8 +1393,7 @@ def test_the_left_out_list_prints_names_on_one_line(
     layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="r-left11")
     layout.ensure()
     layout.logs_path.write_text(
-        json.dumps({"type": "loop.edit.left_out", "iteration": 1, "untracked": ["a\nb.txt"]})
-        + "\n",
+        json.dumps({"type": "loop.edit.left_out", "turn": 1, "untracked": ["a\nb.txt"]}) + "\n",
         encoding="utf-8",
     )
     finalize._print_left_out(layout, cwd=repo, ref="", reporter=reporter.STDIO_REPORTER)

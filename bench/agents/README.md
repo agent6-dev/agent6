@@ -121,7 +121,7 @@ results, and a prompt rule to run tests only through run_verify_command.
 - Prompt caching depends on backend routing and varies day to day: round
   1 saw zero cached tokens on every call, the rerun and a direct probe on
   the same config got real hits. Without caching the growing-transcript
-  loop pays full input price every iteration. Watch `cache_r` in run
+  loop pays full input price every turn. Watch `cache_r` in run
   summaries; if it stays 0, pin a caching backend via
   `[providers.openrouter] extra_body = { provider = { order = [...] } }`.
 - Wall time on kimi is dominated by model latency, not the harness.

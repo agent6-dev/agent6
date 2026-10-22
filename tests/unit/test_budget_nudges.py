@@ -21,27 +21,25 @@ def test_the_planner_is_told_once_on_a_low_budget_or_too_many_turns() -> None:
     state = _state()
     nudge = _guards.plan_budget_nudge(state, low)
     assert nudge is not None and nudge.text == _nudges.PLAN_BUDGET_NUDGE
-    assert nudge.fields == {"iteration": 1, "budget_remaining": _nudges.PLAN_BUDGET_NUDGE_BELOW}
-    assert nudge.log == "LOOP: plan finish-nudge at iter 1 (turns=False, low_budget=True)"
+    assert nudge.fields == {"turn": 1, "budget_remaining": _nudges.PLAN_BUDGET_NUDGE_BELOW}
+    assert nudge.log == "LOOP: plan finish-nudge at turn 1 (turns=False, low_budget=True)"
     assert _guards.plan_budget_nudge(state, low) is None
 
-    late = turn_context(
-        mode="plan", iteration=_nudges.PLAN_NUDGE_AFTER_ITERS + 4, execution_start=5
-    )
+    late = turn_context(mode="plan", turn=_nudges.PLAN_NUDGE_AFTER_TURNS + 4, execution_start=5)
     nudge = _guards.plan_budget_nudge(_state(), late)
     assert nudge is not None and "turns=True, low_budget=False" in nudge.log
-    early = turn_context(mode="plan", iteration=_nudges.PLAN_NUDGE_AFTER_ITERS, execution_start=2)
+    early = turn_context(mode="plan", turn=_nudges.PLAN_NUDGE_AFTER_TURNS, execution_start=2)
     assert _guards.plan_budget_nudge(_state(), early) is None
     assert _guards.plan_budget_nudge(_state(), turn_context(budget_remaining=lambda: 0.1)) is None
 
 
 def test_a_plain_run_is_told_once_on_a_low_budget_naming_its_gate() -> None:
-    low = turn_context(budget_remaining=lambda: _nudges.RUN_BUDGET_NUDGE_BELOW, iteration=9)
+    low = turn_context(budget_remaining=lambda: _nudges.RUN_BUDGET_NUDGE_BELOW, turn=9)
     state = _state()
     nudge = _guards.run_budget_nudge(state, low)
     assert nudge is not None and nudge.text == _nudges.RUN_BUDGET_NUDGE_GATELESS
-    assert nudge.fields == {"iteration": 9, "budget_remaining": _nudges.RUN_BUDGET_NUDGE_BELOW}
-    assert nudge.log == "LOOP: run budget-nudge at iter 9"
+    assert nudge.fields == {"turn": 9, "budget_remaining": _nudges.RUN_BUDGET_NUDGE_BELOW}
+    assert nudge.log == "LOOP: run budget-nudge at turn 9"
     assert _guards.run_budget_nudge(state, low) is None
 
     gated = turn_context(budget_remaining=lambda: 0.1, gate_present=lambda: True)

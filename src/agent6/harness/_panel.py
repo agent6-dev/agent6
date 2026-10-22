@@ -310,7 +310,7 @@ DedupKey = tuple[str, str, Hunk | tuple[int, int] | None]
 
 
 def _dedup_key(f: Finding, hunks: dict[str, list[Hunk]]) -> DedupKey:
-    """Return a finding's identity across seats and iterations: file, category and hunk.
+    """Return a finding's identity across seats and turns: file, category and hunk.
 
     The hunk whose post-image span holds the citation decides first, else the one whose
     pre-image span does; the two sides of one hunk key alike. A citation outside every hunk

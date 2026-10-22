@@ -4,9 +4,9 @@
 {"ts": "2026-07-14T10:00:01.500000+00:00", "type": "role.thinking_delta", "role": "worker", "text": "Let me read the file."}
 {"ts": "2026-07-14T10:00:01.700000+00:00", "type": "role.text_delta", "role": "worker", "text": "Reading now"}
 {"ts": "2026-07-14T10:00:02.000000+00:00", "type": "budget.update", "input_total": 5850, "output_total": 82, "input_cap": 1500000, "output_cap": 200000, "usd_total": 0.004841036, "usd_partial": false}
-{"ts": "2026-07-14T10:00:02.100000+00:00", "type": "loop.budget", "iteration": 1, "input_tokens": 5850, "output_tokens": 82}
+{"ts": "2026-07-14T10:00:02.100000+00:00", "type": "loop.budget", "turn": 1, "input_tokens": 5850, "output_tokens": 82}
 {"ts": "2026-07-14T10:00:02.500000+00:00", "type": "role.result", "role": "worker", "ok": true, "tokens_in": 5850, "tokens_out": 82, "cache_read": 4864, "cache_creation": 0, "stop_reason": "tool_calls"}
-{"ts": "2026-07-14T10:00:03.000000+00:00", "type": "loop.tool.call", "name": "read_file", "iteration": 1}
+{"ts": "2026-07-14T10:00:03.000000+00:00", "type": "loop.tool.call", "name": "read_file", "turn": 1}
 {"ts": "2026-07-14T10:00:03.100000+00:00", "type": "tool.call", "name": "read_file", "args": {"path": "src/x.py"}}
 {"ts": "2026-07-14T10:00:03.200000+00:00", "type": "tool.result", "name": "read_file", "ok": true, "summary": "4773 bytes"}
 {"ts": "2026-07-14T10:00:04.000000+00:00", "type": "tool.call", "name": "run_command", "args": {"argv": ["ls", "/nope"]}}
@@ -15,10 +15,10 @@
 {"ts": "2026-07-14T10:00:04.700000+00:00", "type": "tool.result", "name": "apply_patch", "ok": "True", "summary": "applied=1"}
 {"ts": "2026-07-14T10:00:05.000000+00:00", "type": "verify.start", "cmd": ["pytest", "-x", "-q"], "timeout_s": 600.0}
 {"ts": "2026-07-14T10:00:06.700000+00:00", "type": "verify.end", "cmd": ["pytest", "-x", "-q"], "exit_code": 1, "duration_s": 1.714, "timeout_s": 600.0, "stdout_tail": "1 failed", "stderr_tail": ""}
-{"ts": "2026-07-14T10:00:07.000000+00:00", "type": "loop.auto_commit", "iteration": 1, "sha": "29251c4be62e"}
+{"ts": "2026-07-14T10:00:07.000000+00:00", "type": "loop.auto_commit", "turn": 1, "sha": "29251c4be62e"}
 {"ts": "2026-07-14T10:00:07.100000+00:00", "type": "diff.updated", "sha": "29251c4be62e06bd4de05693aeff4472db5c5626", "patch": "diff --git a/src/x.py b/src/x.py\n@@ -1 +1,2 @@\n+added\n"}
 {"ts": "2026-07-14T10:00:07.500000+00:00", "type": "loop.provider.retry", "attempt": 2, "error": "upstream 502"}
-{"ts": "2026-07-14T10:00:08.000000+00:00", "type": "loop.metric.sample", "score": 0.5, "iteration": 1}
+{"ts": "2026-07-14T10:00:08.000000+00:00", "type": "loop.metric.sample", "score": 0.5, "turn": 1}
 {"ts": "2026-07-14T10:00:09.000000+00:00", "type": "approval.prompt", "id": "approval-1", "prompt": "Allow run_command: rm -rf build"}
 {"ts": "2026-07-14T10:00:09.500000+00:00", "type": "approval.answer", "id": "approval-1", "approved": true, "source": "tui"}
 {"ts": "2026-07-14T10:00:10.000000+00:00", "type": "question.prompt", "id": "question-1", "questions": [{"question": "Which greeting?", "options": ["hi", "hello"]}, {"question": "Apply to all?", "options": []}]}
@@ -32,12 +32,12 @@
 {"ts": "2026-07-14T10:00:14.500000+00:00", "foo": 42}
 {"ts": "2026-07-14T10:00:15.000000+00:00", "type": "graph.update", "nodes": null, "cursor": null}
 {"ts": "2026-07-14T10:00:15.200000+00:00", "type": "graph.update", "nodes": {"ok": {"title": "ok", "status": "pending", "parent_id": null, "children": []}, "bad": "not-a-dict"}, "cursor": 123}
-{"ts": "2026-07-14T10:00:16.000000+00:00", "type": "loop.resume.start", "iteration": 22, "messages": 44}
+{"ts": "2026-07-14T10:00:16.000000+00:00", "type": "loop.resume.start", "turn": 22, "messages": 44}
 {"ts": "2026-07-14T10:00:16.500000+00:00", "type": "role.call", "role": "worker", "model": "kimi-k2", "provider": "openrouter"}
 {"ts": "2026-07-14T10:00:17.000000+00:00", "type": "role.result", "role": "worker", "ok": false, "error": "boom upstream"}
 {"ts": "2026-07-14T10:00:18.000000+00:00", "type": "tool.call", "name": "finish_session", "args": {"summary": "all green"}}
 {"ts": "2026-07-14T10:00:18.200000+00:00", "type": "tool.result", "name": "finish_session", "ok": true, "summary": "finish_session"}
-{"ts": "2026-07-14T10:00:18.500000+00:00", "type": "session.end", "reason": "finish_session", "iterations": 8, "all_passed": true}
+{"ts": "2026-07-14T10:00:18.500000+00:00", "type": "session.end", "reason": "finish_session", "turns": 8, "all_passed": true}
 {"type": "tool.ca
 [1, 2, 3]
 "just a string"

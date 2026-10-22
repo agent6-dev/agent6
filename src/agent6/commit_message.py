@@ -48,7 +48,7 @@ class CommitRow:
     message: str
 
 
-_ITER_SUBJECT_RE = re.compile(r"^agent6 iter \d+:\s*", re.IGNORECASE)
+_TURN_SUBJECT_RE = re.compile(r"^agent6 turn \d+:\s*", re.IGNORECASE)
 
 
 def condense_commit_message(
@@ -64,12 +64,12 @@ def condense_commit_message(
 
     Returns:
         The headline, then the summary whole, else the distinct per-step subjects as
-        bullets with the `agent6 iter N:` prefix and checkpoint noise stripped.
+        bullets with the `agent6 turn N:` prefix and checkpoint noise stripped.
     """
     bullets: list[str] = []
     seen: set[str] = set()
     for row in rows:
-        s = _ITER_SUBJECT_RE.sub("", row.subject).strip()
+        s = _TURN_SUBJECT_RE.sub("", row.subject).strip()
         if not s or s.lower().startswith("checkpoint") or s.lower() in seen:
             continue
         seen.add(s.lower())
@@ -114,18 +114,18 @@ def first_prose_line(text: str, *, fallback: str) -> str:
     return fallback
 
 
-def agent6_subject(text: str, iteration: int, *, fallback: str = "verify passed") -> str:
-    """Return `agent6 iter N: <first line>`, the line fitted to the subject limit.
+def agent6_subject(text: str, turn: int, *, fallback: str = "verify passed") -> str:
+    """Return `agent6 turn N: <first line>`, the line fitted to the subject limit.
 
     Args:
         text: The agent's response; its first prose line is `<first line>`.
-        iteration: The loop iteration, `N`.
+        turn: The loop turn, `N`.
         fallback: The `<first line>` when the text holds no prose.
 
     Returns:
         The subject line.
     """
-    return f"agent6 iter {iteration}: {_fit(first_prose_line(text, fallback=fallback))}"
+    return f"agent6 turn {turn}: {_fit(first_prose_line(text, fallback=fallback))}"
 
 
 def _is_testish(p: str) -> bool:
@@ -201,7 +201,7 @@ def conventional_commit_subject(changes: Sequence[tuple[str, str]], *, summary: 
 
 def _first_clause(task: str) -> str:
     """Return the task's first clause on one line, uncut."""
-    first_line = _ITER_SUBJECT_RE.sub("", task_text.task_headline(task)).strip()
+    first_line = _TURN_SUBJECT_RE.sub("", task_text.task_headline(task)).strip()
     match = re.search(r"[.!?](?:\s|$)", first_line)
     clause = first_line[: match.start()] if match else first_line
     return " ".join(clause.split())

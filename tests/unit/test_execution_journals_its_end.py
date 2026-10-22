@@ -44,7 +44,7 @@ TORN = {
         },
     ],
     "tool_calls": 3,
-    "next_iteration": 4,
+    "next_turn": 4,
     "root_task_id": None,
     "original_task": "x",
     "verify_command": [],
@@ -112,7 +112,7 @@ def test_provider_setup_failure_journals_session_end(
     ended = json.loads(layout.logs_path.read_text(encoding="utf-8").splitlines()[-1])
     assert ended["type"] == "session.end"
     assert ended["reason"] == "crashed"
-    assert ended["iterations"] == 0
+    assert ended["turns"] == 0
     assert any("run crashed" in line for line in said)
 
 
@@ -251,7 +251,7 @@ def test_mcp_setup_failure_journals_session_end(
     ended = json.loads(layout.logs_path.read_text(encoding="utf-8").splitlines()[-1])
     assert ended["type"] == "session.end"
     assert ended["reason"] == "crashed"
-    assert ended["iterations"] == 0
+    assert ended["turns"] == 0
 
 
 def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
@@ -292,18 +292,18 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
     mcp = types.SimpleNamespace(close=lambda: closed.append("mcp") or ())
 
     class _Workflow:
-        iterations_reached = 1
+        turns_reached = 1
 
         def __init__(self, **_kwargs: object) -> None:
             pass
 
         def run(self, _task: str) -> _snapshot.SessionResult:
-            events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+            events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
             return _snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="done",
-                iterations=1,
+                turns=1,
                 tool_calls=0,
             )
 
@@ -555,9 +555,9 @@ def _wired_frontend(
     return dataclasses.replace(frontend, make_steer_state=_steer_state, tui_session=tui_session)
 
 
-def _finishing_workflow(iterations: int) -> type:
+def _finishing_workflow(turns: int) -> type:
     class _Workflow:
-        iterations_reached = iterations
+        turns_reached = turns
 
         def __init__(self, **_kwargs: object) -> None:
             pass
@@ -567,7 +567,7 @@ def _finishing_workflow(iterations: int) -> type:
                 completed=True,
                 reason="finish_session",
                 summary="done",
-                iterations=iterations,
+                turns=turns,
                 tool_calls=0,
                 verified="not_applicable",
             )
@@ -686,18 +686,18 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
     events = event_log.EventSink(layout.logs_path)
 
     class _Workflow:
-        iterations_reached = 1
+        turns_reached = 1
 
         def __init__(self, **_kwargs: object) -> None:
             pass
 
         def run(self, _task: str) -> _snapshot.SessionResult:
-            events.emit("session.end", reason=reason, iterations=1, verified=verified)
+            events.emit("session.end", reason=reason, turns=1, verified=verified)
             return _snapshot.SessionResult(
                 completed=True,
                 reason=reason,
                 summary="done",
-                iterations=1,
+                turns=1,
                 tool_calls=0,
                 verified=verified,
             )
@@ -801,18 +801,18 @@ def test_a_finish_with_no_commit_is_journaled_and_reads_not_committed(
     events = event_log.EventSink(layout.logs_path)
 
     class _Workflow:
-        iterations_reached = 1
+        turns_reached = 1
 
         def __init__(self, **_kwargs: object) -> None:
             pass
 
         def run(self, _task: str) -> _snapshot.SessionResult:
-            events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+            events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
             return _snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="done",
-                iterations=1,
+                turns=1,
                 tool_calls=0,
                 verified="passed",
             )
@@ -880,18 +880,18 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
             raise RuntimeError("dashboard teardown failed")
 
     class _Workflow:
-        iterations_reached = 3
+        turns_reached = 3
 
         def __init__(self, **_kwargs: object) -> None:
             pass
 
         def run(self, _task: str) -> _snapshot.SessionResult:
-            events.emit("session.end", reason="finish_session", iterations=3, all_passed=True)
+            events.emit("session.end", reason="finish_session", turns=3, all_passed=True)
             return _snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="done",
-                iterations=3,
+                turns=3,
                 tool_calls=0,
                 verified="not_applicable",
             )
@@ -953,18 +953,18 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
     order: list[str] = []
 
     class _Workflow:
-        iterations_reached = 3
+        turns_reached = 3
 
         def __init__(self, **_kwargs: object) -> None:
             pass
 
         def run(self, _task: str) -> _snapshot.SessionResult:
-            events.emit("session.end", reason="finish_session", iterations=3, all_passed=True)
+            events.emit("session.end", reason="finish_session", turns=3, all_passed=True)
             return _snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="done",
-                iterations=3,
+                turns=3,
                 tool_calls=0,
                 verified="passed",
             )
@@ -1033,7 +1033,7 @@ def test_a_closed_output_pipe_ends_the_run_as_a_stop_not_a_crash(tmp_path: pathl
     layout.ensure()
     events = event_log.EventSink(layout.logs_path)
 
-    reason = _execution._journal_escape(events, BrokenPipeError(32, "Broken pipe"), iterations=2)
+    reason = _execution._journal_escape(events, BrokenPipeError(32, "Broken pipe"), turns=2)
 
     ended = [json.loads(line) for line in layout.logs_path.read_text().splitlines()][-1]
     assert reason == "interrupted"
@@ -1055,7 +1055,7 @@ def test_an_interrupted_end_records_the_tree_the_run_left(
     order: list[str] = []
 
     class _Workflow:
-        iterations_reached = 2
+        turns_reached = 2
         chain = types.SimpleNamespace(tree_sha=lambda: "tree-at-the-signal")
 
         def __init__(self, **_kwargs: object) -> None:
@@ -1099,7 +1099,7 @@ def test_an_interrupted_end_records_the_tree_the_run_left(
         for line in layout.logs_path.read_text(encoding="utf-8").splitlines()
         if '"session.end"' in line
     ]
-    assert [(e["reason"], e["iterations"], e.get("tree")) for e in ends] == [
+    assert [(e["reason"], e["turns"], e.get("tree")) for e in ends] == [
         ("interrupted", 2, "tree-at-the-signal")
     ]
     assert end.rc == finalize.EXIT_OPERATOR_STOP
@@ -1124,7 +1124,7 @@ def test_a_second_interrupt_during_the_tree_read_still_journals_the_end(
     order: list[str] = []
 
     class _Workflow:
-        iterations_reached = 2
+        turns_reached = 2
         chain = types.SimpleNamespace(tree_sha=_interrupted)
 
         def __init__(self, **_kwargs: object) -> None:
@@ -1168,9 +1168,7 @@ def test_a_second_interrupt_during_the_tree_read_still_journals_the_end(
         for line in layout.logs_path.read_text(encoding="utf-8").splitlines()
         if '"session.end"' in line
     ]
-    assert [(e["reason"], e["iterations"], e.get("tree")) for e in ends] == [
-        ("interrupted", 2, None)
-    ]
+    assert [(e["reason"], e["turns"], e.get("tree")) for e in ends] == [("interrupted", 2, None)]
     assert end.rc == finalize.EXIT_OPERATOR_STOP
     assert "\n[agent6] run interrupted" in said
 
@@ -1263,18 +1261,18 @@ def test_a_plan_under_auto_merge_prints_no_skipped_note(
     events = event_log.EventSink(layout.logs_path)
 
     class _Workflow:
-        iterations_reached = 1
+        turns_reached = 1
 
         def __init__(self, **_kwargs: object) -> None:
             pass
 
         def run(self, _task: str) -> _snapshot.SessionResult:
-            events.emit("session.end", reason="finish_planning", iterations=1)
+            events.emit("session.end", reason="finish_planning", turns=1)
             return _snapshot.SessionResult(
                 completed=True,
                 reason="finish_planning",
                 summary="planned",
-                iterations=1,
+                turns=1,
                 tool_calls=0,
                 verified="not_applicable",
             )

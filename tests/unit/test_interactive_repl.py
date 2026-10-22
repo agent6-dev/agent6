@@ -232,7 +232,7 @@ def test_after_auto_commit_default_continues() -> None:
 
 
 def test_after_auto_commit_field_is_overridable() -> None:
-    """Custom hook is honoured (called with iteration + sha)."""
+    """Custom hook is honoured (called with turn + sha)."""
     from agent6.harness import loop
 
     calls: list[tuple[int, str]] = []

@@ -185,14 +185,14 @@ class RoleCall:
 class CommitStep:
     """One per-step commit of the run, which the dashboards select among."""
 
-    iteration: int
+    turn: int
     sha: str
     subject: str
 
     @property
     def label(self) -> str:
-        """The step picker's line: `iter N · sha7 · subject`, a part left out when empty."""
-        return " · ".join(p for p in (f"iter {self.iteration}", self.sha[:7], self.subject) if p)
+        """The step picker's line: `turn N · sha7 · subject`, a part left out when empty."""
+        return " · ".join(p for p in (f"turn {self.turn}", self.sha[:7], self.subject) if p)
 
 
 def approval_parts(prompt: str) -> tuple[str, str]:

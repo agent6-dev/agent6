@@ -114,8 +114,8 @@ def test_cli_changes_reach_the_tui_and_web_with_their_layer(
     from agent6.ui.web import model
 
     monkeypatch.chdir(repo)
-    assert cli_main(["config", "set", "review.interval_iterations", "9"]) == 0
-    assert cli_main(["config", "set", "--repo", "review.interval_iterations", "11"]) == 0
+    assert cli_main(["config", "set", "review.interval_turns", "9"]) == 0
+    assert cli_main(["config", "set", "--repo", "review.interval_turns", "11"]) == 0
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -127,28 +127,28 @@ def test_cli_changes_reach_the_tui_and_web_with_their_layer(
             row = next(
                 table.get_row_at(i)
                 for i in range(table.row_count)
-                if str(table.get_row_at(i)[0]).strip() == "interval_iterations"
+                if str(table.get_row_at(i)[0]).strip() == "interval_turns"
             )
             assert str(row[1]).strip() == "11"
             assert "repo" in str(row[2])
             web = model.config_payload(repo)
-            assert web["review.interval_iterations"]["value"] == 11
-            assert web["review.interval_iterations"]["source"] == "repo"
+            assert web["review.interval_turns"]["value"] == 11
+            assert web["review.interval_turns"]["source"] == "repo"
 
-            assert cli_main(["config", "unset", "--repo", "review.interval_iterations"]) == 0
+            assert cli_main(["config", "unset", "--repo", "review.interval_turns"]) == 0
             screen.action_reload()
             await pilot.pause()
             table = screen.query_one("#tbl-review", widgets.DataTable)
             row = next(
                 table.get_row_at(i)
                 for i in range(table.row_count)
-                if str(table.get_row_at(i)[0]).strip() == "interval_iterations"
+                if str(table.get_row_at(i)[0]).strip() == "interval_turns"
             )
             assert str(row[1]).strip() == "9"
             assert "global" in str(row[2])
             web = model.config_payload(repo)
-            assert web["review.interval_iterations"]["value"] == 9
-            assert web["review.interval_iterations"]["source"] == "global"
+            assert web["review.interval_turns"]["value"] == 9
+            assert web["review.interval_turns"]["source"] == "global"
 
     asyncio.run(scenario())
 

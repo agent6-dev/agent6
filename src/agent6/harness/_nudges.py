@@ -196,7 +196,7 @@ def verify_failure_signature(stdout_tail: str, stderr_tail: str) -> str:
 
 # Plan-mode wrap-up: nudge below this budget fraction, or after this many turns without a plan.
 PLAN_BUDGET_NUDGE_BELOW = 0.35
-PLAN_NUDGE_AFTER_ITERS = 12
+PLAN_NUDGE_AFTER_TURNS = 12
 
 # Task finish gate: a finish with open subtasks is re-prompted with the open list, this many times.
 # Only subtasks gate; the always-pending root would deadlock.

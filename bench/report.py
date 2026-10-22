@@ -47,7 +47,7 @@ def _agg(rows: list[Row]) -> dict[str, Any]:
         "ci": _ci95(scores),
         "solved": sum(1 for s in scores if s >= 0.999),
         "wall_s": statistics.mean([float(r.get("wall_s") or 0) for r in rows]) if rows else 0.0,
-        "iters": statistics.mean([float(r.get("iterations") or 0) for r in rows]) if rows else 0.0,
+        "turns": statistics.mean([float(r.get("iterations") or 0) for r in rows]) if rows else 0.0,
         "tokens_out": statistics.mean([float(r.get("tokens_out") or 0) for r in rows])
         if rows
         else 0.0,
@@ -79,7 +79,7 @@ def render(arms: dict[str, list[Row]]) -> str:
     out = [head, "<h1>bench report</h1>"]
 
     out.append("<h2>arms</h2><table><tr><th class='key'>arm</th><th>n</th><th>score</th>")
-    out.append("<th>solved</th><th>wall s</th><th>iters</th><th>out tok</th>")
+    out.append("<th>solved</th><th>wall s</th><th>turns</th><th>out tok</th>")
     out.append("<th>usd</th><th>tampered</th></tr>")
     for label, rows in arms.items():
         a = _agg(rows)
@@ -87,7 +87,7 @@ def render(arms: dict[str, list[Row]]) -> str:
             f"<tr><td class='key'>{html.escape(label)}</td><td>{a['n']}</td>"
             f"<td>{a['score']:.3f} &plusmn; {a['ci']:.3f}</td>"
             f"<td>{a['solved']}/{a['n']}</td><td>{a['wall_s']:.0f}</td>"
-            f"<td>{a['iters']:.1f}</td><td>{a['tokens_out']:.0f}</td>"
+            f"<td>{a['turns']:.1f}</td><td>{a['tokens_out']:.0f}</td>"
             f"<td>{a['usd']:.2f}</td><td>{a['tampered']}</td></tr>"
         )
     out.append("</table>")

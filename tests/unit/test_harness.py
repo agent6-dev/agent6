@@ -209,7 +209,7 @@ def test_ask_silent_finish_ends_as_answered_not_silent_finish() -> None:
         "The answer is 42.",
         _conversation.Conversation(),
         _state(),
-        _turn(iteration=2),
+        _turn(turn=2),
         _ctx(wf, _state()),
     )
     assert result is not None
@@ -225,7 +225,7 @@ def test_run_silent_finish_stays_silent_finish() -> None:
         "Done.",
         _conversation.Conversation(),
         _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True)),
-        _turn(iteration=5),
+        _turn(turn=5),
         _ctx(wf, _state()),
     )
     assert result is not None
@@ -268,7 +268,7 @@ def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
         _state(
             ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True, last_ok=False)
         ),
-        _turn(iteration=5),
+        _turn(turn=5),
         _ctx(wf, _state()),
     )
     assert result is not None and result.reason == "silent_finish"
@@ -289,7 +289,7 @@ def test_run_silent_finish_over_green_verify_stays_passed() -> None:
                 ever_passed=True, last_ok=True, edited_since=False
             ),
         ),
-        _turn(iteration=5),
+        _turn(turn=5),
         _ctx(wf, _state()),
     )
     ends = [e for e in ev.events if e["type"] == "session.end"]
@@ -304,7 +304,7 @@ def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
         "READY",
         _conversation.Conversation(),
         _state(ever_edited=True),
-        _turn(iteration=5),
+        _turn(turn=5),
         _ctx(wf, _state()),
     )
     assert result is not None and result.reason == "silent_finish"
@@ -321,7 +321,7 @@ def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
 def _turn(**kw: Any) -> Any:
     """A bare TurnState for direct turn-phase method tests."""
     defaults: dict[str, Any] = {
-        "iteration": 1,
+        "turn": 1,
         "resp": _resp(""),
         "assistant": _conversation.AssistantTurn((), ()),
     }
@@ -329,8 +329,8 @@ def _turn(**kw: Any) -> Any:
     return _loop_state.TurnState(**defaults)
 
 
-def _ctx(wf: loop.Harness, state: Any, iteration: int = 1) -> Any:
-    return wf._turn_context(state, iteration=iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+def _ctx(wf: loop.Harness, state: Any, turn: int = 1) -> Any:
+    return wf._turn_context(state, turn=turn, execution_start=1)  # pyright: ignore[reportPrivateUsage]
 
 
 def _plateau_stop() -> _advice.Stop:
@@ -343,7 +343,7 @@ def _plateau_stop() -> _advice.Stop:
 
 def _settle(wf: loop.Harness, state: Any, turn: Any) -> Any:
     """The settled advisor's answer, applied through the loop; a stop runs the end gates at once."""
-    ctx = _ctx(wf, state, turn.iteration)
+    ctx = _ctx(wf, state, turn.turn)
     return wf._take(state, turn, ctx, _guards.verify_settled(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
@@ -910,13 +910,13 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
     state = _state()
 
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # the run's edit
-    wf._sample_metric(state, _turn(iteration=1), sha="")  # pyright: ignore[reportPrivateUsage]
-    wf._sample_metric(state, _turn(iteration=2), sha="")  # pyright: ignore[reportPrivateUsage]
+    wf._sample_metric(state, _turn(turn=1), sha="")  # pyright: ignore[reportPrivateUsage]
+    wf._sample_metric(state, _turn(turn=2), sha="")  # pyright: ignore[reportPrivateUsage]
 
     assert calls == ["run_metric_command"], "a read-only turn re-ran the benchmark"
 
     (repo / "a.py").write_text("x = 3\n", encoding="utf-8")  # a new state of the tree
-    wf._sample_metric(state, _turn(iteration=3), sha="")  # pyright: ignore[reportPrivateUsage]
+    wf._sample_metric(state, _turn(turn=3), sha="")  # pyright: ignore[reportPrivateUsage]
 
     assert calls == ["run_metric_command", "run_metric_command"]
 
@@ -1001,7 +1001,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
         config=config,
         provider=provider,
         dispatcher=dispatcher,
-        max_iterations=4,
+        max_turns=4,
         # `[git].commit_per_step` governs the commit, not the measurement the prompt promises.
         per_step=commit_per_step,
     )
@@ -1012,7 +1012,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -1029,11 +1029,11 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
     ]
 
 
-def test_drive_loop_tracks_iterations_reached(tmp_path: pathlib.Path) -> None:
-    """The loop records the absolute iteration it is driving on the Harness.
+def test_drive_loop_tracks_turns_reached(tmp_path: pathlib.Path) -> None:
+    """The loop records the absolute turn it is driving on the Harness.
 
     The app-level KeyboardInterrupt fallbacks then emit a session.end with a truthful count; a
-    resumed start_iteration proves it is not a zero-based counter.
+    resumed start_turn proves it is not a zero-based counter.
     """
 
     class ProviderStub:
@@ -1083,9 +1083,9 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: pathlib.Path) -> None:
         config=config,
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=20,
+        max_turns=20,
     )
-    assert wf.iterations_reached == 0  # untouched before the loop runs
+    assert wf.turns_reached == 0  # untouched before the loop runs
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
 
     with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
@@ -1093,14 +1093,14 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: pathlib.Path) -> None:
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=7,  # a resumed run picks up mid-way
+            start_turn=7,  # a resumed run picks up mid-way
             root_task_id=None,
             original_task="t",
         )
 
     assert result.completed is True
-    # verify ran at iter 7, finish_session at iter 8 -> the loop reached iteration 8.
-    assert wf.iterations_reached == 8
+    # verify ran at turn 7, finish_session at turn 8 -> the loop reached turn 8.
+    assert wf.turns_reached == 8
 
 
 @pytest.mark.parametrize(
@@ -1109,7 +1109,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: pathlib.Path) -> None:
         ("budget", "budget_exhausted"),
         ("provider", "provider_error"),
         ("quiet", "went_quiet"),
-        ("iterations", "max_iterations"),
+        ("turns", "max_turns"),
     ],
 )
 def test_abnormal_end_keeps_an_observed_red_verdict(
@@ -1133,7 +1133,7 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
                 raise ProviderError("provider unavailable", fatal=True)
             if ending == "quiet":
                 return _resp("")
-            raise AssertionError("max_iterations should stop before another call")
+            raise AssertionError("max_turns should stop before another call")
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
@@ -1148,7 +1148,7 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
         mode="run",
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=1 if ending == "iterations" else 3,
+        max_turns=1 if ending == "turns" else 3,
     )
     wf.config = _knobs(wf.config, went_quiet_max_nudges=0)
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1157,7 +1157,7 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
             [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
         ),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -1204,14 +1204,14 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: pathlib.Pa
         provider=ProviderStub(),
         dispatcher=mock.MagicMock(),
         logger=logs.append,
-        max_iterations=3,
+        max_turns=3,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="system",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -1261,7 +1261,7 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: pathlib.Path)
         config=config,
         provider=provider,
         dispatcher=mock.MagicMock(),
-        max_iterations=3,
+        max_turns=3,
         call=_provider_call.CallSettings(retry_count=3, retry_delay_s=0.01),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
@@ -1269,7 +1269,7 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: pathlib.Path)
         system="system",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -1301,7 +1301,7 @@ def test_exhausted_provider_retries_keep_the_attempt_count_and_reason(
             [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
         ),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -1342,7 +1342,7 @@ def test_the_first_model_call_carries_the_red_start_gate(
             [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
         ),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -1351,7 +1351,7 @@ def test_the_first_model_call_carries_the_red_start_gate(
     sent = repr(provider.call.call_args)
     assert "start: verify_command exit 1" in sent and "FAILED test_x" in sent
     assert "already failing before your changes" in sent
-    assert result.iterations == 1  # the gate run counted no turn
+    assert result.turns == 1  # the gate run counted no turn
 
 
 def test_a_call_the_providers_front_end_refused_is_an_error_result_not_a_dispatch(
@@ -1371,7 +1371,7 @@ def test_a_call_the_providers_front_end_refused_is_an_error_result_not_a_dispatc
         provider=provider,
         dispatcher=dispatcher,
         logger=logs.append,
-        max_iterations=2,
+        max_turns=2,
     )
     conversation = _conversation.Conversation.from_wire(
         [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
@@ -1381,7 +1381,7 @@ def test_a_call_the_providers_front_end_refused_is_an_error_result_not_a_dispatc
         system="system",
         conversation=conversation,
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -1419,7 +1419,7 @@ def _resume_snapshot(**kw: Any) -> Any:
         "system": "system",
         "messages": [{"role": "user", "content": [{"type": "text", "text": "TASK:\nmean"}]}],
         "tool_calls": 4,
-        "next_iteration": 5,
+        "next_turn": 5,
         "root_task_id": None,
         "original_task": "add a mean() function",
         "verify_command": (),
@@ -1431,7 +1431,7 @@ def _resume_snapshot(**kw: Any) -> Any:
 def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> None:
     """`resume --steer` on a finished run injects the follow-up before the first provider call.
 
-    Otherwise the resumed conversation silent-finishes on iteration 1, before the steer poll.
+    Otherwise the resumed conversation silent-finishes on turn 1, before the steer poll.
     """
 
     class ProviderStub:
@@ -1483,7 +1483,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
         config=config,
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=10,
+        max_turns=10,
         bridge=_operator.OperatorBridge(
             steer_requested=steer.requested, steer_prompt=steer.prompt, steer_clear=steer.clear
         ),
@@ -1495,7 +1495,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
             system=snapshot.system,
             conversation=_conversation.Conversation.from_wire(snapshot.messages),
             tool_calls=snapshot.tool_calls,
-            start_iteration=snapshot.next_iteration,
+            start_turn=snapshot.next_turn,
             root_task_id=snapshot.root_task_id,
             original_task=snapshot.original_task,
             resume_from=snapshot,
@@ -1510,7 +1510,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
     # It drove the run to a real finish, not a dropped-steer silent finish.
     assert result.reason == "finish_session"
     assert result.completed is True
-    assert len(provider.calls) >= 2  # at least one more iteration than the silent finish
+    assert len(provider.calls) >= 2  # at least one more turn than the silent finish
 
 
 def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> None:
@@ -1547,7 +1547,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> 
         config=config,
         provider=ProviderStub(),
         dispatcher=mock.MagicMock(),
-        max_iterations=5,
+        max_turns=5,
     )
     snapshot = _resume_snapshot(
         messages=[{"role": "user", "content": [{"type": "text", "text": "TASK:\nengaged"}]}],
@@ -1558,7 +1558,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> 
         system=snapshot.system,
         conversation=_conversation.Conversation.from_wire(snapshot.messages),
         tool_calls=snapshot.tool_calls,
-        start_iteration=snapshot.next_iteration,
+        start_turn=snapshot.next_turn,
         root_task_id=snapshot.root_task_id,
         original_task=snapshot.original_task,
         resume_from=snapshot,
@@ -1619,9 +1619,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: pathlib
             verify_infer=True,
         ),
     )
-    wf = _wf(
-        root=tmp_path, config=config, provider=provider, dispatcher=dispatcher, max_iterations=5
-    )
+    wf = _wf(root=tmp_path, config=config, provider=provider, dispatcher=dispatcher, max_turns=5)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
@@ -1629,7 +1627,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: pathlib
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -1690,7 +1688,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
         config=config,
         provider=ProviderStub(),
         dispatcher=dispatcher,
-        max_iterations=3,
+        max_turns=3,
         events=ev,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
@@ -1703,12 +1701,12 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
 
-    assert result.reason == "max_iterations"
+    assert result.reason == "max_turns"
     assert dispatcher.calls.count("run_verify_command") == 3
     assert dispatcher.calls.count("run_metric_command") == 1
     failed = [e for e in ev.events if e["type"] == "loop.metric.auto_failed"]
@@ -1788,7 +1786,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
         config=config,
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=3,
+        max_turns=3,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
 
@@ -1804,7 +1802,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -1945,7 +1943,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: pathlib.Path)
         config=config,
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=10,
+        max_turns=10,
         call=_provider_call.CallSettings(
             per_call_max_tokens=16384, metric_task_max_tokens=65536, retry_delay_s=0.01
         ),
@@ -1955,7 +1953,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: pathlib.Path)
         system="s",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -2026,7 +2024,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: pathlib.Path) -> None:
         config=config,
         provider=provider,
         dispatcher=dispatcher,
-        max_iterations=10,
+        max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
@@ -2038,7 +2036,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: pathlib.Path) -> None:
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -2119,7 +2117,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
         config=config,
         provider=provider,
         dispatcher=dispatcher,
-        max_iterations=10,
+        max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
@@ -2131,7 +2129,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -2214,7 +2212,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
         config=config,
         provider=provider,
         dispatcher=dispatcher,
-        max_iterations=20,
+        max_turns=20,
     )
     # The budget fraction follows the measurement count: samples 5-8 see 80% left, 9+ see 10%.
     wf._budget_fraction_remaining = lambda: 0.8 if dispatcher.metric_count <= 8 else 0.1  # type: ignore[method-assign]  # pyright: ignore[reportPrivateUsage]
@@ -2228,7 +2226,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -2243,7 +2241,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
 def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: pathlib.Path) -> None:
     """A planner that never calls finish_planning gets one finish nudge at the plan turn cap.
 
-    Pins the off-by-one (iteration - start + 1 >= cap) and the one-shot latch.
+    Pins the off-by-one (turn - start + 1 >= cap) and the one-shot latch.
     """
     from agent6.harness import _nudges
 
@@ -2270,19 +2268,19 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: pathlib.P
         mode="plan",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=_nudges.PLAN_NUDGE_AFTER_ITERS + 3,
+        max_turns=_nudges.PLAN_NUDGE_AFTER_TURNS + 3,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nplan a feature"}]}]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
-    # Injected exactly once, on the turn-cap iteration; the latch keeps it to one.
-    assert provider.nudged_on == [_nudges.PLAN_NUDGE_AFTER_ITERS]
+    # Injected exactly once, on the turn that reaches the cap; the latch keeps it to one.
+    assert provider.nudged_on == [_nudges.PLAN_NUDGE_AFTER_TURNS]
 
 
 def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
@@ -2318,14 +2316,14 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
         mode="plan",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=5,
+        max_turns=5,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nplan"}]}]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -2366,14 +2364,14 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=4,
+        max_turns=4,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -2430,7 +2428,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=30,
+        max_turns=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -2438,7 +2436,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -2506,7 +2504,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
         mode="run",
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=30,
+        max_turns=30,
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
@@ -2515,7 +2513,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -2535,7 +2533,7 @@ def test_session_end_journals_its_summary() -> None:
     ):
         ev = _EventCapture()
         wf = _wf(mode="run", events=ev)
-        result = wf.finish(_state(), end, iteration=4)
+        result = wf.finish(_state(), end, turn=4)
         (recorded,) = [e for e in ev.events if e["type"] == "session.end"]
         assert recorded.get("summary") == result.summary == end.summary
 
@@ -2556,13 +2554,13 @@ def test_session_end_carries_the_gates_word_for_the_final_tree() -> None:
     for word, verdict in verdicts.items():
         ev = _EventCapture()
         wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
-        result = wf.finish(_state(verify=verdict), stop, iteration=4)
+        result = wf.finish(_state(verify=verdict), stop, turn=4)
         (end,) = [e for e in ev.events if e["type"] == "session.end"]
         assert (end["all_passed"], end["verified"], result.verified) == (False, word, word)
     ev = _EventCapture()
     gateless = _wf(mode="run", events=ev)
     done = _snapshot.End("finish_session", "done", completed=True, verdict="grounded")
-    gateless.finish(_state(), done, iteration=2)
+    gateless.finish(_state(), done, turn=2)
     (end,) = [e for e in ev.events if e["type"] == "session.end"]
     assert (end["all_passed"], end["verified"]) == (None, "not_applicable")
 
@@ -2573,7 +2571,7 @@ def test_settle_after_a_failed_reverify_reports_the_red_gate() -> None:
     state = _state(verify=_verify_verdict.VerifyVerdict(ever_passed=True, last_ok=False))
 
     with mock.patch.object(_chain.RunChain, "dirty", return_value=False):
-        result = wf.finish(state, _guards.settled_end(state, _ctx(wf, state)), iteration=8)
+        result = wf.finish(state, _guards.settled_end(state, _ctx(wf, state)), turn=8)
 
     assert result is not None and result.reason == "settled"
     assert result.verified == "failed"
@@ -2634,7 +2632,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
         system="s",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -2686,7 +2684,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=10,
+        max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value=""):
@@ -2694,7 +2692,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -2702,7 +2700,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
 
 
 def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path) -> None:
-    """On a metric run, post-verify measure and read iterations do not trip the settled stop.
+    """On a metric run, post-verify measure and read turns do not trip the settled stop.
 
     Completion is owned by the metric early-finish and plateau logic.
     """
@@ -2759,7 +2757,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=8,
+        max_turns=8,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value=""):
@@ -2767,7 +2765,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -2846,33 +2844,33 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
     )
     # Huge ceilings keep fraction_remaining ~1.0, so the plateau never becomes terminal.
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
-    max_iters = 12
+    max_turns = 12
     wf = _wf(
         root=tmp_path,
         config=config,
         provider=provider,
         dispatcher=dispatcher,
         budget=budget,
-        max_iterations=max_iters,
+        max_turns=max_turns,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch(
         "agent6.git_ops.chain_commit",
-        side_effect=[f"sha{i}" for i in range(1, max_iters + 2)],
+        side_effect=[f"sha{i}" for i in range(1, max_turns + 2)],
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
 
-    # Ran out the iteration cap instead of stopping, nudging past the patience of 3.
-    assert result.reason == "max_iterations"
+    # Ran out the turn cap instead of stopping, nudging past the patience of 3.
+    assert result.reason == "max_turns"
     assert provider.plateau_nudges_seen > 3
 
 
@@ -2930,7 +2928,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
         provider=provider,
         dispatcher=DispatcherStub(),
         budget=budget,
-        max_iterations=20,
+        max_turns=20,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
@@ -2939,7 +2937,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
         system="system",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -2996,7 +2994,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
         provider=provider,
         dispatcher=DispatcherStub(),
         budget=None,
-        max_iterations=20,
+        max_turns=20,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
@@ -3005,7 +3003,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
         system="system",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -3076,7 +3074,7 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
         provider=provider,
         dispatcher=dispatcher,
         budget=None,
-        max_iterations=20,
+        max_turns=20,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
@@ -3084,7 +3082,7 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
         system="system",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -3198,7 +3196,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
         provider=provider,
         dispatcher=DispatcherStub(),
         budget=budget,
-        max_iterations=20,
+        max_turns=20,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
@@ -3211,7 +3209,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -4234,7 +4232,7 @@ def test_tier2_summariser_is_told_the_task() -> None:
     assert "TASK (the goal, verbatim):\nmake the tests pass" in user_msg
 
 
-def test_a_restart_does_not_re_fire_on_the_next_iteration() -> None:
+def test_a_restart_does_not_re_fire_on_the_next_turn() -> None:
     """The growth floor counts the request prefix, as the trigger does.
 
     Measured on the conversation alone, the floor sat below the total the moment a restart landed
@@ -4254,7 +4252,7 @@ def test_a_restart_does_not_re_fire_on_the_next_iteration() -> None:
     assert wf.compactor.compact(conversation, st, prefix_chars=prefix) is True
     assert summariser.call.call_count == 1
 
-    # Same conversation, one iteration later, nothing added.
+    # Same conversation, one turn later, nothing added.
     assert wf.compactor.compact(conversation, st, prefix_chars=prefix) is False
     assert summariser.call.call_count == 1
 
@@ -4282,7 +4280,7 @@ def test_compact_request_forces_a_tier2_restart() -> None:
 
 
 def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) -> None:
-    """A stop.request ends the run at the iteration boundary in the resumable steer_abort shape."""
+    """A stop.request ends the run at the turn boundary in the resumable steer_abort shape."""
     from agent6 import event_log
 
     class ProviderStub:
@@ -4346,7 +4344,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
             stop_requested=lambda: pending["stop"],
             stop_clear=lambda: pending.__setitem__("stop", False),
         ),
-        max_iterations=30,
+        max_turns=30,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: x"}]}]
@@ -4355,7 +4353,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -4449,7 +4447,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
         events=events,
         curator=cur,  # low so tier-2 fires mid-run
         budget=None,
-        max_iterations=30,
+        max_turns=30,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: review"}]}]
@@ -4458,7 +4456,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id="root",
             original_task="t",
         )
@@ -4541,11 +4539,11 @@ def test_summarise_and_restart_keeps_history_on_provider_error() -> None:
 
 
 def _steer_via_wire(
-    wf: loop.Harness, messages: list[dict[str, Any]], *, iteration: int, state: Any
+    wf: loop.Harness, messages: list[dict[str, Any]], *, turn: int, state: Any
 ) -> str | None:
     conversation = _conversation.Conversation.from_wire(messages)
     try:
-        return wf.steering.handle(conversation, iteration, state)
+        return wf.steering.handle(conversation, turn, state)
     finally:
         messages[:] = conversation.to_wire()
 
@@ -4554,7 +4552,7 @@ def test_steer_noop_when_not_requested() -> None:
     """steer_requested() returns False -> _maybe_handle_steer is a no-op."""
     wf = _wf()  # default steer_requested = lambda: False
     messages: list[dict[str, Any]] = []
-    result = _steer_via_wire(wf, messages, iteration=1, state=_state())
+    result = _steer_via_wire(wf, messages, turn=1, state=_state())
     assert result is None
     assert messages == []
 
@@ -4570,7 +4568,7 @@ def test_steer_injects_instruction() -> None:
         ),
     )
     messages: list[dict[str, Any]] = []
-    result = _steer_via_wire(wf, messages, iteration=3, state=_state())
+    result = _steer_via_wire(wf, messages, turn=3, state=_state())
     assert result is None
     assert cleared == [True], "steer_clear must be called even on success"
     assert len(messages) == 1
@@ -4593,7 +4591,7 @@ def test_steer_empty_text_continues_without_inject() -> None:
         ),
     )
     messages: list[dict[str, Any]] = []
-    result = _steer_via_wire(wf, messages, iteration=2, state=_state())
+    result = _steer_via_wire(wf, messages, turn=2, state=_state())
     assert result is None
     assert cleared == [True]
     assert messages == []
@@ -4610,7 +4608,7 @@ def test_steer_none_text_continues_without_inject() -> None:
         ),
     )
     messages: list[dict[str, Any]] = []
-    result = _steer_via_wire(wf, messages, iteration=2, state=_state())
+    result = _steer_via_wire(wf, messages, turn=2, state=_state())
     assert result is None
     assert cleared == [True]
     assert messages == []
@@ -4628,7 +4626,7 @@ def test_steer_pin_records_and_injects_marked_notice() -> None:
         ),
     )
     messages: list[dict[str, Any]] = []
-    assert _steer_via_wire(wf, messages, iteration=3, state=st) is None
+    assert _steer_via_wire(wf, messages, turn=3, state=st) is None
     assert st.pins == ["never touch the schema files"]
     block = messages[0]["content"][0]["text"]
     assert "pinned:" in block and "survives context compaction" in block
@@ -4654,7 +4652,7 @@ def test_steer_pin_over_cap_delivers_as_ordinary_steer() -> None:
         ),
     )
     messages: list[dict[str, Any]] = []
-    assert _steer_via_wire(wf, messages, iteration=3, state=st) is None
+    assert _steer_via_wire(wf, messages, turn=3, state=st) is None
     assert len(st.pins) == 1  # the oversized pin was NOT recorded
     text = messages[0]["content"][0]["text"]
     assert "OPERATOR STEERING" in text and "y" * 100 in text
@@ -4672,7 +4670,7 @@ def test_steer_bare_pin_answers_with_feedback() -> None:
         ),
     )
     messages: list[dict[str, Any]] = []
-    assert _steer_via_wire(wf, messages, iteration=1, state=st) is None
+    assert _steer_via_wire(wf, messages, turn=1, state=st) is None
     assert st.pins == []
     assert messages and "nothing pinned" in messages[0]["content"][0]["text"]
 
@@ -4694,7 +4692,7 @@ def test_steer_abort_signal() -> None:
             ),
         )
         messages: list[dict[str, Any]] = []
-        result = _steer_via_wire(wf, messages, iteration=5, state=_state())
+        result = _steer_via_wire(wf, messages, turn=5, state=_state())
         assert result == "abort", f"typed={typed!r}"
         assert cleared == [True]
         assert messages == [], "abort must not inject a message"
@@ -4711,7 +4709,7 @@ def test_steer_detach_signal() -> None:
         ),
     )
     messages: list[dict[str, Any]] = []
-    result = _steer_via_wire(wf, messages, iteration=4, state=_state())
+    result = _steer_via_wire(wf, messages, turn=4, state=_state())
     assert result == "detach"
     assert cleared == [True]
     assert messages == [], "detach must not inject a message"
@@ -4733,7 +4731,7 @@ def test_steer_clear_called_even_when_prompt_raises() -> None:
     )
     messages: list[dict[str, Any]] = []
     with pytest.raises(RuntimeError, match="input EOF"):
-        _steer_via_wire(wf, messages, iteration=1, state=_state())
+        _steer_via_wire(wf, messages, turn=1, state=_state())
     assert cleared == [True], "finally must run steer_clear even on prompt failure"
 
 
@@ -4747,7 +4745,7 @@ def test_save_resume_snapshot_noop_when_path_unset(tmp_path: pathlib.Path) -> No
         wf,
         _state(system="s", tool_calls=0, root_task_id=None),
         [],
-        next_iteration=1,
+        next_turn=1,
     )
     # tmp_path should still be empty.
     assert list(tmp_path.iterdir()) == []
@@ -4765,14 +4763,14 @@ def test_save_and_load_run_snapshot_round_trip(tmp_path: pathlib.Path) -> None:
         wf,
         _state(tool_calls=3, system="SYSTEM PROMPT", root_task_id="task-abc"),
         msgs,
-        next_iteration=7,
+        next_turn=7,
     )
     assert snap_path.is_file()
     loaded = _snapshot.load_session_snapshot(snap_path)
     assert loaded.system == "SYSTEM PROMPT"
     assert loaded.messages == msgs
     assert loaded.tool_calls == 3
-    assert loaded.next_iteration == 7
+    assert loaded.next_turn == 7
     assert loaded.root_task_id == "task-abc"
 
 
@@ -4784,7 +4782,7 @@ def test_save_resume_snapshot_atomic_no_partial_tmp(tmp_path: pathlib.Path) -> N
         wf,
         _state(system="s", tool_calls=0, root_task_id=None),
         [],
-        next_iteration=1,
+        next_turn=1,
         write_checkpoint=True,
     )
     assert snap_path.is_file()
@@ -4818,7 +4816,7 @@ def test_save_resume_snapshot_uses_durable_atomic_writer(
         wf,
         _state(system="s", tool_calls=0, root_task_id=None),
         [],
-        next_iteration=9,
+        next_turn=9,
         write_checkpoint=True,
     )
 
@@ -4837,7 +4835,7 @@ def test_load_run_snapshot_rejects_version_mismatch(tmp_path: pathlib.Path) -> N
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
-                "next_iteration": 1,
+                "next_turn": 1,
                 "root_task_id": None,
             }
         ),
@@ -4875,7 +4873,7 @@ def test_resume_migrates_the_legacy_rulings_file_as_a_run_start_does(
     snap_path.write_text(
         f'{{"version": {_snapshot.SNAPSHOT_VERSION}, "system": "S", "messages": [{{"role": "user", '
         '"content": [{"type": "text", "text": "go"}]}], "tool_calls": 2, '
-        '"next_iteration": 5, "root_task_id": null, "original_task": "go", '
+        '"next_turn": 5, "root_task_id": null, "original_task": "go", '
         '"verify_command": []}',
         encoding="utf-8",
     )
@@ -4904,7 +4902,7 @@ def test_a_commands_disabled_resume_keeps_the_withheld_gate_correction_pending(
     snap_path.write_text(
         f'{{"version": {_snapshot.SNAPSHOT_VERSION}, "system": "S", "messages": [{{"role": "user", '
         '"content": [{"type": "text", "text": "go"}]}], "tool_calls": 2, '
-        '"next_iteration": 5, "root_task_id": null, "original_task": "go", '
+        '"next_turn": 5, "root_task_id": null, "original_task": "go", '
         '"verify_command": ["true"], "verify_withheld": true}',
         encoding="utf-8",
     )
@@ -4927,11 +4925,11 @@ def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path, steer: str) ->
     from agent6 import event_log, task_text
 
     snap_path = tmp_path / "loop_state.json"
-    # The snapshot as a prior run left it: iter 4 done, iter 5 about to start.
+    # The snapshot as a prior run left it: turn 4 done, turn 5 about to start.
     snap_path.write_text(
         f'{{"version": {_snapshot.SNAPSHOT_VERSION}, "system": "S", "messages": [{{"role": "user", '
         '"content": [{"type": "text", "text": "go"}]}], "tool_calls": 2, '
-        '"next_iteration": 5, "root_task_id": null, "original_task": "go", '
+        '"next_turn": 5, "root_task_id": null, "original_task": "go", '
         '"verify_command": []}',
         encoding="utf-8",
     )
@@ -4957,7 +4955,7 @@ def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path, steer: str) ->
 
     assert result.completed is True
     assert result.reason == "silent_finish"
-    assert result.iterations == 5, "must resume at snapshot's next_iteration"
+    assert result.turns == 5, "must resume at snapshot's next_turn"
     assert result.tool_calls == 2, "must carry forward snapshot's tool_calls"
     # The pre-call save REWROTE the seeded snapshot (not merely left it there).
     assert snap_path.stat().st_mtime_ns > seeded_mtime_ns
@@ -4969,7 +4967,7 @@ def test_resume_restores_root_task_id_on_dispatcher(tmp_path: pathlib.Path) -> N
     snap_path.write_text(
         f'{{"version": {_snapshot.SNAPSHOT_VERSION}, "system": "S", "messages": [{{"role": "user", '
         '"content": [{"type": "text", "text": "go"}]}], "tool_calls": 0, '
-        '"next_iteration": 1, "root_task_id": "task-xyz", "original_task": "go", '
+        '"next_turn": 1, "root_task_id": "task-xyz", "original_task": "go", '
         '"verify_command": []}',
         encoding="utf-8",
     )
@@ -5018,7 +5016,7 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: pathlib.Pat
             retry_count=0, retry_delay_s=0.01
         ),  # don't mask the crash with a retry
     )
-    # The first run ends with provider_error; the pre-call snapshot makes that iteration resumable.
+    # The first run ends with provider_error; the pre-call snapshot makes that turn resumable.
     result1 = wf1.run("do a thing")
     assert result1.completed is False
     assert result1.reason == "provider_error"
@@ -5201,7 +5199,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
         ),
         events=events,  # low so it fires mid-run
         budget=None,
-        max_iterations=30,
+        max_turns=30,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: optimize"}]}]
@@ -5211,7 +5209,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -5316,7 +5314,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> Non
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=30,
+        max_turns=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -5324,13 +5322,13 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> Non
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
     assert result.reason == "settled"
     assert result.completed is True
-    assert provider.calls < 30  # stopped well before max_iterations, not burned to the cap
+    assert provider.calls < 30  # stopped well before max_turns, not burned to the cap
 
 
 def test_resume_snapshot_carries_verify_command(tmp_path: pathlib.Path) -> None:
@@ -5364,7 +5362,7 @@ def test_resume_snapshot_carries_verify_command(tmp_path: pathlib.Path) -> None:
         wf,
         _state(system="s", tool_calls=0, root_task_id=None),
         [],
-        next_iteration=1,
+        next_turn=1,
     )
     assert _snapshot.load_session_snapshot(snap).verify_command == ("pytest", "-q")
 
@@ -5374,7 +5372,7 @@ def test_resume_snapshot_carries_verify_command(tmp_path: pathlib.Path) -> None:
         wf,
         _state(system="s", tool_calls=0, root_task_id=None),
         [],
-        next_iteration=1,
+        next_turn=1,
     )
     assert _snapshot.load_session_snapshot(snap).verify_command == ()
 
@@ -5426,7 +5424,7 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: pathlib
             wf,
             _state(system="s", tool_calls=0, root_task_id=None),
             [],
-            next_iteration=1,
+            next_turn=1,
         )
     warnings = [m for m in logs if "could not persist resume snapshot" in m]
     assert len(warnings) == 1, "warn exactly once, then stay quiet"
@@ -5522,14 +5520,14 @@ def test_question_nudge_then_accept(tmp_path: pathlib.Path) -> None:
         config=config,
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=10,
+        max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nadd a theme"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -5628,7 +5626,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=40,
+        max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -5636,7 +5634,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -5704,7 +5702,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=30,
+        max_turns=30,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -5712,7 +5710,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -5789,7 +5787,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: pat
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=60,
+        max_turns=60,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -5797,13 +5795,13 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: pat
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
     assert result.completed is False
     assert result.reason == "no_progress"
-    assert result.iterations < 30  # stopped well before the 60-iteration cap
+    assert result.turns < 30  # stopped well before the 60-turn cap
 
 
 def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.Path) -> None:
@@ -5850,7 +5848,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
         mode="run",
         provider=provider,
         dispatcher=mock.MagicMock(),
-        max_iterations=10,
+        max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -5858,7 +5856,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -5918,7 +5916,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=10,
+        max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -5926,7 +5924,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -5998,7 +5996,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=40,
+        max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -6006,7 +6004,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -6064,7 +6062,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: pathli
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=10,
+        max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nread"}]}]
     conversation = _conversation.Conversation.from_wire(messages)
@@ -6073,7 +6071,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: pathli
             system="s",
             conversation=conversation,
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -6144,7 +6142,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=40,
+        max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nsearch"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -6152,7 +6150,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -6160,7 +6158,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
     assert provider.escs == 1
     assert result.reason == "tool_error_stuck"
     assert result.completed is False
-    assert result.iterations < 20
+    assert result.turns < 20
 
 
 def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: pathlib.Path) -> None:
@@ -6236,7 +6234,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=40,
+        max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nship"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -6244,7 +6242,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -6308,7 +6306,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=20,
+        max_turns=20,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -6316,7 +6314,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -6338,7 +6336,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: pathlib.Path) -> None:
         dispatcher=mock.MagicMock(),
     )
     st = _state()
-    turn = _turn(iteration=1)
+    turn = _turn(turn=1)
     # dead verify: instant, "No module named pytest"
     wf.gate.note_result(
         st,
@@ -6356,7 +6354,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: pathlib.Path) -> None:
     assert st.verify.broken_warned is True
 
     # a second dead verify does not re-warn
-    turn2 = _turn(iteration=2)
+    turn2 = _turn(turn=2)
     wf.gate.note_result(
         st,
         turn2,
@@ -6384,7 +6382,7 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: pathlib.Path) -
         dispatcher=mock.MagicMock(),
     )
     st = _state()
-    turn = _turn(iteration=1)
+    turn = _turn(turn=1)
     # a real test failure: took real time, ordinary assertion output
     wf.gate.note_result(
         st,
@@ -6424,7 +6422,7 @@ def test_a_test_module_import_error_is_not_a_dead_verify(
         dispatcher=mock.MagicMock(),
     )
     st = _state()
-    turn = _turn(iteration=1)
+    turn = _turn(turn=1)
     wf.gate.note_result(
         st,
         turn,
@@ -6492,7 +6490,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=20,
+        max_turns=20,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -6500,7 +6498,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -6564,7 +6562,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=40,
+        max_turns=40,
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
@@ -6573,7 +6571,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -6636,7 +6634,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
         mode="run",
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=10,
+        max_turns=10,
         events=_Events(),
         bridge=_operator.OperatorBridge(after_auto_commit=_stop_hook),
     )
@@ -6646,7 +6644,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -6708,7 +6706,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
         mode="run",
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=10,
+        max_turns=10,
         events=_Events(),
         bridge=_operator.OperatorBridge(after_auto_commit=_exit_hook),
     )
@@ -6718,7 +6716,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -6780,7 +6778,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
         mode="run",
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=10,
+        max_turns=10,
         events=_Events(),
         bridge=_operator.OperatorBridge(
             after_auto_commit=_undo_hook, undo_forker=lambda: ("forked-child-ID", "t")
@@ -6792,7 +6790,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -6864,7 +6862,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
         mode="run",
         provider=provider,
         dispatcher=dispatcher,
-        max_iterations=40,
+        max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -6872,7 +6870,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -6931,7 +6929,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=40,
+        max_turns=40,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1"):
@@ -6939,7 +6937,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -7019,7 +7017,7 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=8,
+        max_turns=8,
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
@@ -7027,7 +7025,7 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
         system="s",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -7082,7 +7080,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=8,
+        max_turns=8,
         events=_Events(),
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
@@ -7090,7 +7088,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
         system="s",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -7117,7 +7115,7 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
     )
     wf = _wf(mode="run", dispatcher=dispatcher)
     turn = _loop_state.TurnState(
-        iteration=1,
+        turn=1,
         resp=_resp(""),
         assistant=_conversation.AssistantTurn(
             raw_content=(),
@@ -7144,7 +7142,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
     wf = _wf(mode="run", dispatcher=dispatcher)
     state = _state()
     turn = _loop_state.TurnState(
-        iteration=1,
+        turn=1,
         resp=_resp(""),
         assistant=_conversation.AssistantTurn(
             raw_content=(),
@@ -7157,7 +7155,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
     assert state.ok_tool_calls == 0  # a control verb is not work
 
     worked = _loop_state.TurnState(
-        iteration=2,
+        turn=2,
         resp=_resp(""),
         assistant=_conversation.AssistantTurn(
             raw_content=(),
@@ -7169,7 +7167,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
 
 
 def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None:
-    """A stop after this step is honoured at the end of every completed iteration, prose too."""
+    """A stop after this step is honoured at the end of every completed turn, prose too."""
     calls = {"n": 0}
 
     class ProviderStub:
@@ -7212,7 +7210,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
         config=config,
         provider=ProviderStub(),
         dispatcher=mock.MagicMock(),
-        max_iterations=5,
+        max_turns=5,
         bridge=_operator.OperatorBridge(
             stop_requested=lambda: True,
             stop_clear=lambda: cleared.__setitem__("n", cleared["n"] + 1),
@@ -7223,7 +7221,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
         system="system",
         conversation=_conversation.Conversation.from_wire(messages),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -7238,7 +7236,7 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=pathlib.Path("/tmp"))
     turn = _loop_state.TurnState(
-        iteration=7,
+        turn=7,
         resp=_resp(""),
         assistant=_conversation.AssistantTurn(
             raw_content=(),
@@ -7263,7 +7261,7 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=pathlib.Path("/tmp"))
     turn = _loop_state.TurnState(
-        iteration=7,
+        turn=7,
         resp=_resp(""),
         assistant=_conversation.AssistantTurn(
             raw_content=(),
@@ -7331,7 +7329,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
     wf.finish(
         state,
         _snapshot.End("finish_session", "", completed=True, verdict="grounded", checkpoint=False),
-        iteration=3,
+        turn=3,
     )
 
     (end,) = [e for e in events if e["type"] == "session.end"]
@@ -7495,7 +7493,7 @@ def test_steer_undo_signal() -> None:
         ),
     )
     messages: list[dict[str, Any]] = []
-    result = _steer_via_wire(wf, messages, iteration=4, state=_state())
+    result = _steer_via_wire(wf, messages, turn=4, state=_state())
     assert result == "undo"
     assert cleared == [True]
     assert messages == [], "/undo must not inject a message"
@@ -7522,21 +7520,21 @@ def test_standing_default_never_self_quits_and_escalates() -> None:
     wf = _wf(mode="run", curator=curator, budget=None)
     conv = _conversation.Conversation()
     state = _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True))
-    first = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=3), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    first = wf._handle_silent_finish("Done.", conv, state, _turn(turn=3), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
     assert first is None
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
     # Quiet again with no executed call: still absorbed, nudge escalates.
     state.tool_calls += 1  # a REFUSED call is not work
-    second = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=4), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    second = wf._handle_silent_finish("Done.", conv, state, _turn(turn=4), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
     assert second is None
     text = conv.to_wire()[-1]["content"][0]["text"]
     assert "different approach" in text and "fruitless round 1" in text
-    third = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=5), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    third = wf._handle_silent_finish("Done.", conv, state, _turn(turn=5), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
     assert third is None
     assert "fruitless round 2" in conv.to_wire()[-1]["content"][0]["text"]
     # Work landing resets the streak: the next absorb is the plain nudge.
     state.ok_tool_calls += 1
-    fourth = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=6), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    fourth = wf._handle_silent_finish("Done.", conv, state, _turn(turn=6), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
     assert fourth is None
     assert "fruitless" not in conv.to_wire()[-1]["content"][0]["text"]
     assert state.standing.fruitless == 0
@@ -7551,21 +7549,21 @@ def test_standing_patience_bounds_fruitless_reentries() -> None:
     conv = _conversation.Conversation()
     state = _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True))
     ctx = _ctx(wf, state)
-    assert wf._handle_silent_finish("Done.", conv, state, _turn(iteration=3), ctx) is None  # pyright: ignore[reportPrivateUsage]
-    assert wf._handle_silent_finish("Done.", conv, state, _turn(iteration=4), ctx) is None  # pyright: ignore[reportPrivateUsage]
-    ended = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=5), ctx)  # pyright: ignore[reportPrivateUsage]
+    assert wf._handle_silent_finish("Done.", conv, state, _turn(turn=3), ctx) is None  # pyright: ignore[reportPrivateUsage]
+    assert wf._handle_silent_finish("Done.", conv, state, _turn(turn=4), ctx) is None  # pyright: ignore[reportPrivateUsage]
+    ended = wf._handle_silent_finish("Done.", conv, state, _turn(turn=5), ctx)  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
 
     wf0 = _wf(mode="run", curator=curator, budget=None)
     wf0.config.harness.standing_patience = 0
     state0 = _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True))
     ctx0 = _ctx(wf0, state0)
-    quiet = _turn(iteration=3)
+    quiet = _turn(turn=3)
     assert (
         wf0._handle_silent_finish("Done.", _conversation.Conversation(), state0, quiet, ctx0)
         is None
     )  # pyright: ignore[reportPrivateUsage]
-    quiet = _turn(iteration=4)
+    quiet = _turn(turn=4)
     ended0 = wf0._handle_silent_finish("Done.", _conversation.Conversation(), state0, quiet, ctx0)  # pyright: ignore[reportPrivateUsage]
     assert ended0 is not None and ended0.reason == "silent_finish"
 
@@ -7575,14 +7573,14 @@ def test_standing_task_gates_finish_session_and_soft_stops() -> None:
     curator.nodes.return_value = _standing_nodes()
     wf = _wf(mode="run", curator=curator, budget=None)
     state = _state()
-    turn = _turn(iteration=2)
+    turn = _turn(turn=2)
     turn.finish = _finish_gates.FinishCall("finish_session", "all done")
     wf._turn_finish_gates(state, turn, _ctx(wf, state, 2))  # pyright: ignore[reportPrivateUsage]
     assert turn.finish is None  # revoked: the goal continues
     assert any("standing task" in getattr(n, "text", "") for n in turn.tool_results)
     # Soft stop: verify_settled absorbs and clears its streak.
     state.ok_tool_calls += 1
-    turn2 = _turn(iteration=3)
+    turn2 = _turn(turn=3)
     ctx = _ctx(wf, state, 3)
     turn2.stops.append(_advice.Stop(lambda: _guards.settled_end(state, ctx), soft="verify_settled"))
     state.settled.idle = 9
@@ -7597,7 +7595,7 @@ def test_standing_absorb_refuses_without_a_ready_standing_task() -> None:
     curator = mock.MagicMock()
     curator.nodes.return_value = _typed({"a": {}})  # no standing node
     wf = _wf(mode="run", curator=curator, budget=None)
-    assert wf.standing.absorb(_state(), reason="silent_finish", iteration=1) is None
+    assert wf.standing.absorb(_state(), reason="silent_finish", turn=1) is None
 
 
 def test_standing_goal_seeds_a_standing_child_under_the_root() -> None:
@@ -7664,7 +7662,7 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
     )
     conv = _conversation.Conversation()
     state = _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True))
-    parked = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=4), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    parked = wf._handle_silent_finish("Done.", conv, state, _turn(turn=4), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
     assert parked is None  # steered onward, same conversation
     wire = conv.to_wire()
     assert "keep going: also cover sub()" in wire[-1]["content"][0]["text"]
@@ -7681,7 +7679,7 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
         "Done.",
         _conversation.Conversation(),
         _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True)),
-        _turn(iteration=4),
+        _turn(turn=4),
         _ctx(wf2, _state()),
     )  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "steer_abort"
@@ -7694,7 +7692,7 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
         "Done.",
         _conversation.Conversation(),
         _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True)),
-        _turn(iteration=4),
+        _turn(turn=4),
         _ctx(wf, _state()),
     )  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
@@ -7707,7 +7705,7 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
         "Done.",
         conv,
         _state(ever_edited=True, verify=_verify_verdict.VerifyVerdict(ever_passed=True)),
-        _turn(iteration=4),
+        _turn(turn=4),
         _ctx(wf2, _state()),
     )  # pyright: ignore[reportPrivateUsage]
     assert out is None
@@ -7715,7 +7713,7 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
 
 
 def test_tier2_growth_floor_prevents_zero_growth_refire(tmp_path: pathlib.Path) -> None:
-    """A restart that lands above the threshold does not re-summarise every iteration.
+    """A restart that lands above the threshold does not re-summarise every turn.
 
     Tier-2 re-fires only after the context grew 25% past the last restart's size.
     """
@@ -7761,7 +7759,7 @@ def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: pathlib.Path)
 
     wf.events = mock.MagicMock()
     wf.events.emit = _capture  # type: ignore[method-assign]
-    turn = _turn(iteration=3)
+    turn = _turn(turn=3)
     turn.verify_just_passed = True
     turn.edit_since_verify_pass = False
     with mock.patch.object(_chain.RunChain, "commit", return_value=""):
@@ -7784,18 +7782,18 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: pathlib.Path) -> 
     wf.events.emit = _capture  # type: ignore[method-assign]
 
     for benign in ("nothing to commit, working tree clean", "no changes added to commit"):
-        wf.checkpoints.report_failure(errors.GitError(benign), "s", iteration=1)
+        wf.checkpoints.report_failure(errors.GitError(benign), "s", turn=1)
     assert events == []  # a non-failure never claims to be one
 
     wf.checkpoints.report_failure(
         errors.GitError("fatal: unable to write new index file"),
-        "agent6 iter 2: fix",
-        iteration=2,
+        "agent6 turn 2: fix",
+        turn=2,
     )
     (evt,) = [e for e in events if e["type"] == "loop.auto_commit.failed"]
-    assert evt["iteration"] == 2
+    assert evt["turn"] == 2
     assert "unable to write" in evt["error"]
-    assert evt["commit_subject"] == "agent6 iter 2: fix"
+    assert evt["commit_subject"] == "agent6 turn 2: fix"
 
 
 def _loop_config() -> Any:
@@ -7873,7 +7871,7 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: pat
         config=_loop_config(),
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=3,
+        max_turns=3,
         resume_state_path=tmp_path / "loop_state.json",
     )
     with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
@@ -7881,15 +7879,15 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: pat
             system="system",
             conversation=_conversation.Conversation.from_wire(_TASK_WIRE),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
     assert result.completed is True
     first, last = seen[0], seen[-1]
-    assert first is not None and (first.iteration, first.results) == (1, ())  # live during dispatch
+    assert first is not None and (first.turn, first.results) == (1, ())  # live during dispatch
     assert [b["name"] for b in first.assistant] == ["run_verify_command"]
-    assert last is not None and last.iteration == 2  # the second turn's own record
+    assert last is not None and last.turn == 2  # the second turn's own record
     assert not marker.exists()  # a clean end leaves nothing
 
 
@@ -7917,14 +7915,14 @@ def test_an_end_declared_mid_turn_clears_the_turn_marker(tmp_path: pathlib.Path)
         config=_loop_config(),
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=3,
+        max_turns=3,
         resume_state_path=tmp_path / "loop_state.json",
     )
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="system",
         conversation=_conversation.Conversation.from_wire(_TASK_WIRE),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task="t",
     )
@@ -7955,7 +7953,7 @@ def _die_in_the_second_call(tmp_path: pathlib.Path) -> pathlib.Path:
         config=_loop_config(),
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=3,
+        max_turns=3,
         resume_state_path=snapshot_path,
     )
     with pytest.raises(_Died):
@@ -7963,7 +7961,7 @@ def _die_in_the_second_call(tmp_path: pathlib.Path) -> pathlib.Path:
             system="system",
             conversation=_conversation.Conversation.from_wire(_TASK_WIRE),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -8004,7 +8002,7 @@ def test_a_resume_after_a_death_mid_turn_does_not_run_the_cut_off_call_again(
         config=_loop_config(),
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=3,
+        max_turns=3,
         resume_state_path=snapshot_path,
     )
     with mock.patch("agent6.git_ops.chain_commit", return_value="abc1234567890"):
@@ -8020,7 +8018,7 @@ def test_a_resume_after_a_death_mid_turn_does_not_run_the_cut_off_call_again(
     assert cut_off["content"] == json.dumps(
         {"error": "run_command was interrupted before it returned and was not re-run"}
     )
-    assert result.iterations == 2  # the dead turn is turn 1; the resume opens turn 2
+    assert result.turns == 2  # the dead turn is turn 1; the resume opens turn 2
     assert not marker.exists()
 
 
@@ -8041,13 +8039,13 @@ def test_a_death_before_the_resumed_call_keeps_the_interrupted_turn(tmp_path: pa
         config=_loop_config(),
         provider=ProviderStub(),
         dispatcher=_StubDispatcher(),
-        max_iterations=3,
+        max_turns=3,
         resume_state_path=snapshot_path,
     )
     with pytest.raises(_Died):
         wf.resume()
     snap = _snapshot.load_session_snapshot(snapshot_path)
-    assert snap.next_iteration == 2
+    assert snap.next_turn == 2
     assert [b["tool_use_id"] for b in snap.messages[-1]["content"]] == ["call-a", "call-b"]
 
 
@@ -8059,7 +8057,7 @@ def test_a_resume_clears_a_marker_whose_turn_completed(tmp_path: pathlib.Path) -
             system="system",
             messages=_TASK_WIRE,
             tool_calls=0,
-            next_iteration=5,
+            next_turn=5,
             root_task_id=None,
             original_task="t",
             verify_command=(),
@@ -8069,7 +8067,7 @@ def test_a_resume_clears_a_marker_whose_turn_completed(tmp_path: pathlib.Path) -
     marker = tmp_path / _snapshot.TURN_IN_FLIGHT_NAME
     _snapshot.write_turn_marker(
         marker,
-        _snapshot.TurnInFlight(iteration=3, assistant=tuple(_two_call_resp().raw["content"])),
+        _snapshot.TurnInFlight(turn=3, assistant=tuple(_two_call_resp().raw["content"])),
     )
     sent: list[list[dict[str, Any]]] = []
 
@@ -8080,7 +8078,7 @@ def test_a_resume_clears_a_marker_whose_turn_completed(tmp_path: pathlib.Path) -
 
     wf = _wf(root=tmp_path, provider=ProviderStub(), resume_state_path=snapshot_path)
     result = wf.resume()
-    assert result.iterations == 5
+    assert result.turns == 5
     assert len(sent[0]) == 1  # the task alone: nothing folded in
     assert not marker.exists()
 
@@ -8093,7 +8091,7 @@ def test_a_resume_names_an_in_flight_record_that_does_not_parse(tmp_path: pathli
             system="system",
             messages=_TASK_WIRE,
             tool_calls=0,
-            next_iteration=5,
+            next_turn=5,
             root_task_id=None,
             original_task="t",
             verify_command=(),
@@ -8101,7 +8099,7 @@ def test_a_resume_names_an_in_flight_record_that_does_not_parse(tmp_path: pathli
         encoding="utf-8",
     )
     marker = tmp_path / _snapshot.TURN_IN_FLIGHT_NAME
-    marker.write_text('{"iteration": "five"}', encoding="utf-8")
+    marker.write_text('{"turn": "five"}', encoding="utf-8")
     logged: list[str] = []
 
     class ProviderStub:
@@ -8114,7 +8112,7 @@ def test_a_resume_names_an_in_flight_record_that_does_not_parse(tmp_path: pathli
         resume_state_path=snapshot_path,
         logger=logged.append,
     )
-    assert wf.resume().iterations == 5
+    assert wf.resume().turns == 5
     dropped = [ln for ln in logged if "dropped an in-flight turn record that does not parse" in ln]
     assert dropped, logged
     assert not marker.exists()
@@ -8193,7 +8191,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
     )
     st = _state()
     st.verify.adopted = argv
-    turn = _turn(iteration=4)
+    turn = _turn(turn=4)
     wf.gate.note_result(
         st,
         turn,
@@ -8226,7 +8224,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
         dispatcher=mock.MagicMock(),
     )
     st2 = _state()
-    turn2 = _turn(iteration=2)
+    turn2 = _turn(turn=2)
     wf2.gate.note_result(
         st2,
         turn2,
@@ -8266,7 +8264,7 @@ def test_operator_answers_become_recorded_rulings(tmp_path: pathlib.Path) -> Non
         ),
     )
     st = _state()
-    turn = _turn(iteration=1)
+    turn = _turn(turn=1)
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         st,
         turn,
@@ -8397,14 +8395,14 @@ def _metric_result(score: float) -> tools_results.MetricResult:
     )
 
 
-def _edited_turn(iteration: int) -> _loop_state.TurnState:
-    turn = _loop_state.TurnState(
-        iteration=iteration,
+def _edited_turn(turn: int) -> _loop_state.TurnState:
+    turn_state = _loop_state.TurnState(
+        turn=turn,
         resp=_resp(""),
         assistant=_conversation.AssistantTurn(raw_content=(), tool_uses=()),
     )
-    turn.edited = True
-    return turn
+    turn_state.edited = True
+    return turn_state
 
 
 def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: pathlib.Path) -> None:
@@ -8436,7 +8434,7 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: path
     assert "not a new best" not in (turn.metric_feedback or "")
     # The next turn reads the same tree: still one reading per state of it.
     later = _loop_state.TurnState(
-        iteration=2,
+        turn=2,
         resp=_resp(""),
         assistant=_conversation.AssistantTurn(raw_content=(), tool_uses=()),
     )
@@ -8475,7 +8473,7 @@ def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: pathlib.Path
 def _settles_at(
     wf: loop.Harness, repo: pathlib.Path, state: _loop_state.LoopState, *, gated: bool
 ) -> int | None:
-    """The iteration the verify-settled stop fires at, or None within a generous window."""
+    """The turn the verify-settled stop fires at, or None within a generous window."""
     (repo / "x.txt").write_text("the worker's finished work\n", encoding="utf-8")
     first = _edited_turn(1)
     if gated:
@@ -8485,7 +8483,7 @@ def _settles_at(
     _settle(wf, state, first)
     for i in range(2, 36):
         turn = _loop_state.TurnState(
-            iteration=i,
+            turn=i,
             resp=_resp(""),
             assistant=_conversation.AssistantTurn(raw_content=(), tool_uses=()),
         )
@@ -8567,7 +8565,7 @@ def test_a_flat_ask_user_call_records_its_ruling(tmp_path: pathlib.Path) -> None
     wf = _ruling_wf(tmp_path)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _loop_state.TurnState(
-        iteration=1,
+        turn=1,
         resp=_resp(""),
         assistant=_conversation.AssistantTurn(raw_content=(), tool_uses=()),
     )
@@ -8646,7 +8644,7 @@ def test_ask_user_args_the_dispatcher_coerced_still_record_their_ruling(
     wf = _ruling_wf(tmp_path)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _loop_state.TurnState(
-        iteration=1,
+        turn=1,
         resp=_resp(""),
         assistant=_conversation.AssistantTurn(raw_content=(), tool_uses=()),
     )
@@ -8894,7 +8892,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
         config=config,
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=10,
+        max_turns=10,
         review=_reviewer.ReviewSettings(
             trigger="before_finish",
             reviewers=[object()],  # pyright: ignore[reportArgumentType]
@@ -8903,9 +8901,9 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
     panels: list[str] = []
 
     def fake_panel(
-        self: _reviewer.Reviewer, state: Any, *, trigger: str, iteration: int
+        self: _reviewer.Reviewer, state: Any, *, trigger: str, turn: int
     ) -> _reviewer.CritiqueResult:
-        del self, state, iteration
+        del self, state, turn
         panels.append(trigger)
         return _reviewer.CritiqueResult(text="No blocking findings.", satisfied=True)
 
@@ -8918,7 +8916,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
             system="system",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -8981,7 +8979,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
         mode="run",
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        max_iterations=5,
+        max_turns=5,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
     with mock.patch("agent6.git_ops.chain_commit", return_value="sha1") as commit:
@@ -8989,7 +8987,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )
@@ -9057,7 +9055,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
         provider=ProviderStub(),
         dispatcher=dispatcher,
         events=event_log.EventSink(events_path),
-        max_iterations=8,
+        max_turns=8,
         mode="run",
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
@@ -9071,7 +9069,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
             system="s",
             conversation=_conversation.Conversation.from_wire(messages),
             tool_calls=0,
-            start_iteration=1,
+            start_turn=1,
             root_task_id=None,
             original_task="t",
         )

@@ -23,7 +23,7 @@ Observations:
   `qwen3.6-35b-a3b` (35B, 3B active) completed 44/48 at ~4.6× the wall-clock
   (181 s), a measured difference between a dense and a sparse model of the
   same family on agentic tool-use; the cause (endpoint throughput vs in-loop
-  iteration count) is not separable from these metrics alone.
+  turn count) is not separable from these metrics alone.
 - `opus-4-8` used the fewest input tokens (4214 median) and the lowest latency
   (33 s) of any model, one-shotting most cells; `sonnet-4-6` used
   more (20631) at higher latency.
@@ -47,7 +47,7 @@ the per-task matrix (the opus-4-8 anomaly below is an instance).
 ## Anomaly: the first opus-4-8 sweep
 
 The first opus-4-8 sweep scored 6/12 while `sonnet-4-6` scored 30/30. Every
-opus run exited at iteration 1 with 0 tokens consumed: `claude-opus-4-8` rejects any
+opus run exited at turn 1 with 0 tokens consumed: `claude-opus-4-8` rejects any
 `temperature` parameter (`400 "temperature is deprecated for this model"`);
 agent6 pinned `temperature` for determinism and treated 4xx as permanent,
 so no opus run executed. The 6 passes were the

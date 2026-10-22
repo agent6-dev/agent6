@@ -151,7 +151,7 @@ def test_plan_points_come_from_the_session_record(
     ("exit_code", "reason", "unscored"),
     [
         (4, "finish_session", None),
-        (1, "max_iterations", None),
+        (1, "max_turns", None),
         (1, "provider_error", "provider error"),
         (1, "verify_command_unexecutable", "verify command cannot run in the jail"),
         (1, "", "agent6 exit 1, end reason unread"),

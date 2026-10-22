@@ -165,7 +165,7 @@ def _escape_reason(exc: BaseException) -> _snapshot.SessionEndReason:
 
 
 def _journal_escape(
-    events: event_log.EventSink, exc: BaseException, *, iterations: int, tree: str = ""
+    events: event_log.EventSink, exc: BaseException, *, turns: int, tree: str = ""
 ) -> _snapshot.SessionEndReason:
     """Journal the end an escape leaves.
 
@@ -175,7 +175,7 @@ def _journal_escape(
     Args:
         events: The run's event sink.
         exc: The escaping exception.
-        iterations: The turns reached.
+        turns: The turns reached.
         tree: The tree the run leaves, so the next resume tells its files from the operator's.
 
     Returns:
@@ -184,7 +184,7 @@ def _journal_escape(
     reason = _escape_reason(exc)
     left = {"tree": tree} if tree else {}
     with contextlib.suppress(event_log.EventWriteError):
-        events.emit("session.end", reason=reason, iterations=iterations, all_passed=False, **left)
+        events.emit("session.end", reason=reason, turns=turns, all_passed=False, **left)
     return reason
 
 
@@ -315,7 +315,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         else:
             tree = _tree_left_before_the_loop(cwd, inputs)
-            reason = _journal_escape(events, exc, iterations=0, tree=tree)
+            reason = _journal_escape(events, exc, turns=0, tree=tree)
             reporter.err(f"\n[agent6] {label} {reason}")
         with contextlib.ExitStack() as cleanup:
             if prompt_reviser_provider is not None:
@@ -421,7 +421,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             standing_goal=inputs.standing_goal,
             interactive=inputs.interactive and mode == "run",
             initial_pins=inputs.pins,
-            max_iterations=cfg.harness.max_iterations,
+            max_turns=cfg.harness.max_turns,
             provider=session.provider,
             dispatcher=dispatcher,
             logger=loop_log,
@@ -465,7 +465,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
             review=_reviewer.ReviewSettings(
                 trigger=cfg.review.trigger,
-                interval_iterations=cfg.review.interval_iterations,
+                interval_turns=cfg.review.interval_turns,
                 reviewers=session.review_seats,
                 block_on=cfg.review.block_on,
                 min_blocking_models=cfg.review.min_blocking_models,
@@ -508,14 +508,14 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                             "session.end",
                             reason="setup_command_failed",
                             summary=unready,
-                            iterations=0,
+                            turns=0,
                             all_passed=False,
                         )
                         result = _snapshot.SessionResult(
                             completed=False,
                             reason="setup_command_failed",
                             summary=unready,
-                            iterations=0,
+                            turns=0,
                             tool_calls=0,
                         )
                     elif inputs.task is None:
@@ -531,7 +531,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     escape_handled = True
                     if result is None:
                         _journal_escape(
-                            events, exc, iterations=wf.iterations_reached, tree=_tree_left(wf, mode)
+                            events, exc, turns=wf.turns_reached, tree=_tree_left(wf, mode)
                         )
                     raise
         except _snapshot.ResumeError as exc:
@@ -552,7 +552,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             and result is None
             and stamps.parked_stamp(layout.session_dir) is None
         ):
-            _journal_escape(events, exc, iterations=wf.iterations_reached if wf else 0)
+            _journal_escape(events, exc, turns=wf.turns_reached if wf else 0)
         reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         raise
     finally:

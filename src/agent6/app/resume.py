@@ -611,7 +611,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 )
             except ValueError:
                 flight = None  # the loop names and drops it when it resumes
-            died_in_turn = flight is not None and flight.iteration == snapshot.next_iteration
+            died_in_turn = flight is not None and flight.turn == snapshot.next_turn
             chain_ref = git_ops.chain_ref_for(session_id)
             end_tree = scan.end_tree
             seed = git_ops.chain_tip(cwd, chain_ref) or resume_base_sha or None

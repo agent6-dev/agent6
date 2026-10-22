@@ -177,7 +177,7 @@ on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt
 # max_tokens_fallback = 100000     # this slice's unmetered-token cap (-1/0/>0)
 
 # [states.classify.config.harness] # any other config key, for this state only
-# max_iterations = 20
+# max_turns = 20
 ```
 
 An `agent` state spins up a normal agent6 run: its own snapshot dir, transcript, budget slice, jail.
@@ -745,7 +745,7 @@ It is an ordinary agent6 run handed this document's grammar, writing the `.asm.t
 - it never sees the operator's checkout; the workspace bounds its writes the way a repo bounds a run's
 
 - the workspace is an empty git repo under `[workspace].base_dir` (where lane clones and fork worktrees live)
-    - each iteration commits, so the draft survives a failure for the operator to read
+    - each turn commits, so the draft survives a failure for the operator to read
 - every draft is gated: `machine check`, ruff (the destination's ruff config), ty, the `machine test` dry-run, and mock tests in a no-network jail
     - the mock tests run under `full` `sandbox.isolation` only: elsewhere agent6 reports them as not run
     - agent6 runs those validators itself between attempts (they need agent6, which no jailed command can reach) and hands the problems back

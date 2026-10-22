@@ -53,7 +53,7 @@ def test_status_running_with_live_pid(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start", "mode": "run"},
-            {"ts": _ts(3), "type": "loop.tool.call", "iteration": 3},
+            {"ts": _ts(3), "type": "loop.tool.call", "turn": 3},
         ],
     )
     # this test process is genuinely alive
@@ -63,7 +63,7 @@ def test_status_running_with_live_pid(
     out = capsys.readouterr().out
     assert "running" in out
     assert "claude-opus-4-8" in out
-    assert "iteration:  3" in out
+    assert "turn:       3" in out
 
 
 def test_status_json_is_machine_readable(
@@ -93,8 +93,8 @@ def test_status_elapsed_of_a_fork_execution_runs_from_its_first_event(
         tmp_path,
         monkeypatch,
         [
-            {"type": "loop.resume.start", "ts": "2026-01-01T00:00:00+00:00", "iteration": 2},
-            {"type": "tool.call", "ts": "2026-01-01T00:00:10+00:00", "iteration": 2},
+            {"type": "loop.resume.start", "ts": "2026-01-01T00:00:00+00:00", "turn": 2},
+            {"type": "tool.call", "ts": "2026-01-01T00:00:10+00:00", "turn": 2},
             {
                 "type": "session.end",
                 "ts": "2026-01-01T00:00:30+00:00",
@@ -126,7 +126,7 @@ def test_a_finished_runs_elapsed_time_stops_at_its_receipt(
                 "type": "session.end",
                 "ts": "2026-01-01T00:00:10+00:00",
                 "reason": "finish_session",
-                "iterations": 1,
+                "turns": 1,
                 "all_passed": True,
             },
         ],
@@ -209,7 +209,7 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start"},
-            {"ts": _ts(30), "type": "loop.tool.call", "iteration": 1},
+            {"ts": _ts(30), "type": "loop.tool.call", "turn": 1},
         ],
     )
     (d / "worker.pid").write_text("999999")  # almost certainly not a live pid
@@ -233,7 +233,7 @@ def test_show_stale_run_offers_resume(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start", "mode": "run"},
-            {"ts": _ts(30), "type": "loop.tool.call", "iteration": 1},
+            {"ts": _ts(30), "type": "loop.tool.call", "turn": 1},
         ],
     )
     (d / "loop_state.json").write_text("{}", encoding="utf-8")  # a turn ran: a resume can start
@@ -288,12 +288,12 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
     assert state_word() == "stale"
 
 
-def test_status_prints_the_final_iteration_count_from_the_receipt(
+def test_status_prints_the_final_turn_count_from_the_receipt(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The terminal receipt's `session.end.iterations` is the final count.
+    """The terminal receipt's `session.end.turns` is the final count.
 
-    A run that ended before another iteration-stamped event printed `-`, even
+    A run that ended before another turn-stamped event printed `-`, even
     though its journal recorded the figure the command promises to show.
     """
     _make_run(
@@ -305,16 +305,16 @@ def test_status_prints_the_final_iteration_count_from_the_receipt(
                 "ts": _ts(1),
                 "type": "session.end",
                 "reason": "finish_session",
-                "iterations": 7,
+                "turns": 7,
                 "all_passed": True,
             },
         ],
     )
 
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
-    assert "iteration:  7\n" in capsys.readouterr().out
+    assert "turn:       7\n" in capsys.readouterr().out
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
-    assert json.loads(capsys.readouterr().out)["iteration"] == 7
+    assert json.loads(capsys.readouterr().out)["turn"] == 7
 
 
 @pytest.mark.parametrize("reason", ["steer_abort", "finish_session"])
@@ -526,7 +526,7 @@ def test_status_of_a_provider_failure_keeps_the_providers_error(
                 "ts": _ts(1),
                 "type": "session.end",
                 "reason": "provider_error",
-                "iterations": 1,
+                "turns": 1,
                 "all_passed": False,
             },
         ],
@@ -575,7 +575,7 @@ def test_status_shows_usage_from_budget_update_event(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `sessions show` must read budget.update (the authoritative post-call totals),
-    # not loop.budget (emitted BEFORE each call: lags one call, 0 on iter 1).
+    # not loop.budget (emitted BEFORE each call: lags one call, 0 on turn 1).
     # A stray loop.budget must NOT override the real usage.
     d = _make_run(
         tmp_path,
@@ -585,7 +585,7 @@ def test_status_shows_usage_from_budget_update_event(
             {
                 "ts": _ts(30),
                 "type": "loop.budget",
-                "iteration": 1,
+                "turn": 1,
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "cost_usd": 0.0,
@@ -671,7 +671,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
                 "usd_partial": True,
             },
             {"ts": _ts(40), "type": "session.end", "reason": "finish_session", "all_passed": True},
-            {"ts": _ts(30), "type": "loop.resume.start", "iteration": 4},
+            {"ts": _ts(30), "type": "loop.resume.start", "turn": 4},
             {
                 "ts": _ts(5),
                 "type": "budget.update",
@@ -727,7 +727,7 @@ def test_status_text_labels_plan_points_on_a_resumed_run(
             {"ts": _ts(90), "type": "session.start", "mode": "run", "user_task": "t"},
             {"ts": _ts(80), "type": "budget.update", **plan, "plan_consumed": 1.0},
             {"ts": _ts(70), "type": "session.end", "reason": "finish_session", "all_passed": True},
-            {"ts": _ts(60), "type": "loop.resume.start", "iteration": 4},
+            {"ts": _ts(60), "type": "loop.resume.start", "turn": 4},
             {"ts": _ts(10), "type": "budget.update", **plan, "plan_consumed": 0.0},
             {"ts": _ts(5), "type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
@@ -758,7 +758,7 @@ def test_status_text_labels_execution_scoped_figures_on_a_resumed_run(
                 "usd_total": 0.02,
             },
             {"ts": _ts(70), "type": "session.end", "reason": "finish_session", "all_passed": True},
-            {"ts": _ts(60), "type": "loop.resume.start", "iteration": 4},
+            {"ts": _ts(60), "type": "loop.resume.start", "turn": 4},
             {
                 "ts": _ts(10),
                 "type": "budget.update",
@@ -955,7 +955,7 @@ def test_a_started_session_with_no_pid_file_is_not_running(
         monkeypatch,
         [
             {"ts": _ts(20), "type": "session.start", "mode": "run"},
-            {"ts": _ts(2), "type": "loop.tool.call", "iteration": 2},
+            {"ts": _ts(2), "type": "loop.tool.call", "turn": 2},
         ],
     )
     assert not (d / "worker.pid").exists()
@@ -1277,7 +1277,7 @@ def test_show_says_why_a_stale_run_with_no_snapshot_cannot_be_resumed(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start", "mode": "run"},
-            {"ts": _ts(30), "type": "loop.tool.call", "iteration": 1},
+            {"ts": _ts(30), "type": "loop.tool.call", "turn": 1},
         ],
     )
     assert sessions_show._cmd_status("winsome-dawn") == 0

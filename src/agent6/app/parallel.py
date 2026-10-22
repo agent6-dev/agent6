@@ -193,11 +193,11 @@ def run_parallel(
     except KeyboardInterrupt:
         # An interrupt past the await is journaled, so the record reads stopped, never stale.
         with contextlib.suppress(event_log.EventWriteError):
-            events.emit("session.end", reason="interrupted", iterations=0, all_passed=False)
+            events.emit("session.end", reason="interrupted", turns=0, all_passed=False)
         raise
     except Exception:
         with contextlib.suppress(event_log.EventWriteError):
-            events.emit("session.end", reason="crashed", iterations=0, all_passed=False)
+            events.emit("session.end", reason="crashed", turns=0, all_passed=False)
         raise
     finally:
         process.clear_worker_pid(layout.session_dir)
@@ -367,5 +367,5 @@ def _drive_fanout(
         )
     )
     reason, all_passed = _parallel_results.fanout_end(rc, batch.candidates)
-    events.emit("session.end", reason=reason, iterations=0, all_passed=all_passed)
+    events.emit("session.end", reason=reason, turns=0, all_passed=all_passed)
     return rc

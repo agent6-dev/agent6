@@ -16,18 +16,18 @@ if TYPE_CHECKING:
 def seeded_steer(
     harness: loop.Harness,
     conversation: _conversation.Conversation,
-    iteration: int,
+    turn: int,
     state: _loop_state.LoopState,
 ) -> _snapshot.SessionResult | None:
     """Consume the follow-up a `resume --steer` queued before the loop started.
 
     It enters the conversation ahead of the first model call, since a resumed conversation
-    that was already finished ends on iteration 1 before the end-of-iteration poll runs.
+    that was already finished ends on turn 1 before the end-of-turn poll runs.
 
     Args:
         harness: The execution's harness.
         conversation: The conversation the steer enters.
-        iteration: The first iteration of the execution.
+        turn: The first turn of the execution.
         state: The execution's state.
 
     Returns:
@@ -38,14 +38,14 @@ def seeded_steer(
         harness,
         harness.steering.handle(
             conversation,
-            iteration,
+            turn,
             state,
             heading=(
                 "OPERATOR STEERING: This execution continues the run even if it previously"
                 " finished, and the steer below is its task."
             ),
         ),
-        iteration,
+        turn,
         state,
     )
 
@@ -53,17 +53,17 @@ def seeded_steer(
 def operator_boundary(
     harness: loop.Harness,
     conversation: _conversation.Conversation,
-    iteration: int,
+    turn: int,
     state: _loop_state.LoopState,
 ) -> _snapshot.SessionResult | None:
-    """Honour a pending stop, then poll the steer flag, after every completed iteration.
+    """Honour a pending stop, then poll the steer flag, after every completed turn.
 
     A stop or an injected instruction never splits a tool call from its result.
 
     Args:
         harness: The execution's harness.
         conversation: The conversation a steer enters.
-        iteration: The iteration just completed.
+        turn: The turn just completed.
         state: The execution's state.
 
     Returns:
@@ -74,13 +74,13 @@ def operator_boundary(
     if harness.bridge.stop_requested() or harness.bridge.should_abort():
         immediate = harness.bridge.stop_is_now() or harness.bridge.should_abort()
         harness.bridge.stop_clear()
-        when = f"during step {iteration}" if immediate else f"after step {iteration}"
+        when = f"during step {turn}" if immediate else f"after step {turn}"
         cut = "; running command was cut short" if immediate and state.command_cut else ""
         if immediate:
             harness.bridge.steer_clear()
             harness.log(f"LOOP: operator stop {when}{cut}")
         else:
-            harness.log(f"LOOP: operator stop at the step boundary (iter {iteration})")
+            harness.log(f"LOOP: operator stop at the step boundary (turn {turn})")
         return harness.finish(
             state,
             _snapshot.End(
@@ -88,11 +88,9 @@ def operator_boundary(
                 f"operator stopped the run {when}{cut}{harness.dirty_tree_note()}",
                 checkpoint=False,
             ),
-            iteration=iteration,
+            turn=turn,
         )
-    return steer_outcome(
-        harness, harness.steering.handle(conversation, iteration, state), iteration, state
-    )
+    return steer_outcome(harness, harness.steering.handle(conversation, turn, state), turn, state)
 
 
 def quiet_continuation(
@@ -100,7 +98,7 @@ def quiet_continuation(
     conversation: _conversation.Conversation,
     state: _loop_state.LoopState,
     *,
-    iteration: int,
+    turn: int,
     reason: str,
 ) -> _snapshot.SessionResult | _loop_state.NextTurn | None:
     """Continue a quiet turn in run mode: a standing goal re-enters, else a park.
@@ -109,7 +107,7 @@ def quiet_continuation(
         harness: The execution's harness.
         conversation: The conversation the re-entry enters.
         state: The execution's state.
-        iteration: The current iteration.
+        turn: The current turn.
         reason: The quiet end being continued.
 
     Returns:
@@ -117,12 +115,12 @@ def quiet_continuation(
     """
     if harness.mode != "run":
         return None
-    nudge = harness.standing.absorb(state, reason=reason, iteration=iteration)
+    nudge = harness.standing.absorb(state, reason=reason, turn=turn)
     if nudge is not None:
         conversation.notice(nudge)
         return _loop_state.NEXT_TURN
     if harness.interactive:
-        parked = park_for_steer(harness, conversation, state, iteration=iteration, reason=reason)
+        parked = park_for_steer(harness, conversation, state, turn=turn, reason=reason)
         return _loop_state.NEXT_TURN if parked is None else parked
     return None
 
@@ -132,7 +130,7 @@ def park_for_steer(
     conversation: _conversation.Conversation,
     state: _loop_state.LoopState,
     *,
-    iteration: int,
+    turn: int,
     reason: str,
 ) -> _snapshot.SessionResult | None:
     """Park a quiet interactive execution until the operator steers it.
@@ -143,17 +141,17 @@ def park_for_steer(
         harness: The execution's harness.
         conversation: The conversation a steer enters.
         state: The execution's state.
-        iteration: The current iteration.
+        turn: The current turn.
         reason: The quiet end being parked.
 
     Returns:
         The end a steer verb chose, or None when the execution continues.
     """
     harness.log(
-        f"LOOP: parked at iter {iteration} ({reason}) - waiting for your steer"
+        f"LOOP: parked at turn {turn} ({reason}) - waiting for your steer"
         " (any composer or the pause menu; abort ends the run)"
     )
-    harness.emit("loop.parked", iteration=iteration, reason=reason)
+    harness.emit("loop.parked", turn=turn, reason=reason)
     while True:
         if harness.bridge.stop_requested():
             harness.bridge.stop_clear()
@@ -164,33 +162,33 @@ def park_for_steer(
                     f"operator stopped the parked run{harness.dirty_tree_note()}",
                     checkpoint=False,
                 ),
-                iteration=iteration,
+                turn=turn,
             )
         if harness.bridge.should_abort():
-            return steer_outcome(harness, "abort", iteration, state)
+            return steer_outcome(harness, "abort", turn, state)
         if harness.bridge.steer_requested():
-            verb = harness.steering.handle(conversation, iteration, state)
+            verb = harness.steering.handle(conversation, turn, state)
             if verb is not None:
-                return steer_outcome(harness, verb, iteration, state)
+                return steer_outcome(harness, verb, turn, state)
             # Injected (or a bare poke): the run continues where it parked.
-            harness.emit("loop.parked.resumed", iteration=iteration)
+            harness.emit("loop.parked.resumed", turn=turn)
             return None
         if harness.operator_tasks.take(state.root_task_id):
             # A queued task, goal or retirement is work; the next focus banner names it.
-            harness.emit("loop.parked.resumed", iteration=iteration)
+            harness.emit("loop.parked.resumed", turn=turn)
             return None
         time.sleep(0.5)
 
 
 def steer_outcome(
-    harness: loop.Harness, steer_result: str | None, iteration: int, state: _loop_state.LoopState
+    harness: loop.Harness, steer_result: str | None, turn: int, state: _loop_state.LoopState
 ) -> _snapshot.SessionResult | None:
     """Map a steer verb to the execution's end.
 
     Args:
         harness: The execution's harness.
         steer_result: The verb `Steering.handle` returned; None for an injected instruction.
-        iteration: The current iteration.
+        turn: The current turn.
         state: The execution's state.
 
     Returns:
@@ -206,10 +204,10 @@ def steer_outcome(
             _snapshot.End(
                 reason,
                 f"operator {'exited' if steer_result == 'exit' else 'aborted'}"
-                f" at iter {iteration} via steering prompt{harness.dirty_tree_note()}",
+                f" at turn {turn} via steering prompt{harness.dirty_tree_note()}",
                 checkpoint=False,
             ),
-            iteration=iteration,
+            turn=turn,
         )
     if steer_result == "undo":
         forked = harness.bridge.undo_forker() if harness.bridge.undo_forker is not None else None
@@ -224,10 +222,10 @@ def steer_outcome(
             state,
             _snapshot.End(
                 "undone",
-                f"operator undid the last message at iter {iteration}; forked to {new_id}",
+                f"operator undid the last message at turn {turn}; forked to {new_id}",
                 checkpoint=False,
             ),
-            iteration=iteration,
+            turn=turn,
         )
     if steer_result == "detach":
         # No session.end: the caller respawns a detached `resume` that appends to this log.
@@ -235,10 +233,10 @@ def steer_outcome(
             state,
             _snapshot.End(
                 "detached",
-                f"operator detached at iter {iteration}; resuming in the background",
+                f"operator detached at turn {turn}; resuming in the background",
                 checkpoint=False,
                 event=False,
             ),
-            iteration=iteration,
+            turn=turn,
         )
     return None

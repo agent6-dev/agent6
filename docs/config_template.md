@@ -233,7 +233,7 @@ Different focuses or effort levels on one route still count as one blocking mode
 [review]
 trigger = "before_finish"
 scope = "diff"
-interval_iterations = 10
+interval_turns = 10
 min_remaining_budget_fraction = 0.25
 block_on = "any"
 min_blocking_models = 2

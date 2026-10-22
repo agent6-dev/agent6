@@ -85,7 +85,7 @@ class RunDigest:
         status: The session's status.
         end_reason: The session's end reason, "" when it has none.
         verify: The gate word.
-        iterations: The iteration count, None when the journal has no end.
+        turns: The turn count, None when the journal has no end.
         tool_calls: The tool calls made.
         tool_errors: The tool calls that failed.
         cost_usd: The session's cost.
@@ -111,7 +111,7 @@ class RunDigest:
     status: str
     end_reason: str
     verify: VerifyWord
-    iterations: int | None
+    turns: int | None
     tool_calls: int
     tool_errors: int
     cost_usd: float
@@ -135,7 +135,7 @@ class RunDigest:
         lines = [
             f"session {self.session_id} ({self.mode}): {self.task}",
             f"ended: {self.end_reason or self.status}; verify {self.verify};"
-            f" {self.iterations if self.iterations is not None else '?'} iterations,"
+            f" {self.turns if self.turns is not None else '?'} turns,"
             f" {self.tool_calls} tool calls ({self.tool_errors} failed), ${self.cost_usd:.2f}",
         ]
         if self.steers:
@@ -233,7 +233,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     end_reason = ""
     all_passed: bool | None = None
     execution_rc: int | None = None  # this execution's last verify exit, reset at a resume
-    iterations: int | None = None
+    turns: int | None = None
     try:
         raw = layout.logs_path.read_text(errors="replace")
     except OSError:
@@ -278,7 +278,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
             end_reason = str(event.get("reason", ""))
             passed = event.get("all_passed")
             all_passed = passed if isinstance(passed, bool) else None
-            iterations = _int(event.get("iterations")) if "iterations" in event else iterations
+            turns = _int(event.get("turns")) if "turns" in event else turns
     # `LogScan.verify_verdict`'s rule: "failed" only on this execution's own red verify.
     if summary.mode != "run" or (end_reason and all_passed is None):
         verify = "not gated"
@@ -297,7 +297,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         status=summary.status,
         end_reason=end_reason,
         verify=verify,
-        iterations=iterations,
+        turns=turns,
         tool_calls=tool_calls,
         tool_errors=sum(errors.values()),
         cost_usd=summary.cost_usd,

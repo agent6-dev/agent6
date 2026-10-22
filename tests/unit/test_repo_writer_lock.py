@@ -573,7 +573,7 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
             system="s",
             messages=[],
             tool_calls=0,
-            next_iteration=1,
+            next_turn=1,
             root_task_id=None,
             original_task="t",
             verify_command=(),
@@ -759,7 +759,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
         system="s",
         messages=[],
         tool_calls=0,
-        next_iteration=1,
+        next_turn=1,
         root_task_id=None,
         original_task="t",
         verify_command=(),
@@ -773,7 +773,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     (repo / "built.txt").write_text("a build output\n", encoding="utf-8")
     (repo / "réponse.txt").write_text("git quotes this name in ls-tree\n", encoding="utf-8")
     assert git_ops.chain_commit(
-        repo, "iter 1", ref=git_ops.chain_ref_for("run-U"), fallback_parent=None
+        repo, "turn 1", ref=git_ops.chain_ref_for("run-U"), fallback_parent=None
     )
     (repo / "note.md").write_text("the operator's\n", encoding="utf-8")
     seen: list[frozenset[str]] = []
@@ -860,7 +860,7 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
         system="s",
         messages=[],
         tool_calls=0,
-        next_iteration=1,
+        next_turn=1,
         root_task_id=None,
         original_task="t",
         verify_command=(),
@@ -870,7 +870,7 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
     )
     call = {"type": "tool_use", "id": "t1", "name": "run_command", "input": {"argv": ["sh"]}}
     marker = layout.session_dir / _snapshot.TURN_IN_FLIGHT_NAME
-    _snapshot.write_turn_marker(marker, _snapshot.TurnInFlight(iteration=1, assistant=(call,)))
+    _snapshot.write_turn_marker(marker, _snapshot.TurnInFlight(turn=1, assistant=(call,)))
     (repo / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
     seen: list[frozenset[str]] = []
 
@@ -940,7 +940,7 @@ def test_resume_of_a_fan_out_lane_from_the_origin_checkout_refuses(
         system="s",
         messages=[],
         tool_calls=0,
-        next_iteration=1,
+        next_turn=1,
         root_task_id=None,
         original_task="t",
         verify_command=(),

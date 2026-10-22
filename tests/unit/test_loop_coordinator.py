@@ -243,7 +243,7 @@ def _build_wf(
     dispatcher: mock.MagicMock | None = None,
     verify_command: tuple[str, ...] = (),
     verify_when: str = "finish",
-    max_iterations: int = 2,
+    max_turns: int = 2,
 ) -> loop.Harness:
     steer = _OneShotSteer(steer_text)
     disp = dispatcher if dispatcher is not None else mock.MagicMock()
@@ -280,7 +280,7 @@ def _build_wf(
             steer_clear=steer.clear,
         ),
         call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
-        max_iterations=max_iterations,
+        max_turns=max_turns,
     )
 
 
@@ -347,8 +347,8 @@ def test_none_spawner_answers_with_feedback_and_continues(tmp_path: pathlib.Path
     wf = _build_wf(repo, provider, steer_text="/parallel do a thing", lane_spawner=None)
     result = wf.run("start")
 
-    assert provider.call.call_count == 2  # ran to max_iterations, no crash
-    assert result.reason == "max_iterations"
+    assert provider.call.call_count == 2  # ran to max_turns, no crash
+    assert result.reason == "max_turns"
     texts = _user_texts(_final_messages(provider))
     assert any("parallel dispatch is not available" in t for t in texts)
 
@@ -552,7 +552,7 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path)
     result = wf.run("start")
 
     assert provider.call.call_count == 2  # run continued past the conflict
-    assert result.reason == "max_iterations"
+    assert result.reason == "max_turns"
     # The clean lane's file reached the worktree; the conflicted merge touched nothing.
     assert (repo / "lane1.txt").read_text(encoding="utf-8") == "lane 1\n"
     assert (repo / "conflict.txt").read_text(encoding="utf-8") == "main version"
@@ -591,7 +591,7 @@ def test_failed_lane_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
     )
     result = wf.run("start")
 
-    assert result.reason == "max_iterations"  # did not crash
+    assert result.reason == "max_turns"  # did not crash
     joined = events.of("loop.parallel.joined")[0]
     assert [ln["status"] for ln in joined["lanes"]] == ["failed", "joined"]
     assert joined["lanes"][0]["detail"] == "lane boom"
@@ -644,7 +644,7 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
 
     assert calls == ["p1"]  # the dispatch was attempted
     assert provider.call.call_count == 2  # the run CONTINUED past the fault
-    assert result.reason == "max_iterations"
+    assert result.reason == "max_turns"
     # The failure is rendered truthfully on every surface.
     failed = events.of("loop.parallel.failed")
     assert failed and failed[0]["group"] == "p1"

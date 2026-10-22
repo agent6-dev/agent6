@@ -81,7 +81,7 @@ def test_the_proposal_is_printed_for_the_operator_to_set() -> None:
                 completed=True,
                 reason="gate_stale",
                 summary="s",
-                iterations=1,
+                turns=1,
                 tool_calls=1,
                 stale_gate="uv run pytest tests/unit",
                 verified="failed",
@@ -112,7 +112,7 @@ def test_a_long_proposal_is_clipped() -> None:
                 completed=True,
                 reason="gate_stale",
                 summary="s",
-                iterations=1,
+                turns=1,
                 tool_calls=1,
                 stale_gate=prose,
                 verified="failed",
@@ -140,7 +140,7 @@ def test_a_short_prose_proposal_is_printed_whole_with_no_clip_mark() -> None:
                 completed=True,
                 reason="gate_stale",
                 summary="s",
-                iterations=1,
+                turns=1,
                 tool_calls=1,
                 stale_gate=note,
                 verified="failed",
@@ -161,7 +161,7 @@ def _stale_report(proposal: str) -> str:
                 completed=True,
                 reason="gate_stale",
                 summary="s",
-                iterations=1,
+                turns=1,
                 tool_calls=1,
                 stale_gate=proposal,
                 verified="failed",
@@ -188,7 +188,7 @@ def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
                 completed=True,
                 reason="finish_session",
                 summary="s",
-                iterations=1,
+                turns=1,
                 tool_calls=1,
                 stale_gate="uv run pytest tests/unit",
                 verified="passed",
@@ -205,7 +205,7 @@ def test_nothing_is_printed_without_a_declaration() -> None:
     with contextlib.redirect_stdout(out):
         finalize._print_stale_gate(
             _snapshot.SessionResult(
-                completed=True, reason="finish_session", summary="s", iterations=1, tool_calls=1
+                completed=True, reason="finish_session", summary="s", turns=1, tool_calls=1
             ),
             reporter=reporter.STDIO_REPORTER,
         )
@@ -266,10 +266,10 @@ def _finish_call(
 ) -> _loop_state.TurnState:
     """Return the turn after a finish_session went through the capture and the finish gates."""
     turn = _loop_state.TurnState(
-        iteration=3, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        turn=3, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
     )
     wf._capture_finish(state, turn, "finish_session", tool_input)  # pyright: ignore[reportPrivateUsage]
-    ctx = wf._turn_context(state, iteration=turn.iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.turn, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._turn_finish_gates(state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     return turn
 

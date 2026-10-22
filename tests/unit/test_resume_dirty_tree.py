@@ -595,7 +595,7 @@ def test_a_killed_runs_own_edit_to_a_committed_file_is_not_stashed(
     (repo / "w.txt").write_text("1\n", encoding="utf-8")
     ref = git_ops.chain_ref_for("tree-KILL02")
     assert git_ops.chain_commit(
-        repo, "agent6 iter 2: w", ref=ref, fallback_parent=None, also_branch="agent6/tree-KILL02"
+        repo, "agent6 turn 2: w", ref=ref, fallback_parent=None, also_branch="agent6/tree-KILL02"
     )
     logs = _session_dir(repo, "tree-KILL02") / "logs.jsonl"
     kept = [ln for ln in logs.read_text(encoding="utf-8").splitlines() if '"session.end"' not in ln]

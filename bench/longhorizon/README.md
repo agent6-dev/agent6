@@ -37,7 +37,7 @@ agent uses those channels is part of what the bench measures.
 |------|-------|------|----------|
 | `stylebook` | implement a 10-rule text auditor; each rule is one ~4k-char authoritative doc, with deliberate cross-file couplings (R01<->R09/R10, R08<->R09) | 1 | retention: per-rule component scores = which early-read rules survive elision |
 | `relay` | 6-module event pipeline with a strict interface chain (incl. a ping count threaded through stages 3->6) | 1 | organic length, interface retention, add_dependency shape |
-| `orchard` | session 1: fix a price whose root cause is a SOURCE table behind a generated file (verify regenerates, hand-edits get clobbered); session 2: WEEKEND tier touching the same generator + the cents/half-up convention; session 3: CLEARANCE feed re-probing BOTH conventions with fresh discriminators, spec deliberately silent on them (no NOTES.md pointer) | 3 | memory value: session-2/session-3 iterations/score/trap-edits, baseline vs fresh_state. Session 3 is the READ-side probe: session-1/2 recoverers hold nudged memories by session 3, the 2-session design could not separate that from task ease |
+| `orchard` | session 1: fix a price whose root cause is a SOURCE table behind a generated file (verify regenerates, hand-edits get clobbered); session 2: WEEKEND tier touching the same generator + the cents/half-up convention; session 3: CLEARANCE feed re-probing BOTH conventions with fresh discriminators, spec deliberately silent on them (no NOTES.md pointer) | 3 | memory value: session-2/session-3 turns/score/trap-edits, baseline vs fresh_state. Session 3 is the READ-side probe: session-1/2 recoverers hold nudged memories by session 3, the 2-session design could not separate that from task ease |
 | `ledger` | a double-entry CLI whose command table is GENERATED from `commands.toml` (verify regenerates), money in integer cents with half-up rounding (`docs/CONVENTIONS.md`), every posting through the balanced-transaction invariant; session 1 fixes a handler mapping, sessions 2-5 add `split`, `convert`, `report`, `import-csv`, each spec silent about the conventions it needs | 5 | cross-session memory value over a 5-session campaign: later-session score, tool calls and tokens, re-reads, memory writes; the `poisoned` probe |
 
 Graders were validated against reference solutions (reference scores 1.0,
@@ -79,7 +79,7 @@ post-session store snapshot (`memories_ids`/`memories_bytes`),
 `deps_added`/`deps_in_graph`, `trap_edits` (edit calls whose TARGET is one
 of orchard's generated feeds; matched on the `path` arg when present so a
 generator merely mentioning the feed in a docstring does not count),
-`iterations`, `usd`, `tokens`, `wall_s`, `end_reason`, `tampered`.
+`iterations` (loop turns), `usd`, `tokens`, `wall_s`, `end_reason`, `tampered`.
 
 Memory metrics read the real channel: the repo memory is files under the
 state home's `memory/` dir (plus the injected `MEMORY.md` index), so

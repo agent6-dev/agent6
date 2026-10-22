@@ -641,7 +641,7 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
     # session.start): the mode rides on it too, or the resumed plan's receipt
     # reads "0 commits".
     resumed_plan = [
-        {"type": "loop.resume.start", "mode": "plan", "iteration": 3},
+        {"type": "loop.resume.start", "mode": "plan", "turn": 3},
         {"type": "session.end", "reason": "finish_planning", "all_passed": False},
     ]
     done = next(it for it in fold_transcript(resumed_plan) if it.kind == "done")
@@ -672,7 +672,7 @@ _DONE_LABELS = {
     "detached": "failed · detached",
     "prompt_revision_failed": "failed · prompt revision failed",
     "plan_unreadable": "failed · plan unreadable",
-    "max_iterations": "failed · max iterations",
+    "max_turns": "failed · max turns",
     "ask_repl_empty": "failed · ask repl empty",
     "gate_stale": "finished · gate stale",
     "gate_red_at_base": "finished · gate was already red",

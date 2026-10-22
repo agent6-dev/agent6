@@ -31,9 +31,7 @@ def _wf(
 
 
 def _turn(text: str) -> _loop_state.TurnState:
-    return _loop_state.TurnState(
-        iteration=3, resp=mock.MagicMock(text=text), assistant=mock.MagicMock()
-    )
+    return _loop_state.TurnState(turn=3, resp=mock.MagicMock(text=text), assistant=mock.MagicMock())
 
 
 def test_agent6_style_is_the_default_and_unchanged(tmp_path: pathlib.Path) -> None:
@@ -41,7 +39,7 @@ def test_agent6_style_is_the_default_and_unchanged(tmp_path: pathlib.Path) -> No
     got = wf.checkpoints.subject(
         _turn("Add the unified write path.\nmore prose"), fallback="verify passed"
     )
-    assert got == "agent6 iter 3: Add the unified write path."
+    assert got == "agent6 turn 3: Add the unified write path."
 
 
 def test_conventional_style_derives_from_the_worktree(
@@ -82,5 +80,5 @@ def test_model_style_degrades_to_agent6_with_a_warning(
     logged: list[str] = []
     wf = _wf(tmp_path, "model", provider=provider, logger=logged.append)
     got = wf.checkpoints.subject(_turn("Fix the thing."), fallback="verify passed")
-    assert got == "agent6 iter 3: Fix the thing."
+    assert got == "agent6 turn 3: Fix the thing."
     assert any("model commit message failed (RuntimeError: no endpoint)" in m for m in logged)

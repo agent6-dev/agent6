@@ -80,7 +80,7 @@ class ReviewSettings:
 
     Attributes:
         trigger: When the panel sits: after a verify failure, before a finish, or periodically.
-        interval_iterations: The iterations between periodic panels.
+        interval_turns: The turns between periodic panels.
         reviewers: The resolved seats.
         block_on: `none` advises; `any`, `all` and `model_quorum` can reject an end.
         min_blocking_models: The distinct blocking routes a `model_quorum` rejection needs.
@@ -91,7 +91,7 @@ class ReviewSettings:
     """
 
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
-    interval_iterations: int = 10
+    interval_turns: int = 10
     reviewers: Sequence[ReviewSeat] = ()
     block_on: _panel.ReviewBlockOn = "none"
     min_blocking_models: int = 2
@@ -244,7 +244,7 @@ def repo_review(
     model: str,
     tools: list[ToolDefinition],
     dispatch: ReviewDispatch,
-    max_iters: int = 6,
+    max_turns: int = 6,
     max_tokens: int = 2000,
     deadline_s: float = 90.0,
     temperature: float | None = 0.0,
@@ -258,7 +258,7 @@ def repo_review(
         model: The model name, for the verdict.
         tools: The read-only tools offered.
         dispatch: The dispatch that refuses every other tool.
-        max_iters: The provider calls allowed.
+        max_turns: The provider calls allowed.
         max_tokens: The output cap of each call.
         deadline_s: The wall-clock budget.
         temperature: The sampling temperature on every call.
@@ -269,7 +269,7 @@ def repo_review(
     system = review.REPO_REVIEW_SYSTEM_PROMPT.format(focus=ctx.focus or "general correctness")
     messages: list[dict[str, Any]] = [{"role": "user", "content": _build_user_message(ctx)}]
     start = time.monotonic()
-    for i in range(max_iters):
+    for i in range(max_turns):
         if time.monotonic() - start > deadline_s:
             return _panel.ReviewVerdict(
                 seat=seat, model=model, verdict="pass", error="repo: deadline exceeded"
@@ -294,8 +294,8 @@ def repo_review(
                     seat=seat, model=model, verdict="pass", error=_no_verdict_error(resp)
                 )
             return _verdict_from_obj(obj, seat, model)
-        # On the last iteration a verdict beside tool calls counts; without one no tool runs.
-        if i == max_iters - 1:
+        # On the last turn a verdict beside tool calls counts; without one no tool runs.
+        if i == max_turns - 1:
             obj = _llm_json.extract_json(resp.text, prefer=("verdict", "findings"))
             if obj is not None and ("verdict" in obj or "findings" in obj):
                 return _verdict_from_obj(obj, seat, model)
@@ -312,7 +312,7 @@ def repo_review(
             tool_results.append({"type": "tool_result", "tool_use_id": tu_id, "content": content})
         messages.append({"role": "user", "content": tool_results})
     return _panel.ReviewVerdict(
-        seat=seat, model=model, verdict="pass", error="repo: no verdict within max_iters"
+        seat=seat, model=model, verdict="pass", error="repo: no verdict within max_turns"
     )
 
 
@@ -489,15 +489,15 @@ class Reviewer:
             and turn.verify_just_failed
             and self.available()
         ):
-            critique = self.critique(state, trigger="verify_failed", iteration=turn.iteration)
+            critique = self.critique(state, trigger="verify_failed", turn=turn.turn)
             if critique is not None:
                 turn.review_text = critique.text
         elif (
             self.settings.trigger == "periodic"
             and self.available()
-            and turn.iteration % max(1, self.settings.interval_iterations) == 0
+            and turn.turn % max(1, self.settings.interval_turns) == 0
         ):
-            critique = self.critique(state, trigger="periodic", iteration=turn.iteration)
+            critique = self.critique(state, trigger="periodic", turn=turn.turn)
             if critique is not None:
                 turn.review_text = critique.text
 
@@ -526,23 +526,23 @@ class Reviewer:
     ) -> bool:
         if not (self.settings.trigger == "before_finish" and self.available()):
             return False
-        critique = self.critique(state, trigger="before_finish", iteration=turn.iteration)
+        critique = self.critique(state, trigger="before_finish", turn=turn.turn)
         if critique is None:
             return False
         if not critique.satisfied:
             state.gates.review_rejections += 1
-            self.log(f"  review rejected {ending} at iter {turn.iteration}")
-            self.emit("loop.review.rejected_finish", iteration=turn.iteration, ending=ending)
+            self.log(f"  review rejected {ending} at turn {turn.turn}")
+            self.emit("loop.review.rejected_finish", turn=turn.turn, ending=ending)
             turn.review_text = REVIEW_REJECTED[ending] + critique.text
             return True
         if critique.capped:
             self.log(
-                f"  review rejected {ending} at iter {turn.iteration} but the rejection cap"
+                f"  review rejected {ending} at turn {turn.turn} but the rejection cap"
                 f" ({self.settings.max_review_rejections}) is reached: the end stands"
             )
             self.emit(
                 "loop.review.rejection_cap_reached",
-                iteration=turn.iteration,
+                turn=turn.turn,
                 rejections=state.gates.review_rejections,
             )
             turn.review_text = (
@@ -558,7 +558,7 @@ class Reviewer:
         return bool(self.settings.reviewers)
 
     def critique(
-        self, state: _loop_state.LoopState, *, trigger: str, iteration: int
+        self, state: _loop_state.LoopState, *, trigger: str, turn: int
     ) -> CritiqueResult | None:
         """Run the panel over the run diff.
 
@@ -568,7 +568,7 @@ class Reviewer:
         Args:
             state: The execution's state.
             trigger: What called the panel, for the events.
-            iteration: The current turn.
+            turn: The current turn.
 
         Returns:
             The critique, `satisfied` False only when the panel blocks and the gate is armed,
@@ -577,14 +577,14 @@ class Reviewer:
         """
         diff = self.chain.diff_since_base()
         if not diff.strip():
-            self.emit("loop.review.skipped", iteration=iteration, trigger=trigger, reason="no_diff")
+            self.emit("loop.review.skipped", turn=turn, trigger=trigger, reason="no_diff")
             return None
         # A skipped panel approves: the gate blocks only on an explicit unsatisfied critique.
         remaining = self.budget_remaining()
         if remaining is not None and remaining < self.settings.min_remaining_budget_fraction:
             self.emit(
                 "loop.review.skipped",
-                iteration=iteration,
+                turn=turn,
                 trigger=trigger,
                 reason="min_remaining_budget_fraction",
                 remaining=round(remaining, 3),
@@ -603,7 +603,7 @@ class Reviewer:
         )
         self.emit(
             "loop.review.start",
-            iteration=iteration,
+            turn=turn,
             trigger=trigger,
             seats=len(self.settings.reviewers),
         )
@@ -617,18 +617,18 @@ class Reviewer:
                 ctx,
                 block_on=block_on,
                 min_blocking_models=self.settings.min_blocking_models,
-                panel_id=f"{trigger}-{iteration}",
+                panel_id=f"{trigger}-{turn}",
                 concurrency=self.settings.concurrency,
                 tools=tools,
                 dispatch=dispatch,
             )
         except budget.BudgetExceededError:
-            self.emit("loop.review.skipped", iteration=iteration, reason="budget")
+            self.emit("loop.review.skipped", turn=turn, reason="budget")
             return None
         for v in result.per_seat:
             self.emit(
                 "loop.review.seat",
-                iteration=iteration,
+                turn=turn,
                 seat=v.seat,
                 model=v.model,
                 verdict="abstain" if v.error else v.verdict,
@@ -638,7 +638,7 @@ class Reviewer:
         effective_blocked = result.blocked and not disarmed
         self.emit(
             "loop.review.panel",
-            iteration=iteration,
+            turn=turn,
             trigger=trigger,
             block_on=block_on,
             blocked=effective_blocked,

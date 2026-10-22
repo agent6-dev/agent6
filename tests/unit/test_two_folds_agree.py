@@ -108,7 +108,7 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
             "plan_cap": 6.0,
         },
         _END_PASSED,
-        {"ts": "2026-07-14T10:02:00+00:00", "type": "loop.resume.start", "iteration": 3},
+        {"ts": "2026-07-14T10:02:00+00:00", "type": "loop.resume.start", "turn": 3},
         {
             "ts": "2026-07-14T10:02:30+00:00",
             "type": "budget.update",
@@ -126,7 +126,7 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
             "exit_code": 1,
         },
         {**_END_PASSED, "all_passed": False},
-        {"ts": "2026-07-14T10:02:00+00:00", "type": "loop.resume.start", "iteration": 3},
+        {"ts": "2026-07-14T10:02:00+00:00", "type": "loop.resume.start", "turn": 3},
         {**_END_PASSED, "ts": "2026-07-14T10:03:00+00:00", "all_passed": False},
     ],
     "blocked": [

@@ -570,7 +570,7 @@ def test_crash_then_resume_recovers_liveness(tmp_path: pathlib.Path) -> None:
             await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             # The operator resumes: a new execution appends to the log with a live worker pid.
             with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"type": "loop.resume.start", "iteration": 2}) + "\n")
+                fh.write(json.dumps({"type": "loop.resume.start", "turn": 2}) + "\n")
                 fh.write(json.dumps({"type": "role.call", "role": "worker", "model": "m"}) + "\n")
             (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
             await wait_for(pilot, lambda: not app.worker_lost, "liveness to recover after resume")
@@ -817,7 +817,7 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: pathli
     d.mkdir(parents=True)
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "iterations": 2, "all_passed": True},
+        {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": True},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
@@ -868,7 +868,7 @@ def test_a_finished_log_is_folded_before_the_first_paint(
         {"type": "role.result", "role": "worker", "ok": True, "text": "done"},
         {"type": "tool.call", "name": "finish_session", "args": {"summary": "All done."}},
         {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "ok"},
-        {"type": "session.end", "reason": "finish_session", "iterations": 1, "all_passed": True},
+        {"type": "session.end", "reason": "finish_session", "turns": 1, "all_passed": True},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
@@ -953,7 +953,7 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
             )
 
             (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-            append({"type": "loop.resume.start", "iteration": 2, "mode": "run"})
+            append({"type": "loop.resume.start", "turn": 2, "mode": "run"})
             await wait_for(pilot, lambda: not app.state.finished, "the resumed execution")
             app._tick()
             await pilot.pause()
@@ -1081,7 +1081,7 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
                 {
                     "type": "session.end",
                     "reason": "finish_session",
-                    "iterations": 1,
+                    "turns": 1,
                     "all_passed": True,
                 }
             )
@@ -1206,7 +1206,7 @@ def test_dashboard_header_says_where_the_changes_are(
             await pilot.pause()
             after = str(app._dash.query_one("#top", widgets.Static).render())
             with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"type": "loop.resume.start", "iteration": 2}) + "\n")
+                fh.write(json.dumps({"type": "loop.resume.start", "turn": 2}) + "\n")
             subprocess.run([*git, "checkout", "-q", "agent6/branched"], check=True)
             subprocess.run(
                 [*git, "commit", "-q", "--allow-empty", "-m", "past the stamp"], check=True, env=env
@@ -1325,7 +1325,7 @@ def test_a_session_that_never_commits_shows_no_commit_pane(tmp_path: pathlib.Pat
         )
         evs = [
             {"type": "session.start", "session_id": d.name, "mode": mode, "user_task": "t"},
-            {"type": "session.end", "reason": "answered", "iterations": 1, "all_passed": None},
+            {"type": "session.end", "reason": "answered", "turns": 1, "all_passed": None},
         ]
         (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 

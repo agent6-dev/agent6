@@ -1893,9 +1893,9 @@ def test_bare_diff_returns_the_latest_commit(
     (d / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "work"})
         + "\n"
-        + json.dumps({"type": "loop.auto_commit", "sha": c1, "iteration": 1})
+        + json.dumps({"type": "loop.auto_commit", "sha": c1, "turn": 1})
         + "\n"
-        + json.dumps({"type": "loop.auto_commit", "sha": c2, "iteration": 2})
+        + json.dumps({"type": "loop.auto_commit", "sha": c2, "turn": 2})
         + "\n",
         encoding="utf-8",
     )
@@ -1960,16 +1960,16 @@ def test_session_snapshot_as_of_a_step(
     session_dir.mkdir(parents=True)
     events = [
         {"type": "session.start", "session_id": "asof-run", "mode": "run", "user_task": "t"},
-        {"type": "loop.auto_commit", "iteration": 1, "sha": "a" * 40, "subject": "one"},
-        {"type": "loop.auto_commit", "iteration": 2, "sha": "b" * 40, "subject": "two"},
+        {"type": "loop.auto_commit", "turn": 1, "sha": "a" * 40, "subject": "one"},
+        {"type": "loop.auto_commit", "turn": 2, "sha": "b" * 40, "subject": "two"},
     ]
     (session_dir / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
     status, raw, _ = _get(port, f"/api/session/asof-run?step={'a' * 40}")
     snap = json.loads(raw)
-    assert status == 200 and snap["as_of"] == {"iteration": 1, "sha": "a" * 40}
-    assert [st["iteration"] for st in snap["steps"]] == [1]
+    assert status == 200 and snap["as_of"] == {"turn": 1, "sha": "a" * 40}
+    assert [st["turn"] for st in snap["steps"]] == [1]
     status, raw, _ = _get(port, "/api/session/asof-run")
     snap = json.loads(raw)
     assert status == 200 and snap["as_of"] is None and len(snap["steps"]) == 2
@@ -2226,7 +2226,7 @@ def test_the_draft_route_serves_what_the_step_picker_asks_for(
             json.dumps(e) + "\n"
             for e in (
                 {"type": "session.start", "mode": "machine", "user_task": "draft one"},
-                {"type": "loop.auto_commit", "iteration": 1, "sha": sha, "subject": "draft it"},
+                {"type": "loop.auto_commit", "turn": 1, "sha": sha, "subject": "draft it"},
             )
         ),
         encoding="utf-8",

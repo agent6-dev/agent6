@@ -400,7 +400,8 @@ def _extract_metrics(state_home: Path, session_id: str, traps: tuple[str, ...]) 
             last_graph = e
         elif t == "session.end":
             m["end_reason"] = e.get("reason")
-            m["iterations"] = e.get("iterations")
+            # Recorded benchmark rows keep their schema; live events use turns.
+            m["iterations"] = e.get("turns")
             m["all_passed"] = e.get("all_passed")
         elif t == "loop.compact.summarise.done":
             m["compactions"] += 1
@@ -786,7 +787,7 @@ def main() -> None:
                         f" score={rec.get('score')} drops={rec.get('drops_total')}"
                         f" rr={rec.get('redundant_reads')} memw={rec.get('memory_writes')}"
                         f" nudges={rec.get('memory_flip_nudges')}"
-                        f" deps={rec.get('deps_added')} iters={rec.get('iterations')}"
+                        f" deps={rec.get('deps_added')} turns={rec.get('iterations')}"
                         f" ${rec.get('usd')} {rec.get('wall_s')}s"
                         f" reason={rec.get('end_reason')}"
                     )

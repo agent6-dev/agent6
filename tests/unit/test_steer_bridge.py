@@ -354,7 +354,7 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: pathlib.Path) -
         dispatcher=dispatcher,
         logger=lambda _msg: None,
         call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
-        max_iterations=3,
+        max_turns=3,
     )
     wf.run("do something")
     assert dispatcher.settle_background.called, "no turn boundary observed the background commands"

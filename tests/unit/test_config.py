@@ -1004,24 +1004,24 @@ def test_model_git_control_requires_git_writes(tmp_path: pathlib.Path) -> None:
     assert ok.git.control == "model"
 
 
-def test_max_iterations_defaults_to_200(tmp_path: pathlib.Path) -> None:
+def test_max_turns_defaults_to_200(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.harness.max_iterations == 200
+    assert cfg.harness.max_turns == 200
 
 
-def test_max_iterations_unlimited_is_minus_one(tmp_path: pathlib.Path) -> None:
+def test_max_turns_unlimited_is_minus_one(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         'verify_command = ["true"]',
-        'verify_command = ["true"]\nmax_iterations = -1',
+        'verify_command = ["true"]\nmax_turns = -1',
     )
-    assert load_config(_write(tmp_path, body)).harness.max_iterations == -1
+    assert load_config(_write(tmp_path, body)).harness.max_turns == -1
 
 
-def test_max_iterations_zero_is_rejected(tmp_path: pathlib.Path) -> None:
+def test_max_turns_zero_is_rejected(tmp_path: pathlib.Path) -> None:
     """0 would end every execution before its first call; the sentinel is exactly -1."""
     body = _VALID_TOML.replace(
         'verify_command = ["true"]',
-        'verify_command = ["true"]\nmax_iterations = 0',
+        'verify_command = ["true"]\nmax_turns = 0',
     )
     with pytest.raises(ConfigError, match="exactly -1 for unlimited"):
         load_config(_write(tmp_path, body))

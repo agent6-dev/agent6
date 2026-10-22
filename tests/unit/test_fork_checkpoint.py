@@ -129,7 +129,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path) -> Non
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
 
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    _loop_resume.save_resume_snapshot(wf, state, [], next_iteration=3, write_checkpoint=True)
+    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=3, write_checkpoint=True)
 
     # checkpoints live next to loop_state.json (the run dir).
     cp = session_dir / "checkpoints" / "0003.json"
@@ -137,7 +137,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path) -> Non
     assert cp.is_file(), "per-turn checkpoint must be written"
 
     loaded = _snapshot.load_session_snapshot(cp)
-    assert loaded.next_iteration == 3
+    assert loaded.next_turn == 3
     assert loaded.head_sha == head
     assert loaded.graph_version == 7
     # loop_state.json holds the identical SessionSnapshot bytes as the checkpoint.
@@ -176,7 +176,7 @@ def test_checkpoints_are_append_only(tmp_path: pathlib.Path) -> None:
             wf,
             state,
             [{"role": "user", "content": f"turn {turn}"}],
-            next_iteration=turn,
+            next_turn=turn,
             write_checkpoint=True,
         )
     cp_dir = session_dir / "checkpoints"
@@ -221,7 +221,7 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: pathlib
             wf,
             state,
             [{"role": "user", "content": content}],
-            next_iteration=turn,
+            next_turn=turn,
             write_checkpoint=checkpoint,
         )
 
@@ -338,7 +338,7 @@ def _seed_source_run(
             "system": "sys",
             "messages": [{"role": "user", "content": f"turn {turn}"}],
             "tool_calls": 0,
-            "next_iteration": turn,
+            "next_turn": turn,
             "root_task_id": "root",
             "original_task": "do the thing",
             "verify_command": [],
@@ -628,7 +628,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
     state = paths.state_dir(repo)
     src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
     src.logs_path.write_text(
-        json.dumps({"type": "loop.baseline", "ok": True, "iteration": 0}) + "\n",
+        json.dumps({"type": "loop.baseline", "ok": True, "turn": 0}) + "\n",
         encoding="utf-8",
     )
 
@@ -705,7 +705,7 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
         "system": "sys",
         "messages": [{"role": "user", "content": "turn 3 from loop_state"}],
         "tool_calls": 0,
-        "next_iteration": 3,
+        "next_turn": 3,
         "root_task_id": "root",
         "original_task": "do the thing",
         "verify_command": [],
@@ -813,7 +813,7 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
                 "system": "s",
                 "messages": [{"role": "user", "content": "rolling"}],
                 "tool_calls": 0,
-                "next_iteration": 4,
+                "next_turn": 4,
                 "root_task_id": None,
                 "original_task": "task",
                 "verify_command": [],
@@ -832,7 +832,7 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="fresh-FFFF66")
     seed = _snapshot.load_session_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "rolling"
-    assert seed.next_iteration == 4
+    assert seed.next_turn == 4
 
 
 # --- resume gets onto the run branch ---------------------------------------
@@ -990,7 +990,7 @@ def test_resume_of_an_undone_run_points_at_its_fork(
     events = [
         {"type": "session.start", "session_id": "undone-AAAA11", "mode": "run", "user_task": "t"},
         {"type": "session.undone", "new_session_id": "fork-BBBB22", "undone_text": "again"},
-        {"type": "session.end", "reason": "undone", "iterations": 1, "all_passed": False},
+        {"type": "session.end", "reason": "undone", "turns": 1, "all_passed": False},
     ]
     src.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     for steer in ("", "once more"):

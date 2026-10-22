@@ -77,7 +77,7 @@ class _FakeChild:
             # Mirror the nested loop: commit, advance the chain ref, leave HEAD.
             (cwd / f"work{seq}.txt").write_text(f"state {seq}\n", encoding="utf-8")
             _git(cwd, "add", "-A")
-            _git(cwd, "commit", "-q", "-m", f"agent6 iter 1: state {seq}")
+            _git(cwd, "commit", "-q", "-m", f"agent6 turn 1: state {seq}")
             _git(cwd, "update-ref", CHAIN, "HEAD")
         pathlib.Path(argv[-1]).write_text(
             json.dumps({"reason": "finish_session", "payload": None, "usd": 0.0}),
@@ -201,7 +201,7 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
     _git(origin, "checkout", "-q", "-b", "scratch")
     (origin / "work.txt").write_text("landed\n", encoding="utf-8")
     _git(origin, "add", "-A")
-    _git(origin, "commit", "-q", "-m", "agent6 iter 1: work")
+    _git(origin, "commit", "-q", "-m", "agent6 turn 1: work")
     _git(origin, "update-ref", CHAIN, "HEAD")
     _git(origin, "checkout", "-q", "main")
     _git(origin, "branch", "-D", "scratch")

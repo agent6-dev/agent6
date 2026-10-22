@@ -652,7 +652,7 @@ def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: pathlib.Path) -> Non
             {
                 "type": "session.end",
                 "reason": "finish_session",
-                "iterations": 1,
+                "turns": 1,
                 "all_passed": True,
             },
         ],
@@ -695,7 +695,7 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: pathlib.Path) -> Non
             {
                 "type": "session.end",
                 "reason": "finish_session",
-                "iterations": 1,
+                "turns": 1,
                 "all_passed": True,
             },
         ],

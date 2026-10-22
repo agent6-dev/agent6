@@ -123,7 +123,7 @@ def _build_wf(repo: pathlib.Path, provider: mock.MagicMock, **kwargs: Any) -> lo
         dispatcher=dispatcher,
         logger=_silent,
         call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
-        max_iterations=10,
+        max_turns=10,
         **kwargs,
     )
 
@@ -292,12 +292,12 @@ def test_went_quiet_budget_refills_on_a_bounced_prose_turn(tmp_path: pathlib.Pat
 
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        _resp_text("I think the answer is..."),  # iter 1: prose, bounced (early stall)
-        _empty_resp(),  # iter 2: quiet -> nudge 1/1
-        _resp_text("Let me explain more..."),  # iter 3: prose, bounced -> REFILL
-        _empty_resp(),  # iter 4: quiet -> nudge 1/1 again (old code: budget dead -> went_quiet)
-        _resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t1"),  # iter 5
-        _resp_text("done"),  # iter 6: legitimate silent finish
+        _resp_text("I think the answer is..."),  # turn 1: prose, bounced (early stall)
+        _empty_resp(),  # turn 2: quiet -> nudge 1/1
+        _resp_text("Let me explain more..."),  # turn 3: prose, bounced -> REFILL
+        _empty_resp(),  # turn 4: quiet -> nudge 1/1 again (old code: budget dead -> went_quiet)
+        _resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t1"),  # turn 5
+        _resp_text("done"),  # turn 6: legitimate silent finish
     ]
     wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=1)
     result = wf.run("task")
@@ -330,7 +330,7 @@ def test_a_billed_empty_turn_says_so(tmp_path: pathlib.Path) -> None:
     wf.events = event_log.EventSink(tmp_path / "logs.jsonl")
     wf.run("do something")
 
-    quiet = [ln for ln in lines if "went_quiet at iter" in ln]
+    quiet = [ln for ln in lines if "went_quiet at turn" in ln]
     # Non-subscription run: dollar-metered, so the word is "billed".
     assert quiet and "128 output tokens billed on it" in quiet[0], quiet
     events = [json.loads(ln) for ln in (tmp_path / "logs.jsonl").read_text().splitlines()]
@@ -371,7 +371,7 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: pathlib.Path)
     )
     wf.run("do something")
 
-    quiet = [ln for ln in lines if "went_quiet at iter" in ln]
+    quiet = [ln for ln in lines if "went_quiet at turn" in ln]
     assert quiet and "128 output tokens spent on it" in quiet[0], quiet
     assert "billed" not in quiet[0]
 

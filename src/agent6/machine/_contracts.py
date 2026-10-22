@@ -75,7 +75,7 @@ class AgentExecResult(pydantic.BaseModel):
 
     Attributes:
         reason: The loop's stop reason: `finish_session`, `budget_exhausted`, `timeout`,
-            `max_iterations`.
+            `max_turns`.
         payload: The structured object passed to `finish_session`, or None.
         usd: The slice's spend, summed into the machine's.
         usd_partial: `usd` is a known under-estimate (an unpriced model).

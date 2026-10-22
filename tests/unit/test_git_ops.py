@@ -1240,18 +1240,18 @@ def test_list_run_commits_oldest_first(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
     base = git_ops.status(tmp_path).head_sha
     git_ops.create_branch(tmp_path, "agent6/r1")
-    _commit_file(tmp_path, "a.txt", "a\n", "agent6 iter 1: add a")
-    _commit_file(tmp_path, "b.txt", "b\n", "agent6 iter 2: add b")
+    _commit_file(tmp_path, "a.txt", "a\n", "agent6 turn 1: add a")
+    _commit_file(tmp_path, "b.txt", "b\n", "agent6 turn 2: add b")
     rows = git_ops.list_run_commits(tmp_path, base, "agent6/r1")
-    assert [r.subject for r in rows] == ["agent6 iter 1: add a", "agent6 iter 2: add b"]
+    assert [r.subject for r in rows] == ["agent6 turn 1: add a", "agent6 turn 2: add b"]
 
 
 def test_condense_strips_prefix_and_bullets(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
     base = git_ops.status(tmp_path).head_sha
     git_ops.create_branch(tmp_path, "agent6/r1")
-    _commit_file(tmp_path, "a.txt", "a\n", "agent6 iter 1: add a")
-    _commit_file(tmp_path, "b.txt", "b\n", "agent6 iter 2: add b")
+    _commit_file(tmp_path, "a.txt", "a\n", "agent6 turn 1: add a")
+    _commit_file(tmp_path, "b.txt", "b\n", "agent6 turn 2: add b")
     rows = git_ops.list_run_commits(tmp_path, base, "agent6/r1")
     message = commit_message.condense_commit_message(rows, subject="implement parse_url")
     assert message.splitlines()[0] == "implement parse_url"  # headline = the task
@@ -1293,7 +1293,7 @@ def test_condense_subject_cuts_a_long_clause_at_a_word_boundary() -> None:
 
 def test_condense_body_is_the_finish_summary_when_the_run_has_one() -> None:
     """The finish summary is the body, whole; the step bullets serve a run without one."""
-    rows = (commit_message.CommitRow(sha="a" * 40, subject="agent6 iter 1: add a", message=""),)
+    rows = (commit_message.CommitRow(sha="a" * 40, subject="agent6 turn 1: add a", message=""),)
     summary = "Added a.\n\nVerified with the unit tests."
     message = commit_message.condense_commit_message(rows, subject="do it", summary=summary)
     assert message == f"do it\n\n{summary}"
@@ -1365,7 +1365,7 @@ def test_list_run_commits_preserves_body_with_separator_bytes(tmp_path: pathlib.
     base = git_ops.status(tmp_path).head_sha
     git_ops.create_branch(tmp_path, "agent6/r1")
     body = "line A \x1f mid \x1e end\n\nCo-authored-by: Op <op@x>"
-    _commit_file(tmp_path, "a.txt", "a\n", f"agent6 iter 1: add a\n\n{body}")
+    _commit_file(tmp_path, "a.txt", "a\n", f"agent6 turn 1: add a\n\n{body}")
     rows = git_ops.list_run_commits(tmp_path, base, "agent6/r1")
     assert len(rows) == 1  # \x1e in the body did not split it into two records
     assert "Co-authored-by: Op <op@x>" in rows[0].message  # \x1f did not truncate the body
@@ -1416,7 +1416,7 @@ def test_chain_commit_touches_no_head_index_or_checkout(tmp_path: pathlib.Path) 
 
     sha = git_ops.chain_commit(
         tmp_path,
-        "agent6 iter 1",
+        "agent6 turn 1",
         ref="refs/agent6/t1",
         fallback_parent=head0,
         also_branch="agent6/t1",
@@ -1502,17 +1502,17 @@ def test_chain_commit_skips_identical_trees_and_survives_branch_switches(
     head0 = _rev(tmp_path, "HEAD")
     (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
     s1 = git_ops.chain_commit(
-        tmp_path, "agent6 iter 1", ref="refs/agent6/t1", fallback_parent=head0
+        tmp_path, "agent6 turn 1", ref="refs/agent6/t1", fallback_parent=head0
     )
     assert s1 is not None
     assert (
-        git_ops.chain_commit(tmp_path, "agent6 iter 2", ref="refs/agent6/t1", fallback_parent=None)
+        git_ops.chain_commit(tmp_path, "agent6 turn 2", ref="refs/agent6/t1", fallback_parent=None)
         is None
     )
 
     subprocess.run(["git", "-C", str(tmp_path), "checkout", "-q", "-b", "model-branch"], check=True)
     (tmp_path / "c.txt").write_text("three\n", encoding="utf-8")
-    s2 = git_ops.chain_commit(tmp_path, "agent6 iter 3", ref="refs/agent6/t1", fallback_parent=None)
+    s2 = git_ops.chain_commit(tmp_path, "agent6 turn 3", ref="refs/agent6/t1", fallback_parent=None)
     assert s2 is not None
     assert _rev(tmp_path, f"{s2}^") == s1
     branch = subprocess.run(
@@ -1530,7 +1530,7 @@ def test_chain_commit_root_and_trailer(tmp_path: pathlib.Path) -> None:
     (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
     sha = git_ops.chain_commit(
         tmp_path,
-        "agent6 iter 1",
+        "agent6 turn 1",
         ref="refs/agent6/t2",
         fallback_parent=None,
         identity=git_ops.CommitIdentity(name="A", email="a@a", trailer="Assisted-by: agent6:m1"),
@@ -1583,7 +1583,7 @@ def test_chain_merge_records_the_lane_and_syncs_the_worktree(tmp_path: pathlib.P
     head0 = _rev(tmp_path, "HEAD")
     (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
     s1 = git_ops.chain_commit(
-        tmp_path, "agent6 iter 1", ref="refs/agent6/t3", fallback_parent=head0
+        tmp_path, "agent6 turn 1", ref="refs/agent6/t3", fallback_parent=head0
     )
     assert s1 is not None
     lane = _lane_commit(tmp_path, head0, "c.txt", "lane\n")
@@ -1614,7 +1614,7 @@ def test_chain_merge_syncs_a_file_the_lane_modified(tmp_path: pathlib.Path) -> N
     head0 = _rev(tmp_path, "HEAD")
     (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
     s1 = git_ops.chain_commit(
-        tmp_path, "agent6 iter 1", ref="refs/agent6/t5", fallback_parent=head0
+        tmp_path, "agent6 turn 1", ref="refs/agent6/t5", fallback_parent=head0
     )
     assert s1 is not None
     lane = _lane_commit(tmp_path, head0, "README.md", "hi\nlane edit\n")
@@ -1631,7 +1631,7 @@ def test_chain_merge_conflict_leaves_chain_and_worktree_alone(tmp_path: pathlib.
     head0 = _rev(tmp_path, "HEAD")
     (tmp_path / "b.txt").write_text("ours\n", encoding="utf-8")
     s1 = git_ops.chain_commit(
-        tmp_path, "agent6 iter 1", ref="refs/agent6/t4", fallback_parent=head0
+        tmp_path, "agent6 turn 1", ref="refs/agent6/t4", fallback_parent=head0
     )
     lane = _lane_commit(tmp_path, head0, "b.txt", "theirs\n")
 
@@ -1875,7 +1875,7 @@ def test_a_chain_commit_never_rewinds_the_run_branch(tmp_path: pathlib.Path) -> 
     (tmp_path / "a.txt").write_text("one\n", encoding="utf-8")
     first = git_ops.chain_commit(
         tmp_path,
-        "agent6 iter 1",
+        "agent6 turn 1",
         ref="refs/agent6/t2",
         fallback_parent=head0,
         also_branch="agent6/t2",
@@ -1896,7 +1896,7 @@ def test_a_chain_commit_never_rewinds_the_run_branch(tmp_path: pathlib.Path) -> 
     (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
     second = git_ops.chain_commit(
         tmp_path,
-        "agent6 iter 2",
+        "agent6 turn 2",
         ref="refs/agent6/t2",
         fallback_parent=head0,
         also_branch="agent6/t2",

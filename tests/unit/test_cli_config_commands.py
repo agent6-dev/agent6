@@ -593,10 +593,10 @@ def test_get_honours_the_global_config_flag(
 ) -> None:
     """`--config FILE` reaches `config get`, so `get` and `show` agree about the same leaf."""
     explicit = iso / "x.toml"
-    explicit.write_text("[review]\ninterval_iterations = 77\n", encoding="utf-8")
-    assert _run(["--config", str(explicit), "config", "get", "review.interval_iterations"]) == 0
+    explicit.write_text("[review]\ninterval_turns = 77\n", encoding="utf-8")
+    assert _run(["--config", str(explicit), "config", "get", "review.interval_turns"]) == 0
     out = capsys.readouterr().out
-    assert "review.interval_iterations = 77" in out
+    assert "review.interval_turns = 77" in out
     assert f"[flag ({explicit})]" in out
 
 
@@ -606,8 +606,7 @@ def test_get_refuses_a_missing_global_config_file(iso: pathlib.Path) -> None:
     Instead of answering from defaults.
     """
     assert (
-        _refuse(["--config", str(iso / "nope.toml"), "config", "get", "review.interval_iterations"])
-        == 2
+        _refuse(["--config", str(iso / "nope.toml"), "config", "get", "review.interval_turns"]) == 2
     )
 
 
@@ -622,7 +621,7 @@ def test_get_refuses_a_machine_file_that_does_not_exist(
                 "get",
                 "--machine-file",
                 str(iso / "nope.asm.toml"),
-                "review.interval_iterations",
+                "review.interval_turns",
             ]
         )
         == 2
@@ -647,7 +646,7 @@ def test_set_refuses_a_machine_file_holding_a_protected_table(
     text = "[config.mcp]\nenabled = true\n"
     machine.write_text(text, encoding="utf-8")
 
-    argv = ["config", "set", "harness.max_iterations", "3", "--machine-file", str(machine)]
+    argv = ["config", "set", "harness.max_turns", "3", "--machine-file", str(machine)]
     assert _refuse(argv) == 2
     assert "operator-only" in capsys.readouterr().err
     assert machine.read_text(encoding="utf-8") == text
@@ -671,7 +670,7 @@ def test_an_unreadable_config_refuses_rather_than_crashing(iso: pathlib.Path) ->
     gdir = iso / "g" / "agent6"
     gdir.mkdir(parents=True, exist_ok=True)
     cfg = gdir / "config.toml"
-    cfg.write_text("[review]\ninterval_iterations = 7\n", encoding="utf-8")
+    cfg.write_text("[review]\ninterval_turns = 7\n", encoding="utf-8")
     cfg.chmod(0o000)
     try:
         assert _refuse(["config", "show"]) == 2
@@ -685,8 +684,8 @@ _CRASH_MARKERS = ("unexpected", "full traceback", "report this")
 @pytest.mark.parametrize(
     "argv",
     [
-        ["config", "set", "harness.max_iterations", "7"],
-        ["config", "unset", "review.interval_iterations"],
+        ["config", "set", "harness.max_turns", "7"],
+        ["config", "unset", "review.interval_turns"],
         ["config", "add", "sandbox.allow_urls", "https://example.com"],
         ["config", "remove", "sandbox.allow_urls", "https://example.com"],
     ],
@@ -699,7 +698,7 @@ def test_write_commands_refuse_an_unreadable_target(
     gdir = iso / "g" / "agent6"
     gdir.mkdir(parents=True, exist_ok=True)
     cfg = gdir / "config.toml"
-    cfg.write_text("[review]\ninterval_iterations = 7\n", encoding="utf-8")
+    cfg.write_text("[review]\ninterval_turns = 7\n", encoding="utf-8")
     cfg.chmod(0o000)
     try:
         assert _refuse(argv) == 2
@@ -721,7 +720,7 @@ def test_a_write_command_bug_still_crash_reports(
 
     monkeypatch.setattr(io, "upsert_toml_leaf", _boom)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
-    assert _refuse(["config", "set", "harness.max_iterations", "7"]) == 1
+    assert _refuse(["config", "set", "harness.max_turns", "7"]) == 1
     err = capsys.readouterr().err
     assert "unexpected RuntimeError" in err
     tb_line = next(line for line in err.splitlines() if "full traceback:" in line)
@@ -732,7 +731,7 @@ def test_set_of_an_unserializable_cli_value_refuses(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A value the writer cannot serialize (`2024-01-01`, a TOML date) is a refusal, not a crash."""
-    assert _refuse(["config", "set", "harness.max_iterations", "2024-01-01"]) == 2
+    assert _refuse(["config", "set", "harness.max_turns", "2024-01-01"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("ERROR: ")
     assert not any(marker in err for marker in _CRASH_MARKERS)

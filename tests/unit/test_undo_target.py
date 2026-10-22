@@ -45,7 +45,7 @@ def _checkpoint(
         system="s",
         messages=messages,
         tool_calls=0,
-        next_iteration=turn,
+        next_turn=turn,
         root_task_id=None,
         original_task="do the thing",
         verify_command=(),

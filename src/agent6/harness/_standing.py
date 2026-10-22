@@ -49,17 +49,17 @@ class Standing:
                 return nid, node.title[:120]
         return None
 
-    def absorb(self, state: _loop_state.LoopState, *, reason: str, iteration: int) -> str | None:
+    def absorb(self, state: _loop_state.LoopState, *, reason: str, turn: int) -> str | None:
         """Convert a soft end into re-entry of the standing task.
 
         A re-entry with no executed tool call since the last one is fruitless; past `patience`
         of them the end is honoured. At the default (-1) the nudge escalates instead and the run
-        ends on its budget, its iteration cap or an operator stop.
+        ends on its budget, its turn cap or an operator stop.
 
         Args:
             state: The execution's state.
             reason: The soft end being converted.
-            iteration: The turn the conversion happens at.
+            turn: The turn the conversion happens at.
 
         Returns:
             The nudge that re-enters the task, or None when the run ends: no ready standing
@@ -85,8 +85,8 @@ class Standing:
             state.standing.fruitless = 0
             nudge = _nudges.standing_resume_nudge(reason, nid, title)
         state.standing.tools_mark = state.ok_tool_calls
-        self.log(f"  standing re-entry ({reason}) -> {nid} at iter {iteration}")
-        self.emit("loop.standing.resumed", reason=reason, task_id=nid, iteration=iteration)
+        self.log(f"  standing re-entry ({reason}) -> {nid} at turn {turn}")
+        self.emit("loop.standing.resumed", reason=reason, task_id=nid, turn=turn)
         return nudge
 
     def absorb_soft_stop(
@@ -107,7 +107,7 @@ class Standing:
         soft = next((stop.soft for stop in turn.stops if stop.soft), None)
         if soft is None or any(not stop.soft for stop in turn.stops):
             return
-        nudge = self.absorb(state, reason=soft, iteration=turn.iteration)
+        nudge = self.absorb(state, reason=soft, turn=turn.turn)
         if nudge is None:
             return
         turn.stops = [stop for stop in turn.stops if not stop.soft]

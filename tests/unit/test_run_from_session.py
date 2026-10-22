@@ -123,7 +123,7 @@ def _seed_source(repo: pathlib.Path, bucket: str, session_id: str) -> None:
             {
                 "type": "session.end",
                 "reason": "finish_session",
-                "iterations": 1,
+                "turns": 1,
                 "all_passed": True,
             }
         )

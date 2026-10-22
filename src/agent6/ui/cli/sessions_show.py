@@ -294,7 +294,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 
     Answered from the run dir alone: worker.pid probed with signal 0, so liveness is known
     even while the worker is blocked in a long provider call, plus the last event, the
-    iteration and the elapsed time from logs.jsonl. `agent6 attach` is the live follower.
+    turn and the elapsed time from logs.jsonl. `agent6 attach` is the live follower.
 
     Args:
         session_id: The session, or "" for the newest.
@@ -361,7 +361,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "end_summary": scan.end_summary or None,
                     "alive": alive,
                     "pid": pid,
-                    "iteration": scan.iteration,
+                    "turn": scan.turn,
                     "last_event": scan.last_type,
                     "last_event_age_s": round(last_age, 1) if last_age is not None else None,
                     "elapsed_s": round(elapsed, 1) if elapsed is not None else None,
@@ -415,7 +415,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         f"preset:     {manifest.harness.preset or '-'}"
     )
     print(f"state:      {state}{pid_note}")
-    print(f"iteration:  {scan.iteration if scan.iteration is not None else '-'}")
+    print(f"turn:       {scan.turn if scan.turn is not None else '-'}")
     print(
         f"last event: {scan.last_type or '-'}"
         f"{f'  ({_fmt_dur(last_age)} ago)' if last_age is not None else ''}"

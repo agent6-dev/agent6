@@ -82,7 +82,7 @@ def test_merge_follows_the_chain_when_the_branch_stopped_tracking_it(
     the chain alone.
     """
     monkeypatch.chdir(tmp_path)
-    base = _setup_run(tmp_path, "frozen-branch1", commits=[("a.txt", "one\n", "iter 1")])
+    base = _setup_run(tmp_path, "frozen-branch1", commits=[("a.txt", "one\n", "turn 1")])
     chain = git_ops.chain_ref_for("frozen-branch1")
     _git(tmp_path, "update-ref", chain, "agent6/frozen-branch1")
     # The operator's own commit moves the branch off the chain.
@@ -94,7 +94,7 @@ def test_merge_follows_the_chain_when_the_branch_stopped_tracking_it(
     # The run keeps committing on the chain, which the branch stopped covering.
     tree = _git(tmp_path, "rev-parse", f"{chain}^{{tree}}")
     later = subprocess.run(
-        ["git", "-C", str(tmp_path), "commit-tree", tree, "-p", chain, "-m", "iter 2"],
+        ["git", "-C", str(tmp_path), "commit-tree", tree, "-p", chain, "-m", "turn 2"],
         check=True,
         capture_output=True,
         text=True,
@@ -117,7 +117,7 @@ def test_commits_follows_the_chain_when_the_visible_branch_diverged(
 ) -> None:
     """Commits lists the chain when the visible branch diverged, not a pruned branch."""
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "frozen-commits1", commits=[("a.txt", "one\n", "agent6 iter 1")])
+    _setup_run(tmp_path, "frozen-commits1", commits=[("a.txt", "one\n", "agent6 turn 1")])
     chain = git_ops.chain_ref_for("frozen-commits1")
     _git(tmp_path, "update-ref", chain, "agent6/frozen-commits1")
     _git(tmp_path, "checkout", "-q", "agent6/frozen-commits1")
@@ -126,13 +126,13 @@ def test_commits_follows_the_chain_when_the_visible_branch_diverged(
     _git(tmp_path, "commit", "-q", "-m", "operator work")
     _git(tmp_path, "checkout", "-q", "main")
     tree = _git(tmp_path, "rev-parse", f"{chain}^{{tree}}")
-    later = _git(tmp_path, "commit-tree", tree, "-p", chain, "-m", "agent6 iter 2")
+    later = _git(tmp_path, "commit-tree", tree, "-p", chain, "-m", "agent6 turn 2")
     _git(tmp_path, "update-ref", chain, later)
 
     assert main(["sessions", "commits", "frozen-commits1"]) == 0
 
     captured = capsys.readouterr()
-    assert "agent6 iter 1" in captured.out and "agent6 iter 2" in captured.out
+    assert "agent6 turn 1" in captured.out and "agent6 turn 2" in captured.out
     assert "is gone" not in captured.out
     assert chain in captured.err
 
@@ -203,8 +203,8 @@ def test_runs_merge_squash_is_one_commit_and_records_manifest(
         tmp_path,
         "run-AAAA11",
         commits=[
-            ("a.txt", "a\n", "agent6 iter 1: add a"),
-            ("b.txt", "b\n", "agent6 iter 2: add b"),
+            ("a.txt", "a\n", "agent6 turn 1: add a"),
+            ("b.txt", "b\n", "agent6 turn 2: add b"),
         ],
     )
     rc = main(["sessions", "merge", "run-AAAA11", "--method", "squash"])
@@ -225,7 +225,7 @@ def test_runs_merge_with_no_id_names_the_live_run(
 ) -> None:
     """A merge with no id refused "run '' is still live" instead of naming the run it chose."""
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-LIVE12", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-LIVE12", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-LIVE12"
     )
@@ -244,7 +244,7 @@ def test_runs_merge_refuses_while_the_worker_is_alive(
     would land mid-run WIP; every other guard passes on a run's clean tree.
     """
     monkeypatch.chdir(tmp_path)
-    base = _setup_run(tmp_path, "run-LIVE11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    base = _setup_run(tmp_path, "run-LIVE11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-LIVE11"
     )
@@ -267,19 +267,19 @@ def test_runs_merge_method_merge_keeps_history(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-MERG11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-MERG11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     rc = main(["sessions", "merge", "run-MERG11", "--method", "merge"])
     assert rc == 0
     assert (tmp_path / "a.txt").exists()  # the merge landed the work on main
     log = _git(tmp_path, "log", "--oneline")
-    assert "agent6 iter 1: add a" in log  # --no-ff keeps the per-step commit reachable
+    assert "agent6 turn 1: add a" in log  # --no-ff keeps the per-step commit reachable
 
 
 def test_runs_merge_squash_honors_message(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-MSG111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-MSG111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     rc = main(["sessions", "merge", "run-MSG111", "--method", "squash", "-m", "custom subject"])
     assert rc == 0
     assert _git(tmp_path, "log", "-1", "--format=%s", "main") == "custom subject"
@@ -302,7 +302,7 @@ def test_runs_merge_lands_over_a_worktree_carrying_the_run(
 ) -> None:
     """The merge is ref plumbing, so it lands over a worktree holding the run's uncommitted work."""
     monkeypatch.chdir(tmp_path)
-    base = _setup_run(tmp_path, "run-DIRT11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    base = _setup_run(tmp_path, "run-DIRT11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")  # the run's work, uncommitted
     (tmp_path / "wip.txt").write_text("operator wip\n", encoding="utf-8")
     rc = main(["sessions", "merge", "run-DIRT11"])
@@ -322,7 +322,7 @@ def test_a_conflicting_merge_prints_a_by_hand_command_that_runs_from_this_checko
     another branch to the target.
     """
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-CONF11", commits=[("README.md", "theirs\n", "agent6 iter 1")])
+    _setup_run(tmp_path, "run-CONF11", commits=[("README.md", "theirs\n", "agent6 turn 1")])
     (tmp_path / "README.md").write_text("ours\n", encoding="utf-8")
     _git(tmp_path, "commit", "-qam", "main moved")
     (tmp_path / "README.md").write_text("theirs\n", encoding="utf-8")  # the run's work, uncommitted
@@ -344,7 +344,7 @@ def test_runs_merge_refuses_unknown_into_without_creating_it(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-INTO11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-INTO11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     rc = main(["sessions", "merge", "run-INTO11", "--into", "nonexistent-branch"])
     assert rc == 2
     assert "does not exist" in capsys.readouterr().err
@@ -360,7 +360,7 @@ def test_merge_of_a_run_cut_from_a_detached_head_says_head_is_detached(
     It read "target branch 'HEAD' does not exist", as if a branch had been deleted.
     """
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-DETA11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-DETA11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     _git(tmp_path, "checkout", "-q", "--detach")
     manifest_path = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-DETA11"
@@ -382,7 +382,7 @@ def test_runs_merge_refuses_self_merge(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-SELF11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-SELF11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     rc = main(["sessions", "merge", "run-SELF11", "--into", "agent6/run-SELF11"])
     assert rc == 2
     assert "run branch itself" in capsys.readouterr().err
@@ -392,7 +392,7 @@ def test_runs_merge_restores_original_checkout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-REST11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-REST11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     _git(tmp_path, "checkout", "-q", "-b", "feature")  # user is on a third branch
     rc = main(["sessions", "merge", "run-REST11", "--into", "main"])
     assert rc == 0
@@ -405,7 +405,7 @@ def test_runs_merge_never_switches_the_checkout(
 ) -> None:
     # The merge is ref plumbing: the operator's checkout stays put while the target gains the work.
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-STRAND1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-STRAND1", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     _git(tmp_path, "checkout", "-q", "agent6/run-STRAND1")
     rc = main(["sessions", "merge", "run-STRAND1", "--into", "main"])
     assert rc == 0
@@ -420,7 +420,7 @@ def test_runs_merge_without_identity_refuses_with_clean_tree(
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-NOID11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-NOID11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     _git(tmp_path, "config", "--unset", "user.name")
     _git(tmp_path, "config", "--unset", "user.email")
     rc = main(["sessions", "merge", "run-NOID11", "--method", "squash"])
@@ -438,15 +438,15 @@ def test_runs_commits_lists_per_step(
         tmp_path,
         "run-COMM11",
         commits=[
-            ("a.txt", "a\n", "agent6 iter 1: add a"),
-            ("b.txt", "b\n", "agent6 iter 2: add b"),
+            ("a.txt", "a\n", "agent6 turn 1: add a"),
+            ("b.txt", "b\n", "agent6 turn 2: add b"),
         ],
     )
     rc = main(["sessions", "commits", "run-COMM11"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "agent6 iter 1: add a" in out
-    assert "agent6 iter 2: add b" in out
+    assert "agent6 turn 1: add a" in out
+    assert "agent6 turn 2: add b" in out
 
 
 def test_runs_merge_zero_commit_branch_is_a_stated_noop(
@@ -505,7 +505,7 @@ def test_runs_diff_with_commits_prints_the_patch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-DIFF01", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-DIFF01", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     rc = main(["sessions", "diff", "run-DIFF01"])
     assert rc == 0
     out = capfd.readouterr().out
@@ -525,7 +525,7 @@ def test_the_repl_diff_keeps_gits_pager_out(
     from agent6.ui.cli import _repl
 
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-DIFF02", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-DIFF02", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     seen: list[list[str]] = []
     real_run = subprocess.run
 
@@ -551,7 +551,7 @@ def test_runs_diff_neutralizes_poisoned_diff_external(
 ) -> None:
     # `[diff] external = CMD` in .git/config never runs on `sessions diff`; the -c hardening wins.
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-EVIL01", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-EVIL01", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     marker = tmp_path / "pwned"
     script = tmp_path / "evil.sh"
     script.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
@@ -568,7 +568,7 @@ def test_ff_only_merge_of_a_diverged_base_refuses_with_a_reason(
 ) -> None:
     # The pre-check refuses with the reason and the way out, not git's fast-forward fatal.
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-FFDIV1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-FFDIV1", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     # main moves after the branch was cut: ff_only is now impossible.
     (tmp_path / "moved.txt").write_text("m\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
@@ -586,7 +586,7 @@ def test_ff_only_merge_lands_when_the_base_has_not_moved(
 ) -> None:
     # Pins is_ancestor's argument order: an unmoved base is an ancestor of the run branch.
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-FFOK1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-FFOK1", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     rc = main(["sessions", "merge", "run-FFOK1", "--method", "ff_only"])
     assert rc == 0
     assert "fast-forward is impossible" not in capsys.readouterr().err
@@ -599,7 +599,7 @@ def test_ff_only_merge_of_an_already_contained_branch_is_a_clean_no_op(
 ) -> None:
     # Already-merged commits with a moved main: `--ff-only` says up to date; the pre-check agrees.
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-FFIN1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-FFIN1", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     _git(tmp_path, "merge", "-q", "--ff-only", "agent6/run-FFIN1")  # contain it
     (tmp_path / "moved.txt").write_text("m\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
@@ -621,7 +621,7 @@ def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
     another route and the branch is not an ancestor.
     """
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-AAAA77", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-AAAA77", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     assert main(["sessions", "merge", "run-AAAA77", "--method", "squash"]) == 0
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-AAAA77"
@@ -659,7 +659,7 @@ def test_merging_a_pruned_run_reports_its_recorded_merge(
     _setup_run(
         tmp_path,
         "pruned11",
-        commits=[("a.txt", "one\n", "iter 1"), ("b.txt", "two\n", "iter 2")],
+        commits=[("a.txt", "one\n", "turn 1"), ("b.txt", "two\n", "turn 2")],
         run_branch="<auto>" if branch_per_run else None,
     )
     _git(tmp_path, "update-ref", git_ops.chain_ref_for("pruned11"), "agent6/pruned11")
@@ -698,7 +698,7 @@ def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
     from agent6.viewmodel import summarize_session_dir
 
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-SAME11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-SAME11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")  # the same edit, by hand
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "the same edit, by hand")
@@ -744,7 +744,7 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     from agent6.viewmodel import summarize_session_dir
 
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-RSTP11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-RSTP11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     assert main(["sessions", "merge", "run-RSTP11", "--method", "squash"]) == 0
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-RSTP11"
@@ -753,7 +753,7 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     _git(tmp_path, "checkout", "-q", "agent6/run-RSTP11")
     (tmp_path / "b.txt").write_text("b\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-q", "-m", "agent6 iter 2: add b")
+    _git(tmp_path, "commit", "-q", "-m", "agent6 turn 2: add b")
     tip2 = _git(tmp_path, "rev-parse", "HEAD")
     _git(tmp_path, "checkout", "-q", "main")
     (tmp_path / "b.txt").write_text("b\n", encoding="utf-8")  # the same edit, by hand
@@ -862,7 +862,7 @@ def test_diff_of_a_branch_per_run_off_run_reads_the_chain(
     (tmp_path / "work.txt").write_text("w\n", encoding="utf-8")
     git_ops.chain_commit(
         tmp_path,
-        "agent6 iter 1: work",
+        "agent6 turn 1: work",
         ref=git_ops.chain_ref_for("run-HEADF1"),
         fallback_parent="HEAD",
     )
@@ -884,14 +884,14 @@ def test_commits_of_a_branch_per_run_off_run_lists_the_chain_like_diff(
     (tmp_path / "work.txt").write_text("w\n", encoding="utf-8")
     git_ops.chain_commit(
         tmp_path,
-        "agent6 iter 1: work",
+        "agent6 turn 1: work",
         ref=git_ops.chain_ref_for("run-HEADF2"),
         fallback_parent="HEAD",
     )
 
     assert main(["sessions", "commits", "run-HEADF2"]) == 0
     captured = capsys.readouterr()
-    assert "agent6 iter 1: work" in captured.out
+    assert "agent6 turn 1: work" in captured.out
     assert git_ops.chain_ref_for("run-HEADF2") in captured.err
 
 
@@ -899,7 +899,7 @@ def test_merge_with_a_branch_but_no_base_sha_refuses_before_mutating(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-NOBASE2", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-NOBASE2", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     _set_manifest_field(tmp_path, "run-NOBASE2", base_sha="")
     before = _git(tmp_path, "rev-parse", "main")
 
@@ -917,7 +917,7 @@ def test_commits_with_a_branch_but_no_base_sha_does_not_blame_branch_per_run(
     The guard does not blame branch_per_run for a branch it recorded.
     """
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-NOBASE1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-NOBASE1", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     _set_manifest_field(tmp_path, "run-NOBASE1", base_sha="")
 
     assert main(["sessions", "commits", "run-NOBASE1"]) == 2
@@ -943,12 +943,12 @@ def test_merge_squash_combine_style_uses_gits_own_message(
     _setup_run(
         tmp_path,
         "run-CMB111",
-        commits=[("a.txt", "a\n", "agent6 iter 1: add a\n\nThe reason for a.")],
+        commits=[("a.txt", "a\n", "agent6 turn 1: add a\n\nThe reason for a.")],
     )
     assert main(["sessions", "merge", "run-CMB111", "--method", "squash"]) == 0
     msg = _head_message(tmp_path)
     assert "Squashed commit of the following" in msg
-    assert "agent6 iter 1: add a" in msg
+    assert "agent6 turn 1: add a" in msg
     assert "The reason for a." in msg
 
 
@@ -961,7 +961,7 @@ def test_merge_squash_conventional_style_derives_the_subject(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[git.commit.squash]\nmessage = "conventional"\n', encoding="utf-8"
     )
-    _setup_run(tmp_path, "run-CNV111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-CNV111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     assert main(["sessions", "merge", "run-CNV111", "--method", "squash"]) == 0
     subject = _head_message(tmp_path).splitlines()[0]
     assert subject == "feat: implement the thing"  # an added file, no common scope
@@ -976,8 +976,8 @@ def test_merge_squash_default_style_writes_the_run_message(
         tmp_path,
         "run-DEF222",
         commits=[
-            ("a.txt", "a\n", "agent6 iter 1: add a"),
-            ("b.txt", "b\n", "agent6 iter 2: add b"),
+            ("a.txt", "a\n", "agent6 turn 1: add a"),
+            ("b.txt", "b\n", "agent6 turn 2: add b"),
         ],
     )
     assert main(["sessions", "merge", "run-DEF222", "--method", "squash"]) == 0
@@ -1010,7 +1010,7 @@ def test_merge_squash_body_is_the_finish_summary(
     landed their first lines in place of the summary.
     """
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-FIN111", commits=[("a.txt", "a\n", "agent6 iter 6: checkpoint")])
+    _setup_run(tmp_path, "run-FIN111", commits=[("a.txt", "a\n", "agent6 turn 6: checkpoint")])
     summary = _write_finish_log(tmp_path, "run-FIN111", end_reason="finish_session")
     assert main(["sessions", "merge", "run-FIN111", "--method", "squash"]) == 0
     assert _head_message(tmp_path) == f"implement the thing\n\n{summary}"
@@ -1021,7 +1021,7 @@ def test_merge_squash_ignores_a_finish_the_run_did_not_end_on(
 ) -> None:
     """A finish call the run did not end on supplies no body: the steps do."""
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-FIN222", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-FIN222", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     summary = _write_finish_log(tmp_path, "run-FIN222", end_reason="steer_abort")
     assert main(["sessions", "merge", "run-FIN222", "--method", "squash"]) == 0
     head = _head_message(tmp_path)
@@ -1041,7 +1041,7 @@ def test_merge_squash_conventional_cuts_the_task_once(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[git.commit.squash]\nmessage = "conventional"\n', encoding="utf-8"
     )
-    _setup_run(tmp_path, "run-CNV222", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-CNV222", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     task = (
         "rename every helper in textkit so the public names read as verbs and the private"
         " ones keep their underscore"
@@ -1111,7 +1111,7 @@ def test_merge_squash_model_style_degrades_on_a_budget_fault(
         raise agent6_budget.BudgetExceededError("the ceiling was crossed on the last call")
 
     monkeypatch.setattr(app_providers, "build_role_provider", over)
-    _setup_run(tmp_path, "run-BDG111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-BDG111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     assert main(["sessions", "merge", "run-BDG111", "--method", "squash"]) == 0
     assert "model squash message failed (the ceiling was crossed" in capsys.readouterr().err
     assert _head_message(tmp_path).splitlines()[0] == "implement the thing"
@@ -1127,7 +1127,7 @@ def test_merge_squash_model_style_degrades_with_a_warning(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
     )
-    _setup_run(tmp_path, "run-MDL111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-MDL111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     assert main(["sessions", "merge", "run-MDL111", "--method", "squash"]) == 0
     assert "model squash message failed" in capsys.readouterr().err
     assert _head_message(tmp_path).splitlines()[0] == "implement the thing"
@@ -1154,7 +1154,7 @@ def test_merge_squash_model_style_names_the_providers_failure(
         return _AtLimit()
 
     monkeypatch.setattr(app_providers, "build_role_provider", at_limit)
-    _setup_run(tmp_path, "run-LIM111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-LIM111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     assert main(["sessions", "merge", "run-LIM111", "--method", "squash"]) == 0
     err = capsys.readouterr().err
     assert "model squash message failed (You've reached your Fable limit.)" in err
@@ -1184,7 +1184,7 @@ def test_model_squash_uses_the_whole_run(
         tmp_path,
         session_id,
         commits=[
-            ("window.py", "context_window = 200000\n", "agent6 iter 1: checkpoint"),
+            ("window.py", "context_window = 200000\n", "agent6 turn 1: checkpoint"),
             ("review.txt", "Document the fallback.\n", "Address review feedback"),
             ("z.txt", "é" * 100 + "\n" if not oversized else ("é" * 100 + "\n") * 1000, "data"),
         ],
@@ -1251,7 +1251,7 @@ def test_merge_squash_trailer_lands_once(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[git.commit]\ntrailer = "Assisted-by: agent6:{model}"\n', encoding="utf-8"
     )
-    _setup_run(tmp_path, "run-TRL111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-TRL111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     assert main(["sessions", "merge", "run-TRL111", "--method", "squash"]) == 0
     assert _head_message(tmp_path).count("Assisted-by: agent6:") == 1
 
@@ -1269,7 +1269,7 @@ def test_merge_squash_trailer_names_every_code_writer(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[git.commit]\ntrailer = "Assisted-by: agent6:{model}"\n', encoding="utf-8"
     )
-    _setup_run(tmp_path, "run-TRL222", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-TRL222", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-TRL222"
     )
@@ -1385,7 +1385,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     _git(clone, "checkout", "-q", "-b", "agent6/fan-l1")
     (clone / "work.txt").write_text("lane work\n", encoding="utf-8")
     _git(clone, "add", "-A")
-    _git(clone, "commit", "-q", "-m", "agent6 iter 1: work")
+    _git(clone, "commit", "-q", "-m", "agent6 turn 1: work")
 
     # The lane's session dir in its bucket plus the origin's live-view symlink, lineage stamped.
     lane_state = tmp_path / "lane-state" / "sessions" / "runs" / "fan-l1"
@@ -1538,7 +1538,7 @@ def test_merge_warns_before_landing_a_tree_the_gate_did_not_certify(
     The merge still lands and exits 0; a green, gateless or unworded end draws no warning.
     """
     monkeypatch.chdir(tmp_path)
-    base = _setup_run(tmp_path, "run-VVVV11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    base = _setup_run(tmp_path, "run-VVVV11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-VVVV11"
     )
@@ -1560,7 +1560,7 @@ def test_merge_says_a_timed_out_gate_timed_out(
 ) -> None:
     """The merge warning says a gate that ran out its limit timed out."""
     monkeypatch.chdir(tmp_path)
-    _setup_run(tmp_path, "run-TTTT11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _setup_run(tmp_path, "run-TTTT11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-TTTT11"
     )
@@ -1587,14 +1587,14 @@ def test_runs_merge_refuses_a_run_undo_took_back(
 ) -> None:
     """The taken-back work landed on main under a generic warning, and main's tests failed."""
     monkeypatch.chdir(tmp_path)
-    base = _setup_run(tmp_path, "run-UNDO11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    base = _setup_run(tmp_path, "run-UNDO11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-UNDO11"
     )
     events = [
         {"type": "session.start", "session_id": "run-UNDO11", "mode": "run", "user_task": "t"},
         {"type": "session.undone", "new_session_id": "fork-UNDO22", "undone_text": "again"},
-        {"type": "session.end", "reason": "undone", "iterations": 2, "all_passed": False},
+        {"type": "session.end", "reason": "undone", "turns": 2, "all_passed": False},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 

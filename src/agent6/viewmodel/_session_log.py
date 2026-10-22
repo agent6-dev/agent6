@@ -60,7 +60,7 @@ class LogScan:
         plan_used_percent: The account's last reading, 0.0 until a plan call runs.
         plan_usage: That reading's windows, None until a plan call reports them.
         plan_usage_at: When the reading was taken, as epoch seconds; 0.0 without one.
-        iteration: The last event's iteration.
+        turn: The last event's turn.
         start_ep: session.start's epoch, else the first event's (a fork's log has none).
         last_ep: The last event's epoch.
         last_type: The last event's type.
@@ -107,7 +107,7 @@ class LogScan:
     plan_used_percent: float = 0.0
     plan_usage: budget.PlanUsage | None = None
     plan_usage_at: float = 0.0
-    iteration: int | None = None
+    turn: int | None = None
     start_ep: float | None = None
     last_ep: float | None = None
     last_type: str | None = None
@@ -273,7 +273,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     plan_consumed = plan_prior_executions = plan_cap = plan_used_percent = 0.0
     plan_usage: budget.PlanUsage | None = None
     plan_usage_at: float = 0.0
-    iteration: int | None = None
+    turn: int | None = None
     start_ep: float | None = None
     first_ep: float | None = None
     last_ep: float | None = None
@@ -302,8 +302,9 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         first_ep = ep
                 if isinstance(etype, str):
                     last_type = etype
-                if isinstance(ev.get("iteration"), int):
-                    iteration = ev["iteration"]
+                # Journals written before the turn rename stamp `iteration` and `iterations`.
+                if isinstance(ev_turn := ev.get("turn", ev.get("iteration")), int):
+                    turn = ev_turn
                 if etype in _session_status.OPERATOR_PROMPT_EVENTS:
                     # Keyed by str(id) like the answer side, so an int id still clears.
                     if (pid := ev.get("id")) is not None:
@@ -329,8 +330,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         start_ep = ep
                 elif etype == "session.end":
                     finished = True
-                    if isinstance(ev.get("iterations"), int):
-                        iteration = ev["iterations"]
+                    if isinstance(end_turns := ev.get("turns", ev.get("iterations")), int):
+                        turn = end_turns
                     # An explicit null is the ungated tri-state; an absent key folds False.
                     raw_ap = ev.get("all_passed", False)
                     all_passed = None if raw_ap is None else bool(raw_ap)
@@ -447,7 +448,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         plan_usage=plan_usage,
         plan_usage_at=plan_usage_at,
         unattended_questions=unattended_questions,
-        iteration=iteration,
+        turn=turn,
         start_ep=start_ep if start_ep is not None else first_ep,
         last_ep=last_ep,
         last_type=last_type,

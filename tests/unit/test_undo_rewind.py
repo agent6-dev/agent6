@@ -52,7 +52,7 @@ def _checkpoint(
         system="s",
         messages=messages,
         tool_calls=0,
-        next_iteration=turn,
+        next_turn=turn,
         root_task_id=None,
         original_task="do the thing",
         verify_command=(),
@@ -217,7 +217,7 @@ def test_undo_of_a_finished_run_journals_its_undone_end(
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "iterations": 2, "all_passed": True},
+        {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": True},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
@@ -228,7 +228,7 @@ def test_undo_of_a_finished_run_journals_its_undone_end(
     tail = [json.loads(line) for line in layout.logs_path.read_text(encoding="utf-8").splitlines()]
     assert [e["type"] for e in tail[-2:]] == ["session.undone", "session.end"]
     assert tail[-2]["new_session_id"] == child and tail[-2]["undone_text"] == "steer 1"
-    assert tail[-1]["reason"] == "undone" and tail[-1]["iterations"] == 2
+    assert tail[-1]["reason"] == "undone" and tail[-1]["turns"] == 2
     scan = _session_log.scan_session_log(layout.logs_path)
     assert scan.undone_to == child
     word, _detail = _session_status.status_word(
@@ -694,7 +694,7 @@ def test_a_failed_rewind_still_journals_the_undone_end(
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "iterations": 2, "all_passed": True},
+        {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": True},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 

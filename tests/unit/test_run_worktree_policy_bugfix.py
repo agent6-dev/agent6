@@ -320,7 +320,7 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     (repo / "seed.txt").write_text("edited by the prior run\n", encoding="utf-8")
     head = _git(repo, "rev-parse", "HEAD").strip()
     assert git_ops.chain_commit(
-        repo, "agent6 iter 1", ref=git_ops.chain_ref_for(prior.name), fallback_parent=head
+        repo, "agent6 turn 1", ref=git_ops.chain_ref_for(prior.name), fallback_parent=head
     )
     _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
 

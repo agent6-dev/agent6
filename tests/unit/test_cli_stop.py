@@ -158,7 +158,7 @@ def test_worker_stop_words_match_the_request(
     assert f"operator stopped the run {when}{cut}" in output
     assert "stopped" in output
     if urgency == "after_step":
-        assert "LOOP: operator stop at the step boundary (iter 1)" in output
+        assert "LOOP: operator stop at the step boundary (turn 1)" in output
         assert "cut short" not in output
     else:
         assert f"LOOP: operator stop during step 1{cut}" in output

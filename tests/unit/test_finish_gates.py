@@ -14,12 +14,12 @@ from agent6.harness import _conversation, _finish_gates, _loop_state, _metric
 from tests.unit.turn_context import turn_context
 
 
-def _finishing(iteration: int = 4) -> _loop_state.TurnState:
-    turn = _loop_state.TurnState(
-        iteration=iteration, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+def _finishing(turn: int = 4) -> _loop_state.TurnState:
+    turn_state = _loop_state.TurnState(
+        turn=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
     )
-    turn.finish = _finish_gates.FinishCall("finish_session", "done")
-    return turn
+    turn_state.finish = _finish_gates.FinishCall("finish_session", "done")
+    return turn_state
 
 
 def _state() -> _loop_state.LoopState:
@@ -72,8 +72,8 @@ def test_an_early_finish_on_a_metric_run_is_refused_while_runway_remains() -> No
     first = refusals[0]
     assert first is not None and first.text == _metric.METRIC_FINISH_NUDGE
     assert first.event == "loop.metric_early_finish.rejected"
-    assert first.fields == {"iteration": 1, "nudges_used": 1, "budget_remaining": 0.9}
-    assert first.log == "  metric early-finish rejected #1 at iter 1 (budget 90% left)"
+    assert first.fields == {"turn": 1, "nudges_used": 1, "budget_remaining": 0.9}
+    assert first.log == "  metric early-finish rejected #1 at turn 1 (budget 90% left)"
     assert state.metric.finish_nudges_used == _metric.METRIC_EARLY_FINISH_PATIENCE
 
     quiet = _finishing(2)
@@ -104,8 +104,8 @@ def test_a_ceiling_the_final_slice_no_budget_signal_or_a_plain_run_lets_it_throu
 def test_a_standing_task_re_enters_instead_of_ending() -> None:
     asked: list[tuple[str, int]] = []
 
-    def absorb(reason: str, iteration: int) -> str:
-        asked.append((reason, iteration))
+    def absorb(reason: str, turn: int) -> str:
+        asked.append((reason, turn))
         return "[harness] the standing task continues"
 
     refusal = _finish_gates.standing_finish(

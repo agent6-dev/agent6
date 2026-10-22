@@ -332,7 +332,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
-                "next_iteration": 2,
+                "next_turn": 2,
                 "root_task_id": None,
                 "original_task": "t",
                 "verify_command": snapshot_gate,
@@ -410,7 +410,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
-                "next_iteration": 1,
+                "next_turn": 1,
                 "root_task_id": None,
                 "original_task": "t",
                 "verify_command": ["pytest", "-q"],
@@ -738,7 +738,7 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: pathlib.Path
         dispatcher=dispatcher,
         logger=lambda _line: None,
     )
-    turn = _loop_state.TurnState(iteration=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(turn=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
     wf.gate.maybe_adopt(mock.MagicMock(), turn)
     dispatcher.adopt_verify_command.assert_not_called()
     assert wf.gate.command(_verify_verdict.VerifyVerdict()) == ()
@@ -763,7 +763,7 @@ def test_the_decline_line_prints_when_its_reason_changes(
     )
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     for i in (1, 2, 3):
-        turn = _loop_state.TurnState(iteration=i, resp=mock.MagicMock(), assistant=mock.MagicMock())
+        turn = _loop_state.TurnState(turn=i, resp=mock.MagicMock(), assistant=mock.MagicMock())
         wf.gate.maybe_adopt(state, turn)
     declined = [line for line in lines if "verify inference declined" in line]
     assert len(declined) == 1, lines
@@ -772,7 +772,7 @@ def test_the_decline_line_prints_when_its_reason_changes(
     (tmp_path / "package.json").unlink()
     (jail_bin / "cargo").unlink()
     (tmp_path / "Cargo.toml").write_text('[package]\nname = "x"\n', encoding="utf-8")
-    turn = _loop_state.TurnState(iteration=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(turn=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
     wf.gate.maybe_adopt(state, turn)
     declined = [line for line in lines if "verify inference declined" in line]
     assert len(declined) == 2, lines
@@ -873,7 +873,7 @@ def test_a_resumes_key_check_precedes_isolation(
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
-                "next_iteration": 2,
+                "next_turn": 2,
                 "root_task_id": None,
                 "original_task": "t",
                 "verify_command": [],
@@ -949,7 +949,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
-                "next_iteration": 2,
+                "next_turn": 2,
                 "root_task_id": None,
                 "original_task": "t",
                 "verify_command": list(gate),

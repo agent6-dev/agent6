@@ -211,17 +211,17 @@ class HarnessConfig(pydantic.BaseModel):
         ),
     )
     # Per execution: a standing run is not capped by the sum of its executions.
-    max_iterations: int = pydantic.Field(
+    max_turns: int = pydantic.Field(
         default=200,
         description=(
-            "Assistant turns one execution may take before the run stops with reason "
-            "`max_iterations`; -1 is unlimited. A resumed execution gets a fresh allowance."
+            "Loop turns one execution may take before the run stops with reason "
+            "`max_turns`; -1 is unlimited. A resumed execution gets a fresh allowance."
         ),
     )
 
-    @pydantic.field_validator("max_iterations")
+    @pydantic.field_validator("max_turns")
     @classmethod
-    def _iterations_unlimited_is_exactly_minus_one(cls, v: int) -> int:
+    def _turns_unlimited_is_exactly_minus_one(cls, v: int) -> int:
         """Refuse a cap that is neither positive nor exactly -1.
 
         Args:
@@ -234,7 +234,7 @@ class HarnessConfig(pydantic.BaseModel):
             ValueError: The cap is 0 or below -1.
         """
         if v == 0 or v < -1:
-            raise ValueError("max_iterations is >= 1, or exactly -1 for unlimited")
+            raise ValueError("max_turns is >= 1, or exactly -1 for unlimited")
         return v
 
     # The loop's guards: the empty turn, the repeated call, the long silence.
@@ -304,7 +304,7 @@ class HarnessConfig(pydantic.BaseModel):
         description=(
             "Consecutive fruitless standing-goal re-entries (rounds with no executed tool call) "
             "the run absorbs before soft ends are honoured. `-1`: never on its own (the run ends "
-            "on its budget, iteration cap, or an operator stop); `0`: the first fruitless round "
+            "on its budget, turn cap, or an operator stop); `0`: the first fruitless round "
             "ends it; `N`: N fruitless re-entries get an escalating nudge, then ends are "
             "honoured. A round that lands work resets the streak."
         ),
@@ -536,15 +536,15 @@ class ReviewConfig(pydantic.BaseModel):
             "When the in-loop review panel runs on the diff so far and its findings reach the "
             "model as a message: `off` (never), `on_verify_fail` (after each failed verify), "
             "`before_finish` (when the model calls `finish_session`; a gating `block_on` can "
-            "reject the finish), or `periodic` (every `interval_iterations` iterations). "
+            "reject the finish), or `periodic` (every `interval_turns` turns). "
             "With no `reviewers` the "
             "panel is one reviewer seat on `[models.reviewer]`, the model `agent6 review` uses."
         ),
     )
-    interval_iterations: int = pydantic.Field(
+    interval_turns: int = pydantic.Field(
         ge=1,
         default=10,
-        description='Iterations between panels when `trigger = "periodic"`.',
+        description='Turns between panels when `trigger = "periodic"`.',
     )
     block_on: Literal["none", "any", "model_quorum", "all"] = pydantic.Field(
         default="none",

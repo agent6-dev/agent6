@@ -20,14 +20,14 @@ def test_format_plain_event_renders_known_fields() -> None:
             "ts": 1100.0,
             "event": "loop.auto_commit",
             "session_id": "ignored-by-formatter",
-            "iteration": 3,
+            "turn": 3,
             "sha": "abc123def456",
         }
     )
     out = plan_watch.format_plain_event(raw, session_start_ts=1000.0)
     assert "+  100.0s" in out
     assert "loop.auto_commit" in out
-    assert "iteration=3" in out
+    assert "turn=3" in out
     assert "sha='abc123def456'" in out
     assert "session_id" not in out  # filtered
 

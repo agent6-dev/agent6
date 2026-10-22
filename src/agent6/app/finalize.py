@@ -453,7 +453,7 @@ def _print_run_branch_footer(
         )
     elif (
         not result.completed
-        and result.iterations == 0
+        and result.turns == 0
         and not (layout.session_dir / "loop_state.json").is_file()
     ):
         # A fresh run that never reached a turn has no snapshot for a resume to continue.

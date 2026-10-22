@@ -142,7 +142,7 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
             _snapshot.End(
                 "finish_session", "", completed=True, verdict="grounded", checkpoint=False
             ),
-            iteration=1,
+            turn=1,
         )
         assert emitted and emitted[-1]["all_passed"] is all_passed
         assert wf.gate.verification(state.verify) == verdict
@@ -177,7 +177,7 @@ def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
             _snapshot.End(
                 "finish_session", "", completed=True, verdict="grounded", checkpoint=False
             ),
-            iteration=1,
+            turn=1,
         )
         assert (emitted[-1]["all_passed"], emitted[-1]["scoped"]) == (True, scoped)
     assert _session_status.status_word(
@@ -288,7 +288,7 @@ def _snap(**kw: Any) -> Any:
         "system": "s",
         "messages": [],
         "tool_calls": 0,
-        "next_iteration": 1,
+        "next_turn": 1,
         "root_task_id": None,
         "original_task": "t",
         "verify_command": ("true",),
@@ -396,7 +396,7 @@ def _harness_wf(
 
 
 def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
-    turn = _loop_state.TurnState(iteration=3, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(turn=3, resp=mock.MagicMock(), assistant=mock.MagicMock())
     if finishing:
         turn.finish = _finish_gates.FinishCall("finish_session", "done")
     if edited:
@@ -407,7 +407,7 @@ def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
 
 def _verify_gate(wf: loop.Harness, state: _loop_state.LoopState, turn: Any) -> None:
     """The verify gate's answer over *turn*, applied through the loop."""
-    ctx = wf._turn_context(state, iteration=turn.iteration, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=turn.turn, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._refuse(state, turn, _finish_gates.verify_finish(turn, state, ctx))  # pyright: ignore[reportPrivateUsage]
 
 
@@ -652,7 +652,7 @@ def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
     notice = turn.tool_results[-1].text
     assert "the gate ran scoped to the tests nearest the run's change (tests/test_mod.py)" in notice
     assert "not a full-suite pass" in notice
-    assert ("loop.verify_scoped", {"paths": ["tests/test_mod.py"], "iteration": 3}) in emitted
+    assert ("loop.verify_scoped", {"paths": ["tests/test_mod.py"], "turn": 3}) in emitted
     # The next gate skips the doomed full run.
     dispatcher.run_verify.reset_mock(side_effect=True)
     dispatcher.run_verify.return_value = _exec(0)
@@ -840,12 +840,12 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_edit()
     state.verify.note_fail("sig")
-    turn = _loop_state.TurnState(iteration=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(turn=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
     wf._end_gates(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
-        wf._turn_context(state, iteration=turn.iteration, execution_start=1),  # pyright: ignore[reportPrivateUsage]
+        wf._turn_context(state, turn=turn.turn, execution_start=1),  # pyright: ignore[reportPrivateUsage]
         ending="silent_finish",
         gates=_finish_gates.SILENT_END_GATES,
     )
@@ -880,12 +880,12 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     state.verify.note_fail("sig")
     state.verify.withheld = withheld
     state.verify.note_edit()
-    turn = _loop_state.TurnState(iteration=7, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(turn=7, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
     wf._end_gates(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
-        wf._turn_context(state, iteration=turn.iteration, execution_start=1),  # pyright: ignore[reportPrivateUsage]
+        wf._turn_context(state, turn=turn.turn, execution_start=1),  # pyright: ignore[reportPrivateUsage]
         ending="silent_finish",
         gates=_finish_gates.SILENT_END_GATES,
     )

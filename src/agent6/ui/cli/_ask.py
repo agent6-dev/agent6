@@ -41,7 +41,7 @@ def summarize_session_log(logs_path: pathlib.Path) -> str:
     out: list[str] = []
     end = next((e for e in reversed(events) if e.get("type") == "session.end"), None)
     if end is not None:
-        out.append(f"Ended: reason={end.get('reason')!r} iterations={end.get('iterations')}")
+        out.append(f"Ended: reason={end.get('reason')!r} turns={end.get('turns')}")
     top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:8]
     out.append("Event counts: " + ", ".join(f"{t}={n}" for t, n in top))
     notable_types = {
@@ -359,6 +359,6 @@ def run_ask_repl(
             break
     if result is None:
         return _snapshot.SessionResult(
-            completed=True, reason="ask_repl_empty", summary="", iterations=0, tool_calls=0
+            completed=True, reason="ask_repl_empty", summary="", turns=0, tool_calls=0
         )
     return result

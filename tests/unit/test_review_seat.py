@@ -369,7 +369,7 @@ def test_repo_review_uses_tools_then_verdicts() -> None:
 
 def test_repo_review_abstains_when_no_verdict_in_budget() -> None:
     tu = {"name": "list_dir", "id": "t1", "input": {"path": "."}}
-    # provider keeps calling tools, never emits a verdict -> abstain after max_iters
+    # provider keeps calling tools, never emits a verdict -> abstain after max_turns
     provider = _RepoProvider(
         [
             _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]})
@@ -383,12 +383,12 @@ def test_repo_review_abstains_when_no_verdict_in_budget() -> None:
         model="m1",
         tools=[],
         dispatch=lambda n, i: results.RawResult({"entries": []}),
-        max_iters=3,
+        max_turns=3,
     )
     assert v.error is not None and provider.calls == 3  # bounded, abstains (never false-pass)
 
 
-def test_repo_review_skips_dispatch_on_final_iteration() -> None:
+def test_repo_review_skips_dispatch_on_final_turn() -> None:
     # The last allowed model call returns tool_uses and no verdict: the seat is
     # about to abstain, and no model call follows to consume the results, so the
     # final round's tools must not be executed (pure waste).
@@ -412,9 +412,9 @@ def test_repo_review_skips_dispatch_on_final_iteration() -> None:
         model="m1",
         tools=[],
         dispatch=dispatch,
-        max_iters=3,
+        max_turns=3,
     )
-    assert v.error == "repo: no verdict within max_iters"
+    assert v.error == "repo: no verdict within max_turns"
     assert provider.calls == 3  # every model call still happens
     assert dispatched == ["find_references", "find_references"]  # rounds 1-2; final skipped
 
@@ -461,8 +461,8 @@ def test_extract_json_ignores_braces_inside_strings() -> None:
     assert obj is not None and obj["verdict"] == "block"
 
 
-def test_repo_review_honors_verdict_alongside_tool_use_on_last_iter() -> None:
-    # On the FINAL allowed iteration the model emits a tool_use AND a verdict in
+def test_repo_review_honors_verdict_alongside_tool_use_on_last_turn() -> None:
+    # On the FINAL allowed turn the model emits a tool_use AND a verdict in
     # the same turn; the verdict must be honored (not wasted into an abstain).
     tu = {"name": "find_references", "id": "t1", "input": {"symbol": "x"}}
     provider = _RepoProvider([_RepoResp(text=_BLOCK_JSON, tool_uses=(tu,), raw={"content": []})])
@@ -473,7 +473,7 @@ def test_repo_review_honors_verdict_alongside_tool_use_on_last_iter() -> None:
         model="m1",
         tools=[],
         dispatch=lambda n, i: results.RawResult({"ok": True}),
-        max_iters=1,
+        max_turns=1,
     )
     assert v.error is None and v.verdict == "block"
 

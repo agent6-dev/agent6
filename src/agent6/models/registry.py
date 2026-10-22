@@ -139,7 +139,7 @@ def compaction_thresholds(
 
 
 # Families with a measured decompose-first win (bench/coreagent/FINDINGS.md: mistral-small-3.2-24b
-# textkit +0.53, rpn +0.13, ledger +0.18); the other benched models paid a 2-4x iteration tax.
+# textkit +0.53, rpn +0.13, ledger +0.18); the other benched models paid a 2-4x turn tax.
 DECOMPOSE_WIN_MODEL_FAMILIES: tuple[str, ...] = ("mistral-small-3.2",)
 
 

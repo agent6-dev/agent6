@@ -17,7 +17,7 @@ from agent6.providers import ProviderResponse
 if TYPE_CHECKING:
     from agent6.harness import _loop_state
 
-# An early prose turn on an untouched tree is a stall for this many iterations, then a finish.
+# An early prose turn on an untouched tree is a stall for this many turns, then a finish.
 SILENT_NO_WORK_UNTIL = 3
 
 
@@ -39,7 +39,7 @@ class QuietGuard:
 def silent_no_work(state: _loop_state.LoopState, ctx: _advice.TurnContext) -> _advice.Nudge | None:
     """Steer an early prose turn on an untouched tree back to the tools.
 
-    A prose turn within the first `SILENT_NO_WORK_UNTIL` iterations of a run that edited nothing
+    A prose turn within the first `SILENT_NO_WORK_UNTIL` turns of a run that edited nothing
     is a stall, nudged up to `SILENT_NO_WORK_PATIENCE` times; a later prose turn is a finish.
 
     Args:
@@ -52,7 +52,7 @@ def silent_no_work(state: _loop_state.LoopState, ctx: _advice.TurnContext) -> _a
     quiet = state.quiet
     if not (
         ctx.mode == "run"
-        and ctx.iteration <= SILENT_NO_WORK_UNTIL
+        and ctx.turn <= SILENT_NO_WORK_UNTIL
         and not state.ever_edited
         and not state.verify.ever_passed
         and quiet.silent_no_work_nudges_used < _nudges.SILENT_NO_WORK_PATIENCE
@@ -62,10 +62,10 @@ def silent_no_work(state: _loop_state.LoopState, ctx: _advice.TurnContext) -> _a
     return _advice.Nudge(
         _nudges.SILENT_NO_WORK_NUDGE,
         event="loop.silent_no_work.nudge",
-        fields={"iteration": ctx.iteration, "nudges_used": quiet.silent_no_work_nudges_used},
+        fields={"turn": ctx.turn, "nudges_used": quiet.silent_no_work_nudges_used},
         log=(
             f"  silent finish rejected: no work yet (nudge"
-            f" #{quiet.silent_no_work_nudges_used}) at iter {ctx.iteration}"
+            f" #{quiet.silent_no_work_nudges_used}) at turn {ctx.turn}"
         ),
     )
 
@@ -91,8 +91,8 @@ def question_in_prose(
     return _advice.Nudge(
         _nudges.QUESTION_NUDGE,
         event="loop.question_nudge",
-        fields={"iteration": ctx.iteration},
-        log=f"  silent_finish nudged: ended on a question at iter {ctx.iteration}",
+        fields={"turn": ctx.turn},
+        log=f"  silent_finish nudged: ended on a question at turn {ctx.turn}",
     )
 
 
@@ -123,7 +123,7 @@ def went_quiet(
         else _nudges.WENT_QUIET_NUDGE,
         event="loop.went_quiet.nudge",
         fields={
-            "iteration": ctx.iteration,
+            "turn": ctx.turn,
             "nudges_used": quiet.went_quiet_nudges_used,
             "nudges_max": cap,
             "output_tokens": resp.output_tokens,

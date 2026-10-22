@@ -160,7 +160,7 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
             task = sessions_manifest.read_manifest(src.session_dir).user_task
         except sessions_manifest.ManifestError:
             task = task_text.operator_task_text(ops[0]) if ops else ""
-        return UndoTarget(src, src.session_id, turns[0], first.next_iteration, task)
+        return UndoTarget(src, src.session_id, turns[0], first.next_turn, task)
     target = _newest_checkpoint_below(src, len(ops), ops[-1])
     if target is None:
         reporter.err(f"nothing to undo: no state before the last message of {src.session_id}.")
@@ -197,10 +197,10 @@ def _newest_checkpoint_below(
     ]
     for previous, current in zip(reversed(snapshots[:-1]), reversed(snapshots[1:]), strict=True):
         if current[2].count(last_message) > previous[2].count(last_message):
-            return _Checkpoint(layout.session_id, previous[0], previous[1].next_iteration)
+            return _Checkpoint(layout.session_id, previous[0], previous[1].next_turn)
     for at_turn, snap, messages in reversed(snapshots):
         if len(messages) < current_ops:
-            return _Checkpoint(layout.session_id, at_turn, snap.next_iteration)
+            return _Checkpoint(layout.session_id, at_turn, snap.next_turn)
     try:
         parent = sessions_manifest.read_manifest(layout.session_dir).parent_session_id
     except sessions_manifest.ManifestError:
@@ -468,7 +468,7 @@ def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_te
         child: The fork's id.
         undone_text: The message taken back.
     """
-    iterations = _session_log.scan_session_log(undone.logs_path).iteration or 0
+    turns = _session_log.scan_session_log(undone.logs_path).turn or 0
     events = event_log.EventSink(undone.logs_path)
     with contextlib.suppress(event_log.EventWriteError):
         events.emit("session.undone", new_session_id=child, undone_text=undone_text)
@@ -476,7 +476,7 @@ def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_te
             "session.end",
             reason="undone",
             summary=f"operator undid the last message; forked to {child}",
-            iterations=iterations,
+            turns=turns,
             all_passed=False,
         )
 

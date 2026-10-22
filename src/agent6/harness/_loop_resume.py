@@ -43,7 +43,7 @@ def fold_interrupted_turn(
         )
         flight = None
     interrupted: tuple[str, ...] = ()
-    if flight is not None and flight.iteration == snapshot.next_iteration:
+    if flight is not None and flight.turn == snapshot.next_turn:
         try:
             snapshot, interrupted = _snapshot.fold_interrupted_turn(snapshot, flight)
         except ValueError as exc:
@@ -118,7 +118,7 @@ def carry_adopted_gate(
         "loop.verify_inferred",
         command=list(argv),
         source="resumed",
-        adopted_at=snapshot.next_iteration,
+        adopted_at=snapshot.next_turn,
     )
     return argv
 
@@ -161,14 +161,14 @@ def save_resume_snapshot(
     state: _loop_state.LoopState,
     messages: list[dict[str, Any]],
     *,
-    next_iteration: int,
+    next_turn: int,
     write_checkpoint: bool = False,
 ) -> None:
     """Write the resume snapshot, and the turn's checkpoint when asked.
 
     Written before each model call and again after the turn's tool results land, so a
     crash after a non-idempotent tool resumes from after it. Every write advances the
-    latest pointer; only the pre-call write owns `checkpoints/<next_iteration>.json`, so
+    latest pointer; only the pre-call write owns `checkpoints/<next_turn>.json`, so
     `fork --at-turn N` has one meaning. Atomic, so a crash mid-write keeps the prior
     snapshot. A None `resume_state_path` writes nothing.
 
@@ -176,7 +176,7 @@ def save_resume_snapshot(
         harness: The execution's harness.
         state: The execution's state.
         messages: The conversation in wire form.
-        next_iteration: The iteration the snapshot resumes at.
+        next_turn: The turn the snapshot resumes at.
         write_checkpoint: Also write the turn's checkpoint file.
     """
     if harness.resume_state_path is None:
@@ -187,7 +187,7 @@ def save_resume_snapshot(
         system=state.system,
         messages=messages,
         tool_calls=state.tool_calls,
-        next_iteration=next_iteration,
+        next_turn=next_turn,
         root_task_id=state.root_task_id,
         original_task=state.original_task,
         operator_task=state.operator_task,
@@ -220,7 +220,7 @@ def save_resume_snapshot(
         # The checkpoint first, then the latest pointer, so a fork keeps a durable target.
         if write_checkpoint:
             cp_dir = harness.resume_state_path.parent / "checkpoints"
-            portable.atomic_write(cp_dir / f"{next_iteration:04d}.json", blob)
+            portable.atomic_write(cp_dir / f"{next_turn:04d}.json", blob)
         portable.atomic_write(harness.resume_state_path, blob)
     except OSError as exc:
         if not harness.snapshot_write_failed:
@@ -243,7 +243,7 @@ def mark_turn(harness: loop.Harness, turn: _loop_state.TurnState) -> None:
     _snapshot.write_turn_marker(
         harness.resume_state_path.parent / _snapshot.TURN_IN_FLIGHT_NAME,
         _snapshot.TurnInFlight(
-            iteration=turn.iteration,
+            turn=turn.turn,
             assistant=turn.assistant.raw_content,
             results=tuple(
                 item.content

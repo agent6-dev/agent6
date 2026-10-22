@@ -211,13 +211,13 @@ def test_a_headless_run_still_has_something_to_show() -> None:
 def test_a_run_that_failed_does_not_render_as_silence() -> None:
     """The fold sets `body` only for a clean finish, carrying everything else in ok/name/detail.
 
-    Reading body alone made a provider error, a budget stop and an iteration cap produce ZERO
+    Reading body alone made a provider error, a budget stop and a turn cap produce ZERO
     notifications: an editor watching a run that simply stops.
     """
     labels = {
         "provider_error": "failed · provider error",
         "budget_exhausted": "failed · budget exhausted",
-        "max_iterations": "failed · max iterations",
+        "max_turns": "failed · max turns",
         "steer_abort": "stopped",
     }
     for reason, label in labels.items():

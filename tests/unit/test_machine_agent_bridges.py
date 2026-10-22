@@ -172,7 +172,7 @@ def test_machine_agent_wires_the_summariser_seat(
 
         def run(self, _prompt: str) -> _snapshot.SessionResult:
             return _snapshot.SessionResult(
-                reason="finish_session", completed=True, summary="done", iterations=1, tool_calls=0
+                reason="finish_session", completed=True, summary="done", turns=1, tool_calls=0
             )
 
     def _fake_role(*_a: Any, **k: Any) -> object:

@@ -322,7 +322,7 @@ def test_runs_prune_delete_squashed_keeps_a_branch_that_advanced_after_the_merge
     _git(tmp_path, "checkout", "-q", "agent6/resmd33")
     (tmp_path / "after.txt").write_text("post-merge work\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-q", "-m", "agent6 iter 2: post-merge follow-up work")
+    _git(tmp_path, "commit", "-q", "-m", "agent6 turn 2: post-merge follow-up work")
     after = _git(tmp_path, "rev-parse", "HEAD")
     _git(tmp_path, "checkout", "-q", "main")
 
@@ -876,7 +876,7 @@ def test_prune_preserves_a_created_fork_at_an_already_reachable_commit(
             system="sys",
             messages=[{"role": "user", "content": "t"}],
             tool_calls=0,
-            next_iteration=4,
+            next_turn=4,
             root_task_id=None,
             original_task="t",
             verify_command=(),

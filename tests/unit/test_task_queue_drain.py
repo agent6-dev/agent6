@@ -208,7 +208,7 @@ def test_a_parked_run_takes_a_queued_task_and_continues(tmp_path: pathlib.Path) 
         wf,
         mock.MagicMock(),
         _state(root),
-        iteration=2,
+        turn=2,
         reason="quiet",
     )
 

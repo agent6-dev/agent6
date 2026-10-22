@@ -82,10 +82,8 @@ def _exec(rc: int) -> results.ExecResult:
     )
 
 
-def _turn(iteration: int) -> _loop_state.TurnState:
-    return _loop_state.TurnState(
-        iteration=iteration, resp=mock.MagicMock(), assistant=mock.MagicMock()
-    )
+def _turn(turn: int) -> _loop_state.TurnState:
+    return _loop_state.TurnState(turn=turn, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
 
 def _edit(
@@ -151,7 +149,7 @@ def test_a_source_edit_then_red_then_a_test_edit_then_green_is_noticed(
     assert _notices(turn3) == [
         f"{NOTICE_HEAD} every file changed in between is a test file: tests/test_mod.py."
     ]
-    assert _fired(emitted) == [{"iteration": 3, "paths": ["tests/test_mod.py"]}]
+    assert _fired(emitted) == [{"turn": 3, "paths": ["tests/test_mod.py"]}]
 
 
 def test_a_command_that_wrote_a_source_file_withholds_the_notice(tmp_path: pathlib.Path) -> None:

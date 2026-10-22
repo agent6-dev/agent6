@@ -31,13 +31,13 @@ from agent6.viewmodel import _session_status
 from tests.unit.turn_context import turn_context
 
 
-def _turn(iteration: int, **kw: bool) -> _loop_state.TurnState:
-    turn = _loop_state.TurnState(
-        iteration=iteration, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+def _turn(turn: int, **kw: bool) -> _loop_state.TurnState:
+    turn_state = _loop_state.TurnState(
+        turn=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
     )
     for name, value in kw.items():
-        setattr(turn, name, value)
-    return turn
+        setattr(turn_state, name, value)
+    return turn_state
 
 
 def _green_state() -> _loop_state.LoopState:
@@ -59,11 +59,11 @@ def test_idle_turns_draw_one_nudge_then_a_soft_declared_stop() -> None:
         " nothing; finish_session ends the run, and at 12 unchanged turns the run ends on its"
         " own."
     ]
-    assert nudges[0].fields == {"iteration": _nudges.VERIFY_SETTLED_NUDGE_AFTER + 1, "idle": 3}
+    assert nudges[0].fields == {"turn": _nudges.VERIFY_SETTLED_NUDGE_AFTER + 1, "idle": 3}
     assert len(stops) == 1 and answers[-1] is stops[0]
     stop = stops[0]
     assert stop.soft == "verify_settled" and stop.declared == "settled"
-    assert stop.log == "LOOP: verify_settled at iter 13 (idle 12)"
+    assert stop.log == "LOOP: verify_settled at turn 13 (idle 12)"
     end = stop.end()
     assert end.reason == "verify_settled" and end.completed and end.verdict == "passed"
 
@@ -148,7 +148,7 @@ def _configured_context(
         logger=lambda _line: None,
         mode="run",
     )
-    ctx = wf._turn_context(state, iteration=1, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=1, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     return dataclasses.replace(ctx, tree_sha=lambda: "tree")
 
 
@@ -179,7 +179,7 @@ def test_zero_disables_the_settled_stop_but_keeps_the_nudge(
     nudges = [a for a in answers if isinstance(a, _advice.Nudge)]
     assert not any(isinstance(a, _advice.Stop) for a in answers)
     assert len(nudges) == 1 and answers[3] is nudges[0]
-    assert nudges[0].fields == {"iteration": 4, "idle": 3}
+    assert nudges[0].fields == {"turn": 4, "idle": 3}
     assert nudges[0].text == (
         "[harness settled] Changes are committed and the last three turns changed"
         " nothing; finish_session ends the run."

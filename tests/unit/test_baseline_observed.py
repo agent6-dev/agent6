@@ -72,7 +72,7 @@ def _verify(rc: int, *, duration_s: float = 5.0) -> results.ExecResult:
 
 
 def _turn() -> _loop_state.TurnState:
-    return _loop_state.TurnState(iteration=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    return _loop_state.TurnState(turn=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
 
 @pytest.mark.parametrize("rc", [0, 1])
@@ -126,7 +126,7 @@ def test_the_gate_runs_before_the_first_turn_and_records_the_baseline(
     texts = [n.text for n in wf.gate.start_baseline(state)]
     assert state.verify.baseline_ok is (rc == 0)
     assert state.verify.last_ok is (rc == 0)
-    assert ("loop.baseline", {"ok": rc == 0, "iteration": 0}) in events
+    assert ("loop.baseline", {"ok": rc == 0, "turn": 0}) in events
     # The operator reads the verdict in the run log; the model reads a red one in its first request.
     assert lines[-1] == f"LOOP: gate {'green' if rc == 0 else 'red (exit 1)'} before the run"
     if rc == 0:
@@ -342,7 +342,7 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
         completed=True,
         reason="gate_red_at_base",
         summary="s",
-        iterations=1,
+        turns=1,
         tool_calls=1,
         verified="failed",
     )
@@ -385,7 +385,7 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: path
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.last_ok = False
     state.verify.baseline_ok = False
-    turn = _loop_state.TurnState(iteration=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(turn=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
     turn.finish = _finish_gates.FinishCall("finish_session", "done")
 
     ctx = turn_context(tree_green=lambda: False, gate_present=lambda: True)

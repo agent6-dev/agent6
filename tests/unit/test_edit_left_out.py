@@ -94,7 +94,7 @@ def _dispatch_edit(
     )
     wf.state_dir = state_dir
     turn = _loop_state.TurnState(
-        iteration=3,
+        turn=3,
         resp=test_harness._resp(""),  # pyright: ignore[reportPrivateUsage]
         assistant=_conversation.AssistantTurn(
             raw_content=(),
@@ -128,7 +128,7 @@ def test_an_edit_to_a_gitignored_path_says_so_in_its_tool_result(tmp_path: pathl
     assert left_out == [
         {
             "type": "loop.edit.left_out",
-            "iteration": 3,
+            "turn": 3,
             "ignored": ["data/rates.json"],
             "untracked": [],
         }
@@ -197,7 +197,7 @@ def _end_footer(
     session_dir.mkdir(parents=True)
     events: list[dict[str, object]] = [
         {"type": "session.start", "session_id": session_id, "user_task": "t"},
-        {"type": "loop.edit.left_out", "iteration": 1, **left_out},
+        {"type": "loop.edit.left_out", "turn": 1, **left_out},
         {"type": "session.end", "reason": "finish_session", "all_passed": True},
     ]
     (session_dir / "logs.jsonl").write_text(
@@ -213,7 +213,7 @@ def _end_footer(
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     finalize.print_session_end(
         _snapshot.SessionResult(
-            completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
+            completed=True, reason="finish_session", summary="done", turns=1, tool_calls=1
         ),
         layout=layout,
         cwd=repo,
@@ -231,7 +231,7 @@ def _commit_run_branch(repo: pathlib.Path, session_id: str, *force: str) -> None
     _git(repo, "add", "work.py")
     for rel in force:
         _git(repo, "add", "-f", rel)
-    _git(repo, "commit", "-qm", "agent6 iter 1")
+    _git(repo, "commit", "-qm", "agent6 turn 1")
     _git(repo, "update-ref", git_ops.chain_ref_for(session_id), "HEAD")
     _git(repo, "switch", "-q", "main")
     # The run's work stays in the checkout, as a run leaves it.

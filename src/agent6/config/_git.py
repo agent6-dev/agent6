@@ -24,7 +24,7 @@ class GitCommitCheckpointConfig(pydantic.BaseModel):
     message: Literal["agent6", "conventional", "model"] = pydantic.Field(
         default="agent6",
         description=(
-            "The message of each per-step commit: `agent6` (`agent6 iter N: <summary>`), "
+            "The message of each per-step commit: `agent6` (`agent6 turn N: <summary>`), "
             "`conventional` (a `type(scope): subject` derived from the diff, no model call), or "
             "`model` (the model writes it from the git facts, falling back to `agent6` with a "
             "warning on any failure)."

@@ -978,14 +978,12 @@ def test_config_set_notes_a_repo_layer_that_keeps_a_global_write_out(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "--repo", "harness.max_iterations", "7"]) == 0
+    assert main(["config", "set", "--repo", "harness.max_turns", "7"]) == 0
     capsys.readouterr()
-    assert main(["config", "set", "harness.max_iterations", "9"]) == 0
+    assert main(["config", "set", "harness.max_turns", "9"]) == 0
     out = capsys.readouterr().out
-    assert (
-        "note: the repo config overrides harness.max_iterations; a run here reads its value." in out
-    )
-    assert main(["config", "set", "--repo", "harness.max_iterations", "8"]) == 0
+    assert "note: the repo config overrides harness.max_turns; a run here reads its value." in out
+    assert main(["config", "set", "--repo", "harness.max_turns", "8"]) == 0
     assert "overrides" not in capsys.readouterr().out
 
 

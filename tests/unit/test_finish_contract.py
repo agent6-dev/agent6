@@ -64,7 +64,7 @@ def _wf(validator: Any) -> loop.Harness:
 
 
 def _finishing_turn(payload: dict[str, Any] | None) -> _loop_state.TurnState:
-    turn = _loop_state.TurnState(iteration=3, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = _loop_state.TurnState(turn=3, resp=mock.MagicMock(), assistant=mock.MagicMock())
     turn.finish = _finish_gates.FinishCall("finish_session", "done", payload)
     return turn
 
@@ -75,10 +75,10 @@ def test_a_nonconforming_finish_is_refused_with_the_problems() -> None:
     wf = _wf(validator)
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _finishing_turn(None)
-    ctx = wf._turn_context(state, iteration=3, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    ctx = wf._turn_context(state, turn=3, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     refusal = _finish_gates.finish_contract(turn, state, ctx)
     assert refusal is not None and refusal.event == "loop.finish_contract.refused"
-    assert refusal.fields["iteration"] == 3 and refusal.fields["problems"]
+    assert refusal.fields["turn"] == 3 and refusal.fields["problems"]
     wf._turn_finish_gates(state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     assert turn.finish is None
     notices = [r.text for r in turn.tool_results if isinstance(r, _conversation.Notice)]

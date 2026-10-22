@@ -3,8 +3,8 @@
 
 Per (model, task, session, condition) cell: n, mean score +/- stderr, solved
 rate, tier-1/2 compaction activity, re-reads (total and post-first-drop),
-memory/dependency tool usage, iterations, usd, wall. Then paired
-condition-vs-baseline deltas on score and iterations. `--components` prints
+memory/dependency tool usage, turns, usd, wall. Then paired
+condition-vs-baseline deltas on score and turns. `--components` prints
 mean per-component scores per cell: for stylebook that is the per-rule
 retention curve.
 
@@ -62,7 +62,7 @@ def main() -> None:
     print(" | ".join(keys))
     print(
         "  n   score(mean+/-se)  solved  drops  compact  rr/rr_pd  memw  trap  deps"
-        "  iters   usd     wall  tamper"
+        "  turns   usd     wall  tamper"
     )
     for key in sorted(cells, key=lambda k: tuple(str(x) for x in k)):
         rs = cells[key]
@@ -75,7 +75,7 @@ def main() -> None:
         memw = _mean_se(_num(rs, "memory_writes"))[0]
         trap = _mean_se(_num(rs, "trap_edits"))[0]
         deps = _mean_se(_num(rs, "deps_added"))[0]
-        iters = _mean_se(_num(rs, "iterations"))[0]
+        turns = _mean_se(_num(rs, "iterations"))[0]
         usd = _mean_se(_num(rs, "usd"))[0]
         wall = _mean_se(_num(rs, "wall_s"))[0]
         tamper = sum(1 for r in rs if r.get("tampered")) / len(rs)
@@ -83,7 +83,7 @@ def main() -> None:
             f"  {' | '.join(str(x) for x in key)}\n"
             f"    {len(rs):<3} {mu:.3f}+/-{se:.3f}     {solved:.2f}  {drops:6.1f}"
             f"  {compact:5.1f}  {rr:5.1f}/{rr_pd:<5.1f} {memw:4.1f}  {trap:4.1f}  {deps:4.1f}"
-            f"  {iters or float('nan'):5.1f}  {usd or float('nan'):.3f}"
+            f"  {turns or float('nan'):5.1f}  {usd or float('nan'):.3f}"
             f"  {wall:5.0f}s  {tamper:.2f}"
         )
         if args.components:
@@ -99,12 +99,12 @@ def main() -> None:
         ci = keys.index("condition")
         print("\n=== condition deltas vs baseline (same other keys) ===")
         base_score: dict[tuple[Any, ...], float] = {}
-        base_iters: dict[tuple[Any, ...], float] = {}
+        base_turns: dict[tuple[Any, ...], float] = {}
         for key, rs in cells.items():
             if key[ci] == "baseline":
                 rest = tuple(x for i, x in enumerate(key) if i != ci)
                 base_score[rest] = _mean_se(_num(rs, "score"))[0]
-                base_iters[rest] = _mean_se(_num(rs, "iterations"))[0]
+                base_turns[rest] = _mean_se(_num(rs, "iterations"))[0]
         for key in sorted(cells, key=lambda k: tuple(str(x) for x in k)):
             if key[ci] == "baseline":
                 continue
@@ -114,9 +114,9 @@ def main() -> None:
             mu = _mean_se(_num(cells[key], "score"))[0]
             it = _mean_se(_num(cells[key], "iterations"))[0]
             d = mu - base_score[rest]
-            di = it - base_iters[rest] if not math.isnan(base_iters[rest]) else float("nan")
+            di = it - base_turns[rest] if not math.isnan(base_turns[rest]) else float("nan")
             tag = "  WIN" if d > 0.02 else "  loss" if d < -0.02 else "  flat"
-            print(f"  {' | '.join(str(x) for x in key)}: dscore={d:+.3f} diters={di:+.1f}{tag}")
+            print(f"  {' | '.join(str(x) for x in key)}: dscore={d:+.3f} dturns={di:+.1f}{tag}")
 
 
 if __name__ == "__main__":

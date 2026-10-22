@@ -336,9 +336,9 @@ def _plan_fork(
         ),
         checkpoint_path=checkpoint_path,
         graph_version=checkpoint.graph_version,
-        forked_from_turn=checkpoint.next_iteration,
+        forked_from_turn=checkpoint.next_turn,
         # A fork's checkpoint 0 is its seed: it holds the source's turn, not turn 0.
-        from_seed=at_turn == 0 and checkpoint.next_iteration != 0,
+        from_seed=at_turn == 0 and checkpoint.next_turn != 0,
         forked_from_sha=forked_from_sha,
         # A source whose work landed moved its base to where it continued from; a turn from
         # before that predates the base, and the fork's own work starts at the turn.

@@ -655,7 +655,7 @@ def test_summary_resume_unfinishes(tmp_path: pathlib.Path) -> None:
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "session.end", "all_passed": False, "reason": "steer_abort"},
-            {"type": "loop.resume.start", "iteration": 2},
+            {"type": "loop.resume.start", "turn": 2},
         ],
     )
     assert summarize_session_dir(rd).status == "running"
@@ -970,7 +970,7 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> No
         "runs",
         "fork-1",
         [
-            {"type": "loop.resume.start", "iteration": 1},
+            {"type": "loop.resume.start", "turn": 1},
             {"type": "budget.update", "usd_total": 0.05},
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
@@ -985,9 +985,9 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> No
         "runs",
         "fork-2",
         [
-            {"type": "loop.resume.start", "iteration": 1},
+            {"type": "loop.resume.start", "turn": 1},
             {"type": "budget.update", "usd_total": 0.05},
-            {"type": "loop.resume.start", "iteration": 5},
+            {"type": "loop.resume.start", "turn": 5},
             {"type": "budget.update", "usd_total": 0.01},
         ],
     )
@@ -1008,7 +1008,7 @@ def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: path
         "runs",
         "fork-3",
         [
-            {"type": "loop.resume.start", "mode": "run", "iteration": 1},
+            {"type": "loop.resume.start", "mode": "run", "turn": 1},
             {"type": "verify.end", "cmd": ["pytest"], "exit_code": 0, "duration_s": 1.0},
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
@@ -1035,7 +1035,7 @@ def test_summary_cost_sums_across_resume_executions(tmp_path: pathlib.Path) -> N
             {"type": "budget.update", "usd_total": 0.01},
             {"type": "budget.update", "usd_total": 0.02},  # execution 1 ends at $0.02
             {"type": "session.end", "all_passed": False, "reason": "budget_exhausted"},
-            {"type": "loop.resume.start", "iteration": 3},
+            {"type": "loop.resume.start", "turn": 3},
             {"type": "budget.update", "usd_total": 0.003},
             {"type": "budget.update", "usd_total": 0.007},  # execution 2 ends at $0.007
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
@@ -1063,7 +1063,7 @@ def test_summary_plan_points_sum_across_resume_executions(tmp_path: pathlib.Path
                 "plan_cap": 2.0,
             },
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
-            {"type": "loop.resume.start", "iteration": 3},
+            {"type": "loop.resume.start", "turn": 3},
             {
                 "type": "budget.update",
                 "plan_used_percent": 40.0,
@@ -1098,7 +1098,7 @@ def test_cost_cell_keeps_points_between_a_resume_and_its_first_budget_update(
                 "plan_cap": 2.0,
             },
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
-            {"type": "loop.resume.start", "iteration": 3},
+            {"type": "loop.resume.start", "turn": 3},
         ],
     )
     assert summarize_session_dir(rd).cost_cell == "1pt"
@@ -1506,7 +1506,7 @@ def test_a_resume_starts_the_unanswered_count_again(tmp_path: pathlib.Path) -> N
                 "unseen": True,
             },
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
-            {"type": "loop.resume.start", "iteration": 3},
+            {"type": "loop.resume.start", "turn": 3},
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
@@ -1534,7 +1534,7 @@ def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: path
     ]
     ends = {
         "gate_red_at_base": ("finished", "gate was already red · 1 question unanswered"),
-        "max_iterations": ("failed", "max_iterations · 1 question unanswered"),
+        "max_turns": ("failed", "max_turns · 1 question unanswered"),
     }
     for reason, expected in ends.items():
         rd = _write_run(
@@ -1594,7 +1594,7 @@ def test_the_scan_names_the_fork_an_undo_continues_as(tmp_path: pathlib.Path) ->
     events = [
         {"type": "session.start", "session_id": "src-AAAA11", "mode": "run", "user_task": "t"},
         {"type": "session.undone", "new_session_id": "child-BBBB22", "undone_text": "again"},
-        {"type": "session.end", "reason": "undone", "iterations": 3, "all_passed": False},
+        {"type": "session.end", "reason": "undone", "turns": 3, "all_passed": False},
     ]
     log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     scan = _session_log.scan_session_log(log)
@@ -1796,3 +1796,18 @@ def test_a_plan_reading_carries_its_own_time(tmp_path: pathlib.Path) -> None:
     assert scan.plan_usage is not None and scan.plan_usage.windows[0].used_percent == 41.0
     taken = datetime.datetime(2026, 10, 20, 11, tzinfo=datetime.UTC)
     assert scan.plan_usage_at == taken.timestamp()
+
+
+def test_a_journal_written_before_the_turn_rename_keeps_its_end_turn(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A `session.end` stamped `iterations`, and events stamped `iteration`, still give the turn."""
+    from agent6.viewmodel import _session_log
+
+    journal = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "loop.tool.call", "name": "read_file", "iteration": 4},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True, "iterations": 7},
+    ]
+    (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
+    assert _session_log.scan_session_log(tmp_path / "logs.jsonl").turn == 7

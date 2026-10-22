@@ -20,9 +20,9 @@ def _state() -> _loop_state.LoopState:
     return _loop_state.LoopState(original_task="t", tool_calls=0, stagnation=started)
 
 
-def _turn(iteration: int = 4) -> _loop_state.TurnState:
+def _turn(turn: int = 4) -> _loop_state.TurnState:
     return _loop_state.TurnState(
-        iteration=iteration, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
+        turn=turn, resp=mock.MagicMock(), assistant=_conversation.AssistantTurn((), ())
     )
 
 
@@ -34,7 +34,7 @@ def test_the_notice_fires_once_and_names_the_gate_only_when_one_can_run() -> Non
     state = _state()
     nudge = _guards.stagnation(_turn(), state, _ctx(gate_present=lambda: True))
     assert nudge is not None and "no edit and no verify" in nudge.text
-    assert nudge.event == "loop.stagnation.nudged" and nudge.fields["iteration"] == 4
+    assert nudge.event == "loop.stagnation.nudged" and nudge.fields["turn"] == 4
     assert state.stagnation.nudged is True
     assert _guards.stagnation(_turn(5), state, _ctx(gate_present=lambda: True)) is None
 

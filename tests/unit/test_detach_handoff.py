@@ -144,7 +144,7 @@ def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: pathli
     ).stdout.strip()
     ref = git_ops.chain_ref_for("resume-run-A1")
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # the run's own execution-1 work
-    git_ops.chain_commit(repo, "iter 1", ref=ref, fallback_parent=base)
+    git_ops.chain_commit(repo, "turn 1", ref=ref, fallback_parent=base)
 
     assert git_ops.chain_dirty_paths(repo, ref, base, 5) == []
 
@@ -197,7 +197,7 @@ def _stub_execution_internals(
     built: dict[str, Any] | None = None,
 ) -> None:
     class _Workflow:
-        iterations_reached = 3
+        turns_reached = 3
         chain = types.SimpleNamespace(tree_sha=lambda: "")
 
         def __init__(self, **kw: Any) -> None:
@@ -311,8 +311,8 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
         _snapshot.SessionResult(
             completed=False,
             reason="detached",
-            summary="operator detached at iter 3; resuming in the background",
-            iterations=3,
+            summary="operator detached at turn 3; resuming in the background",
+            turns=3,
             tool_calls=7,
         ),
     )
@@ -366,7 +366,7 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
 
     assert (end.rc, end.detach_requested) == (0, True)
     assert saved == []
-    assert not any("operator detached at iter" in s for s in said)
+    assert not any("operator detached at turn" in s for s in said)
 
 
 def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
@@ -382,8 +382,8 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
         _snapshot.SessionResult(
             completed=False,
             reason="undone",
-            summary="operator undid the last message at iter 3",
-            iterations=3,
+            summary="operator undid the last message at turn 3",
+            turns=3,
             tool_calls=7,
         ),
     )
@@ -449,7 +449,7 @@ def test_a_surface_without_the_revise_choice_skips_revision(
     _stub_execution_internals(
         monkeypatch,
         _snapshot.SessionResult(
-            completed=True, reason="finish_session", summary="ok", iterations=1, tool_calls=0
+            completed=True, reason="finish_session", summary="ok", turns=1, tool_calls=0
         ),
         built,
     )
@@ -521,7 +521,7 @@ def test_an_answer_streamed_to_the_terminal_is_not_printed_on_it_again(
     _stub_execution_internals(
         monkeypatch,
         _snapshot.SessionResult(
-            completed=True, reason="answered", summary="CoreTest", iterations=1, tool_calls=1
+            completed=True, reason="answered", summary="CoreTest", turns=1, tool_calls=1
         ),
     )
     monkeypatch.setattr(sys.stdout, "isatty", lambda: stdout_is_tty)

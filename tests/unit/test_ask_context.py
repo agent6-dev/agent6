@@ -53,7 +53,7 @@ def _make_run(tmp_path: pathlib.Path) -> str:
                 json.dumps({"type": "session.start", "user_task": "make x equal 2"}),
                 json.dumps({"type": "tool.call", "name": "apply_edit", "args": "m.py"}),
                 json.dumps({"type": "verify.end", "exit_code": 0}),
-                json.dumps({"type": "session.end", "reason": "finish_session", "iterations": 3}),
+                json.dumps({"type": "session.end", "reason": "finish_session", "turns": 3}),
             ]
         )
         + "\n",
@@ -155,7 +155,7 @@ def test_ask_repl_multi_turn_carries_context(
                 completed=True,
                 reason="silent_finish",
                 summary=f"answer-{len(self.calls)}",
-                iterations=1,
+                turns=1,
                 tool_calls=0,
             )
 

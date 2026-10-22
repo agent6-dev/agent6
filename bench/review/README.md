@@ -58,8 +58,8 @@ rounds, no stall, final code symlink-safe.
 | correct string | correct (4 it) | correct (4 it, no churn) |
 
 Both real vulnerabilities the baseline shipped were caught and fixed under veto,
-with no false-blocks on clean work (veto matched off's iteration count). A clean
-run adds about one panel call; a buggy run costs the iterations to fix it.
+with no false-blocks on clean work (veto matched off's turn count). A clean
+run adds about one panel call; a buggy run costs the turns to fix it.
 
 Keep `XDG_STATE_HOME` out of the repo (the default). An earlier A/B put it
 inside, so agent6's own logs were committed and the panel correctly blocked them

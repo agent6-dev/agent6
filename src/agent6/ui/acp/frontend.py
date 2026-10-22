@@ -201,7 +201,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         _session_dir: pathlib.Path, _budget: budget.BudgetTracker, _task: str, _mcp: object
     ) -> Callable[[int, str], kinds.AutoCommitDirective]:
         # ACP has its own turn loop; a REPL inside it would be a second reader of stdin.
-        return lambda _iteration, _summary: "continue"
+        return lambda _turn, _summary: "continue"
 
     def _no_ask_repl(
         _wf: loop.Harness, _budget: budget.BudgetTracker, _layout: layout.SessionLayout, _task: str

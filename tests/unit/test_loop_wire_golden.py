@@ -163,7 +163,7 @@ class _Dispatcher(_StubDispatcher):
 
 
 class _SteerOnce:
-    """One steering request after the first completed iteration."""
+    """One steering request after the first completed turn."""
 
     def __init__(self) -> None:
         self.armed = True
@@ -203,7 +203,7 @@ def _config() -> Any:
 
 
 _RESPONSES = [
-    # iter 1: prose, a read and a broken verify, with a [harness] notice inside the same user turn.
+    # turn 1: prose, a read and a broken verify, with a [harness] notice inside the same user turn.
     _resp(
         thinking="scan the repo first",
         text="Reading a.md and running verify.",
@@ -213,13 +213,13 @@ _RESPONSES = [
         ),
         stop_reason="tool_use",
     ),
-    # iter 2: went quiet; the empty assistant turn is popped and a [harness] nudge appended.
+    # turn 2: went quiet; the empty assistant turn is popped and a [harness] nudge appended.
     _resp(thinking="pondering silently"),
-    # iter 3: another large read (feeds tier-1 pressure).
+    # turn 3: another large read (feeds tier-1 pressure).
     _resp(tool_uses=(("tu-3", "read_file", {"path": "b.md"}),), stop_reason="tool_use"),
-    # iter 4: list_dir; serving it arms the manual compact marker.
+    # turn 4: list_dir; serving it arms the manual compact marker.
     _resp(tool_uses=(("tu-4", "list_dir", {"path": "."}),), stop_reason="tool_use"),
-    # iter 5 (post tier-2 restart): finish.
+    # turn 5 (post tier-2 restart): finish.
     _resp(tool_uses=(("tu-5", "finish_session", {"summary": "done"}),), stop_reason="tool_use"),
 ]
 
@@ -234,7 +234,7 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
 
     def _compact_requested() -> str | None:
         if compact_flag[0] and not pre_restart_state:
-            # The richest on-disk snapshot (post-tools iteration 4), before the forced restart.
+            # The richest on-disk snapshot (post-tools turn 4), before the forced restart.
             pre_restart_state.append(snap_path.read_text(encoding="utf-8"))
         return "" if compact_flag[0] else None  # a plain /compact carries no focus
 
@@ -265,7 +265,7 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
         system="SYSTEM",
         conversation=_conversation.Conversation.from_wire([initial]),
         tool_calls=0,
-        start_iteration=1,
+        start_turn=1,
         root_task_id=None,
         original_task=_TASK,
     )

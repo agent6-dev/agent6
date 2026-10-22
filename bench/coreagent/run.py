@@ -262,7 +262,8 @@ def _extract_metrics(state_home: Path) -> dict[str, Any]:
             last_graph = e
         elif t == "session.end":
             m["end_reason"] = e.get("reason")
-            m["iterations"] = e.get("iterations")
+            # Recorded benchmark rows keep their schema; live events use turns.
+            m["iterations"] = e.get("turns")
             m["all_passed"] = e.get("all_passed")
         elif t == "loop.compact.summarise.done":
             m["compactions"] += 1
@@ -507,7 +508,7 @@ def main() -> None:
                     f"[{done}/{len(jobs)}] {rec.get('task')}/{rec.get('condition')}"
                     f" r{rec.get('rep')} score={rec.get('score')}"
                     f" subtasks={rec.get('n_subtasks')} comp={rec.get('compactions')}"
-                    f" iters={rec.get('iterations')} ${rec.get('usd')} {rec.get('wall_s')}s"
+                    f" turns={rec.get('iterations')} ${rec.get('usd')} {rec.get('wall_s')}s"
                     f" reason={rec.get('end_reason')}"
                 )
     print(f"[coreagent] done -> {out_path}")

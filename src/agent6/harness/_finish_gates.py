@@ -271,7 +271,7 @@ def finish_contract(
     """Return a finish_session whose `result` is off the machine state's schema.
 
     The retry happens in-execution instead of the execution ending failed over
-    correct work. Uncapped: the budget and iteration backstops end a model that
+    correct work. Uncapped: the budget and turn backstops end a model that
     never conforms.
 
     Args:
@@ -290,8 +290,8 @@ def finish_contract(
     return _advice.Refusal(
         contract_refusal(problems),
         event="loop.finish_contract.refused",
-        fields={"iteration": turn.iteration, "problems": problems},
-        log=f"  finish_session returned: result violates the contract at iter {turn.iteration}",
+        fields={"turn": turn.turn, "problems": problems},
+        log=f"  finish_session returned: result violates the contract at turn {turn.turn}",
     )
 
 
@@ -335,13 +335,13 @@ def open_tasks_finish(
         nudge,
         event="loop.task_finish.gated",
         fields={
-            "iteration": turn.iteration,
+            "turn": turn.turn,
             "nudges_used": state.gates.task_nudges_used,
             "trigger": ending,
         },
         log=(
             f"  {ending} gated: open subtasks remain (nudge"
-            f" #{state.gates.task_nudges_used}) at iter {turn.iteration}"
+            f" #{state.gates.task_nudges_used}) at turn {turn.turn}"
         ),
     )
 
@@ -390,10 +390,10 @@ def verify_finish(
     return _advice.Refusal(
         notice,
         event="loop.verify_finish.gated",
-        fields={"iteration": turn.iteration, "nudges_used": used, "trigger": ending},
+        fields={"turn": turn.turn, "nudges_used": used, "trigger": ending},
         log=(
             f"  {'settled stop' if settled else 'finish_session'} returned: verify not green"
-            f" (return #{used} of {ctx.verify_retries}) at iter {turn.iteration}"
+            f" (return #{used} of {ctx.verify_retries}) at turn {turn.turn}"
         ),
     )
 
@@ -416,7 +416,7 @@ def standing_finish(
     """
     if ctx.mode != "run":
         return None
-    nudge = ctx.standing_absorb("finish_session", turn.iteration)
+    nudge = ctx.standing_absorb("finish_session", turn.turn)
     return None if nudge is None else _advice.Refusal(nudge)
 
 

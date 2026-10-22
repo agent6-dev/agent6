@@ -74,7 +74,7 @@ def _row(reason: _snapshot.SessionEndReason) -> str:
             completed=reason in _COMPLETED,
             reason=reason,
             summary="",
-            iterations=1,
+            turns=1,
             tool_calls=0,
             verified=verified,
         )

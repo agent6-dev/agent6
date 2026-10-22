@@ -22,7 +22,7 @@ from agent6.ui.cli import _interact, _steer, plan_watch, sessions_cmds
 from agent6.viewmodel import events, state
 
 REPL_HELP = (
-    "  /continue  (empty enter) - let the agent take another iteration\n"
+    "  /continue  (empty enter) - let the agent take another turn\n"
     "  /cost                    - print the running token + USD summary\n"
     "  /diff                    - git diff: base_sha -> the run branch's tip\n"
     "                              (read-only; `agent6 sessions diff`, no pager)\n"
@@ -68,17 +68,17 @@ def build_repl_hook(
             the commit opens its menu only after this prompt, so the banner says so.
 
     Returns:
-        The hook, taking the iteration and the commit sha.
+        The hook, taking the turn and the commit sha.
     """
 
-    def hook(iteration: int, sha: str) -> kinds.AutoCommitDirective:
+    def hook(turn: int, sha: str) -> kinds.AutoCommitDirective:
         # Paused, the heartbeat cannot erase the prompt; idle, Ctrl-C stands aside for all of it.
         with _interact._pause(console_view), _steer.idle_prompt_sigint():
-            return _prompt_loop(iteration, sha)
+            return _prompt_loop(turn, sha)
 
-    def _prompt_loop(iteration: int, sha: str) -> kinds.AutoCommitDirective:
+    def _prompt_loop(turn: int, sha: str) -> kinds.AutoCommitDirective:
         print(
-            f"\n[agent6] iter {iteration} committed {sha[:12]}. "
+            f"\n[agent6] turn {turn} committed {sha[:12]}. "
             f"REPL: /continue /cost /diff /watch /mcp /init /undo /help /quit /exit",
             file=sys.stderr,
         )

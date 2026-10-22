@@ -211,7 +211,7 @@ def session_snapshot(
         if at is None:
             raise UnknownStepError(f"no commit {step} in this run")
         state = at
-        as_of = {"iteration": at.steps[-1].iteration, "sha": at.steps[-1].sha}
+        as_of = {"turn": at.steps[-1].turn, "sha": at.steps[-1].sha}
     else:
         state = viewmodel_state.fold_session(events)
     word, _reason = _session_status.status_for_session_dir(

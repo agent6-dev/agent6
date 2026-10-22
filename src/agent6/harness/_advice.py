@@ -76,8 +76,8 @@ class TurnContext:
     """
 
     mode: Literal["run", "plan", "ask", "agent"]
-    iteration: int
-    # The execution's first iteration: a turn allowance counts from it.
+    turn: int
+    # The execution's first turn: a turn allowance counts from it.
     execution_start: int
     # `[harness]`'s guard knobs.
     went_quiet_max_nudges: int

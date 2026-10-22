@@ -378,7 +378,7 @@ def test_show_drops_the_questions_line_after_a_resume(
         },
     ]
     resumed = [
-        {"type": "loop.resume.start", "iteration": 3},
+        {"type": "loop.resume.start", "turn": 3},
         {"type": "session.end", "reason": "finish_session", "all_passed": True},
     ]
     layout.logs_path.write_text(
@@ -417,12 +417,12 @@ def test_show_names_a_failed_end_once_beside_the_unanswered_count(
             "source": "headless-default",
             "unseen": True,
         },
-        {"type": "session.end", "all_passed": False, "reason": "max_iterations"},
+        {"type": "session.end", "all_passed": False, "reason": "max_turns"},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     assert main(["sessions", "show", "capped"]) == 0
     line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("state:"))
-    assert line == "state:      failed · max iterations · 1 question unanswered"
+    assert line == "state:      failed · max turns · 1 question unanswered"
 
 
 def test_show_offers_plan_show_only_once_the_plan_is_written(
@@ -526,7 +526,7 @@ def test_show_names_the_start_gates_verdict_beside_the_final_one(
         "fan-l1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "loop.baseline", "ok": False, "iteration": 0},
+            {"type": "loop.baseline", "ok": False, "turn": 0},
             {
                 "type": "session.end",
                 "all_passed": True,

@@ -259,7 +259,7 @@ def test_compact_idempotent_on_already_elided() -> None:
 def test_compact_never_elides_unseen_results_in_final_turn() -> None:
     """Compaction never elides the final turn's results, which the model has not seen yet.
 
-    It runs at top-of-iteration, before the provider call that delivers them.
+    It runs at top-of-turn, before the provider call that delivers them.
     """
     big = "x" * 10_000
     conv = _conversation.Conversation()

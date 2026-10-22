@@ -164,13 +164,13 @@ def stop_reason(code: int, *, end_reason: str = "") -> acp_session.StopReason:
 
     Returns:
         `cancelled` for an operator stop (exit 130) and `max_turn_requests` for a run that
-        hit its iteration cap. A deliberate finish is `end_turn` even over a red gate or
+        hit its turn cap. A deliberate finish is `end_turn` even over a red gate or
         stranded edits: those are already on the wire. `refusal` is ACP's one word for a
         run that could not complete.
     """
     if code == 130:
         return "cancelled"
-    if end_reason == "max_iterations":
+    if end_reason == "max_turns":
         return "max_turn_requests"
     return (
         "end_turn"

@@ -109,7 +109,7 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
         events=events,
         curator=curator,
         bridge=_operator.OperatorBridge(take_requests=lambda: ipc.drain_requests(session_dir)),
-        max_iterations=3,
+        max_turns=3,
     )
 
     wf.run("Implement parse_csv_row")

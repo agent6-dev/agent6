@@ -38,7 +38,7 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 
 - commands ask for approval by default (`sandbox.run_commands = "ask"`): allow one call or the whole session
 - without a terminal (CI, cron, a hub-spawned run) a prompt parks the run until a front-end answers it, or an away-mode decides it; a run whose commands are unsettled refuses to start and names the choices (`--auto-approve`, `--no-commands`, `AGENT6_DETACHED_AWAY`), see [approvals](security.md#6-approvals)
-- the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`; `--after-step` lets the step finish) or a ceiling (budget, iterations) stops it
+- the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`; `--after-step` lets the step finish) or a ceiling (budget, turns) stops it
 - at a terminal it then asks for the next input: type to continue, `/exit` to finish
 - without a terminal a finished run prints its merge and inspect commands, and an unfinished run its resume command
 - `agent6 resume <id> --steer "<what to do next>"` continues a run ended by `finish_session` with the gate green or no gate set; the steer is this execution's task, and a bare resume of that run is refused
@@ -70,7 +70,7 @@ agent6 steer ID "focus on X"  # an instruction at the next step; --now interrupt
 agent6 answer ID "yes"        # answer a live run's question (bare: print the question)
 agent6 stop ID                # stop during the current step (the worker killed if it does not answer); --all
 agent6 stop ID --after-step   # finish the current step, then stop
-agent6 sessions show          # status, iteration, elapsed, cost, the gate's word, where the changes are; --json
+agent6 sessions show          # status, turn, elapsed, cost, the gate's word, where the changes are; --json
 agent6 sessions diff          # the git diff the run produced; --stat, --path P
 agent6 sessions commits       # the run's per-step commits
 agent6 sessions merge         # land on the run's starting branch (warns first when the gate did not certify it); --method, --into BRANCH
@@ -230,7 +230,7 @@ Every end has one reason (`end_reason` in `agent6 sessions show --json` and `ses
 | `detached` | none: no end is recorded | `0` |
 | `prompt_revision_failed` | `failed · prompt revision failed` | `1` |
 | `plan_unreadable` | `failed · plan unreadable` | `1` |
-| `max_iterations` | `failed · max iterations` | `1` |
+| `max_turns` | `failed · max turns` | `1` |
 | `ask_repl_empty` | none: no end is recorded | `0` |
 | `gate_stale` | `finished · gate stale` | `4` |
 | `gate_red_at_base` | `finished · gate was already red` | `4` |

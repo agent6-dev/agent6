@@ -144,10 +144,10 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 cursor_task_id=cursor,
             )
 
-        case events.AutoCommit(iteration=iteration, sha=sha, subject=subject):
+        case events.AutoCommit(turn=turn, sha=sha, subject=subject):
             if not sha:
                 return state
-            step = _state_types.CommitStep(iteration=iteration, sha=sha, subject=subject)
+            step = _state_types.CommitStep(turn=turn, sha=sha, subject=subject)
             return dataclasses.replace(state, steps=(*state.steps, step))
 
         case events.DiffUpdated(patch=patch, sha=sha):

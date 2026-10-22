@@ -3,7 +3,7 @@
 
 Reads one or more results/*.jsonl files and prints, per (model, task,
 condition) cell: n, mean score +/- stderr, pass@compile rate, mean subtasks
-created, mean compactions, mean iters, mean usd, mean wall. Designed for
+created, mean compactions, mean turns, mean usd, mean wall. Designed for
 adopt/scrap calls: the per-cell mean+stderr and the paired baseline-vs-treatment
 delta are what separate signal from noise.
 
@@ -59,7 +59,7 @@ def main() -> None:
 
     hdr = " | ".join(keys)
     print(f"{hdr}")
-    print(f"{'':<2}n   score(mean+/-se)   solved  subtasks  compact  rereads  iters   usd     wall")
+    print(f"{'':<2}n   score(mean+/-se)   solved  subtasks  compact  rereads  turns   usd     wall")
     for key in sorted(cells, key=lambda k: tuple(str(x) for x in k)):
         rs = cells[key]
         scores = num(rs, "score")
@@ -68,14 +68,14 @@ def main() -> None:
         subtasks = _mean_se(num(rs, "n_subtasks"))[0]
         compact = _mean_se(num(rs, "compactions"))[0]
         rereads = _mean_se(num(rs, "redundant_reads"))[0]
-        iters = _mean_se(num(rs, "iterations"))[0]
+        turns = _mean_se(num(rs, "iterations"))[0]
         usd = _mean_se(num(rs, "usd"))[0]
         wall = _mean_se(num(rs, "wall_s"))[0]
         tamper = sum(1 for r in rs if r.get("tampered")) / len(rs)
         print(
             f"  {' | '.join(str(x) for x in key)}\n"
             f"    {len(rs):<3} {mu:.3f}+/-{se:.3f}      {solved:.2f}   "
-            f"{subtasks:5.1f}    {compact:4.1f}    {rereads:5.1f}   {iters or float('nan'):5.1f}  "
+            f"{subtasks:5.1f}    {compact:4.1f}    {rereads:5.1f}   {turns or float('nan'):5.1f}  "
             f"{usd or float('nan'):.3f}  {wall:5.0f}s  tamper={tamper:.2f}"
         )
 
