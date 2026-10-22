@@ -323,11 +323,14 @@ def main() -> None:
             record_video_size=vp,
             device_scale_factor=2,
         )
-        # Sign in off camera: the cookie the server sets is the context's for the whole tour.
+        # Sign in off camera: the token the server mints rides a header the page adds from its
+        # origin's storage, so every page of the tour starts with it planted.
         secret = os.environ["AGENT6_WEB_SECRET"]
         login = context.request.post(args.url + "/api/login", data={"secret": secret})
         if not login.ok:
             sys.exit(f"web_demo.py: sign-in refused ({login.status}): {login.text()}")
+        token = json.dumps(login.json()["token"])
+        context.add_init_script(f"localStorage.setItem('a6-token', {token})")
         page = context.new_page()
         page.add_init_script(OVERLAY_INIT_SCRIPT)
         t0 = time.monotonic()

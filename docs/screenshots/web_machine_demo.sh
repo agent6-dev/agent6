@@ -93,12 +93,17 @@ echo "web machine demo: starting agent6 web on :$WEB_PORT"
 # The server requires a secret; web_demo.py signs in with this one, fresh for every tour.
 AGENT6_WEB_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 export AGENT6_WEB_SECRET
-( cd "$DEMO_REPO" && exec agent6 web --host 127.0.0.1 --port "$WEB_PORT" ) >/dev/null 2>&1 &
+( cd "$DEMO_REPO" && exec agent6 web --host 127.0.0.1 --port "$WEB_PORT" ) > "$TMP/web.log" 2>&1 &
 SERVER=$!
 for _ in $(seq 1 40); do
   curl -sf "http://127.0.0.1:$WEB_PORT/" >/dev/null 2>&1 && break
   sleep 0.25
 done
+curl -sf "http://127.0.0.1:$WEB_PORT/" >/dev/null 2>&1 || {
+  echo "web_machine_demo.sh: agent6 web did not answer on :$WEB_PORT within 10s; its output:" >&2
+  cat "$TMP/web.log" >&2
+  exit 1
+}
 
 mkdir -p "$OUT"
 rm -f "$OUT/web-machine.webm"
