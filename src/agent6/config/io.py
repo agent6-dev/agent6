@@ -216,9 +216,12 @@ def upsert_toml_leaf(path: pathlib.Path, dotted_key: str, value: object) -> None
         text = errors.read_operator_file(path) if path.is_file() else ""
         lines = text.splitlines()
         if table:
+            # An existing `[table.leaf]` block, or the key's own `[[table.leaf]]` array of
+            # tables, plus the inline value declares the key twice: the new value replaces it.
+            lines, _ = _drop_table_lines(lines, dotted_key)
             # Raised here so every writer hits it; the header the surgery would emit collides
             # with the headerless ancestor, and _drop_top_region_key would then delete it whole.
-            if owner := undeclared_table_ancestor(path, dotted_key):
+            if owner := _undeclared_ancestor_in("\n".join(lines), dotted_key):
                 raise model.ConfigError(
                     f"{dotted_key} lives inside {owner}, which is not a plain [table]"
                     " (a value, an inline table, a dotted key, or an array-of-tables),"
@@ -226,8 +229,6 @@ def upsert_toml_leaf(path: pathlib.Path, dotted_key: str, value: object) -> None
                     f" {path} by hand."
                 )
             lines = _drop_top_region_key(lines, table.split(".", 1)[0])
-            # An existing `[table.leaf]` block plus the inline value declares the key twice.
-            lines, _ = _drop_table_lines(lines, dotted_key)
             start = _header_line(lines, table)
             if start is None:
                 text = "\n".join(lines) + "\n" if lines else ""
@@ -607,7 +608,11 @@ def undeclared_table_ancestor(path: pathlib.Path, dotted_key: str) -> str | None
     """
     if not path.is_file():
         return None
-    text = errors.read_operator_file(path)
+    return _undeclared_ancestor_in(errors.read_operator_file(path), dotted_key)
+
+
+def _undeclared_ancestor_in(text: str, dotted_key: str) -> str | None:
+    """Return the outermost ancestor the leaf surgery cannot write under, in the text."""
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError:

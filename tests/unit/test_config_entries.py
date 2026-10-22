@@ -108,6 +108,23 @@ def test_add_reviewer_uses_target_resolution(tmp_path: pathlib.Path, *, to_repo:
     ]
 
 
+def test_a_roster_written_as_an_array_of_tables_takes_an_edit(tmp_path: pathlib.Path) -> None:
+    """`[[review.reviewers]]` blocks, the natural TOML for a roster, take an add and a remove.
+
+    The writer refused the edit: the blocks declared `review` without a `[review]` header,
+    so the roster editor failed on a hand-written config.
+    """
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('[[review.reviewers]]\nfocus = "security"\n', encoding="utf-8")
+
+    assert write.add_reviewer(tmp_path, {"focus": "tests"}) is None
+    roster = layer.load_global_only().config.review.reviewers
+    assert [r.focus for r in roster] == ["security", "tests"]
+    assert write.remove_reviewer(tmp_path, 0) is None
+    assert [r.focus for r in layer.load_global_only().config.review.reviewers] == ["tests"]
+
+
 @pytest.mark.parametrize("to_repo", [False, True])
 def test_remove_reviewer_by_position_and_keep_empty_override(
     tmp_path: pathlib.Path, *, to_repo: bool
