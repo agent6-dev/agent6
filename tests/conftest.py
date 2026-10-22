@@ -46,6 +46,17 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     headless path instead of waiting on the developer's keyboard. A pty test forks its own
     session leader, which takes the pty as its terminal unaffected.
     """
+    detach_controlling_tty()
+
+
+def detach_controlling_tty() -> None:
+    """Drop the controlling terminal, unless this process leads the session that holds it.
+
+    `TIOCNOTTY` from a session leader hangs up the terminal's foreground group, the leader
+    included, so a pytest started as its own session leader on a pty keeps its terminal.
+    """
+    if os.getsid(0) == os.getpid():
+        return
     with contextlib.suppress(OSError):
         fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
         try:
