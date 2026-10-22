@@ -44,7 +44,7 @@ secs = { type = "int", value = 3600 }
 
 [states.poll]
 kind = "wait"
-every_secs = "{{ secs }}"
+delay_s = "{{ secs }}"
 on = { tick = "done", signal = "woken" }
 
 [states.done]
@@ -109,7 +109,7 @@ def test_a_polling_run_prints_the_poke_hint_once(
     f.write_text(
         'machine = "poller"\nversion = 1\ninitial = "poll"\n'
         "[budget]\nmax_transitions = 2\n"
-        '[states.poll]\nkind = "wait"\nevery_secs = "1"\n'
+        '[states.poll]\nkind = "wait"\ndelay_s = "1"\n'
         'on = { tick = "poll", signal = "done" }\n'
         '[states.done]\nkind = "terminal"\nstatus = "ok"\nreason = "poked"\n',
         encoding="utf-8",
@@ -355,13 +355,13 @@ max_transitions = 100
 [states.one]
 kind = "tool"
 command = ["true"]
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "two", nonzero = "bad", timeout = "bad" }
 
 [states.two]
 kind = "tool"
 command = ["true"]
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "done", nonzero = "bad", timeout = "bad" }
 
 [states.done]
@@ -983,7 +983,7 @@ kind = "agent"
 prompt = "judge"
 output_schema = "r"
 capture = { finish_json = "out" }
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done" }
 
 [states.done]
@@ -1015,7 +1015,7 @@ mode = "run"
 prompt = "fix it"
 output_schema = "r"
 capture = { finish_json = "out" }
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done" }
 
 [states.done]""",
@@ -1274,7 +1274,7 @@ def test_machine_run_end_line_carries_spend_and_tokens(
     if ending != "ok":
         text = text.replace('= "done"', '= "park"').replace(
             "[states.done]",
-            '[states.park]\nkind = "wait"\nevery_secs = "3600"\n'
+            '[states.park]\nkind = "wait"\ndelay_s = "3600"\n'
             'on = { tick = "done", signal = "done" }\n\n[states.done]',
         )
     machine.write_text(text, encoding="utf-8")
@@ -1489,7 +1489,7 @@ out = { type = "r", default = {} }
 
 [states.park]
 kind = "wait"
-every_secs = "{{ secs }}"
+delay_s = "{{ secs }}"
 on = { tick = "judge", signal = "judge" }
 
 [states.judge]
@@ -1498,7 +1498,7 @@ mode = "run"
 prompt = "judge"
 output_schema = "r"
 capture = { finish_json = "out" }
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done" }
 
 [states.done]
@@ -1606,7 +1606,7 @@ max_transitions = 10
 [states.lint]
 kind = "tool"
 command = ["definitely-not-a-binary-xyz", "check"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "done", nonzero = "fail", timeout = "fail" }
 
 [states.done]
@@ -1961,7 +1961,7 @@ max_transitions = 5
 [states.check]
 kind = "tool"
 command = ["true"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "done", nonzero = "broken", timeout = "broken" }
 
 [states.done]

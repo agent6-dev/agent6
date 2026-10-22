@@ -821,14 +821,14 @@ def _validate_wait(name: str, state: schema.WaitState, env: _Env) -> list[str]:
     timings = [
         timing
         for timing, value in (
-            ("every_secs", state.every_secs),
+            ("delay_s", state.delay_s),
             ("until", state.until),
         )
         if value is not None
     ]
     if len(timings) > 1:
         problems = [
-            f"state {name!r}: a `wait` may declare at most one of `every_secs` or"
+            f"state {name!r}: a `wait` may declare at most one of `delay_s` or"
             f" `until` (found: {timings})"
         ]
     elif not timings:
@@ -836,7 +836,7 @@ def _validate_wait(name: str, state: schema.WaitState, env: _Env) -> list[str]:
     else:
         problems = _validate_on(name, state.on, schema.WAIT_LABELS)
     for timing, value in (
-        ("every_secs", state.every_secs),
+        ("delay_s", state.delay_s),
         ("until", state.until),
     ):
         if value is None:
@@ -850,8 +850,8 @@ def _validate_wait(name: str, state: schema.WaitState, env: _Env) -> list[str]:
                 where=f"state {name!r} {timing}",
             )
         )
-    if state.every_secs is not None:
-        problems.extend(_timing_problems(name, "every_secs", state.every_secs, env, kind="int"))
+    if state.delay_s is not None:
+        problems.extend(_timing_problems(name, "delay_s", state.delay_s, env, kind="int"))
     if state.until is not None:
         problems.extend(_timing_problems(name, "until", state.until, env, kind="iso"))
     return problems
@@ -905,10 +905,10 @@ def _timing_problems(
 
     Args:
         name: The state's name.
-        key: `every_secs` or `until`.
+        key: `delay_s` or `until`.
         text: The timing template.
         env: The resolved declarations.
-        kind: `int` for `every_secs`, `iso` for `until`.
+        kind: `int` for `delay_s`, `iso` for `until`.
 
     Returns:
         The problems.

@@ -201,7 +201,7 @@ def _check_state(
             return _check_agent(spec, name, state, blackboard)
         if isinstance(state, schema.WaitState):
             # A wait with no timer parks until a poke (no `tick` edge).
-            forever = state.every_secs is None and state.until is None
+            forever = state.delay_s is None and state.until is None
             label = "signal" if forever else "tick"
             goto = state.on[label]
             ok = goto in spec.states

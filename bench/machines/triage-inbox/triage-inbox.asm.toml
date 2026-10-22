@@ -7,7 +7,7 @@ initial = "scan"
 # branch decides whether to escalate it; a `wait` paces the loop. When the inbox
 # drains the machine terminates.
 #
-# Demonstrates: a `wait` state on `every_secs`, an enum-constrained agent schema,
+# Demonstrates: a `wait` state on `delay_s`, an enum-constrained agent schema,
 # a compound branch predicate (string == AND float >=), and a self-terminating
 # poll loop.
 
@@ -43,7 +43,7 @@ kind = "tool"
 command = ["python3", "scripts/scan.py"]
 output_schema = "scan_result"
 capture = { set = { pending = "{{ result.pending }}", remaining = "{{ result.remaining }}", head = "{{ result.head }}", head_text = "{{ result.head_text }}" } }
-timeout_secs = 20
+timeout_s = 20
 on = { ok = "have_items", nonzero = "drained", timeout = "drained" }
 
 [states.have_items]
@@ -65,7 +65,7 @@ Call finish_session with JSON {label: "urgent"|"normal"|"spam", confidence: 0..1
 """
 output_schema = "classification"
 capture = { finish_json = "verdict" }
-timeout_secs = 120
+timeout_s = 120
 on = { ok = "route", failed = "ack", budget_exhausted = "drained", timeout = "ack" }
 
 [states.classify.config.models.worker]
@@ -82,18 +82,18 @@ when = [
 [states.escalate]
 kind = "tool"
 command = ["python3", "scripts/process.py", "{{ head }}", "escalated"]
-timeout_secs = 20
+timeout_s = 20
 on = { ok = "poll", nonzero = "poll", timeout = "poll" }
 
 [states.ack]
 kind = "tool"
 command = ["python3", "scripts/process.py", "{{ head }}", "filed"]
-timeout_secs = 20
+timeout_s = 20
 on = { ok = "poll", nonzero = "poll", timeout = "poll" }
 
 [states.poll]
 kind = "wait"
-every_secs = "{{ poll_secs }}"
+delay_s = "{{ poll_secs }}"
 on = { tick = "scan", signal = "scan" }
 
 [states.drained]

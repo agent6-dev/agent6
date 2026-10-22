@@ -178,7 +178,7 @@ def machine_tool_runner(
             raise jail.JailUnavailableError(f"machine tree clone failed: {exc}") from exc
         try:
             # Setup runs the tree's code at the chain tip, which a run state can edit: it gets
-            # the tool's policy with none of its pass_env, and the state's timeout_secs.
+            # the tool's policy with none of its pass_env, and the state's timeout_s.
             setup_policy = tool_policy(state, policy.argv, policy.timeout_s, ())
             failed = _workspace.tool_setup_failure(
                 resolved.config, _in_clone(setup_policy, dest, cwd), events_log, reporter

@@ -45,7 +45,7 @@ kind = "agent"
 prompt = "judge"
 output_schema = "verdict"
 capture = { finish_json = "verdict" }
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done" }
 
 [states.done]
@@ -165,8 +165,8 @@ max_tokens_fallback = 0
     mfile = tmp_path / "agent.asm.toml"
     mfile.write_text(
         _AGENT_MACHINE.replace(
-            "timeout_secs = 5\n",
-            "timeout_secs = 5\nconfig = { budget = { max_tokens_fallback = 100000 } }\n",
+            "timeout_s = 5\n",
+            "timeout_s = 5\nconfig = { budget = { max_tokens_fallback = 100000 } }\n",
         ),
         encoding="utf-8",
     )

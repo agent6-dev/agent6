@@ -36,7 +36,7 @@ max_transitions = 100
 [states.fetch]
 kind = "tool"
 command = ["scripts/fetch.sh"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "store", nonzero = "stop_fail", timeout = "stop_fail" }
 
 [states.fetch.config.sandbox]
@@ -45,7 +45,7 @@ network = "host"
 [states.store]
 kind = "tool"
 command = ["store"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
 
 [states.stop_ok]
@@ -70,7 +70,7 @@ max_transitions = 5
 [states.check]
 kind = "tool"
 command = ["true"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "done", nonzero = "fail", timeout = "fail" }
 
 [states.done]

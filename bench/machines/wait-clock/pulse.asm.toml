@@ -17,7 +17,7 @@ interval_secs = { type = "int", value = 4 }
 
 [states.tick]
 kind = "wait"
-every_secs = "{{ interval_secs }}"
+delay_s = "{{ interval_secs }}"
 on = { tick = "done", signal = "done" }
 
 [states.done]

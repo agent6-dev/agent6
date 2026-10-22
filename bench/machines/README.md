@@ -50,7 +50,7 @@ The pure-agent machines (hello, council) and the pure-timer machine (wait-clock)
 - [_invalid/check_errors.sh](_invalid/check_errors.sh): 14 intentionally-broken
   machines, asserting `machine check` rejects each at load with a precise
   diagnostic (non-total branch, dangling goto, `len()` of an int, a TOML boolean
-  in a predicate, a float `every_secs`, cron, …).
+  in a predicate, a float `delay_s`, cron, …).
 - [_create-bench/run.sh](_create-bench/run.sh): `agent6 machine create` across
   six providers/models on one poll → classify → act task; see
   [_create-bench/README.md](_create-bench/README.md).

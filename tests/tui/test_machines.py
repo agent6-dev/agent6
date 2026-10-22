@@ -59,7 +59,7 @@ secs = { type = "int", value = 3600 }
 
 [states.poll]
 kind = "wait"
-every_secs = "{{ secs }}"
+delay_s = "{{ secs }}"
 on = { tick = "done", signal = "woken" }
 
 [states.done]
@@ -1104,7 +1104,7 @@ kind = "agent"
 prompt = "do the thing"
 output_schema = "verdict"
 capture = { finish_json = "verdict" }
-timeout_secs = 600
+timeout_s = 600
 on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done" }
 
 [states.done]

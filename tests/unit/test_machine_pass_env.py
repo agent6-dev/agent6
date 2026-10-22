@@ -29,7 +29,7 @@ max_transitions = 100
 [states.fetch]
 kind = "tool"
 command = ["fetch"]
-timeout_secs = 5
+timeout_s = 5
 pass_env = ["X_TOKEN", "X_REGION"]
 on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
 

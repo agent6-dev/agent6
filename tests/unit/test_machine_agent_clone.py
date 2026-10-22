@@ -293,7 +293,7 @@ max_transitions = 5
 [states.check]
 kind = "tool"
 command = ["cat", "environment.txt"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "done", nonzero = "fail", timeout = "fail" }
 [states.done]
 kind = "terminal"
@@ -514,7 +514,7 @@ max_transitions = 5
 [states.check]
 kind = "tool"
 command = ["tool"]
-timeout_secs = 3
+timeout_s = 3
 on = { ok = "done", nonzero = "error", timeout = "timed_out" }
 [states.done]
 kind = "terminal"

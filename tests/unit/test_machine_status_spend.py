@@ -287,13 +287,13 @@ res = { type = "out", default = {} }
 [states.probe]
 kind = "tool"
 command = ["sh", "-c", "exit 2"]
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "done", nonzero = "fix", timeout = "fix" }
 
 [states.fix]
 kind = "agent"
 prompt = "p"
-timeout_secs = 60
+timeout_s = 60
 output_schema = "out"
 capture = { finish_json = "res" }
 on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done" }

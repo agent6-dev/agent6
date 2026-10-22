@@ -44,7 +44,7 @@ kind = "tool"
 command = ["python3", "scripts/collect.py", "{{ max_commits }}"]
 output_schema = "gitlog"
 capture = { set = { count = "{{ result.count }}", range = "{{ result.range }}", log = "{{ result.log }}" } }
-timeout_secs = 30
+timeout_s = 30
 on = { ok = "gate", nonzero = "empty", timeout = "empty" }
 
 [states.gate]
@@ -66,7 +66,7 @@ Write a short digest a teammate could skim. Call finish_session with JSON
 """
 output_schema = "digest"
 capture = { finish_json = "digest" }
-timeout_secs = 180
+timeout_s = 180
 on = { ok = "write", failed = "empty", budget_exhausted = "empty", timeout = "empty" }
 
 [states.summarize.config.models.worker]
@@ -79,7 +79,7 @@ kind = "tool"
 # element per highlight, after the headline.
 command = ["python3", "scripts/write_digest.py", "{{ digest.headline }}", "{{ digest.highlights }}"]
 capture = { stdout_json = "write_result" }
-timeout_secs = 30
+timeout_s = 30
 on = { ok = "done", nonzero = "empty", timeout = "empty" }
 
 [states.done]

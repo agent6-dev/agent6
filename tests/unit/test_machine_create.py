@@ -39,7 +39,7 @@ max_transitions = 10
 [states.say]
 kind = "tool"
 command = ["echo", "hi"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "done", nonzero = "fail", timeout = "fail" }
 
 [states.done]
@@ -891,7 +891,7 @@ max_transitions = 10
 [states.go]
 kind = "tool"
 command = ["python3", "scripts/run.py"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "done", nonzero = "fail", timeout = "fail" }
 
 [states.done]

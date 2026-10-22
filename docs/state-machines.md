@@ -161,7 +161,7 @@ Call finish_session with JSON {label, confidence}.
 """
 output_schema = "classification"   # a [schemas.*] entry; validates the payload
 capture = { finish_json = "verdict" }   # payload -> blackboard var `verdict`
-timeout_secs = 600
+timeout_s = 600
 on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt" }
 
 # mode = "agent"                   # "agent" (default, read-only) | "run"
@@ -206,7 +206,7 @@ Where a run state's work lands:
     - a branch left without its ref is an ordinary branch, and the instance starts from HEAD
 - a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip
     - setup comes from `[parallel].setup_command`, else the AGENTS.md block at `machine.begin.base_commit` (the commit the machine started from), never the writable chain tip
-    - setup runs per tool call, in each fresh clone, and gets the state's `timeout_secs` before the tool receives its own `timeout_secs`; setup time adds to the state's elapsed time
+    - setup runs per tool call, in each fresh clone, and gets the state's `timeout_s` before the tool receives its own `timeout_s`; setup time adds to the state's elapsed time
     - each clone runs the [workspace setup command](usage.md#isolated-workspaces) before the state executes; setup output tails, argv, exit code and duration are recorded as `workspace.setup` events in the instance's `states/<step>-<state>/logs.jsonl`, bounded by `machine.state_log_keep`
     - a failed setup command takes the tool state's `nonzero` edge (`timeout` for a timed-out setup); clone or jail host failures abort the machine instead
     - an agent state's failed setup command returns `setup_command_failed`
@@ -247,7 +247,7 @@ kind = "tool"
 command = ["scan-inbox", "--dir", "{{ inbox_dir }}", "--since", "{{ cursor }}"]
 output_schema = "scan_result"          # types `result` so fields are navigable
 capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "have_items", nonzero = "poll", timeout = "poll" }
 ```
 
@@ -318,14 +318,17 @@ Cross-iteration persistence: `$AGENT6_MACHINE_DATA_DIR`.
 ```toml
 [states.poll]
 kind = "wait"
-every_secs = "{{ poll_secs }}"   # at most one of: every_secs | until
+delay_s = "{{ poll_secs }}"   # at most one of: delay_s | until
 on = { tick = "scan", signal = "scan" }
 ```
 
 A `wait` keeps a machine running for a long time without spending CPU or tokens.
 
-- at most one of `every_secs` or `until` (an absolute ISO-8601 instant); both is a load error
+- at most one of `delay_s` or `until` (an absolute ISO-8601 instant); both is a load error
+- `delay_s` is a one-shot delay from state entry, in positive integer seconds (a bare integer, a string, or a template)
+- a wait repeats only when the graph returns to that state
 - on entry the engine persists the absolute next-wake instant (`wait.json`) before sleeping and journals it on the `WaitFact` after the wake: replay re-reads it and never sleeps
+- resume reuses the persisted deadline instead of restarting the delay
 - without `--exit-on-wait` the engine blocks in-process until the instant or an external `signal` (a file/IPC poke)
 - the wake being journaled absolutely lets the `--exit-on-wait` persisted-wake driver ([Reliability](#6-reliability-for-247-operation)) run the identical file, no format change
 
@@ -412,7 +415,7 @@ Two channels render it; agent6 owns no push infrastructure:
 ### 4.4 Templating and list-splicing
 
 Strings may contain `{{ ... }}` interpolations.
-The templated fields are an agent's `prompt`, each element of a tool's `command`, a `capture.set` value, a wait's `every_secs` and `until`, any state's `notify` message, and a terminal's `reason`; every other string is literal.
+The templated fields are an agent's `prompt`, each element of a tool's `command`, a `capture.set` value, a wait's `delay_s` and `until`, any state's `notify` message, and a terminal's `reason`; every other string is literal.
 
 - an interpolation is one reference plus at most one filter, nothing more
 - no arbitrary expressions, no chained filters, no method calls; anything richer belongs in a `branch` predicate (itself restricted)
@@ -848,7 +851,7 @@ cursor  = "str"
 
 [states.poll]
 kind = "wait"
-every_secs = "{{ poll_secs }}"    # at most one of every_secs | until
+delay_s = "{{ poll_secs }}"    # at most one of delay_s | until
 on = { tick = "scan", signal = "scan" }
 
 [states.scan]
@@ -856,7 +859,7 @@ kind = "tool"
 command = ["scan-inbox", "--dir", "{{ inbox_dir }}", "--since", "{{ cursor }}"]
 output_schema = "scan_result"
 capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "have_items", nonzero = "poll", timeout = "poll" }
 
 [states.have_items]
@@ -874,7 +877,7 @@ Call finish_session with JSON {label:"urgent"|"normal"|"spam", confidence:0..1}.
 """
 output_schema = "classification"
 capture = { finish_json = "verdict" }
-timeout_secs = 600
+timeout_s = 600
 on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt" }
 
 [states.route]
@@ -888,7 +891,7 @@ when = [
 kind = "tool"
 # `{{ pending }}` is a lone list reference -> spliced to one argv element per item
 command = ["archive-item", "--label", "{{ verdict.label }}", "{{ pending }}"]
-timeout_secs = 30
+timeout_s = 30
 on = { ok = "poll", nonzero = "poll", timeout = "poll" }
 
 [states.halt]

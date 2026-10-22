@@ -40,7 +40,7 @@ when = [ { if = "n == 0", goto = "s" } ]'
 check_case "dangling goto" "not a declared state" '
 [states.s]
 kind = "wait"
-every_secs = "5"
+delay_s = "5"
 on = { tick = "ghost", signal = "s" }'
 
 check_case "unreachable state" "unreachable" '
@@ -59,7 +59,7 @@ v = { type = "str", default = "" }
 [states.s]
 kind = "tool"
 command = ["true"]
-timeout_secs = 5
+timeout_s = 5
 capture = { set = { v = "{{ result }}" } }
 on = { ok = "s", nonzero = "s", timeout = "s" }'
 
@@ -84,18 +84,18 @@ b = { type = "bool", default = false }
 kind = "branch"
 when = [ { if = "b == true", goto = "s" }, { else = true, goto = "s" } ]'
 
-check_case "float every_secs ref" "int variable" '
+check_case "float delay_s ref" "int variable" '
 [vars.operator]
 secs = { type = "float", value = 1.0 }
 [states.s]
 kind = "wait"
-every_secs = "{{ secs }}"
+delay_s = "{{ secs }}"
 on = { tick = "s", signal = "s" }'
 
-check_case "zero every_secs literal" ">= 1" '
+check_case "zero delay_s literal" ">= 1" '
 [states.s]
 kind = "wait"
-every_secs = "0"
+delay_s = "0"
 on = { tick = "s", signal = "s" }'
 
 check_case "garbage until literal" "ISO-8601" '
@@ -110,10 +110,10 @@ kind = "wait"
 cron = "* * * * *"
 on = { tick = "s", signal = "s" }'
 
-check_case "two wait timings" "exactly one" '
+check_case "two wait timings" "at most one" '
 [states.s]
 kind = "wait"
-every_secs = "5"
+delay_s = "5"
 until = "2020-01-01T00:00:00Z"
 on = { tick = "s", signal = "s" }'
 

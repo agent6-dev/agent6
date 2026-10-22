@@ -44,7 +44,7 @@ kind = "tool"
 command = ["scan"]
 output_schema = "scan_result"
 capture = { set = { items = "{{ result.items }}" } }
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "check", nonzero = "stop_fail", timeout = "stop_fail" }
 
 [states.check]
@@ -59,7 +59,7 @@ kind = "agent"
 prompt = "review {{ items | json }}"
 output_schema = "review"
 capture = { finish_json = "verdict" }
-timeout_secs = 30
+timeout_s = 30
 on = { ok = "stop_ok", failed = "stop_fail", budget_exhausted = "stop_fail", timeout = "stop_fail" }
 
 [states.stop_ok]

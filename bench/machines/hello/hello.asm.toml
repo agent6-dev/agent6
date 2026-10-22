@@ -21,7 +21,7 @@ Reply with a one-sentence friendly greeting. Call finish_session with JSON
 """
 output_schema = "greeting"
 capture = { finish_json = "out" }
-timeout_secs = 120
+timeout_s = 120
 on = { ok = "done", failed = "fail", budget_exhausted = "fail", timeout = "fail" }
 
 [states.greet.config.models.worker]

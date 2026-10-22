@@ -41,7 +41,7 @@ kind = "tool"
 command = ["scan"]
 output_schema = "scan_result"
 capture = { set = { items = "{{ result.items }}" } }
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "check", nonzero = "stop_fail", timeout = "stop_fail" }
 
 [states.check]
@@ -54,7 +54,7 @@ when = [
 [states.record]
 kind = "tool"
 command = ["record", "{{ items }}"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
 
 [states.stop_ok]
@@ -83,7 +83,7 @@ secs = { type = "int", value = 1 }
 
 [states.poll]
 kind = "wait"
-every_secs = "{{ secs }}"
+delay_s = "{{ secs }}"
 on = { tick = "done", signal = "woken" }
 
 [states.done]
@@ -112,7 +112,7 @@ secs = { type = "int", default = 0 }
 
 [states.poll]
 kind = "wait"
-every_secs = "{{ secs }}"
+delay_s = "{{ secs }}"
 on = { tick = "done", signal = "woken" }
 
 [states.done]
@@ -141,7 +141,7 @@ secs = { type = "int", value = 60 }
 
 [states.poll]
 kind = "wait"
-every_secs = "{{ secs }}"
+delay_s = "{{ secs }}"
 on = { tick = "done", signal = "woken" }
 
 [states.done]
@@ -176,7 +176,7 @@ on = { signal = "record" }
 kind = "tool"
 command = ["record"]
 capture = { stdout_json = "last" }
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
 
 [states.stop_ok]
@@ -240,7 +240,7 @@ who = { type = "str", value = "ops" }
 kind = "tool"
 notify = { message = "hi {{ who }}", level = "warn" }
 command = ["noop"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "done", nonzero = "done", timeout = "done" }
 
 [states.done]
@@ -263,7 +263,7 @@ max_transitions = 3
 [states.spin]
 kind = "tool"
 command = ["noop"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "spin", nonzero = "spin", timeout = "spin" }
 """
 
@@ -290,7 +290,7 @@ kind = "agent"
 prompt = "Review the change."
 output_schema = "verdict"
 capture = { finish_json = "verdict" }
-timeout_secs = 600
+timeout_s = 600
 on = { ok = "route", failed = "stop_fail", budget_exhausted = "halt", timeout = "expired" }
 
 [states.route]
@@ -343,7 +343,7 @@ kind = "agent"
 prompt = "Score it."
 output_schema = "score_result"
 capture = { set = { total = "{{ result.points }}" } }
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "stop_ok", failed = "stop_fail", budget_exhausted = "stop_fail", timeout = "stop_fail" }
 
 [states.stop_ok]
@@ -646,7 +646,7 @@ def test_recovery_rejects_a_state_the_edited_file_dropped(tmp_path: pathlib.Path
         """[states.record]
 kind = "tool"
 command = ["record", "{{ items }}"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
 
 """,
@@ -785,7 +785,7 @@ def test_wait_zero_dynamic_interval_fails_cleanly(tmp_path: pathlib.Path) -> Non
     spec = _semantics.load_machine(f)
     result = machine_engine.drive(spec, journal, FakeWorld({}), live=True)
     assert result.status == "failed"
-    assert "`every_secs` must be >= 1" in result.reason
+    assert "`delay_s` must be >= 1" in result.reason
     assert not any(isinstance(event, machine_journal.StepEvent) for event in journal.read())
 
 
@@ -820,7 +820,7 @@ def test_exit_on_wait_zero_dynamic_interval_fails_cleanly(tmp_path: pathlib.Path
     spec = _semantics.load_machine(f)
     result = machine_engine.drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True)
     assert result.status == "failed"
-    assert "`every_secs` must be >= 1" in result.reason
+    assert "`delay_s` must be >= 1" in result.reason
     assert isinstance(journal.read()[-1], machine_journal.MachineEnd)
 
 
@@ -1387,7 +1387,7 @@ kind = "agent"
 prompt = "do"
 output_schema = "r"
 capture = { finish_json = "out" }
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "work", failed = "stop_fail", budget_exhausted = "stop_fail", timeout = "stop_fail" }
 
 [states.stop_fail]
@@ -1859,12 +1859,12 @@ max_transitions = 100
 
 [states.first]
 kind = "wait"
-every_secs = "60"
+delay_s = "60"
 on = { tick = "second", signal = "second" }
 
 [states.second]
 kind = "wait"
-every_secs = "3600"
+delay_s = "3600"
 on = { tick = "done", signal = "done" }
 
 [states.done]
@@ -1915,7 +1915,7 @@ hop = { type = "json", default = 0 }
 
 [states.poll]
 kind = "wait"
-every_secs = "60"
+delay_s = "60"
 on = { tick = "route", signal = "route" }
 
 [states.route]
@@ -1929,7 +1929,7 @@ when = [
 kind = "tool"
 command = ["bump"]
 capture = { stdout_json = "hop" }
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "poll", nonzero = "done", timeout = "done" }
 
 [states.done]

@@ -36,7 +36,7 @@ Call finish_session with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<o
 """
 output_schema = "verdict"
 capture = { finish_json = "verdict_a" }
-timeout_secs = 180
+timeout_s = 180
 on = { ok = "juror_b", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
 
 [states.juror_a.config.models.worker]
@@ -53,7 +53,7 @@ Call finish_session with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<o
 """
 output_schema = "verdict"
 capture = { finish_json = "verdict_b" }
-timeout_secs = 180
+timeout_s = 180
 on = { ok = "compare", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
 
 [states.juror_b.config.models.worker]
@@ -82,7 +82,7 @@ Call finish_session with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<w
 """
 output_schema = "verdict"
 capture = { finish_json = "verdict_c" }
-timeout_secs = 240
+timeout_s = 240
 on = { ok = "decided", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
 
 [states.tiebreak.config.models.worker]

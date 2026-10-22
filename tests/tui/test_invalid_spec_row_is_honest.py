@@ -63,7 +63,7 @@ max_transitions = 5
 [states.go]
 kind = "tool"
 command = ["bash", "scripts/missing.sh"]
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "done", nonzero = "done", timeout = "done" }
 
 [states.done]

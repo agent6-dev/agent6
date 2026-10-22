@@ -31,7 +31,7 @@ secs = { type = "int", value = 3600 }
 
 [states.poll]
 kind = "wait"
-every_secs = "{{ secs }}"
+delay_s = "{{ secs }}"
 on = { tick = "done", signal = "woken" }
 
 [states.done]

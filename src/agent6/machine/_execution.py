@@ -165,16 +165,16 @@ def route_branch(
 
 def is_forever(state: schema.WaitState) -> bool:
     """Return whether the wait has no timer and parks until a poke."""
-    return state.every_secs is None and state.until is None
+    return state.delay_s is None and state.until is None
 
 
 def compute_wake(state: schema.WaitState, blackboard: Mapping[str, object], now: float) -> float:
     """Return the wait's absolute wake instant.
 
     Args:
-        state: The wait state, with an `every_secs` or `until` timing.
+        state: The wait state, with a `delay_s` or `until` timing.
         blackboard: The values its timing renders against.
-        now: The current epoch, which `every_secs` counts from.
+        now: The entry epoch, which `delay_s` counts from.
 
     Returns:
         The instant as an epoch; an `until` without a timezone reads as UTC.
@@ -183,18 +183,18 @@ def compute_wake(state: schema.WaitState, blackboard: Mapping[str, object], now:
         StateRuntimeError: The rendered timing is not a positive integer or an ISO-8601
             instant, or the wait has no timer.
     """
-    if state.every_secs is not None:
+    if state.delay_s is not None:
         rendered = machine_template.render_string(
-            machine_template.parse_template(state.every_secs), blackboard, where="every_secs"
+            machine_template.parse_template(state.delay_s), blackboard, where="delay_s"
         )
         try:
             seconds = int(rendered)
         except ValueError as exc:
             raise _contracts.StateRuntimeError(
-                f"`every_secs` did not render to an integer: {rendered!r}"
+                f"`delay_s` did not render to an integer: {rendered!r}"
             ) from exc
         if seconds < 1:
-            raise _contracts.StateRuntimeError(f"`every_secs` must be >= 1: {seconds}")
+            raise _contracts.StateRuntimeError(f"`delay_s` must be >= 1: {seconds}")
         return now + seconds
     if state.until is not None:
         rendered = machine_template.render_string(
@@ -403,7 +403,7 @@ def execute(
         argv = machine_template.render_command(state.command, blackboard, where="command")
         result = world.run_tool(
             tuple(argv),
-            float(state.timeout_secs),
+            float(state.timeout_s),
             state=state_name,
             pass_env=state.pass_env,
             step_seq=seq,
@@ -426,7 +426,7 @@ def execute(
         result = world.run_agent(
             _contracts.AgentRequest(
                 prompt=prompt,
-                timeout_s=float(state.timeout_secs),
+                timeout_s=float(state.timeout_s),
                 max_usd=agent_usd_cap(state.max_usd, remaining_usd),
                 mode=state.mode,
                 state_name=state_name,

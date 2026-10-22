@@ -301,7 +301,7 @@ class AgentState(pydantic.BaseModel):
         prompt: The prompt template.
         output_schema: The schema the payload must match.
         capture: How the payload is written to the blackboard.
-        timeout_secs: The wall-clock cap.
+        timeout_s: The wall-clock cap.
         on: The destination per outcome label.
         max_usd: The slice's spend cap, or None to inherit the config's; a field because the
             engine clamps it to what the machine budget has left.
@@ -317,7 +317,7 @@ class AgentState(pydantic.BaseModel):
     prompt: str = pydantic.Field(min_length=1)
     output_schema: str = pydantic.Field(min_length=1)
     capture: Capture
-    timeout_secs: int = pydantic.Field(gt=0)
+    timeout_s: int = pydantic.Field(gt=0)
     on: dict[str, str]
     max_usd: float | None = pydantic.Field(default=None, gt=0.0)
     config: dict[str, Any] = pydantic.Field(default_factory=dict)
@@ -347,7 +347,7 @@ class ToolState(pydantic.BaseModel):
         command: The argv templates.
         output_schema: The schema the stdout must match, or None for no shape.
         capture: How the stdout is written to the blackboard, or None.
-        timeout_secs: The wall-clock cap.
+        timeout_s: The wall-clock cap.
         on: The destination per outcome label.
         pass_env: The operator environment variables the command receives, each of which
             `[machine].pass_env` must allow or the run is refused at startup.
@@ -362,7 +362,7 @@ class ToolState(pydantic.BaseModel):
     command: _NonEmptyStrTuple
     output_schema: str | None = None
     capture: Capture | None = None
-    timeout_secs: int = pydantic.Field(gt=0)
+    timeout_s: int = pydantic.Field(gt=0)
     on: dict[str, str]
     pass_env: _StrTuple = ()
     config: dict[str, Any] = pydantic.Field(default_factory=dict)
@@ -391,20 +391,20 @@ _ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _seconds_as_str(value: object) -> object:
-    """Return a bare integer `every_secs` as its template string; a float stays refused."""
+    """Return a bare integer `delay_s` as its template string; a float stays refused."""
     if isinstance(value, int) and not isinstance(value, bool):
         return str(value)
     return value
 
 
 class WaitState(pydantic.BaseModel):
-    """A `wait` state: parks until an interval, an instant, or a poke."""
+    """A `wait` state: parks for a one-shot delay, until an instant, or until a poke."""
 
     model_config = _MODEL_CONFIG
 
     kind: Literal["wait"]
     notify: _NotifySpecT | None = None
-    every_secs: Annotated[str, pydantic.BeforeValidator(_seconds_as_str)] | None = None
+    delay_s: Annotated[str, pydantic.BeforeValidator(_seconds_as_str)] | None = None
     until: str | None = None
     on: dict[str, str]
 

@@ -41,7 +41,7 @@ cursor  = "str"
 
 [states.poll]
 kind = "wait"
-every_secs = "{{ poll_secs }}"
+delay_s = "{{ poll_secs }}"
 on = { tick = "scan", signal = "scan" }
 
 [states.scan]
@@ -49,7 +49,7 @@ kind = "tool"
 command = ["scan-inbox", "--dir", "{{ inbox_dir }}", "--since", "{{ cursor }}"]
 output_schema = "scan_result"
 capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "have_items", nonzero = "poll", timeout = "poll" }
 
 [states.have_items]
@@ -64,7 +64,7 @@ kind  = "agent"
 prompt = "Classify these pending items: {{ pending | json }}"
 output_schema = "classification"
 capture = { finish_json = "verdict" }
-timeout_secs = 600
+timeout_s = 600
 on = { ok = "route", failed = "poll", budget_exhausted = "halt", timeout = "poll" }
 
 [states.route]
@@ -77,7 +77,7 @@ when = [
 [states.record]
 kind = "tool"
 command = ["archive-item", "--label", "{{ verdict.label }}", "{{ pending }}"]
-timeout_secs = 30
+timeout_s = 30
 on = { ok = "poll", nonzero = "poll", timeout = "poll" }
 
 [states.halt]
@@ -114,6 +114,40 @@ def test_valid_machine_loads(tmp_path: pathlib.Path) -> None:
     }
 
 
+def test_seconds_fields_validate(tmp_path: pathlib.Path) -> None:
+    """A machine accepts timeout_s for agents and tools and a templated delay_s for waits."""
+    spec = _semantics.load_machine(_write(tmp_path, VALID_MACHINE))
+    tool = spec.states["scan"]
+    agent = spec.states["classify"]
+    wait = spec.states["poll"]
+    assert isinstance(tool, schema.ToolState)
+    assert isinstance(agent, schema.AgentState)
+    assert isinstance(wait, schema.WaitState)
+    assert tool.timeout_s == 60
+    assert agent.timeout_s == 600
+    assert wait.delay_s == "{{ poll_secs }}"
+
+
+@pytest.mark.parametrize(
+    ("current", "obsolete", "field"),
+    [
+        ("timeout_s = 60\n", "timeout_secs = 60\n", "states.scan.tool.timeout_secs"),
+        ("timeout_s = 600\n", "timeout_secs = 600\n", "states.classify.agent.timeout_secs"),
+        (
+            'delay_s = "{{ poll_secs }}"',
+            'every_secs = "{{ poll_secs }}"',
+            "states.poll.wait.every_secs",
+        ),
+    ],
+)
+def test_obsolete_seconds_fields_are_refused(
+    tmp_path: pathlib.Path, current: str, obsolete: str, field: str
+) -> None:
+    """An obsolete timing key is an extra field, not an alias or a timerless wait."""
+    problems = _problems(tmp_path, VALID_MACHINE.replace(current, obsolete, 1))
+    assert any(field in problem and "extra_forbidden" in problem for problem in problems), problems
+
+
 def test_bad_toml(tmp_path: pathlib.Path) -> None:
     problems = _problems(tmp_path, "machine = ")
     assert any("not valid TOML" in p for p in problems)
@@ -124,7 +158,7 @@ def test_bad_toml(tmp_path: pathlib.Path) -> None:
     [
         ("max_transitions = 100000", 'max_transitions = "100000"', "max_transitions", "integer"),
         ("max_usd         = 25.0", 'max_usd         = "25.0"', "max_usd", "number"),
-        ("timeout_secs = 60", 'timeout_secs = "60"', "timeout_secs", "integer"),
+        ("timeout_s = 60", 'timeout_s = "60"', "timeout_s", "integer"),
         (
             'confidence = "float"',
             'confidence = { type = "float", optional = "false" }',
@@ -202,8 +236,8 @@ def test_reserved_name(tmp_path: pathlib.Path) -> None:
 
 
 def test_cron_wait_is_an_unknown_key(tmp_path: pathlib.Path) -> None:
-    # `wait` timings are every_secs and until; a `cron` key refuses like any unknown key.
-    body = VALID_MACHINE.replace('every_secs = "{{ poll_secs }}"', 'cron = "0 * * * *"')
+    # `wait` timings are delay_s and until; a `cron` key refuses like any unknown key.
+    body = VALID_MACHINE.replace('delay_s = "{{ poll_secs }}"', 'cron = "0 * * * *"')
     problems = _problems(tmp_path, body)
     assert any("cron" in p for p in problems)
 
@@ -359,40 +393,40 @@ def test_predicate_len_of_str_allowed(tmp_path: pathlib.Path) -> None:
     _semantics.load_machine(_write(tmp_path, body))
 
 
-def test_wait_every_secs_float_ref_rejected(tmp_path: pathlib.Path) -> None:
+def test_wait_delay_s_float_ref_rejected(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'poll_secs = { type = "int", value = 300 }',
         'poll_secs = { type = "float", value = 300.0 }',
     )
     problems = _problems(tmp_path, body)
-    assert any("every_secs" in p and "int variable" in p for p in problems)
+    assert any("delay_s" in p and "int variable" in p for p in problems)
 
 
-def test_wait_every_secs_zero_literal_rejected(tmp_path: pathlib.Path) -> None:
-    body = VALID_MACHINE.replace('every_secs = "{{ poll_secs }}"', 'every_secs = "0"')
+def test_wait_delay_s_zero_literal_rejected(tmp_path: pathlib.Path) -> None:
+    body = VALID_MACHINE.replace('delay_s = "{{ poll_secs }}"', 'delay_s = "0"')
     problems = _problems(tmp_path, body)
-    assert any("every_secs" in p and ">= 1" in p for p in problems)
+    assert any("delay_s" in p and ">= 1" in p for p in problems)
 
 
-def test_wait_every_secs_zero_operator_ref_rejected(tmp_path: pathlib.Path) -> None:
+def test_wait_delay_s_zero_operator_ref_rejected(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'poll_secs = { type = "int", value = 300 }',
         'poll_secs = { type = "int", value = 0 }',
     )
     problems = _problems(tmp_path, body)
-    assert any("every_secs" in p and "poll_secs" in p and ">= 1" in p for p in problems)
+    assert any("delay_s" in p and "poll_secs" in p and ">= 1" in p for p in problems)
 
 
-def test_wait_every_secs_composite_template_allowed(tmp_path: pathlib.Path) -> None:
+def test_wait_delay_s_composite_template_allowed(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
-        'every_secs = "{{ poll_secs }}"',
-        'every_secs = "{{ poll_secs }}0"',
+        'delay_s = "{{ poll_secs }}"',
+        'delay_s = "{{ poll_secs }}0"',
     )
     _semantics.load_machine(_write(tmp_path, body))
 
 
 def test_wait_until_garbage_literal_rejected(tmp_path: pathlib.Path) -> None:
-    body = VALID_MACHINE.replace('every_secs = "{{ poll_secs }}"', 'until = "not-a-date"')
+    body = VALID_MACHINE.replace('delay_s = "{{ poll_secs }}"', 'until = "not-a-date"')
     problems = _problems(tmp_path, body)
     assert any("until" in p and "ISO-8601" in p for p in problems)
 
@@ -401,7 +435,7 @@ def test_wait_until_bad_operator_ref_rejected(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'poll_secs = { type = "int", value = 300 }',
         'when = { type = "str", value = "not-a-date" }',
-    ).replace('every_secs = "{{ poll_secs }}"', 'until = "{{ when }}"')
+    ).replace('delay_s = "{{ poll_secs }}"', 'until = "{{ when }}"')
     problems = _problems(tmp_path, body)
     assert any("until" in p and "when" in p and "ISO-8601" in p for p in problems)
 
@@ -411,7 +445,7 @@ def test_wait_until_composite_template_allowed(tmp_path: pathlib.Path) -> None:
         'poll_secs = { type = "int", value = 300 }',
         'day = { type = "str", value = "2030-01-01" }',
     ).replace(
-        'every_secs = "{{ poll_secs }}"',
+        'delay_s = "{{ poll_secs }}"',
         'until = "{{ day }}T00:00:00Z"',
     )
     _semantics.load_machine(_write(tmp_path, body))
@@ -419,7 +453,7 @@ def test_wait_until_composite_template_allowed(tmp_path: pathlib.Path) -> None:
 
 def test_wait_until_unverifiable_composite_template_allowed_at_load(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
-        'every_secs = "{{ poll_secs }}"',
+        'delay_s = "{{ poll_secs }}"',
         'until = "prefix-{{ cursor }}"',
     )
     _semantics.load_machine(_write(tmp_path, body))
@@ -511,17 +545,17 @@ def test_list_spliced_inside_larger_string_is_error(tmp_path: pathlib.Path) -> N
 
 def test_wait_rejects_two_timings(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
-        'every_secs = "{{ poll_secs }}"',
-        'every_secs = "{{ poll_secs }}"\nuntil = "2030-01-01T00:00:00Z"',
+        'delay_s = "{{ poll_secs }}"',
+        'delay_s = "{{ poll_secs }}"\nuntil = "2030-01-01T00:00:00Z"',
     )
     problems = _problems(tmp_path, body)
-    assert any("at most one of `every_secs`" in p for p in problems)
+    assert any("at most one of `delay_s`" in p for p in problems)
 
 
 def test_wait_forever_no_timer_is_valid(tmp_path: pathlib.Path) -> None:
     # A wait with no timer parks until a signal poke; it declares only `signal`.
     body = VALID_MACHINE.replace(
-        'every_secs = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
+        'delay_s = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
         'on = { signal = "scan" }',
     )
     spec = _semantics.load_machine(_write(tmp_path, body))
@@ -531,7 +565,7 @@ def test_wait_forever_no_timer_is_valid(tmp_path: pathlib.Path) -> None:
 def test_wait_forever_rejects_tick_edge(tmp_path: pathlib.Path) -> None:
     # A no-timer wait can never tick; declaring a `tick` edge is a load error.
     body = VALID_MACHINE.replace(
-        'every_secs = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
+        'delay_s = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
         'on = { tick = "scan", signal = "scan" }',
     )
     problems = _problems(tmp_path, body)
@@ -540,7 +574,7 @@ def test_wait_forever_rejects_tick_edge(tmp_path: pathlib.Path) -> None:
 
 def test_wait_forever_requires_signal_edge(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
-        'every_secs = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
+        'delay_s = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
         "on = { }",
     )
     problems = _problems(tmp_path, body)
@@ -705,7 +739,7 @@ def test_an_agent_state_takes_its_model_from_its_config_table(tmp_path: pathlib.
         "prompt",
         "output_schema",
         "capture",
-        "timeout_secs",
+        "timeout_s",
         "on",
         "max_usd",
         "config",
@@ -825,18 +859,18 @@ def test_agent_state_best_effort_field_is_gone(tmp_path: pathlib.Path) -> None:
         _semantics.load_machine(_write(tmp_path, body))
 
 
-def test_wait_every_secs_accepts_a_bare_integer() -> None:
-    """`every_secs = 30` coerces to the string the template field carries; floats stay refused."""
+def test_wait_delay_s_accepts_a_bare_integer() -> None:
+    """`delay_s = 30` coerces to the string the template field carries; floats stay refused."""
     import pydantic
 
-    st = schema.WaitState.model_validate({"kind": "wait", "every_secs": 30, "on": {"tick": "done"}})
-    assert st.every_secs == "30"
+    st = schema.WaitState.model_validate({"kind": "wait", "delay_s": 30, "on": {"tick": "done"}})
+    assert st.delay_s == "30"
     templated = schema.WaitState.model_validate(
-        {"kind": "wait", "every_secs": "{{ config.poll }}", "on": {"tick": "done"}}
+        {"kind": "wait", "delay_s": "{{ config.poll }}", "on": {"tick": "done"}}
     )
-    assert templated.every_secs == "{{ config.poll }}"
+    assert templated.delay_s == "{{ config.poll }}"
     with pytest.raises(pydantic.ValidationError):
-        schema.WaitState.model_validate({"kind": "wait", "every_secs": 1.5, "on": {"tick": "done"}})
+        schema.WaitState.model_validate({"kind": "wait", "delay_s": 1.5, "on": {"tick": "done"}})
 
 
 def test_a_schema_named_after_a_builtin_type_is_refused(tmp_path: pathlib.Path) -> None:

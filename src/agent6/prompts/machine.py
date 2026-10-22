@@ -78,7 +78,7 @@ grammar. Terminal states end the machine.
     command = ["scan", "{{ threshold }}"]   # argv; see templating below
     output_schema = "scan_result"            # optional: types `result` so result.x works
     capture = { set = { items = "{{ result.items }}" } }   # writes [vars.code] only
-    timeout_secs = 5
+    timeout_s = 5
     on = { ok = "check", nonzero = "stop_fail", timeout = "stop_fail" }
 
   tool labels are exactly: ok, nonzero, timeout.
@@ -94,7 +94,7 @@ grammar. Terminal states end the machine.
     output_schema = "verdict"                # finish_session payload validated against this
     capture = { finish_json = "verdict" }    # whole payload -> a [vars.agent] var
     # or: capture = { set = { total = "{{ result.points }}" } }  # one field
-    timeout_secs = 600
+    timeout_s = 600
     on = { ok = "route", failed = "stop_fail", budget_exhausted = "halt", timeout = "expired" }
 
   agent labels are exactly: ok, failed, budget_exhausted, timeout.
@@ -121,11 +121,17 @@ grammar. Terminal states end the machine.
 ### wait: pause until an instant or a poke
     [states.poll]
     kind = "wait"
-    every_secs = "{{ interval }}"   # OR  until = "2026-01-01T00:00:00Z"
+    delay_s = "{{ interval }}"   # OR  until = "2026-01-01T00:00:00Z"
     on = { tick = "scan", signal = "scan" }
 
-  wait labels are exactly: tick, signal. `cron` is NOT supported by the v1
-  runtime — use `every_secs` or `until`.
+  `delay_s` is a one-shot delay from state entry, in positive integer seconds.
+  It accepts a bare integer, a string, or a template.
+  To repeat, route back to the wait state.
+  Resume keeps the persisted deadline instead of restarting the delay.
+  Declare at most one of `delay_s` or `until`.
+  Timed waits declare exactly the labels tick and signal.
+  With neither timer, a wait parks until a poke and declares only signal.
+  `cron` is not supported by the v1 runtime; use `delay_s` or `until`.
 
 ### terminal: stop
     [states.stop_ok]
@@ -263,7 +269,7 @@ offline.
 
     [states.wait_tick]
     kind = "wait"
-    every_secs = "{{ interval_secs }}"
+    delay_s = "{{ interval_secs }}"
     on = { tick = "fetch_price", signal = "fetch_price" }
 
     [states.fetch_price]
@@ -271,7 +277,7 @@ offline.
     command = ["python3", "scripts/fetch_price.py", "{{ feed_url }}"]
     output_schema = "price_result"          # types `result` so result.price works
     capture = { set = { price = "{{ result.price }}" } }
-    timeout_secs = 15
+    timeout_s = 15
     on = { ok = "decide", nonzero = "wait_tick", timeout = "wait_tick" }
 
     [states.fetch_price.config.sandbox]
@@ -289,7 +295,7 @@ offline.
     command = ["python3", "scripts/record_buy.py", "{{ price }}"]
     output_schema = "record_result"
     capture = { set = { recorded = "{{ result.recorded }}" } }
-    timeout_secs = 10
+    timeout_s = 10
     on = { ok = "wait_tick", nonzero = "wait_tick", timeout = "wait_tick" }
 
 ### …and the scripts it references (write ALL of these under `scripts/`)

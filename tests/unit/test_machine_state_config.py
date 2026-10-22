@@ -51,7 +51,7 @@ extra_write_paths = []
 [states.scan]
 kind = "tool"
 command = ["true"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "store", nonzero = "fail", timeout = "fail" }
 
 [states.scan.config.sandbox]
@@ -60,7 +60,7 @@ extra_read_paths = ["/srv/inbox"]
 [states.store]
 kind = "tool"
 command = ["true"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "judge", nonzero = "fail", timeout = "fail" }
 
 [states.judge]
@@ -68,7 +68,7 @@ kind = "agent"
 prompt = "judge"
 output_schema = "v"
 capture = { finish_json = "verdict" }
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "done", failed = "fail", timeout = "fail", budget_exhausted = "fail" }
 
 [states.judge.config.sandbox]
@@ -100,7 +100,7 @@ max_transitions = 10
 [states.scan]
 kind = "tool"
 command = ["true"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "done", nonzero = "fail", timeout = "fail" }
 
 [states.done]
@@ -131,7 +131,7 @@ out = { type = "r", default = {} }
 
 [states.poll]
 kind = "wait"
-every_secs = 3600
+delay_s = 3600
 on = { tick = "work", signal = "work" }
 
 [states.work]
@@ -140,13 +140,13 @@ mode = "run"
 prompt = "fix it"
 output_schema = "r"
 capture = { finish_json = "out" }
-timeout_secs = 60
+timeout_s = 60
 on = { ok = "check", failed = "done", budget_exhausted = "done", timeout = "done" }
 
 [states.check]
 kind = "tool"
 command = ["true"]
-timeout_secs = 5
+timeout_s = 5
 on = { ok = "done", nonzero = "done", timeout = "done" }
 
 [states.done]
@@ -861,7 +861,7 @@ def test_two_states_with_the_same_own_warning_each_get_it_under_their_label(
         'on = { ok = "done", nonzero = "fail", timeout = "fail" }',
         'on = { ok = "again", nonzero = "fail", timeout = "fail" }\n\n'
         "[states.again]\n"
-        'kind = "tool"\ncommand = ["true"]\ntimeout_secs = 5\n'
+        'kind = "tool"\ncommand = ["true"]\ntimeout_s = 5\n'
         'on = { ok = "done", nonzero = "fail", timeout = "fail" }',
     )
     two += "\n[config.sandbox]\nextra_read_paths = []\n"
