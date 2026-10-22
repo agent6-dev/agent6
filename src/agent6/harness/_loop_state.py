@@ -111,7 +111,7 @@ def restore_completion_state(state: LoopState, snap: _snapshot.SessionSnapshot) 
         state: The fresh loop state.
         snap: The snapshot the run resumes from.
     """
-    state.gates.review_total = snap.review_rejections_total
+    state.gates.review_rejections = snap.review_rejections_total
     state.verify.ever_passed = snap.verify_ever_passed
     state.verify.ever_failed = snap.verify_ever_failed
     state.verify.scoped = snap.verify_scoped

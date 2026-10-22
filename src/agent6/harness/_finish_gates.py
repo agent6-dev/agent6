@@ -145,10 +145,8 @@ class FinishGates:
             caps them.
         settled_returns_used: Settled stops returned over a red gate; `verify_retries`
             caps them apart from the model's own finishes.
-        review_consecutive: The before-finish panel's consecutive rejections; its
-            cap lets the end through.
-        review_total: The panel's run-total, persisted; past
-            `max_total_rejections` the gate disarms to advisory.
+        review_rejections: The ends the before-finish panel rejected in the run, persisted
+            and never decremented; past `max_review_rejections` the panel advises.
         stale_gate: The replacement gate the latest finish_session to carry one
             proposed; the end reports it though a gate returned that finish.
     """
@@ -156,8 +154,7 @@ class FinishGates:
     task_nudges_used: int = 0
     verify_retries_used: int = 0
     settled_returns_used: int = 0
-    review_consecutive: int = 0
-    review_total: int = 0
+    review_rejections: int = 0
     stale_gate: str = ""
 
 

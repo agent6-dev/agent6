@@ -190,7 +190,8 @@ class SessionSnapshot(pydantic.BaseModel):
             whose work landed moves it.
         verify_command: The gate the run resolved, () when gateless; a resume reuses it rather
             than inferring again.
-        review_rejections_total: The before-finish panel's rejection count, which disarms it.
+        review_rejections_total: The ends the before-finish panel rejected in the run; at
+            `max_review_rejections` it advises.
         verify_ever_passed: Whether any verify passed.
         verify_ever_failed: Whether any verify failed.
         gateless_ever_edited: Whether a gateless run edited the tree.

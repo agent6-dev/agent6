@@ -193,7 +193,7 @@ def save_resume_snapshot(
         operator_task=state.operator_task,
         base_sha=harness.chain.base_sha,
         verify_command=harness.gate.command(state.verify),
-        review_rejections_total=state.gates.review_total,
+        review_rejections_total=state.gates.review_rejections,
         verify_ever_passed=state.verify.ever_passed,
         verify_ever_failed=state.verify.ever_failed,
         gateless_ever_edited=state.settled.gateless_ever_edited,

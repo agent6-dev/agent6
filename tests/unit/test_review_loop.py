@@ -11,6 +11,8 @@ from __future__ import annotations
 from typing import Any
 from unittest import mock
 
+import pytest
+
 from agent6.harness import _chain, _conversation, _reviewer, loop
 from agent6.tools import results
 from tests.unit.test_review_gate import (
@@ -172,15 +174,17 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
     assert result.reason == "finish_session" and result.iterations == 1
 
 
-def test_disarm_after_max_total_rejections_lets_finish_through() -> None:
-    """Once `review_rejections_total` hits the cap, the gate disarms to advisory.
+@pytest.mark.parametrize("cap", [2, 4])
+def test_the_configured_cap_counts_rejected_finishes(cap: int) -> None:
+    """The one counter is the configured cap: the finish after the cap's rejection stands.
 
-    A persistently blocking panel cannot stall the run forever.
+    A persistently blocking panel cannot stall the run forever, and nothing else lets an end
+    through early: the default cap of 4 means four rejections, not two.
     """
     worker = mock.MagicMock()
     # the worker keeps trying to finish; the seat keeps blocking
     worker.call.side_effect = [
-        _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(6)
+        _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(8)
     ]
     seat_provider = mock.MagicMock()
     seat_provider.call.return_value = _resp(_BLOCK)
@@ -191,14 +195,12 @@ def test_disarm_after_max_total_rejections_lets_finish_through() -> None:
             seats=[_seat(seat_provider)],
             decision="veto",
             trigger="before_finish",
-            max_consecutive_rejections=0,  # isolate the per-run total disarm
-            max_total_rejections=2,
+            max_review_rejections=cap,
         ),
         base_sha="b",
     )
     result = _drive(wf, _begin())
-    # blocks on rejections 1 and 2, disarms on the 3rd attempt -> finish accepted
-    assert result.reason == "finish_session" and result.iterations == 3
+    assert result.reason == "finish_session" and result.iterations == cap + 1
 
 
 def test_in_loop_panel_all_abstain_names_the_abstention() -> None:

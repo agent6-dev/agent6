@@ -469,7 +469,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 seats=session.review_seats,
                 decision=cfg.review.decision,
                 quorum=cfg.review.quorum,
-                max_total_rejections=cfg.review.max_total_rejections,
+                max_review_rejections=cfg.review.max_review_rejections,
                 budget_fraction=cfg.review.budget_fraction,
                 concurrency=cfg.review.concurrency,
             ),

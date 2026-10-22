@@ -209,20 +209,23 @@ def test_before_finish_panel_satisfied_accepts_finish() -> None:
 
 
 def test_before_finish_rejection_cap_lets_finish_through() -> None:
-    """After `max_consecutive_rejections` back-to-back rejections the finish goes through.
+    """After `max_review_rejections` rejected finishes the next one goes through.
 
-    The findings are still injected; the worker cannot bounce forever.
+    The findings are still injected; the worker cannot bounce forever. The panel past the cap
+    reports its block as `capped`, which the gate reads as the end standing.
     """
     worker = mock.MagicMock()
     worker.call.return_value = _resp_with_tool_use("finishing", _finish_tool_use("tu1", "done"))
     dispatcher = mock.MagicMock()
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
-    panel = _PanelScript([_reviewer.CritiqueResult(text="* nope", satisfied=False)] * 3)
+    rejected = _reviewer.CritiqueResult(text="* nope", satisfied=False)
+    capped = _reviewer.CritiqueResult(text="* nope", satisfied=True, capped=True)
+    panel = _PanelScript([rejected, rejected, capped])
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
         review=_reviewer.ReviewSettings(
-            trigger="before_finish", max_consecutive_rejections=2, seats=[mock.MagicMock()]
+            trigger="before_finish", max_review_rejections=2, seats=[mock.MagicMock()]
         ),
     )
     with mock.patch.object(_reviewer.Reviewer, "critique", panel):

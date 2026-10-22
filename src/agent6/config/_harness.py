@@ -466,12 +466,14 @@ class ReviewConfig(pydantic.BaseModel):
             "seats on one model count once, so a same-model panel cannot reach it)."
         ),
     )
-    max_total_rejections: int = pydantic.Field(
+    max_review_rejections: int = pydantic.Field(
         ge=1,
         default=4,
         description=(
-            "How many finishes a gating panel may reject per run before it disarms to `advisory` "
-            "for the rest of the run, so a panel can never stall a run forever."
+            "How many ends (a `finish_session`, a silent finish, a settled or plateau stop) a "
+            "gating panel may reject in one run. The count persists across resumes and never "
+            "resets; from the cap on the panel still runs and its findings still reach the "
+            "model, but every end stands, so a panel cannot stall a run forever."
         ),
     )
     budget_fraction: float = pydantic.Field(

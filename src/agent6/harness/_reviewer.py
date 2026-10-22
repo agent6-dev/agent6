@@ -40,10 +40,13 @@ class CritiqueResult:
     Attributes:
         text: The findings text injected for the worker.
         satisfied: False only when a blocking decision mode rejects.
+        capped: The panel blocked but the run's rejected finishes reached the cap, so the end
+            stands with the findings.
     """
 
     text: str
     satisfied: bool
+    capped: bool = False
 
 
 # A read-only dispatch callable for explore-tier seats: (tool_name, input) -> result.
@@ -80,11 +83,10 @@ class ReviewSettings:
         seats: The seats.
         decision: `advisory` only injects the findings; `veto` and `quorum` can reject an end.
         quorum: The blocks a `quorum` rejection needs.
-        max_total_rejections: The blocks after which the gate disarms to advisory for the run.
+        max_review_rejections: The ends the gate may reject in the run; from then on the panel
+            advises and every end stands.
         budget_fraction: The remaining budget fraction below which the panel is skipped.
         concurrency: The seat calls run at once.
-        max_consecutive_rejections: The back-to-back rejections after which the next end is
-            accepted; 0 disables the cap.
     """
 
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
@@ -92,10 +94,9 @@ class ReviewSettings:
     seats: Sequence[ReviewSeat] = ()
     decision: _panel.ReviewDecision = "advisory"
     quorum: int = 2
-    max_total_rejections: int = 4
+    max_review_rejections: int = 4
     budget_fraction: float = 0.25
     concurrency: int = 1
-    max_consecutive_rejections: int = 2
 
 
 def _build_user_message(ctx: _panel.ReviewContext) -> str:
@@ -484,8 +485,8 @@ class Reviewer:
     ) -> bool:
         """Sit the before-finish panel over an end, once per turn.
 
-        After `max_consecutive_rejections` back-to-back rejections the end goes through with the
-        findings injected. A turn that declares two ends gets one verdict for both.
+        After `max_review_rejections` rejected ends the panel advises and the end goes through
+        with the findings injected. A turn that declares two ends gets one verdict for both.
 
         Args:
             state: The execution's state.
@@ -507,23 +508,21 @@ class Reviewer:
         critique = self.critique(state, trigger="before_finish", iteration=turn.iteration)
         if critique is None:
             return False
-        cap = self.settings.max_consecutive_rejections
-        cap_reached = cap > 0 and state.gates.review_consecutive >= cap
-        if not critique.satisfied and not cap_reached:
+        if not critique.satisfied:
+            state.gates.review_rejections += 1
             self.log(f"  review rejected {ending} at iter {turn.iteration}")
             self.emit("loop.review.rejected_finish", iteration=turn.iteration, ending=ending)
-            state.gates.review_consecutive += 1
             turn.review_text = REVIEW_REJECTED[ending] + critique.text
             return True
-        if not critique.satisfied:
+        if critique.capped:
             self.log(
-                f"  review rejected {ending} at iter {turn.iteration} but"
-                f" rejection cap ({cap}) reached - letting the end through"
+                f"  review rejected {ending} at iter {turn.iteration} but the rejection cap"
+                f" ({self.settings.max_review_rejections}) is reached: the end stands"
             )
             self.emit(
                 "loop.review.rejection_cap_reached",
                 iteration=turn.iteration,
-                rejections=state.gates.review_consecutive,
+                rejections=state.gates.review_rejections,
             )
             turn.review_text = (
                 "The review panel flagged issues but the rejection cap was"
@@ -531,7 +530,6 @@ class Reviewer:
             )
         else:
             self.log(f"  review approved {ending}")
-        state.gates.review_consecutive = 0
         return False
 
     def available(self) -> bool:
@@ -543,8 +541,8 @@ class Reviewer:
     ) -> CritiqueResult | None:
         """Run the panel over the run diff.
 
-        The before-finish rejection counter decays on a pass and disarms the gate at its cap, so
-        a gating panel cannot stall the run.
+        Past `max_review_rejections` rejected ends the panel still sits and its findings still
+        reach the model, but nothing blocks: a gating panel cannot stall the run.
 
         Args:
             state: The execution's state.
@@ -552,8 +550,9 @@ class Reviewer:
             iteration: The current turn.
 
         Returns:
-            The critique, `satisfied` False only when the panel blocks and the gate is armed;
-            None when the panel was skipped (no diff, a scarce budget, a spent budget).
+            The critique, `satisfied` False only when the panel blocks and the gate is armed,
+            `capped` when it blocks past the cap; None when the panel was skipped (no diff, a
+            scarce budget, a spent budget).
         """
         diff = self.chain.diff_since_base()
         if not diff.strip():
@@ -614,7 +613,7 @@ class Reviewer:
                 verdict="abstain" if v.error else v.verdict,
                 findings=len(v.findings),
             )
-        disarmed = state.gates.review_total >= self.settings.max_total_rejections
+        disarmed = state.gates.review_rejections >= self.settings.max_review_rejections
         effective_blocked = result.blocked and not disarmed
         self.emit(
             "loop.review.panel",
@@ -627,14 +626,13 @@ class Reviewer:
             n_block=result.n_block,
             n_abstain=result.n_abstain,
         )
-        if trigger == "before_finish":
-            if effective_blocked:
-                state.gates.review_total += 1
-            else:
-                state.gates.review_total = max(0, state.gates.review_total - 1)
         # An all-abstain panel reviewed nothing and says so; it still lets the end through.
         if _panel.panel_is_inconclusive(result):
             text = _panel.inconclusive_note(result)
         else:
             text = _panel.render_findings(result.merged_findings) or "No blocking findings."
-        return CritiqueResult(text=text, satisfied=not effective_blocked)
+        return CritiqueResult(
+            text=text,
+            satisfied=not effective_blocked,
+            capped=result.blocked and disarmed and trigger == "before_finish",
+        )
