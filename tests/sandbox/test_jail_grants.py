@@ -19,7 +19,8 @@ from agent6.sandbox import jail, jail_session
 from agent6.tools import dispatch
 from agent6.tools import policy as tools_policy
 
-pytestmark = pytest.mark.needs_namespaces
+# The `partial` cases need no namespaces: Landlock and seccomp bind without them.
+_FULL = pytest.param("full", marks=pytest.mark.needs_namespaces)
 
 
 @pytest.fixture
@@ -60,6 +61,7 @@ def _launch_errors(policy: kinds.JailPolicy) -> tuple[str, str]:
     ("grant", "why"),
     [("/", "the root directory cannot be granted"), ("/dev", "/dev cannot be granted")],
 )
+@pytest.mark.needs_namespaces
 def test_a_grant_on_the_root_or_on_dev_fails_the_launch_by_name(
     tmp_path: pathlib.Path, grant: str, why: str, write: bool
 ) -> None:
@@ -89,6 +91,7 @@ def _read_only_submount() -> tuple[pathlib.Path, pathlib.Path] | None:
     return None
 
 
+@pytest.mark.needs_namespaces
 def test_a_write_grant_holding_a_read_only_mount_names_the_grant_and_the_mount(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -105,7 +108,7 @@ def test_a_write_grant_holding_a_read_only_mount_names_the_grant_and_the_mount(
         assert f"write grant {grant}: remount of submount {nested.name}: EPERM" in error
 
 
-@pytest.mark.parametrize("isolation", ["full", "partial"])
+@pytest.mark.parametrize("isolation", [_FULL, "partial"])
 def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_with(
     scratch: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
@@ -152,7 +155,7 @@ def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_w
         assert after["returncode"] != 0, after
 
 
-@pytest.mark.parametrize("isolation", ["full", "partial"])
+@pytest.mark.parametrize("isolation", [_FULL, "partial"])
 def test_a_symlinked_grant_is_readable_at_its_spelled_name(
     scratch: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
@@ -176,6 +179,7 @@ def test_a_symlinked_grant_is_readable_at_its_spelled_name(
 
 
 @pytest.mark.parametrize("shape", ["duplicate", "nested"])
+@pytest.mark.needs_namespaces
 def test_a_file_grant_binds_over_a_mount_point_an_earlier_grant_made(
     tmp_path: pathlib.Path, shape: str
 ) -> None:
@@ -204,6 +208,7 @@ def test_a_file_grant_binds_over_a_mount_point_an_earlier_grant_made(
     assert granted.read_text(encoding="utf-8") == "cert\n"
 
 
+@pytest.mark.needs_namespaces
 def test_a_grant_is_never_mounted_through_a_link_an_earlier_grant_shows(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -227,6 +232,7 @@ def test_a_grant_is_never_mounted_through_a_link_an_earlier_grant_shows(
     assert target.read_text(encoding="utf-8") == "host content\n"
 
 
+@pytest.mark.needs_namespaces
 def test_a_hidden_path_is_masked_under_a_grants_spelled_name_too(scratch: pathlib.Path) -> None:
     """A hidden path inside a symlinked grant stayed readable through the grant's name.
 
