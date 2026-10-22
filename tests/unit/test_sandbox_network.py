@@ -31,17 +31,21 @@ def _cfg(network: str = "session") -> Config:
 # --- check_network_support (isolation compatibility) ------------------------
 
 
-@pytest.mark.parametrize("isolation", ["full", "none"])
-def test_check_network_support_allows_off_partial(isolation: kinds.IsolationLevel) -> None:
-    # `session` is only refused on `partial`; `full` supports it and `none` is unsandboxed
-    # (warned elsewhere), so neither refuses here.
-    assert confine.check_network_support(_cfg("session"), isolation) is None
+def test_check_network_support_allows_session_under_full() -> None:
+    assert confine.check_network_support(_cfg("session"), "full") is None
 
 
-def test_check_network_support_refuses_an_explicit_session_on_partial() -> None:
-    msg = confine.check_network_support(_cfg("session"), "partial")
-    assert msg is not None and "'session'" in msg
-    assert confine.check_network_support(_cfg("auto"), "partial") is None
+@pytest.mark.parametrize("isolation", ["partial", "none"])
+def test_check_network_support_refuses_an_explicit_session_below_full(
+    isolation: kinds.IsolationLevel,
+) -> None:
+    """An explicit `session` refuses wherever there is no network namespace; `auto` degrades.
+
+    `none` ran a `session` config connected to the host network with nothing refused.
+    """
+    msg = confine.check_network_support(_cfg("session"), isolation)
+    assert msg is not None and "'session'" in msg and f"'{isolation}'" in msg
+    assert confine.check_network_support(_cfg("auto"), isolation) is None
 
 
 def test_only_explicit_states_fails_naming_sandbox_network() -> None:

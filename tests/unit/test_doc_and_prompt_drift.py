@@ -15,6 +15,7 @@ import subprocess
 import tomllib
 
 from agent6 import directive
+from agent6.app import confine
 from agent6.prompts import loop as prompts
 from agent6.tools import patch_apply
 from agent6.tools import schema as tool_schema
@@ -195,7 +196,11 @@ def test_bench_container_config_template_validates() -> None:
         rendered = _render(env)
         data = tomllib.loads(rendered)
         data.pop("agent6", None)
-        Config.model_validate(data)
+        cfg = Config.model_validate(data)
+        # The template declares `none`: a config that validates and then refuses at preflight
+        # starts no benchmark run.
+        assert cfg.sandbox.isolation == "none"
+        assert confine.check_network_support(cfg, "none") is None
         if env.get("AGENT6_SB_EFFORT"):
             assert data["models"]["worker"]["effort"] == "medium"
         if env.get("AGENT6_SB_VERIFY_WHEN"):

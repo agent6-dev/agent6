@@ -351,15 +351,14 @@ Under `full`, the only level with namespaces:
 
 The column is the value the command's config resolves to: your `sandbox.network`, narrowed by the machine's `[config]` or set by the state's own `config`.
 
-On `partial` there is no network namespace: `auto` degrades to the agent process's network with a once-per-run warning, while `session` refuses.
-Under `none` isolation nothing is enforced or refused.
+Below `full` there is no network namespace: `auto` degrades to the agent process's network with a warning (once per run under `partial`; under `none` the unsandboxed warning covers every `auto` knob), while `session` refuses.
 
 **Refusals** (fail-closed)
 
 | Configuration | When |
 |---|---|
 | a machine overlay sets `network = host` under your `auto` or `session` | `machine check`, machine start |
-| explicit `network = session`, yours or a machine state's | run or machine start under `partial` |
+| explicit `network = session`, yours or a machine state's | run or machine start under `partial` or `none` |
 
 **MCP servers** take their own value per server (`[mcp.servers.<name>.sandbox].network`, default `auto`):
 

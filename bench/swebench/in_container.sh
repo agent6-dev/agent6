@@ -136,7 +136,8 @@ model = "$MODEL"
 # the boundary. isolation = "none" is an operator-only config value; the
 # per-invocation forms are --disable-sandbox / AGENT6_DISABLE_SANDBOX=1.
 isolation = "none"
-network = "session"
+# The host network: a run's own network needs the kernel sandbox, and the container bounds it.
+network = "host"
 run_commands = "yes"
 protect_git = "off"
 extra_read_paths = ["/opt/miniconda3", "/opt/conda"]

@@ -500,8 +500,8 @@ def mcp_network_refusal(
 ) -> str | None:
     """Return the refusal when the server named a network this host cannot give it, else None.
 
-    A server's `none` or `session` network requires `full` `sandbox.isolation` and refuses on
-    `partial`, while `auto` degrades with a warning. The run's preflight and `agent6 check`
+    A server's `none` or `session` network requires `full` `sandbox.isolation` and refuses
+    below it, while `auto` degrades with a warning. The run's preflight and `agent6 check`
     both ask here, for each server a run starts.
 
     Args:
@@ -510,9 +510,9 @@ def mcp_network_refusal(
         isolation: The resolved isolation level.
 
     Returns:
-        The refusal for a `none` or `session` network on `partial`, else None.
+        The refusal for a `none` or `session` network below `full`, else None.
     """
-    if isolation != "partial" or srv.effective_network not in ("none", "session"):
+    if isolation == "full" or srv.effective_network not in ("none", "session"):
         return None
     return (
         f"MCP server {name!r} sets sandbox.network = {srv.effective_network!r}. Keeping the"
@@ -582,25 +582,23 @@ def config_refusal(
 def check_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str | None:
     """Return the refusal when the network config needs what the isolation cannot give, else None.
 
-    `session` requires `full` `sandbox.isolation`, while `auto` degrades with a warning.
+    `session` requires `full` `sandbox.isolation` and refuses below it, while `auto` degrades
+    with a warning.
 
     Args:
         cfg: The resolved config.
         isolation: The resolved isolation level.
 
     Returns:
-        The refusal for `sandbox.network = "session"` on `partial`, else None.
+        The refusal for `sandbox.network = "session"` below `full`, else None.
     """
-    if isolation != "partial":
+    if isolation == "full" or cfg.sandbox.network != "session":
         return None
-    sb = cfg.sandbox
-    if sb.network == "session":
-        return (
-            "sandbox.network = 'session' requires sandbox.isolation = 'full' to give the run its"
-            " own network, but this run resolved to 'partial'. Set sandbox.network = 'auto' to"
-            " run with a warning, or 'host' to accept this host's network."
-        )
-    return None
+    return (
+        "sandbox.network = 'session' requires sandbox.isolation = 'full' to give the run its"
+        f" own network, but this run resolved to {isolation!r}. Set sandbox.network = 'auto' to"
+        " run with a warning, or 'host' to accept this host's network."
+    )
 
 
 def resolved_config_values(cfg: Config) -> dict[str, object]:

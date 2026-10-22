@@ -55,15 +55,18 @@ def test_the_words_mean_the_same_on_both_sides() -> None:
         SandboxConfig(network="none")  # type: ignore[arg-type]
 
 
-def test_explicit_block_refuses_where_there_is_no_namespace() -> None:
-    """An explicit `block` refuses where there is no namespace.
+@pytest.mark.parametrize("isolation", ["partial", "none"])
+def test_explicit_block_refuses_where_there_is_no_namespace(
+    isolation: kinds.IsolationLevel,
+) -> None:
+    """An explicit `none` refuses wherever there is no network namespace.
 
-    An operator who wrote `block` asked for enforcement, so a host that cannot give a network
-    namespace refuses rather than running the server connected.
+    An operator who wrote `none` asked for enforcement, so a host that cannot give a network
+    namespace refuses rather than running the server connected; `none` isolation ran it connected.
     """
     cfg = _server({"network": "none"})
-    err = confine.check_mcp_network_support(cfg, "partial")
-    assert err is not None and "'s'" in err and "full" in err
+    err = confine.check_mcp_network_support(cfg, isolation)
+    assert err is not None and "'s'" in err and "full" in err and f"'{isolation}'" in err
     assert confine.check_mcp_network_support(cfg, "full") is None
 
 

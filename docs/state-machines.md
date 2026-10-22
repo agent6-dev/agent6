@@ -270,8 +270,8 @@ A single command, argv-style (never a shell string), through the existing `run_i
 
 - a state's network is `sandbox.network` in its own `config` table ([Machine config overlay](#47-machine-config-overlay-config)), for a `tool` and an `agent` state alike
     - `host`: the host network, honored only when your own `sandbox.network` resolves to it
-    - `session`: a network of its own, refused under `partial` `sandbox.isolation`
-    - `auto` (default): its own where the host can give one, the host's with a warning under `partial`
+    - `session`: a network of its own, refused below `full` `sandbox.isolation`
+    - `auto` (default): its own where the host can give one, the host's with a warning where it cannot
 - a `tool` state's network is never shared with another state: its processes die with the state
 - the machine's `[config.sandbox] network = "session"` keeps every state offline; one state sets `host` back:
 
