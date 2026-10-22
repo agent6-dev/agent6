@@ -28,12 +28,11 @@ class SandboxConfig(pydantic.BaseModel):
     isolation: Literal["auto", "full", "partial", "none"] = pydantic.Field(
         default="auto",
         description=(
-            "How jailed commands are confined: `full` (user + mount namespaces, Landlock, "
-            "seccomp), `partial` (Landlock + seccomp, no namespaces), or `none` (unconfined). "
-            "`auto` picks the strongest the host supports and warns when that is below `full`. An "
-            "explicit `full` or `partial` refuses to start where the host cannot honor it. "
-            "`none` also via `--disable-sandbox` or "
-            "`AGENT6_DISABLE_SANDBOX=1`."
+            "How jailed commands are confined: `full` (user + mount namespaces, seccomp, Landlock "
+            "where the kernel has it), `partial` (Landlock + seccomp, no namespaces), or `none` "
+            "(unconfined). `auto` picks the strongest the host supports and warns when that is "
+            "below `full`. An explicit `full` or `partial` refuses to start where the host cannot "
+            "honor it. `none` also via `--disable-sandbox` or `AGENT6_DISABLE_SANDBOX=1`."
         ),
     )
     # A jailed child never out-reaches the process that launches it.

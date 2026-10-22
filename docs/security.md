@@ -124,12 +124,12 @@ A diagnostic hands a server the repository to read and writes nothing but the co
 
 | Mode | Applies |
 |---|---|
-| `full` | user namespace (one uid, the operator's own) + mount + PID + IPC + UTS namespaces (hostname `agent6`) + network namespace, `pivot_root` rootfs, private `/proc` and `/tmp`, curated `/dev`, Landlock, seccomp, `NO_NEW_PRIVS`, capability drop, timeout |
-| `partial` | Landlock (ABI >= 3), seccomp, `NO_NEW_PRIVS`, capability drop, timeout. No namespaces, no rootfs |
-| `none` | Nothing. Timeout only |
+| `full` | user namespace (one uid, the operator's own) + mount + PID + IPC + UTS namespaces (hostname `agent6`), a network namespace unless `sandbox.network = "host"`, `pivot_root` rootfs, private `/proc` and `/tmp`, curated `/dev`, Landlock where the kernel has it, seccomp, `NO_NEW_PRIVS`, capability drop, timeout |
+| `partial` | Landlock, seccomp, `NO_NEW_PRIVS`, capability drop, timeout. No namespaces, no rootfs |
+| `none` | No confinement: no namespaces, Landlock or seccomp. The timeout and `memory_limit_mb` still apply |
 | `auto` *(default)* | The strongest of the three this host supports |
 
-Landlock is best-effort under `full` (a kernel without it skips that layer, warned once per run) and is `partial`'s only filesystem boundary.
+Under `full` a kernel without Landlock skips that layer, warned once per run; under `partial` Landlock is the only filesystem boundary.
 
 **Resolution**
 
