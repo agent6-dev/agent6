@@ -61,9 +61,11 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
         )
         for table in write.ENTRY_TABLES
     ),
+    Action("add_reviewer", "Add reviewer…", "Append a reviewer to the ordered panel roster"),
     Action(
         "remove_entry", "Remove entry", "Remove the selected provider, MCP server or skill entry"
     ),
+    Action("remove_reviewer", "Remove reviewer", "Choose a reviewer by position and remove it"),
     # The labels match the home and run footers.
     Action("reset", "Unset", "Unset the selected setting in its source config layer"),
     Action("reload", "Refresh", "Re-read config from disk"),
@@ -181,6 +183,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                     if a.id.startswith("add_")
                 ),
                 menubar.MenuItem("Remove entry", "remove_entry"),
+                menubar.MenuItem("Remove reviewer", "remove_reviewer"),
                 menubar.MenuItem("Unset override", "reset"),
             ),
         ),
@@ -588,10 +591,41 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """Open the entry form and reload after it."""
         table = next(t for t in write.ENTRY_TABLES if t.path == path)
 
-        def reload_config(_: None) -> None:
-            self._reload()
+        self.app.push_screen(_config_forms.EntryModal(self.repo_root, table), self._form_closed)
 
-        self.app.push_screen(_config_forms.EntryModal(self.repo_root, table), reload_config)
+    def _form_closed(self, _: None) -> None:
+        """Refresh the roster or entries after a form closes."""
+        self._reload()
+
+    def action_add_reviewer(self) -> None:
+        """Open the reviewer form and reload after it."""
+        self.app.push_screen(_config_forms.ReviewerModal(self.repo_root), self._form_closed)
+
+    def action_remove_reviewer(self) -> None:
+        """Open a positional chooser for the selected roster."""
+        setting = self._current_setting()
+        if setting is None or setting.key != "review.reviewers" or self._eff is None:
+            self.notify("Select review.reviewers first.", severity="warning")
+            return
+        roster = self._eff.config.review.reviewers
+        if not roster:
+            self.notify("The reviewer roster is empty.")
+            return
+        if setting.source not in ("global", "repo"):
+            self.notify(
+                f"The roster comes from the {setting.source} layer;"
+                " Remove reviewer edits only the global and repo config.",
+                severity="warning",
+            )
+            return
+        self.app.push_screen(
+            _config_forms.RemoveReviewerModal(
+                self.repo_root,
+                tuple(seat.focus for seat in roster),
+                to_repo=setting.source == "repo",
+            ),
+            self._form_closed,
+        )
 
     def action_remove_entry(self) -> None:
         """Confirm removal of the selected entry from its highest config layer."""

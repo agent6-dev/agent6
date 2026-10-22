@@ -588,9 +588,9 @@ class ReviewConfig(pydantic.BaseModel):
         strict=False,
         json_schema_extra={"display_safe": True},
         description=(
-            "The panel roster as a list of tables with `focus` and optional `provider`, `model`, "
-            "`temperature` and `effort`. Omitted routing inherits `[models.reviewer]`; a pinned "
-            "route uses the role-model defaults. Set `provider` and `model` together. "
+            "The panel roster as an ordered list of tables with `focus` and optional `provider`, "
+            "`model`, `temperature` and `effort`. Omitted routing inherits `[models.reviewer]`; "
+            "a pinned route uses the role-model defaults. Set `provider` and `model` together. "
             "The built-in focuses cycled when empty are `security`, `correctness`, `tests`, "
             "`over-engineering`, `edge-cases`. Empty: one seat when `trigger` is on. "
             "`agent6 review --reviewers N --focus ...` builds a one-off roster."

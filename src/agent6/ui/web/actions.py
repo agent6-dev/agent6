@@ -747,6 +747,44 @@ def remove_entry(
     return True, f"{key} is not set in {source} config"
 
 
+def add_reviewer(
+    cwd: pathlib.Path, fields: dict[str, str], *, repo: bool = False
+) -> tuple[bool, str]:
+    """Append the form's reviewer.
+
+    Args:
+        cwd: The repository.
+        fields: The five form fields as typed.
+        repo: Write to the repo config instead of the global one.
+
+    Returns:
+        Whether the write landed, and the confirmation or validation error.
+    """
+    try:
+        err = write.add_reviewer(cwd, fields, to_repo=repo)
+    except errors.OperatorError as exc:
+        return False, str(exc)
+    return (False, err) if err else (True, "added reviewer")
+
+
+def remove_reviewer(cwd: pathlib.Path, index: int, *, repo: bool = False) -> tuple[bool, str]:
+    """Remove a zero-based reviewer position.
+
+    Args:
+        cwd: The repository.
+        index: The position to remove.
+        repo: Write to the repo config instead of the global one.
+
+    Returns:
+        Whether the write landed, and the confirmation or validation error.
+    """
+    try:
+        err = write.remove_reviewer(cwd, index, to_repo=repo)
+    except errors.OperatorError as exc:
+        return False, str(exc)
+    return (False, err) if err else (True, f"removed reviewer {index + 1}")
+
+
 def unset_config(
     cwd: pathlib.Path,
     key: str,

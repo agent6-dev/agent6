@@ -2534,6 +2534,61 @@ def test_the_entry_route_refuses_unknown_fields(server: tuple[web_server.WebServ
     assert not paths.global_config_path().exists()
 
 
+def test_config_reviewer_append_and_positional_removal(
+    server: tuple[web_server.WebServer, int],
+) -> None:
+    """Reviewer POSTs preserve order and write [] rather than exposing the global roster."""
+    from agent6.config import io
+
+    srv, port = server
+    status, body, _ = _get(port, "/api/config/reviewer_choices")
+    assert status == 200
+    assert json.loads(body)["effort"] == ["off", "low", "medium", "high", "xhigh", "max"]
+    status, data = _post(port, "/api/config/reviewer", {"focus": "tests", "effort": "off"})
+    assert status == 200 and data["ok"] is True, data
+    status, data = _post(
+        port,
+        "/api/config/reviewer",
+        {"focus": "tests", "provider": "", "model": " ", "temperature": "0.5", "repo": True},
+    )
+    assert status == 200 and data["ok"] is True, data
+    status, data = _post(port, "/api/config/reviewer/remove", {"index": 0, "repo": True})
+    assert status == 200 and data["ok"] is True, data
+    status, body, _ = _get(port, "/api/config")
+    assert status == 200
+    setting = json.loads(body)["review.reviewers"]
+    assert setting["value"] == [{"focus": "tests", "temperature": 0.5}]
+    assert setting["source"] == "repo"
+    status, data = _post(port, "/api/config/reviewer/remove", {"index": 0, "repo": True})
+    assert status == 200 and data["ok"] is True, data
+    assert io.read_toml_file(paths.repo_config_path(srv.cwd))["review"]["reviewers"] == []
+    assert io.read_toml_file(paths.global_config_path())["review"]["reviewers"] == [
+        {"focus": "tests", "effort": "off"}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("route", "body", "status"),
+    [
+        ("reviewer", {"focus": " "}, 422),
+        ("reviewer", {"focus": "tests", "provider": "p"}, 422),
+        ("reviewer", {"focus": "tests", "temperature": "hot"}, 422),
+        ("reviewer", {"focus": "tests", "unknown": "value"}, 400),
+        ("reviewer/remove", {"index": -1}, 400),
+        ("reviewer/remove", {"index": True}, 400),
+        ("reviewer/remove", {"index": 0.5}, 400),
+        ("reviewer/remove", {"index": 0}, 422),
+    ],
+)
+def test_config_reviewer_refuses_bad_input(
+    server: tuple[web_server.WebServer, int], route: str, body: dict[str, object], status: int
+) -> None:
+    """Invalid roster edits return a refusal rather than success or a server error."""
+    _srv, port = server
+    got, data = _post(port, "/api/config/" + route, body)
+    assert got == status and data["error"], data
+
+
 def test_re_adding_a_provider_keeps_its_other_keys(
     server: tuple[web_server.WebServer, int],
 ) -> None:

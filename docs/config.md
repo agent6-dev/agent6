@@ -295,9 +295,12 @@ The table was `[harness]` from 0.0.35; a config that still says `[workflow]` is 
 | `min_blocking_models` | `2` | Distinct provider/model routes required to block for `block_on = "model_quorum"`. Two seats on one route count once, even with different focus or effort. |
 | `max_review_rejections` | `4` | How many ends (a `finish_session`, a silent finish, a settled or plateau stop) a gating panel may reject in one run. The count persists across resumes and never resets; from the cap on the panel still runs and its findings still reach the model, but every end stands, so a panel cannot stall a run forever. |
 | `min_remaining_budget_fraction` | `0.25` | Skip the panel (the finish is accepted) once the run's remaining budget falls below this fraction of the whole. `0.25`: no panel in the last quarter. |
-| `reviewers` | `[]` | The panel roster as a list of tables with `focus` and optional `provider`, `model`, `temperature` and `effort`. Omitted routing inherits `[models.reviewer]`; a pinned route uses the role-model defaults. Set `provider` and `model` together. The built-in focuses cycled when empty are `security`, `correctness`, `tests`, `over-engineering`, `edge-cases`. Empty: one seat when `trigger` is on. `agent6 review --reviewers N --focus ...` builds a one-off roster. |
+| `reviewers` | `[]` | The panel roster as an ordered list of tables with `focus` and optional `provider`, `model`, `temperature` and `effort`. Omitted routing inherits `[models.reviewer]`; a pinned route uses the role-model defaults. Set `provider` and `model` together. The built-in focuses cycled when empty are `security`, `correctness`, `tests`, `over-engineering`, `edge-cases`. Empty: one seat when `trigger` is on. `agent6 review --reviewers N --focus ...` builds a one-off roster. |
 | `concurrency` | `1` | How many seats the in-loop panel runs at once (`1` = one after another). `agent6 review` always runs every seat in parallel. |
 | `scope` | `"diff"` | How much a seat reads: `diff` (one call over the diff, the task, and the verify result) or `repo` (a read-only tool-using reviewer that also reads the repo around the diff to catch cross-file impact; several calls per seat, and it reads the checkout, so the reviewed head must be checked out with a clean tree). |
+
+The [TUI](terminal.md#configuration) and [web](web.md#pages) config pages edit the ordered roster with **Add reviewer…** and positional removal.
+Each edit writes the whole list to the chosen layer, including `[]` after the last removal.
 
 Each `reviewers` entry has these fields:
 

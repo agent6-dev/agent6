@@ -15,6 +15,9 @@ async function renderConfig(gen) {
     addBtn.onclick = () => addEntry(table);
     bar.appendChild(addBtn);
   }
+  const reviewerBtn = el('button', null, 'Add reviewer…');
+  reviewerBtn.onclick = () => addReviewer();
+  bar.appendChild(reviewerBtn);
   card.appendChild(bar);
   const tbl = el('table', 'cfg');
   const head = el('tr'); ['setting','value','source'].forEach(h => head.appendChild(el('th', null, h))); tbl.appendChild(head);
@@ -122,6 +125,52 @@ function addEntry(table) {
   };
 }
 
+async function addReviewer() {
+  let choices;
+  try { choices = await getJSON('/api/config/reviewer_choices'); } catch (e) { toast(e.message, true); return; }
+  const opener = document.activeElement;
+  const back = el('div', 'overlay'), box = el('div', 'card');
+  box.style.width = 'min(560px, 92vw)';
+  box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'add reviewer');
+  box.appendChild(el('h2', null, 'Add reviewer'));
+  box.appendChild(el('div', 'sub muted', 'Focus is required. Set provider and model together, or leave both blank. Blank optional fields inherit the route\'s settings.'));
+  const fields = {};
+  for (const name of ['focus', 'provider', 'model', 'effort', 'temperature']) {
+    const label = el('label', 'sub muted', name); label.style.display = 'block'; label.style.marginTop = '8px';
+    const field = el(choices[name] ? 'select' : 'input', 'field');
+    field.id = 'reviewer-' + name; label.htmlFor = field.id;
+    if (choices[name]) for (const value of ['', ...choices[name]]) {
+      const option = el('option', null, value || 'blank = inherit'); option.value = value; field.appendChild(option);
+    }
+    fields[name] = field; box.appendChild(label); box.appendChild(field);
+  }
+  const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px';
+  const repo = el('input'); repo.type = 'checkbox'; repo.id = 'reviewer-repo';
+  repoRow.appendChild(repo); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
+  box.appendChild(repoRow);
+  const row = el('div', 'form-row'), add = el('button', 'primary', 'Add'), cancel = el('button', null, 'Cancel');
+  row.appendChild(add); row.appendChild(cancel); box.appendChild(row);
+  back.appendChild(box); document.body.appendChild(back);
+  const close = () => {
+    activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
+    if (opener && opener.isConnected) opener.focus();
+  };
+  activeOverlayClose = close;
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
+  cancel.onclick = close;
+  back.onclick = e => { if (e.target === back) close(); };
+  fields.focus.focus();
+  add.onclick = async () => {
+    add.disabled = true;
+    try {
+      const body = Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.value]));
+      const result = await postJSON('/api/config/reviewer', {...body, repo: repo.checked});
+      toast(result.message); close(); renderConfig();
+    } catch (e) { toast(e.message, true); add.disabled = false; }
+  };
+}
+
 // A proper editor overlay (not a browser prompt): choices and booleans get a
 // select, everything else a text field, with the default, source, and type
 // shown; "set for this repo" writes the per-repo config instead of the global.
@@ -153,7 +202,7 @@ function editConfig(key, s, tables) {
   } else {
     field = el('input', 'field');
     field.value = cur;
-    if (s.type === 'list') field.placeholder = 'comma-separated values';
+    if (s.type === 'list') field.placeholder = 'TOML list';
     // Dynamic suggestions (configured provider names, the provider's model
     // ids) from the same sources the TUI config page and CLI TAB completion
     // use, attached as a native datalist autocomplete.
@@ -208,6 +257,31 @@ function editConfig(key, s, tables) {
   document.addEventListener('keydown', onKey);
   cancel.onclick = close;
   back.onclick = (e) => { if (e.target === back) close(); };
+  if (key === 'review.reviewers') {
+    const roster = el('div');
+    const editable = s.source === 'repo' || s.source === 'global';
+    roster.appendChild(el('div', 'sub muted', editable
+      ? `Remove saves the remaining roster to the ${s.source} config, including an empty list after the last reviewer.`
+      : `Remove edits only the global and repo config, not the ${s.source} layer.`));
+    (s.value || []).forEach((reviewer, index) => {
+      const item = el('div', 'row');
+      const label = `${index + 1}: ${reviewer.focus}`;
+      item.appendChild(el('span', null, label));
+      const remove = el('button', null, 'Remove'); remove.disabled = !editable;
+      remove.setAttribute('aria-label', 'Remove reviewer ' + label);
+      remove.onclick = async () => {
+        if (!confirm(`Remove reviewer ${label} from ${s.source} config?`)) return;
+        remove.disabled = true;
+        try {
+          const result = await postJSON('/api/config/reviewer/remove', {index, repo: s.source === 'repo'});
+          toast(result.message); close(); renderConfig();
+        } catch (e) { toast(e.message, true); remove.disabled = false; }
+      };
+      item.appendChild(remove); roster.appendChild(item);
+    });
+    if (!s.value || !s.value.length) roster.appendChild(el('div', 'sub muted', 'The reviewer roster is empty.'));
+    box.insertBefore(roster, field);
+  }
   field.focus();
   const submit = async () => {
     save.disabled = true;

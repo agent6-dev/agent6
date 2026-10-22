@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The config page's form modals: edit one setting, add a named entry."""
+"""The config page's forms for settings, named entries and the reviewer roster."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6 import errors
 from agent6.config import io, write
-from agent6.ui.tui import forms
+from agent6.ui.tui import forms, modals
 from agent6.viewmodel import config_view
 
 
@@ -224,6 +224,139 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
         """Cancel on a click outside the dialog."""
         if event.widget is self:
             self.action_cancel()
+
+
+class ReviewerModal(_FormModal[None]):
+    """Append one reviewer through the validated list writer."""
+
+    BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
+    CSS = (
+        forms.FORM_CSS
+        + """
+    ReviewerModal, RemoveReviewerModal { align: center middle; }
+    .reviewer-box {
+        width: 80; height: auto;
+        border: round $accent; padding: 1 2; background: $surface;
+    }
+    .reviewer-actions { padding-top: 1; height: auto; }
+    """
+    )
+
+    def __init__(self, repo_root: pathlib.Path) -> None:
+        super().__init__()
+        self._repo = repo_root
+
+    def compose(self) -> app.ComposeResult:
+        """Yield the five fields and the save target."""
+        choices = write.reviewer_choices()
+        with containers.VerticalScroll(classes="reviewer-box"):
+            yield textual_widgets.Static("Add reviewer")
+            yield textual_widgets.Static(
+                "Focus is required. Set provider and model together, or leave both blank.\n"
+                "Blank optional fields inherit the route's settings."
+            )
+            for field in write.REVIEWER_FIELDS:
+                yield textual_widgets.Static(field, classes="edit-label")
+                if field in choices:
+                    options = ("blank = inherit", *choices[field])
+                    yield forms.ChoiceField(options, options[0], id=f"reviewer-{field}")
+                else:
+                    yield textual_widgets.Input(id=f"reviewer-{field}", classes="edit-input")
+            yield textual_widgets.Static("save to", classes="edit-label")
+            yield forms.ChoiceField(
+                ("global config", "repo config"), "global config", id="reviewer-target"
+            )
+            with containers.Horizontal(classes="reviewer-actions"):
+                yield forms.ActionItem("Add", "add")
+                yield forms.ActionItem("Cancel", "cancel")
+
+    def on_mount(self) -> None:
+        """Focus the required field."""
+        self.query_one("#reviewer-focus", textual_widgets.Input).focus()
+
+    @textual.on(textual_widgets.Input.Submitted)
+    def _input_submitted(self, event: textual_widgets.Input.Submitted) -> None:
+        """Advance from a text field on Enter."""
+        forms.focus_neighbor(event.input, 1)
+
+    def action_add(self) -> None:
+        """Append the reviewer, keeping an invalid form open."""
+        choices = write.reviewer_choices()
+        fields: dict[str, str] = {}
+        for field in write.REVIEWER_FIELDS:
+            control = self.query_one(f"#reviewer-{field}")
+            if isinstance(control, forms.ChoiceField):
+                fields[field] = control.value if control.value in choices[field] else ""
+            elif isinstance(control, textual_widgets.Input):
+                fields[field] = control.value
+        to_repo = self.query_one("#reviewer-target", forms.ChoiceField).index == 1
+        try:
+            err = write.add_reviewer(self._repo, fields, to_repo=to_repo)
+        except errors.OperatorError as exc:
+            err = str(exc)
+        if err:
+            self.notify(err, severity="error", timeout=8.0)
+            return
+        self.notify("Added reviewer.")
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Close the form."""
+        self.dismiss(None)
+
+
+class RemoveReviewerModal(_FormModal[None]):
+    """Choose a position and confirm removal from the displayed roster's source layer."""
+
+    BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
+    CSS = ReviewerModal.CSS
+
+    def __init__(self, repo_root: pathlib.Path, focuses: tuple[str, ...], *, to_repo: bool) -> None:
+        super().__init__()
+        self._repo = repo_root
+        self._positions = tuple(f"{index + 1}: {focus}" for index, focus in enumerate(focuses))
+        self._to_repo = to_repo
+
+    def compose(self) -> app.ComposeResult:
+        """Yield the positional chooser and removal action."""
+        with containers.VerticalScroll(classes="reviewer-box"):
+            yield textual_widgets.Static("Remove reviewer")
+            yield forms.ChoiceField(self._positions, self._positions[0], id="reviewer-position")
+            with containers.Horizontal(classes="reviewer-actions"):
+                yield forms.ActionItem("Remove…", "remove")
+                yield forms.ActionItem("Cancel", "cancel")
+
+    def action_remove(self) -> None:
+        """Confirm the selected position before writing the remaining list."""
+        index = self.query_one("#reviewer-position", forms.ChoiceField).index
+        source = "repo" if self._to_repo else "global"
+
+        def remove(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            try:
+                err = write.remove_reviewer(self._repo, index, to_repo=self._to_repo)
+            except errors.OperatorError as exc:
+                err = str(exc)
+            if err:
+                self.notify(err, severity="error", timeout=8.0)
+                return
+            self.notify(f"Removed reviewer {index + 1} from {source} config.")
+            self.dismiss(None)
+
+        self.app.push_screen(
+            modals.ConfirmModal(
+                "Remove reviewer?",
+                f"Remove {self._positions[index]} from {source} config.\n"
+                "The remaining list is saved, including an empty list after the last reviewer.",
+                confirm_label="Remove",
+            ),
+            remove,
+        )
+
+    def action_cancel(self) -> None:
+        """Close the chooser."""
+        self.dismiss(None)
 
 
 class EntryModal(_FormModal[None]):

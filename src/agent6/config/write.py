@@ -25,7 +25,7 @@ import pydantic_core
 
 from agent6 import errors as agent6_errors
 from agent6 import paths, portable
-from agent6.config import _base, _providers, io, layer
+from agent6.config import _base, _harness, _providers, io, layer
 from agent6.config import model as config_model
 
 
@@ -699,6 +699,15 @@ def _entry_fields(table: EntryTable, field: str) -> tuple[pydantic.fields.FieldI
     return tuple(model.model_fields[field] for model in models if field in model.model_fields)
 
 
+def _field_choices(annotation: Any) -> list[str]:
+    """Return literal and boolean choices, including inside optional fields."""
+    if annotation is bool:
+        return ["true", "false"]
+    if get_origin(annotation) is Literal:
+        return [str(value) for value in get_args(annotation)]
+    return [value for arg in get_args(annotation) for value in _field_choices(arg)]
+
+
 def entry_choices(table: EntryTable) -> dict[str, list[str]]:
     """Return each fixed-choice form field's values from the entry schema.
 
@@ -712,13 +721,7 @@ def entry_choices(table: EntryTable) -> dict[str, list[str]]:
     for field in table.fields:
         values: list[str] = []
         for info in _entry_fields(table, field):
-            annotation = info.annotation
-            if get_origin(annotation) is dict:
-                annotation = get_args(annotation)[1]
-            if annotation is bool:
-                values.extend(("true", "false"))
-            elif get_origin(annotation) is Literal:
-                values.extend(str(value) for value in get_args(annotation))
+            values.extend(_field_choices(info.annotation))
         if values:
             choices[field] = list(dict.fromkeys(values))
     return choices
@@ -735,6 +738,75 @@ def entry_field_description(table: EntryTable, field: str) -> str:
         The first member's description, or an empty string when absent.
     """
     return next((info.description or "" for info in _entry_fields(table, field)), "")
+
+
+REVIEWER_FIELDS = ("focus", "provider", "model", "effort", "temperature")
+
+
+def reviewer_choices() -> dict[str, list[str]]:
+    """Return the reviewer form's fixed choices from the schema."""
+    return {
+        name: choices
+        for name, field in _harness.ReviewerConfig.model_fields.items()
+        if (choices := _field_choices(field.annotation))
+    }
+
+
+def add_reviewer(
+    repo_root: pathlib.Path, fields: dict[str, str], *, to_repo: bool = False
+) -> str | None:
+    """Append a reviewer to the chosen layer's effective roster.
+
+    Args:
+        repo_root: The repo.
+        fields: Form values; focus is required and blank optional fields are omitted.
+        to_repo: The repo resolution instead of defaults plus the global config.
+
+    Returns:
+        The input or validation error, else None.
+
+    Raises:
+        ConfigError: The config cannot be loaded or the writer refuses the key.
+        OperatorError: The target cannot be written.
+    """
+    if not fields.get("focus", "").strip():
+        return "reviewer focus is required"
+    values = {
+        field: io.parse_cli_value(raw.strip()) if field == "temperature" else raw.strip()
+        for field, raw in fields.items()
+        if raw.strip()
+    }
+    eff = layer.load_effective(repo_root) if to_repo else layer.load_global_only()
+    roster = [entry.model_dump(exclude_none=True) for entry in eff.config.review.reviewers]
+    roster.append(values)
+    return set_config_value(
+        repo_root, "review.reviewers", io.format_toml_value(roster), to_repo=to_repo
+    )
+
+
+def remove_reviewer(repo_root: pathlib.Path, index: int, *, to_repo: bool = False) -> str | None:
+    """Remove a zero-based position, writing an explicit empty list after the last seat.
+
+    Args:
+        repo_root: The repo.
+        index: The reviewer's zero-based position, never its focus.
+        to_repo: The repo resolution instead of defaults plus the global config.
+
+    Returns:
+        The input or validation error, else None.
+
+    Raises:
+        ConfigError: The config cannot be loaded or the writer refuses the key.
+        OperatorError: The target cannot be written.
+    """
+    eff = layer.load_effective(repo_root) if to_repo else layer.load_global_only()
+    roster = [entry.model_dump(exclude_none=True) for entry in eff.config.review.reviewers]
+    if not 0 <= index < len(roster):
+        return f"reviewer index {index} is out of range (roster has {len(roster)} reviewers)"
+    del roster[index]
+    return set_config_value(
+        repo_root, "review.reviewers", io.format_toml_value(roster), to_repo=to_repo
+    )
 
 
 def add_entry(

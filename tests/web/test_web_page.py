@@ -20,7 +20,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "3c53ebb6afcacb78def6b5c40368bf4bbdabd507bd580e6bd8c43bc69fc1022e"
+PAGE_SHA256 = "4449bd11ef05aceb835fada381a6f5ad062dc8dfa8e6024b7212d8747d7aa3a1"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -198,6 +198,94 @@ async function check(text, wanted, caret = text.length, replacement = null) {
 """
     result = subprocess.run(
         [node, "-e", suggest + scenario], check=False, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_reviewer_controls_post_form_fields_and_position() -> None:
+    """The roster controls send five fields on add and a zero-based position on removal."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is needed to exercise the web config editor")
+    source = (
+        resources.files("agent6.ui.web").joinpath("client_config.js").read_text(encoding="utf-8")
+    )
+    setup = r"""
+const assert = require('node:assert/strict');
+function el(tag, cls, text = '') {
+  return {
+    tag, cls, text, children: [], style: {}, value: '', checked: false, isConnected: true,
+    set textContent(value) { this.text = value; this.children = []; },
+    set innerHTML(value) { this.children = []; },
+    appendChild(child) { this.children.push(child); child.parent = this; return child; },
+    insertBefore(child, before) {
+      this.children.splice(this.children.indexOf(before), 0, child); child.parent = this;
+    },
+    setAttribute(key, value) { this[key] = value; },
+    remove() {
+      this.isConnected = false; this.parent.children = this.parent.children.filter(c => c !== this);
+    },
+    focus() { document.activeElement = this; },
+  };
+}
+const document = {
+  body: el('body'), activeElement: null, addEventListener() {}, removeEventListener() {},
+};
+const view = el('div'); document.body.appendChild(view);
+const boot = () => {}, setCrumb = () => {}, esc = String, toast = () => {};
+const actionable = (node, action) => { node.onclick = action; };
+let routeGen = 0, activeOverlayClose = null;
+const setting = {
+  type: 'list', source: 'repo', input: '[]', display: 'tests, tests',
+  value: [{focus: 'tests'}, {focus: 'tests'}],
+};
+const getJSON = async path => path === '/api/config/entry_tables' ? {tables: []}
+  : path === '/api/config/reviewer_choices'
+  ? {effort: ['off', 'low', 'medium', 'high', 'xhigh', 'max']}
+  : path === '/api/config' ? {'review.reviewers': setting} : {values: []};
+const posts = [];
+const postJSON = async (path, body) => { posts.push({path, body}); return {ok: true}; };
+let confirmed = false;
+const confirm = () => confirmed;
+function nodes(root = document.body) {
+  return [root, ...root.children.flatMap(child => nodes(child))];
+}
+function button(text) { return nodes().find(n => n.tag === 'button' && n.text === text); }
+function field(id) { return nodes().find(n => n.id === id); }
+"""
+    scenario = r"""
+(async () => {
+  await renderConfig();
+  assert.ok(button('Add reviewer…'), 'the config bar offers Add reviewer');
+  await button('Add reviewer…').onclick();
+  field('reviewer-focus').value = 'security';
+  field('reviewer-provider').value = 'p';
+  field('reviewer-model').value = 'm';
+  assert.deepEqual(field('reviewer-effort').children.map(n => n.value),
+    ['', 'off', 'low', 'medium', 'high', 'xhigh', 'max']);
+  field('reviewer-effort').value = 'off';
+  field('reviewer-temperature').value = '0';
+  field('reviewer-repo').checked = true;
+  await button('Add').onclick();
+  assert.deepEqual(posts.shift(), {path: '/api/config/reviewer', body: {
+    focus: 'security', provider: 'p', model: 'm', effort: 'off', temperature: '0', repo: true,
+  }});
+  editConfig('review.reviewers', setting);
+  const removes = nodes().filter(n => n.tag === 'button' && n.text === 'Remove');
+  assert.equal(removes.length, 2);
+  assert.ok(nodes().some(n => n.text === '1: tests'));
+  assert.ok(nodes().some(n => n.text === '2: tests'));
+  await removes[1].onclick();
+  assert.equal(posts.length, 0, 'cancel does not write');
+  confirmed = true;
+  await removes[1].onclick();
+  assert.deepEqual(posts.shift(), {
+    path: '/api/config/reviewer/remove', body: {index: 1, repo: true},
+  });
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+    result = subprocess.run(
+        [node, "-e", setup + source + scenario], check=False, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stdout + result.stderr
 

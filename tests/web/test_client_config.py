@@ -84,7 +84,7 @@ async function run() {
   await renderConfig();
   const bar = all(view).find(e => e.className === 'row cfg-bar');
   assert.deepEqual(bar.children.map(e => e.textContent), [
-    '', 'Add provider…', 'Add MCP server…', 'Add skill…',
+    '', 'Add provider…', 'Add MCP server…', 'Add skill…', 'Add reviewer…',
   ]);
   assert.equal(bar.children[0].placeholder, 'filter settings…');
 

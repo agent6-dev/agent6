@@ -79,14 +79,22 @@ The Edit menu and Ctrl+P palette offer entry forms:
   This sets a skill's state; it does not install the skill.
 
 Forms save to global config by default and offer repo config as a target.
-A blank field keeps an existing value or uses the schema default.
+In a named-entry form, a blank field keeps an existing value or uses the schema default.
 
 **Remove entry** (`x`) confirms the selected entry's name and config layer before removing the whole entry, including its subtables.
 It removes from the highest layer holding the entry, and accepts only global or repo config.
 Values from lower layers may become visible.
 Skill states have individual rows, so Remove drops only the selected skill's state.
 **Unset** (`d`) still drops only the selected leaf.
-`review.reviewers` is a list, not a named-entry table, so these entry actions do not apply to it.
+
+**Add reviewer…** (`v`) in the Edit menu, palette and footer appends to the ordered `review.reviewers` list.
+Its form takes `focus` (required), `provider`, `model`, `effort` and `temperature`, with the same save-target chooser.
+Set `provider` and `model` together, or leave both blank to inherit the reviewer role.
+Blank sampling fields inherit the route's settings.
+**Remove reviewer** (`Shift+X`) on the `review.reviewers` row opens a chooser by position and focus, then confirms removal from the roster's source layer (global or repo).
+Positions distinguish reviewers that share a focus.
+Both actions save the whole list; removing the last reviewer writes `[]` so a lower layer's roster stays hidden.
+The row's value column still shows the list.
 
 ![The config page](screenshots/out/03-config.png)
 

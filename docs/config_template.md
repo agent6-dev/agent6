@@ -220,6 +220,9 @@ The table was `[harness]` from 0.0.35; a config that still says `[workflow]` is 
 
 <!-- config-table: review -->
 
+The [TUI](terminal.md#configuration) and [web](web.md#pages) config pages edit the ordered roster with **Add reviewer…** and positional removal.
+Each edit writes the whole list to the chosen layer, including `[]` after the last removal.
+
 Each `reviewers` entry has these fields:
 
 <!-- config-table: review.reviewers.<entry> -->

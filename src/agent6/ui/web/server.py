@@ -157,6 +157,24 @@ class EntryRemoveBody(_Body):
     repo: bool = False
 
 
+class ReviewerBody(_Body):
+    """The add-reviewer form's five fields and save target."""
+
+    focus: str
+    provider: str = ""
+    model: str = ""
+    effort: str = ""
+    temperature: str = ""
+    repo: bool = False
+
+
+class RemoveReviewerBody(_Body):
+    """The zero-based reviewer position and save target."""
+
+    index: int = pydantic.Field(strict=True, ge=0)
+    repo: bool = False
+
+
 class LoginBody(_Body):
     """A sign-in body: the secret as typed, normalized before it is compared."""
 
@@ -462,7 +480,13 @@ class _Handler(http_server.BaseHTTPRequestHandler):
             )
             self._ok_or_err(ok, {"message": msg}, msg)
             return
-        if path in ("/api/config", "/api/config/entry", "/api/config/entry/remove"):
+        if path in (
+            "/api/config",
+            "/api/config/entry",
+            "/api/config/entry/remove",
+            "/api/config/reviewer",
+            "/api/config/reviewer/remove",
+        ):
             self._route_config_post(path)
             return
         if path == "/api/machine/create":
@@ -484,7 +508,7 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         self._post_not_found(f"not found: {path}")
 
     def _route_config_post(self, path: str) -> None:
-        """Dispatch config leaf and entry writes."""
+        """Dispatch config leaf, entry and roster writes."""
         if path == "/api/config/entry":
             body = EntryBody.model_validate(self._read_body())
             ok, msg = actions.add_entry(
@@ -493,6 +517,12 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         elif path == "/api/config/entry/remove":
             body = EntryRemoveBody.model_validate(self._read_body())
             ok, msg = actions.remove_entry(self.cwd, body.table, body.name, repo=body.repo)
+        elif path == "/api/config/reviewer":
+            rb = ReviewerBody.model_validate(self._read_body())
+            ok, msg = actions.add_reviewer(self.cwd, rb.model_dump(exclude={"repo"}), repo=rb.repo)
+        elif path == "/api/config/reviewer/remove":
+            removal = RemoveReviewerBody.model_validate(self._read_body())
+            ok, msg = actions.remove_reviewer(self.cwd, removal.index, repo=removal.repo)
         else:
             body = ConfigSetBody.model_validate(self._read_body())
             if body.unset:
@@ -691,6 +721,9 @@ class _Handler(http_server.BaseHTTPRequestHandler):
                     ]
                 }
             )
+            return
+        if path == "/api/config/reviewer_choices":
+            self._send_json(write.reviewer_choices())
             return
         if path.startswith("/api/config/suggest/"):
             key = path.removeprefix("/api/config/suggest/")

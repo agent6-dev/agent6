@@ -73,6 +73,102 @@ def test_mcp_entry_keeps_blank_fields_and_removes_subtables(tmp_path: pathlib.Pa
     assert "local" not in paths.global_config_path().read_text()
 
 
+@pytest.mark.parametrize("to_repo", [False, True])
+def test_add_reviewer_uses_target_resolution(tmp_path: pathlib.Path, *, to_repo: bool) -> None:
+    """An append keeps the chosen layer's effective roster, not a higher layer's roster."""
+    assert (
+        write.set_config_value(
+            tmp_path, "review.reviewers", '[{ focus = "global", effort = "off" }]'
+        )
+        is None
+    )
+    assert (
+        write.set_config_value(tmp_path, "review.reviewers", '[{ focus = "repo" }]', to_repo=True)
+        is None
+    )
+    assert (
+        write.add_reviewer(
+            tmp_path,
+            {
+                "focus": " tests ",
+                "provider": " ",
+                "model": "",
+                "effort": "high",
+                "temperature": "0",
+            },
+            to_repo=to_repo,
+        )
+        is None
+    )
+    target = paths.repo_config_path(tmp_path) if to_repo else paths.global_config_path()
+    first = {"focus": "repo"} if to_repo else {"focus": "global", "effort": "off"}
+    assert io.read_toml_file(target)["review"]["reviewers"] == [
+        first,
+        {"focus": "tests", "effort": "high", "temperature": 0.0},
+    ]
+
+
+@pytest.mark.parametrize("to_repo", [False, True])
+def test_remove_reviewer_by_position_and_keep_empty_override(
+    tmp_path: pathlib.Path, *, to_repo: bool
+) -> None:
+    """Shared focuses stay distinct; removing the last inherited seat writes an empty list."""
+    assert (
+        write.set_config_value(
+            tmp_path,
+            "review.reviewers",
+            '[{ focus = "tests", effort = "off" }, { focus = "tests", temperature = 0.5 }]',
+        )
+        is None
+    )
+    assert write.remove_reviewer(tmp_path, 0, to_repo=to_repo) is None
+    target = paths.repo_config_path(tmp_path) if to_repo else paths.global_config_path()
+    assert io.read_toml_file(target)["review"]["reviewers"] == [
+        {"focus": "tests", "temperature": 0.5}
+    ]
+    assert write.remove_reviewer(tmp_path, 0, to_repo=to_repo) is None
+    assert io.read_toml_file(target)["review"]["reviewers"] == []
+    assert layer.load_effective(tmp_path).config.review.reviewers == ()
+    if to_repo:
+        assert len(layer.load_global_only().config.review.reviewers) == 2
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"focus": " "},
+        {"focus": "tests", "provider": "p"},
+        {"focus": "tests", "temperature": "3"},
+        {"focus": "tests", "temperature": "warm"},
+        {"focus": "tests", "effort": "unknown"},
+        {"focus": "tests", "unknown": "value"},
+    ],
+)
+def test_invalid_reviewer_keeps_roster(tmp_path: pathlib.Path, fields: dict[str, str]) -> None:
+    """Invalid form values cannot replace the existing roster."""
+    assert write.set_config_value(tmp_path, "review.reviewers", '[{ focus = "security" }]') is None
+    target = paths.global_config_path()
+    before = target.read_text()
+    assert write.add_reviewer(tmp_path, fields)
+    assert target.read_text() == before
+
+
+@pytest.mark.parametrize("index", [-1, 1])
+def test_remove_reviewer_refuses_out_of_range(tmp_path: pathlib.Path, index: int) -> None:
+    """An invalid position cannot remove a different seat or rewrite the config."""
+    assert write.set_config_value(tmp_path, "review.reviewers", '[{ focus = "security" }]') is None
+    target = paths.global_config_path()
+    before = target.read_text()
+    assert write.remove_reviewer(tmp_path, index)
+    assert target.read_text() == before
+
+
+def test_reviewer_effort_choices() -> None:
+    """The optional effort field offers its schema choices to both forms."""
+    assert write.reviewer_choices() == {"effort": ["off", "low", "medium", "high", "xhigh", "max"]}
+
+
 def test_bad_entry_input_leaves_config_untouched(tmp_path: pathlib.Path) -> None:
     """A missing name or malformed command is refused before any write."""
     table = next(t for t in write.ENTRY_TABLES if t.path == "mcp.servers")

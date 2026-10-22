@@ -1120,6 +1120,87 @@ def test_entry_form_and_remove_selected_entry(
     asyncio.run(scenario())
 
 
+def test_reviewer_form_and_positional_removal(repo: pathlib.Path) -> None:
+    """The roster form appends; the removal chooser distinguishes seats with a shared focus."""
+    from agent6.config import write
+
+    assert (
+        write.set_config_value(
+            repo,
+            "review.reviewers",
+            '[{ focus = "tests", effort = "off" }, { focus = "tests", effort = "low" }]',
+        )
+        is None
+    )
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test(size=(120, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            handler = next(
+                handler
+                for label, handler, _ in screen.palette_commands()
+                if label == "Add reviewer…"
+            )
+            handler()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, _config_forms.ReviewerModal)
+            modal.query_one("#reviewer-focus", widgets.Input).value = "security"
+            modal.query_one("#reviewer-provider", widgets.Input).value = "anthropic"
+            modal.query_one("#reviewer-model", widgets.Input).value = "claude-sonnet-4-5"
+            modal.query_one("#reviewer-effort", forms.ChoiceField).select_value("high")
+            modal.query_one("#reviewer-temperature", widgets.Input).value = "0.5"
+            modal.query_one("#reviewer-target", forms.ChoiceField).select_value("repo config")
+            modal.action_add()
+            await pilot.pause()
+            assert app.screen is screen
+            roster = layer.load_effective(repo).config.review.reviewers
+            assert [seat.focus for seat in roster] == ["tests", "tests", "security"]
+            assert roster[2].provider == "anthropic"
+            assert roster[2].model == "claude-sonnet-4-5"
+            assert roster[2].effort == "high" and roster[2].temperature == 0.5
+            table = screen.query_one("#tbl-review", widgets.DataTable)
+            row = next(
+                i for i in range(table.row_count) if str(table.get_row_at(i)[0]) == "reviewers"
+            )
+            assert "security" in str(table.get_row_at(row)[1])
+            table.move_cursor(row=row)
+            table.focus()
+            await pilot.pause()
+            screen.action_remove_reviewer()
+            await pilot.pause()
+            chooser = app.screen
+            assert isinstance(chooser, _config_forms.RemoveReviewerModal)
+            chooser.query_one("#reviewer-position", forms.ChoiceField).select_value("2: tests")
+            chooser.action_remove()
+            await pilot.pause()
+            assert isinstance(app.screen, modals.ConfirmModal)
+            prompt = str(app.screen.query_one("#confirm-box Static", widgets.Static).render())
+            assert "2: tests" in prompt and "repo" in prompt
+            await pilot.press("escape")
+            await pilot.pause()
+            assert len(layer.load_effective(repo).config.review.reviewers) == 3
+            chooser.action_remove()
+            await pilot.pause()
+            await pilot.press("y")
+            await pilot.pause()
+            assert app.screen is screen
+            roster = layer.load_effective(repo).config.review.reviewers
+            assert [seat.focus for seat in roster] == ["tests", "security"]
+            assert roster[0].effort == "off"
+            footer_actions = {
+                active.binding.action
+                for active in screen.active_bindings.values()
+                if active.binding.show
+            }
+            assert {"add_reviewer", "remove_reviewer"} <= footer_actions
+
+    asyncio.run(scenario())
+
+
 def test_remove_entry_from_a_default_leaf(repo: pathlib.Path) -> None:
     """A default-valued provider leaf still belongs to a removable entry."""
     from agent6.config import write
