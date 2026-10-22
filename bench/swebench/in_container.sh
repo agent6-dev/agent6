@@ -60,21 +60,15 @@ base_url = "https://openrouter.ai/api/v1"
 extra_headers = { "HTTP-Referer" = "https://github.com/agent6-dev/agent6", "X-Title" = "agent6-swebench" }'
 
 
-# Optional review panel (Fugu dimension). AGENT6_SB_REVIEW_SEATS is a
-# semicolon-separated list of "persona@provider/model" seats; when set the panel
-# reviews before finish_session and gates per AGENT6_SB_REVIEW_DECISION (default
-# quorum). Same-model vs distinct-model panels are just different seat lists.
+# AGENT6_SB_REVIEWERS is a TOML list of reviewer tables, each with focus and model settings.
 REVIEW_LINES=""
-if [ -n "${AGENT6_SB_REVIEW_SEATS:-}" ]; then
-  ARR=""
-  IFS=';' read -ra _SEATS <<< "$AGENT6_SB_REVIEW_SEATS"
-  for s in "${_SEATS[@]}"; do ARR="${ARR}\"${s}\", "; done
+if [ -n "${AGENT6_SB_REVIEWERS:-}" ]; then
   REVIEW_LINES="[review]
 trigger = \"before_finish\"
-decision = \"${AGENT6_SB_REVIEW_DECISION:-quorum}\"
-quorum = ${AGENT6_SB_REVIEW_QUORUM:-2}
-tier = \"diff\"
-seats = [${ARR%, }]"
+block_on = \"${AGENT6_SB_REVIEW_BLOCK_ON:-model_quorum}\"
+min_blocking_models = ${AGENT6_SB_REVIEW_MIN_BLOCKING_MODELS:-2}
+scope = \"diff\"
+reviewers = ${AGENT6_SB_REVIEWERS}"
 fi
 
 # Verify command. The jail forces child PATH=/usr/bin:/bin, so a bare `python3`

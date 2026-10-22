@@ -100,7 +100,9 @@ def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) 
                 "worker": {"provider": "main", "model": "m"},
                 "reviewer": {"provider": "main", "model": "m"},
             },
-            "review": {"seats": ["security@seatp/judge-1"]},
+            "review": {
+                "reviewers": [{"focus": "security", "provider": "seatp", "model": "judge-1"}]
+            },
         }
     )
     err = _setup.check_provider_keys(cfg)
@@ -113,7 +115,9 @@ def test_a_seat_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyP
         {
             "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
             "models": {"worker": {"provider": "main", "model": "m"}},
-            "review": {"seats": ["security@ghost/judge-1"]},
+            "review": {
+                "reviewers": [{"focus": "security", "provider": "ghost", "model": "judge-1"}]
+            },
         }
     )
     err = _setup.check_provider_keys(cfg)
@@ -149,7 +153,11 @@ def test_budget_preflight_prices_a_seat_pinned_model() -> None:
         {
             "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
             "models": {"worker": {"provider": "main", "model": "claude-opus-5"}},
-            "review": {"seats": ["security@main/very-unpriced-model"]},
+            "review": {
+                "reviewers": [
+                    {"focus": "security", "provider": "main", "model": "very-unpriced-model"}
+                ]
+            },
             "budget": {"max_tokens_fallback": 0},
         }
     )

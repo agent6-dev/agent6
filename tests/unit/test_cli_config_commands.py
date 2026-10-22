@@ -593,10 +593,10 @@ def test_get_honours_the_global_config_flag(
 ) -> None:
     """`--config FILE` reaches `config get`, so `get` and `show` agree about the same leaf."""
     explicit = iso / "x.toml"
-    explicit.write_text("[review]\nperiod = 77\n", encoding="utf-8")
-    assert _run(["--config", str(explicit), "config", "get", "review.period"]) == 0
+    explicit.write_text("[review]\ninterval_iterations = 77\n", encoding="utf-8")
+    assert _run(["--config", str(explicit), "config", "get", "review.interval_iterations"]) == 0
     out = capsys.readouterr().out
-    assert "review.period = 77" in out
+    assert "review.interval_iterations = 77" in out
     assert f"[flag ({explicit})]" in out
 
 
@@ -605,7 +605,10 @@ def test_get_refuses_a_missing_global_config_file(iso: pathlib.Path) -> None:
 
     Instead of answering from defaults.
     """
-    assert _refuse(["--config", str(iso / "nope.toml"), "config", "get", "review.period"]) == 2
+    assert (
+        _refuse(["--config", str(iso / "nope.toml"), "config", "get", "review.interval_iterations"])
+        == 2
+    )
 
 
 def test_get_refuses_a_machine_file_that_does_not_exist(
@@ -613,7 +616,15 @@ def test_get_refuses_a_machine_file_that_does_not_exist(
 ) -> None:
     """`get` refuses a --machine-file that does not exist instead of reading it as empty."""
     assert (
-        _refuse(["config", "get", "--machine-file", str(iso / "nope.asm.toml"), "review.period"])
+        _refuse(
+            [
+                "config",
+                "get",
+                "--machine-file",
+                str(iso / "nope.asm.toml"),
+                "review.interval_iterations",
+            ]
+        )
         == 2
     )
     assert "no such machine file" in capsys.readouterr().err
@@ -660,7 +671,7 @@ def test_an_unreadable_config_refuses_rather_than_crashing(iso: pathlib.Path) ->
     gdir = iso / "g" / "agent6"
     gdir.mkdir(parents=True, exist_ok=True)
     cfg = gdir / "config.toml"
-    cfg.write_text("[review]\nperiod = 7\n", encoding="utf-8")
+    cfg.write_text("[review]\ninterval_iterations = 7\n", encoding="utf-8")
     cfg.chmod(0o000)
     try:
         assert _refuse(["config", "show"]) == 2
@@ -675,7 +686,7 @@ _CRASH_MARKERS = ("unexpected", "full traceback", "report this")
     "argv",
     [
         ["config", "set", "harness.max_iterations", "7"],
-        ["config", "unset", "review.period"],
+        ["config", "unset", "review.interval_iterations"],
         ["config", "add", "sandbox.allow_urls", "https://example.com"],
         ["config", "remove", "sandbox.allow_urls", "https://example.com"],
     ],
@@ -688,7 +699,7 @@ def test_write_commands_refuse_an_unreadable_target(
     gdir = iso / "g" / "agent6"
     gdir.mkdir(parents=True, exist_ok=True)
     cfg = gdir / "config.toml"
-    cfg.write_text("[review]\nperiod = 7\n", encoding="utf-8")
+    cfg.write_text("[review]\ninterval_iterations = 7\n", encoding="utf-8")
     cfg.chmod(0o000)
     try:
         assert _refuse(argv) == 2

@@ -25,7 +25,7 @@ from typing import Any, cast
 import pydantic
 import pydantic_core
 
-from agent6.config import layer
+from agent6.config import io, layer
 from agent6.config import model as config_model
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -74,6 +74,11 @@ def leaves() -> dict[str, tuple[str, str]]:
                         walk(entry, f"{path}.<name>.")
                     continue
             nested = _sections_of(field.annotation)
+            if nested and typing.get_origin(field.annotation) in (list, tuple):
+                out[path] = (_default_cell(path, field), field.description or "")
+                for entry in nested:
+                    walk(entry, f"{path}.<entry>.")
+                continue
             for section in nested:
                 walk(section, f"{path}.")
             if not nested:
@@ -143,7 +148,7 @@ def _flatten(prefix: str, node: dict[str, Any]) -> list[str]:
         if isinstance(value, dict):
             out.extend(_flatten(path, cast(dict[str, Any], value)))
         else:
-            out.append(f"`{path} = {json.dumps(value)}`")
+            out.append(f"`{path} = {io.format_toml_value(value)}`")
     return out
 
 

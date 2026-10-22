@@ -161,8 +161,8 @@ def discover_layers(
 # The generated config table prints each note.
 BUILTIN_PRESET_NOTES: dict[str, str] = {
     "no_review": "turns off the review panel",
-    "review": "three review seats that can veto the finish",
-    "deep_review": "five explore-tier review seats that can veto the finish",
+    "review": "three review seats that can block the finish",
+    "deep_review": "five repo-scope review seats that can block the finish",
 }
 BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
     "no_review": {
@@ -171,23 +171,23 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
     "review": {
         "review": {
             "trigger": "before_finish",
-            # veto, not quorum: the seats share one model, and the gate counts blocks per model.
-            "decision": "veto",
-            "seats": ["security", "correctness", "tests"],
+            # The seats share one model, so a model quorum above one is unreachable.
+            "block_on": "any",
+            "reviewers": [{"focus": "security"}, {"focus": "correctness"}, {"focus": "tests"}],
             "concurrency": 3,
         },
     },
     "deep_review": {
         "review": {
             "trigger": "before_finish",
-            "decision": "veto",
-            "tier": "explore",
-            "seats": [
-                "security",
-                "correctness",
-                "tests",
-                "edge-cases",
-                "over-engineering",
+            "block_on": "any",
+            "scope": "repo",
+            "reviewers": [
+                {"focus": "security"},
+                {"focus": "correctness"},
+                {"focus": "tests"},
+                {"focus": "edge-cases"},
+                {"focus": "over-engineering"},
             ],
             "concurrency": 5,
         },
@@ -480,6 +480,13 @@ def config_leaves(config: config_model.Config) -> dict[str, Any]:
             ):
                 for key, entry in value.items():
                     walk(entry, f"{path}.{key}.")
+            elif isinstance(value, tuple):
+                out[path] = tuple(
+                    entry.model_dump(exclude_none=True)
+                    if isinstance(entry, pydantic.BaseModel)
+                    else entry
+                    for entry in value
+                )
             else:
                 out[path] = value
 

@@ -261,7 +261,7 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 
 | Field | Default | Meaning |
 |---|---|---|
-| `preset` | `"none"` | The selected preset: `none` (no preset), `no_review` (review panel off), `review` (three review seats that can veto the finish), `deep_review` (five explore-tier review seats that can veto the finish), or a `[presets.<name>]` of your own. A preset overrides settings in the layer that selects it. `--preset` selects per run, `resume --preset` per resumed execution. `none` stops preset lookup; an empty string is refused. |
+| `preset` | `"none"` | The selected preset: `none` (no preset), `no_review` (review panel off), `review` (three review seats that can block the finish), `deep_review` (five repo-scope review seats that can block the finish), or a `[presets.<name>]` of your own. A preset overrides settings in the layer that selects it. `--preset` selects per run, `resume --preset` per resumed execution. `none` stops preset lookup; an empty string is refused. |
 
 ## `[harness]`
 
@@ -288,15 +288,45 @@ The table was `[harness]` from 0.0.35; a config that still says `[workflow]` is 
 
 | Field | Default | Meaning |
 |---|---|---|
-| `trigger` | `"off"` | When the in-loop review panel runs on the diff so far and its findings reach the model as a message: `off` (never), `on_verify_fail` (after each failed verify), `before_finish` (when the model calls `finish_session`; a gating `decision` can reject the finish), or `periodic` (every `period` iterations). With no `seats` the panel is one reviewer seat on `[models.reviewer]`, the model `agent6 review` uses. |
-| `period` | `10` | Iterations between panels when `trigger = "periodic"`. |
-| `decision` | `"advisory"` | What a panel's `block` verdicts do: `advisory` (the findings are injected as guidance, nothing is blocked), `veto` (one blocking seat rejects the finish), `quorum` (`quorum` distinct models must block), or `all` (every seat must block). A gate applies to `before_finish` only; the other triggers always advise. |
-| `quorum` | `2` | How many seats must block for `decision = "quorum"`, counted per distinct model (two seats on one model count once, so a same-model panel cannot reach it). |
+| `trigger` | `"off"` | When the in-loop review panel runs on the diff so far and its findings reach the model as a message: `off` (never), `on_verify_fail` (after each failed verify), `before_finish` (when the model calls `finish_session`; a gating `block_on` can reject the finish), or `periodic` (every `interval_iterations` iterations). With no `reviewers` the panel is one reviewer seat on `[models.reviewer]`, the model `agent6 review` uses. |
+| `interval_iterations` | `10` | Iterations between panels when `trigger = "periodic"`. |
+| `block_on` | `"none"` | What a panel's `block` verdicts do: `none` (the findings are injected as guidance, nothing is blocked), `any` (one blocking seat rejects the finish), `model_quorum` (`min_blocking_models` distinct provider/model routes must block), or `all` (every seat must block, with abstentions counting as no block). A gate applies to `before_finish` only; the other triggers always advise. |
+| `min_blocking_models` | `2` | Distinct provider/model routes required to block for `block_on = "model_quorum"`. Two seats on one route count once, even with different focus or effort. |
 | `max_review_rejections` | `4` | How many ends (a `finish_session`, a silent finish, a settled or plateau stop) a gating panel may reject in one run. The count persists across resumes and never resets; from the cap on the panel still runs and its findings still reach the model, but every end stands, so a panel cannot stall a run forever. |
-| `budget_fraction` | `0.25` | Skip the panel (the finish is accepted) once the run's remaining budget falls below this fraction of the whole. `0.25`: no panel in the last quarter. |
-| `seats` | `[]` | The panel roster, one entry per seat: a persona name (`"security"`), routed via `[models.reviewer]`, or `"<persona>@<provider>/<model>"` to pin a model per seat (`"correctness@openrouter/moonshotai/kimi-k2"`). A persona is any short stance the reviewer's prompt adopts; the built-in set cycled when none is named is `security`, `correctness`, `tests`, `over-engineering`, `edge-cases`. Empty: one reviewer seat when `trigger` is on. `agent6 review --reviewers N --personas ...` builds the same roster for a one-off review. |
+| `min_remaining_budget_fraction` | `0.25` | Skip the panel (the finish is accepted) once the run's remaining budget falls below this fraction of the whole. `0.25`: no panel in the last quarter. |
+| `reviewers` | `[]` | The panel roster as a list of tables with `focus` and optional `provider`, `model`, `temperature` and `effort`. Omitted routing inherits `[models.reviewer]`; a pinned route uses the role-model defaults. Set `provider` and `model` together. The built-in focuses cycled when empty are `security`, `correctness`, `tests`, `over-engineering`, `edge-cases`. Empty: one seat when `trigger` is on. `agent6 review --reviewers N --personas ...` builds a one-off roster. |
 | `concurrency` | `1` | How many seats the in-loop panel runs at once (`1` = one after another). `agent6 review` always runs every seat in parallel. |
-| `tier` | `"diff"` | How much a seat reads: `diff` (one call over the diff, the task, and the verify result) or `explore` (a read-only tool-using reviewer that also reads the repo around the diff to catch cross-file impact; several calls per seat, and it reads the checkout, so the reviewed head must be checked out with a clean tree). |
+| `scope` | `"diff"` | How much a seat reads: `diff` (one call over the diff, the task, and the verify result) or `repo` (a read-only tool-using reviewer that also reads the repo around the diff to catch cross-file impact; several calls per seat, and it reads the checkout, so the reviewed head must be checked out with a clean tree). |
+
+Each `reviewers` entry has these fields:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `focus` | *(required)* | A short review stance. |
+| `provider` | none | A provider name; requires `model` too. |
+| `model` | none | A model id; requires `provider` too. |
+| `temperature` | none | Sampling temperature; unset inherits the route's value. `0.0` is explicit. |
+| `effort` | none | Reasoning effort; unset inherits the route's value. `off` is explicit. |
+
+Set `provider` and `model` together to pin a route; omit both to inherit the resolved reviewer role.
+An unpinned entry inherits the role's sampling settings; a pinned entry defaults to `temperature = 0.0` and unset effort.
+Explicit `effort = "off"` and `temperature = 0.0` override inherited values.
+`model_quorum` requires at least `min_blocking_models` distinct resolved provider/model routes at config validation.
+Different focuses or effort levels on one route still count as one blocking model.
+
+```toml
+[review]
+trigger = "before_finish"
+scope = "diff"
+interval_iterations = 10
+min_remaining_budget_fraction = 0.25
+block_on = "any"
+min_blocking_models = 2
+reviewers = [
+  { focus = "security" },
+  { focus = "correctness", provider = "openrouter", model = "moonshotai/kimi-k2", effort = "high" },
+]
+```
 
 A `block` gates only when its `file:line` is in the diff and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness`; every other finding is advisory and cannot stall the run.
 
@@ -357,8 +387,8 @@ The name `none` is reserved, so `[presets.none]` is refused.
 | Preset | For | Sets |
 |---|---|---|
 | `no_review` | turns off the review panel | `review.trigger = "off"` |
-| `review` | three review seats that can veto the finish | `review.trigger = "before_finish"`, `review.decision = "veto"`, `review.seats = ["security", "correctness", "tests"]`, `review.concurrency = 3` |
-| `deep_review` | five explore-tier review seats that can veto the finish | `review.trigger = "before_finish"`, `review.decision = "veto"`, `review.tier = "explore"`, `review.seats = ["security", "correctness", "tests", "edge-cases", "over-engineering"]`, `review.concurrency = 5` |
+| `review` | three review seats that can block the finish | `review.trigger = "before_finish"`, `review.block_on = "any"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }]`, `review.concurrency = 3` |
+| `deep_review` | five repo-scope review seats that can block the finish | `review.trigger = "before_finish"`, `review.block_on = "any"`, `review.scope = "repo"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }, { focus = "edge-cases" }, { focus = "over-engineering" }]`, `review.concurrency = 5` |
 
 Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
 
@@ -367,10 +397,10 @@ preset = "myteam"
 
 [presets.myteam.review]
 trigger = "before_finish"
-decision = "veto"
-seats = [
-  "security@anthropic/claude-opus-4-8",
-  "correctness@openrouter/moonshotai/kimi-k2",
+block_on = "any"
+reviewers = [
+  { focus = "security", provider = "anthropic", model = "claude-opus-4-8" },
+  { focus = "correctness", provider = "openrouter", model = "moonshotai/kimi-k2", effort = "high" },
 ]
 ```
 

@@ -61,12 +61,16 @@ def _block(category: str, file_line: str) -> harness__panel.Finding:
 def _agg(
     seats: list[harness__panel.ReviewVerdict],
     *,
-    decision: harness__panel.ReviewDecision = "veto",
-    quorum: int = 2,
+    block_on: harness__panel.ReviewBlockOn = "any",
+    min_blocking_models: int = 2,
     ctx: harness__panel.ReviewContext | None = None,
 ) -> harness__panel.PanelResult:
     return harness__panel.aggregate_verdicts(
-        seats, ctx or _ctx(), decision=decision, quorum=quorum, panel_id="p"
+        seats,
+        ctx or _ctx(),
+        block_on=block_on,
+        min_blocking_models=min_blocking_models,
+        panel_id="p",
     )
 
 
@@ -111,21 +115,21 @@ def test_is_grounded_accepts_a_line_col_citation() -> None:
 
 
 def test_grounded_security_block_gates_under_veto() -> None:
-    res = _agg([_seat("m1", _block("security", "foo.py:11"))], decision="veto")
+    res = _agg([_seat("m1", _block("security", "foo.py:11"))], block_on="any")
     assert res.blocked is True and res.n_block == 1
     assert res.merged_findings[0].severity == "block"
 
 
 def test_ungrounded_block_is_not_reported_and_does_not_gate() -> None:
     # A finding at a line absent from the reviewed tree is not reportable.
-    res = _agg([_seat("m1", _block("security", "foo.py:99"))], decision="veto")
+    res = _agg([_seat("m1", _block("security", "foo.py:99"))], block_on="any")
     assert res.blocked is False and res.n_block == 0
     assert res.merged_findings == ()
 
 
 def test_non_gating_category_block_is_downgraded() -> None:
     # a "test-gap" can never block even if grounded in the diff.
-    res = _agg([_seat("m1", _block("test-gap", "foo.py:11"))], decision="veto")
+    res = _agg([_seat("m1", _block("test-gap", "foo.py:11"))], block_on="any")
     assert res.blocked is False
     assert res.merged_findings[0].severity == "warn"
 
@@ -139,32 +143,32 @@ def test_verify_uncovered_requires_verify_passed() -> None:
     assert _agg([_seat("m1", f)], ctx=_ctx(verify_ok=True)).blocked is True
 
 
-# --- decision policies --------------------------------------------------------
+# --- block_on policies --------------------------------------------------------
 
 
 def test_advisory_never_blocks_even_with_grounded_security_block() -> None:
-    res = _agg([_seat("m1", _block("security", "foo.py:11"))], decision="advisory")
+    res = _agg([_seat("m1", _block("security", "foo.py:11"))], block_on="none")
     assert res.blocked is False
     assert res.merged_findings[0].severity == "block"  # still reported, just not gating
 
 
 def test_quorum_counts_distinct_models_not_seats() -> None:
     g = lambda: _block("security", "foo.py:11")  # noqa: E731
-    # two blocking seats but the SAME model -> counts as one -> quorum(2) unmet.
+    # two blocking seats but the SAME model -> counts as one -> min_blocking_models(2) unmet.
     same = [_seat("m1", g(), seat="a"), _seat("m1", g(), seat="b")]
-    assert _agg(same, decision="quorum", quorum=2).blocked is False
-    assert _agg(same, decision="quorum", quorum=2).n_block == 1
-    # distinct models -> quorum met.
+    assert _agg(same, block_on="model_quorum", min_blocking_models=2).blocked is False
+    assert _agg(same, block_on="model_quorum", min_blocking_models=2).n_block == 1
+    # distinct models -> min_blocking_models met.
     diff_models = [_seat("m1", g(), seat="a"), _seat("m2", g(), seat="b")]
-    assert _agg(diff_models, decision="quorum", quorum=2).blocked is True
+    assert _agg(diff_models, block_on="model_quorum", min_blocking_models=2).blocked is True
 
 
 def test_all_requires_every_non_abstaining_seat_to_block() -> None:
     blk = _seat("m1", _block("security", "foo.py:11"), seat="a")
     passing = _seat("m2", seat="b")  # no findings -> pass
-    assert _agg([blk, passing], decision="all").blocked is False
+    assert _agg([blk, passing], block_on="all").blocked is False
     assert _agg(
-        [blk, _seat("m2", _block("security", "bar.py:1"), seat="b")], decision="all"
+        [blk, _seat("m2", _block("security", "bar.py:1"), seat="b")], block_on="all"
     ).blocked
 
 
@@ -172,15 +176,15 @@ def test_all_lone_blocker_with_mostly_errored_panel_does_not_gate() -> None:
     # FINDING 1 regression: a 5-seat panel where 4 seats abstained (provider
     # error) and ONE seat blocks must NOT gate under "all" -- "all" means the
     # panel that actually reviewed unanimously agreed, and one vote is not a
-    # quorum of five. Previously this blocked because abstentions were filtered
+    # min_blocking_models of five. Previously this blocked because abstentions were filtered
     # out before the all(...) check, so all(...) ran over the single survivor.
     blk = _seat("m1", _block("security", "foo.py:11"), seat="a")
     errs = [_seat(f"m{i}", seat=f"s{i}", error="provider timeout") for i in range(2, 6)]
-    res = _agg([blk, *errs], decision="all")
+    res = _agg([blk, *errs], block_on="all")
     assert res.n_abstain == 4 and res.n_block == 1
-    assert res.blocked is False  # no majority quorum responded
+    assert res.blocked is False  # no majority min_blocking_models responded
     # the same lone grounded block DOES gate under veto (one block is enough there).
-    assert _agg([blk, *errs], decision="veto").blocked is True
+    assert _agg([blk, *errs], block_on="any").blocked is True
 
 
 def test_abstain_does_not_count_as_pass_or_block() -> None:
@@ -189,20 +193,20 @@ def test_abstain_does_not_count_as_pass_or_block() -> None:
     err2 = _seat("m3", seat="c", error="unparseable")
     # "all" must NOT gate when only a minority responded: a lone blocker with
     # everyone else abstaining is not unanimous agreement of the panel.
-    res = _agg([blk, err], decision="all")  # 1 of 2 responded -> no majority quorum
+    res = _agg([blk, err], block_on="all")  # 1 of 2 responded -> no majority min_blocking_models
     assert res.n_abstain == 1
     assert res.blocked is False
     # even more lopsided: one block, two abstentions -> still no gate.
-    res3 = _agg([blk, err, err2], decision="all")
+    res3 = _agg([blk, err, err2], block_on="all")
     assert res3.n_abstain == 2 and res3.blocked is False
     # "all" means every configured seat, so an abstention prevents a gate.
     blk2 = _seat("m2", _block("security", "bar.py:1"), seat="b")
-    res4 = _agg([blk, blk2, err2], decision="all")
+    res4 = _agg([blk, blk2, err2], block_on="all")
     assert res4.n_abstain == 1 and res4.blocked is False
     # under veto, a single grounded block still gates regardless of abstentions.
-    assert _agg([blk, err], decision="veto").blocked is True
+    assert _agg([blk, err], block_on="any").blocked is True
     # an all-abstain panel never blocks
-    only_err = _agg([err], decision="veto")
+    only_err = _agg([err], block_on="any")
     assert only_err.blocked is False and only_err.n_abstain == 1
 
 
@@ -211,11 +215,15 @@ def test_abstain_does_not_count_as_pass_or_block() -> None:
 
 def test_dedup_across_seats_and_against_prior_findings() -> None:
     f = _block("security", "foo.py:11")
-    res = _agg([_seat("m1", f, seat="a"), _seat("m2", f, seat="b")], decision="advisory")
+    res = _agg([_seat("m1", f, seat="a"), _seat("m2", f, seat="b")], block_on="none")
     assert len(res.merged_findings) == 1  # same (path, category) merged
     prior = (harness__panel.Finding("security", "block", "foo.py:11", "already shown"),)
     res2 = harness__panel.aggregate_verdicts(
-        [_seat("m1", f)], _ctx(prior_findings=prior), decision="advisory", quorum=2, panel_id="p"
+        [_seat("m1", f)],
+        _ctx(prior_findings=prior),
+        block_on="none",
+        min_blocking_models=2,
+        panel_id="p",
     )
     assert res2.merged_findings == ()  # already injected -> not re-surfaced
 
@@ -226,16 +234,24 @@ def test_prior_deduped_block_does_not_count_toward_the_gate() -> None:
     # worker is rejected while being told "No blocking findings.".
     f = _block("security", "foo.py:11")
     prior = (harness__panel.Finding("security", "block", "foo.py:11", "already shown"),)
-    for decision in ("veto", "quorum", "all"):
+    for block_on in ("any", "model_quorum", "all"):
         res = harness__panel.aggregate_verdicts(
-            [_seat("m1", f)], _ctx(prior_findings=prior), decision=decision, quorum=1, panel_id="p"
+            [_seat("m1", f)],
+            _ctx(prior_findings=prior),
+            block_on=block_on,
+            min_blocking_models=1,
+            panel_id="p",
         )
         assert res.merged_findings == ()
-        assert res.n_block == 0 and res.blocked is False, decision
+        assert res.n_block == 0 and res.blocked is False, block_on
     # A NEW grounded block alongside the deduped one still gates.
     new = _block("data-loss", "bar.py:1")
     res2 = harness__panel.aggregate_verdicts(
-        [_seat("m1", f, new)], _ctx(prior_findings=prior), decision="veto", quorum=2, panel_id="p"
+        [_seat("m1", f, new)],
+        _ctx(prior_findings=prior),
+        block_on="any",
+        min_blocking_models=2,
+        panel_id="p",
     )
     assert res2.blocked is True and res2.n_block == 1
     assert [x.category for x in res2.merged_findings] == ["data-loss"]
@@ -254,7 +270,7 @@ def test_a_pass_verdict_cannot_contribute_a_blocking_vote() -> None:
     contradictory = harness__panel.ReviewVerdict(
         seat="s", model="m1", verdict="pass", findings=(finding,)
     )
-    res = _agg([contradictory], decision="veto")
+    res = _agg([contradictory], block_on="any")
     assert res.blocked is False and res.n_block == 0
 
 
@@ -305,7 +321,7 @@ def test_in_place_modification_grounds_old_side_lines() -> None:
     assert harness__panel.is_grounded("mod.py:103", ranges)
     res = _agg(
         [_seat("m1", _block("data-loss", "mod.py:103"))],
-        decision="veto",
+        block_on="any",
         ctx=harness__panel.ReviewContext(diff=diff),
     )
     assert res.blocked is True and res.n_block == 1
@@ -377,7 +393,7 @@ def test_a_citation_under_a_real_top_level_a_or_b_dir_grounds() -> None:
 def test_range_block_with_unchanged_start_still_gates() -> None:
     # End-to-end: a grounded block citing a real range whose start line is
     # unchanged must keep blocking (not be silently downgraded to warn).
-    res = _agg([_seat("m1", _block("security", "foo.py:8-12"))], decision="veto")
+    res = _agg([_seat("m1", _block("security", "foo.py:8-12"))], block_on="any")
     assert res.blocked is True and res.n_block == 1
     assert res.merged_findings[0].severity == "block"
 
@@ -398,7 +414,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
 
     class _Seat:
         persona = "security"
-        tier = "diff"
+        scope = "diff"
 
     abstain = harness__panel.ReviewVerdict(
         seat="security",
@@ -408,7 +424,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
     )
     res = harness__panel.PanelResult(
         panel_id="cli",
-        decision="advisory",
+        block_on="none",
         blocked=False,
         merged_findings=(),
         per_seat=(abstain, abstain, abstain),
@@ -463,7 +479,7 @@ def test_review_exit_code_is_consistent_across_verdicts(
 
     class _Seat:
         persona = "security"
-        tier = "diff"
+        scope = "diff"
 
     block = _seat("m1", _block("security", "foo.py:11"))  # a real gating verdict
     passing = _seat("m2", seat="s2")
@@ -476,7 +492,7 @@ def test_review_exit_code_is_consistent_across_verdicts(
     ) -> int:
         res = harness__panel.PanelResult(
             panel_id="cli",
-            decision="veto",
+            block_on="any",
             blocked=blocked,
             merged_findings=findings,
             per_seat=per_seat,
@@ -542,7 +558,7 @@ def test_panel_is_inconclusive_owner() -> None:
     passing = harness__panel.ReviewVerdict(seat="s2", model="m2", verdict="pass")
     all_abstain = harness__panel.PanelResult(
         panel_id="p",
-        decision="advisory",
+        block_on="none",
         blocked=False,
         merged_findings=(),
         per_seat=(abstain, abstain),
@@ -552,7 +568,7 @@ def test_panel_is_inconclusive_owner() -> None:
     assert harness__panel.panel_is_inconclusive(all_abstain) is True
     mixed = harness__panel.PanelResult(
         panel_id="p",
-        decision="advisory",
+        block_on="none",
         blocked=False,
         merged_findings=(),
         per_seat=(abstain, passing),
@@ -562,7 +578,7 @@ def test_panel_is_inconclusive_owner() -> None:
     assert harness__panel.panel_is_inconclusive(mixed) is False
     empty = harness__panel.PanelResult(
         panel_id="p",
-        decision="advisory",
+        block_on="none",
         blocked=False,
         merged_findings=(),
         per_seat=(),

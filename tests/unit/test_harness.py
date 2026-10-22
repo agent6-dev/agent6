@@ -8897,7 +8897,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
         max_iterations=10,
         review=_reviewer.ReviewSettings(
             trigger="before_finish",
-            seats=[object()],  # pyright: ignore[reportArgumentType]
+            reviewers=[object()],  # pyright: ignore[reportArgumentType]
         ),
     )
     panels: list[str] = []

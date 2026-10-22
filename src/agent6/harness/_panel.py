@@ -16,7 +16,7 @@ from typing import Literal
 
 Severity = Literal["block", "warn", "nit"]
 Verdict = Literal["pass", "block"]
-ReviewDecision = Literal["advisory", "veto", "quorum", "all"]
+ReviewBlockOn = Literal["none", "any", "model_quorum", "all"]
 
 # Only the first set may gate; the rest advise, being too noisy to block on.
 ALLOWED_BLOCK_CATEGORIES: frozenset[str] = frozenset(
@@ -95,7 +95,7 @@ class PanelResult:
 
     Attributes:
         panel_id: The panel's id.
-        decision: The gating rule applied.
+        block_on: The gating rule applied.
         blocked: Whether the panel rejects the work.
         merged_findings: The grounded findings across seats, deduplicated, blocks first.
         per_seat: Each seat's grounded verdict.
@@ -105,7 +105,7 @@ class PanelResult:
     """
 
     panel_id: str
-    decision: ReviewDecision
+    block_on: ReviewBlockOn
     blocked: bool
     merged_findings: tuple[Finding, ...]
     per_seat: tuple[ReviewVerdict, ...]
@@ -410,9 +410,9 @@ def _has_new_block(
 
 
 def _decide(
-    decision: ReviewDecision,
+    block_on: ReviewBlockOn,
     n_block: int,
-    quorum: int,
+    min_blocking_models: int,
     *,
     n_seats_blocking: int,
     n_total: int,
@@ -420,22 +420,22 @@ def _decide(
     """Apply the gating rule.
 
     Args:
-        decision: The rule.
+        block_on: The rule.
         n_block: Distinct blocking models.
-        quorum: The blocks a `quorum` decision needs.
+        min_blocking_models: The distinct blocking routes `model_quorum` needs.
         n_seats_blocking: Seats with a surviving non-prior block.
         n_total: Seats that reviewed.
 
     Returns:
         Whether the panel blocks.
     """
-    if decision == "advisory" or not n_total:
+    if block_on == "none" or not n_total:
         return False
-    if decision == "veto":
+    if block_on == "any":
         return n_block >= 1
-    if decision == "quorum":
-        return n_block >= max(1, quorum)
-    if decision == "all":
+    if block_on == "model_quorum":
+        return n_block >= max(1, min_blocking_models)
+    if block_on == "all":
         return n_seats_blocking == n_total
     return False  # pragma: no cover - exhaustive
 
@@ -444,8 +444,8 @@ def aggregate_verdicts(
     per_seat: list[ReviewVerdict],
     ctx: ReviewContext,
     *,
-    decision: ReviewDecision,
-    quorum: int,
+    block_on: ReviewBlockOn,
+    min_blocking_models: int,
     panel_id: str,
 ) -> PanelResult:
     """Fold per-seat verdicts into one panel result with executable grounding.
@@ -453,15 +453,15 @@ def aggregate_verdicts(
     Every finding whose citation is not in the diff is dropped, and a block outside a gating
     category becomes a warn. Findings dedup across seats and against `prior_findings` by (path,
     category, hunk); an already-injected block neither re-surfaces nor counts toward the gate.
-    Advisory never blocks; veto blocks on any surviving block; quorum needs `quorum` blocks
-    counting at most one per distinct model; all needs every seat to block, an abstention being
-    no block.
+    `none` never blocks; `any` blocks on any surviving block. `model_quorum` needs
+    `min_blocking_models` distinct provider/model routes to block. `all` needs every seat
+    to block; an abstention is not a block.
 
     Args:
         per_seat: The seats' verdicts.
         ctx: The review context.
-        decision: The gating rule.
-        quorum: The blocks a `quorum` decision needs.
+        block_on: The gating rule.
+        min_blocking_models: The distinct blocking routes `model_quorum` needs.
         panel_id: The panel's id.
 
     Returns:
@@ -500,16 +500,16 @@ def aggregate_verdicts(
 
     n_block = len(blocking_models)  # distinct-model blocking seats
     blocked = _decide(
-        decision,
+        block_on,
         n_block,
-        quorum,
+        min_blocking_models,
         n_seats_blocking=n_seats_blocking,
         n_total=len(grounded_seats),
     )
 
     return PanelResult(
         panel_id=panel_id,
-        decision=decision,
+        block_on=block_on,
         blocked=blocked,
         merged_findings=merged_findings,
         per_seat=tuple(grounded_seats),
@@ -536,8 +536,8 @@ __all__ = [
     "Finding",
     "Hunk",
     "PanelResult",
+    "ReviewBlockOn",
     "ReviewContext",
-    "ReviewDecision",
     "ReviewVerdict",
     "aggregate_verdicts",
     "diff_hunks",

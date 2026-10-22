@@ -14,37 +14,114 @@ import pydantic
 
 from agent6.config import _base
 
+EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
 
-def parse_seat_spec(spec: str) -> tuple[str, str, str]:
-    """Split a review seat spec, `persona[@provider/model]`, into its three parts.
 
-    Only the first `/` after `@` splits provider from model, so the model may contain `/`.
-    `"security"` gives `("security", "", "")`, routed via the reviewer role;
-    `"@anthropic/claude-opus-4-8"` gives `("", "anthropic", "claude-opus-4-8")`.
+class RoleModel(pydantic.BaseModel):
+    """One role's provider and model.
 
-    Args:
-        spec: The seat spec.
-
-    Returns:
-        `(persona, provider, model)`, each stripped, the route parts empty without an `@`.
-
-    Raises:
-        ValueError: An `@` form names no provider or no model (a typo must not degrade to the
-            reviewer route in silence).
+    `temperature` defaults to 0.0: high-temperature sampling degenerates on some open-weights
+    models (an observed 15997 literal newline escapes in one `old_string`), and OpenRouter's
+    per-model defaults vary, so pinning is what makes a bench reproducible.
     """
-    persona, sep, route = spec.partition("@")
-    if not sep:
-        return (spec.strip(), "", "")
-    provider, slash, model = route.partition("/")
-    if not (provider.strip() and slash and model.strip()):
-        raise ValueError(
-            f"{spec!r} must be 'persona@provider/model' (both provider and model required)"
+
+    model_config = _base.MODEL_CONFIG
+
+    provider: str = pydantic.Field(
+        min_length=1,
+        description="A `[providers.<name>]` entry, by name.",
+    )
+    model: str = pydantic.Field(
+        min_length=1,
+        description="Model id as that provider names it (`agent6 model` lists them).",
+    )
+    temperature: float | None = pydantic.Field(
+        default=0.0,
+        ge=0.0,
+        le=2.0,
+        description=(
+            "Sampling temperature pinned on every call, `0.0` to `2.0`. `0.0` keeps tool use "
+            "stable. TOML omission uses `0.0`; only the Python API can pass `None` to leave the "
+            "provider's default."
+        ),
+    )
+    # Per wire: `reasoning.effort` on OpenAI-family models, `output_config.effort` or a thinking
+    # budget on Anthropic ones.
+    effort: EffortLevel | None = pydantic.Field(
+        default=None,
+        description=(
+            "Reasoning effort: `off`, `low`, `medium`, `high`, `xhigh`, or `max` (the top tiers "
+            "where the model offers them; Anthropic collapses them to its highest). Unset: `low` "
+            "on openai-compatible reasoning models and no thinking on Anthropic, as "
+            "`agent6 config show` prints. On `chatgpt` and `claude_code`, agent6 sends no "
+            "effort, so the model's own default applies."
+        ),
+    )
+
+
+class ReviewerConfig(pydantic.BaseModel):
+    """One reviewer's focus and optional model settings."""
+
+    model_config = _base.MODEL_CONFIG
+
+    focus: str = pydantic.Field(min_length=1, pattern=r"\S", description="A short review stance.")
+    provider: str | None = pydantic.Field(
+        default=None, min_length=1, description="A provider name; requires `model` too."
+    )
+    model: str | None = pydantic.Field(
+        default=None, min_length=1, description="A model id; requires `provider` too."
+    )
+    temperature: float | None = pydantic.Field(
+        default=None,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature; unset inherits the route's value. `0.0` is explicit.",
+    )
+    effort: EffortLevel | None = pydantic.Field(
+        default=None,
+        description="Reasoning effort; unset inherits the route's value. `off` is explicit.",
+    )
+
+    @pydantic.model_validator(mode="after")
+    def _check_route(self) -> ReviewerConfig:
+        """Refuse a partial provider/model route.
+
+        Returns:
+            The validated entry.
+
+        Raises:
+            ValueError: Only one routing field is set.
+        """
+        if (self.provider is None) != (self.model is None):
+            raise ValueError("reviewer provider and model must be set together or both omitted")
+        return self
+
+    def resolve(self, reviewer: RoleModel | None) -> RoleModel | None:
+        """Resolve the route and apply explicit sampling settings.
+
+        Args:
+            reviewer: The resolved reviewer role, or None when unconfigured.
+
+        Returns:
+            A pinned route uses RoleModel defaults; an unpinned route inherits the role.
+            None when neither supplies a route.
+        """
+        route = (
+            RoleModel(provider=self.provider, model=self.model)
+            if self.provider is not None and self.model is not None
+            else reviewer
         )
-    return (persona.strip(), provider.strip(), model.strip())
+        if route is None:
+            return None
+        return RoleModel(
+            provider=route.provider,
+            model=route.model,
+            temperature=route.temperature if self.temperature is None else self.temperature,
+            effort=route.effort if self.effort is None else self.effort,
+        )
 
 
-# The review-seat depth; ReviewSeat.tier mirrors this, so the vocabulary has one owner.
-ReviewTier = Literal["diff", "explore"]
+ReviewScope = Literal["diff", "repo"]
 
 
 class MetricConfig(pydantic.BaseModel):
@@ -458,31 +535,33 @@ class ReviewConfig(pydantic.BaseModel):
         description=(
             "When the in-loop review panel runs on the diff so far and its findings reach the "
             "model as a message: `off` (never), `on_verify_fail` (after each failed verify), "
-            "`before_finish` (when the model calls `finish_session`; a gating `decision` can "
-            "reject the finish), or `periodic` (every `period` iterations). With no `seats` the "
+            "`before_finish` (when the model calls `finish_session`; a gating `block_on` can "
+            "reject the finish), or `periodic` (every `interval_iterations` iterations). "
+            "With no `reviewers` the "
             "panel is one reviewer seat on `[models.reviewer]`, the model `agent6 review` uses."
         ),
     )
-    period: int = pydantic.Field(
+    interval_iterations: int = pydantic.Field(
         ge=1,
         default=10,
         description='Iterations between panels when `trigger = "periodic"`.',
     )
-    decision: Literal["advisory", "veto", "quorum", "all"] = pydantic.Field(
-        default="advisory",
+    block_on: Literal["none", "any", "model_quorum", "all"] = pydantic.Field(
+        default="none",
         description=(
-            "What a panel's `block` verdicts do: `advisory` (the findings are injected as "
-            "guidance, nothing is blocked), `veto` (one blocking seat rejects the finish), "
-            "`quorum` (`quorum` distinct models must block), or `all` (every seat must block). A "
+            "What a panel's `block` verdicts do: `none` (the findings are injected as "
+            "guidance, nothing is blocked), `any` (one blocking seat rejects the finish), "
+            "`model_quorum` (`min_blocking_models` distinct provider/model routes must block), "
+            "or `all` (every seat must block, with abstentions counting as no block). A "
             "gate applies to `before_finish` only; the other triggers always advise."
         ),
     )
-    quorum: int = pydantic.Field(
+    min_blocking_models: int = pydantic.Field(
         ge=1,
         default=2,
         description=(
-            'How many seats must block for `decision = "quorum"`, counted per distinct model (two '
-            "seats on one model count once, so a same-model panel cannot reach it)."
+            'Distinct provider/model routes required to block for `block_on = "model_quorum"`. '
+            "Two seats on one route count once, even with different focus or effort."
         ),
     )
     max_review_rejections: int = pydantic.Field(
@@ -495,7 +574,7 @@ class ReviewConfig(pydantic.BaseModel):
             "model, but every end stands, so a panel cannot stall a run forever."
         ),
     )
-    budget_fraction: float = pydantic.Field(
+    min_remaining_budget_fraction: float = pydantic.Field(
         gt=0.0,
         le=1.0,
         default=0.25,
@@ -504,16 +583,17 @@ class ReviewConfig(pydantic.BaseModel):
             "this fraction of the whole. `0.25`: no panel in the last quarter."
         ),
     )
-    seats: _base.StrTuple = pydantic.Field(
+    reviewers: tuple[ReviewerConfig, ...] = pydantic.Field(
         default=(),
+        strict=False,
+        json_schema_extra={"display_safe": True},
         description=(
-            'The panel roster, one entry per seat: a persona name (`"security"`), routed via '
-            '`[models.reviewer]`, or `"<persona>@<provider>/<model>"` to pin a model per seat '
-            '(`"correctness@openrouter/moonshotai/kimi-k2"`). A persona is any short stance the '
-            "reviewer's prompt adopts; the built-in set cycled when none is named is `security`, "
-            "`correctness`, `tests`, `over-engineering`, `edge-cases`. Empty: one reviewer seat "
-            "when `trigger` is on. `agent6 review --reviewers N --personas ...` builds the same "
-            "roster for a one-off review."
+            "The panel roster as a list of tables with `focus` and optional `provider`, `model`, "
+            "`temperature` and `effort`. Omitted routing inherits `[models.reviewer]`; a pinned "
+            "route uses the role-model defaults. Set `provider` and `model` together. "
+            "The built-in focuses cycled when empty are `security`, `correctness`, `tests`, "
+            "`over-engineering`, `edge-cases`. Empty: one seat when `trigger` is on. "
+            "`agent6 review --reviewers N --personas ...` builds a one-off roster."
         ),
     )
     concurrency: int = pydantic.Field(
@@ -524,55 +604,15 @@ class ReviewConfig(pydantic.BaseModel):
             "`agent6 review` always runs every seat in parallel."
         ),
     )
-    tier: ReviewTier = pydantic.Field(
+    scope: ReviewScope = pydantic.Field(
         default="diff",
         description=(
             "How much a seat reads: `diff` (one call over the diff, the task, and the verify "
-            "result) or `explore` (a read-only tool-using reviewer that also reads the repo around "
+            "result) or `repo` (a read-only tool-using reviewer that also reads the repo around "
             "the diff to catch cross-file impact; several calls per seat, and it reads the "
             "checkout, so the reviewed head must be checked out with a clean tree)."
         ),
     )
-
-    @pydantic.model_validator(mode="after")
-    def _check_review_seats(self) -> ReviewConfig:
-        """Refuse a seat entry that is empty or does not parse.
-
-        Returns:
-            The model unchanged.
-
-        Raises:
-            ValueError: A seat is blank, or its `@` form names no provider or no model.
-        """
-        for spec in self.seats:
-            if not spec.strip():
-                raise ValueError("review.seats entries must be non-empty")
-            try:
-                parse_seat_spec(spec)
-            except ValueError as exc:
-                raise ValueError(f"review.seats: {exc}") from exc
-        return self
-
-    @pydantic.model_validator(mode="after")
-    def _check_review_quorum(self) -> ReviewConfig:
-        """Refuse a quorum the roster's distinct models can never reach.
-
-        Returns:
-            The model unchanged.
-
-        Raises:
-            ValueError: `decision = "quorum"` with fewer distinct seat models than `quorum`.
-        """
-        if self.decision == "quorum" and self.quorum > 1:
-            models = {f"{p}/{m}" if p else "" for _, p, m in map(parse_seat_spec, self.seats)}
-            if len(models) < self.quorum:
-                raise ValueError(
-                    f"review.decision='quorum' with quorum={self.quorum}"
-                    f" needs >= {self.quorum} distinct models (the gate counts one block per"
-                    " distinct model). Provide them via seats"
-                    " ('persona@provider/model'), or use decision='veto'."
-                )
-        return self
 
 
 class BudgetConfig(pydantic.BaseModel):

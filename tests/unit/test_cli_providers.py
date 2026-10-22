@@ -37,7 +37,7 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
 
     They share the reviewer route; a transcript still tells which actor made a call.
     """
-    from agent6.config import PromptConfig, ReviewConfig
+    from agent6.config import PromptConfig, ReviewConfig, ReviewerConfig
 
     cfg = Config(
         providers={"o": OpenAIProviderEntry(api_format="openai", base_url="https://x/v1")},
@@ -45,7 +45,9 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
             worker=RoleModel(provider="o", model="m"),
             reviewer=RoleModel(provider="o", model="m"),
         ),
-        review=ReviewConfig(trigger="on_verify_fail", seats=("security",)),
+        review=ReviewConfig(
+            trigger="on_verify_fail", reviewers=(ReviewerConfig(focus="security"),)
+        ),
         prompt=PromptConfig(revise_prompt="auto"),
     )
 

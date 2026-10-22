@@ -356,9 +356,9 @@ def test_repeated_config_show_names_each_winning_file(
     monkeypatch.chdir(tmp_path)
     first = tmp_path / "first.toml"
     second = tmp_path / "second.toml"
-    first.write_text("[review]\nperiod = 7\n[budget]\nmax_usd = 2\n", encoding="utf-8")
+    first.write_text("[review]\ninterval_iterations = 7\n[budget]\nmax_usd = 2\n", encoding="utf-8")
     second.write_text("[budget]\nmax_usd = 3\n", encoding="utf-8")
     assert main(["--config", str(first), "--config", str(second), "config", "show"]) == 0
     lines = capsys.readouterr().out.splitlines()
-    assert any("review.period" in line and str(first) in line for line in lines)
+    assert any("review.interval_iterations" in line and str(first) in line for line in lines)
     assert any("budget.max_usd" in line and str(second) in line for line in lines)

@@ -3,7 +3,7 @@
 agent6 can run N reviewer subagents over a diff and aggregate their verdicts. It
 ships two ways: `agent6 review --reviewers N [--personas a,b,c]` (read-only,
 post-hoc) and in-loop via the `[review]` config (the `before_finish` /
-`on_verify_fail` / `periodic` triggers, with `advisory` / `veto` / `quorum`
+`on_verify_fail` / `periodic` triggers, with `none` / `any` / `model_quorum`
 decisions). The `ultra` profile enables a 3-seat `before_finish` veto panel. The
 configuration reference documents the fields.
 
@@ -19,7 +19,7 @@ panel makes the grounding executable in the aggregator instead. A reviewer's
 present in the diff the seat was shown, and the category is in the allowed-block
 set (`security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`,
 `verify-uncovered-correctness`). A block that fails either check is downgraded to
-`warn` before any quorum or veto counting. Taste, naming, "should add a test", and
+`warn` before any blocking-model counting. Taste, naming, "should add a test", and
 uncited claims cannot gate.
 
 ## Validation

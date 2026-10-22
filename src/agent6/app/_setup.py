@@ -27,7 +27,6 @@ from agent6.config import (
     MCPServerEntry,
     ProviderEntry,
     layer,
-    parse_seat_spec,
     plan_metered,
 )
 from agent6.models import cache
@@ -329,10 +328,7 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
     except secret_store.SecretsError as exc:
         return str(exc)
     needed = {rm.provider for rm in cfg.models.configured().values()}
-    for spec in cfg.review.seats:
-        _persona, seat_provider, _model = parse_seat_spec(spec)
-        if seat_provider:
-            needed.add(seat_provider)
+    needed.update(entry.provider for entry in cfg.review.reviewers if entry.provider)
     needed.update(p for p in extra_providers if p)
     if absent := sorted(needed - cfg.providers.keys()):
         return (

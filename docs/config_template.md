@@ -219,6 +219,30 @@ The table was `[harness]` from 0.0.35; a config that still says `[workflow]` is 
 
 <!-- config-table: review -->
 
+Each `reviewers` entry has these fields:
+
+<!-- config-table: review.reviewers.<entry> -->
+
+Set `provider` and `model` together to pin a route; omit both to inherit the resolved reviewer role.
+An unpinned entry inherits the role's sampling settings; a pinned entry defaults to `temperature = 0.0` and unset effort.
+Explicit `effort = "off"` and `temperature = 0.0` override inherited values.
+`model_quorum` requires at least `min_blocking_models` distinct resolved provider/model routes at config validation.
+Different focuses or effort levels on one route still count as one blocking model.
+
+```toml
+[review]
+trigger = "before_finish"
+scope = "diff"
+interval_iterations = 10
+min_remaining_budget_fraction = 0.25
+block_on = "any"
+min_blocking_models = 2
+reviewers = [
+  { focus = "security" },
+  { focus = "correctness", provider = "openrouter", model = "moonshotai/kimi-k2", effort = "high" },
+]
+```
+
 A `block` gates only when its `file:line` is in the diff and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness`; every other finding is advisory and cannot stall the run.
 
 ## `[context]`
@@ -269,10 +293,10 @@ preset = "myteam"
 
 [presets.myteam.review]
 trigger = "before_finish"
-decision = "veto"
-seats = [
-  "security@anthropic/claude-opus-4-8",
-  "correctness@openrouter/moonshotai/kimi-k2",
+block_on = "any"
+reviewers = [
+  { focus = "security", provider = "anthropic", model = "claude-opus-4-8" },
+  { focus = "correctness", provider = "openrouter", model = "moonshotai/kimi-k2", effort = "high" },
 ]
 ```
 

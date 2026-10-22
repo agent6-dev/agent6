@@ -21,8 +21,8 @@ from agent6.app import _setup, finalize, providers
 from agent6.config import (
     Config,
     ConfigError,
+    ReviewScope,
     layer,
-    parse_seat_spec,
 )
 from agent6.harness import _context, _panel, _reviewer, _toolset, code_review
 from agent6.providers import (
@@ -161,7 +161,7 @@ def save_review(reviews_dir: pathlib.Path, *, label: str, body: str) -> pathlib.
 def _is_checked_out(git: str, root: pathlib.Path, rev: str) -> bool:
     """Return whether the checkout at the root is the rev, with nothing uncommitted on top.
 
-    An explore-tier seat's read-only tools read the checkout, so anything else answers
+    A repo-scope seat's read-only tools read the checkout, so anything else answers
     `read_file` from a tree the diff does not describe.
 
     Args:
@@ -245,40 +245,38 @@ def _run_review_panel(
     except ProviderError as exc:
         _common.error(f"provider init failed: {exc}")
         return 2
-    # check_provider_keys reads a configured roster; --personas is the roster only without one.
-    pinned = [] if cfg.review.seats else [parse_seat_spec(spec)[1] for spec in persona_tuple]
-    err = _setup.check_provider_keys(cfg, extra_providers=pinned)
+    err = _setup.check_provider_keys(cfg)
     if err is not None:
         _common.error(f"{err}")
         return 2
     ctx = _panel.ReviewContext(task=f"code review: {label}", agents_md=agents_md, diff=diff)
-    # explore-tier seats need a read-only tool surface over the repo.
+    # repo-scope seats need a read-only tool surface over the repo.
     tools = None
     dispatch = None
-    if any(s.tier == "explore" for s in seats):
+    if any(s.scope == "repo" for s in seats):
         reviewed = _reviewed_head(base, head)
         if base and not _is_checked_out(git, root, reviewed):
             _common.error(
-                "review.tier = 'explore' reads the checkout, but the checkout is not the"
+                "review.scope = 'repo' reads the checkout, but the checkout is not the"
                 f" reviewed head {reviewed!r} (another commit, or uncommitted changes on top):"
                 " a seat's read_file would answer from a tree the diff does not describe."
-                " Check it out clean, or set review.tier = 'diff'."
+                " Check it out clean, or set review.scope = 'diff'."
             )
             return 2
         disp = tools_dispatch.ToolDispatcher(root=root, config=cfg)
         tools, dispatch = _toolset.build_readonly_review_tools(disp)
     print(
         f"[agent6] review panel: {len(seats)} seats"
-        f" ({', '.join(s.persona for s in seats)}) | decision={cfg.review.decision}"
-        f" | tier={cfg.review.tier} | range={label}",
+        f" ({', '.join(s.persona for s in seats)}) | block_on={cfg.review.block_on}"
+        f" | scope={cfg.review.scope} | range={label}",
         file=sys.stderr,
     )
     try:
         result = _reviewer.run_panel(
             seats,
             ctx,
-            decision=cfg.review.decision,
-            quorum=cfg.review.quorum,
+            block_on=cfg.review.block_on,
+            min_blocking_models=cfg.review.min_blocking_models,
             panel_id="cli",
             concurrency=len(seats),  # one-shot CLI: run all seats in parallel
             tools=tools,
@@ -375,12 +373,15 @@ def _reviewed_diff(
     return git, root, diff, label
 
 
-def _reviewer_config(config_paths: tuple[pathlib.Path, ...], model: str) -> Config:
+def _reviewer_config(
+    config_paths: tuple[pathlib.Path, ...], model: str, scope: ReviewScope | None = None
+) -> Config:
     """Return the effective config with `--model` applied to the reviewer route.
 
     Args:
         config_paths: The `--config` files in command-line order, if any.
         model: The `[provider/]model` value; "" leaves the route as configured.
+        scope: The panel reading scope; None leaves it as configured.
 
     Returns:
         The current directory's effective config, its reviewer route replaced when `model`
@@ -390,9 +391,13 @@ def _reviewer_config(config_paths: tuple[pathlib.Path, ...], model: str) -> Conf
         ConfigError: The value names no configured provider or no model.
     """
     cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
-    if not model:
-        return cfg
-    return cfg.with_model_route("reviewer", cfg.model_route("reviewer", model))
+    if model:
+        cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", model))
+    if scope is not None:
+        data = cfg.model_dump(mode="python")
+        data["review"]["scope"] = scope
+        cfg = Config.model_validate(data)
+    return cfg
 
 
 def _cmd_review(  # noqa: PLR0911
@@ -404,6 +409,7 @@ def _cmd_review(  # noqa: PLR0911
     model: str = "",
     reviewers: int = 0,
     personas: str = "",
+    scope: ReviewScope | None = None,
 ) -> int:
     """Print a code review of a diff to stdout.
 
@@ -418,6 +424,7 @@ def _cmd_review(  # noqa: PLR0911
         model: The `[provider/]model` value applied to the reviewer route.
         reviewers: The number of panel seats; 0 for the freeform review.
         personas: The panel's persona roster.
+        scope: The panel's reading scope; None keeps the config's.
 
     Returns:
         The exit code: 0 reviewed or PASS, 2 refused, 3 budget, and the panel's 1 or 4.
@@ -436,12 +443,12 @@ def _cmd_review(  # noqa: PLR0911
             file=sys.stderr,
         )
     try:
-        cfg = _reviewer_config(config_paths, model)
+        cfg = _reviewer_config(config_paths, model, scope)
     except ConfigError as exc:
         _common.error(str(exc))
         return 2
-    if personas.strip() and reviewers >= 1 and cfg.review.seats:
-        print("note: --personas ignored ([review].seats names the roster).", file=sys.stderr)
+    if personas.strip() and reviewers >= 1 and cfg.review.reviewers:
+        print("note: --personas ignored ([review].reviewers names the roster).", file=sys.stderr)
 
     reviewed = _reviewed_diff(base, head, paths)
     if isinstance(reviewed, int):

@@ -261,7 +261,10 @@ agent6 sessions review <session-id>           # read-only review of a finished r
 agent6 ask "how does the task-graph curator work?"
 ```
 
-- `review --reviewers 3 --personas security,correctness,tests`: a panel whose findings are checked against the diff, so only real problems gate; a seat pins its model in `[review].seats` (`security@openrouter/<model-id>`)
+- `review --reviewers 3 --personas security,correctness,tests`: build a one-off panel on the resolved reviewer role, with findings checked against the diff.
+  Configure [`review.reviewers`](config.md#review) tables to give each reviewer a `focus`, `provider`, `model`, `effort` and `temperature`.
+- `review --reviewers 3 --scope repo`: let the panel read the checkout through read-only tools instead of making one call over the diff (`--scope diff`).
+  `review.block_on` sets when grounded findings block; `model_quorum` counts each distinct provider/model route once.
 - `sessions review` reports how the run ended, what went wrong, what you corrected, the questions nobody answered, and candidate memory facts and AGENTS.md lines with their evidence; it touches no repo or memory file (`agent6 memory add` lands a candidate)
 - every review is saved under `<state-dir>/reviews/`; the path prints on stderr
 - `ask` runs in any directory; `run` and `plan` need a git repository

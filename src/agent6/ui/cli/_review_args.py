@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import argparse
+from typing import get_args
 
+from agent6.config import ReviewScope
 from agent6.ui.cli import _common, completers
 
 
@@ -92,7 +94,7 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         default="HEAD",
         help=(
             "Head ref (default: HEAD). Requires --base. With"
-            " [review].tier = 'explore' it must be the checked-out commit, clean,"
+            " [review].scope = 'repo' it must be the checked-out commit, clean,"
             " which the seats read."
         ),
     )
@@ -110,7 +112,7 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         metavar="[PROVIDER/]MODEL",
         help=(
             "The reviewer for this review, over every config layer: provider/model, or a"
-            " model id on the reviewer's provider. A seat pinned in [review].seats keeps"
+            " model id on the reviewer's provider. A seat pinned in [review].reviewers keeps"
             " its own model."
         ),
     )
@@ -124,10 +126,19 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             "Run an adversarial review panel of N grounded reviewers instead of one"
             " freeform review. Findings are grounded against the diff (only real,"
             " block-eligible problems gate). 0 (default) = the single freeform review."
-            " With [review].seats configured, N only turns the panel on: the seats"
-            " decide the reviewers. Exits 0 PASS, 1 INCONCLUSIVE (every seat"
+            " With [review].reviewers configured, N only turns the panel on; the"
+            " configured list supplies the roster. Exits 0 PASS, 1 INCONCLUSIVE (every seat"
             " abstained), 2 refused before any seat ran, 3 budget, 4 BLOCK: the"
             " codes `agent6 run` uses."
+        ),
+    )
+    review_p.add_argument(
+        "--scope",
+        choices=get_args(ReviewScope),
+        default=None,
+        help=(
+            "Panel reading scope: diff (one call over the diff) or repo (a read-only tool loop"
+            " over the checkout). Overrides [review].scope; ignored without --reviewers."
         ),
     )
     review_p.add_argument(
@@ -135,9 +146,8 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         default="",
         help=(
             "The panel's seats, comma-separated and cycled over --reviewers: a stance"
-            " ('security,correctness,tests'), or a stance on a model"
-            " ('security@openrouter/model-id', as [review].seats writes it). Default: a"
-            " built-in set. Ignored without --reviewers, and when [review].seats is"
+            " ('security,correctness,tests'). Pin models with [review].reviewers tables."
+            " Default: a built-in set. Ignored without --reviewers, and when [review].reviewers is"
             " configured."
         ),
     )

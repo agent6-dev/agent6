@@ -124,9 +124,9 @@ def run_one(
             "AGENT6_SB_DEADLINE_STEER",
             "AGENT6_SB_EFFORT",
             "AGENT6_SB_MAX_PLAN_POINTS",
-            "AGENT6_SB_REVIEW_SEATS",
-            "AGENT6_SB_REVIEW_DECISION",
-            "AGENT6_SB_REVIEW_QUORUM",
+            "AGENT6_SB_REVIEWERS",
+            "AGENT6_SB_REVIEW_BLOCK_ON",
+            "AGENT6_SB_REVIEW_MIN_BLOCKING_MODELS",
             "AGENT6_SB_STAGNATION_S",
         )
         if (v := os.environ.get(k))

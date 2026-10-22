@@ -121,17 +121,25 @@ def test_personas_without_reviewers_is_said_to_be_ignored(
     assert rc == 2 and "--personas ignored" not in capsys.readouterr().err
 
 
-def test_personas_under_configured_seats_is_said_to_be_ignored(
+def test_personas_under_configured_reviewers_is_said_to_be_ignored(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--personas` under a configured `[review].seats` roster is said to be ignored."""
+    """`--personas` under a configured `[review].reviewers` roster is said to be ignored."""
     import types
 
     from agent6.config import Config
 
     subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
     monkeypatch.chdir(tmp_path)
-    cfg = Config.model_validate({"review": {"seats": ["security@openrouter/some-model"]}})
+    cfg = Config.model_validate(
+        {
+            "review": {
+                "reviewers": [
+                    {"focus": "security", "provider": "openrouter", "model": "some-model"}
+                ]
+            }
+        }
+    )
 
     def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
         return types.SimpleNamespace(config=cfg)
@@ -139,10 +147,10 @@ def test_personas_under_configured_seats_is_said_to_be_ignored(
     monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
     rc = cli_main(["review", "--personas", "tests", "--reviewers", "2"])
     err = capsys.readouterr().err
-    assert rc == 2 and "note: --personas ignored ([review].seats names the roster)." in err
+    assert rc == 2 and "note: --personas ignored ([review].reviewers names the roster)." in err
 
 
-def _panel_config(*, with_reviewer: bool) -> Any:
+def _panel_config(*, with_reviewer: bool, reviewers: tuple[dict[str, str], ...] = ()) -> Any:
     from agent6.config import Config
 
     data: dict[str, Any] = {
@@ -150,6 +158,7 @@ def _panel_config(*, with_reviewer: bool) -> Any:
     }
     if with_reviewer:
         data["models"] = {"reviewer": {"provider": "local", "model": "reviewer"}}
+    data["review"] = {"reviewers": reviewers}
     return Config.model_validate(data)
 
 
@@ -258,7 +267,12 @@ def test_an_unknown_pinned_provider_is_named_without_a_reviewer_route(
         layer,
         "load_effective",
         mock.MagicMock(
-            return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=False))
+            return_value=types.SimpleNamespace(
+                config=_panel_config(
+                    with_reviewer=False,
+                    reviewers=({"focus": "security", "provider": "missing", "model": "model"},),
+                )
+            )
         ),
     )
     monkeypatch.setattr(
@@ -271,7 +285,6 @@ def test_an_unknown_pinned_provider_is_named_without_a_reviewer_route(
         head=head,
         paths=(),
         reviewers=1,
-        personas="security@missing/model",
     )
 
     err = capsys.readouterr().err
@@ -297,7 +310,12 @@ def test_a_fully_pinned_panel_needs_no_reviewer_route(
         layer,
         "load_effective",
         mock.MagicMock(
-            return_value=types.SimpleNamespace(config=_panel_config(with_reviewer=False))
+            return_value=types.SimpleNamespace(
+                config=_panel_config(
+                    with_reviewer=False,
+                    reviewers=({"focus": "security", "provider": "local", "model": "model"},),
+                )
+            )
         ),
     )
     monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
@@ -311,7 +329,6 @@ def test_a_fully_pinned_panel_needs_no_reviewer_route(
         head=head,
         paths=(),
         reviewers=1,
-        personas="security@local/model",
     )
 
     captured = capsys.readouterr()
@@ -321,23 +338,22 @@ def test_a_fully_pinned_panel_needs_no_reviewer_route(
     assert "1 seats (security)" in captured.err
 
 
-def _explore_review(
+def _repo_review(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, base: str, head: str
 ) -> tuple[int, dict[str, Any]]:
-    """Run `agent6 review --reviewers 1` under `review.tier = "explore"` with one fake seat.
+    """Run `agent6 review --reviewers 1` under `review.scope = "repo"` with one fake seat.
 
-    The seat reads `caller.py` the way the explore prompt tells it to. Returns the exit code and
+    The seat reads `caller.py` the way the repo prompt tells it to. Returns the exit code and
     what the seat read.
     """
     import types
 
     from agent6.config import Config
     from agent6.harness import _panel, _reviewer
-    from agent6.ui.cli import review_cmds
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    cfg = Config.model_validate({"review": {"tier": "explore"}})
+    cfg = Config()
     seen: dict[str, Any] = {}
 
     def _fake_effective(*_a: object, **_k: object) -> types.SimpleNamespace:
@@ -355,7 +371,7 @@ def _explore_review(
                 persona="correctness",
                 model="fake",
                 provider=None,  # pyright: ignore[reportArgumentType]
-                tier="explore",
+                scope=_cfg.review.scope,
             )
         ]
 
@@ -363,7 +379,7 @@ def _explore_review(
         seen["read_file"] = kw["dispatch"]("read_file", {"path": "caller.py"}).content
         return _panel.PanelResult(
             panel_id="cli",
-            decision="advisory",
+            block_on="none",
             blocked=False,
             merged_findings=(),
             per_seat=(),
@@ -376,58 +392,55 @@ def _explore_review(
     monkeypatch.setattr(_setup, "check_provider_keys", _no_key_error)
     monkeypatch.setattr(providers, "build_review_seats", _fake_seats)
     monkeypatch.setattr(harness__reviewer, "run_panel", _fake_panel)
-    rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        (), base=base, head=head, paths=(), reviewers=1
-    )
+    rc = cli_main(["review", "--base", base, "--head", head, "--reviewers", "1", "--scope", "repo"])
     return rc, seen
 
 
-def test_explore_tier_gates_on_the_head_being_the_checkout(
+def test_repo_scope_gates_on_the_head_being_the_checkout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The explore tier runs only when `--head` is the checkout.
+    """The repo scope runs only when `--head` is the checkout.
 
     Its read-only tools read the checkout, so another head would feed the seat file contents the
     diff contradicts, the false break the prompt tells it to block on.
     """
     base, head = _two_commits(tmp_path)
-    rc, seen = _explore_review(tmp_path, monkeypatch, base=base, head=head)
+    rc, seen = _repo_review(tmp_path, monkeypatch, base=base, head=head)
     err = capsys.readouterr().err
-    assert seen == {}, f"an explore seat read the checkout, not --head: {seen}"
+    assert seen == {}, f"a repo seat read the checkout, not --head: {seen}"
     assert rc == 2
-    assert "reviewed head" in err and "explore" in err
+    assert "reviewed head" in err and "repo" in err
 
     subprocess.run(["git", "checkout", "-q", head], cwd=tmp_path, check=True)
     (tmp_path / "scratch.log").write_text("build output\n", encoding="utf-8")  # untracked
-    rc, seen = _explore_review(tmp_path, monkeypatch, base=base, head="HEAD")
+    rc, seen = _repo_review(tmp_path, monkeypatch, base=base, head="HEAD")
     assert rc == 0
     assert seen == {"read_file": "from lib import f\n\nprint(f(1, 2))\n"}
 
 
-def test_explore_tier_refuses_a_dirty_checkout(
+def test_repo_scope_refuses_a_dirty_checkout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The explore tier refuses a dirty checkout, whose tree contradicts the `base..HEAD` diff."""
+    """The repo scope refuses a dirty checkout, whose tree contradicts the `base..HEAD` diff."""
     base, head = _two_commits(tmp_path)
     subprocess.run(["git", "checkout", "-q", head], cwd=tmp_path, check=True)
     (tmp_path / "caller.py").write_text("from lib import f\n\nprint(f(1))\n", encoding="utf-8")
-    rc, seen = _explore_review(tmp_path, monkeypatch, base=base, head="HEAD")
+    rc, seen = _repo_review(tmp_path, monkeypatch, base=base, head="HEAD")
     err = capsys.readouterr().err
-    assert seen == {}, f"an explore seat read a dirty tree the diff contradicts: {seen}"
+    assert seen == {}, f"a repo seat read a dirty tree the diff contradicts: {seen}"
     assert rc == 2
-    assert "reviewed head" in err and "explore" in err
+    assert "reviewed head" in err and "repo" in err
 
 
 def test_a_panel_with_an_unpinned_seat_still_requires_the_reviewer_route(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A panel with an unpinned seat still requires the reviewer route.
 
-    The refusal carries `require_runnable`'s remedy.
+    The refusal names the missing reviewer route.
     """
     import types
 
-    from agent6.config import ConfigError
     from agent6.ui.cli import review_cmds
 
     base, head = _two_commits(tmp_path)
@@ -442,10 +455,13 @@ def test_a_panel_with_an_unpinned_seat_still_requires_the_reviewer_route(
     )
     monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
 
-    with pytest.raises(ConfigError, match="reviewer"):
+    assert (
         review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
             (), base=base, head=head, paths=(), reviewers=2, personas="security"
         )
+        == 2
+    )
+    assert "configure [models.reviewer]" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("head", ["rel", ""])
@@ -506,10 +522,7 @@ def test_the_recent_log_survives_a_head_that_is_also_a_path_or_empty(
 def test_personas_a_configured_roster_ignores_are_not_read(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Personas a configured roster ignores are not parsed.
-
-    A malformed spec cannot fail the run.
-    """
+    """Personas a configured roster ignores do not affect its routes."""
     import types
 
     from agent6.config import Config
@@ -521,7 +534,7 @@ def test_personas_a_configured_roster_ignores_are_not_read(
     cfg = Config.model_validate(
         {
             "providers": {"local": {"api_format": "openai", "base_url": "https://example.test/v1"}},
-            "review": {"seats": ["security@local/m"]},
+            "review": {"reviewers": [{"focus": "security", "provider": "local", "model": "m"}]},
         }
     )
     seen: dict[str, Any] = {}
@@ -539,7 +552,7 @@ def test_personas_a_configured_roster_ignores_are_not_read(
     monkeypatch.setattr(_setup, "check_provider_keys", _keys)
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        (), base=base, head=head, paths=(), reviewers=1, personas="tests@oops"
+        (), base=base, head=head, paths=(), reviewers=1, personas="tests"
     )
 
     assert rc == 2

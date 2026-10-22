@@ -3,7 +3,7 @@
 """The run review's prompt and the review panel seats' prompts.
 
 The run review (`sessions review`) reads a finished session's record; each adversarial seat
-sees the panel prompt, or its explore-tier variant, with a `{persona}` placeholder.
+sees the panel prompt, or its repo-scope variant, with a `{persona}` placeholder.
 `harness.run_review` and `harness._reviewer` own the calls.
 """
 
@@ -76,7 +76,7 @@ Output STRICT JSON and nothing else (no prose, no markdown fence):
   ]}}"""
 
 
-EXPLORE_REVIEW_SYSTEM_PROMPT = (
+REPO_REVIEW_SYSTEM_PROMPT = (
     REVIEW_SYSTEM_PROMPT
     + """
 

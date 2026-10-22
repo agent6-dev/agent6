@@ -114,7 +114,7 @@ def test_review_branch_after_base_advanced(
 
 
 def test_an_explicit_range_names_its_right_endpoint_as_the_reviewed_head() -> None:
-    """`review --base main..topic` checked the explore checkout against HEAD, not topic.
+    """`review --base main..topic` checked the repo checkout against HEAD, not topic.
 
     `main..` is `main..HEAD` to git; the helper named "" as its head.
     """

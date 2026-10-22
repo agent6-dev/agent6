@@ -110,10 +110,19 @@ def test_a_symlink_whose_target_does_not_exist_yet_is_created(
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
-        (("set", "review.period", "8"), {"period": 8, "seats": ["tests"]}),
-        (("unset", "review.period"), {"seats": ["tests"]}),
-        (("add", "review.seats", "security"), {"period": 7, "seats": ["tests", "security"]}),
-        (("remove", "review.seats", "tests"), {"period": 7, "seats": []}),
+        (
+            ("set", "harness.verify_timeout_s", "8"),
+            {"verify_timeout_s": 8, "verify_command": ["tests"]},
+        ),
+        (("unset", "harness.verify_timeout_s"), {"verify_command": ["tests"]}),
+        (
+            ("add", "harness.verify_command", "security"),
+            {"verify_timeout_s": 7, "verify_command": ["tests", "security"]},
+        ),
+        (
+            ("remove", "harness.verify_command", "tests"),
+            {"verify_timeout_s": 7, "verify_command": []},
+        ),
     ],
 )
 def test_machine_overlay_writers_keep_a_symlinked_machine_file(
@@ -130,11 +139,13 @@ def test_machine_overlay_writers_keep_a_symlinked_machine_file(
     monkeypatch.chdir(tmp_path)
     target = tmp_path / "machines" / "real.asm.toml"
     target.parent.mkdir()
-    target.write_text('[config.review]\nperiod = 7\nseats = ["tests"]\n', encoding="utf-8")
+    target.write_text(
+        '[config.harness]\nverify_timeout_s = 7\nverify_command = ["tests"]\n', encoding="utf-8"
+    )
     link = tmp_path / "linked.asm.toml"
     link.symlink_to(target)
 
     assert main(["config", *command, "--machine-file", str(link)]) == 0
 
     assert link.is_symlink(), f"`config {command[0]} --machine-file` replaced the symlink"
-    assert tomllib.loads(target.read_text(encoding="utf-8"))["config"]["review"] == expected
+    assert tomllib.loads(target.read_text(encoding="utf-8"))["config"]["harness"] == expected

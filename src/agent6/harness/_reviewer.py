@@ -17,7 +17,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
 from agent6 import budget
-from agent6.config import ReviewTier
+from agent6.config import ReviewScope
 from agent6.harness import _chain, _context, _llm_json, _panel
 from agent6.prompts import review
 from agent6.providers import (
@@ -39,7 +39,7 @@ class CritiqueResult:
 
     Attributes:
         text: The findings text injected for the worker.
-        satisfied: False only when a blocking decision mode rejects.
+        satisfied: False only when a blocking block_on mode rejects.
         capped: The panel blocked but the run's rejected finishes reached the cap, so the end
             stands with the findings.
     """
@@ -49,7 +49,7 @@ class CritiqueResult:
     capped: bool = False
 
 
-# A read-only dispatch callable for explore-tier seats: (tool_name, input) -> result.
+# A read-only dispatch callable for repo-scope seats: (tool_name, input) -> result.
 ReviewDispatch = Callable[[str, dict[str, Any]], results.ToolResult]
 
 
@@ -61,41 +61,42 @@ class ReviewSeat:
         persona: The reviewer's stance.
         model: The model name, for events.
         provider: The provider called.
-        tier: `diff` for one call over the diff, `explore` for a read-only tool loop first.
+        scope: `diff` for one call over the diff, `repo` for a read-only tool loop first.
+        temperature: The sampling temperature sent on every call.
     """
 
     persona: str
     model: str
     provider: Provider
-    tier: ReviewTier = "diff"
+    scope: ReviewScope = "diff"
+    temperature: float | None = 0.0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewSettings:
     """Hold the in-loop review panel's settings, from `[review]`.
 
-    The findings return to the model on the next user turn whatever the decision mode.
+    The findings return to the model on the next user turn whatever the blocking rule.
 
     Attributes:
-        trigger: When the panel sits: on a verify failure, before a finish, or every `period`
-            iterations; `off` never.
-        period: The iterations between periodic panels.
-        seats: The seats.
-        decision: `advisory` only injects the findings; `veto` and `quorum` can reject an end.
-        quorum: The blocks a `quorum` rejection needs.
+        trigger: When the panel sits: after a verify failure, before a finish, or periodically.
+        interval_iterations: The iterations between periodic panels.
+        reviewers: The resolved seats.
+        block_on: `none` advises; `any`, `all` and `model_quorum` can reject an end.
+        min_blocking_models: The distinct blocking routes a `model_quorum` rejection needs.
         max_review_rejections: The ends the gate may reject in the run; from then on the panel
             advises and every end stands.
-        budget_fraction: The remaining budget fraction below which the panel is skipped.
+        min_remaining_budget_fraction: Skip panels below this remaining budget fraction.
         concurrency: The seat calls run at once.
     """
 
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
-    period: int = 10
-    seats: Sequence[ReviewSeat] = ()
-    decision: _panel.ReviewDecision = "advisory"
-    quorum: int = 2
+    interval_iterations: int = 10
+    reviewers: Sequence[ReviewSeat] = ()
+    block_on: _panel.ReviewBlockOn = "none"
+    min_blocking_models: int = 2
     max_review_rejections: int = 4
-    budget_fraction: float = 0.25
+    min_remaining_budget_fraction: float = 0.25
     concurrency: int = 1
 
 
@@ -177,9 +178,15 @@ def _no_verdict_error(resp: ProviderResponse) -> str:
 
 
 def structured_review(
-    provider: Provider, ctx: _panel.ReviewContext, *, seat: str, model: str, max_tokens: int = 1500
+    provider: Provider,
+    ctx: _panel.ReviewContext,
+    *,
+    seat: str,
+    model: str,
+    max_tokens: int = 1500,
+    temperature: float | None = 0.0,
 ) -> _panel.ReviewVerdict:
-    """Run one diff-tier seat.
+    """Run one diff-scope seat.
 
     Args:
         provider: The seat's provider.
@@ -187,6 +194,7 @@ def structured_review(
         seat: The seat's name.
         model: The model name, for the verdict.
         max_tokens: The output cap of the call.
+        temperature: The sampling temperature.
 
     Returns:
         The seat's verdict; a provider error or junk output abstains with `error` set.
@@ -197,6 +205,7 @@ def structured_review(
             system=system,
             messages=[{"role": "user", "content": _build_user_message(ctx)}],
             max_tokens=max_tokens,
+            temperature=temperature,
         )
     except ProviderError as exc:
         return _panel.ReviewVerdict(
@@ -227,7 +236,7 @@ def _verdict_from_obj(obj: dict[str, Any], seat: str, model: str) -> _panel.Revi
     )
 
 
-def explore_review(
+def repo_review(
     provider: Provider,
     ctx: _panel.ReviewContext,
     *,
@@ -238,8 +247,9 @@ def explore_review(
     max_iters: int = 6,
     max_tokens: int = 2000,
     deadline_s: float = 90.0,
+    temperature: float | None = 0.0,
 ) -> _panel.ReviewVerdict:
-    """Run one explore-tier seat: a bounded loop of read-only tool calls, then a verdict.
+    """Run one repo-scope seat: a bounded loop of read-only tool calls, then a verdict.
 
     Args:
         provider: The seat's provider.
@@ -251,23 +261,26 @@ def explore_review(
         max_iters: The provider calls allowed.
         max_tokens: The output cap of each call.
         deadline_s: The wall-clock budget.
+        temperature: The sampling temperature on every call.
 
     Returns:
         The seat's verdict; a provider error, the deadline or no verdict in time abstains.
     """
-    system = review.EXPLORE_REVIEW_SYSTEM_PROMPT.format(
-        persona=ctx.persona or "general correctness"
-    )
+    system = review.REPO_REVIEW_SYSTEM_PROMPT.format(persona=ctx.persona or "general correctness")
     messages: list[dict[str, Any]] = [{"role": "user", "content": _build_user_message(ctx)}]
     start = time.monotonic()
     for i in range(max_iters):
         if time.monotonic() - start > deadline_s:
             return _panel.ReviewVerdict(
-                seat=seat, model=model, verdict="pass", error="explore: deadline exceeded"
+                seat=seat, model=model, verdict="pass", error="repo: deadline exceeded"
             )
         try:
             resp = provider.call(
-                system=system, messages=messages, tools=tools, max_tokens=max_tokens
+                system=system,
+                messages=messages,
+                tools=tools,
+                max_tokens=max_tokens,
+                temperature=temperature,
             )
         except ProviderError as exc:
             return _panel.ReviewVerdict(
@@ -299,7 +312,7 @@ def explore_review(
             tool_results.append({"type": "tool_result", "tool_use_id": tu_id, "content": content})
         messages.append({"role": "user", "content": tool_results})
     return _panel.ReviewVerdict(
-        seat=seat, model=model, verdict="pass", error="explore: no verdict within max_iters"
+        seat=seat, model=model, verdict="pass", error="repo: no verdict within max_iters"
     )
 
 
@@ -307,8 +320,8 @@ def run_panel(
     seats: Sequence[ReviewSeat],
     ctx: _panel.ReviewContext,
     *,
-    decision: _panel.ReviewDecision,
-    quorum: int,
+    block_on: _panel.ReviewBlockOn,
+    min_blocking_models: int,
     panel_id: str,
     concurrency: int = 1,
     tools: list[ToolDefinition] | None = None,
@@ -319,12 +332,12 @@ def run_panel(
     Args:
         seats: The seats.
         ctx: The review context; each seat gets its own persona substituted.
-        decision: The decision mode.
-        quorum: The blocks a `quorum` rejection needs.
+        block_on: The blocking rule.
+        min_blocking_models: The distinct blocking routes a `model_quorum` rejection needs.
         panel_id: The panel's id, for the result.
         concurrency: The seat calls run at once.
-        tools: The read-only tools for explore seats.
-        dispatch: The read-only dispatch for explore seats.
+        tools: The read-only tools for repo seats.
+        dispatch: The read-only dispatch for repo seats.
 
     Returns:
         The aggregated panel result.
@@ -332,18 +345,26 @@ def run_panel(
 
     def _run(s: ReviewSeat) -> _panel.ReviewVerdict:
         seat_ctx = dataclasses.replace(ctx, persona=s.persona)
-        if s.tier == "explore" and tools is not None and dispatch is not None:
-            return explore_review(
-                s.provider, seat_ctx, seat=s.persona, model=s.model, tools=tools, dispatch=dispatch
+        if s.scope == "repo" and tools is not None and dispatch is not None:
+            return repo_review(
+                s.provider,
+                seat_ctx,
+                seat=s.persona,
+                model=s.model,
+                tools=tools,
+                dispatch=dispatch,
+                temperature=s.temperature,
             )
-        return structured_review(s.provider, seat_ctx, seat=s.persona, model=s.model)
+        return structured_review(
+            s.provider, seat_ctx, seat=s.persona, model=s.model, temperature=s.temperature
+        )
 
     if concurrency > 1 and len(seats) > 1:
         verdicts = _run_seats_concurrently(seats, _run, concurrency)
     else:
         verdicts = [_run(s) for s in seats]
     return _panel.aggregate_verdicts(
-        verdicts, ctx, decision=decision, quorum=quorum, panel_id=panel_id
+        verdicts, ctx, block_on=block_on, min_blocking_models=min_blocking_models, panel_id=panel_id
     )
 
 
@@ -403,7 +424,7 @@ def _run_seats_concurrently(
 __all__ = [
     "ReviewDispatch",
     "ReviewSeat",
-    "explore_review",
+    "repo_review",
     "run_panel",
     "structured_review",
 ]
@@ -440,7 +461,7 @@ class Reviewer:
         settings: The panel's settings.
         chain: The run's chain: the diff the panel grounds on and the AGENTS.md it reads.
         hide: `[sandbox].hide_paths`, which no AGENTS.md is read from.
-        review_tools: Builds the read-only tools and dispatch an explore seat gets.
+        review_tools: Builds the read-only tools and dispatch a repo seat gets.
         budget_remaining: The fraction of the budget left, or None without a tracker.
         log: The run's text logger.
         emit: The run's event emitter.
@@ -455,7 +476,7 @@ class Reviewer:
     emit: Callable[..., None]
 
     def triggers(self, state: _loop_state.LoopState, turn: _loop_state.TurnState) -> None:
-        """Sit the observe-only panels: after a verify failure, or every `period` iterations.
+        """Sit the observe-only panels after a verify failure or at the configured interval.
 
         The before-finish panel, which can revoke an end, is `end_rejected`.
 
@@ -474,7 +495,7 @@ class Reviewer:
         elif (
             self.settings.trigger == "periodic"
             and self.available()
-            and turn.iteration % max(1, self.settings.period) == 0
+            and turn.iteration % max(1, self.settings.interval_iterations) == 0
         ):
             critique = self.critique(state, trigger="periodic", iteration=turn.iteration)
             if critique is not None:
@@ -534,7 +555,7 @@ class Reviewer:
 
     def available(self) -> bool:
         """Return whether the panel has seats; every in-loop trigger gates on it."""
-        return bool(self.settings.seats)
+        return bool(self.settings.reviewers)
 
     def critique(
         self, state: _loop_state.LoopState, *, trigger: str, iteration: int
@@ -560,18 +581,18 @@ class Reviewer:
             return None
         # A skipped panel approves: the gate blocks only on an explicit unsatisfied critique.
         remaining = self.budget_remaining()
-        if remaining is not None and remaining < self.settings.budget_fraction:
+        if remaining is not None and remaining < self.settings.min_remaining_budget_fraction:
             self.emit(
                 "loop.review.skipped",
                 iteration=iteration,
                 trigger=trigger,
-                reason="budget_fraction",
+                reason="min_remaining_budget_fraction",
                 remaining=round(remaining, 3),
             )
             return None
         # Only the before-finish panel gates.
-        decision: _panel.ReviewDecision = (
-            self.settings.decision if trigger == "before_finish" else "advisory"
+        block_on: _panel.ReviewBlockOn = (
+            self.settings.block_on if trigger == "before_finish" else "none"
         )
         ctx = _panel.ReviewContext(
             task=state.original_task,
@@ -584,18 +605,18 @@ class Reviewer:
             "loop.review.start",
             iteration=iteration,
             trigger=trigger,
-            seats=len(self.settings.seats),
+            seats=len(self.settings.reviewers),
         )
         tools: list[ToolDefinition] | None = None
         dispatch: ReviewDispatch | None = None
-        if any(s.tier == "explore" for s in self.settings.seats):
+        if any(s.scope == "repo" for s in self.settings.reviewers):
             tools, dispatch = self.review_tools()
         try:
             result = run_panel(
-                self.settings.seats,
+                self.settings.reviewers,
                 ctx,
-                decision=decision,
-                quorum=self.settings.quorum,
+                block_on=block_on,
+                min_blocking_models=self.settings.min_blocking_models,
                 panel_id=f"{trigger}-{iteration}",
                 concurrency=self.settings.concurrency,
                 tools=tools,
@@ -619,7 +640,7 @@ class Reviewer:
             "loop.review.panel",
             iteration=iteration,
             trigger=trigger,
-            decision=decision,
+            block_on=block_on,
             blocked=effective_blocked,
             raw_blocked=result.blocked,
             disarmed=disarmed,

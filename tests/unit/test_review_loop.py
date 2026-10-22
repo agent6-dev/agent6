@@ -3,7 +3,7 @@
 """In-loop review-panel wiring.
 
 The panel fires at before_finish, grounds against the run diff, and gates the finish only under a
-gating decision (no network).
+gating block_on (no network).
 """
 
 from __future__ import annotations
@@ -74,9 +74,9 @@ def _drive(wf: loop.Harness, messages: list[dict[str, Any]]) -> Any:
 
 
 def test_has_reviewer_true_with_seats() -> None:
-    wf = _wf(review=_reviewer.ReviewSettings(seats=[_seat(mock.MagicMock())]))
+    wf = _wf(review=_reviewer.ReviewSettings(reviewers=[_seat(mock.MagicMock())]))
     assert wf.reviewer.available() is True
-    assert _wf(review=_reviewer.ReviewSettings(seats=[])).reviewer.available() is False
+    assert _wf(review=_reviewer.ReviewSettings(reviewers=[])).reviewer.available() is False
 
 
 def test_panel_blocks_finish_under_veto_then_accepts() -> None:
@@ -95,7 +95,7 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
         provider=worker,
         dispatcher=_disp(),
         review=_reviewer.ReviewSettings(
-            seats=[_seat(seat_provider)], decision="veto", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
         ),
         base_sha="b",
     )
@@ -111,10 +111,10 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
 
 
 def test_panel_skipped_when_budget_fraction_low() -> None:
-    """When remaining budget < review_budget_fraction the panel is SKIPPED (approve-and-proceed).
+    """Below `min_remaining_budget_fraction` the panel is skipped and the finish stands.
 
     Reviewing costs most when budget is scarcest. The seat that WOULD block is never called, and
-    finish_session is accepted. This is the only behavioural test of review_budget_fraction.
+    finish_session is accepted. This is the only behavioural test of the floor.
     """
     worker = mock.MagicMock()
     worker.call.return_value = _resp_with_tool_use("f1", _finish_tool_use("a", "done"))
@@ -124,10 +124,10 @@ def test_panel_skipped_when_budget_fraction_low() -> None:
         provider=worker,
         dispatcher=_disp(),
         review=_reviewer.ReviewSettings(
-            seats=[_seat(seat_provider)], decision="veto", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
         ),
         base_sha="b",
-    )  # review_budget_fraction defaults to 0.25
+    )  # min_remaining_budget_fraction defaults to 0.25
     with mock.patch.object(loop.Harness, "_budget_fraction_remaining", return_value=0.10):
         result = _drive(wf, _begin())
     assert seat_provider.call.call_count == 0  # panel skipped, not run
@@ -144,7 +144,7 @@ def test_panel_advisory_does_not_block_finish() -> None:
         provider=worker,
         dispatcher=_disp(),
         review=_reviewer.ReviewSettings(
-            seats=[_seat(seat_provider)], decision="advisory", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="none", trigger="before_finish"
         ),
         base_sha="b",
     )
@@ -166,7 +166,7 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
         provider=worker,
         dispatcher=_disp(),
         review=_reviewer.ReviewSettings(
-            seats=[_seat(seat_provider)], decision="veto", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
         ),
         base_sha="b",
     )
@@ -192,8 +192,8 @@ def test_the_configured_cap_counts_rejected_finishes(cap: int) -> None:
         provider=worker,
         dispatcher=_disp(),
         review=_reviewer.ReviewSettings(
-            seats=[_seat(seat_provider)],
-            decision="veto",
+            reviewers=[_seat(seat_provider)],
+            block_on="any",
             trigger="before_finish",
             max_review_rejections=cap,
         ),
@@ -216,7 +216,7 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     abstain = _panel.ReviewVerdict(seat="s", model="m", verdict="pass", error="output hit the cap")
     res = _panel.PanelResult(
         panel_id="p",
-        decision="advisory",
+        block_on="none",
         blocked=False,
         merged_findings=(),
         per_seat=(abstain, abstain, abstain),
@@ -226,7 +226,7 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     wf = _wf(
         provider=mock.MagicMock(),
         dispatcher=_disp(),
-        review=_reviewer.ReviewSettings(seats=[_seat(mock.MagicMock())], decision="advisory"),
+        review=_reviewer.ReviewSettings(reviewers=[_seat(mock.MagicMock())], block_on="none"),
         base_sha="b",
     )
     state = _loop_state.LoopState(original_task="t", tool_calls=0)

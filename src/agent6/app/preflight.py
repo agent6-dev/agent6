@@ -20,7 +20,7 @@ from agent6 import budget as agent6_budget
 from agent6 import errors, event_log, git_ops, kinds, terminal, verify_infer
 from agent6.app import _setup, providers
 from agent6.app import reporter as app_reporter
-from agent6.config import Config, parse_seat_spec, plan_metered
+from agent6.config import Config, plan_metered
 from agent6.models import pricing, validate
 from agent6.providers import TranscriptSink
 from agent6.sessions import ipc, manifest
@@ -82,10 +82,9 @@ def budget_preflight(
     """
     if routes is None:
         reachable = {(role, rm.provider, rm.model) for role, rm in cfg.models.configured().items()}
-        for spec in cfg.review.seats:
-            persona, seat_provider, seat_model = parse_seat_spec(spec)
-            if seat_model:
-                reachable.add((f"review seat {persona}", seat_provider, seat_model))
+        for entry in cfg.review.reviewers:
+            if entry.provider is not None and entry.model is not None:
+                reachable.add((f"review seat {entry.focus}", entry.provider, entry.model))
     else:
         # A machine's states carry routes with no role of the run's config.
         reachable = {("", prov, m) for prov, m in routes if m}

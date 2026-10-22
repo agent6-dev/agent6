@@ -34,27 +34,27 @@ def test_preset_via_preset_field_expands_review_knobs(repo: pathlib.Path) -> Non
     _write_repo_config(repo, 'preset = "review"\n')
     cfg = layer.load_effective(repo).config
     assert cfg.review.trigger == "before_finish"
-    assert cfg.review.seats == ("security", "correctness", "tests")
-    assert cfg.review.decision == "veto"
+    assert [entry.focus for entry in cfg.review.reviewers] == ["security", "correctness", "tests"]
+    assert cfg.review.block_on == "any"
     assert cfg.review.concurrency == 3  # seats run in parallel, not in series
 
 
 def test_preset_via_flag_overrides_field(repo: pathlib.Path) -> None:
     _write_repo_config(repo, 'preset = "no_review"\n')
     cfg = layer.load_effective(repo, preset="deep_review").config  # flag wins over the field
-    assert len(cfg.review.seats) == 5
-    assert cfg.review.tier == "explore"
-    assert cfg.review.decision == "veto"
+    assert len(cfg.review.reviewers) == 5
+    assert cfg.review.scope == "repo"
+    assert cfg.review.block_on == "any"
     assert cfg.review.concurrency == 5  # seats run in parallel, not in series
 
 
 def test_repo_selected_preset_beats_same_layer_setting(repo: pathlib.Path) -> None:
     # The preset selected by the repo's top-level `preset` is injected ABOVE the
     # repo config, so it OVERRIDES a conflicting value set in the SAME repo config.
-    _write_repo_config(repo, 'preset = "review"\n\n[review]\ndecision = "advisory"\n')
+    _write_repo_config(repo, 'preset = "review"\n\n[review]\nblock_on = "none"\n')
     cfg = layer.load_effective(repo).config
-    assert cfg.review.decision == "veto"  # repo-selected preset wins
-    assert cfg.review.seats == ("security", "correctness", "tests")  # rest of the preset applies
+    assert cfg.review.block_on == "any"  # repo-selected preset wins
+    assert [entry.focus for entry in cfg.review.reviewers] == ["security", "correctness", "tests"]
 
 
 def test_custom_user_preset(repo: pathlib.Path) -> None:
@@ -100,7 +100,7 @@ def test_user_preset_replaces_the_builtin(repo: pathlib.Path) -> None:
     cfg = layer.load_effective(repo).config
     assert cfg.review.trigger == "before_finish"
     assert cfg.review.concurrency == 4
-    assert cfg.review.decision == "advisory"
+    assert cfg.review.block_on == "none"
 
 
 def test_unknown_preset_errors(repo: pathlib.Path) -> None:

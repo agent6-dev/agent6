@@ -1390,7 +1390,7 @@ def test_run_warns_naming_the_last_config_file(
     first = tmp_path / "ask.toml"
     first.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
     second = tmp_path / "later.toml"
-    second.write_text("[review]\nperiod = 7\n", encoding="utf-8")
+    second.write_text("[review]\ninterval_iterations = 7\n", encoding="utf-8")
     assert main(["--config", str(first), "--config", str(second), "machine", "run", str(f)]) == 2
     err = capsys.readouterr().err
     assert f'set sandbox.run_commands = "yes" in {second}' in err

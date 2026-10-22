@@ -45,6 +45,9 @@ Linux (x86_64/aarch64) with Python 3.12+; other platforms run without the sandbo
 
 Providers: Anthropic, any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, LM Studio), a ChatGPT subscription, or the signed-in Claude Code binary, with model and reasoning effort set per role ([Configuration](https://agent6.dev/config/)).
 
+The optional [review panel](docs/config.md#review) takes `reviewers` tables with a `focus` and per-reviewer model settings, including `effort` and `temperature`.
+Its `scope` selects `diff` or read-only `repo` access; `block_on` sets when findings block a finish.
+
 ## Learn more
 
 [Usage](https://agent6.dev/usage/) walks through a first run, inspecting it and recovering one that went wrong; [Architecture](https://agent6.dev/architecture/) explains the loop, the task graph, compaction, memory and `--parallel` lanes.

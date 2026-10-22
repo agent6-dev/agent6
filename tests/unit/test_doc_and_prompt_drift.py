@@ -182,7 +182,13 @@ def test_bench_container_config_template_validates() -> None:
         {**stub, "AGENT6_SB_EFFORT": "medium"},
         {**stub, "AGENT6_SB_VERIFY_WHEN": "step"},
         {**stub, "AGENT6_SB_MAX_PLAN_POINTS": "40"},
-        {**stub, "AGENT6_SB_REVIEW_SEATS": "security@openrouter/a;tests@anthropic/b"},
+        {
+            **stub,
+            "AGENT6_SB_REVIEWERS": (
+                '[{ focus = "security", provider = "openrouter", model = "a", effort = "high" }, '
+                '{ focus = "tests", provider = "anthropic", model = "b" }]'
+            ),
+        },
         {**stub, "AGENT6_SB_VERIFY": "none"},
     )
     for env in cases:
@@ -196,8 +202,11 @@ def test_bench_container_config_template_validates() -> None:
             assert data["harness"]["verify_when"] == "step"
         if env.get("AGENT6_SB_MAX_PLAN_POINTS"):
             assert data["budget"]["max_plan_points"] == 40
-        if env.get("AGENT6_SB_REVIEW_SEATS"):
-            assert data["review"]["seats"] == ["security@openrouter/a", "tests@anthropic/b"]
+        if env.get("AGENT6_SB_REVIEWERS"):
+            assert data["review"]["reviewers"] == [
+                {"focus": "security", "provider": "openrouter", "model": "a", "effort": "high"},
+                {"focus": "tests", "provider": "anthropic", "model": "b"},
+            ]
         if env.get("AGENT6_SB_VERIFY") == "none":
             assert data["harness"]["verify_infer"] is False
             assert "verify_command" not in data["harness"]

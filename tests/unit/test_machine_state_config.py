@@ -639,7 +639,7 @@ def test_a_config_flag_file_is_part_of_the_ceiling(
     assert ops.resolve() in machine_protect_paths(tmp_path / "m.asm.toml", tmp_path, (ops,))
     assert ops.resolve() not in machine_protect_paths(tmp_path / "m.asm.toml", tmp_path)
     # Every `--config` file is part of the ceiling, so each is read-only.
-    more = _write(tmp_path, "[review]\nperiod = 7\n", name="more.toml")
+    more = _write(tmp_path, "[review]\ninterval_iterations = 7\n", name="more.toml")
     protected = machine_protect_paths(tmp_path / "m.asm.toml", tmp_path, (ops, more))
     assert ops.resolve() in protected and more.resolve() in protected
 

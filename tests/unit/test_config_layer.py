@@ -474,13 +474,13 @@ def test_repeated_flag_layers_land_in_order(repo: pathlib.Path, tmp_path: pathli
     """Both `--config` files land, the later wins a shared key, and each value names its file."""
     first = tmp_path / "first.toml"
     second = tmp_path / "second.toml"
-    first.write_text("[review]\nperiod = 7\n[budget]\nmax_usd = 2\n", encoding="utf-8")
+    first.write_text("[review]\ninterval_iterations = 7\n[budget]\nmax_usd = 2\n", encoding="utf-8")
     second.write_text("[budget]\nmax_usd = 3\n", encoding="utf-8")
     eff = layer.load_effective(repo, (first, second))
     assert [lyr.path for lyr in eff.layers if lyr.name == "flag"] == [first, second]
-    assert eff.config.review.period == 7
+    assert eff.config.review.interval_iterations == 7
     assert eff.config.budget.max_usd == 3
-    assert eff.sources["review.period"] == f"flag ({first})"
+    assert eff.sources["review.interval_iterations"] == f"flag ({first})"
     assert eff.sources["budget.max_usd"] == f"flag ({second})"
 
 
@@ -1062,7 +1062,7 @@ def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
 def test_load_config_wraps_an_unreadable_file(tmp_path: pathlib.Path) -> None:
     """The single-file loader wraps an unreadable file's OSError as its layered sibling does."""
     p = tmp_path / "c.toml"
-    p.write_text("[review]\nperiod = 7\n", encoding="utf-8")
+    p.write_text("[review]\ninterval_iterations = 7\n", encoding="utf-8")
     p.chmod(0o000)
     try:
         with pytest.raises(ConfigError, match="cannot be read"):

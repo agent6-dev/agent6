@@ -16,9 +16,9 @@ from agent6.config import (
     ClaudeCodeProviderEntry,
     Config,
     EffortLevel,
+    ReviewerConfig,
     RoleModel,
     RoleName,
-    parse_seat_spec,
 )
 from agent6.harness import _reviewer
 from agent6.models import registry as models_registry
@@ -504,9 +504,8 @@ def build_review_seats(
 ) -> list[_reviewer.ReviewSeat]:
     """Build the review-panel seats, one per roster entry.
 
-    An entry is `persona[@provider/model]`: a pinned seat uses that route, a bare
-    persona routes via `[models.reviewer]`. `cfg.review.seats` names the roster
-    outright; otherwise `n` seats cycle the personas.
+    `cfg.review.reviewers` names the roster; otherwise `n` seats cycle the personas.
+    Each entry resolves its route and sampling settings before the provider is built.
 
     Args:
         cfg: The run's config.
@@ -521,76 +520,49 @@ def build_review_seats(
         The seats in roster order.
 
     Raises:
-        ProviderError: An entry does not parse or names a missing provider.
+        ProviderError: An entry has no resolved route or names a missing provider.
     """
-
-    def _instrumented(provider: Provider, persona: str, model: str, provider_name: str) -> Provider:
-        if events is None:
-            return provider
-        return InstrumentedProvider(
-            inner=provider,
-            role=f"review:{persona}",
-            model=model,
-            provider_name=provider_name,
-            events=events,
+    pool = personas or _DEFAULT_PERSONAS
+    roster = cfg.review.reviewers or tuple(
+        ReviewerConfig(focus=pool[i % len(pool)]) for i in range(max(1, n))
+    )
+    reviewer = cfg.models.resolve("reviewer")
+    resolved = [(entry.focus, entry.resolve(reviewer)) for entry in roster]
+    for focus, rm in resolved:
+        if rm is None:
+            raise ProviderError(f"reviewer {focus!r} has no model; configure [models.reviewer]")
+        if rm.provider not in cfg.providers:
+            raise ProviderError(
+                f"reviewer {focus!r} names provider {rm.provider!r} but"
+                f" [providers.{rm.provider}] is missing"
+            )
+    seats: list[_reviewer.ReviewSeat] = []
+    for focus, rm in resolved:
+        assert rm is not None  # every route was checked before constructing any provider
+        provider = _provider_from_entry(
+            rm.provider,
+            cfg.providers[rm.provider],
+            rm.model,
+            rm.effort,
+            transcript_sink=transcript_sink.for_seat(f"review:{focus}"),
             budget=budget,
         )
-
-    if cfg.review.seats:
-        specs = list(cfg.review.seats)
-    else:
-        pool = list(personas) if personas else list(_DEFAULT_PERSONAS)
-        specs = [pool[i % len(pool)] for i in range(max(1, n))]
-    parsed_specs: list[tuple[str, str, str]] = []
-    for spec in specs:
-        try:
-            persona, provider_name, model = parse_seat_spec(spec)
-        except ValueError as exc:
-            raise ProviderError(f"review seat: {exc}") from exc
-        persona = persona or "general"
-        if provider_name and provider_name not in cfg.providers:
-            raise ProviderError(
-                f"review seat {spec!r} names provider {provider_name!r} but"
-                f" [providers.{provider_name}] is missing"
-            )
-        parsed_specs.append((persona, provider_name, model))
-
-    # A fully pinned panel needs no reviewer route.
-    if any(not (provider_name and model) for _, provider_name, model in parsed_specs):
-        cfg.require_runnable("reviewer")
-    rm = cfg.models.resolve("reviewer")
-    seats: list[_reviewer.ReviewSeat] = []
-    for persona, provider_name, model in parsed_specs:
-        if provider_name and model:
-            entry = cfg.providers[provider_name]
-            seat_model = model
-            provider = _provider_from_entry(
-                provider_name,
-                entry,
-                seat_model,
-                None,
-                # An unstamped sink records seat="", which the fold renders as worker turns.
-                transcript_sink=transcript_sink.for_seat(f"review:{persona}"),
+        if events is not None:
+            provider = InstrumentedProvider(
+                inner=provider,
+                role=f"review:{focus}",
+                model=rm.model,
+                provider_name=rm.provider,
+                events=events,
                 budget=budget,
-            )
-            label = f"{provider_name}/{seat_model}"
-            provider = _instrumented(provider, persona, seat_model, provider_name)
-        else:
-            provider = build_role_provider(
-                cfg,
-                "reviewer",
-                transcript_sink=transcript_sink,
-                budget=budget,
-                seat=f"review:{persona}",
-            )
-            seat_model = rm.model if rm is not None else "reviewer"
-            label = f"{rm.provider}/{seat_model}" if rm is not None else seat_model
-            provider = _instrumented(
-                provider, persona, seat_model, rm.provider if rm is not None else ""
             )
         seats.append(
             _reviewer.ReviewSeat(
-                persona=persona, model=label, provider=provider, tier=cfg.review.tier
+                persona=focus,
+                model=f"{rm.provider}/{rm.model}",
+                provider=provider,
+                scope=cfg.review.scope,
+                temperature=rm.temperature,
             )
         )
     return seats

@@ -294,7 +294,7 @@ def test_salient_arg_renders_ask_user_questions_as_text() -> None:
 
 
 def test_interleaved_tool_calls_pair_by_name() -> None:
-    # A concurrent explore-tier review panel can interleave tool.call/tool.result
+    # A concurrent repo-scope review panel can interleave tool.call/tool.result
     # across tools; each result must pair with its own call by name, not with the
     # next pending call by position.
     events = [

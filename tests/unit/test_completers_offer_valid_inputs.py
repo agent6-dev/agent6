@@ -311,7 +311,7 @@ def test_config_key_completion_reads_user_presets_from_the_typed_config(
     explicit.write_text('[presets.team.review]\ntrigger = "before_finish"\n', encoding="utf-8")
 
     later = tmp_path / "later.toml"
-    later.write_text("[presets.later.review]\nperiod = 9\n", encoding="utf-8")
+    later.write_text("[presets.later.review]\ninterval_iterations = 9\n", encoding="utf-8")
 
     offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
         prefix="presets.",
@@ -320,7 +320,7 @@ def test_config_key_completion_reads_user_presets_from_the_typed_config(
     )
 
     assert "presets.team.review.trigger" in offered
-    assert "presets.later.review.period" in offered
+    assert "presets.later.review.interval_iterations" in offered
 
 
 def test_config_value_completion_under_a_preset_uses_the_leafs_choices(

@@ -41,51 +41,6 @@ def preset_name(name: str) -> str:
     return name
 
 
-EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
-
-
-class RoleModel(pydantic.BaseModel):
-    """One role's provider and model.
-
-    `temperature` defaults to 0.0: high-temperature sampling degenerates on some open-weights
-    models (an observed 15997 literal newline escapes in one `old_string`), and OpenRouter's
-    per-model defaults vary, so pinning is what makes a bench reproducible.
-    """
-
-    model_config = _base.MODEL_CONFIG
-
-    provider: str = pydantic.Field(
-        min_length=1,
-        description="A `[providers.<name>]` entry, by name.",
-    )
-    model: str = pydantic.Field(
-        min_length=1,
-        description="Model id as that provider names it (`agent6 model` lists them).",
-    )
-    temperature: float | None = pydantic.Field(
-        default=0.0,
-        ge=0.0,
-        le=2.0,
-        description=(
-            "Sampling temperature pinned on every call, `0.0` to `2.0`. `0.0` keeps tool use "
-            "stable. TOML omission uses `0.0`; only the Python API can pass `None` to leave the "
-            "provider's default."
-        ),
-    )
-    # Per wire: `reasoning.effort` on OpenAI-family models, `output_config.effort` or a thinking
-    # budget on Anthropic ones.
-    effort: EffortLevel | None = pydantic.Field(
-        default=None,
-        description=(
-            "Reasoning effort: `off`, `low`, `medium`, `high`, `xhigh`, or `max` (the top tiers "
-            "where the model offers them; Anthropic collapses them to its highest). Unset: `low` "
-            "on openai-compatible reasoning models and no thinking on Anthropic, as "
-            "`agent6 config show` prints. On `chatgpt` and `claude_code`, agent6 sends no "
-            "effort, so the model's own default applies."
-        ),
-    )
-
-
 class ModelsConfig(pydantic.BaseModel):
     """The `[models]` table: the provider and model per role.
 
@@ -95,29 +50,29 @@ class ModelsConfig(pydantic.BaseModel):
 
     model_config = _base.MODEL_CONFIG
 
-    worker: RoleModel | None = pydantic.Field(
+    worker: _harness.RoleModel | None = pydantic.Field(
         default=None,
         description="The `(provider, model)` driving `agent6 run`/`resume`.",
     )
-    reviewer: RoleModel | None = pydantic.Field(
+    reviewer: _harness.RoleModel | None = pydantic.Field(
         default=None,
         description=(
             "Drives `agent6 review`, the in-loop review panel, the context summariser and"
             " gister, and the prompt reviser. Unset falls back to `worker`."
         ),
     )
-    planner: RoleModel | None = pydantic.Field(
+    planner: _harness.RoleModel | None = pydantic.Field(
         default=None,
         description="Drives `agent6 plan` (the planning pass). Unset falls back to `worker`.",
     )
 
-    def configured(self) -> dict[str, RoleModel]:
+    def configured(self) -> dict[str, _harness.RoleModel]:
         """Return the roles explicitly set.
 
         Returns:
             The set roles by name.
         """
-        out: dict[str, RoleModel] = {}
+        out: dict[str, _harness.RoleModel] = {}
         if self.worker is not None:
             out["worker"] = self.worker
         if self.reviewer is not None:
@@ -126,7 +81,7 @@ class ModelsConfig(pydantic.BaseModel):
             out["planner"] = self.planner
         return out
 
-    def resolve(self, role: kinds.RoleName) -> RoleModel | None:
+    def resolve(self, role: kinds.RoleName) -> _harness.RoleModel | None:
         """Return the effective model for a role, with the worker fallback.
 
         Args:
@@ -205,8 +160,8 @@ class Config(pydantic.BaseModel):
         default="none",
         description=(
             "The selected preset: `none` (no preset), `no_review` (review panel off), "
-            "`review` (three review seats that can veto the finish), `deep_review` (five "
-            "explore-tier review seats that can veto the finish), or a `[presets.<name>]` "
+            "`review` (three review seats that can block the finish), `deep_review` (five "
+            "repo-scope review seats that can block the finish), or a `[presets.<name>]` "
             "of your own. A preset overrides settings in the layer that selects it. "
             "`--preset` selects per run, `resume --preset` per resumed execution. "
             "`none` stops preset lookup; an empty string is refused."
@@ -287,6 +242,33 @@ class Config(pydantic.BaseModel):
                 raise ValueError(
                     f"{where} names provider API key env var(s) {', '.join(leaked)};"
                     f" agent6 never passes a provider key to {who}."
+                )
+        return self
+
+    @pydantic.model_validator(mode="after")
+    def _check_review_model_quorum(self) -> Config:
+        """Refuse a blocking threshold the resolved reviewer routes cannot reach.
+
+        Returns:
+            The validated config.
+
+        Raises:
+            ValueError: Too few distinct provider/model routes can block.
+        """
+        if self.review.block_on == "model_quorum":
+            reviewer = self.models.resolve("reviewer")
+            resolved = (
+                [entry.resolve(reviewer) for entry in self.review.reviewers]
+                if self.review.reviewers
+                else [reviewer]
+            )
+            routes = {(rm.provider, rm.model) for rm in resolved if rm is not None}
+            required = self.review.min_blocking_models
+            if len(routes) < required:
+                raise ValueError(
+                    f"review.block_on='model_quorum' with min_blocking_models={required} "
+                    f"needs >= {required} distinct provider/model routes; resolved {len(routes)}. "
+                    "Set review.reviewers to distinct routes, or use block_on='any'."
                 )
         return self
 
