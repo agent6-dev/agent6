@@ -44,10 +44,10 @@ def workdir_base(cfg: Config, origin: pathlib.Path) -> pathlib.Path:
         origin: The repository.
 
     Returns:
-        `[parallel].workdir` as an absolute path, or the cache's `parallel` dir, plus the
+        `[workspace].base_dir` as an absolute path, or the cache's `parallel` dir, plus the
         repo id.
     """
-    return paths.parallel_base(cfg.parallel.workdir) / paths.repo_id(origin)
+    return paths.workspace_base(cfg.workspace.base_dir) / paths.repo_id(origin)
 
 
 def adopt_orphan_lane(

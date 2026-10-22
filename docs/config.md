@@ -442,7 +442,7 @@ Every browser [signs in](web.md#sign-in) with the server's secret.
 
 ## `[parallel]`
 
-Fan-out defaults for `run --parallel N|[provider/]model,...`.
+Lane limit for `run --parallel N|[provider/]model,...`.
 Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
 A lane runs under the settings you set, at their effective values; a setting left at its default is a default in the lane too, so a sandbox default this host cannot honour degrades with a warning there as it does in a single run, and one you set refuses.
 `--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
@@ -451,7 +451,15 @@ A live run dispatches lanes the same way via the `/parallel` steer directive (de
 | Field | Default | Meaning |
 |---|---|---|
 | `max_lanes` | `4` | The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for more is refused before anything is cloned. |
-| `workdir` | `""` | Base directory for the working trees lanes, machine run states, forks and `run --worktree` runs work in, in a per-repo subdirectory. Empty: `<cache_dir>/parallel`. A lane's clone is removed after its work is imported; a fork's or a `run --worktree` run's worktree by `sessions prune` once the session is merged or holds no work. |
+
+## `[workspace]`
+
+Placement and setup for lane clones, machine state clones, forks and `run --worktree` worktrees.
+An empty `base_dir` uses `<cache_dir>/parallel`.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `base_dir` | `""` | Base directory for lane clones, machine state clones, forks and `run --worktree` worktrees, grouped by repository. Empty: `<cache_dir>/parallel`. A lane's clone is removed after its work is imported; a fork's or a `run --worktree` run's worktree by `sessions prune` once the session is merged or holds no work. |
 | `setup_command` | `[]` | The command that builds the environment of a new isolated workspace, as argv (no shell; wrap a pipeline as `["sh", "-c", "a && b"]`). A `run --worktree` worktree, a fork's worktree, a lane's clone and a machine state's clone hold tracked files only, so an untracked environment (`.venv`, `node_modules`) is absent there. The command runs once in each, before the first turn, in the run's own sandbox: the isolation, network and grants every command of that run gets. A nonzero exit, or 600 seconds without one, ends the session before any turn. Unset: an AGENTS.md `## Setup command` fenced block supplies it, read as the `## Verify command` block is, and the run prints it; with neither, nothing runs. |
 
 ## `[mcp]` and `[mcp.servers.<name>]` (optional)

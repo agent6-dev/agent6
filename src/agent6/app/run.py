@@ -103,7 +103,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         explicit_leaves: The config leaves the operator wrote, as dotted paths; a
             default this host cannot honour degrades, a written value refuses.
         worktree: Whether the run works in its own linked worktree, added at HEAD's
-            commit under `[parallel].workdir`; the checkout is then never touched.
+            commit under `[workspace].base_dir`; the checkout is then never touched.
         config_paths: The `--config` files, which an `/undo` fork is stamped under.
         reporter: Receives every refusal and note.
 
@@ -270,8 +270,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         path = _workdirs.subordinate_workdir_root(cfg, repo, effective_session_id)
         if path.is_relative_to(repo.resolve()):
             reporter.refuse(
-                f"[parallel].workdir puts the worktree inside this checkout ({path}), where it"
-                " would show as an untracked change. Set [parallel].workdir to a directory"
+                f"[workspace].base_dir puts the worktree inside this checkout ({path}), where it"
+                " would show as an untracked change. Set [workspace].base_dir to a directory"
                 " outside the repository, or run without --worktree."
             )
             return 2

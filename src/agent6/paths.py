@@ -179,19 +179,19 @@ def jail_cache_home_of(repo: str, user: RealUser | None = None) -> pathlib.Path:
     return cache_dir(user) / "homes" / repo
 
 
-def parallel_base(workdir: str) -> pathlib.Path:
-    """Return the directory that holds every repository's subordinate working trees.
+def workspace_base(base_dir: str) -> pathlib.Path:
+    """Return the base directory for every repository's isolated workspaces.
 
     Each repository has one directory in it, named by its `repo_id`, for its worktrees, lane
     clones and machine clones.
 
     Args:
-        workdir: The `[parallel].workdir` setting.
+        base_dir: The `[workspace].base_dir` setting.
 
     Returns:
-        `workdir` as an absolute path, or the cache's `parallel` dir when `workdir` is empty.
+        `base_dir` as an absolute path, or `<cache_dir>/parallel` when `base_dir` is empty.
     """
-    return pathlib.Path(workdir).resolve() if workdir else cache_dir() / "parallel"
+    return pathlib.Path(base_dir).resolve() if base_dir else cache_dir() / "parallel"
 
 
 def data_dir(user: RealUser | None = None) -> pathlib.Path:

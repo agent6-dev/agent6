@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `[parallel]` config section: defaults + repo override."""
+"""The `[parallel]` and `[workspace]` config sections: defaults and repo overrides."""
 
 from __future__ import annotations
 
@@ -29,10 +29,10 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
     return r
 
 
-def test_parallel_defaults() -> None:
+def test_parallel_and_workspace_defaults() -> None:
     cfg = Config()
     assert cfg.parallel.max_lanes == 4
-    assert cfg.parallel.workdir == ""
+    assert cfg.workspace.base_dir == ""
 
 
 def test_parallel_max_lanes_bounds() -> None:
@@ -45,11 +45,11 @@ def test_parallel_max_lanes_bounds() -> None:
     assert ParallelConfig(max_lanes=1024).max_lanes == 1024
 
 
-def test_parallel_override_via_repo_config(repo: pathlib.Path) -> None:
-    _write_repo_config(repo, '[parallel]\nmax_lanes = 8\nworkdir = "/tmp/lanes"\n')
+def test_parallel_and_workspace_override_via_repo_config(repo: pathlib.Path) -> None:
+    _write_repo_config(repo, '[parallel]\nmax_lanes = 8\n[workspace]\nbase_dir = "/tmp/lanes"\n')
     cfg = layer.load_effective(repo).config
     assert cfg.parallel.max_lanes == 8
-    assert cfg.parallel.workdir == "/tmp/lanes"
+    assert cfg.workspace.base_dir == "/tmp/lanes"
 
 
 @pytest.mark.parametrize("word", ["auto", "on"])

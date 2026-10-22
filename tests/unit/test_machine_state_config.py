@@ -235,7 +235,10 @@ def test_a_state_that_runs_nothing_takes_no_config_table(tmp_path: pathlib.Path)
         ("[states.judge.config.mcp]\nenabled = true\n", "mcp"),
         ('[states.judge.config.machine]\npass_env = ["X"]\n', "machine"),
         ("[states.judge.config.machine]\nsnapshot_keep = 2\n", "read once for the whole machine"),
-        ('[states.judge.config.parallel]\nworkdir = "/tmp/x"\n', "read once for the whole machine"),
+        (
+            '[states.judge.config.workspace]\nbase_dir = "/tmp/x"\n',
+            "read once for the whole machine",
+        ),
         ('[states.judge.config.git.commit]\nname = "x"\n', "read once for the whole machine"),
         ("[states.judge.config.git]\nrun_repo_hooks = true\n", "git.run_repo_hooks"),
         (
@@ -255,7 +258,7 @@ def test_a_state_table_carries_no_operator_only_key(
     ("table", "needle"),
     [
         ('[config.skills]\nextra_dirs = ["/tmp/skills"]\n', r"skills\.extra_dirs"),
-        ('[config.parallel]\nworkdir = "/tmp/elsewhere"\n', r"parallel\.workdir"),
+        ('[config.workspace]\nbase_dir = "/tmp/elsewhere"\n', r"workspace\.base_dir"),
         ("[config.budget]\nallow_paid_credits = true\n", r"budget\.allow_paid_credits"),
         ('[states.judge.config.skills]\nextra_dirs = ["/tmp/skills"]\n', r"skills\.extra_dirs"),
         (

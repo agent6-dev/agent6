@@ -1064,7 +1064,7 @@ model = "x"
 
     def capture(cfg: Config, isolation: kinds.IsolationLevel) -> machine_agent.StateOverlay:
         overlay = real_overlay(cfg, isolation)
-        carried.append(tuple(overlay.overlay["parallel"]["setup_command"]))
+        carried.append(tuple(overlay.overlay["workspace"]["setup_command"]))
         return overlay
 
     monkeypatch.setattr(machine_agent, "state_overlay", capture)

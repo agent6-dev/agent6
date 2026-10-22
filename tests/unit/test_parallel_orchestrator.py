@@ -956,7 +956,7 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
             },
             "harness": {"verify_infer": False},
             "review": {"trigger": "off"},
-            "parallel": {"setup_command": ["sh", "-c", command]},
+            "workspace": {"setup_command": ["sh", "-c", command]},
         }
     )
     calls: list[str] = []
@@ -1105,7 +1105,7 @@ def test_run_parallel_settles_the_gate_and_the_setup_command_in_the_origin(
 
     (lane_cfg,) = carried
     assert lane_cfg.harness.verify_command == (".venv/bin/python", "-m", "pytest", "-q")
-    assert lane_cfg.parallel.setup_command == ("uv", "sync", "--offline")
+    assert lane_cfg.workspace.setup_command == ("uv", "sync", "--offline")
 
 
 @pytest.mark.parametrize("committed", [False, True])
@@ -1149,7 +1149,7 @@ def test_fanout_setup_is_inferred_from_its_commit_not_the_dirty_agents_md(
     )
     assert len(carried) == 2
     assert all(
-        c.parallel.setup_command == (("echo", "committed") if committed else ()) for c in carried
+        c.workspace.setup_command == (("echo", "committed") if committed else ()) for c in carried
     )
 
 
@@ -2967,7 +2967,7 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     against the wrong origin nor kept forever with advice that cannot apply here.
     """
     workdir = tmp_path / "cache"
-    cfg = Config.model_validate({"parallel": {"workdir": str(workdir)}})
+    cfg = Config.model_validate({"workspace": {"base_dir": str(workdir)}})
     scoped = workdir / paths.repo_id(origin)
 
     unmerged = scoped / "fan-a" / "lane-1"
@@ -3081,7 +3081,7 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     a prune message about commits it never held.
     """
     workdir = tmp_path / "cache"
-    cfg = Config.model_validate({"parallel": {"workdir": str(workdir)}})
+    cfg = Config.model_validate({"workspace": {"base_dir": str(workdir)}})
     lane = workdir / paths.repo_id(origin) / "fan-starting" / "lane-1"
     lane.parent.mkdir(parents=True)
     subrun.clone_workspace(origin, lane)
@@ -3120,7 +3120,7 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
     import subprocess as sp
 
     workdir = tmp_path / "cache"
-    cfg = Config.model_validate({"parallel": {"workdir": str(workdir)}})
+    cfg = Config.model_validate({"workspace": {"base_dir": str(workdir)}})
     scoped = workdir / paths.repo_id(origin)
     lane = scoped / "fan-x" / "lane-1"
     lane.parent.mkdir(parents=True)
@@ -3149,7 +3149,7 @@ def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
     files) holds no lane clone, and the sweep read that as "nothing to prove" and deleted it.
     """
     workdir = tmp_path / "cache"
-    cfg = Config.model_validate({"parallel": {"workdir": str(workdir)}})
+    cfg = Config.model_validate({"workspace": {"base_dir": str(workdir)}})
     scoped = workdir / paths.repo_id(origin)
     theirs = scoped / "my-clone"
     theirs.parent.mkdir(parents=True)
@@ -3390,8 +3390,8 @@ def test_a_fan_out_leaves_no_stop_marker_behind(
 def test_a_relative_workdir_resolves_to_an_absolute_path(
     origin: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A relative `[parallel].workdir` reached a fork's manifest as a relative worktree path."""
+    """A relative `[workspace].base_dir` reached a fork's manifest as a relative worktree path."""
     monkeypatch.chdir(tmp_path)
-    cfg = Config.model_validate({"parallel": {"workdir": "wt"}})
+    cfg = Config.model_validate({"workspace": {"base_dir": "wt"}})
 
     assert _workdirs.workdir_base(cfg, origin) == tmp_path.resolve() / "wt" / paths.repo_id(origin)

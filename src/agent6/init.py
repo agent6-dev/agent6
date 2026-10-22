@@ -72,7 +72,7 @@ _SETUP_SECTION = """
 The command that builds this repo's environment in a new worktree or clone, which
 holds tracked files only. agent6 runs it once there, in the sandbox, before the
 first turn of `run --worktree`, a fork or a `--parallel` lane; set
-parallel.setup_command to pin another.
+workspace.setup_command to pin another.
 
 ```bash
 {setup}

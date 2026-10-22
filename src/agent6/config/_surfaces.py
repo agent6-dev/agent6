@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The surface models.
 
-`[skills]`, `[machine]`, `[web]`, `[notify]` and `[parallel]`.
+`[skills]`, `[machine]`, `[web]`, `[notify]`, `[parallel]` and `[workspace]`.
 """
 
 from __future__ import annotations
@@ -225,7 +225,7 @@ class NotifyConfig(pydantic.BaseModel):
 
 
 class ParallelConfig(pydantic.BaseModel):
-    """The `[parallel]` table: the bounds and placement of a `--parallel` fan-out."""
+    """The `[parallel]` table: the lane limit for a `--parallel` fan-out."""
 
     model_config = _base.MODEL_CONFIG
 
@@ -240,13 +240,20 @@ class ParallelConfig(pydantic.BaseModel):
             "more is refused before anything is cloned."
         ),
     )
-    # A lane: `<workdir>/<repo-id>/<fanout-id>/lane-<i>`; a fork or a `run --worktree` run:
-    # `<workdir>/<repo-id>/<session-id>`.
-    workdir: str = pydantic.Field(
+
+
+class WorkspaceConfig(pydantic.BaseModel):
+    """The `[workspace]` table: placement and setup of isolated workspaces."""
+
+    model_config = _base.MODEL_CONFIG
+
+    # A lane: `<base_dir>/<repo-id>/<fanout-id>/lane-<i>`; a fork or a `run --worktree` run:
+    # `<base_dir>/<repo-id>/<session-id>`.
+    base_dir: str = pydantic.Field(
         default="",
         description=(
-            "Base directory for the working trees lanes, machine run states, forks and "
-            "`run --worktree` runs work in, in a per-repo subdirectory. Empty: "
+            "Base directory for lane clones, machine state clones, forks and "
+            "`run --worktree` worktrees, grouped by repository. Empty: "
             "`<cache_dir>/parallel`. A lane's clone is removed after its work is imported; a "
             "fork's or a `run --worktree` run's worktree by `sessions prune` once the session "
             "is merged or holds no work."

@@ -3,7 +3,7 @@
 """Build the environment of an isolated workspace before its first turn.
 
 A `run --worktree` worktree, a fork's worktree, a lane's clone and a machine state's clone
-hold tracked files only. `[parallel].setup_command` runs once in each, through an injected
+hold tracked files only. `[workspace].setup_command` runs once in each, through an injected
 runner using the workspace's command policy and jail. A session's manifest records that its
 workspace is set up. With no command configured, the `## Setup command` block of AGENTS.md
 supplies it from the workspace's base commit, never a model-written machine chain tip.
@@ -55,7 +55,7 @@ def infer_if_unset(
     Returns:
         The config, its setup command set when the `## Setup command` block gives one.
     """
-    if cfg.parallel.setup_command:
+    if cfg.workspace.setup_command:
         return cfg
     agents_md = verify_infer.read_agents_md(origin, cfg.sandbox.hide_paths, at=at)
     argv = verify_infer.setup_from_agents_md(agents_md)
@@ -63,7 +63,7 @@ def infer_if_unset(
         return cfg
     reporter.note(
         f"setup_command not set; inferred from AGENTS.md: {shlex.join(argv)}\n"
-        "         (pin it with parallel.setup_command in your per-repo config)"
+        "         (pin it with workspace.setup_command in your per-repo config)"
     )
     return cfg.with_setup_command(argv)
 
@@ -90,7 +90,7 @@ def _no_setup_text(path: str, workspace: str) -> str:
     return (
         f"the verify gate runs `{path}`, a path git does not track, so it is absent in"
         f" {workspace}, which holds tracked files only, and no setup command builds it there.\n"
-        "  - set one for this repository:  agent6 config set --repo parallel.setup_command"
+        "  - set one for this repository:  agent6 config set --repo workspace.setup_command"
         """ '["uv", "sync"]'\n"""
         "  - or commit it in AGENTS.md: a `## Setup command` heading over a fenced block\n"
         "  it runs in the run's own sandbox: with no route off the machine it has to work"
@@ -125,7 +125,7 @@ def gate_refusal(
         and when commands are withheld, which leaves the run gateless.
     """
     path = _gate_path(gate)
-    if not path or cfg.sandbox.run_commands == "no" or cfg.parallel.setup_command:
+    if not path or cfg.sandbox.run_commands == "no" or cfg.workspace.setup_command:
         return None
     agents_md = verify_infer.read_agents_md(origin, cfg.sandbox.hide_paths, at=at)
     if verify_infer.setup_from_agents_md(agents_md) is not None:
@@ -217,7 +217,7 @@ def prepare(
     prepared = setup(cfg, runner=runner, reporter=reporter)
     if prepared.problem is not None or runner.command_policy() == "no":
         return prepared
-    argv = cfg.parallel.setup_command
+    argv = cfg.workspace.setup_command
     result = prepared.result
     gate = cfg.harness.verify_command
     path = _gate_path(gate)
@@ -244,7 +244,7 @@ def setup(cfg: Config, *, runner: SetupRunner, reporter: app_reporter.Reporter) 
     Returns:
         The command result and any setup failure.
     """
-    argv = cfg.parallel.setup_command
+    argv = cfg.workspace.setup_command
     if runner.command_policy() == "no":
         if argv:
             line = shlex.join(argv)

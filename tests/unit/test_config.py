@@ -75,6 +75,14 @@ def test_extra_key_forbidden(tmp_path: pathlib.Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_workspace_base_dir_replaces_parallel_workdir() -> None:
+    """Workspace placement accepts the workspace key and refuses the parallel key."""
+    with pytest.raises(pydantic.ValidationError, match=r"parallel\.workdir") as exc:
+        Config.model_validate({"parallel": {"workdir": "/x"}})
+    assert exc.value.errors()[0]["type"] == "extra_forbidden"
+    assert Config.model_validate({"workspace": {"base_dir": "/x"}}).workspace.base_dir == "/x"
+
+
 def test_security_field_defaults_to_safe_value(tmp_path: pathlib.Path) -> None:
     # protect_git is a security field: omitted, it defaults to the safe value.
     body = _VALID_TOML.replace('protect_git = "on"\n', "")

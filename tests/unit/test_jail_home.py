@@ -264,7 +264,7 @@ def test_a_lanes_clone_and_a_machine_clone_share_the_repositorys_home(
     """A lane's clone and a machine state's clone each got a HOME of their own.
 
     A tool cache warmed for the repository was absent there. Every working tree agent6
-    makes for a repository sits under that repository's directory in the parallel workdir,
+    makes for a repository sits under that repository's directory in the workspace base directory,
     and its commands get the repository's HOME; a directory elsewhere keeps its own.
     """
     repo, base = tmp_path / "repo", tmp_path / "work"
@@ -275,7 +275,9 @@ def test_a_lanes_clone_and_a_machine_clone_share_the_repositorys_home(
     stranger = tmp_path / "elsewhere" / rid / "x"
     for made in (lane, state_clone, stranger):
         made.mkdir(parents=True)
-    cfg = Config.model_validate({"sandbox": {"home": "cache"}, "parallel": {"workdir": str(base)}})
+    cfg = Config.model_validate(
+        {"sandbox": {"home": "cache"}, "workspace": {"base_dir": str(base)}}
+    )
 
     def home(root: pathlib.Path) -> pathlib.Path | None:
         return policy_module.persistent_jail_home(cfg, "full", root)

@@ -196,7 +196,7 @@ An `agent` state spins up a normal agent6 run: its own snapshot dir, transcript,
 
 Where a run state's work lands:
 
-- each run state executes in a fresh clone (the `--parallel` lane mechanism, `[parallel].workdir` cache) checked out at the machine chain's tip
+- each run state executes in a fresh clone (the `--parallel` lane mechanism, `[workspace].base_dir` cache) checked out at the machine chain's tip
 - its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
 - merge the branch when you want the work (the run's ending names it and the `git merge` line)
 - a state's clone is removed as it lands, so nothing is left for `sessions prune` to sweep
@@ -205,7 +205,7 @@ Where a run state's work lands:
     - while the tip is not in HEAD it refuses, naming the merge and delete remedies
     - a branch left without its ref is an ordinary branch, and the instance starts from HEAD
 - a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip
-    - setup comes from `[parallel].setup_command`, else the AGENTS.md block at `machine.begin.base_commit` (the commit the machine started from), never the writable chain tip
+    - setup comes from `[workspace].setup_command`, else the AGENTS.md block at `machine.begin.base_commit` (the commit the machine started from), never the writable chain tip
     - setup runs per tool call, in each fresh clone, and gets the state's `timeout_s` before the tool receives its own `timeout_s`; setup time adds to the state's elapsed time
     - each clone runs the [workspace setup command](usage.md#isolated-workspaces) before the state executes; setup output tails, argv, exit code and duration are recorded as `workspace.setup` events in the instance's `states/<step>-<state>/logs.jsonl`, bounded by `machine.state_log_keep`
     - a failed setup command takes the tool state's `nonzero` edge (`timeout` for a timed-out setup); clone or jail host failures abort the machine instead
@@ -545,10 +545,10 @@ Unset keys read straight through to the lower layers, so a machine only states w
 
 **Operator-only keys.** Refused in both tables, each a load-time error:
 
-- `providers.*`, `presets.*`, `mcp.*`, a top-level `preset`, `budget.allow_paid_credits`, `git.run_repo_hooks`, `git.run_repo_drivers`, `machine.notify`, `machine.pass_env`, `notify.on_complete`, `parallel.workdir`, `prompt.system_prompt_file`, `skills.extra_dirs`
+- `providers.*`, `presets.*`, `mcp.*`, a top-level `preset`, `budget.allow_paid_credits`, `git.run_repo_hooks`, `git.run_repo_drivers`, `machine.notify`, `machine.pass_env`, `notify.on_complete`, `workspace.base_dir`, `prompt.system_prompt_file`, `skills.extra_dirs`
     - endpoints, key-env names, and secrets live in the global config / secrets store; presets, MCP servers, host-argv hooks, host-side read and work dirs, and paid credits are operator decisions in the global/repo config
     - a machine file may be LLM-drafted or shared: it must not route keys elsewhere or run host code through an overlay
-- a state's table also refuses `machine.*`, `parallel.*` and `git.commit.*`, which are read once for the whole machine: set them in `[config]`
+- a state's table also refuses `machine.*`, `parallel.*`, `workspace.*` and `git.commit.*`, which are read once for the whole machine: set them in `[config]`
 
 **Sandbox keys: never wider than your own config.** An overlay may set any `sandbox` key, bounded by your own layers alone (defaults, global, repo, preset, `--config FILE`).
 
@@ -744,7 +744,7 @@ It is an ordinary agent6 run handed this document's grammar, writing the `.asm.t
 - no host is pre-allowed, so a headless `fetch` denies
 - it never sees the operator's checkout; the workspace bounds its writes the way a repo bounds a run's
 
-- the workspace is an empty git repo under `[parallel].workdir` (where lane clones and fork worktrees live)
+- the workspace is an empty git repo under `[workspace].base_dir` (where lane clones and fork worktrees live)
     - each iteration commits, so the draft survives a failure for the operator to read
 - every draft is gated: `machine check`, ruff (the destination's ruff config), ty, the `machine test` dry-run, and mock tests in a no-network jail
     - the mock tests run under `full` `sandbox.isolation` only: elsewhere agent6 reports them as not run

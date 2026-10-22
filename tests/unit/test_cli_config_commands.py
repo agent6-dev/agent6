@@ -45,7 +45,7 @@ def _global_toml(tmp_path: pathlib.Path) -> dict[str, object]:
 @pytest.mark.parametrize(
     ("key", "value"),
     [
-        ("parallel.setup_command", '["sh", "-c", "echo hi"]'),
+        ("workspace.setup_command", '["sh", "-c", "echo hi"]'),
         ("git.commit.name", r'"A \"quoted\" name"'),
         ("context", "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"),
     ],
@@ -64,15 +64,15 @@ def test_config_set_echo_keeps_the_written_toml(
 @pytest.mark.parametrize(
     ("verb", "initial", "message", "changed"),
     [
-        ("add", "[]", 'Added "echo hi" to parallel.setup_command in {target}\n', True),
+        ("add", "[]", 'Added "echo hi" to workspace.setup_command in {target}\n', True),
         (
             "remove",
             '["echo hi"]',
-            'Removed "echo hi" from parallel.setup_command in {target}\n',
+            'Removed "echo hi" from workspace.setup_command in {target}\n',
             True,
         ),
-        ("add", '["echo hi"]', '"echo hi" already in parallel.setup_command.\n', False),
-        ("remove", "[]", '"echo hi" not in parallel.setup_command.\n', False),
+        ("add", '["echo hi"]', '"echo hi" already in workspace.setup_command.\n', False),
+        ("remove", "[]", '"echo hi" not in workspace.setup_command.\n', False),
     ],
 )
 def test_config_list_edit_echo_keeps_toml_quotes(
@@ -84,7 +84,7 @@ def test_config_list_edit_echo_keeps_toml_quotes(
     changed: bool,
 ) -> None:
     """Add and remove must quote string entries in success and no-op messages."""
-    key = "parallel.setup_command"
+    key = "workspace.setup_command"
     assert _run(["config", "set", "--repo", key, initial]) == 0
     target = paths.repo_config_path(iso)
     before = target.read_text(encoding="utf-8")

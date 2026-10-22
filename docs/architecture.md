@@ -297,7 +297,7 @@ The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent
 [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) implements those Protocols: it holds the front-end's `LaneRuntime`, plans the lanes, clones, spawns, awaits and imports one lane, and builds the coordinator's `/parallel` dispatcher.
 [app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) drives the fan-out session: spawn, await, import, rank, report.
 [app/_parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_parallel_results.py) imports the finished lanes, carries memory and decisions back, and stamps and prints the ranking.
-[app/_workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_workdirs.py) resolves `[parallel].workdir` for clones and linked worktrees, writes lane configs, recovers orphaned lanes and removes imported or safely swept clones.
+[app/_workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_workdirs.py) resolves `[workspace].base_dir` for clones and linked worktrees, writes lane configs, recovers orphaned lanes and removes imported or safely swept clones.
 The detached spawn it drives (`ui.spawn`'s `spawn_and_locate`, the path the web and TUI hubs start a run with) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`, and liveness probes use `sessions.process` and stop requests use the run-dir bridge (`sessions.ipc`).
 
 **`agent6 run --parallel N|[provider/]model,...`** plans one `LaneSpec` per lane, each spawned as an ordinary detached `agent6 run` with its own jail and `run_commands` policy.
@@ -414,7 +414,7 @@ The planner re-reads it before every turn and is shown it whenever it differs fr
 
 **A fork** clones a source run's state as of a checkpoint into a new session dir with a new id, and gives it a linked git worktree of its own:
 
-- adds the worktree detached at the turn's sha (`<[parallel].workdir>/<repo-id>/<new>`)
+- adds the worktree detached at the turn's sha (`<[workspace].base_dir>/<repo-id>/<new>`)
 - copies the checkpoint as the new `loop_state.json` and seed `checkpoints/0000.json`
 - rebuilds the curator DAG at the checkpoint's `graph_version`
 - writes a manifest with `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `worktree` / `worktree_git_dir` (the repository git dir the worktree points into, recorded so the jail grant never depends on the worktree's own `.git` pointer)
@@ -427,7 +427,7 @@ The worktree's checkout lock is removed with the worktree.
 The worktree shares the repository's refs, so `sessions diff|commits|merge <new>` work from the repo like any run's; `sessions prune` removes the worktree once the fork is merged, and `sessions rm <new>` removes it with the record.
 An unstarted fork keeps its branch, chain ref and worktree even when its tip is reachable from the checkout's HEAD.
 The manifest is the only thing that names a worktree as agent6's.
-The clone sweep deletes a group dir of `lane-*` clones once the origin reaches every one of their tips, and leaves every other directory under `[parallel].workdir` alone; a worktree two sessions name (an `/undo` fork and its source) stays while either still needs it.
+The clone sweep deletes a group dir of `lane-*` clones once the origin reaches every one of their tips, and leaves every other directory under `[workspace].base_dir` alone; a worktree two sessions name (an `/undo` fork and its source) stays while either still needs it.
 A clone with no lane session record stays because a spawn timeout can leave a child alive before its first write, even after the coordinator exits.
 Prune names each kept group with its reason, and for a missing lane record the command that removes it.
 

@@ -182,6 +182,7 @@ class Config(pydantic.BaseModel):
     mcp: _sandbox.MCPConfig = pydantic.Field(default_factory=_sandbox.MCPConfig)
     web: _surfaces.WebConfig = pydantic.Field(default_factory=_surfaces.WebConfig)
     parallel: _surfaces.ParallelConfig = pydantic.Field(default_factory=_surfaces.ParallelConfig)
+    workspace: _surfaces.WorkspaceConfig = pydantic.Field(default_factory=_surfaces.WorkspaceConfig)
     # The injection order and stacking rules live in config.layer._apply_preset.
     preset: str = pydantic.Field(
         default="",
@@ -440,7 +441,7 @@ class Config(pydantic.BaseModel):
         return Config.model_validate(data)
 
     def with_setup_command(self, argv: tuple[str, ...]) -> Config:
-        """Return a copy whose `parallel.setup_command` is the argv AGENTS.md states.
+        """Return a copy whose `workspace.setup_command` is the argv AGENTS.md states.
 
         Args:
             argv: The setup command.
@@ -449,7 +450,7 @@ class Config(pydantic.BaseModel):
             The config with the setup command set.
         """
         data = self.model_dump(mode="python")
-        data.setdefault("parallel", {})["setup_command"] = list(argv)
+        data.setdefault("workspace", {})["setup_command"] = list(argv)
         return Config.model_validate(data)
 
     def cleartext_credential_endpoints(self) -> tuple[str, ...]:

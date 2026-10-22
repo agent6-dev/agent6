@@ -5,7 +5,7 @@
 A fork copies a source session's state as of a checkpoint into a fresh session
 with a new id, recording the lineage; the source is never mutated. A run fork is
 the repo at the checkpoint's committed HEAD in its own linked worktree (under
-`[parallel].workdir`, recorded in the manifest, removed by `sessions prune` once
+`[workspace].base_dir`, recorded in the manifest, removed by `sessions prune` once
 merged) plus the conversation up to that turn; an uncommitted edit at the forked
 turn is absent from the tree. The DAG is rebuilt at the checkpoint's
 `graph_version` by `graph.replay`, not copied. A plan or ask fork reads the

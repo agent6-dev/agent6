@@ -42,6 +42,7 @@ from agent6.config._surfaces import (  # noqa: ICN003  # re-export
     NotifyConfig,
     ParallelConfig,
     WebConfig,
+    WorkspaceConfig,
     is_loopback_host,
 )
 from agent6.config.model import (  # noqa: ICN003  # re-export
@@ -86,6 +87,7 @@ __all__ = [
     "RoleName",
     "SandboxConfig",
     "WebConfig",
+    "WorkspaceConfig",
     "is_cleartext_url",
     "is_loopback_host",
     "is_loopback_url",

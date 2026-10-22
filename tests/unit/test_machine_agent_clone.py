@@ -248,7 +248,7 @@ def test_tool_clone_runs_setup_before_reading_environment(
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}}).with_setup_command(
         ("sh", "-c", command)
     )
-    expected_setup = cfg.parallel.setup_command
+    expected_setup = cfg.workspace.setup_command
     calls: list[tuple[str, ...]] = []
 
     def execute(policy: kinds.JailPolicy, **kwargs: object) -> kinds.CommandResult:
@@ -474,7 +474,7 @@ def test_tool_setup_routes_its_outcome_without_checking_a_session_gate(
     cfg = Config.model_validate(
         {
             "sandbox": {"run_commands": "yes"},
-            "parallel": {"setup_command": ["setup"]},
+            "workspace": {"setup_command": ["setup"]},
             "harness": {"verify_command": [".missing-gate"]},
         }
     )
@@ -666,7 +666,7 @@ def _state_in_a_clone(
                     "api_key_env": "PROBE_KEY",
                 }
             },
-            "parallel": {"setup_command": setup},
+            "workspace": {"setup_command": setup},
         },
         isolation="none",
         transcript_dir=tmp_path / "m1" / "agent_transcripts",

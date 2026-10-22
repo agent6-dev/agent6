@@ -428,7 +428,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         if cfg is not configs.machine.config:
             # parallel.* is machine-wide: a state with no config table shares the machine's config.
             machine = dataclasses.replace(configs.machine, config=cfg)
-            setup = cfg.parallel.setup_command
+            setup = cfg.workspace.setup_command
             configs = dataclasses.replace(
                 configs,
                 machine=machine,
@@ -443,7 +443,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             )
         for name, resolved in configs.states.items():
             state_cfg = resolved.config
-            if state_cfg.parallel.setup_command and state_cfg.sandbox.run_commands == "ask":
+            if state_cfg.workspace.setup_command and state_cfg.sandbox.run_commands == "ask":
                 reporter.refuse(
                     f"state {name!r} needs workspace setup, but sandbox.run_commands='ask'; "
                     "use --auto-approve or set sandbox.run_commands='yes' to allow setup"
