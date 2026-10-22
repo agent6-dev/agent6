@@ -265,7 +265,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     total_out = 0
     # One ledger across attempts: each subprocess is otherwise a fresh tracker. -1 = unlimited.
     create_cap = None if cfg.budget.max_usd == -1 else cfg.budget.max_usd
-    plan_cap = None if cfg.budget.max_percent == -1 else cfg.budget.max_percent
+    plan_cap = None if cfg.budget.max_plan_points == -1 else cfg.budget.max_plan_points
     total_plan = 0.0
     attempt = 0
     for next_attempt in range(1, max_attempts + 1):
@@ -279,7 +279,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
             break
         if total_plan > 0 and plan_cap is not None and total_plan >= plan_cap:
             reporter.err(
-                f"machine create: budget max_percent ({plan_cap:g}) exhausted after"
+                f"machine create: budget max_plan_points ({plan_cap:g}) exhausted after"
                 f" {attempt} attempt(s) ({total_plan:g} plan points); stopping."
             )
             break
@@ -298,7 +298,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                 mode="run",
                 effort="off",
                 max_usd=remaining,
-                max_percent=remaining_plan,
+                max_plan_points=remaining_plan,
             ),
             events_log,
         )

@@ -136,7 +136,9 @@ def test_run_header_prints_the_inferred_gate_as_check_verify_does(
         mode="run",
         events=event_log.EventSink(tmp_path / "logs.jsonl"),
         transcript_sink=mock.MagicMock(),
-        budget=agent6_budget.BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=-1.0),
+        budget=agent6_budget.BudgetTracker(
+            max_usd=-1.0, max_tokens_fallback=-1, max_plan_points=-1.0
+        ),
     )
     header = capsys.readouterr().err
     assert f"verify_command not set; inferred from AGENTS.md: {command}\n" in header
@@ -178,7 +180,9 @@ def test_check_verify_and_the_run_header_say_why_a_manifest_was_passed_over(
         mode="run",
         events=event_log.EventSink(log),
         transcript_sink=mock.MagicMock(),
-        budget=agent6_budget.BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=-1.0),
+        budget=agent6_budget.BudgetTracker(
+            max_usd=-1.0, max_tokens_fallback=-1, max_plan_points=-1.0
+        ),
     )
     header = capsys.readouterr().err
     assert cfg.harness.verify_command == ("make", "test")
@@ -211,7 +215,9 @@ def test_check_verify_and_the_run_header_name_the_manifests_the_gate_leaves_out(
         mode="run",
         events=event_log.EventSink(tmp_path / "logs.jsonl"),
         transcript_sink=mock.MagicMock(),
-        budget=agent6_budget.BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=-1.0),
+        budget=agent6_budget.BudgetTracker(
+            max_usd=-1.0, max_tokens_fallback=-1, max_plan_points=-1.0
+        ),
     )
     header = capsys.readouterr().err
     assert cfg.harness.verify_command == ("npm", "test", "--silent")

@@ -181,7 +181,7 @@ def test_bench_container_config_template_validates() -> None:
         stub,
         {**stub, "AGENT6_SB_EFFORT": "medium"},
         {**stub, "AGENT6_SB_VERIFY_WHEN": "step"},
-        {**stub, "AGENT6_SB_MAX_PERCENT": "40"},
+        {**stub, "AGENT6_SB_MAX_PLAN_POINTS": "40"},
         {**stub, "AGENT6_SB_REVIEW_SEATS": "security@openrouter/a;tests@anthropic/b"},
         {**stub, "AGENT6_SB_VERIFY": "none"},
     )
@@ -194,8 +194,8 @@ def test_bench_container_config_template_validates() -> None:
             assert data["models"]["worker"]["effort"] == "medium"
         if env.get("AGENT6_SB_VERIFY_WHEN"):
             assert data["harness"]["verify_when"] == "step"
-        if env.get("AGENT6_SB_MAX_PERCENT"):
-            assert data["budget"]["max_percent"] == 40
+        if env.get("AGENT6_SB_MAX_PLAN_POINTS"):
+            assert data["budget"]["max_plan_points"] == 40
         if env.get("AGENT6_SB_REVIEW_SEATS"):
             assert data["review"]["seats"] == ["security@openrouter/a", "tests@anthropic/b"]
         if env.get("AGENT6_SB_VERIFY") == "none":

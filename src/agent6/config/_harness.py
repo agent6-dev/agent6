@@ -559,7 +559,7 @@ class ReviewConfig(pydantic.BaseModel):
 class BudgetConfig(pydantic.BaseModel):
     """The `[budget]` table: every provider call is bounded in exactly one currency.
 
-    A meterable call counts against `max_usd`, a plan-metered call against `max_percent`, and
+    A meterable call counts against `max_usd`, a plan-metered call against `max_plan_points`, and
     a call with neither against `max_tokens_fallback`. Each cap reads `-1` as unlimited and
     `0` as refuse up front.
     """
@@ -585,7 +585,7 @@ class BudgetConfig(pydantic.BaseModel):
         ),
     )
 
-    max_percent: float = pydantic.Field(
+    max_plan_points: float = pydantic.Field(
         default=-1.0,  # the float the loader validates it to, so `config fill` is idempotent
         description=(
             "Cap on the plan percentage points one run may consume on a subscription provider: "
@@ -595,16 +595,16 @@ class BudgetConfig(pydantic.BaseModel):
             "full point, so the cap ends a run early, never late; the call in flight still "
             "finishes. The reading is account-global: a concurrent run's spend counts toward "
             "whichever run observes it next. `-1`: unlimited; `0`: refuse plan-metered calls. "
-            "`--max-percent` overrides per run."
+            "`--max-plan-points` overrides per run."
         ),
     )
 
     # Purchased credits and extra usage are real money after the included window.
-    allow_paid_credits: bool = pydantic.Field(
+    allow_plan_overage: bool = pydantic.Field(
         default=False,
         description=(
-            "Allow plan-metered calls (`chatgpt`, `claude_code`) to spend purchased credits or "
-            "extra usage once the included plan window is exhausted (auto top-up can buy more "
+            "Allow plan overage (`chatgpt`, `claude_code`): purchased credits or extra usage "
+            "once the included plan window is exhausted (auto top-up can buy more "
             "with the saved payment method). `false` is a circuit breaker, not a guarantee: "
             "the backend's usage readings (a chatgpt preflight and every response's headers, "
             "every claude_code round's rate-limit event) report the account's windows and "
@@ -616,7 +616,7 @@ class BudgetConfig(pydantic.BaseModel):
         ),
     )
 
-    @pydantic.field_validator("max_usd", "max_percent")
+    @pydantic.field_validator("max_usd", "max_plan_points")
     @classmethod
     def _usd_unlimited_is_exactly_minus_one(cls, v: float) -> float:
         """Refuse a negative cap other than exactly -1.

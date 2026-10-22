@@ -56,7 +56,7 @@ class LogScan:
         plan_consumed: The plan points consumed across every execution; 0.0 until a plan
             call runs.
         plan_prior_executions: The points banked by completed executions.
-        plan_cap: `[budget].max_percent` for this execution, 0.0 until a plan call runs.
+        plan_cap: `[budget].max_plan_points` for this execution, 0.0 until a plan call runs.
         plan_used_percent: The account's last reading, 0.0 until a plan call runs.
         plan_usage: That reading's windows, None until a plan call reports them.
         plan_usage_at: When the reading was taken, as epoch seconds; 0.0 without one.

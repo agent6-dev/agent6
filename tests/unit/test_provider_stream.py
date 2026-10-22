@@ -457,7 +457,7 @@ def test_a_raising_abort_poll_leaves_the_watchdog_alive(monkeypatch: pytest.Monk
 
 
 def test_reported_cost_without_token_counts_is_recorded() -> None:
-    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
 
     stream_mod.record_billed_usage(
         budget,

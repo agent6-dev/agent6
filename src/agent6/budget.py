@@ -10,7 +10,7 @@ task. Once a ledger crosses its cap the next provider call raises
 Every call is bounded in one currency. A call the meter can price (a reported
 cost, else price times tokens at the model's fetched rates, cache tokens
 included) counts against `max_usd`; a call carrying a plan reading counts
-percentage points against `max_percent`; a call with neither counts its tokens
+percentage points against `max_plan_points`; a call with neither counts its tokens
 against `max_tokens_fallback`. Each cap: -1 unlimited, 0 refuse that ledger, >
 0 the cap.
 """
@@ -303,7 +303,7 @@ class BudgetSnapshot:
         unmetered_tokens: Tokens of the calls the fallback ledger counts.
         max_usd: The USD cap.
         max_tokens_fallback: The fallback token cap.
-        max_percent: The plan percentage-point cap.
+        max_plan_points: The plan percentage-point cap.
         plans: One entry per provider entry that reported a plan, the latest last.
         exhausted: A ledger crossed its cap.
         exhausted_reason: Why, or "".
@@ -317,7 +317,7 @@ class BudgetSnapshot:
     unmetered_tokens: int
     max_usd: float
     max_tokens_fallback: int
-    max_percent: float
+    max_plan_points: float
     plans: dict[str, PlanSpend]
     exhausted: bool
     exhausted_reason: str
@@ -330,7 +330,7 @@ class BudgetSnapshot:
 
     @property
     def plan_consumed(self) -> float:
-        """This run's consumption on the plan that moved most, what `max_percent` caps."""
+        """This run's consumption on the plan that moved most, what `max_plan_points` caps."""
         return max((spend.consumed for spend in self.plans.values()), default=0.0)
 
 
@@ -340,7 +340,7 @@ class BudgetTracker:
 
     The call that brings a ledger to or over its cap trips `BudgetExceededError` on
     the next `check`, so one call may cross the line and no further call is issued.
-    `max_percent` meters consumption: the rise in the account's reported used percent
+    `max_plan_points` meters consumption: the rise in the account's reported used percent
     across this run's readings, accumulated across window resets. The reading is
     account-global, so a concurrent run's spend lands in whichever run reads it next:
     over-counting, never under.
@@ -348,15 +348,15 @@ class BudgetTracker:
     Attributes:
         max_usd: The USD cap; required, so the tracker never carries its own default.
         max_tokens_fallback: The fallback token cap.
-        max_percent: The plan percentage-point cap.
-        allow_paid_credits: Whether a call may draw on purchased credits; an omitted
-            value is the safe one.
+        max_plan_points: The plan percentage-point cap.
+        allow_plan_overage: Whether a call may use purchased credits or extra usage after
+            the included plan window is spent; an omitted value is the safe one.
     """
 
     max_usd: float
     max_tokens_fallback: int
-    max_percent: float
-    allow_paid_credits: bool = False
+    max_plan_points: float
+    allow_plan_overage: bool = False
     _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _per_model: dict[str, ModelUsage] = dataclasses.field(default_factory=dict)
     _input_total: int = 0
@@ -403,8 +403,8 @@ class BudgetTracker:
             cost_usd: The provider-reported cost; 0.0 leaves the call to a table price,
                 or to the fallback ledger when there is none.
             plan_usage: A plan reading, which meters the call in percentage points at an
-                authoritative $0; a call that would draw on purchased credits refuses
-                unless `allow_paid_credits` is set.
+                authoritative $0; a call that would use purchased credits or extra usage
+                refuses unless `allow_plan_overage` is set.
         """
         with self._lock:
             # A negative count from a gateway would subtract from the ledger, so signs are clamped.
@@ -521,7 +521,7 @@ class BudgetTracker:
             and not plan_usage.credits_unlimited
             and plan_usage.window_exhausted
         )
-        if would_spend_credits and not self.allow_paid_credits:
+        if would_spend_credits and not self.allow_plan_overage:
             balance = plan_usage.credits_balance or "unknown"
             usd = plan_usage.credits_usd
             if usd is not None and not plan_usage.credits_balance.strip().startswith("$"):
@@ -529,25 +529,25 @@ class BudgetTracker:
             self._exceeded_reason = (
                 "the plan window is exhausted and the account holds purchased"
                 f" credits (balance {balance}): continuing would spend them."
-                " Set [budget].allow_paid_credits = true to allow that"
+                " Set [budget].allow_plan_overage = true to allow that"
             )
         elif would_spend_credits and self.max_usd == 0.0:
             self._exceeded_reason = (
                 "USD budget is 0: purchased-credit calls are refused (raise [budget].max_usd)"
             )
-        elif self.max_percent == 0.0:
+        elif self.max_plan_points == 0.0:
             self._exceeded_reason = (
                 "percent budget is 0: plan-metered calls are refused"
                 f" (model {model!r} draws on a subscription plan;"
-                " raise [budget].max_percent)"
+                " raise [budget].max_plan_points)"
             )
-        elif self.max_percent > 0.0 and self._plan_consumed() >= self.max_percent:
+        elif self.max_plan_points > 0.0 and self._plan_consumed() >= self.max_plan_points:
             route, window, consumed = self._plan_consumption_binding()
             reading = self._plan_last_window[(route, window)]
             windows = tuple(w for (r, _), w in self._plan_last_window.items() if r == route)
             self._exceeded_reason = (
                 f"plan budget exhausted: this run consumed ~{consumed:.1f}"
-                f" percentage points >= max_percent {self.max_percent:g}"
+                f" percentage points >= max_plan_points {self.max_plan_points:g}"
                 f" ({route}: account at {reading.used_percent:g}% on its"
                 f" {format_plan_window(reading, windows)})"
             )
@@ -606,8 +606,8 @@ class BudgetTracker:
                 used = max(used, usd_spent / self.max_usd)
             if self.max_tokens_fallback > 0:
                 used = max(used, self._unmetered_tokens / self.max_tokens_fallback)
-            if self.max_percent > 0.0:
-                used = max(used, self._plan_consumed() / self.max_percent)
+            if self.max_plan_points > 0.0:
+                used = max(used, self._plan_consumed() / self.max_plan_points)
         return max(0.0, 1.0 - used)
 
     def snapshot(self) -> BudgetSnapshot:
@@ -624,7 +624,7 @@ class BudgetTracker:
                 unmetered_tokens=self._unmetered_tokens,
                 max_usd=self.max_usd,
                 max_tokens_fallback=self.max_tokens_fallback,
-                max_percent=self.max_percent,
+                max_plan_points=self.max_plan_points,
                 plans={
                     route: PlanSpend(plan, self._plan_consumed(route))
                     for route, plan in self._plans.items()
@@ -745,7 +745,7 @@ class BudgetTracker:
             budget_line += " (some models unpriced; figure is a lower bound)"
         lines.append(budget_line)
         for route, spend in snap.plans.items():
-            lines.append("  " + format_plan_usage(route, spend, snap.max_percent))
+            lines.append("  " + format_plan_usage(route, spend, snap.max_plan_points))
         if snap.exhausted and include_stop_reason:
             lines.append(f"  STATUS: {snap.exhausted_reason}")
         return "\n".join(lines)
@@ -802,19 +802,19 @@ def format_plan_reading(route: str, usage: PlanUsage) -> str:
     )
 
 
-def format_plan_usage(route: str, spend: PlanSpend, max_percent: float) -> str:
+def format_plan_usage(route: str, spend: PlanSpend, max_plan_points: float) -> str:
     """Return the plan-usage line every surface prints for one provider entry.
 
     Args:
         route: The provider entry.
         spend: Its latest reading and observed window movement.
-        max_percent: The cap the consumption is printed against; -1 prints none.
+        max_plan_points: The cap the consumption is printed against; -1 prints none.
 
     Returns:
         The line.
     """
     plan = spend.usage
-    cap = "" if max_percent == -1 else f" of max_percent {max_percent:g}"
+    cap = "" if max_plan_points == -1 else f" of max_plan_points {max_plan_points:g}"
     resets_h = max(0.0, (plan.resets_at - time.time()) / 3600)
     return (
         f"plan usage ({route}): {plan.used_percent:g}% of the"

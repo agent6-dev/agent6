@@ -436,7 +436,7 @@ class InstrumentedProvider:
             tokens_fallback_cap=snap.max_tokens_fallback,
             plan_used_percent=plan.used_percent if plan else 0.0,
             plan_consumed=snap.plan_consumed,
-            plan_cap=snap.max_percent,
+            plan_cap=snap.max_plan_points,
             plan_resets_at=plan.resets_at if plan else 0.0,
             # Every reported window, raw: the derived fields cannot show a second window.
             plan_windows=[

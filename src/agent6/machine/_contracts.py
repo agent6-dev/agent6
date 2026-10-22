@@ -44,7 +44,7 @@ class AgentRequest(pydantic.BaseModel):
         effort: The reasoning effort the `machine create` authoring agent runs at, or None; a
             state sets its own in its `config` table.
         max_usd: The slice's spend cap, or None.
-        max_percent: The slice's plan-points cap, or None.
+        max_plan_points: The slice's plan-points cap, or None.
         mode: The nested loop's mode: `agent` (a read-only structured judge) or `run`.
         state_name: The state, for its own watchable logs.jsonl; "" for the authoring agent.
         step_seq: The transition, likewise; 0 for the authoring agent.
@@ -58,7 +58,7 @@ class AgentRequest(pydantic.BaseModel):
     timeout_s: float
     effort: str | None = None
     max_usd: float | None = None
-    max_percent: float | None = None
+    max_plan_points: float | None = None
     mode: str = "agent"
     state_name: str = ""
     step_seq: int = 0

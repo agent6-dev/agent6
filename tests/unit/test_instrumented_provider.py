@@ -40,7 +40,7 @@ def _wrap(inner: mock.MagicMock) -> providers.InstrumentedProvider:
         model="moonshotai/kimi-k2.6",
         provider_name="openai",
         events=mock.MagicMock(),
-        budget=agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
     )
 
 
@@ -109,7 +109,7 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: pathlib.Path) -> 
         model="m",
         provider_name="p",
         events=events,
-        budget=agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
     ).call(system="s", messages=[], tools=[], max_tokens=8)
 
     settled = [
@@ -139,7 +139,7 @@ def test_a_failed_call_still_reports_what_it_spent(
     )
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     budget = agent6_budget.BudgetTracker(
-        max_usd=10.0, max_tokens_fallback=2_000_000, max_percent=-1
+        max_usd=10.0, max_tokens_fallback=2_000_000, max_plan_points=-1
     )
 
     def _cut_stream(**_: object) -> ProviderResponse:

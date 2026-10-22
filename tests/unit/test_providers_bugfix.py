@@ -94,7 +94,7 @@ def test_openai_2xx_envelope_permanent_status_is_not_retried() -> None:
     """
     from agent6.harness import _provider_call
 
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
     provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200,
@@ -116,7 +116,7 @@ def test_openai_2xx_envelope_transient_status_stays_retryable() -> None:
     # A 429/5xx envelope keeps a retryable classification (not in the set).
     from agent6.harness import _provider_call
 
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
     provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200, text=json.dumps({"error": {"code": 503, "message": "Overloaded"}})
@@ -179,7 +179,7 @@ def test_openai_2xx_string_error_and_placeholder_choices_are_envelopes() -> None
     Neither falls through to the misleading metering 422; a guard that requires `error` to be a dict
     misses both.
     """
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
     for body in (
         {"error": "model not found"},
         {
@@ -200,7 +200,7 @@ def test_openai_2xx_string_error_and_placeholder_choices_are_envelopes() -> None
 def test_openai_error_key_beside_real_content_still_parses() -> None:
     # An `error` key beside a REAL assistant message is incidental, not an
     # envelope: the response must parse normally.
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
     provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200,
@@ -228,7 +228,7 @@ def test_openai_2xx_error_envelope_is_the_upstreams_failure() -> None:
     """
     from agent6.harness import _provider_call
 
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
     provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200,
@@ -248,7 +248,7 @@ def test_openai_2xx_error_envelope_is_the_upstreams_failure() -> None:
 
 
 def test_anthropic_2xx_error_envelope_is_the_upstreams_failure() -> None:
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
     provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-3-5-sonnet", budget=budget
     )
@@ -289,7 +289,7 @@ def test_anthropic_2xx_error_envelope_keeps_retry_after() -> None:
 
 
 def test_openai_budgeted_response_requires_usage_tokens() -> None:
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
     provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200,
@@ -314,7 +314,7 @@ def test_openai_budgeted_response_requires_usage_tokens() -> None:
 
 
 def test_anthropic_budgeted_response_requires_usage_tokens() -> None:
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
     provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-3-5-sonnet", budget=budget
     )
@@ -344,7 +344,7 @@ def test_anthropic_budgeted_response_requires_usage_tokens() -> None:
 def test_openai_budgeted_response_rejects_zero_token_usage() -> None:
     # Presence is not enough: a gateway with usage tracking off returns 0/0, and
     # every turn would record zero so the budget never trips. Fail closed.
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
     provider = openai.OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
         status_code=200,
@@ -369,7 +369,7 @@ def test_openai_budgeted_response_rejects_zero_token_usage() -> None:
 
 
 def test_anthropic_budgeted_response_rejects_zero_token_usage() -> None:
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
     provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-3-5-sonnet", budget=budget
     )
@@ -399,7 +399,7 @@ def test_anthropic_budgeted_response_rejects_zero_token_usage() -> None:
 def test_anthropic_budgeted_response_accepts_fully_cached_turn() -> None:
     # A fully-cached turn legitimately reports input_tokens: 0 with a positive
     # cache_read count; the metering check must NOT false-reject it.
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-3-5-sonnet", budget=budget
     )

@@ -211,7 +211,7 @@ def test_plan_metered_routes_skip_the_fallback_note(
 ) -> None:
     """A model routed through a ChatGPT plan is percent-metered.
 
-    The unpriced-fallback note must not claim the token ledger bounds it, and max_percent = 0
+    The unpriced-fallback note must not claim the token ledger bounds it, and max_plan_points = 0
     refuses it up front like the sibling zeros.
     """
     from agent6.app import preflight
@@ -226,13 +226,13 @@ def test_plan_metered_routes_skip_the_fallback_note(
         {
             "providers": {"chatgpt": {"api_format": "chatgpt"}},
             "models": {"worker": {"provider": "chatgpt", "model": "gpt-5.6-sol"}},
-            "budget": {"max_percent": 0},
+            "budget": {"max_plan_points": 0},
         }
     )
     err = preflight.budget_preflight(refused)
     assert err is not None and "the plan cap is 0" in err
     # The flag or the key may have set it: the remedy names both.
-    assert "Raise --max-percent or [budget].max_percent" in err
+    assert "Raise --max-plan-points or [budget].max_plan_points" in err
 
 
 def test_a_plan_cap_under_three_points_is_flagged_at_run_start(
@@ -250,14 +250,14 @@ def test_a_plan_cap_under_three_points_is_flagged_at_run_start(
             {
                 "providers": {"chatgpt": {"api_format": "chatgpt"}},
                 "models": {"worker": {"provider": "chatgpt", "model": "gpt-5.6-sol"}},
-                "budget": {"max_percent": cap},
+                "budget": {"max_plan_points": cap},
             }
         )
         assert preflight.budget_preflight(cfg) is None
         return capsys.readouterr().err
 
     one = _with_cap(1)
-    assert "max_percent 1 point per run" in one
+    assert "max_plan_points 1 point per run" in one
     assert "whole percents" in one
     assert "whole percents" in _with_cap(2.5)
     assert "whole percents" not in _with_cap(3)
@@ -273,7 +273,7 @@ def test_claude_code_routes_are_plan_metered(
 ) -> None:
     """A model routed through a claude_code provider is percent-metered like a chatgpt one.
 
-    The plan note, the max_percent = 0 refusal, and no OpenRouter catalog refresh for its bare
+    The plan note, the max_plan_points = 0 refusal, and no OpenRouter catalog refresh for its bare
     claude-* id (an authoritative $0 needs no price).
     """
     from agent6.app import preflight
@@ -288,7 +288,7 @@ def test_claude_code_routes_are_plan_metered(
         {
             "providers": {"claude": {"api_format": "claude_code"}},
             "models": {"worker": {"provider": "claude", "model": "claude-haiku-4-5"}},
-            "budget": {"max_percent": 0},
+            "budget": {"max_plan_points": 0},
         }
     )
     err = preflight.budget_preflight(refused)

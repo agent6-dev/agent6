@@ -246,17 +246,17 @@ def test_worker_and_caps_use_operator_config_and_explicit_overrides(
     if override:
         monkeypatch.setenv("AGENT6_REALWORLD_MODEL", "chatgpt/test-model")
         monkeypatch.setenv("PER_TASK_BUDGET_USD", "2.50")
-        monkeypatch.setenv("PER_TASK_MAX_PERCENT", "2")
+        monkeypatch.setenv("PER_TASK_MAX_PLAN_POINTS", "2")
         monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
     result = _run_bench(bench_repo)
     config = tomllib.loads((bench_repo / "results" / "fixture_index" / "agent6.toml").read_text())
     assert config["budget"]["max_usd"] == (2.5 if override else 1.0)
     assert "providers" not in config
     assert "models" not in config
-    assert config["budget"].get("max_percent") == (2 if override else None)
+    assert config["budget"].get("max_plan_points") == (2 if override else None)
     loaded = agent6_config.Config.model_validate(config)
     assert loaded.budget.max_usd == (2.5 if override else 1.0)
-    assert loaded.budget.max_percent == (2.0 if override else -1.0)
+    assert loaded.budget.max_plan_points == (2.0 if override else -1.0)
     calls = [json.loads(line) for line in (bench_repo / "calls.jsonl").read_text().splitlines()]
     run = next(call for call in calls if call["argv"][2] == "run")
     assert run["argv"][3:] == (

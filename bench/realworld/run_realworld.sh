@@ -26,8 +26,8 @@ REPO="${AGENT6_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 BENCH_ROOT=${BENCH_ROOT:-/tmp/agent6-realworld}
 TOOLSET=${AGENT6_REALWORLD_TOOLSET:-index}
 PER_TASK_BUDGET_USD=${PER_TASK_BUDGET_USD:-1.00}
-# Plan points one task may use; unset keeps the operator's [budget].max_percent.
-PER_TASK_MAX_PERCENT=${PER_TASK_MAX_PERCENT:-}
+# Plan points one task may use; unset keeps the operator's [budget].max_plan_points.
+PER_TASK_MAX_PLAN_POINTS=${PER_TASK_MAX_PLAN_POINTS:-}
 # [PROVIDER/]MODEL for `run --model`; unset runs the operator's configured worker.
 MODEL=${AGENT6_REALWORLD_MODEL:-}
 # Wall-clock bound on one task's `agent6 run`.
@@ -79,7 +79,7 @@ ${metric_block}
 [budget]
 max_usd = $PER_TASK_BUDGET_USD
 max_tokens_fallback = 1500000
-$(if [ -n "$PER_TASK_MAX_PERCENT" ]; then echo "max_percent = $PER_TASK_MAX_PERCENT"; fi)
+$(if [ -n "$PER_TASK_MAX_PLAN_POINTS" ]; then echo "max_plan_points = $PER_TASK_MAX_PLAN_POINTS"; fi)
 EOF
 }
 
@@ -434,7 +434,7 @@ done
 {
   echo "# agent6 real-world benchmark — toolset: $TOOLSET"
   echo
-  echo "Model: ${run_model:-${MODEL:-operator config}}. Per-task caps: \$$PER_TASK_BUDGET_USD metered, ${PER_TASK_MAX_PERCENT:-operator config} plan points, ${TASK_TIMEOUT_S}s wall."
+  echo "Model: ${run_model:-${MODEL:-operator config}}. Per-task caps: \$$PER_TASK_BUDGET_USD metered, ${PER_TASK_MAX_PLAN_POINTS:-operator config} plan points, ${TASK_TIMEOUT_S}s wall."
   echo
   printf "| Task | verify | wall | cost | plan pts | in toks | out toks |\n"
   printf "|------|--------|------|------|----------|---------|----------|\n"

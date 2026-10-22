@@ -66,16 +66,16 @@ def test_every_budget_override_survives_a_detach() -> None:
     """Every budget override survives a detach.
 
     A detached execution re-reads config for anything the flags do not carry, so a dropped flag
-    silently restores the config default; `--max-percent` defaults to -1 (unlimited).
+    silently restores the config default; `--max-plan-points` defaults to -1 (unlimited).
     """
     import argparse
 
     from agent6.app import _setup
 
-    args = argparse.Namespace(max_usd=2.0, max_tokens_fallback=1000, max_percent=5.0)
+    args = argparse.Namespace(max_usd=2.0, max_tokens_fallback=1000, max_plan_points=5.0)
     overrides = _setup.BudgetOverrides.from_args(args)
     argv = overrides.argv()
-    for field in ("max_usd", "max_tokens_fallback", "max_percent"):
+    for field in ("max_usd", "max_tokens_fallback", "max_plan_points"):
         assert getattr(overrides, field) is not None
         assert f"--{field.replace('_', '-')}" in argv, field
 

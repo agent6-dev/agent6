@@ -185,7 +185,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
         ),
         layout=sessions_layout.SessionLayout(state_dir=tmp_path, session_id="r1"),
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=app_reporter.STDIO_REPORTER,
     )
@@ -241,7 +241,7 @@ def test_a_gate_that_changed_between_executions_takes_no_blame_for_the_edits(
         ),
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=app_reporter.STDIO_REPORTER,
     )
@@ -291,7 +291,7 @@ def test_a_resumed_red_gate_reads_the_first_executions_baseline(
         ),
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=app_reporter.STDIO_REPORTER,
     )

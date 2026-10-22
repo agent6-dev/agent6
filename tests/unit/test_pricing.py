@@ -156,7 +156,7 @@ def test_a_model_two_providers_list_is_priced_by_its_route(
     assert models_pricing.lookup_price("openai/gpt-4o", "aaa_cheap") == models_pricing.Price(
         0.1, 0.2
     )
-    budget = agent6_budget.BudgetTracker(max_usd=100.0, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=100.0, max_tokens_fallback=-1, max_plan_points=-1)
     budget.note_route("openai/gpt-4o", "openrouter")
     budget.record(
         model="openai/gpt-4o",
@@ -211,7 +211,7 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
         ),
         encoding="utf-8",
     )
-    listed = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    listed = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     listed.record(
         model="openai/gpt-x",
         input_tokens=0,
@@ -220,7 +220,7 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
         cache_creation_tokens=0,
     )
     assert listed.estimate_usd()[0] == pytest.approx(1.0)  # the listed 0.5x, not 0.1x
-    assumed = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    assumed = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     assumed.record(
         model="listed-only/plain",
         input_tokens=0,

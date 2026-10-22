@@ -167,7 +167,7 @@ $REVIEW_LINES
 [budget]
 max_usd = $MAX_USD
 max_tokens_fallback = 2000000
-max_percent = ${AGENT6_SB_MAX_PERCENT:-30}
+max_plan_points = ${AGENT6_SB_MAX_PLAN_POINTS:-30}
 EOF
 
 cd /testbed

@@ -277,7 +277,7 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
         model="m",
         provider_name="p",
         events=events,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
     ).call(system="s", messages=[{"role": "user", "content": "q"}], tools=[], max_tokens=64)
 
     layout = sessions_layout.session_layout(tmp_path, "quiet-fox-AAAAAA")

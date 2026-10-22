@@ -50,7 +50,7 @@ def test_finish_session_over_red_verify_is_not_headlined_passed(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -75,7 +75,7 @@ def test_all_green_finish_is_headlined_passed(tmp_path: pathlib.Path, capsys: ob
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -96,7 +96,7 @@ def test_a_budget_stop_prints_its_detail_once(
             {"type": "session.end", "reason": "budget_exhausted", "all_passed": False},
         ],
     )
-    tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=5, max_percent=-1)
+    tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=5, max_plan_points=-1)
     tracker.record(
         model="unpriced",
         input_tokens=5,
@@ -148,7 +148,7 @@ def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -193,7 +193,7 @@ def test_silent_and_plateau_ends_are_not_headlined_passed(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -234,7 +234,7 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -267,7 +267,7 @@ def _end_output(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -384,7 +384,7 @@ def test_end_banner_does_not_claim_merged_from_a_prior_executions_stamp(
         result,
         layout=layout,
         cwd=repo,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -422,7 +422,7 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -468,7 +468,7 @@ def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
         result,
         layout=layout,
         cwd=repo,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -516,7 +516,7 @@ def _end_footer(
         result,
         layout=layout,
         cwd=repo,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -658,7 +658,7 @@ def test_interrupt_end_prints_cost_resume_and_branch_hints(
     _finalize.print_interrupt_end(
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         reporter=reporter.STDIO_REPORTER,
     )
     out = capsys.readouterr().out
@@ -683,7 +683,7 @@ def test_provider_error_is_headlined_failed(tmp_path: pathlib.Path, capsys: obje
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -736,7 +736,7 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
             result,
             layout=layout,
             cwd=repo,
-            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
             console_stream=False,
             reporter=reporter.STDIO_REPORTER,
         )
@@ -776,7 +776,7 @@ def test_end_banner_adds_the_run_total_across_resume_executions(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -811,7 +811,7 @@ def test_end_banner_run_total_carries_plan_points(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -837,7 +837,7 @@ def test_end_banner_stays_quiet_on_a_single_execution_run(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -1057,7 +1057,7 @@ def test_a_plan_that_crashed_before_finishing_gets_no_execute_hint(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -1085,7 +1085,7 @@ def test_a_plan_that_completed_without_finish_planning_gets_no_execute_hint(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -1117,7 +1117,7 @@ def test_the_end_of_run_block_goes_through_the_reporter(
         ),
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.Reporter(out=said.append, err=said.append),
     )
@@ -1157,7 +1157,7 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -1194,7 +1194,7 @@ def test_a_failed_run_keeps_its_reason_on_the_console_stream(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=True,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -1222,7 +1222,7 @@ def test_a_clean_finish_does_not_repeat_the_summary_the_stream_showed(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=True,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -1255,7 +1255,7 @@ def test_a_silent_finish_does_not_repeat_the_answer_the_stream_showed(
             result,
             layout=layout,
             cwd=tmp_path,
-            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
             console_stream=True,
             reporter=reporter.STDIO_REPORTER,
         )
@@ -1292,7 +1292,7 @@ def test_the_sandbox_warning_states_its_remedy_once(
         result,
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
@@ -1326,7 +1326,7 @@ def test_the_run_total_rides_the_receipt_channel(tmp_path: pathlib.Path) -> None
         ),
         layout=layout,
         cwd=tmp_path,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.Reporter(out=out.append, err=out.append, receipt=receipt.append),
     )
@@ -1372,7 +1372,7 @@ def test_a_plan_ends_without_the_no_commit_footer(
             result,
             layout=layout,
             cwd=repo,
-            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
             console_stream=False,
             reporter=reporter.STDIO_REPORTER,
         )

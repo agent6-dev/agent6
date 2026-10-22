@@ -134,7 +134,7 @@ class BudgetView:
         plan_used_percent: The account's reported plan usage; 0 until a plan call runs.
         plan_consumed: The plan points consumed across every execution.
         plan_prior_executions: The points banked by completed executions.
-        plan_cap: `[budget].max_percent`; 0 until a plan call runs.
+        plan_cap: `[budget].max_plan_points`; 0 until a plan call runs.
         plan_resets_at: When the plan window resets, as epoch seconds.
     """
 

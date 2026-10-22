@@ -1232,7 +1232,7 @@ def test_machine_preflight_judges_the_states_routes(
         '[providers.plan]\napi_format = "chatgpt"\n'
         '[providers.paid]\napi_format = "openai"\nbase_url = "http://127.0.0.1:9"\n'
         '[models.worker]\nprovider = "plan"\nmodel = "plan-model"\n'
-        f"[budget]\nmax_percent = {percent}\n"
+        f"[budget]\nmax_plan_points = {percent}\n"
         + (f'[models.{role}]\nprovider = "plan"\nmodel = "plan-model"\n' if role else ""),
         encoding="utf-8",
     )

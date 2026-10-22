@@ -116,9 +116,9 @@ agent6 model worker chatgpt/gpt-5.6-sol
 ```
 
 - `agent6 connect chatgpt` runs a PKCE OAuth sign-in against OpenAI's fixed OAuth authority (`https://auth.openai.com`, a constant, not config) and stores the tokens in `secrets.toml` (0600); they refresh automatically.
-- Usage draws on the plan's own limits; cost meters show an authoritative $0 and the tokens meter nothing, so `[budget].max_percent` is the ledger that bounds these calls.
+- Usage draws on the plan's own limits; cost meters show an authoritative $0 and the tokens meter nothing, so `[budget].max_plan_points` is the ledger that bounds these calls.
 - Past the included window, calls draw on purchased credits (real money; auto top-up can buy more).
-  `[budget].allow_paid_credits = false` (the default) is a circuit breaker: a usage preflight before the first call and every response's headers report both windows and the credit state, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes, so a boundary-crossing call can spend before the stop.
+  `[budget].allow_plan_overage = false` (the default) is a circuit breaker: a usage preflight before the first call and every response's headers report both windows and the credit state, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes, so a boundary-crossing call can spend before the stop.
 - Whether these conversations train OpenAI's models follows the ChatGPT account's own data controls (Settings > Data controls > "Improve the model for everyone"); agent6 cannot change that setting.
   agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.
 - Model names complete from the backend's own listing for the signed-in plan (fetched like other providers' catalogs, never a static list), and its context windows size compaction.
@@ -126,7 +126,7 @@ agent6 model worker chatgpt/gpt-5.6-sol
   Later calls on that provider instance keep the accepted levels; they are not persisted across machine attempts.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
 - Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit window, surfaces show the fullest window as `plan usage (<entry>): N% of the 7-day window`; the duration is whatever the provider reports (`5-hour window`), or `window` when unknown.
-  `[budget].max_percent` caps the points one run may consume (`--max-percent` per run).
+  `[budget].max_plan_points` caps the points one run may consume (`--max-plan-points` per run).
   Dollar figures stay an authoritative $0.
 
 ### Claude Code subscription (`api_format = "claude_code"`)
@@ -146,7 +146,7 @@ agent6 model worker claude/claude-sonnet-4-5
 - Spend is plan-metered, not dollar-metered: every round reports the account's 5-hour and 7-day windows.
   The end-of-run summary and fan-out report show the fuller one as `plan usage (<entry>): N% of the 7-day window` (or `5-hour window`).
   Window labels show the reported duration (or `window` when unknown), adding the distinguishing key suffix with the common prefix removed when reported windows share a duration.
-  `[budget].max_percent` caps the points one run may consume (`--max-percent` per run).
+  `[budget].max_plan_points` caps the points one run may consume (`--max-plan-points` per run).
   Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
 - Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
   Refused: `effort = "off"` (`claude --effort` has no off value; use `low`).
@@ -388,20 +388,20 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 ## `[budget]`
 
 Hard stops; on hit the run ends (exit 3) and is resumable with a fresh budget.
-Every call is bounded in exactly one currency: priceable calls (reported cost, else cached price × tokens) count against `max_usd`; a call carrying a plan-usage reading counts percentage points against `max_percent`; the rest count input+output tokens against `max_tokens_fallback`.
+Every call is bounded in exactly one currency: priceable calls (reported cost, else cached price × tokens) count against `max_usd`; a call carrying a plan-usage reading counts percentage points against `max_plan_points`; the rest count input+output tokens against `max_tokens_fallback`.
 All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 
 | Field | Default | Meaning |
 |---|---|---|
 | `max_usd` | `10.0` | Cap on the metered spend of one run (provider-reported cost, else price times tokens at the model's fetched rates, cache-aware). Hitting it ends the run resumably (`budget_exhausted`); each resumed execution gets a fresh budget. `-1`: unlimited; `0`: refuse every metered call. `--max-usd` overrides per run. |
 | `max_tokens_fallback` | `2000000` | Token cap (input plus output) for the calls the run cannot price: local models, a model with no price data. `-1`: unlimited; `0`: never run an unmeterable model. `--max-tokens-fallback` overrides per run. |
-| `max_percent` | `-1.0` | Cap on the plan percentage points one run may consume on a subscription provider: the rise in the account's reported used-percent across the run, added up across window resets (so a value above 100 is meaningful; with several windows, the one that moved most). The account reports whole percents and every tick counts as a full point, so the cap ends a run early, never late; the call in flight still finishes. The reading is account-global: a concurrent run's spend counts toward whichever run observes it next. `-1`: unlimited; `0`: refuse plan-metered calls. `--max-percent` overrides per run. |
-| `allow_paid_credits` | `false` | Allow plan-metered calls (`chatgpt`, `claude_code`) to spend purchased credits or extra usage once the included plan window is exhausted (auto top-up can buy more with the saved payment method). `false` is a circuit breaker, not a guarantee: the backend's usage readings (a chatgpt preflight and every response's headers, every claude_code round's rate-limit event) report the account's windows and credit state, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes. `true`: a chatgpt credit balance's drop across the run is read as dollars and meters against `max_usd`; a claude_code run reads no credit balance, so the extra usage it spends is not metered by `max_usd`. Included-plan usage is unaffected. |
+| `max_plan_points` | `-1.0` | Cap on the plan percentage points one run may consume on a subscription provider: the rise in the account's reported used-percent across the run, added up across window resets (so a value above 100 is meaningful; with several windows, the one that moved most). The account reports whole percents and every tick counts as a full point, so the cap ends a run early, never late; the call in flight still finishes. The reading is account-global: a concurrent run's spend counts toward whichever run observes it next. `-1`: unlimited; `0`: refuse plan-metered calls. `--max-plan-points` overrides per run. |
+| `allow_plan_overage` | `false` | Allow plan overage (`chatgpt`, `claude_code`): purchased credits or extra usage once the included plan window is exhausted (auto top-up can buy more with the saved payment method). `false` is a circuit breaker, not a guarantee: the backend's usage readings (a chatgpt preflight and every response's headers, every claude_code round's rate-limit event) report the account's windows and credit state, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes. `true`: a chatgpt credit balance's drop across the run is read as dollars and meters against `max_usd`; a claude_code run reads no credit balance, so the extra usage it spends is not metered by `max_usd`. Included-plan usage is unaffected. |
 
-`--max-usd` / `--max-tokens-fallback` / `--max-percent` override per run.
+`--max-usd` / `--max-tokens-fallback` / `--max-plan-points` override per run.
 A flag's value is recorded with the run: a resume without that flag runs under it again, and a flag on the resume replaces it for later resumes too.
 A worker with no price data is not metered by `max_usd` at all and runs under `max_tokens_fallback`, with a note at startup.
-Included-plan calls are bounded by `max_percent`, not by `max_usd` or `max_tokens_fallback`.
+Included-plan calls are bounded by `max_plan_points`, not by `max_usd` or `max_tokens_fallback`.
 Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/agent6/models/`), and a direct-Anthropic id is priced via its OpenRouter listing.
 
 ## `[machine]`

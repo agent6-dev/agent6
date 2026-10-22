@@ -295,19 +295,19 @@ class Config(pydantic.BaseModel):
         *,
         max_usd: float | None = None,
         max_tokens_fallback: int | None = None,
-        max_percent: float | None = None,
+        max_plan_points: float | None = None,
     ) -> Config:
         """Return a copy with the per-run budget flags applied.
 
         Args:
             max_usd: The `--max-usd` value, or None to keep the config's.
             max_tokens_fallback: The `--max-tokens-fallback` value, or None.
-            max_percent: The `--max-percent` value, or None.
+            max_plan_points: The `--max-plan-points` value, or None.
 
         Returns:
             The config with the given caps; self when none is given.
         """
-        if max_usd is None and max_tokens_fallback is None and max_percent is None:
+        if max_usd is None and max_tokens_fallback is None and max_plan_points is None:
             return self
         data = self.model_dump(mode="python")
         budget = data.setdefault("budget", {})
@@ -315,8 +315,8 @@ class Config(pydantic.BaseModel):
             budget["max_usd"] = max_usd
         if max_tokens_fallback is not None:
             budget["max_tokens_fallback"] = max_tokens_fallback
-        if max_percent is not None:
-            budget["max_percent"] = max_percent
+        if max_plan_points is not None:
+            budget["max_plan_points"] = max_plan_points
         return Config.model_validate(data)
 
     def model_route(self, role: kinds.RoleName, spec: str) -> kinds.ModelRoute:
@@ -418,14 +418,14 @@ class Config(pydantic.BaseModel):
         *,
         effort: str | None = None,
         max_usd: float | None = None,
-        max_percent: float | None = None,
+        max_plan_points: float | None = None,
     ) -> Config:
         """Return a copy with a machine agent's effort and spend caps applied.
 
         Args:
             effort: The worker's effort, or None to keep the config's.
             max_usd: The `budget.max_usd` cap, or None to keep the config's.
-            max_percent: The `budget.max_percent` cap, or None to keep the config's.
+            max_plan_points: The `budget.max_plan_points` cap, or None to keep the config's.
 
         Returns:
             The config, revalidated.
@@ -439,8 +439,8 @@ class Config(pydantic.BaseModel):
             worker["effort"] = effort
         if max_usd is not None:
             data.setdefault("budget", {})["max_usd"] = max_usd
-        if max_percent is not None:
-            data.setdefault("budget", {})["max_percent"] = max_percent
+        if max_plan_points is not None:
+            data.setdefault("budget", {})["max_plan_points"] = max_plan_points
         return Config.model_validate(data)
 
     def with_verify_command(self, argv: tuple[str, ...]) -> Config:

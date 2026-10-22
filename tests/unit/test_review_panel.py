@@ -437,7 +437,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
         personas="security,correctness,tests",
         transcript_sink=TranscriptSink(tmp_path),
         reviews_dir=tmp_path / "reviews",
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
     )
     out, err = capsys.readouterr()
     assert "main..topic" in err
@@ -505,7 +505,7 @@ def test_review_exit_code_is_consistent_across_verdicts(
             personas="security",
             transcript_sink=mock.MagicMock(),
             reviews_dir=tmp_path,
-            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         )
         capsys.readouterr()
         return rc

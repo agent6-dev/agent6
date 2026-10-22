@@ -123,14 +123,14 @@ class BudgetStamp(pydantic.BaseModel):
     Attributes:
         max_usd: `--max-usd`, None when no flag set it.
         max_tokens_fallback: `--max-tokens-fallback`, None when no flag set it.
-        max_percent: `--max-percent`, None when no flag set it.
+        max_plan_points: `--max-plan-points`, None when no flag set it.
     """
 
     model_config = _MODEL_CONFIG
 
     max_usd: float | None = None
     max_tokens_fallback: int | None = None
-    max_percent: float | None = None
+    max_plan_points: float | None = None
 
 
 # The `sha` of a merge that added no commit; the target's own tip is not the run's.
@@ -251,7 +251,7 @@ class CompareStamp(pydantic.BaseModel):
 
 
 # Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
-MANIFEST_VERSION = 5
+MANIFEST_VERSION = 6
 MANIFEST_NAME = "manifest.json"
 
 
@@ -399,6 +399,9 @@ def read_manifest(session_dir: pathlib.Path) -> SessionManifest:
         raise ManifestError("manifest is not a JSON object")
     if "harness" not in data and "workflow" in data:
         data["harness"] = data.pop("workflow")  # the stamp's key through version 3
+    budget = data.get("budget")
+    if isinstance(budget, dict) and "max_plan_points" not in budget and "max_percent" in budget:
+        budget["max_plan_points"] = budget.pop("max_percent")  # the cap's key through version 5
     try:
         return SessionManifest.model_validate(data)
     except pydantic.ValidationError as exc:

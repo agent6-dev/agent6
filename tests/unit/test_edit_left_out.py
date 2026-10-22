@@ -217,7 +217,7 @@ def _end_footer(
         ),
         layout=layout,
         cwd=repo,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )

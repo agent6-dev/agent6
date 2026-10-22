@@ -264,7 +264,7 @@ def test_show_usage_and_json_carry_the_plan_points(
 ) -> None:
     """A plan-metered run shows the points this execution consumed outside the live views.
 
-    The usage line and the JSON carry them against [budget].max_percent; a dollar-metered run
+    The usage line and the JSON carry them against [budget].max_plan_points; a dollar-metered run
     shows none.
     """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

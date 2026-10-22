@@ -467,7 +467,7 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "workspace.base_dir": (
         "the supervisor creates and removes every state's working tree under it, on the host"
     ),
-    "budget.allow_paid_credits": "it lets a plan's paid credits be spent",
+    "budget.allow_plan_overage": "it lets purchased credits or extra usage be spent",
 }
 # The supervisor reads these once for the whole machine, so one state cannot change them.
 STATE_OVERLAY_KEYS: tuple[str, ...] = ("git.commit", "machine", "parallel", "workspace")

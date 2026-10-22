@@ -490,7 +490,7 @@ def test_fork_inherits_the_caps_its_source_ran_under(
     state = paths.state_dir(repo)
     src = _seed_source_run(state, "src-CAPS11", head_sha=head, turns=(1,))
     manifest = json.loads(src.manifest_path.read_text(encoding="utf-8"))
-    manifest["budget"] = {"max_usd": 2.0, "max_tokens_fallback": None, "max_percent": 30.0}
+    manifest["budget"] = {"max_usd": 2.0, "max_tokens_fallback": None, "max_plan_points": 30.0}
     src.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     assert fork._cmd_fork((), "src-CAPS11", new_session_id="child-CAPS22", no_run=True) == 0

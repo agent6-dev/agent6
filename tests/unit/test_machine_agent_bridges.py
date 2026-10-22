@@ -280,7 +280,7 @@ def test_the_agent_seat_journals_under_a_driving_role(
     provider, _summariser, _events = machine_agent._build_agent_providers(  # pyright: ignore[reportPrivateUsage]
         Config(),
         req,
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         attach_console=lambda _sink: None,
     )
     assert not kinds.is_side_role(provider.role)

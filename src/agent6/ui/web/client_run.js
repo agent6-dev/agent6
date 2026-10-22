@@ -377,7 +377,7 @@ function paintDetails(cards, s, asOf) {
   if (b.plan_used_percent > 0 || b.plan_cap > 0) {
     // Subscription plan usage: the account's window fill; the bar meters this
     // execution's consumed points (plan_consumed - plan_prior_executions) against
-    // max_percent when one is set, else the account percent itself. The cap re-arms
+    // max_plan_points when one is set, else the account percent itself. The cap re-arms
     // each resume, as the cost bar's does.
     const planCap = b.plan_cap || 0;
     const executionPt = Math.max(0, (b.plan_consumed || 0) - (b.plan_prior_executions || 0));

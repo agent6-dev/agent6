@@ -575,7 +575,7 @@ def test_an_upstream_error_completion_is_retryable_and_still_metered() -> None:
         ],
         "usage": {"prompt_tokens": 12000, "completion_tokens": 16801},
     }
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider = openai.OpenAIProvider(api_key="k", model="gpt-x", budget=budget)
 
     def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
@@ -618,7 +618,7 @@ def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
     lines += chunk({"usage": {"prompt_tokens": 12000, "completion_tokens": 16801}, "choices": []})
     lines += ["data: [DONE]", ""]
 
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider = openai.OpenAIProvider(api_key="k", model="gpt-x", budget=budget)
     with (
         mock.patch(

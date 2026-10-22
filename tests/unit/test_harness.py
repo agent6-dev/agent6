@@ -2845,7 +2845,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0, so the plateau never becomes terminal.
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     max_iters = 12
     wf = _wf(
         root=tmp_path,
@@ -2923,7 +2923,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0, well above the final slice.
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -3191,7 +3191,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0: without the ceiling guard the finish is rejected.
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     wf = _wf(
         root=tmp_path,
         config=config,

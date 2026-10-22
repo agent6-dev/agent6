@@ -232,7 +232,7 @@ def test_run_family_help_explains_actions_in_user_terms() -> None:
         "Make the agent split the task into ordered subtasks before editing"
     )
     assert (_option(run, "--parallel").help or "").startswith("Fan out isolated lanes")
-    assert (_option(run, "--max-percent").help or "").startswith(
+    assert (_option(run, "--max-plan-points").help or "").startswith(
         "The plan percentage points this run may use"
     )
     assert (_option(run, "--disable-sandbox").help or "").startswith(

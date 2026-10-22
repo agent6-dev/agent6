@@ -64,8 +64,8 @@ def budget_tracker(cfg: Config, *, max_usd: float | None = None) -> agent6_budge
     """Return a run's meter from `[budget]`; a `--max-usd` flag overrides the cap."""
     return agent6_budget.BudgetTracker(
         max_usd=cfg.budget.max_usd if max_usd is None else max_usd,
-        max_percent=cfg.budget.max_percent,
-        allow_paid_credits=cfg.budget.allow_paid_credits,
+        max_plan_points=cfg.budget.max_plan_points,
+        allow_plan_overage=cfg.budget.allow_plan_overage,
         max_tokens_fallback=cfg.budget.max_tokens_fallback,
     )
 
@@ -77,12 +77,12 @@ class BudgetOverrides:
     Attributes:
         max_usd: The dollar cap.
         max_tokens_fallback: The token cap for an unpriced model.
-        max_percent: The plan-window cap.
+        max_plan_points: The plan-window cap.
     """
 
     max_usd: float | None = None
     max_tokens_fallback: int | None = None
-    max_percent: float | None = None
+    max_plan_points: float | None = None
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> BudgetOverrides:
@@ -90,7 +90,7 @@ class BudgetOverrides:
         return cls(
             max_usd=getattr(args, "max_usd", None),
             max_tokens_fallback=getattr(args, "max_tokens_fallback", None),
-            max_percent=getattr(args, "max_percent", None),
+            max_plan_points=getattr(args, "max_plan_points", None),
         )
 
     def over(self, recorded: manifest.BudgetStamp) -> BudgetOverrides:
@@ -102,7 +102,9 @@ class BudgetOverrides:
                 if self.max_tokens_fallback is None
                 else self.max_tokens_fallback
             ),
-            max_percent=recorded.max_percent if self.max_percent is None else self.max_percent,
+            max_plan_points=recorded.max_plan_points
+            if self.max_plan_points is None
+            else self.max_plan_points,
         )
 
     def stamp(self) -> manifest.BudgetStamp:
@@ -110,7 +112,7 @@ class BudgetOverrides:
         return manifest.BudgetStamp(
             max_usd=self.max_usd,
             max_tokens_fallback=self.max_tokens_fallback,
-            max_percent=self.max_percent,
+            max_plan_points=self.max_plan_points,
         )
 
     def apply(self, cfg: Config) -> Config:
@@ -129,7 +131,7 @@ class BudgetOverrides:
             return cfg.with_budget_overrides(
                 max_usd=self.max_usd,
                 max_tokens_fallback=self.max_tokens_fallback,
-                max_percent=self.max_percent,
+                max_plan_points=self.max_plan_points,
             )
         except pydantic.ValidationError as exc:
             raise ConfigError(self._flag_error(exc)) from exc
@@ -141,8 +143,8 @@ class BudgetOverrides:
             out += ["--max-usd", str(self.max_usd)]
         if self.max_tokens_fallback is not None:
             out += ["--max-tokens-fallback", str(self.max_tokens_fallback)]
-        if self.max_percent is not None:
-            out += ["--max-percent", str(self.max_percent)]
+        if self.max_plan_points is not None:
+            out += ["--max-plan-points", str(self.max_plan_points)]
         return out
 
     def _flag_error(self, exc: pydantic.ValidationError) -> str:
@@ -150,7 +152,7 @@ class BudgetOverrides:
         flags = {
             "max_usd": "--max-usd",
             "max_tokens_fallback": "--max-tokens-fallback",
-            "max_percent": "--max-percent",
+            "max_plan_points": "--max-plan-points",
         }
         parts: list[str] = []
         for err in exc.errors():

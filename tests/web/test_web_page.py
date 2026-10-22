@@ -16,7 +16,7 @@ from importlib import resources
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "90a15618c20118ba83b9b00e675b5888dad26a0b0a610733c43b3fc8b45f2712"
+PAGE_SHA256 = "234aaff5d90871012bf19deb83387806d7582fd0bf1b6e6c2228134a5dcc8fb5"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:

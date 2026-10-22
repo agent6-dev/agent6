@@ -360,7 +360,7 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: pathlib.Path)
     wf = _knobs(_build_wf(repo, provider), went_quiet_max_nudges=2)
     wf.logger = lines.append
     wf.events = event_log.EventSink(tmp_path / "logs.jsonl")
-    wf.budget = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    wf.budget = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     wf.budget.record(
         model="gpt-5.6-sol",
         input_tokens=1,

@@ -137,7 +137,7 @@ def _alive(pid: int) -> bool:
 
 
 def _budget() -> agent6_budget.BudgetTracker:
-    return agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    return agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
 
 
 def _provider(binary: str, **kw: Any) -> claude_code.ClaudeCodeProvider:

@@ -673,11 +673,11 @@ def test_budget_block_names_the_plan_meter_for_subscription_runs(tmp_path: pathl
                 "worker": {"provider": "gpt", "model": "gpt-5.6-sol"},
                 "reviewer": {"provider": "gpt", "model": "gpt-5.6-sol"},
             },
-            "budget": {"max_percent": 3},
+            "budget": {"max_plan_points": 3},
         }
     )
     prompt = _prompt_blocks.build_system_prompt(config=sub, repo=repo, mode="run", skills=None)
-    assert "meter in plan percent (max_percent 3 points per run)" in prompt
+    assert "meter in plan percent (max_plan_points 3 points per run)" in prompt
     plain = _prompt_blocks.build_system_prompt(config=Config(), repo=repo, mode="run", skills=None)
     assert "plan percent" not in plain
 
@@ -693,7 +693,7 @@ def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: pathlib.Pat
     (tmp_path / "AGENTS.md").write_text(
         "## Verify command\n\n```bash\ntrue\n```\n", encoding="utf-8"
     )
-    budget = agent6_budget.BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=-1.0)
+    budget = agent6_budget.BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_plan_points=-1.0)
 
     cfg_on = preflight.infer_verify_if_unset(
         Config(),

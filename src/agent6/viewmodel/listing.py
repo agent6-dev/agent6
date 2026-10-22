@@ -149,7 +149,7 @@ class SessionSummary:
         coordinator: The session that dispatched this lane, the row it nests under.
         lane: The lane number within its fan-out.
         plan_consumed: The plan points consumed across executions on a plan-metered provider.
-        plan_cap: The plan's points cap, `[budget].max_percent`.
+        plan_cap: The plan's points cap, `[budget].max_plan_points`.
         plan_used_percent: The account's reading; 0 unless a plan provider answered.
         model: The manifest's provider/model route for this execution.
         model_from_flag: The route came from a `--model` flag rather than config.

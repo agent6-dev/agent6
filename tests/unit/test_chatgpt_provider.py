@@ -337,7 +337,7 @@ def test_response_done_raises_and_bills_a_failed_response(
             },
         }
     )
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider = _provider(signed_in, budget=budget)
     no_preflight, _ = _usage_get({}, status=503)
     with (
@@ -354,7 +354,7 @@ def test_response_done_raises_and_bills_a_cancelled_response(
     signed_in: chatgpt_oauth.ChatGPTCredential,
 ) -> None:
     lines = _evt({"type": "response.done", "response": {"status": "cancelled", "usage": _USAGE}})
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider = _provider(signed_in, budget=budget)
     no_preflight, _ = _usage_get({}, status=503)
     with (
@@ -404,7 +404,7 @@ def test_failed_event_usage_is_recorded(signed_in: chatgpt_oauth.ChatGPTCredenti
             },
         }
     )
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider = _provider(signed_in, budget=budget)
     no_preflight, _ = _usage_get({}, status=503)
 
@@ -471,7 +471,7 @@ def test_budgeted_call_requires_usage(signed_in: chatgpt_oauth.ChatGPTCredential
     provider = _provider(
         signed_in,
         budget=agent6_budget.BudgetTracker(
-            max_usd=-1, max_tokens_fallback=1_000_000, max_percent=-1
+            max_usd=-1, max_tokens_fallback=1_000_000, max_plan_points=-1
         ),
     )
     with (
@@ -599,7 +599,9 @@ def test_plan_usage_headers_feed_the_percent_budget(
     """The x-codex primary-window headers feed the percent budget as plan-metered spend."""
     provider = _provider(
         signed_in,
-        budget=agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=-1),
+        budget=agent6_budget.BudgetTracker(
+            max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1
+        ),
     )
 
     def stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
@@ -625,7 +627,7 @@ def test_plan_usage_headers_feed_the_percent_budget(
 def test_http_error_plan_headers_reach_the_budget(
     signed_in: chatgpt_oauth.ChatGPTCredential,
 ) -> None:
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider = _provider(signed_in, budget=budget)
     no_preflight, _ = _usage_get({}, status=503)
 
@@ -941,7 +943,7 @@ def test_usage_body_does_not_treat_string_false_as_unlimited_credits() -> None:
         }
     )
     assert plan is not None and plan.credits_unlimited is False
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     budget.record_plan_preflight("chatgpt", plan)
     with pytest.raises(agent6_budget.BudgetExceededError, match="purchased"):
         budget.check()
@@ -1040,7 +1042,7 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
 ) -> None:
     """The preflight refuses a credit-spending run before its first call.
 
-    An exhausted window with purchased credits and `allow_paid_credits = false` refuses with no
+    An exhausted window with purchased credits and `allow_plan_overage = false` refuses with no
     request sent, and the reading seeds the percent ledger; with the knob on, the call proceeds.
     """
     body = json.loads(json.dumps(_USAGE_BODY))
@@ -1055,7 +1057,9 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
 
     provider = _provider(
         signed_in,
-        budget=agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=-1),
+        budget=agent6_budget.BudgetTracker(
+            max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1
+        ),
     )
     with (
         mock.patch("httpx2.get", side_effect=get),
@@ -1069,7 +1073,7 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
     allowed = _provider(
         signed_in,
         budget=agent6_budget.BudgetTracker(
-            max_usd=10.0, max_tokens_fallback=100, max_percent=-1, allow_paid_credits=True
+            max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1, allow_plan_overage=True
         ),
     )
     with mock.patch("httpx2.get", side_effect=get), mock.patch("httpx2.stream", side_effect=stream):
@@ -1083,7 +1087,9 @@ def test_preflight_failure_never_blocks(signed_in: chatgpt_oauth.ChatGPTCredenti
     get, _urls = _usage_get({}, status=503)
     provider = _provider(
         signed_in,
-        budget=agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=-1),
+        budget=agent6_budget.BudgetTracker(
+            max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1
+        ),
     )
     with (
         mock.patch("httpx2.get", side_effect=get),
@@ -1098,7 +1104,7 @@ def test_preflight_failure_never_blocks(signed_in: chatgpt_oauth.ChatGPTCredenti
         fresh = _provider(
             signed_in,
             budget=agent6_budget.BudgetTracker(
-                max_usd=10.0, max_tokens_fallback=100, max_percent=-1
+                max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1
             ),
         )
         resp = fresh.call(system="s", messages=[{"role": "user", "content": "x"}])
@@ -1129,7 +1135,9 @@ def test_a_credential_fault_in_the_preflight_is_no_reading(
     get, _urls = _usage_get({}, status=200)
     provider = _provider(
         _FlakyCredential(),
-        budget=agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=-1),
+        budget=agent6_budget.BudgetTracker(
+            max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1
+        ),
     )
     with (
         mock.patch("httpx2.get", side_effect=get),
@@ -1159,7 +1167,7 @@ def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
         }
         return resp
 
-    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider = _provider(signed_in, budget=budget)
     with (
         mock.patch("httpx2.stream", side_effect=stream),

@@ -203,8 +203,8 @@ def _plan_budget_line(config: Config) -> str:
         return ""
     cap = (
         "uncapped per run"
-        if config.budget.max_percent == -1
-        else f"max_percent {config.budget.max_percent:g} points per run"
+        if config.budget.max_plan_points == -1
+        else f"max_plan_points {config.budget.max_plan_points:g} points per run"
     )
     return loop.PLAN_BUDGET_LINE.format(percent_cap=cap)
 

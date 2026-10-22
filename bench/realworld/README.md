@@ -48,7 +48,7 @@ It writes no provider or model tables; an enabled reviewer also comes from your 
 |---|---|---|
 | `AGENT6_REALWORLD_MODEL` | `[PROVIDER/]MODEL`, passed as `run --model` | your configured worker |
 | `PER_TASK_BUDGET_USD` | `[budget] max_usd` for each task | `1.00` |
-| `PER_TASK_MAX_PERCENT` | `[budget] max_percent` for each task (subscription providers) | your config |
+| `PER_TASK_MAX_PLAN_POINTS` | `[budget] max_plan_points` for each task (subscription providers) | your config |
 | `AGENT6_REALWORLD_TASK_TIMEOUT_S` | wall-clock bound on one task's `agent6 run`, in seconds | `3600` |
 | `AGENT6_REALWORLD_TASK_FILTER` | comma-separated substrings of task names | all tasks |
 | `AGENT6_REALWORLD_TOOLSET` | `index` (symbol tools on) or `baseline` (off) | `index` |

@@ -375,7 +375,7 @@ def print_report(
                 reporter.out(f"    {line}")
             if scan.end_reason == "budget_exhausted":
                 reporter.out(
-                    "    raise the cap on the fork (--max-usd, --max-percent or"
+                    "    raise the cap on the fork (--max-usd, --max-plan-points or"
                     " --max-tokens-fallback), then continue with:"
                     f" agent6 fork {res.spec.session_id}"
                 )

@@ -259,11 +259,11 @@ def test_a_state_table_carries_no_operator_only_key(
     [
         ('[config.skills]\nextra_dirs = ["/tmp/skills"]\n', r"skills\.extra_dirs"),
         ('[config.workspace]\nbase_dir = "/tmp/elsewhere"\n', r"workspace\.base_dir"),
-        ("[config.budget]\nallow_paid_credits = true\n", r"budget\.allow_paid_credits"),
+        ("[config.budget]\nallow_plan_overage = true\n", r"budget\.allow_plan_overage"),
         ('[states.judge.config.skills]\nextra_dirs = ["/tmp/skills"]\n', r"skills\.extra_dirs"),
         (
-            "[states.judge.config.budget]\nallow_paid_credits = true\n",
-            r"budget\.allow_paid_credits",
+            "[states.judge.config.budget]\nallow_plan_overage = true\n",
+            r"budget\.allow_plan_overage",
         ),
     ],
 )

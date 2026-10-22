@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "agent6_version": "0.1.0",
   "session_id": "r-lane02",
   "mode": "run",
@@ -34,7 +34,7 @@
   "budget": {
     "max_usd": null,
     "max_tokens_fallback": null,
-    "max_percent": null
+    "max_plan_points": null
   },
   "parked_task": "",
   "parked_reason": "",

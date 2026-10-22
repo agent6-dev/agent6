@@ -67,7 +67,7 @@ def budget_preflight(
     """Judge the budget config against every statically reachable model, before any spend.
 
     A zero `max_tokens_fallback` refuses an unpriced model, a zero `max_usd` refuses a
-    priced one, a zero `max_percent` refuses a plan-metered one; otherwise each unpriced
+    priced one, a zero `max_plan_points` refuses a plan-metered one; otherwise each unpriced
     or plan-metered model gets a notice naming its configured role and bound. A model chosen
     later (a `/parallel` lane spec) is caught by the tracker's runtime backstop.
 
@@ -97,12 +97,12 @@ def budget_preflight(
     metered = {
         (role, prov, m) for role, prov, m in reachable if not plan_metered(cfg.providers.get(prov))
     }
-    if cfg.budget.max_percent == 0.0 and plan_models:
+    if cfg.budget.max_plan_points == 0.0 and plan_models:
         return (
             "the plan cap is 0 (plan-metered calls refused), but "
             f"{', '.join(plan_models)} route"
             f"{'s' if len(plan_models) == 1 else ''} through a subscription plan."
-            " Raise --max-percent or [budget].max_percent, or reroute those roles."
+            " Raise --max-plan-points or [budget].max_plan_points, or reroute those roles."
         )
     unpriced = _by_model(
         (role, m) for role, prov, m in metered if pricing.lookup_price(m, prov) is None
@@ -131,9 +131,9 @@ def budget_preflight(
             f" metered by max_usd and is bounded by {bound} instead."
         )
     if plan_models:
-        pct = cfg.budget.max_percent
+        pct = cfg.budget.max_plan_points
         point = "point" if pct == 1 else "points"
-        bound = "the plan itself" if pct == -1 else f"max_percent {pct:g} {point} per run"
+        bound = "the plan itself" if pct == -1 else f"max_plan_points {pct:g} {point} per run"
         tick = (
             " The account reports whole percents, so a cap this small can end the run on"
             " its first tick."

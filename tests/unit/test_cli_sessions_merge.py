@@ -1336,7 +1336,7 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
     monkeypatch.setattr(app_providers, "build_role_provider", _brp)
     monkeypatch.setattr(git_ops, "range_name_status", _no_files)
     sink = _Sink()
-    tracker = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    tracker = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     msg = merge_mod._model_squash_message(  # pyright: ignore[reportPrivateUsage]
         tmp_path,
         Config(),
