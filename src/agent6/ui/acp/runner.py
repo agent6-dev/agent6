@@ -525,9 +525,12 @@ class RunBridge:
 
         order = ProseOrder(self.server, session.acp_id, layout.logs_path)
         start_at = journal_before if resuming else None
+        banked = _session_log.scan_session_log(layout.logs_path).cost_usd if resuming else None
+        info = updates.RunInfo(session.acp_id, banked_usd=banked or 0.0)
         tail = threading.Thread(
             target=self._stream,
             args=(session, layout.logs_path, _stop, start_at, announced, order),
+            kwargs={"info": info},
             name=f"acp-tail-{session.acp_id}",
             daemon=True,
         )
@@ -581,6 +584,7 @@ class RunBridge:
         journal_before: int | None,
         announced: Announced,
         order: ProseOrder | None = None,
+        info: updates.RunInfo | None = None,
     ) -> None:
         """Project the run's journal into `session/update` as it is written.
 
@@ -595,6 +599,7 @@ class RunBridge:
                 editor already rendered; None replays the whole journal.
             announced: The execution's register of announced calls.
             order: The lifecycle's queued lines.
+            info: The title, commands and usage projection; None sends none.
         """
         fold = transcript.TranscriptFold()
         streamed: set[str] = set()
@@ -612,6 +617,8 @@ class RunBridge:
                 on_position=_at,
             ):
                 event_type = str(event.get("type", ""))
+                for body in info.feed(event) if info is not None else ():
+                    self.server.notify_raw(body)
                 paths = _result_paths(event) if event_type == "tool.result" else ()
                 if event_type == "role.call":
                     streamed.clear()

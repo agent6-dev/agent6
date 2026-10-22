@@ -53,23 +53,31 @@ def _notifications() -> list[dict[str, Any]]:
     fold = transcript.TranscriptFold()
     out: list[dict[str, Any]] = []
     announced: set[str] = set()
+    for event in _events():
+        for item in fold.feed(event):
+            out.extend(
+                updates.updates_for(
+                    item,
+                    acp_session_id="s",
+                    wire_id=updates.tool_call_id(item, "brave-oak-AAAAAA", 1),
+                    announced=item.call_id in announced,
+                )
+            )
+            if item.kind == "tool":
+                announced.add(item.call_id)
+    return out
+
+
+def _events() -> list[dict[str, Any]]:
+    """The recorded run's events, skipping the fixture's trailing malformed lines."""
+    out: list[dict[str, Any]] = []
     for line in _RECORDED.read_text(encoding="utf-8").splitlines():
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
-            continue  # the fixture's trailing malformed lines
+            continue
         if isinstance(event, dict):
-            for item in fold.feed(event):
-                out.extend(
-                    updates.updates_for(
-                        item,
-                        acp_session_id="s",
-                        wire_id=updates.tool_call_id(item, "brave-oak-AAAAAA", 1),
-                        announced=item.call_id in announced,
-                    )
-                )
-                if item.kind == "tool":
-                    announced.add(item.call_id)
+            out.append(event)
     return out
 
 
@@ -112,6 +120,19 @@ def test_each_fold_item_projects_to_a_valid_update(item: transcript.TranscriptIt
         cwd=pathlib.Path("/repo"),
         paths=paths,
     ):
+        assert not _errors(validator, body["params"]), json.dumps(body["params"])
+
+
+def test_the_recorded_runs_title_commands_and_usage_are_valid_updates() -> None:
+    info = updates.RunInfo(acp_session_id="s", window=lambda _p, _m: 128_000)
+    out = [body for event in _events() for body in info.feed(event)]
+    assert {b["params"]["update"]["sessionUpdate"] for b in out} == {
+        "session_info_update",
+        "available_commands_update",
+        "usage_update",
+    }
+    validator = _validator("SessionNotification")
+    for body in out:
         assert not _errors(validator, body["params"]), json.dumps(body["params"])
 
 

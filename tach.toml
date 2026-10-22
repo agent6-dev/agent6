@@ -260,6 +260,7 @@ depends_on = [
   "agent6.app",
   "agent6.budget",
   "agent6.config",
+  "agent6.directive",  # the `/pin` line an editor is offered as a slash command
   "agent6.errors",  # a fault after the journal opened is a bug unless it is an operator error
   "agent6.event_log",
   "agent6.paths",

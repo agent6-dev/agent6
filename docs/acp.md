@@ -26,12 +26,19 @@ An editor sees what `agent6 attach` shows: reasoning, each tool call and its out
 ACP carries a tool call as two messages.
 
 - `tool_call` (`in_progress`) when the run dispatches it, `tool_call_update` (`completed` or `failed`, with the output) when its result lands
-- built-in calls carry their ACP kind, and an edit result carries each journaled path as an absolute follow-along location
+- a call names its tool (`name`) beside the call's title; built-in calls carry their ACP kind, and an edit result carries each journaled path as an absolute follow-along location
 - a call waiting on an approval or an `ask_user` answer is updated to `pending` while its prompt is open, and back to `in_progress` once answered
 - a long verify shows as in progress while it runs; a call the run never returned from settles as `failed` when the run's `session.end` is written, or when the tail ends without one (a worker killed mid-call)
 - `toolCallId` is `<run id>:<execution>:<call>`, unique for the life of the session; each prompt's execution numbers its calls from 1
 
 Worker text and thinking arrive as they stream; side-role output stays out of the conversation.
+
+Three more updates ride the journal.
+
+- `session_info_update`: the task's headline as the session title, the line `agent6 sessions list` shows
+- `available_commands_update`: `/pin <text>`, the one directive a later prompt carries into the run as steering text.
+  The composer's other directives (`/compact`, `/btw`, `/task`, ...) are a front-end's own act; typed into an editor they reach the model as words.
+- `usage_update` after each model call: the last call's whole prompt over the model's context window (the `ctx N%` rule), and the run's cumulative USD when it spent any and every call was priced (a plan-metered run carries none); nothing while the window is unknown
 Everything agent6 says carries `[agent6]`, the model's final summary arrives bare, and the cost receipt goes to stderr.
 
 ## Approvals

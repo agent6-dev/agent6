@@ -145,5 +145,5 @@ Render session status, context usage, and the wire snapshot.
 **session_state_as_dict** &mdash; Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
 - **Written by:** viewmodel/{_state_view, machine_state}
-- **Read by:** ui/cli/_steer_menu, ui/tui/app, ui/web/{_sse, model}, viewmodel/{__init__, wire}
+- **Read by:** ui/acp/updates, ui/cli/_steer_menu, ui/tui/app, ui/web/{_sse, model}, viewmodel/{__init__, wire}
 - **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (7 test files exercise it)

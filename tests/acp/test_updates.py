@@ -12,6 +12,7 @@ import json
 import pathlib
 from typing import Any
 
+from agent6 import directive
 from agent6.ui.acp import updates as acp_updates
 from agent6.viewmodel import transcript
 
@@ -417,3 +418,107 @@ def test_a_whitespace_delta_reaches_the_editor() -> None:
         )
         == []
     )
+
+
+def test_a_tool_call_carries_the_tools_name() -> None:
+    """An editor keys icons and filters on `name`; the title is one invocation's words."""
+    call = {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "call_id": 1}
+    (announced,) = updates_for_events([call], acp_session_id="s")
+    assert announced["params"]["update"]["name"] == "read_file"
+
+
+def _info(**kw: float) -> acp_updates.RunInfo:
+    return acp_updates.RunInfo(
+        acp_session_id="s", window=lambda _p, m: 200_000 if m == "big" else None, **kw
+    )
+
+
+def _updates_of(info: acp_updates.RunInfo, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [u["params"]["update"] for ev in events for u in info.feed(ev)]
+
+
+def test_the_session_is_titled_by_the_tasks_headline() -> None:
+    """The headline `sessions list` shows, so the editor's thread and the listing agree."""
+    start = {"type": "session.start", "user_task": "# Fix the bug\n\nRestore it.", "mode": "run"}
+    titles = [
+        u for u in _updates_of(_info(), [start]) if u["sessionUpdate"] == "session_info_update"
+    ]
+    assert titles == [{"sessionUpdate": "session_info_update", "title": "Fix the bug"}]
+
+
+def test_the_pin_directive_is_advertised_when_the_run_starts() -> None:
+    """The one directive a later prompt carries into the run; the others are a front-end's."""
+    start = {"type": "session.start", "user_task": "x", "mode": "run"}
+    (commands,) = [
+        u
+        for u in _updates_of(_info(), [start])
+        if u["sessionUpdate"] == "available_commands_update"
+    ]
+    (pin,) = commands["availableCommands"]
+    assert pin["name"] == "pin"
+    assert pin["description"] == directive.STEER_COMMANDS["/pin"]
+    assert pin["input"] == {"type": "text", "hint": "<text>"}
+
+
+def test_context_use_and_spend_follow_each_budget_update() -> None:
+    """`used` is the last call's whole prompt over the model's window, the `ctx N%` rule.
+
+    The cost is the run's, so an earlier execution's spend is added to this one's.
+    """
+    events = [
+        {"type": "role.call", "role": "worker", "model": "big", "provider": "p"},
+        {
+            "type": "role.result",
+            "role": "worker",
+            "ok": True,
+            "tokens_in": 100,
+            "cache_read": 40,
+            "cache_creation": 10,
+        },
+        {"type": "budget.update", "usd_total": 0.5, "usd_partial": False},
+    ]
+    assert _updates_of(_info(banked_usd=1.0), events) == [
+        {
+            "sessionUpdate": "usage_update",
+            "used": 150,
+            "size": 200_000,
+            "cost": {"amount": 1.5, "currency": "USD"},
+        }
+    ]
+
+
+def test_usage_is_silent_without_a_window_and_costless_while_unpriced() -> None:
+    """A required field nobody knows is not invented; a lower bound is not a total.
+
+    A plan-metered run spends no dollars, so it carries no cost, as in the listing's cost cell.
+    """
+    result = {
+        "type": "role.result",
+        "role": "worker",
+        "ok": True,
+        "tokens_in": 5,
+        "cache_read": 0,
+        "cache_creation": 0,
+    }
+    unknown = [
+        {"type": "role.call", "role": "worker", "model": "tiny", "provider": "p"},
+        result,
+        {"type": "budget.update", "usd_total": 0.1, "usd_partial": False},
+    ]
+    assert _updates_of(_info(), unknown) == []
+    partial = [
+        {"type": "role.call", "role": "worker", "model": "big", "provider": "p"},
+        result,
+        {"type": "budget.update", "usd_total": 0.1, "usd_partial": True},
+    ]
+    assert _updates_of(_info(), partial) == [
+        {"sessionUpdate": "usage_update", "used": 5, "size": 200_000}
+    ]
+    plan = [
+        {"type": "role.call", "role": "worker", "model": "big", "provider": "p"},
+        result,
+        {"type": "budget.update", "usd_total": 0.0, "usd_partial": False, "plan_consumed": 3.0},
+    ]
+    assert _updates_of(_info(), plan) == [
+        {"sessionUpdate": "usage_update", "used": 5, "size": 200_000}
+    ]

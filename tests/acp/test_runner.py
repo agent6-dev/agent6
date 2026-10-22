@@ -26,7 +26,7 @@ from agent6.config import Config, layer, model
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
-from agent6.ui.acp import runner
+from agent6.ui.acp import runner, updates
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as session_mod
 from agent6.viewmodel import tail as viewmodel_tail
@@ -264,6 +264,8 @@ def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
         session_id = wire.new_session(_repo(tmp_path))
         wire.prompt(session_id, "do the thing")
         said = wire.until("session/update")
+        while "content" not in said["params"]["update"]:  # the title and the commands, if first
+            said = wire.until("session/update")
         text = said["params"]["update"]["content"]["text"]
         assert "the run failed" in text and "exploded" in text, text
         assert wire.until("")["result"]["stopReason"] == "refusal"
@@ -1831,3 +1833,40 @@ def test_a_missing_provider_key_refuses_the_prompt_before_any_state(
     ]
     assert any("agent6 connect" in t for t in told), told
     assert not session.layout(paths.state_dir(repo)).session_dir.exists()
+
+
+def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.Path) -> None:
+    """The session's title, slash commands and context use ride the same tail as the fold."""
+    import time
+
+    from agent6 import event_log
+
+    sent: list[dict[str, Any]] = []
+    server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    bridge = runner.RunBridge(server=server)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", execution=1)
+    log = tmp_path / "logs.jsonl"
+    log.write_text("", encoding="utf-8")
+    done = threading.Event()
+    info = updates.RunInfo(acp_session_id="s", window=lambda _p, _m: 1000)
+    tail = threading.Thread(
+        target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
+        args=(session, log, done.is_set, False, runner.Announced(execution=1)),
+        kwargs={"info": info},
+        daemon=True,
+    )
+    tail.start()
+    sink = event_log.EventSink(log)
+    sink.emit("session.start", session_id="run-x", user_task="Fix it", mode="run")
+    sink.emit("role.call", role="worker", model="m", provider="p")
+    sink.emit("role.result", role="worker", ok=True, tokens_in=10, cache_read=0, cache_creation=0)
+    sink.emit("budget.update", usd_total=0.0, usd_partial=True)
+    for _ in range(100):
+        if len(sent) >= 3:
+            break
+        time.sleep(0.05)
+    done.set()
+    tail.join(timeout=5.0)
+    kinds = [u["params"]["update"]["sessionUpdate"] for u in sent]
+    assert kinds == ["session_info_update", "available_commands_update", "usage_update"], sent

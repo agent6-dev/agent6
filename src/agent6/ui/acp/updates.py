@@ -8,10 +8,13 @@ disagreeing about what happened. Nothing here touches the wire.
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
+from collections.abc import Callable
 from typing import Any
 
-from agent6.viewmodel import transcript
+from agent6 import directive
+from agent6.viewmodel import _session_status, _state_view, transcript
 
 # The update a fold item becomes; the operator's own words echo back as a user message.
 _CHUNK_KIND = {
@@ -45,6 +48,109 @@ _TOOL_KINDS = {
     "finish_session": "other",  # the finish tools never fold to a call; listed for coverage
     "finish_planning": "other",
 }
+
+
+# The directive a later prompt carries into the run as steering text. The composer's other
+# directives (`directive.LIVE_RUN_COMMANDS`) are a front-end's own act, and ACP has no such view.
+_COMMANDS: tuple[dict[str, Any], ...] = (
+    {
+        "name": "pin",
+        "description": directive.STEER_COMMANDS["/pin"],
+        "input": {"type": "text", "hint": "<text>"},
+    },
+)
+
+
+@dataclasses.dataclass
+class RunInfo:
+    """The session's title, slash commands and context use, projected from the journal.
+
+    `used` over `size` is the rule behind every surface's `ctx N%` readout
+    (`_state_view.context_fill`): the last completed call's whole prompt over its model's window.
+
+    Attributes:
+        acp_session_id: The conversation the notifications address.
+        window: The context window of a provider's model, None when unknown.
+        banked_usd: The spend of the run's earlier executions; each execution's budget
+            starts at 0.
+    """
+
+    acp_session_id: str
+    window: Callable[[str, str], int | None] = _state_view.cached_context_window
+    banked_usd: float = 0.0
+    _size: int | None = dataclasses.field(default=None, init=False)
+    _used: int = dataclasses.field(default=0, init=False)
+    _cost: dict[str, Any] | None = dataclasses.field(default=None, init=False)
+    # A call's result and its budget update arrive as a pair, in either order in old journals.
+    _owed: set[str] = dataclasses.field(default_factory=set, init=False)
+
+    def feed(self, event: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return the notifications the event owes beyond the fold's items.
+
+        Args:
+            event: One journal event.
+
+        Returns:
+            The title and the commands at `session.start`; the usage once a call's
+            `role.result` and `budget.update` have both landed.
+        """
+        match str(event.get("type", "")):
+            case "session.start":
+                return self._start(str(event.get("user_task", "")))
+            case "role.call":
+                self._size = self.window(
+                    str(event.get("provider", "")), str(event.get("model", ""))
+                )
+                self._owed = {"role.result", "budget.update"}
+            case "role.result":
+                used = sum(
+                    int(event.get(k) or 0) for k in ("tokens_in", "cache_read", "cache_creation")
+                )
+                self._used = used if used > 0 else self._used
+                return self._settle("role.result")
+            case "budget.update":
+                # The listing's cost cell rule: dollars only when some were spent and all priced.
+                usd = event.get("usd_total")
+                total = self.banked_usd + (float(usd) if isinstance(usd, int | float) else 0.0)
+                self._cost = (
+                    {"amount": total, "currency": "USD"}
+                    if total > 0 and not event.get("usd_partial")
+                    else None
+                )
+                return self._settle("budget.update")
+            case _:
+                pass
+        return []
+
+    def _start(self, user_task: str) -> list[dict[str, Any]]:
+        """Return the title, when the task has a headline, and the commands."""
+        out: list[dict[str, Any]] = []
+        if title := printable(_session_status.task_snippet(user_task)):
+            out.append(
+                _update(
+                    self.acp_session_id, {"sessionUpdate": "session_info_update", "title": title}
+                )
+            )
+        commands = {
+            "sessionUpdate": "available_commands_update",
+            "availableCommands": list(_COMMANDS),
+        }
+        out.append(_update(self.acp_session_id, commands))
+        return out
+
+    def _settle(self, arrived: str) -> list[dict[str, Any]]:
+        """Return the call's usage once its pair is complete, the window and a prompt known."""
+        self._owed.discard(arrived)
+        if self._owed or not self._size or self._used <= 0:
+            return []
+        usage: dict[str, Any] = {
+            "sessionUpdate": "usage_update",
+            "used": self._used,
+            "size": self._size,
+        }
+        if self._cost is not None:
+            usage["cost"] = self._cost
+        return [_update(self.acp_session_id, usage)]
 
 
 def updates_for(
@@ -239,6 +345,7 @@ def _tool_call(item: transcript.TranscriptItem, wire_id: str) -> dict[str, Any]:
     return {
         "toolCallId": wire_id,
         "title": title,
+        "name": item.name,
         "kind": _TOOL_KINDS.get(item.name, "other"),
         "status": _tool_status(item),
     }
