@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import tomllib
 from typing import Any
 from unittest import mock
@@ -13,10 +14,83 @@ import httpx2
 import pydantic
 import pytest
 
+from agent6 import paths
 from agent6.app import providers
 from agent6.config import Config, ReviewConfig, _layer_data, io
 from agent6.harness import _panel, _reviewer
+from agent6.ui.cli import cli_main
 from agent6.viewmodel import config_view
+from tests.unit import test_run_lifecycle_bugfix
+
+
+def test_repo_max_turns_defaults_to_twenty_in_config_surfaces() -> None:
+    """An unset repo seat budget is visible as 20 provider calls."""
+    assert _layer_data.config_leaves(Config())["review.repo_max_turns"] == 20
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_repo_max_turns_requires_a_positive_call_budget(value: int) -> None:
+    """A repo seat needs at least one provider call for its verdict."""
+    with pytest.raises(pydantic.ValidationError) as caught:
+        ReviewConfig.model_validate({"repo_max_turns": value})
+    assert any(
+        err["loc"] == ("repo_max_turns",) and err["type"] == "greater_than_equal"
+        for err in caught.value.errors()
+    )
+
+
+@pytest.mark.parametrize("command", ["run", "review"])
+def test_configured_repo_call_budget_reaches_the_seat(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+) -> None:
+    """Both panel paths stop a tool-only seat at the configured budget and name it."""
+    repo = test_run_lifecycle_bugfix._setup(tmp_path, monkeypatch)
+    config = tmp_path / "review.toml"
+    config.write_text(
+        '[review]\nrepo_max_turns = 2\nscope = "repo"\n'
+        'trigger = "periodic"\ninterval_turns = 1\n'
+        "[harness]\nmax_turns = 1\nverify_infer = false\n"
+        '[prompt]\ndecompose = "off"\n',
+        encoding="utf-8",
+    )
+    tool = {"type": "tool_use", "id": "r1", "name": "read_file", "input": {"path": "a.py"}}
+    seat = test_run_lifecycle_bugfix._Scripted([("", (tool,))] * 3)
+    seat_call = mock.Mock(wraps=seat.call)
+    monkeypatch.setattr(seat, "call", seat_call)
+    monkeypatch.setattr(providers, "_provider_from_entry", test_run_lifecycle_bugfix._use(seat))
+    aggregate = mock.Mock(wraps=_panel.aggregate_verdicts)
+    monkeypatch.setattr(_panel, "aggregate_verdicts", aggregate)
+    if command == "run":
+        worker = test_run_lifecycle_bugfix._Scripted(
+            [test_run_lifecycle_bugfix._edit("a.py", "x = 2\n")]
+        )
+        monkeypatch.setattr(
+            providers, "build_role_provider", test_run_lifecycle_bugfix._use(worker)
+        )
+        argv = ["run", "--session-id", "review-TURNS1", "Update x"]
+    else:
+        (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
+        argv = ["review", "--reviewers", "1", "--scope", "repo"]
+
+    rc = cli_main(["--config", str(config), *argv])
+
+    captured = capsys.readouterr()
+    assert rc == 1, captured.err
+    assert seat.calls == 2
+    (verdict,) = aggregate.call_args.args[0]
+    assert verdict.error == "repo: no verdict within 2 calls"
+    assert "at most 2 replies" in seat_call.call_args_list[0].kwargs["system"]
+    assert "x = 2" in json.dumps(seat_call.call_args_list[1].kwargs["messages"])
+    if command == "run":
+        session = paths.state_dir(repo) / "sessions" / "runs" / "review-TURNS1"
+        snapshot = (session / "loop_state.json").read_text(encoding="utf-8")
+        assert "review inconclusive: all 1 seats abstained" in snapshot
+    else:
+        assert "INCONCLUSIVE" in captured.out
+        assert "abstain: repo: no verdict within 2 calls" in captured.err
 
 
 @pytest.mark.parametrize("route", [{"provider": "o"}, {"model": "m"}])
@@ -145,6 +219,7 @@ def test_reviewer_sampling_reaches_provider_call(
             block_on="none",
             min_blocking_models=2,
             panel_id="test",
+            repo_max_turns=cfg.review.repo_max_turns,
             tools=[],
             dispatch=mock.MagicMock(),
         )

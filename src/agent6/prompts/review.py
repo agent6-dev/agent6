@@ -94,5 +94,7 @@ at the `path:line` IN THE DIFF that caused the break (the changed signature),
 with the broken caller (file:line) in the `detail`; only diff lines gate, so a
 finding cited at the other file's line is ignored.
 
-Investigate first; when done, reply with ONLY the JSON verdict and no tool calls."""
+Investigate first. You have at most {max_turns} replies, replies that call tools included;
+when done, and by the last reply at the latest, reply with ONLY the JSON verdict and no
+tool calls."""
 )

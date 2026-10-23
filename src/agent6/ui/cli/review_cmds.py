@@ -278,6 +278,7 @@ def _run_review_panel(
             block_on=cfg.review.block_on,
             min_blocking_models=cfg.review.min_blocking_models,
             panel_id="cli",
+            repo_max_turns=cfg.review.repo_max_turns,
             concurrency=len(seats),  # one-shot CLI: run all seats in parallel
             tools=tools,
             dispatch=dispatch,

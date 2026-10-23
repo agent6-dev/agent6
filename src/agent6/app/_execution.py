@@ -473,6 +473,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 max_review_rejections=cfg.review.max_review_rejections,
                 min_remaining_budget_fraction=cfg.review.min_remaining_budget_fraction,
                 concurrency=cfg.review.concurrency,
+                repo_max_turns=cfg.review.repo_max_turns,
             ),
             revision=_prompt_revision.RevisionSettings(
                 reviser=prompt_reviser_provider,

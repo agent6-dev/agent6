@@ -613,6 +613,14 @@ class ReviewConfig(pydantic.BaseModel):
             "checkout, so the reviewed head must be checked out with a clean tree)."
         ),
     )
+    repo_max_turns: int = pydantic.Field(
+        ge=1,
+        default=20,
+        description=(
+            'Provider calls a `scope = "repo"` seat may make, tool calls included. '
+            "A seat with no verdict after these calls abstains, and the panel says so."
+        ),
+    )
 
 
 class BudgetConfig(pydantic.BaseModel):

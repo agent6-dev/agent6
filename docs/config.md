@@ -307,6 +307,7 @@ The table was `[harness]` from 0.0.35; a config that still says `[workflow]` is 
 | `reviewers` | `[]` | The panel roster as an ordered list of tables with `focus` and optional `provider`, `model`, `temperature` and `effort`. Omitted routing inherits `[models.reviewer]`; a pinned route uses the role-model defaults. Set `provider` and `model` together. The built-in focuses cycled when empty are `security`, `correctness`, `tests`, `over-engineering`, `edge-cases`. Empty: one seat when `trigger` is on. `agent6 review --reviewers N --focus ...` builds a one-off roster. |
 | `concurrency` | `1` | How many seats the in-loop panel runs at once (`1` = one after another). `agent6 review` always runs every seat in parallel. |
 | `scope` | `"diff"` | How much a seat reads: `diff` (one call over the diff, the task, and the verify result) or `repo` (a read-only tool-using reviewer that also reads the repo around the diff to catch cross-file impact; several calls per seat, and it reads the checkout, so the reviewed head must be checked out with a clean tree). |
+| `repo_max_turns` | `20` | Provider calls a `scope = "repo"` seat may make, tool calls included. A seat with no verdict after these calls abstains, and the panel says so. |
 
 The [TUI](terminal.md#configuration) and [web](web.md#pages) config pages edit the ordered roster with **Add reviewer…** and positional removal.
 Each edit writes the whole list to the chosen layer, including `[]` after the last removal.
@@ -331,6 +332,7 @@ Different focuses or effort levels on one route still count as one blocking mode
 [review]
 trigger = "before_finish"
 scope = "diff"
+repo_max_turns = 20
 interval_turns = 10
 min_remaining_budget_fraction = 0.25
 block_on = "any"

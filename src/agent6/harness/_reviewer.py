@@ -87,6 +87,7 @@ class ReviewSettings:
             advises and every end stands.
         min_remaining_budget_fraction: Skip panels below this remaining budget fraction.
         concurrency: The seat calls run at once.
+        repo_max_turns: The provider calls each repo-scope seat may make, tools included.
     """
 
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
@@ -97,6 +98,7 @@ class ReviewSettings:
     max_review_rejections: int = 4
     min_remaining_budget_fraction: float = 0.25
     concurrency: int = 1
+    repo_max_turns: int = 20
 
 
 def _build_user_message(ctx: _panel.ReviewContext) -> str:
@@ -243,7 +245,7 @@ def repo_review(
     model: str,
     tools: list[ToolDefinition],
     dispatch: ReviewDispatch,
-    max_turns: int = 6,
+    max_turns: int,
     max_tokens: int = 2000,
     temperature: float | None = 0.0,
 ) -> _panel.ReviewVerdict:
@@ -263,7 +265,9 @@ def repo_review(
     Returns:
         The seat's verdict; a provider error or no valid verdict abstains with `error` set.
     """
-    system = review.REPO_REVIEW_SYSTEM_PROMPT.format(focus=ctx.focus or "general correctness")
+    system = review.REPO_REVIEW_SYSTEM_PROMPT.format(
+        focus=ctx.focus or "general correctness", max_turns=max_turns
+    )
     messages: list[dict[str, Any]] = [{"role": "user", "content": _build_user_message(ctx)}]
     for i in range(max_turns):
         try:
@@ -304,7 +308,7 @@ def repo_review(
             tool_results.append({"type": "tool_result", "tool_use_id": tu_id, "content": content})
         messages.append({"role": "user", "content": tool_results})
     return _panel.ReviewVerdict(
-        seat=seat, model=model, verdict="pass", error="repo: no verdict within max_turns"
+        seat=seat, model=model, verdict="pass", error=f"repo: no verdict within {max_turns} calls"
     )
 
 
@@ -315,6 +319,7 @@ def run_panel(
     block_on: _panel.ReviewBlockOn,
     min_blocking_models: int,
     panel_id: str,
+    repo_max_turns: int,
     concurrency: int = 1,
     tools: list[ToolDefinition] | None = None,
     dispatch: ReviewDispatch | None = None,
@@ -327,6 +332,7 @@ def run_panel(
         block_on: The blocking rule.
         min_blocking_models: The distinct blocking routes a `model_quorum` rejection needs.
         panel_id: The panel's id, for the result.
+        repo_max_turns: The provider calls each repo-scope seat may make, tools included.
         concurrency: The seat calls run at once.
         tools: The read-only tools for repo seats.
         dispatch: The read-only dispatch for repo seats.
@@ -345,6 +351,7 @@ def run_panel(
                 model=s.model,
                 tools=tools,
                 dispatch=dispatch,
+                max_turns=repo_max_turns,
                 temperature=s.temperature,
             )
         return structured_review(
@@ -614,6 +621,7 @@ class Reviewer:
                 block_on=block_on,
                 min_blocking_models=self.settings.min_blocking_models,
                 panel_id=f"{trigger}-{turn}",
+                repo_max_turns=self.settings.repo_max_turns,
                 concurrency=self.settings.concurrency,
                 tools=tools,
                 dispatch=dispatch,

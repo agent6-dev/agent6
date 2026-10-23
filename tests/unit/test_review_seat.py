@@ -193,14 +193,21 @@ def test_run_panel_distinct_models_quorum_blocks() -> None:
         _reviewer.ReviewSeat(focus="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
     ]
     res = _reviewer.run_panel(
-        seats, _ctx(), block_on="model_quorum", min_blocking_models=2, panel_id="p"
+        seats,
+        _ctx(),
+        block_on="model_quorum",
+        min_blocking_models=2,
+        panel_id="p",
+        repo_max_turns=20,
     )
     assert res.blocked is True and res.n_block == 2
 
 
 def test_run_panel_advisory_never_blocks() -> None:
     seats = [_reviewer.ReviewSeat(focus="security", model="m1", provider=_prov(_BLOCK_JSON))]
-    res = _reviewer.run_panel(seats, _ctx(), block_on="none", min_blocking_models=2, panel_id="p")
+    res = _reviewer.run_panel(
+        seats, _ctx(), block_on="none", min_blocking_models=2, panel_id="p", repo_max_turns=20
+    )
     assert res.blocked is False
     assert (
         res.merged_findings and res.merged_findings[0].severity == "block"
@@ -216,7 +223,13 @@ def test_run_panel_concurrent_preserves_order_and_aggregates() -> None:
         _reviewer.ReviewSeat(focus="edge", model="m3", provider=_prov(_BLOCK_JSON)),
     ]
     res = _reviewer.run_panel(
-        seats, _ctx(), block_on="model_quorum", min_blocking_models=2, panel_id="p", concurrency=3
+        seats,
+        _ctx(),
+        block_on="model_quorum",
+        min_blocking_models=2,
+        panel_id="p",
+        repo_max_turns=20,
+        concurrency=3,
     )
     assert [v.seat for v in res.per_seat] == ["security", "correctness", "edge"]
     assert res.blocked is True and res.n_block == 3
@@ -321,7 +334,12 @@ def test_bare_and_pinned_routes_to_the_same_model_count_once(monkeypatch: Any) -
         "anthropic/reviewer-default",
     ]
     result = _reviewer.run_panel(
-        seats, _ctx(), block_on="model_quorum", min_blocking_models=2, panel_id="p"
+        seats,
+        _ctx(),
+        block_on="model_quorum",
+        min_blocking_models=2,
+        panel_id="p",
+        repo_max_turns=20,
     )
     assert result.n_block == 1 and result.blocked is False
 
@@ -348,6 +366,26 @@ class _RepoProvider:
         return self._responses.pop(0)
 
 
+@pytest.mark.parametrize("max_turns", [1, 2, 20])
+def test_repo_review_first_request_names_the_call_budget(max_turns: int) -> None:
+    """The seat knows its total call budget and that the last call must be its verdict."""
+    provider = mock.MagicMock()
+    provider.call.return_value = _RepoResp(text=_BLOCK_JSON)
+    verdict = _reviewer.repo_review(
+        provider,
+        _ctx(),
+        seat="security",
+        model="m1",
+        tools=[],
+        dispatch=mock.MagicMock(),
+        max_turns=max_turns,
+    )
+    assert verdict.error is None
+    system = provider.call.call_args_list[0].kwargs["system"]
+    assert f"at most {max_turns} replies" in system
+    assert "by the last reply at the latest, reply with ONLY the JSON verdict" in system
+
+
 def test_repo_review_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.MonkeyPatch) -> None:
     """Five tool rounds leave the sixth call for a verdict, however long they took."""
     clock = itertools.count(0, 100.0)
@@ -367,7 +405,13 @@ def test_repo_review_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.Mon
         return results.RawResult({"matches": ["caller.py:9: read_doc(x)"]})
 
     v = _reviewer.repo_review(
-        cast(Provider, provider), _ctx(), seat="security", model="m1", tools=[], dispatch=dispatch
+        cast(Provider, provider),
+        _ctx(),
+        seat="security",
+        model="m1",
+        tools=[],
+        dispatch=dispatch,
+        max_turns=6,
     )
     assert v.error is None and v.verdict == "block" and v.findings[0].category == "security"
     assert provider.calls == 6
@@ -390,8 +434,9 @@ def test_repo_review_abstains_after_six_calls_without_a_verdict() -> None:
         model="m1",
         tools=[],
         dispatch=lambda n, i: results.RawResult({"entries": []}),
+        max_turns=6,
     )
-    assert v.error == "repo: no verdict within max_turns"
+    assert v.error == "repo: no verdict within 6 calls"
     assert provider.calls == 6
 
 
@@ -421,7 +466,7 @@ def test_repo_review_skips_dispatch_on_final_turn() -> None:
         dispatch=dispatch,
         max_turns=3,
     )
-    assert v.error == "repo: no verdict within max_turns"
+    assert v.error == "repo: no verdict within 3 calls"
     assert provider.calls == 3  # every model call still happens
     assert dispatched == ["find_references", "find_references"]  # rounds 1-2; final skipped
 
@@ -443,6 +488,7 @@ def test_run_panel_routes_repo_tier_seats() -> None:
         block_on="any",
         min_blocking_models=2,
         panel_id="p",
+        repo_max_turns=2,
         tools=[],
         dispatch=lambda n, i: results.RawResult({"ok": True}),
     )
@@ -508,7 +554,13 @@ def test_run_panel_concurrent_seats_run_on_daemon_threads() -> None:
         for i in range(3)
     ]
     res = _reviewer.run_panel(
-        seats, _ctx(), block_on="none", min_blocking_models=2, panel_id="p", concurrency=3
+        seats,
+        _ctx(),
+        block_on="none",
+        min_blocking_models=2,
+        panel_id="p",
+        repo_max_turns=20,
+        concurrency=3,
     )
     assert len(res.per_seat) == 3
     assert daemons == [True, True, True]
@@ -530,7 +582,13 @@ def test_run_panel_concurrent_seat_crash_propagates() -> None:
     ]
     with pytest.raises(RuntimeError, match="unexpected seat crash"):
         _reviewer.run_panel(
-            seats, _ctx(), block_on="none", min_blocking_models=2, panel_id="p", concurrency=2
+            seats,
+            _ctx(),
+            block_on="none",
+            min_blocking_models=2,
+            panel_id="p",
+            repo_max_turns=20,
+            concurrency=2,
         )
 
 
@@ -559,7 +617,13 @@ def test_run_panel_concurrency_limit_is_honored() -> None:
         for i in range(6)
     ]
     res = _reviewer.run_panel(
-        seats, _ctx(), block_on="none", min_blocking_models=2, panel_id="p", concurrency=2
+        seats,
+        _ctx(),
+        block_on="none",
+        min_blocking_models=2,
+        panel_id="p",
+        repo_max_turns=20,
+        concurrency=2,
     )
     assert len(res.per_seat) == 6
     assert peak <= 2
