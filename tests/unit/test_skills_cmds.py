@@ -8,7 +8,9 @@ import contextlib
 import pathlib
 import subprocess
 import threading
+from collections.abc import Iterator
 from http import server
+from typing import Any
 
 import pytest
 
@@ -536,25 +538,41 @@ def _serve_bytes(body: bytes) -> tuple[str, dict[str, str], server.ThreadingHTTP
     return f"http://127.0.0.1:{httpd.server_address[1]}/SKILL.md", seen, httpd
 
 
-def test_a_remote_skill_is_capped_while_it_arrives_not_after() -> None:
-    """The 1 MiB check runs on the wire, before the body is buffered.
+def test_a_remote_skill_is_capped_while_it_arrives_not_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The 1 MiB check runs on the wire: the client pulls at most one chunk past the cap.
 
-    A 1 MiB gzip reached 2 GiB of RSS before the refusal.
+    A 1 MiB gzip reached 2 GiB of RSS before the refusal. The pin counts the bytes the
+    fetch pulled from the response, not the process's memory: the in-process test server
+    shares that heap, and its send path made the peak read ten megabytes on one CI host.
     """
-    import tracemalloc
+    from agent6.tools import http_body
 
+    pulled: list[int] = []
+    real_read_capped = http_body.read_capped
+
+    def counting_read_capped(response: Any, **kwargs: Any) -> bytes:
+        iter_raw = response.iter_raw
+
+        def counted(*args: Any, **kw: Any) -> Iterator[bytes]:
+            for chunk in iter_raw(*args, **kw):
+                pulled.append(len(chunk))
+                yield chunk
+
+        response.iter_raw = counted
+        return real_read_capped(response, **kwargs)
+
+    monkeypatch.setattr(http_body, "read_capped", counting_read_capped)
     url, seen, httpd = _serve_bytes(b"x" * (8 << 20))
     try:
-        tracemalloc.start()
-        try:
-            with pytest.raises(errors.OperatorError, match="larger than"):
-                cli_skills_cmds._fetch_url(url)
-            peak = tracemalloc.get_traced_memory()[1]
-        finally:
-            tracemalloc.stop()
+        with pytest.raises(errors.OperatorError, match="larger than"):
+            cli_skills_cmds._fetch_url(url)
     finally:
         httpd.shutdown()
-    assert peak < 4 << 20, f"buffered {peak} bytes of an 8 MiB body"
+    cap = cli_skills_cmds._FETCH_MAX_BYTES
+    assert pulled and sum(pulled) <= cap + max(pulled), f"pulled {sum(pulled)} bytes past the cap"
+    assert max(pulled) <= cap, f"one chunk of {max(pulled)} bytes: the body was not streamed"
     assert seen["accept-encoding"] == "identity", "a decoded stream expands past the cap"
 
 
@@ -564,7 +582,7 @@ def test_the_skill_fetch_clock_starts_with_the_body(monkeypatch: pytest.MonkeyPa
     DNS, TLS and a redirect chain spent the budget and the refusal blamed a body still arriving.
     """
     import time
-    from collections.abc import Generator, Iterator
+    from collections.abc import Generator
     from typing import ClassVar
 
     from agent6.ui.cli import skills_cmds
