@@ -133,10 +133,11 @@ def _ignore_revs_refusal(path: pathlib.Path) -> str:
         The refusal naming the offending value, or "".
     """
     res = _git_command.run(
-        path, "config", "--get-all", "--type=path", "blame.ignoreRevsFile", check=False
+        path, "config", "--get-all", "-z", "--type=path", "blame.ignoreRevsFile", check=False
     )
     root = path.resolve()
-    for value in filter(None, res.stdout.splitlines()):
+    # NUL-delimited: a value holding a newline is one path to git, and must be one here.
+    for value in filter(None, res.stdout.split("\0")):
         real = (root / value).resolve()
         if not (real.is_relative_to(root) and real.is_file()):
             return (

@@ -239,3 +239,28 @@ def test_blame_honours_an_ignore_revs_file_inside_the_repository(tmp_path: pathl
     git_policy.set_repo_driver_policy(False)
     rows = git_files.blame_lines(root, second, "f.txt", b"v2\n", lines=1)
     assert rows[0].sha == first
+
+
+def test_blame_refuses_an_ignore_revs_file_whose_name_holds_a_newline(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A `blame.ignoreRevsFile` holding a newline was checked as two paths.
+
+    Git reads the value whole, so a file named `a<newline>b` that links outside the repository
+    passed a check that split the value into `a` and `b`, two regular files inside it.
+    """
+    from agent6.vcs import git_files
+
+    root = _repo(tmp_path / "r")
+    secret = tmp_path / "token.txt"
+    secret.write_text("TOKEN-4711\n", encoding="utf-8")
+    (root / "a").write_text("x\n", encoding="utf-8")
+    (root / "b").write_text("y\n", encoding="utf-8")
+    (root / "a\nb").symlink_to(secret)
+    _git(root, "config", "blame.ignoreRevsFile", "a\nb")
+    git_policy.set_repo_driver_policy(False)
+    head = _git(root, "rev-parse", "HEAD").stdout.strip()
+    with pytest.raises(errors.GitError) as caught:
+        git_files.blame_lines(root, head, "f.txt", b"v1\n", lines=1)
+    assert "TOKEN-4711" not in str(caught.value)
+    assert "blame.ignoreRevsFile" in str(caught.value)
