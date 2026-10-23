@@ -74,60 +74,6 @@
   background-color: var(--a6-panel);
 }
 
-/* ---- Home hero -------------------------------------------------------- */
-.a6-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 0.4rem;
-  padding: 2.2rem 0 1.4rem;
-}
-.a6-hero h1 {
-  font-size: 2.6rem;
-  font-weight: 800;
-  margin: 0;
-  letter-spacing: -0.02em;
-}
-.a6-hero .a6-tagline {
-  font-size: 1.05rem;
-  color: var(--md-default-fg-color--light);
-  max-width: 42rem;
-}
-.a6-cta {
-  display: flex;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-top: 0.6rem;
-}
-.a6-cta .md-button {
-  margin: 0;
-}
-
-/* ---- Feature grid ----------------------------------------------------- */
-.a6-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 1rem;
-  margin: 1.2rem 0;
-}
-.a6-grid .a6-card {
-  border: 1px solid var(--a6-panel);
-  border-radius: 0.5rem;
-  padding: 1rem 1.1rem;
-  background-color: var(--a6-surface);
-}
-.a6-grid .a6-card h3 {
-  margin: 0 0 0.4rem;
-  font-size: 0.95rem;
-}
-.a6-grid .a6-card p {
-  margin: 0;
-  font-size: 0.82rem;
-  color: var(--md-default-fg-color--light);
-}
-
 /* Diagrams. Material renders each one into a closed shadow root, so page CSS
    reaches the host box only: flex centres the diagram the shadow tree draws
    inside it (it is left-aligned otherwise). */
@@ -137,8 +83,7 @@
 }
 
 /* Screenshots: rounded, framed, click-to-zoom (glightbox). */
-.md-typeset img[src*="screenshots/"],
-.md-typeset .a6-shot img {
+.md-typeset img[src*="screenshots/"] {
   border-radius: 0.5rem;
   border: 1px solid var(--a6-panel);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
