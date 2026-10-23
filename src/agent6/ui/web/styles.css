@@ -595,6 +595,10 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .files-note { font-size: 12px; white-space: nowrap; }
 .files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px; }
 .files-back { display: none; }
+.blame-cell { display: inline-flex; width: 38ch; gap: 1ch; padding-right: 1ch; vertical-align: bottom; user-select: none; }
+.blame-commit, .blame-date { flex: none; }
+.blame-author { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.files-blame.active { color: var(--accent); border-color: var(--accent); }
 .git-img.one { grid-template-columns: 1fr; }
 @media (min-width: 781px) {
   .files-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }

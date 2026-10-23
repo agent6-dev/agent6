@@ -34,13 +34,15 @@ const fileCount = (n) => n === 1 ? '1 file' : n + ' files';
 // contents) that folds and unfolds its children on a click, and `fileRow(entry)` for each
 // file; both carry `data-path` and a `--depth` the stylesheet indents by. `folded` starts
 // every folder closed.
-function treeView(root, fileRow, folderNote, folded) {
+function treeView(root, fileRow, folderNote, folded, folderMark) {
   const box = el('div', 'gtree');
   const paint = (node, host, depth) => {
     for (const d of node.dirs.values()) {
       const row = el('div', 'gtree-dir'); row.dataset.path = d.path; row.style.setProperty('--depth', depth);
       const caret = el('span', 'gtree-caret');
-      row.appendChild(caret); row.appendChild(el('span', 'gtree-name', d.name)); row.appendChild(el('span', 'muted gtree-note', folderNote(d)));
+      row.appendChild(caret);
+      if (folderMark) { const mark = folderMark(d); if (mark) row.appendChild(mark); }
+      row.appendChild(el('span', 'gtree-name', d.name)); row.appendChild(el('span', 'muted gtree-note', folderNote(d)));
       const kids = el('div', 'gtree-kids');
       let open = !folded;
       caret.textContent = '▾'; // one glyph; the stylesheet turns it for a folded folder

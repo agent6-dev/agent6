@@ -18,6 +18,7 @@ from collections.abc import Iterator
 
 import pytest
 
+from agent6 import errors
 from agent6.vcs import git_ops, git_policy
 
 
@@ -181,3 +182,39 @@ def test_the_review_diff_does_not_run_a_repo_clean_filter(tmp_path: pathlib.Path
     proc = review_cmds._collect_review_diff("git", root, base="", head="HEAD", paths=())
     assert "f.txt" in proc.stdout, proc.stdout
     assert not marker.exists(), "the repo's clean filter ran a host command"
+
+
+def test_blame_refuses_an_ignore_revs_file_outside_the_repository(tmp_path: pathlib.Path) -> None:
+    """Host-side blame does not open a `blame.ignoreRevsFile` outside the repository.
+
+    Git quotes the file's first unparsable line in its error, so a poisoned `.git/config`
+    read any host file a line at a time through `/api/git/blame`.
+    """
+    from agent6.vcs import git_files
+
+    root = _repo(tmp_path / "r")
+    secret = tmp_path / "token.txt"
+    secret.write_text("TOKEN-4711\n", encoding="utf-8")
+    _git(root, "config", "blame.ignoreRevsFile", str(secret))
+    git_policy.set_repo_driver_policy(False)
+    head = _git(root, "rev-parse", "HEAD").stdout.strip()
+    with pytest.raises(errors.GitError) as caught:
+        git_files.blame_lines(root, head, "f.txt", b"v1\n", lines=1)
+    assert "TOKEN-4711" not in str(caught.value)
+    assert "blame.ignoreRevsFile" in str(caught.value)
+
+
+def test_blame_honours_an_ignore_revs_file_inside_the_repository(tmp_path: pathlib.Path) -> None:
+    """A repository-relative `blame.ignoreRevsFile` naming a commit still attributes lines."""
+    from agent6.vcs import git_files
+
+    root = _repo(tmp_path / "r")
+    first = _git(root, "rev-parse", "HEAD").stdout.strip()
+    (root / "f.txt").write_text("v2\n", encoding="utf-8")
+    _git(root, "commit", "-qam", "reformat")
+    second = _git(root, "rev-parse", "HEAD").stdout.strip()
+    (root / ".git-blame-ignore-revs").write_text(second + "\n", encoding="utf-8")
+    _git(root, "config", "blame.ignoreRevsFile", ".git-blame-ignore-revs")
+    git_policy.set_repo_driver_policy(False)
+    rows = git_files.blame_lines(root, second, "f.txt", b"v2\n", lines=1)
+    assert rows[0].sha == first

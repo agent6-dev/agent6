@@ -266,6 +266,80 @@ def test_the_diff_view_switches_between_inline_split_old_and_new(
     assert errors == [], errors
 
 
+def test_blame_opens_the_lines_commit_in_git(
+    open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
+) -> None:
+    """A working-tree blame marks uncommitted lines and opens a committed line's panel."""
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/files/WORKTREE/b.txt")
+    page.locator(".files-blame").click()
+    page.wait_for_selector(".sl[data-line='4'] .blame-cell")
+    assert "not committed" in page.locator(".sl[data-line='4'] .blame-cell").inner_text()
+    assert page.locator(".files-view .sl").count() == 4
+    page.locator(".sl[data-line='1'] .blame-commit").click()
+    page.wait_for_selector(".git-side .gd-subject")
+    assert "root commit" in page.locator(".git-side .gd-subject").inner_text()
+    assert page.locator(".gc-row.sel").count() == 1
+    assert errors == [], errors
+
+
+def test_git_and_files_deep_links_survive_reload_and_back(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """Encoded file paths, commit and compare hashes select their panes on entry and Back."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/b.txt")
+    page.wait_for_selector(".files-view .sl[data-line='3']")
+    page.reload()
+    page.wait_for_selector(".files-view .sl[data-line='3']")
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/feature")
+    page.wait_for_selector(".git-side .gd-subject")
+    assert "feature: rename" in page.locator(".git-side .gd-subject").inner_text()
+    assert page.locator(".gc-row.sel").count() == 1
+    page.locator(".gc-row").first.click()
+    page.wait_for_function(
+        "() => document.querySelector('.gd-subject')?.textContent.includes('merge feature')"
+    )
+    page.go_back()
+    page.wait_for_function(
+        "() => document.querySelector('.gd-subject')?.textContent.includes('feature: rename')"
+    )
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/compare/v1..v2")
+    page.wait_for_selector(".gcmp-result .gf")
+    assert page.locator(".gcmp-result .gf").count() == 5
+    assert errors == [], errors
+
+
+def test_files_marks_worktree_states_and_sums_folders(
+    open_page: Callable[[int], tuple[Page, list[str]]], files_port: int
+) -> None:
+    """Working-tree marks distinguish tracked, untracked and modified files, not commits."""
+    page, errors = open_page(files_port)
+    page.goto(f"http://127.0.0.1:{files_port}/#/files")
+    page.wait_for_selector(".files-tree [data-path='b.txt']")
+    assert page.locator(".files-tree .gf-st").count() == 0
+    page.locator(".files-bar .gpick input").click()
+    page.locator(".gpick-list .ac-item", has_text="working tree").click()
+    page.wait_for_selector(".files-tree [data-path='src/tool.py']")
+    for path, mark in (
+        ("b.txt", "M"),
+        ("img.bin", "H"),
+        ("new.txt", "A"),
+        ("src/tool.py", "A"),
+        ("src", "A"),
+        ("dir", "M"),
+    ):
+        assert page.locator(f".files-tree [data-path='{path}'] .gf-st").inner_text() == mark
+    assert "1 untracked" in (
+        page.locator(".files-tree [data-path='src'] .gf-st").get_attribute("title") or ""
+    )
+    page.locator(".files-bar .gpick input").fill("HEAD")
+    page.locator(".files-bar .gpick input").press("Enter")
+    page.wait_for_selector(".files-tree [data-path='dir/f.txt']")
+    assert page.locator(".files-tree .gf-st").count() == 0
+    assert errors == [], errors
+
+
 def test_the_files_tab_opens_a_file_highlighted(
     open_page: Callable[[int], tuple[Page, list[str]]], files_port: int
 ) -> None:
@@ -290,4 +364,36 @@ def test_the_files_tab_opens_a_file_highlighted(
     assert "def" in first.inner_text() and first.locator(".hl-keyword").count() >= 1
     assert page.locator(".files-view .src .sl").count() == 2
     assert "python" in page.locator(".files-view").inner_text()
+    assert errors == [], errors
+
+
+def test_back_from_a_compare_link_returns_to_the_graph(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """Back from a comparison lands on the bare Git tab; the restore pushed its hash again."""
+    page, errors = open_page(git_port)
+    base = f"http://127.0.0.1:{git_port}/"
+    page.goto(base + "#/git")
+    page.wait_for_selector(".gc-row")
+    page.goto(base + "#/git/compare/v1..v2")
+    page.wait_for_selector(".gcmp-result .gf")
+    page.go_back()
+    page.wait_for_selector(".git-side .empty", timeout=3000)
+    assert page.evaluate("location.hash") == "#/git"
+    assert page.locator(".gcmp-result").count() == 0
+    assert errors == [], errors
+
+
+def test_the_worktree_pane_has_a_hash_that_survives_reload(
+    open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
+) -> None:
+    """The working-tree row publishes `#/git/worktree`, and a reload reopens that pane."""
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git")
+    page.locator(".gc-wt").click()
+    page.wait_for_selector(".git-side .gd-subject")
+    assert page.evaluate("location.hash") == "#/git/worktree"
+    page.reload()
+    page.wait_for_selector(".git-side .gd-subject")
+    assert "Uncommitted changes" in page.locator(".git-side .gd-subject").inner_text()
     assert errors == [], errors

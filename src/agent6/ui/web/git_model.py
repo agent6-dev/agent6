@@ -1,23 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Build the Git tab's JSON payloads: refs, the commit graph, a commit, a compare, a diff.
+"""Build read-only Git and Files payloads with verified revisions and marked caps.
 
-Every revision and path arrives from the operator's browser and is still checked before
-git sees it: a value starting with `-` is refused, a revision resolves through
-`git rev-parse --verify --end-of-options <rev>^{commit}` before any other call, a ref name
-must be one `git for-each-ref` listed, and a file must be in one of the two trees. The one
-revision that is not a commit is `WORKTREE`, the working tree, taken as a `head` only.
-Nothing here writes. Each list is capped and says when it was cut.
+Revisions resolve through `rev-parse --verify --end-of-options`; paths follow `--`.
+WORKTREE names disk content for files, or the head of a diff or comparison.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import pathlib
 from typing import Any
 
 from agent6.ui.web import highlight
-from agent6.vcs import git_history, git_ops
+from agent6.vcs import git_files, git_history, git_ops
 from agent6.viewmodel import format
 
 # Commits per graph page, and the most a request may ask for.
@@ -220,14 +217,14 @@ def graph_payload(
 
     Args:
         repo: The repository.
-        refs: The full ref names (or `HEAD`) to walk from; None walks every branch, remote
-            and tag plus HEAD, leaving out the `refs/agent6/*` chain refs.
+        refs: Full ref names, resolved shas or `HEAD`; None walks branches, remotes and tags
+            plus HEAD, leaving out the `refs/agent6/*` chain refs.
         limit: Commits in the page, as the query gave it; "" is `GRAPH_PAGE`, more than
             `GRAPH_PAGE_MAX` is clamped.
         skip: Commits to pass over first, as the query gave it.
 
     Returns:
-        `commits`, each with its refs, then `has_more`, `skip` and `limit`.
+        `commits`, each with its refs, then `tips`, `has_more`, `skip` and `limit`.
 
     Raises:
         GitRequestError: A name is not a listed ref, or a number is not one.
@@ -237,18 +234,35 @@ def graph_payload(
     start = _whole_number(skip, "skip", 0)
     listed = git_history.list_refs(repo)
     head_sha, _branch = git_history.head_commit(repo)
-    known = {r.full for r in listed}
+    known = {r.full: r.sha for r in listed}
+    known["HEAD"] = head_sha
     if refs is None:
-        revs = [r.full for r in listed if r.kind != "agent6"] + (["HEAD"] if head_sha else [])
+        revs = [r.sha for r in listed if r.kind != "agent6"] + ([head_sha] if head_sha else [])
     else:
+        revs: list[str] = []
         for name in refs:
-            if name != "HEAD" and name not in known:
+            if name in known:
+                if known[name]:
+                    revs.append(known[name])
+            elif (
+                len(name) in (40, 64)
+                and all(c in "0123456789abcdef" for c in name)
+                and git_history.resolve_commit(repo, name) == name
+            ):
+                revs.append(name)
+            else:
                 raise GitRequestError(f"no such ref {name!r}")
-        revs = [name for name in refs if name != "HEAD" or head_sha]
+    revs = list(dict.fromkeys(_resolve(repo, rev) for rev in revs))
     rows = git_history.log_commits(repo, revs, limit=page + 1, skip=start) if revs else ()
     decorated = _decorations(listed)
     commits = [{**_log_row(c), "refs": decorated.get(c.sha, [])} for c in rows[:page]]
-    return {"commits": commits, "has_more": len(rows) > page, "skip": start, "limit": page}
+    return {
+        "commits": commits,
+        "tips": revs,
+        "has_more": len(rows) > page,
+        "skip": start,
+        "limit": page,
+    }
 
 
 def commit_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
@@ -458,10 +472,10 @@ def _read(repo: pathlib.Path, rev: str, path: str) -> tuple[str, bytes]:
     sha = _resolve(repo, rev, worktree_ok=True)
     _check_path(path)
     if sha == git_history.WORKTREE:
-        blob = git_history.worktree_blob(repo, path, max_bytes=BLOB_MAX_BYTES)
+        blob = git_files.worktree_blob(repo, path, max_bytes=BLOB_MAX_BYTES)
         where = "the working tree"
     else:
-        blob = git_history.blob_at(repo, sha, path, max_bytes=BLOB_MAX_BYTES)
+        blob = git_files.blob_at(repo, sha, path, max_bytes=BLOB_MAX_BYTES)
         where = rev
     if blob is None:
         raise GitRequestError(f"no file {path!r} in {where}")
@@ -500,6 +514,35 @@ def _line_count(text: str) -> int:
     return text.count("\n") + (0 if not text or text.endswith("\n") else 1)
 
 
+def _display_text(data: bytes, cap: int | None) -> tuple[str, bool, bool]:
+    """Return text, binary and truncated with the shared text and blame cap."""
+    binary = git_history.looks_binary(data)
+    truncated = not binary and cap is not None and len(data) > cap
+    if truncated:
+        data = data[: data.rfind(b"\n", 0, cap) + 1]
+    return "" if binary else data.decode("utf-8", errors="replace"), binary, truncated
+
+
+def blame_payload(
+    repo: pathlib.Path, rev: str, path: str, *, whole: bool = False
+) -> dict[str, Any]:
+    """Return per-line attribution with the text route's caps, refusals and digest."""
+    _repo(repo)
+    sha, data = _read(repo, rev, path)
+    cap = None if whole else TEXT_MAX_BYTES
+    text, binary, truncated = _display_text(data, cap)
+    rows = git_files.blame_lines(repo, sha, path, data, lines=_line_count(text))
+    return {
+        "rev": sha,
+        "path": path,
+        "digest": hashlib.sha256(data).hexdigest(),
+        "lines": [dataclasses.asdict(row) for row in rows],
+        "binary": binary,
+        "truncated": truncated,
+        "max_bytes": cap,
+    }
+
+
 def text_payload(repo: pathlib.Path, rev: str, path: str, *, whole: bool = False) -> dict[str, Any]:
     """Return a file's text at a revision or in the working tree, with its highlight spans.
 
@@ -510,9 +553,10 @@ def text_payload(repo: pathlib.Path, rev: str, path: str, *, whole: bool = False
         whole: Keep every byte instead of cutting at `TEXT_MAX_BYTES`.
 
     Returns:
-        `rev` resolved, `path`, `text` ("" for a binary file), `lines`, `binary`,
-        `truncated`, `max_bytes`, `language` (the pack's name, "" when none) and `spans`
-        (per line `[start, end, class]`, empty when nothing is highlighted).
+        `rev` resolved, `path`, `digest` (sha256 of the bytes read; the blame route sends
+        the same, so rows attach only to the text shown), `text` ("" for a binary file),
+        `lines`, `binary`, `truncated`, `max_bytes`, `language` (the pack's name, "" when
+        none) and `spans` (per line `[start, end, class]`, empty when nothing is highlighted).
 
     Raises:
         GitRequestError: The revision or path is malformed, or no regular file is there.
@@ -520,17 +564,13 @@ def text_payload(repo: pathlib.Path, rev: str, path: str, *, whole: bool = False
     """
     _repo(repo)
     sha, data = _read(repo, rev, path)
-    binary = git_history.looks_binary(data)
     cap = None if whole else TEXT_MAX_BYTES
-    truncated = False
-    if not binary and cap is not None and len(data) > cap:
-        data = data[: data.rfind(b"\n", 0, cap) + 1]
-        truncated = True
-    text = "" if binary else data.decode("utf-8", errors="replace")
+    text, binary, truncated = _display_text(data, cap)
     language = highlight.language_of(path)
     return {
         "rev": sha,
         "path": path,
+        "digest": hashlib.sha256(data).hexdigest(),
         "text": text,
         "lines": _line_count(text),
         "binary": binary,
@@ -550,7 +590,7 @@ def tree_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
             untracked files `.gitignore` keeps.
 
     Returns:
-        `rev` resolved, `files` as `{path, size, kind}` cut at `TREE_MAX`, and `truncated`.
+        `rev` resolved, `files` as `{path, size, kind, state}` cut at `TREE_MAX`, and `truncated`.
 
     Raises:
         GitRequestError: The revision is malformed or unknown.
@@ -558,8 +598,8 @@ def tree_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
     _repo(repo)
     sha = _resolve(repo, rev, worktree_ok=True)
     if sha == git_history.WORKTREE:
-        rows = git_history.worktree_tree_files(repo)
+        rows = git_files.worktree_tree_files(repo)
     else:
-        rows = git_history.tree_files(repo, sha)
-    files = [{"path": f.path, "size": f.size, "kind": f.kind} for f in rows[:TREE_MAX]]
+        rows = git_files.tree_files(repo, sha)
+    files = [dataclasses.asdict(f) for f in rows[:TREE_MAX]]
     return {"rev": sha, "files": files, "truncated": len(rows) > TREE_MAX}

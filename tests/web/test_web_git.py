@@ -8,8 +8,11 @@ much as the payloads: a flag-shaped rev or path, an unknown rev, a path in neith
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import pathlib
+import stat
 import threading
 from collections.abc import Iterator
 from http import client
@@ -19,7 +22,7 @@ import pytest
 
 from agent6.ui.web import git_model, page
 from agent6.ui.web import server as web_server
-from agent6.vcs import git_ops
+from agent6.vcs import git_files, git_ops
 from tests.unit.test_git_history import (
     PNG_BLUE_2X2,
     PNG_RED_1X1,
@@ -153,6 +156,26 @@ def test_graph_takes_a_ref_list_and_pages(
     assert "no such ref" in _refused(port, "/api/git/graph?refs=refs/heads/nope")
     assert "no such ref" in _refused(port, "/api/git/graph?refs=main")  # short names are not refs
     assert "whole number" in _refused(port, "/api/git/graph?limit=ten")
+
+
+def test_graph_pages_keep_the_original_tips_when_refs_move(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """Paging resolved tips neither repeats nor loses a row after a new commit lands."""
+    path, shas = repo
+    expected = _ok(port, "/api/git/graph?refs=HEAD")["commits"]
+    first = _ok(port, "/api/git/graph?refs=HEAD&limit=2")
+    assert first["tips"] == [shas["merge"]]
+    _git(path, "commit", "--allow-empty", "-m", "a new tip")
+    query = "&".join("refs=" + tip for tip in first["tips"])
+    rest = _ok(port, f"/api/git/graph?{query}&skip=2")
+    assert [c["sha"] for c in first["commits"] + rest["commits"]] == [c["sha"] for c in expected]
+    assert rest["tips"] == first["tips"]
+    refreshed = _ok(port, "/api/git/graph?refs=HEAD")
+    assert refreshed["tips"] == [_git(path, "rev-parse", "HEAD")]
+    assert refreshed["commits"][0]["subject"] == "a new tip"
+    assert "no such ref" in _refused(port, "/api/git/graph?refs=" + "f" * 40)
+    assert "no such ref" in _refused(port, "/api/git/graph?refs=--all")
 
 
 def test_commit_lists_its_files_against_the_first_parent(
@@ -392,6 +415,103 @@ def test_text_returns_a_files_lines_with_its_language_and_spans(
     assert "unknown revision" in _refused(port, "/api/git/text?rev=nope&path=b.txt")
 
 
+@pytest.mark.parametrize("route", ["blob", "text", "blame"])
+@pytest.mark.parametrize("hazard", ["ancestor", "ancestor_inside", "fifo", "device", "leaf"])
+def test_worktree_reads_refuse_unsafe_files(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int, route: str, hazard: str
+) -> None:
+    """A listed path cannot escape through an ancestor or open a special file."""
+    path, _ = repo
+    name = "dir/f.txt" if hazard.startswith("ancestor") else "b.txt"
+    target = path / name
+    target.unlink()
+    if hazard.startswith("ancestor"):
+        # Inside the repository, the containment check passes and only the descriptor
+        # walk's no-follow refuses; outside, both would.
+        inside = hazard == "ancestor_inside"
+        other = path / "other" if inside else path.parent / f"{path.name}-outside"
+        other.mkdir()
+        (other / "f.txt").write_text("private\n", encoding="utf-8")
+        (path / "dir").rmdir()
+        (path / "dir").symlink_to(other, target_is_directory=True)
+    elif hazard == "leaf":
+        target.symlink_to("img.bin")
+    elif hazard == "fifo":
+        os.mkfifo(target)
+    else:
+        try:
+            os.mknod(target, stat.S_IFCHR | 0o600, os.makedev(1, 3))
+        except PermissionError:
+            pytest.skip("the host does not allow device nodes")
+    conn = signin.SignedIn(port, timeout=1)
+    status, body = 0, b""
+    try:
+        conn.request("GET", f"/api/git/{route}?rev=WORKTREE&path={name}")
+        response = conn.getresponse()
+        status, body = response.status, response.read()
+    except TimeoutError:
+        pass
+    finally:
+        conn.close()
+        if hazard == "fifo":
+            # Release a reader stuck in open so a red pin leaves no blocked server thread.
+            fd = os.open(target, os.O_RDWR | os.O_NONBLOCK)
+            os.close(fd)
+    assert status == 422, "read blocked" if not status else body
+    assert "no file" in json.loads(body)["error"]
+
+
+def test_blame_attributes_lines_and_marks_uncommitted_content(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Blame follows renames and shares the text reader's caps and refusals."""
+    path, shas = repo
+    body = _ok(port, "/api/git/blame?rev=HEAD&path=b.txt")
+    assert body["rev"] == shas["merge"] and body["path"] == "b.txt"
+    assert [line["sha"] for line in body["lines"]] == [shas["root"], shas["root"], shas["feature"]]
+    assert [line["line"] for line in body["lines"]] == [1, 2, 3]
+    assert body["lines"][0]["author"] == "t"
+    assert body["lines"][0]["date"].startswith("2026-01-")
+    make_dirty(path)
+    dirty = _ok(port, "/api/git/blame?rev=WORKTREE&path=b.txt")
+    assert dirty["lines"][:3] == body["lines"]
+    assert dirty["lines"][3] == {"line": 4, "sha": "", "author": "not committed", "date": ""}
+    _git(path, "add", "b.txt")
+    assert _ok(port, "/api/git/blame?rev=WORKTREE&path=b.txt")["lines"] == dirty["lines"]
+    new = _ok(port, "/api/git/blame?rev=WORKTREE&path=new.txt")
+    assert len(new["lines"]) == 2 and all(not line["sha"] for line in new["lines"])
+    binary = _ok(port, "/api/git/blame?rev=HEAD&path=img.bin")
+    assert binary["binary"] is True and binary["lines"] == []
+    monkeypatch.setattr(git_model, "TEXT_MAX_BYTES", 8)
+    cut = _ok(port, "/api/git/blame?rev=HEAD&path=b.txt")
+    assert (len(cut["lines"]), cut["truncated"], cut["max_bytes"]) == (2, True, 8)
+    whole = _ok(port, "/api/git/blame?rev=HEAD&path=b.txt&whole=1")
+    assert (len(whole["lines"]), whole["truncated"], whole["max_bytes"]) == (3, False, None)
+    for query in (
+        "rev=nope&path=b.txt",
+        "rev=HEAD&path=../x",
+        "rev=HEAD&path=-x",
+        "rev=HEAD&path=dir",
+        "rev=HEAD&path=missing",
+        "rev=WORKTREE&path=junk.log",
+    ):
+        assert _refused(port, "/api/git/blame?" + query)
+    monkeypatch.setattr(git_model, "BLOB_MAX_BYTES", 1)
+    assert _get(port, "/api/git/blame?rev=HEAD&path=b.txt")[0] == 413
+
+
+def test_blame_counts_newlines_not_other_text_separators(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """A tab after a vertical tab is source text, not another porcelain line."""
+    path, _ = repo
+    (path / "b.txt").write_text("one\v\tstill one\nsecond\n", encoding="utf-8")
+    _git(path, "add", "b.txt")
+    _git(path, "commit", "-m", "text with separators")
+    body = _ok(port, "/api/git/blame?rev=HEAD&path=b.txt")
+    assert [line["line"] for line in body["lines"]] == [1, 2]
+
+
 def test_tree_lists_the_files_at_a_revision_or_in_the_working_tree(
     repo: tuple[pathlib.Path, dict[str, str]], port: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -400,7 +520,7 @@ def test_tree_lists_the_files_at_a_revision_or_in_the_working_tree(
     body = _ok(port, "/api/git/tree?rev=main")
     assert body["rev"] == shas["merge"] and body["truncated"] is False
     assert [f["path"] for f in body["files"]] == ["b.txt", "dir/f.txt", "img.bin", "logo.png"]
-    assert body["files"][0] == {"path": "b.txt", "size": 14, "kind": "file"}
+    assert body["files"][0] == {"path": "b.txt", "size": 14, "kind": "file", "state": ""}
     wt = _ok(port, "/api/git/tree?rev=WORKTREE")
     assert wt["rev"] == "WORKTREE"
     assert [f["path"] for f in wt["files"]] == [
@@ -419,6 +539,24 @@ def test_tree_lists_the_files_at_a_revision_or_in_the_working_tree(
     assert "unknown revision" in _refused(port, "/api/git/tree?rev=nope")
     assert "cannot start with '-'" in _refused(port, "/api/git/tree?rev=-x")
     assert "a revision is required" in _refused(port, "/api/git/tree?rev=")
+
+
+def test_tree_states_distinguish_clean_tracked_and_untracked(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """Staged changes and disk changes are modified; committed trees have no state."""
+    path, _ = repo
+    make_dirty(path)
+    states = {f["path"]: f["state"] for f in _ok(port, "/api/git/tree?rev=WORKTREE")["files"]}
+    assert states == {
+        "b.txt": "modified",
+        "blob.bin": "untracked",
+        "dir/g.txt": "modified",
+        "img.bin": "tracked",
+        "logo.png": "modified",
+        "new.txt": "untracked",
+    }
+    assert all(not f["state"] for f in _ok(port, "/api/git/tree?rev=HEAD")["files"])
 
 
 def test_diff_shows_a_submodule_pointer_move(
@@ -515,3 +653,35 @@ def test_the_page_has_a_git_tab_in_both_navs() -> None:
     assert 'href="#/git"' in page.PAGE_HTML
     assert "async function renderGit(" in page.CLIENT_JS
     assert "parts[0] === 'git'" in page.CLIENT_JS
+
+
+def test_text_and_blame_share_the_digest_of_the_bytes_read(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """Both routes digest the same bytes, so blame rows attach only to the text shown."""
+    path, _ = repo
+    text = _ok(port, "/api/git/text?rev=WORKTREE&path=b.txt")
+    blame = _ok(port, "/api/git/blame?rev=WORKTREE&path=b.txt")
+    expected = hashlib.sha256((path / "b.txt").read_bytes()).hexdigest()
+    assert text["digest"] == blame["digest"] == expected
+    (path / "b.txt").write_text("changed\n", encoding="utf-8")
+    assert _ok(port, "/api/git/text?rev=WORKTREE&path=b.txt")["digest"] != expected
+
+
+def test_a_file_swapped_for_a_fifo_after_its_stat_is_not_waited_on(
+    repo: tuple[pathlib.Path, dict[str, str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The leaf opens nonblocking: a FIFO planted between the stat and the open is refused."""
+    path, _ = repo
+    target = path / "b.txt"
+    real_stat = os.stat
+
+    def swapping_stat(name: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        st = real_stat(name, *args, **kwargs)
+        if kwargs.get("dir_fd") is not None and name == "b.txt":
+            target.unlink()
+            os.mkfifo(target)
+        return st
+
+    monkeypatch.setattr(os, "stat", swapping_stat)
+    assert git_files.worktree_blob(path, "b.txt", max_bytes=1 << 20) is None

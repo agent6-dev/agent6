@@ -227,6 +227,8 @@ let booted = false; // the one-shot deep-link to `agent6 web <target>` ran
 // stream (whose stale handler could later closeLive() the visible view when
 // the old run finishes).
 let routeGen = 0;
+// Publish a tab selection without rebuilding its graph or file pane.
+function setViewHash(hash, replace = false) { if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState'](null, '', hash); }
 async function route() {
   const gen = ++routeGen;
   closeLive();
@@ -253,8 +255,8 @@ async function route() {
     if (parts.length === 0) { setTab('hub'); await renderHub(undefined, gen); }
     else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines', gen); }
     else if (parts[0] === 'config') { setTab('config'); await renderConfig(gen); }
-    else if (parts[0] === 'git') { setTab('git'); await renderGit(gen); }
-    else if (parts[0] === 'files') { setTab('files'); await renderFiles(gen); }
+    else if (parts[0] === 'git') { setTab('git'); await renderGit(gen, parts.slice(1).map(decodeURIComponent)); }
+    else if (parts[0] === 'files') { setTab('files'); await renderFiles(gen, decodeURIComponent(parts[1] || ''), parts.slice(2).map(decodeURIComponent).join('/')); }
     else if (parts[0] === 'session' && parts[1]) { setTab('hub'); await renderRun(decodeURIComponent(parts[1]), undefined, gen); }
     else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); await renderMachine(decodeURIComponent(parts[1]), gen); }
     else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); await renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }, gen); }

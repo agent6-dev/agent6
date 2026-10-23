@@ -756,6 +756,9 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         # One `refs=` per ref; present and blank is an empty selection, absent the default walk.
         refs = [r for r in q["refs"] if r] if "refs" in q else None
         reads: dict[str, Callable[[], dict[str, Any]]] = {
+            "blame": lambda: git_model.blame_payload(
+                cwd, arg("rev"), arg("path"), whole=arg("whole") == "1"
+            ),
             "compare": lambda: git_model.compare_payload(cwd, arg("base"), arg("head")),
             "diff": lambda: git_model.diff_payload(
                 cwd,

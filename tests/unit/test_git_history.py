@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 
-from agent6.vcs import git_history, git_ops
+from agent6.vcs import git_files, git_history, git_ops
 
 _CLOCK = {"n": 0}
 # Two valid PNGs, so an image's "before" and "after" differ in size and dimensions.
@@ -100,6 +100,21 @@ def make_dirty(path: pathlib.Path) -> None:
     (path / ".git" / "info").mkdir(exist_ok=True)
     (path / ".git" / "info" / "exclude").write_text("junk.log\n", encoding="utf-8")
     (path / "junk.log").write_text("ignored\n", encoding="utf-8")
+
+
+def test_only_gitlinks_are_submodules(tmp_path: pathlib.Path) -> None:
+    """An ordinary directory replacing a tracked file is not a submodule."""
+    build_history(tmp_path)
+    _, tip = add_submodule_pointer(tmp_path)
+    (tmp_path / "sub").mkdir(exist_ok=True)
+    (tmp_path / "b.txt").unlink()
+    (tmp_path / "b.txt").mkdir()
+    committed = {f.path: f for f in git_files.tree_files(tmp_path, tip)}
+    working = {f.path: f for f in git_files.worktree_tree_files(tmp_path)}
+    assert committed["sub"].kind == "submodule"
+    assert working["sub"].kind == "submodule"
+    assert "b.txt" not in working
+    assert committed["b.txt"].kind == "file"
 
 
 def test_list_refs_names_kinds_and_peels_tags(tmp_path: pathlib.Path) -> None:
@@ -355,13 +370,13 @@ def test_blob_at_reads_a_regular_files_bytes_within_the_cap(tmp_path: pathlib.Pa
     Anything that is not a regular file in that tree is nothing.
     """
     shas = build_history(tmp_path)
-    blob = git_history.blob_at(tmp_path, shas["main"], "logo.png", max_bytes=1 << 20)
-    assert blob == git_history.Blob(len(PNG_RED_1X1), PNG_RED_1X1)
-    over = git_history.blob_at(tmp_path, shas["main"], "logo.png", max_bytes=10)
-    assert over == git_history.Blob(len(PNG_RED_1X1), None)
-    assert git_history.blob_at(tmp_path, shas["root"], "logo.png", max_bytes=1 << 20) is None
-    assert git_history.blob_at(tmp_path, shas["main"], "dir", max_bytes=1 << 20) is None
-    assert git_history.blob_at(tmp_path, git_ops.EMPTY_TREE, "a.txt", max_bytes=1 << 20) is None
+    blob = git_files.blob_at(tmp_path, shas["main"], "logo.png", max_bytes=1 << 20)
+    assert blob == git_files.Blob(len(PNG_RED_1X1), PNG_RED_1X1)
+    over = git_files.blob_at(tmp_path, shas["main"], "logo.png", max_bytes=10)
+    assert over == git_files.Blob(len(PNG_RED_1X1), None)
+    assert git_files.blob_at(tmp_path, shas["root"], "logo.png", max_bytes=1 << 20) is None
+    assert git_files.blob_at(tmp_path, shas["main"], "dir", max_bytes=1 << 20) is None
+    assert git_files.blob_at(tmp_path, git_ops.EMPTY_TREE, "a.txt", max_bytes=1 << 20) is None
 
 
 def test_worktree_blob_reads_only_a_regular_file_git_lists(tmp_path: pathlib.Path) -> None:
@@ -372,19 +387,19 @@ def test_worktree_blob_reads_only_a_regular_file_git_lists(tmp_path: pathlib.Pat
     """
     build_history(tmp_path)
     make_dirty(tmp_path)
-    assert git_history.worktree_blob(tmp_path, "logo.png", max_bytes=1 << 20) == git_history.Blob(
+    assert git_files.worktree_blob(tmp_path, "logo.png", max_bytes=1 << 20) == git_files.Blob(
         len(PNG_BLUE_2X2), PNG_BLUE_2X2
     )
-    assert git_history.worktree_blob(tmp_path, "new.txt", max_bytes=1 << 20) == git_history.Blob(
+    assert git_files.worktree_blob(tmp_path, "new.txt", max_bytes=1 << 20) == git_files.Blob(
         12, b"hello\nworld\n"
     )
-    assert git_history.worktree_blob(tmp_path, "new.txt", max_bytes=5) == git_history.Blob(12, None)
-    assert git_history.worktree_blob(tmp_path, "junk.log", max_bytes=1 << 20) is None
-    assert git_history.worktree_blob(tmp_path, "dir/f.txt", max_bytes=1 << 20) is None
-    assert git_history.worktree_blob(tmp_path, "../outside", max_bytes=1 << 20) is None
+    assert git_files.worktree_blob(tmp_path, "new.txt", max_bytes=5) == git_files.Blob(12, None)
+    assert git_files.worktree_blob(tmp_path, "junk.log", max_bytes=1 << 20) is None
+    assert git_files.worktree_blob(tmp_path, "dir/f.txt", max_bytes=1 << 20) is None
+    assert git_files.worktree_blob(tmp_path, "../outside", max_bytes=1 << 20) is None
     (tmp_path / "lnk").symlink_to("/etc/hostname")
     assert git_history.worktree_entry(tmp_path, "lnk") == "untracked"
-    assert git_history.worktree_blob(tmp_path, "lnk", max_bytes=1 << 20) is None
+    assert git_files.worktree_blob(tmp_path, "lnk", max_bytes=1 << 20) is None
 
 
 def test_tree_files_list_a_commits_files_with_size_and_kind(tmp_path: pathlib.Path) -> None:
@@ -392,17 +407,17 @@ def test_tree_files_list_a_commits_files_with_size_and_kind(tmp_path: pathlib.Pa
     (tmp_path / "lnk").symlink_to("a.txt")
     _git(tmp_path, "add", "lnk")
     _git(tmp_path, "commit", "-q", "-m", "a symlink")
-    rows = {f.path: f for f in git_history.tree_files(tmp_path, "HEAD")}
+    rows = {f.path: f for f in git_files.tree_files(tmp_path, "HEAD")}
     assert sorted(rows) == ["b.txt", "dir/f.txt", "img.bin", "lnk", "logo.png"]
-    assert rows["b.txt"] == git_history.TreeFile("b.txt", 14, "file")
-    assert rows["logo.png"] == git_history.TreeFile("logo.png", len(PNG_RED_1X1), "file")
-    assert rows["lnk"] == git_history.TreeFile("lnk", 5, "symlink")
-    assert [f.path for f in git_history.tree_files(tmp_path, shas["root"])] == [
+    assert rows["b.txt"] == git_files.TreeFile("b.txt", 14, "file")
+    assert rows["logo.png"] == git_files.TreeFile("logo.png", len(PNG_RED_1X1), "file")
+    assert rows["lnk"] == git_files.TreeFile("lnk", 5, "symlink")
+    assert [f.path for f in git_files.tree_files(tmp_path, shas["root"])] == [
         "a.txt",
         "d.txt",
         "img.bin",
     ]
-    assert git_history.tree_files(tmp_path, git_ops.EMPTY_TREE) == ()
+    assert git_files.tree_files(tmp_path, git_ops.EMPTY_TREE) == ()
 
 
 def test_worktree_tree_files_list_tracked_and_unignored_untracked_files(
@@ -416,11 +431,11 @@ def test_worktree_tree_files_list_tracked_and_unignored_untracked_files(
     make_dirty(tmp_path)
     (tmp_path / "img.bin").unlink()
     (tmp_path / "lnk").symlink_to("b.txt")
-    rows = {f.path: f for f in git_history.worktree_tree_files(tmp_path)}
+    rows = {f.path: f for f in git_files.worktree_tree_files(tmp_path)}
     assert sorted(rows) == ["b.txt", "blob.bin", "dir/g.txt", "lnk", "logo.png", "new.txt"]
-    assert rows["b.txt"] == git_history.TreeFile("b.txt", 19, "file")
-    assert rows["new.txt"] == git_history.TreeFile("new.txt", 12, "file")
-    assert rows["lnk"] == git_history.TreeFile("lnk", 5, "symlink")
+    assert rows["b.txt"] == git_files.TreeFile("b.txt", 19, "file", "modified")
+    assert rows["new.txt"] == git_files.TreeFile("new.txt", 12, "file", "untracked")
+    assert rows["lnk"] == git_files.TreeFile("lnk", 5, "symlink", "untracked")
 
 
 def add_submodule_pointer(path: pathlib.Path) -> tuple[str, str]:
@@ -452,4 +467,4 @@ def test_a_submodule_pointer_is_a_diffable_entry(tmp_path: pathlib.Path) -> None
     assert rows["sub"].status == "M"
     patch, _ = git_history.file_patch(tmp_path, one, two, "sub", max_bytes=1 << 20)
     assert "-Subproject commit" in patch and "+Subproject commit" in patch
-    assert git_history.blob_at(tmp_path, two, "sub", max_bytes=1 << 20) is None
+    assert git_files.blob_at(tmp_path, two, "sub", max_bytes=1 << 20) is None

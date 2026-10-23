@@ -90,7 +90,7 @@ Buttons do what the CLI command of the same name does, and prompts are answered 
       Removing the last reviewer writes `[]`, so a lower layer's roster stays hidden.
 
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions; it reads the repository `agent6 web` was started in and writes nothing
-    - the graph walks every branch, remote-tracking branch and tag plus HEAD, newest first in topological order, 200 commits a page with **Load more** for the next page; lanes are drawn per commit and merges join their parents
+    - the graph walks every branch, remote-tracking branch and tag plus HEAD, newest first in topological order, 200 commits a page with **Load more** for the next page from the same resolved tips, even if refs move; lanes are drawn per commit and merges join their parents
     - **Refs ▾** filters the walk: tick a whole group (branches, remotes, tags, agent6 run refs) or single refs; the `refs/agent6/*` chain refs are off until ticked
     - a **Working tree · N uncommitted files** row tops the graph while the tree is dirty: tracked changes against HEAD, staged or not, plus untracked files `.gitignore` does not exclude; click it for the list, each file opening its diff like a commit's
     - the page reads the repository once per visit; **↻** re-reads the refs, the graph and the working-tree row, and nothing polls
@@ -105,14 +105,29 @@ Buttons do what the CLI command of the same name does, and prompts are answered 
 - **Files page**: the files at one revision, read-only; it reads the repository `agent6 web` was started in and writes nothing
     - the revision picker at the top is the compare pickers' search, with **working tree** as its first choice; HEAD to start (the working tree in a repository with no commits yet)
     - the files as a folder tree with a filter box: a folder row shows how many files it holds and their size and folds them on a click; a tree over 200 files starts folded; at a commit the committed files, in the working tree the tracked files plus untracked ones `.gitignore` does not exclude
+    - working-tree badges use `H` for tracked, `A` for untracked and `M` for tracked files with uncommitted changes; a folder shows `M` if any child is modified, else `A` if any is untracked, else `H`, with the counts in its tooltip
+    - commit revisions have no state badges
+    - changing the revision clears the selected file and drops late content and errors from that selection
     - click a file: text with line numbers and highlighting (cut at 1 MiB, the whole file on a click), an image as itself, a binary file as its size; a symlink or submodule entry says so
-    - limits: 20000 files a tree, 1 MiB of text unless opened whole, 20 MiB a file; the tree says when it was cut
+    - **blame** beside a text file's title adds each line's last commit, author and UTC date beside the gutter; click a commit to open it in Git, or toggle blame off to keep only the source
+    - working-tree blame includes staged and unstaged content; lines without a commit read **not committed**
+    - a file that changed since it was opened says so instead of attaching blame to other bytes
+    - limits: 20000 files a tree, 1 MiB of text and matching blame lines unless opened whole, 20 MiB a file; the tree says when it was cut
 
 Start a machine on the Machines page and watch the current state stream, answering its approvals and questions in place:
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/web-machine.webm" type="video/webm">
 </video>
+
+## Links
+
+- `#/git/commit/<sha>` opens a commit and scrolls to its graph row when loaded; a commit outside that page still opens by sha
+- `#/git/compare/<base>..<head>` opens a comparison
+- `#/git/worktree` opens the working tree's uncommitted changes
+- `#/files/<rev>/<path>` opens a file, with `WORKTREE` for the working tree
+- revisions and path components are URL-encoded; selecting a commit, a comparison, the working tree or a file updates the hash for copying, Back restores the selection, and a bare `#/git` shows the graph alone
+- an unknown revision or path shows an error in the tab
 
 ## Highlighting
 
@@ -152,14 +167,18 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 - sign-in: `POST` `/api/login` with `{"secret": "<secret>"}` answers the token; a wrong secret answers `403`
 - every other `/api/...` route answers `401` with `{"error": ..., "login": true}` without the token
 - reads: `/api/meta`, `/api/hub`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>` , `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?step=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
-- git reads, all of the repository the server runs in: `/api/git/refs`, `/api/git/graph` (`?refs=<full ref name>` repeated, `&limit=&skip=`), `/api/git/commit/<rev>`, `/api/git/compare?base=&head=`, `/api/git/diff?base=&head=&path=&old_path=`, `/api/git/search?q=`, `/api/git/worktree`
+- git reads, all of the repository the server runs in: `/api/git/refs`, `/api/git/graph` (`?refs=<full ref name or resolved sha>` repeated, `&limit=&skip=`), `/api/git/commit/<rev>`, `/api/git/compare?base=&head=`, `/api/git/diff?base=&head=&path=&old_path=`, `/api/git/search?q=`, `/api/git/worktree`
+    - graph pages return `tips`, the resolved shas walked; pass these as `refs` with the next `skip`, while **↻** starts from live refs
     - a revision is a branch, tag, full ref name, sha prefix or expression git resolves to a commit; the empty tree sha is accepted as a `base`
     - `WORKTREE` names the working tree as the `head` of a compare or diff (an untracked file diffs against nothing); as a `base` or a commit it answers `422`
     - `/api/git/worktree` lists the uncommitted files against HEAD (`base`, `files`, `truncated`): tracked changes with git's letters and counts, then untracked files as `A` with their line count, `.gitignore` honoured
-    - `/api/git/tree?rev=` lists the files at a revision or in the working tree (`rev` resolved, `files` as `{path, size, kind}` with `kind` one of `file`, `symlink` and `submodule`, `truncated`), 20000 files at most; the working tree is the index plus the untracked files `.gitignore` keeps, a tracked file gone from disk left out
-    - `/api/git/text?rev=&path=` returns a file's text at a revision or in the working tree (`rev` resolved, `path`, `text`, `lines`, `binary`, `truncated`, `max_bytes`, `language`, `spans`): the text is cut at 1 MiB on a line boundary unless `whole=1`, a binary file has `text` empty and `binary` true, a file over 20 MiB answers `413`; `language` is the tree-sitter language pack's name for the path ("" when it has none) and `spans` its highlight spans per line as `[start, end, class]`, empty when the text is over 512 KiB, the grammar is not cached and cannot be fetched, or the parse ran past a second
+    - `/api/git/tree?rev=` lists the files at a revision or in the working tree (`rev` resolved, `files` as `{path, size, kind, state}` with `kind` one of `file`, `symlink` and `submodule`, `truncated`), 20000 files at most; the working tree is the index plus the untracked files `.gitignore` keeps, a tracked file gone from disk left out; only mode `160000` entries are submodules, including unpopulated gitlinks; `state` is `tracked`, `untracked` or `modified` for `WORKTREE`, empty at a commit
+    - `/api/git/text?rev=&path=` returns a file's text at a revision or in the working tree (`rev` resolved, `path`, `digest`, `text`, `lines`, `binary`, `truncated`, `max_bytes`, `language`, `spans`): the text is cut at 1 MiB on a line boundary unless `whole=1`, a binary file has `text` empty and `binary` true, a file over 20 MiB answers `413`; `language` is the tree-sitter language pack's name for the path ("" when it has none) and `spans` its highlight spans per line as `[start, end, class]`, empty when the text is over 512 KiB, the grammar is not cached and cannot be fetched, or the parse ran past a second
     - `/api/git/blob?rev=&path=` serves a file's bytes at a revision, or from disk for `WORKTREE` (a regular file git lists, never through a symlink); an image is typed by extension, anything else is `application/octet-stream` with `Content-Disposition: attachment`; every blob response carries `Content-Security-Policy: sandbox; default-src 'none'` and `X-Content-Type-Options: nosniff`, so a repository file opened directly runs under no origin; a file over 20 MiB answers `413`
-    - a revision or path starting with `-`, an unknown revision, a ref not in `/api/git/refs`, or a path in neither tree answers `422`
+    - `/api/git/blame?rev=&path=` returns `rev`, `path`, `digest`, `lines` as `{line, sha, author, date}`, `binary`, `truncated` and `max_bytes`; its caps and refusals match `/api/git/text`, including `whole=1`
+    - blame dates are UTC ISO 8601; working-tree blame uses checked file bytes against the index, with an empty `sha` and `date` and author `not committed` for uncommitted lines
+    - blob, text and blame share a working-tree reader that refuses ancestor and leaf symlinks, paths resolving outside the repository, and non-regular files; descriptor-relative nonblocking opens prevent a FIFO from blocking the request
+    - a revision or path starting with `-`, an unknown revision, a graph ref neither listed in `/api/git/refs` nor a verified full sha, or a path in neither tree answers `422`
 - writes, small JSON `POST`s: `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,review,stop,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/entry`, `/api/config/entry/remove`, `/api/config/reviewer`, `/api/config/reviewer/remove`, `/api/machine/{create,run}`
 - roster writes: `/api/config/reviewer` takes the five form fields as strings (only `focus` is required) and `repo` (default `false`); `/api/config/reviewer/remove` takes a zero-based integer `index` and `repo`
 - writes use the shared config writer or the same spawn and answer-file contracts as the CLI; machine names and answer ids validate to one path component

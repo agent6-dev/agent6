@@ -415,7 +415,7 @@ Below `full` there is no network namespace: `auto` degrades to the agent process
 
 **agent6's own git**
 
-- agent6's own git writes go through `vcs/git_ops.py`, and the web Git tab's reads through `vcs/git_history.py`; only the `vcs` package's modules may import the private runner, `_git_command.py`, enforced by tach and `test_only_the_vcs_package_imports_the_runner`
+- agent6's own git writes go through `vcs/git_ops.py`, and the web Git and Files tabs' reads through `vcs/git_history.py` and `vcs/git_files.py`; only the `vcs` package's modules may import the private runner, `_git_command.py`, enforced by tach and `test_only_the_vcs_package_imports_the_runner`
     - it wraps the safe ops (status, add, commit, diff, branch, checkout)
     - it spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable.
       `test_the_vcs_package_never_spells_a_destructive_verb` pins every verb but `filter-repo` in every module of the package, exempting two argv: `push` inside a `git stash push`, and the one `branch -D` below
@@ -443,6 +443,7 @@ Below `full` there is no network namespace: `auto` degrades to the agent process
 **Repo-controlled host code in a poisoned `.git/config`**
 
 - `core.fsmonitor` and `diff.external` are always off.
+- `blame.ignoreRevsFile` is honoured only for a regular file inside the repository; the Files view's blame refuses any other value, since git would open the file on the host and quote its first unparsable line.
 - `.git/hooks/*` run only under `git.run_repo_hooks = true` (default false); `core.hooksPath` points away, so a hook cannot fire on agent6's auto-commit.
 - Content drivers (`filter.<n>.clean` / `smudge` / `process`, `merge.<n>.driver`) are off by default (`git.run_repo_drivers`), neutralized per name
     - the clean filter runs on the auto-commit's `git add`, the merge driver on the chain merge's `merge-tree`: a cloned poisoned repo fires one without any model action

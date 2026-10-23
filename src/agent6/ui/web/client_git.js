@@ -17,7 +17,6 @@ const gitState = {
   groupOn: { branch: true, remote: true, tag: true, agent6: false }, // agent6 chain refs are off until asked for
   refOff: new Set(),                 // refs unticked one by one, by full name
   compare: { base: null, head: null }, // each { rev, label } or null
-  side: 'commit',                    // what the side panel shows: 'commit', 'worktree' or 'compare'
 };
 
 // Lanes: each slot waits for one sha. A commit takes the slot waiting for it (or a free
@@ -257,7 +256,7 @@ function gitPicker(name, initial, onPick, listHost, fixed) {
   return { root, get: () => value, set: (v) => { value = v; input.value = v ? v.label : ''; } };
 }
 
-async function renderGit(gen) {
+async function renderGit(gen, link = []) {
   setCrumb('git');
   const [refsData, wtData] = await Promise.all([getJSON('/api/git/refs'), getJSON('/api/git/worktree')]);
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
@@ -377,10 +376,10 @@ async function renderGit(gen) {
   };
 
   // -- the graph -------------------------------------------------------------------
-  let commits = [], hasMore = false, selected = null, loading = 0;
+  let commits = [], tips = null, hasMore = false, selected = null, loading = 0;
   const graphUrl = (skip) => {
-    const params = selectedRefs().map(r => 'refs=' + encodeURIComponent(r.full));
-    if (head.sha) params.push('refs=HEAD');
+    const revs = tips === null ? selectedRefs().map(r => r.full).concat(head.sha ? ['HEAD'] : []) : tips;
+    const params = (revs.length ? revs : ['']).map(r => 'refs=' + encodeURIComponent(r));
     params.push('skip=' + skip);
     return '/api/git/graph?' + params.join('&');
   };
@@ -427,11 +426,11 @@ async function renderGit(gen) {
   };
   const loadGraph = async (reset) => {
     const n = ++loading;
-    if (reset) { commits = []; hasMore = false; }
+    if (reset) { commits = []; tips = null; hasMore = false; }
     try {
       const d = await getJSON(graphUrl(commits.length));
       if (n !== loading || !app.isConnected) return;
-      commits = commits.concat(d.commits); hasMore = d.has_more;
+      commits = commits.concat(d.commits); tips = d.tips; hasMore = d.has_more;
     } catch (e) { if (n === loading) toast(e.message, true); }
     paintGraph();
   };
@@ -443,7 +442,7 @@ async function renderGit(gen) {
     catch (e) { toast(e.message, true); return; }
     if (!app.isConnected) return;
     refs = r.refs; head = r.head; wt = w;
-    if (gitState.side === 'worktree') showWorktree();
+    if (selected === GIT_WORKTREE) showWorktree();
     await loadGraph(true);
   };
   reloadBtn.onclick = reload;
@@ -461,7 +460,8 @@ async function renderGit(gen) {
   // The working tree's panel: no message; HEAD is the base every file diffs against.
   const showWorktree = () => {
     closeDiff();
-    selected = GIT_WORKTREE; gitState.side = 'worktree';
+    selected = GIT_WORKTREE;
+    setViewHash('#/git/worktree');
     graph.querySelectorAll('.gc-row').forEach(r => r.classList.toggle('sel', r.dataset.sha === GIT_WORKTREE));
     side.innerHTML = '';
     side.appendChild(sideHead('Working tree'));
@@ -486,14 +486,18 @@ async function renderGit(gen) {
   };
   const showCommit = async (sha) => {
     closeDiff();
-    selected = sha; gitState.side = 'commit';
+    selected = sha;
+    setViewHash('#/git/commit/' + encodeURIComponent(sha));
     graph.querySelectorAll('.gc-row').forEach(r => r.classList.toggle('sel', r.dataset.sha === sha));
     side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'muted page-pad', 'loading…'));
     openSide();
     let c;
     try { c = await getJSON('/api/git/commit/' + encodeURIComponent(sha)); }
-    catch (e) { side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'err page-pad', e.message)); return; }
+    catch (e) { if (selected === sha && app.isConnected) { side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'err page-pad', e.message)); } return; }
     if (selected !== sha || !app.isConnected) return;
+    selected = c.sha;
+    setViewHash('#/git/commit/' + encodeURIComponent(c.sha), true);
+    graph.querySelectorAll('.gc-row').forEach(r => { const match = r.dataset.sha === c.sha; r.classList.toggle('sel', match); if (match) r.scrollIntoView({ block: 'nearest' }); });
     side.innerHTML = '';
     side.appendChild(sideHead('Commit'));
     const pad = el('div', 'gd page-pad'); side.appendChild(pad);
@@ -530,7 +534,6 @@ async function renderGit(gen) {
   let compareRun = 0;
   const showCompare = () => {
     closeDiff();
-    gitState.side = 'compare';
     selected = null;
     graph.querySelectorAll('.gc-row.sel').forEach(r => r.classList.remove('sel'));
     side.innerHTML = '';
@@ -540,8 +543,9 @@ async function renderGit(gen) {
     const run = async () => {
       const { base, head: h } = gitState.compare;
       result.innerHTML = '';
-      if (!base || !h) { result.appendChild(el('div', 'muted', 'pick a base and a head: a branch, a tag, a commit, or text from a commit message')); return; }
+      if (!base || !h) { setViewHash('#/git'); result.appendChild(el('div', 'muted', 'pick a base and a head: a branch, a tag, a commit, or text from a commit message')); return; }
       const n = ++compareRun;
+      setViewHash('#/git/compare/' + encodeURIComponent(base.rev) + '..' + encodeURIComponent(h.rev));
       result.appendChild(el('div', 'muted', 'comparing…'));
       try {
         const d = await getJSON('/api/git/compare?base=' + encodeURIComponent(base.rev) + '&head=' + encodeURIComponent(h.rev));
@@ -616,8 +620,14 @@ async function renderGit(gen) {
   };
   refsBtn.onclick = openFilter;
 
-  if (gitState.side === 'compare' && (gitState.compare.base || gitState.compare.head)) showCompare();
-  else if (gitState.side === 'worktree' && wt.files.length) showWorktree();
-  else side.appendChild(el('div', 'empty', 'click a commit for its files and diff, or Compare for any two revisions'));
   await loadGraph(true);
+  if (!app.isConnected) return;
+  if (link[0] === 'commit' && link[1]) await showCommit(link[1]);
+  else if (link[0] === 'compare' && link[1]) {
+    const [base, head] = link[1].split('..');
+    gitState.compare = { base: { rev: base || '', label: base || '' }, head: { rev: head || '', label: head || '' } };
+    showCompare();
+  }
+  else if (link[0] === 'worktree' && wt.files.length) showWorktree();
+  else side.appendChild(el('div', 'empty', 'click a commit for its files and diff, or Compare for any two revisions'));
 }
