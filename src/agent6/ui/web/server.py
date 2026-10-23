@@ -513,17 +513,31 @@ class _Handler(http_server.BaseHTTPRequestHandler):
         if path == "/api/config/entry":
             body = EntryBody.model_validate(self._read_body())
             ok, msg = actions.add_entry(
-                self.cwd, body.table, body.name, body.fields, repo=body.repo
+                self.cwd,
+                body.table,
+                body.name,
+                body.fields,
+                repo=body.repo,
+                config_paths=self.config_paths,
             )
         elif path == "/api/config/entry/remove":
             body = EntryRemoveBody.model_validate(self._read_body())
-            ok, msg = actions.remove_entry(self.cwd, body.table, body.name, repo=body.repo)
+            ok, msg = actions.remove_entry(
+                self.cwd, body.table, body.name, repo=body.repo, config_paths=self.config_paths
+            )
         elif path == "/api/config/reviewer":
             rb = ReviewerBody.model_validate(self._read_body())
-            ok, msg = actions.add_reviewer(self.cwd, rb.model_dump(exclude={"repo"}), repo=rb.repo)
+            ok, msg = actions.add_reviewer(
+                self.cwd,
+                rb.model_dump(exclude={"repo"}),
+                repo=rb.repo,
+                config_paths=self.config_paths,
+            )
         elif path == "/api/config/reviewer/remove":
             removal = RemoveReviewerBody.model_validate(self._read_body())
-            ok, msg = actions.remove_reviewer(self.cwd, removal.index, repo=removal.repo)
+            ok, msg = actions.remove_reviewer(
+                self.cwd, removal.index, repo=removal.repo, config_paths=self.config_paths
+            )
         else:
             body = ConfigSetBody.model_validate(self._read_body())
             if body.unset:

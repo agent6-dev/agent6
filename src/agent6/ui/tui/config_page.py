@@ -26,7 +26,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6 import errors
 from agent6.app import confine
-from agent6.config import ConfigError, layer, write
+from agent6.config import ConfigError, layer, notices, write
 from agent6.models import cache
 from agent6.models import choices as models_choices
 from agent6.ui.tui import _config_forms, menubar, modals, screen_chrome
@@ -591,7 +591,9 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """Open the entry form and reload after it."""
         table = next(t for t in write.ENTRY_TABLES if t.path == path)
 
-        self.app.push_screen(_config_forms.EntryModal(self.repo_root, table), self._form_closed)
+        self.app.push_screen(
+            _config_forms.EntryModal(self.repo_root, table, self.config_paths), self._form_closed
+        )
 
     def _form_closed(self, _: None) -> None:
         """Refresh the roster or entries after a form closes."""
@@ -599,7 +601,9 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
 
     def action_add_reviewer(self) -> None:
         """Open the reviewer form and reload after it."""
-        self.app.push_screen(_config_forms.ReviewerModal(self.repo_root), self._form_closed)
+        self.app.push_screen(
+            _config_forms.ReviewerModal(self.repo_root, self.config_paths), self._form_closed
+        )
 
     def action_remove_reviewer(self) -> None:
         """Open a positional chooser for the selected roster."""
@@ -623,6 +627,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 self.repo_root,
                 tuple(seat.focus for seat in roster),
                 to_repo=setting.source == "repo",
+                config_paths=self.config_paths,
             ),
             self._form_closed,
         )
@@ -658,10 +663,20 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             if result.error:
                 self.notify(result.error, severity="error", timeout=8.0)
                 return
-            if result.removed:
-                self.notify(f"Removed {key} from {source} config.")
-            else:
-                self.notify(f"{key} is not set in {source} config.")
+            message = (
+                f"Removed {key} from {source} config."
+                if result.removed
+                else f"{key} is not set in {source} config."
+            )
+            self.notify(
+                notices.write_message(
+                    self.repo_root,
+                    [key],
+                    message,
+                    to_repo=source == "repo",
+                    config_paths=self.config_paths,
+                )
+            )
             self._reload()
 
         self.app.push_screen(
@@ -701,7 +716,15 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             if err:
                 self.notify(err, severity="error", timeout=8.0)
             else:
-                self.notify(f"Set {setting.key}")
+                self.notify(
+                    notices.write_message(
+                        self.repo_root,
+                        [setting.key],
+                        f"Set {setting.key}",
+                        to_repo=to_repo,
+                        config_paths=self.config_paths,
+                    )
+                )
                 self._reload()
 
         # A model-id field gets a typeahead over the provider's models, cached now and live after.
@@ -753,7 +776,15 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         if err:
             self.notify(err, severity="error", timeout=8.0)
         else:
-            self.notify(f"Unset {setting.key} from {setting.source} config")
+            self.notify(
+                notices.write_message(
+                    self.repo_root,
+                    [setting.key],
+                    f"Unset {setting.key} from {setting.source} config",
+                    to_repo=setting.source == "repo",
+                    config_paths=self.config_paths,
+                )
+            )
             self._reload()
 
     @textual.on(textual_widgets.Input.Changed, "#search")

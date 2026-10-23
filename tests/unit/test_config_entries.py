@@ -1,11 +1,97 @@
 from __future__ import annotations
 
+import concurrent.futures
 import pathlib
+import threading
+from collections.abc import Callable
 
 import pytest
 
-from agent6 import paths
+from agent6 import paths, portable
 from agent6.config import io, layer, write
+
+
+def _interleave_edits(
+    target: pathlib.Path,
+    waiting_edit: Callable[[], object],
+    held_edit: Callable[[], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[object, object]:
+    """Queue one editor behind a real lock while its holder completes another edit."""
+    attempted = threading.Event()
+    real_lock = portable.lock_exclusive
+
+    def observe_lock(fd: int, *, blocking: bool) -> None:
+        attempted.set()
+        real_lock(fd, blocking=blocking)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        with portable.locked_file(target) as held:
+            assert held
+            monkeypatch.setattr(portable, "lock_exclusive", observe_lock)
+            waiting = executor.submit(waiting_edit)
+            assert attempted.wait(timeout=5), "the queued editor did not reach the lock"
+            result = held_edit()
+        return waiting.result(timeout=5), result
+
+
+@pytest.mark.parametrize("to_repo", [False, True])
+@pytest.mark.parametrize("remove", [False, True])
+def test_reviewer_edits_read_the_roster_under_the_lock(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, to_repo: bool, remove: bool
+) -> None:
+    """A queued append or removal keeps the reviewer's edit made by the lock holder."""
+    assert (
+        write.set_config_value(
+            tmp_path, "review.reviewers", '[{ focus = "first" }]', to_repo=to_repo
+        )
+        is None
+    )
+    target = paths.repo_config_path(tmp_path) if to_repo else paths.global_config_path()
+
+    def waiting_edit() -> str | None:
+        if remove:
+            return write.remove_reviewer(tmp_path, 0, to_repo=to_repo)
+        return write.add_reviewer(tmp_path, {"focus": "queued"}, to_repo=to_repo)
+
+    assert _interleave_edits(
+        target,
+        waiting_edit,
+        lambda: write.add_reviewer(tmp_path, {"focus": "holder"}, to_repo=to_repo),
+        monkeypatch,
+    ) == (None, None)
+    expected = ["holder"] if remove else ["first", "holder", "queued"]
+    assert [r.focus for r in layer.load_effective(tmp_path).config.review.reviewers] == expected
+
+
+@pytest.mark.parametrize("to_repo", [False, True])
+@pytest.mark.parametrize("remove", [False, True])
+def test_entry_edits_preserve_a_concurrent_sibling(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, to_repo: bool, remove: bool
+) -> None:
+    """An entry update or removal cannot erase a sibling added while it waits for the lock."""
+    table = next(t for t in write.ENTRY_TABLES if t.path == "mcp.servers")
+    assert write.add_entry(tmp_path, table, "first", {"command": "server"}, to_repo=to_repo) is None
+    target = paths.repo_config_path(tmp_path) if to_repo else paths.global_config_path()
+
+    def waiting_edit() -> str | write.UnsetResult | None:
+        if remove:
+            return write.remove_entry(tmp_path, table, "first", to_repo=to_repo)
+        return write.add_entry(tmp_path, table, "first", {"approve": "allow"}, to_repo=to_repo)
+
+    assert _interleave_edits(
+        target,
+        waiting_edit,
+        lambda: write.add_entry(tmp_path, table, "sibling", {"command": "other"}, to_repo=to_repo),
+        monkeypatch,
+    ) == (write.UnsetResult(True) if remove else None, None)
+    servers = layer.load_effective(tmp_path).config.mcp.servers
+    assert servers["sibling"].command == ("other",)
+    if remove:
+        assert "first" not in servers
+    else:
+        assert servers["first"].command == ("server",)
+        assert servers["first"].approve == "allow"
 
 
 @pytest.mark.parametrize("to_repo", [False, True])

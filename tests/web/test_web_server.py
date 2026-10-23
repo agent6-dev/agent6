@@ -2387,6 +2387,66 @@ def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
     assert status == 404
 
 
+@pytest.mark.parametrize("source", ["repo", "preset", "flag"])
+@pytest.mark.parametrize(
+    ("route", "body", "key"),
+    [
+        ("", {"key": "sandbox.run_commands", "value": "ask"}, "sandbox.run_commands"),
+        ("", {"key": "sandbox.run_commands", "unset": True}, "sandbox.run_commands"),
+        (
+            "/entry",
+            {"table": "providers", "name": "local", "fields": {"base_url": "https://new.test/v1"}},
+            "providers.local.base_url",
+        ),
+        ("/entry/remove", {"table": "providers", "name": "local"}, "providers.local.base_url"),
+        ("/reviewer", {"focus": "new"}, "review.reviewers"),
+        ("/reviewer/remove", {"index": 0}, "review.reviewers"),
+    ],
+)
+def test_config_writes_report_shadowing_layers(
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    source: str,
+    route: str,
+    body: dict[str, object],
+    key: str,
+) -> None:
+    """Every editor route names the layer masking the leaf it wrote or removed."""
+    srv, port = server
+    target = paths.global_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    initial = (
+        '[sandbox]\nrun_commands = "allow"\n'
+        '[providers.local]\napi_format = "openai"\nbase_url = "https://old.test/v1"\n'
+        '[review]\nreviewers = [{ focus = "old" }]\n'
+    )
+    target.write_text(initial)
+    overlay = (
+        '[sandbox]\nrun_commands = "deny"\n'
+        '[providers.local]\napi_format = "openai"\nbase_url = "https://mask.test/v1"\n'
+        '[review]\nreviewers = [{ focus = "mask" }]\n'
+    )
+    if source == "preset":
+        target.write_text(
+            'preset = "mask"\n'
+            + initial
+            + overlay.replace("[", "[presets.mask.", 1).replace("\n[", "\n[presets.mask.")
+        )
+        # Array values are not table headers.
+        described = "the preset"
+    else:
+        higher = paths.repo_config_path(tmp_path) if source == "repo" else tmp_path / "flag.toml"
+        higher.parent.mkdir(parents=True, exist_ok=True)
+        higher.write_text(overlay)
+        if source == "flag":
+            srv.config_paths = (higher,)
+        described = "the repo config" if source == "repo" else f"--config {higher}"
+    status, data = _post(port, "/api/config" + route, body)
+    assert status == 200, data
+    tail = " while that flag is used." if source == "flag" else "; a run here reads its value."
+    assert f"note: {described} overrides {key}{tail}" in str(data["message"])
+
+
 def test_the_config_entry_tables_serve_the_form_schema(
     server: tuple[web_server.WebServer, int],
 ) -> None:
@@ -2519,6 +2579,25 @@ def test_the_entry_routes_refuse_unknown_tables_and_empty_names(
         body["fields"] = {"api_format": "openai"}
     status, data = _post(port, route, body)
     assert status == 422 and error in str(data["error"]), data
+    assert not paths.global_config_path().exists()
+
+
+@pytest.mark.parametrize("route", ["/api/config/entry", "/api/config/entry/remove"])
+@pytest.mark.parametrize("name", ["bad.name", "bad name", "\u0430dmin"])
+def test_provider_entry_routes_use_the_schema_name_refusal(
+    server: tuple[web_server.WebServer, int], route: str, name: str
+) -> None:
+    """Invalid provider names cannot write or remove entries through either HTTP route."""
+    _srv, port = server
+    body: dict[str, object] = {"table": "providers", "name": name}
+    if route == "/api/config/entry":
+        body["fields"] = {"api_format": "openai"}
+    status, data = _post(port, route, body)
+    expected = (
+        f"provider name {name!r} is not a valid TOML bare key"
+        " (use only ASCII letters, digits, '-', '_')."
+    )
+    assert status == 422 and data["error"] == expected, data
     assert not paths.global_config_path().exists()
 
 

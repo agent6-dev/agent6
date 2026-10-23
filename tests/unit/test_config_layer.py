@@ -603,17 +603,17 @@ def test_materialize_distinguishes_explicit_defaults_from_unset_leaves(
 
 
 def test_materialize_selective_keeps_named_models_and_dict_values() -> None:
-    """Selective materialization preserves dotted provider names and whole extra_body leaves."""
+    """Selective materialization preserves named providers and whole extra_body leaves."""
     cfg = Config.model_validate(
         {
             "providers": {
-                "team.provider": {
+                "team-provider": {
                     "api_format": "openai",
                     "base_url": "https://p.example/v1",
                     "extra_body": {"nested": {"enabled": True}, "steps": [{"count": 2}]},
                 }
             },
-            "models": {"worker": {"provider": "team.provider", "model": "lane-model"}},
+            "models": {"worker": {"provider": "team-provider", "model": "lane-model"}},
         }
     )
 
@@ -621,8 +621,8 @@ def test_materialize_selective_keeps_named_models_and_dict_values() -> None:
     reloaded = Config.model_validate(written)
 
     assert reloaded.models.worker is not None
-    assert reloaded.models.worker.provider == "team.provider"
-    provider = reloaded.providers["team.provider"]
+    assert reloaded.models.worker.provider == "team-provider"
+    provider = reloaded.providers["team-provider"]
     assert isinstance(provider, OpenAIProviderEntry)
     assert provider.extra_body == {"nested": {"enabled": True}, "steps": [{"count": 2}]}
 
@@ -710,24 +710,27 @@ def test_profile_key_is_rejected_in_flag_and_machine_layers(
 
 
 def test_materialize_quotes_non_bare_keys(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    """Materialize quotes a provider name with a space or dot, so the header parses."""
+    """Materialize quotes free-form skill names and nested extra_body keys."""
     from agent6.config import Config, load_config
 
     cfg = Config.model_validate(
         {
             "providers": {
-                "my provider": {"api_format": "openai", "base_url": "https://x.example/v1"},
-                "openrouter.free": {"api_format": "openai", "base_url": "https://o.example/v1"},
+                "local": {
+                    "api_format": "openai",
+                    "extra_body": {"some.options": {"my key": "value"}},
+                },
             },
-            "skills": {"state": {"org.some.skill": "enabled"}},
+            "skills": {"state": {"org.some.skill": "enabled", "my skill": "always"}},
         }
     )
     out = tmp_path / "materialized.toml"
     out.write_text(layer.materialize(cfg), encoding="utf-8")
     reloaded = load_config(out)
-    assert "my provider" in reloaded.providers
-    assert "openrouter.free" in reloaded.providers  # not silently re-nested
-    assert reloaded.skills.state == {"org.some.skill": "enabled"}
+    provider = reloaded.providers["local"]
+    assert isinstance(provider, OpenAIProviderEntry)
+    assert provider.extra_body == {"some.options": {"my key": "value"}}
+    assert reloaded.skills.state == {"org.some.skill": "enabled", "my skill": "always"}
 
 
 def test_materialize_escapes_control_chars_in_values(

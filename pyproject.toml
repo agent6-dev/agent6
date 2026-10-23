@@ -205,6 +205,7 @@ banned-from = [
     "agent6.config.io",
     "agent6.config.layer",
     "agent6.config.model",
+    "agent6.config.notices",
     "agent6.config.write",
     "agent6.directive",
     "agent6.errors",

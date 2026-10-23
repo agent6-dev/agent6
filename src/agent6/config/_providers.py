@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal
 from urllib import parse
 
@@ -14,6 +15,25 @@ from agent6.config import _base, _sandbox
 ApiFormat = Literal["anthropic", "openai", "chatgpt", "claude_code"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
+
+
+def provider_name_refusal(name: str) -> str:
+    """Return why a provider name cannot be one dotted-key component, or "".
+
+    Args:
+        name: The proposed provider key.
+
+    Returns:
+        The refusal, or "" for a non-empty TOML bare key.
+    """
+    if not name:
+        return "provider name is required"
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+        return (
+            f"provider name {name!r} is not a valid TOML bare key"
+            " (use only ASCII letters, digits, '-', '_')."
+        )
+    return ""
 
 
 def validate_base_url(url: str, field: str = "base_url") -> None:

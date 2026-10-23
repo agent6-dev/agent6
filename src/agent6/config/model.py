@@ -137,6 +137,7 @@ class Config(pydantic.BaseModel):
         default_factory=dict,
         description=(
             "Provider endpoints by name (`[providers.<name>]`); a `[models.*]` role names one. "
+            "Names use only ASCII letters, digits, '-' and '_', with at least one character. "
             "`agent6 connect` writes them."
         ),
     )
@@ -167,6 +168,27 @@ class Config(pydantic.BaseModel):
             "`none` stops preset lookup; an empty string is refused."
         ),
     )
+
+    @pydantic.field_validator("providers")
+    @classmethod
+    def _valid_provider_names(
+        cls, entries: dict[str, _providers.ProviderEntry]
+    ) -> dict[str, _providers.ProviderEntry]:
+        """Refuse names the config editors cannot write as one bare key.
+
+        Args:
+            entries: The provider entries by name.
+
+        Returns:
+            The entries unchanged.
+
+        Raises:
+            ValueError: A name is empty or not a TOML bare key.
+        """
+        for name in entries:
+            if refusal := _providers.provider_name_refusal(name):
+                raise ValueError(refusal)
+        return entries
 
     @pydantic.model_validator(mode="after")
     def _cross_validate_provider_routing(self) -> Config:

@@ -28,6 +28,7 @@ from agent6.config._providers import (  # noqa: ICN003  # re-export
     OpenAIProviderEntry,
     ProviderEntry,
     plan_metered,
+    provider_name_refusal,
     validate_base_url,
 )
 from agent6.config._sandbox import (  # noqa: ICN003  # re-export
@@ -95,6 +96,7 @@ __all__ = [
     "load_config",
     "mcp_server_name_refusal",
     "plan_metered",
+    "provider_name_refusal",
     "validate_base_url",
     "validate_config",
 ]

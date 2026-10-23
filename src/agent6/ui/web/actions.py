@@ -19,7 +19,7 @@ from agent6 import errors
 from agent6 import paths as agent6_paths
 from agent6.app import fork, stop, undo
 from agent6.app import reporter as app_reporter
-from agent6.config import ConfigError, write
+from agent6.config import ConfigError, notices, write
 from agent6.machine import (
     JournalError,
     MachineError,
@@ -687,6 +687,7 @@ def add_entry(
     fields: dict[str, str],
     *,
     repo: bool = False,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Add or update a named entry through the shared config writer.
 
@@ -696,6 +697,7 @@ def add_entry(
         name: The entry's name, stripped; blank is refused.
         fields: Form values; blank fields keep their existing values.
         repo: Write to the per-repo config instead of the global one.
+        config_paths: The editor's `--config` files.
 
     Returns:
         Whether the write landed, and the note or the refusal.
@@ -712,11 +714,23 @@ def add_entry(
     if err:
         return False, err
     key = f"{table}.{name.strip()}"
-    return True, f"set {key}" if entry_table.leaf else f"set [{key}]"
+    keys = [key] if entry_table.leaf else [f"{key}.{f}" for f, raw in fields.items() if raw.strip()]
+    return True, notices.write_message(
+        cwd,
+        keys,
+        f"set {key}" if entry_table.leaf else f"set [{key}]",
+        to_repo=repo,
+        config_paths=config_paths,
+    )
 
 
 def remove_entry(
-    cwd: pathlib.Path, table: str, name: str, *, repo: bool = False
+    cwd: pathlib.Path,
+    table: str,
+    name: str,
+    *,
+    repo: bool = False,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Remove a whole named entry from the chosen config layer.
 
@@ -725,6 +739,7 @@ def remove_entry(
         table: The registry table's path.
         name: The entry's name, stripped; blank is refused.
         repo: Remove from the per-repo config instead of the global one.
+        config_paths: The editor's `--config` files.
 
     Returns:
         Whether the write succeeded, and the note or the refusal.
@@ -742,13 +757,20 @@ def remove_entry(
     if result.error:
         return False, result.error
     key, source = f"{table}.{name}", "repo" if repo else "global"
-    if result.removed:
-        return True, f"removed {key} from {source} config"
-    return True, f"{key} is not set in {source} config"
+    message = (
+        f"removed {key} from {source} config"
+        if result.removed
+        else f"{key} is not set in {source} config"
+    )
+    return True, notices.write_message(cwd, [key], message, to_repo=repo, config_paths=config_paths)
 
 
 def add_reviewer(
-    cwd: pathlib.Path, fields: dict[str, str], *, repo: bool = False
+    cwd: pathlib.Path,
+    fields: dict[str, str],
+    *,
+    repo: bool = False,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Append the form's reviewer.
 
@@ -756,6 +778,7 @@ def add_reviewer(
         cwd: The repository.
         fields: The five form fields as typed.
         repo: Write to the repo config instead of the global one.
+        config_paths: The editor's `--config` files.
 
     Returns:
         Whether the write landed, and the confirmation or validation error.
@@ -764,16 +787,27 @@ def add_reviewer(
         err = write.add_reviewer(cwd, fields, to_repo=repo)
     except errors.OperatorError as exc:
         return False, str(exc)
-    return (False, err) if err else (True, "added reviewer")
+    if err:
+        return False, err
+    return True, notices.write_message(
+        cwd, ["review.reviewers"], "added reviewer", to_repo=repo, config_paths=config_paths
+    )
 
 
-def remove_reviewer(cwd: pathlib.Path, index: int, *, repo: bool = False) -> tuple[bool, str]:
+def remove_reviewer(
+    cwd: pathlib.Path,
+    index: int,
+    *,
+    repo: bool = False,
+    config_paths: tuple[pathlib.Path, ...] = (),
+) -> tuple[bool, str]:
     """Remove a zero-based reviewer position.
 
     Args:
         cwd: The repository.
         index: The position to remove.
         repo: Write to the repo config instead of the global one.
+        config_paths: The editor's `--config` files.
 
     Returns:
         Whether the write landed, and the confirmation or validation error.
@@ -782,7 +816,15 @@ def remove_reviewer(cwd: pathlib.Path, index: int, *, repo: bool = False) -> tup
         err = write.remove_reviewer(cwd, index, to_repo=repo)
     except errors.OperatorError as exc:
         return False, str(exc)
-    return (False, err) if err else (True, f"removed reviewer {index + 1}")
+    if err:
+        return False, err
+    return True, notices.write_message(
+        cwd,
+        ["review.reviewers"],
+        f"removed reviewer {index + 1}",
+        to_repo=repo,
+        config_paths=config_paths,
+    )
 
 
 def unset_config(

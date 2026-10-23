@@ -1120,6 +1120,37 @@ def test_entry_form_and_remove_selected_entry(
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("name", ["bad.name", "bad name", "\u0430dmin"])
+def test_provider_form_uses_the_schema_name_refusal(repo: pathlib.Path, name: str) -> None:
+    """An invalid provider name stays in the form with the schema's refusal words."""
+    before = paths.global_config_path().read_text()
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test(size=(120, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            screen.action_add_provider()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, _config_forms.EntryModal)
+            modal.query_one("#entry-name", widgets.Input).value = name
+            modal.query_one("#entry-api_format", forms.ChoiceField).select_value("openai")
+            modal.action_add()
+            await pilot.pause()
+            expected = (
+                f"provider name {name!r} is not a valid TOML bare key"
+                " (use only ASCII letters, digits, '-', '_')."
+            )
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert any(expected in note for note in notes), notes
+            assert app.screen is modal
+            assert paths.global_config_path().read_text() == before
+
+    asyncio.run(scenario())
+
+
 def test_reviewer_form_and_positional_removal(repo: pathlib.Path) -> None:
     """The roster form appends; the removal chooser distinguishes seats with a shared focus."""
     from agent6.config import write

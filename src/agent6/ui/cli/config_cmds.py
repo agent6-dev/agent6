@@ -17,6 +17,7 @@ from agent6.config import (
     ConfigError,
     io,
     layer,
+    notices,
     write,
 )
 from agent6.machine import (
@@ -406,31 +407,6 @@ def _cmd_config_get(
     return 0
 
 
-def _shadow_note(key: str, to_repo: bool, config_paths: tuple[pathlib.Path, ...]) -> str | None:
-    """Return a note when a layer above the target sets the key the write just landed under.
-
-    Under several `--config` files the note names the last one that sets the key: its value wins.
-
-    Args:
-        key: The dotted key the write set or removed.
-        to_repo: The write landed in the repo config.
-        config_paths: The invocation's `--config`.
-
-    Returns:
-        The note; None when no layer above the target sets the key, the key is a table, or the
-        config does not load.
-    """
-    try:
-        eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
-    except ConfigError:
-        return None
-    above = layer.shadowing_layer(eff, key, "repo" if to_repo else "global")
-    if above is None:
-        return None
-    tail = " while that flag is used." if above.name == "flag" else "; a run here reads its value."
-    return f"note: {above.described} overrides {key}{tail}"
-
-
 def _cmd_config_set(
     key: str,
     value: str,
@@ -470,9 +446,17 @@ def _cmd_config_set(
         return 2
     if machine is None:
         _warn_if_still_broken()
-    print(f"Set {key} = {io.format_toml_value(parsed)} in {target}")
-    if machine is None and (note := _shadow_note(key, repo, config_paths)):
-        print(note)
+    message = f"Set {key} = {io.format_toml_value(parsed)} in {target}"
+    if machine is None:
+        keys = (
+            [f"{key}.{leaf}" for leaf in parsed]
+            if isinstance(parsed, dict) and write.names_a_section(key)
+            else [key]
+        )
+        message = notices.write_message(
+            pathlib.Path.cwd(), keys, message, to_repo=repo, config_paths=config_paths
+        )
+    print(message)
     return 0
 
 
@@ -550,9 +534,12 @@ def _cmd_config_unset(
         return 0
     if machine is None:
         _warn_if_still_broken()
-    print(f"Unset {key} in {target}")
-    if machine is None and (note := _shadow_note(key, repo, config_paths)):
-        print(note)
+    message = f"Unset {key} in {target}"
+    if machine is None:
+        message = notices.write_message(
+            pathlib.Path.cwd(), [key], message, to_repo=repo, config_paths=config_paths
+        )
+    print(message)
     return 0
 
 

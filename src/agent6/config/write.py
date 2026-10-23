@@ -279,6 +279,22 @@ def _section_leaves(doc: dict[str, Any], key: str) -> dict[str, Any]:
     return {k: v for k, v in cur.items() if not isinstance(v, dict)}
 
 
+def _provider_key_refusal(key: str, value: object = None) -> str | None:
+    """Return a provider-name refusal before a dotted-key write loses name boundaries."""
+    parts = key.split(".")
+    if parts[0] == "presets":
+        parts = parts[2:]
+    if not parts or parts[0] != "providers":
+        return None
+    if len(parts) >= 2:
+        return _providers.provider_name_refusal(parts[1]) or None
+    if isinstance(value, dict):
+        for name in value:
+            if refusal := _providers.provider_name_refusal(name):
+                return refusal
+    return None
+
+
 def written_value_error(
     key: str,
     value: object,
@@ -313,7 +329,7 @@ def written_value_error(
             )
         return None
     if parts[0] == "providers" and len(parts) == 3:
-        return provider_field_error(key, parts[2], value)
+        return _provider_key_refusal(key) or provider_field_error(key, parts[2], value)
     nested: dict[str, object] = {}
     cur = nested
     for part in parts[:-1]:
@@ -564,12 +580,14 @@ def set_config_value(
             value is empty.
         OperatorError: The target cannot be written.
     """
+    parsed = io.parse_cli_value(raw_value)
+    if refusal := _provider_key_refusal(dotted_key, parsed):
+        return refusal
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with writing_config(target) as held:
         prior = agent6_errors.read_operator_file(target) if target.is_file() else None
         io.read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
-        parsed = io.parse_cli_value(raw_value)
         if isinstance(parsed, dict) and names_a_section(dotted_key):
             if not parsed:
                 raise config_model.ConfigError(
@@ -618,6 +636,8 @@ def set_config_table(
         ConfigError: The target does not parse, or a value has no TOML form.
         OperatorError: The target cannot be written.
     """
+    if refusal := _provider_key_refusal(table, fields):
+        return refusal
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with writing_config(target) as held:
         prior = agent6_errors.read_operator_file(target) if target.is_file() else None
@@ -776,12 +796,14 @@ def add_reviewer(
         for field, raw in fields.items()
         if raw.strip()
     }
-    eff = layer.load_effective(repo_root) if to_repo else layer.load_global_only()
-    roster = [entry.model_dump(exclude_none=True) for entry in eff.config.review.reviewers]
-    roster.append(values)
-    return set_config_value(
-        repo_root, "review.reviewers", io.format_toml_value(roster), to_repo=to_repo
-    )
+    target = _prepare_write_target(repo_root, to_repo=to_repo)
+    with writing_config(target):
+        eff = layer.load_effective(repo_root) if to_repo else layer.load_global_only()
+        roster = [entry.model_dump(exclude_none=True) for entry in eff.config.review.reviewers]
+        roster.append(values)
+        return set_config_value(
+            repo_root, "review.reviewers", io.format_toml_value(roster), to_repo=to_repo
+        )
 
 
 def remove_reviewer(repo_root: pathlib.Path, index: int, *, to_repo: bool = False) -> str | None:
@@ -799,14 +821,16 @@ def remove_reviewer(repo_root: pathlib.Path, index: int, *, to_repo: bool = Fals
         ConfigError: The config cannot be loaded or the writer refuses the key.
         OperatorError: The target cannot be written.
     """
-    eff = layer.load_effective(repo_root) if to_repo else layer.load_global_only()
-    roster = [entry.model_dump(exclude_none=True) for entry in eff.config.review.reviewers]
-    if not 0 <= index < len(roster):
-        return f"reviewer index {index} is out of range (roster has {len(roster)} reviewers)"
-    del roster[index]
-    return set_config_value(
-        repo_root, "review.reviewers", io.format_toml_value(roster), to_repo=to_repo
-    )
+    target = _prepare_write_target(repo_root, to_repo=to_repo)
+    with writing_config(target):
+        eff = layer.load_effective(repo_root) if to_repo else layer.load_global_only()
+        roster = [entry.model_dump(exclude_none=True) for entry in eff.config.review.reviewers]
+        if not 0 <= index < len(roster):
+            return f"reviewer index {index} is out of range (roster has {len(roster)} reviewers)"
+        del roster[index]
+        return set_config_value(
+            repo_root, "review.reviewers", io.format_toml_value(roster), to_repo=to_repo
+        )
 
 
 def add_entry(
@@ -834,6 +858,8 @@ def add_entry(
         OperatorError: The target cannot be written.
     """
     name = name.strip()
+    if table.path == "providers" and (refusal := _providers.provider_name_refusal(name)):
+        return refusal
     if not name:
         return f"{table.label} name is required"
     choices = entry_choices(table)
@@ -872,6 +898,8 @@ def remove_entry(
     Returns:
         Whether the entry was present and any revalidation error.
     """
+    if table.path == "providers" and (refusal := _providers.provider_name_refusal(name)):
+        return UnsetResult(removed=False, error=refusal)
     key = f"{table.path}.{name}"
     unset = unset_config_value if table.leaf else unset_config_table
     return unset(repo_root, key, to_repo=to_repo)
@@ -931,6 +959,8 @@ def set_config_leaves(
             rolled back first).
         OperatorError: The target cannot be written.
     """
+    if refusal := _provider_key_refusal(table, fields):
+        return refusal
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with writing_config(target) as held:
         prior = agent6_errors.read_operator_file(target) if target.is_file() else None
@@ -990,6 +1020,8 @@ def unset_config_table(
         ConfigError: The target does not parse.
         OperatorError: The target cannot be written.
     """
+    if refusal := _provider_key_refusal(table):
+        return UnsetResult(removed=False, error=refusal)
     target = _write_target(repo_root, to_repo=to_repo)
     if not target.is_file():
         return UnsetResult(removed=False)
@@ -1023,6 +1055,8 @@ def unset_config_value(
         ConfigError: The target does not parse, or the key's ancestor is not a plain table.
         OperatorError: The target cannot be written.
     """
+    if refusal := _provider_key_refusal(dotted_key):
+        return UnsetResult(removed=False, error=refusal)
     target = _write_target(repo_root, to_repo=to_repo)
     if not target.is_file():
         return UnsetResult(removed=False)

@@ -11,7 +11,6 @@ import html as html_module
 import http.server
 import os
 import pathlib
-import re
 import secrets as pysecrets
 import sys
 import threading
@@ -26,6 +25,7 @@ from agent6.config import (
     ProviderEntry,
     io,
     layer,
+    provider_name_refusal,
     validate_base_url,
     write,
 )
@@ -230,8 +230,7 @@ def _write_provider_block(
 def _resolve_provider_name(provider: str) -> str | None:
     """Validate the provider name and print an error when it is not a bare TOML key.
 
-    The name becomes the table key `[providers.<name>]`; `connect` does not re-validate the
-    file after writing, so a name with a space, dot or bracket would corrupt it.
+    The name is checked before any config or credential write.
 
     Args:
         provider: The name; blank prompts for one.
@@ -251,11 +250,8 @@ def _resolve_provider_name(provider: str) -> str | None:
         except EOFError:
             _common.error("no input.")
             return None
-    if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
-        _common.error(
-            f"provider name {name!r} is not a valid TOML bare key"
-            " (use only letters, digits, '-', '_')."
-        )
+    if refusal := provider_name_refusal(name):
+        _common.error(refusal)
         return None
     return name
 

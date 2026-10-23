@@ -39,6 +39,7 @@ It can be empty or absent when the global config supplies a provider and model; 
   An invalid edit without the lock is reported as "kept as written", since rolling it back could erase another writer's update.
   A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
 - The [TUI config page](terminal.md#configuration) adds and removes named provider, MCP server and skill state entries through forms.
+- `config set`, `config unset`, and the web and TUI config editors name the preset or higher config layer that overrides a value they write or remove.
 - `agent6 config fill`: materialize defaults + global config into the global file; pass `--force` to replace an existing file.
   The repo layer and any selected preset are left as-is.
 - `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values) from every layer and preset, a global value a repo override masks included, naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.
@@ -54,6 +55,8 @@ It can be empty or absent when the global config supplies a provider and model; 
 ## `[providers.<name>]`
 
 One backend per block; `<name>` is referenced from `[models.<role>]`.
+Provider names must match `[A-Za-z0-9_-]+`: one or more ASCII letters, digits, hyphens or underscores.
+The schema and config editors use the same rule, so `config set providers.<name>.<leaf>` can address each entry.
 Three orthogonal choices describe an HTTP backend: **`api_format`** (the wire dialect, the only field that selects code), **`deployment`** (URL/placement quirks of where it is hosted), and **auth** (`auth_style` + `api_key_env` or `token_command`).
 A minimal block is just `api_format` (plus `base_url` for a non-default host).
 

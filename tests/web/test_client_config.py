@@ -93,6 +93,12 @@ async function run() {
   assert.equal(field('deployment').value, '');
   assert.equal(field('base_url').tag, 'input');
   assert.match(field('base_url').title, /endpoint/);
+  field('name').value = 'bad.name';
+  await button('Add', overlay()).onclick();
+  assert.equal(notices.at(-1).text,
+    "provider name 'bad.name' is not a valid TOML bare key" +
+    " (use only ASCII letters, digits, '-', '_').");
+  assert.equal(button('Add', overlay()).disabled, false);
   field('name').value = 'openrouter'; field('name').oninput();
   assert.equal(field('api_format').value, 'openai');
   assert.equal(field('base_url').value, 'https://openrouter.ai/api/v1');
@@ -153,16 +159,28 @@ async function run() {
   assert.ok(row('skills.state.beta'));
   row('sandbox.network').onclick();
   assert.ok(!all(overlay()).some(e => e.tag === 'button' && e.textContent.startsWith('Remove ')));
+  await button('Cancel', overlay()).onclick();
+  await button('Add provider…').onclick();
+  field('name').value = 'masked'; field('api_format').value = 'openai';
+  field('base_url').value = 'https://written.test/v1';
+  await button('Add', overlay()).onclick();
+  assert.ok(notices.at(-1).text.includes(
+    'note: --config ' + flagPath + ' overrides providers.masked.base_url while that flag is used.'
+  ));
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
 """
-    srv = server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=signin.SECRET)
+    flag = tmp_path / "flag.toml"
+    flag.write_text(
+        '[providers.masked]\napi_format = "openai"\nbase_url = "https://mask.test/v1"\n'
+    )
+    srv = server.WebServer(("127.0.0.1", 0), tmp_path, "", (flag,), secret=signin.SECRET)
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
     try:
         setup = (
             f"const base = 'http://127.0.0.1:{srv.server_port}', "
-            f"secret = {json.dumps(signin.SECRET)};\n"
+            f"secret = {json.dumps(signin.SECRET)}, flagPath = {json.dumps(str(flag))};\n"
         )
         result = subprocess.run(
             [node, "-e", setup + client + scenario],

@@ -18,7 +18,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
     raise SystemExit("The config page needs textual: pip install 'agent6[tui]'") from e
 
 from agent6 import errors
-from agent6.config import io, write
+from agent6.config import io, notices, write
 from agent6.ui.tui import forms, modals
 from agent6.viewmodel import config_view
 
@@ -242,9 +242,12 @@ class ReviewerModal(_FormModal[None]):
     """
     )
 
-    def __init__(self, repo_root: pathlib.Path) -> None:
+    def __init__(
+        self, repo_root: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
+    ) -> None:
         super().__init__()
         self._repo = repo_root
+        self._config_paths = config_paths
 
     def compose(self) -> app.ComposeResult:
         """Yield the five fields and the save target."""
@@ -297,7 +300,15 @@ class ReviewerModal(_FormModal[None]):
         if err:
             self.notify(err, severity="error", timeout=8.0)
             return
-        self.notify("Added reviewer.")
+        self.notify(
+            notices.write_message(
+                self._repo,
+                ["review.reviewers"],
+                "Added reviewer.",
+                to_repo=to_repo,
+                config_paths=self._config_paths,
+            )
+        )
         self.dismiss(None)
 
     def action_cancel(self) -> None:
@@ -311,9 +322,17 @@ class RemoveReviewerModal(_FormModal[None]):
     BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
     CSS = ReviewerModal.CSS
 
-    def __init__(self, repo_root: pathlib.Path, focuses: tuple[str, ...], *, to_repo: bool) -> None:
+    def __init__(
+        self,
+        repo_root: pathlib.Path,
+        focuses: tuple[str, ...],
+        *,
+        to_repo: bool,
+        config_paths: tuple[pathlib.Path, ...] = (),
+    ) -> None:
         super().__init__()
         self._repo = repo_root
+        self._config_paths = config_paths
         self._positions = tuple(f"{index + 1}: {focus}" for index, focus in enumerate(focuses))
         self._to_repo = to_repo
 
@@ -341,7 +360,15 @@ class RemoveReviewerModal(_FormModal[None]):
             if err:
                 self.notify(err, severity="error", timeout=8.0)
                 return
-            self.notify(f"Removed reviewer {index + 1} from {source} config.")
+            self.notify(
+                notices.write_message(
+                    self._repo,
+                    ["review.reviewers"],
+                    f"Removed reviewer {index + 1} from {source} config.",
+                    to_repo=self._to_repo,
+                    config_paths=self._config_paths,
+                )
+            )
             self.dismiss(None)
 
         self.app.push_screen(
@@ -382,9 +409,15 @@ class EntryModal(_FormModal[None]):
     """
     )
 
-    def __init__(self, repo_root: pathlib.Path, table: write.EntryTable) -> None:
+    def __init__(
+        self,
+        repo_root: pathlib.Path,
+        table: write.EntryTable,
+        config_paths: tuple[pathlib.Path, ...] = (),
+    ) -> None:
         super().__init__()
         self._repo = repo_root
+        self._config_paths = config_paths
         self._table = table
         self._autofilled_baseurl = ""  # the last prefilled base_url; a typed one is never replaced
 
@@ -482,7 +515,21 @@ class EntryModal(_FormModal[None]):
         if err:
             self.notify(f"Invalid: {err}", severity="error", timeout=8.0)
             return
-        self.notify(f"Set {self._table.label} '{name}'.")
+        key = f"{self._table.path}.{name}"
+        keys = (
+            [key]
+            if self._table.leaf
+            else [f"{key}.{f}" for f, raw in fields.items() if raw.strip()]
+        )
+        self.notify(
+            notices.write_message(
+                self._repo,
+                keys,
+                f"Set {self._table.label} '{name}'.",
+                to_repo=to_repo,
+                config_paths=self._config_paths,
+            )
+        )
         self.dismiss(None)
 
     def action_cancel(self) -> None:
