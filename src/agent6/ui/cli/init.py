@@ -42,13 +42,13 @@ change a project convention, build command, dependency, or security invariant.
 {setup}
 ## Verify command
 
-The command agent6 runs to decide whether a step "succeeded". agent6 reads this
-section to infer its verify_command when one is not configured -- keep it a real
-pass/fail (build + tests). It runs in the sandbox (PATH=/usr/bin:/bin plus the
-standard bin dirs, ephemeral $HOME, no network), so `uv run ...` works (it uses
-the already-synced venv); a stdlib `.venv/bin/python` or `/usr/bin/python3` is
-also fine.
-
+The command agent6 runs to decide whether a step succeeded.
+agent6 reads this section to infer its verify_command when one is not configured.
+Keep it a real pass/fail command (build + tests).
+It runs in the configured sandbox with its own HOME.
+Install toolchains and dependencies before the run; the default network under
+full isolation has no route off this machine.
+{advice}
 ```bash
 {verify}
 ```
@@ -101,9 +101,26 @@ _GITIGNORE_ENTRIES = (".env", ".env.*", ".envrc", "secrets/", "*.pem", "*.key")
 
 # Build artifacts a verify run leaves, kept out of the per-step commits.
 _ECOSYSTEM_GITIGNORE: dict[str, tuple[str, ...]] = {
+    "go": ("*.test",),
+    "node": ("node_modules/",),
     "py": ("__pycache__/", "*.pyc", ".pytest_cache/"),
     "rust": ("target/",),
-    "node": ("node_modules/",),
+}
+
+_ECOSYSTEM_VERIFY_ADVICE = {
+    "go": (
+        "Use an installed Go toolchain and keep module dependencies available offline.\n"
+        'Set sandbox.home = "cache" to reuse the jail\'s Go build cache across runs.\n'
+    ),
+    "node": "Use the project's package manager with dependencies already installed.\n",
+    "py": (
+        "Use `uv run ...` with an already-synced venv, `.venv/bin/python`, or\n"
+        "`/usr/bin/python3` with the project's dependencies installed.\n"
+    ),
+    "rust": (
+        "Use a system Rust toolchain, or explicitly grant the rustup directory and name\n"
+        "it with RUSTUP_HOME in the gate. Keep Cargo dependencies available offline.\n"
+    ),
 }
 
 _VERIFY_HEADING = re.compile(r"^#{1,6}\s*verify\b", re.IGNORECASE | re.MULTILINE)
@@ -117,6 +134,8 @@ def _detect_ecosystem(root: pathlib.Path) -> str:
         return "rust"
     if (root / "package.json").is_file():
         return "node"
+    if (root / "go.mod").is_file():
+        return "go"
     return ""
 
 
@@ -152,7 +171,7 @@ def _missing_gitignore_entries(root: pathlib.Path, *, ecosystem: str) -> list[st
 
     Args:
         root: The repository.
-        ecosystem: "py", "rust" or "node" adds that ecosystem's build artifacts; "" adds none.
+        ecosystem: "go", "node", "py" or "rust" adds build artifacts; "" adds none.
 
     Returns:
         The entries, the secret ones first; empty when `.gitignore` has them all.
@@ -191,7 +210,7 @@ def _append_gitignore(root: pathlib.Path, missing: list[str]) -> str:
 
 
 def _setup_verify_command(
-    root: pathlib.Path, *, ecosystem: str, ask: _Ask, config_paths: tuple[pathlib.Path, ...] = ()
+    root: pathlib.Path, *, ask: _Ask, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> None:
     """Set `harness.verify_command` from the repo when unset, asking before an override."""
     effective = layer.load_effective(root, config_paths)
@@ -247,7 +266,9 @@ def _setup_agents_md(
             setup = next((cmd for lock, cmd in _LOCKFILE_SETUP if (root / lock).is_file()), "")
             agents.write_text(
                 _STARTER_AGENTS_MD.format(
-                    verify=verify_hint, setup=_SETUP_SECTION.format(setup=setup) if setup else ""
+                    verify=verify_hint,
+                    setup=_SETUP_SECTION.format(setup=setup) if setup else "",
+                    advice=_ECOSYSTEM_VERIFY_ADVICE.get(ecosystem, ""),
                 ),
                 encoding="utf-8",
             )
@@ -312,7 +333,7 @@ def init_workspace(
         print("  skipped; using the global config + built-in defaults.")
 
     # 2. verify_command (optional; inferred).
-    _setup_verify_command(root, ecosystem=detected, ask=ask, config_paths=config_paths)
+    _setup_verify_command(root, ask=ask, config_paths=config_paths)
 
     # 3. .gitignore: the question names the entries it would add.
     try:

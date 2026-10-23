@@ -97,6 +97,45 @@ def test_init_infers_verify_for_python_repo(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.usefixtures("jail_bin")
+@pytest.mark.parametrize("flags", [[], ["--ecosystem", "go"]])
+def test_init_go_uses_go_advice_and_artifacts(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, flags: list[str]
+) -> None:
+    """A Go scaffold must not give Python advice or reject the explicit Go ecosystem."""
+    from agent6.ui.cli import main
+
+    repo = _repo(tmp_path)
+    (repo / "go.mod").write_text("module example.com/probe\n\ngo 1.22\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    assert main(["init", "--yes", *flags]) == 0
+
+    assert layer.load_effective(repo).config.harness.verify_command == ("go", "test", "./...")
+    text = (repo / "AGENTS.md").read_text(encoding="utf-8")
+    assert "Go toolchain" in text
+    assert "go test ./..." in text
+    assert "sandbox.home" in text
+    assert "uv run" not in text and "python" not in text
+    assert "*.test" in (repo / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+
+@pytest.mark.parametrize(
+    ("ecosystem", "advice"),
+    [("py", "uv run"), ("rust", "RUSTUP_HOME"), ("node", "package manager"), ("", "")],
+)
+def test_init_verify_advice_matches_the_ecosystem(
+    tmp_path: pathlib.Path, ecosystem: str, advice: str
+) -> None:
+    """Python runner advice belongs only in a Python scaffold, not in every template."""
+    repo = _repo(tmp_path)
+    assert init.init_workspace(repo, ecosystem=ecosystem) == 0
+    text = (repo / "AGENTS.md").read_text(encoding="utf-8")
+    assert advice in text
+    if ecosystem != "py":
+        assert "uv run" not in text and "python" not in text
+
+
+@pytest.mark.usefixtures("jail_bin")
 def test_init_verify_from_agents_md(tmp_path: pathlib.Path) -> None:
     repo = _repo(tmp_path)
     (repo / "AGENTS.md").write_text("## Verify\n\n```bash\nmake test\n```\n", encoding="utf-8")

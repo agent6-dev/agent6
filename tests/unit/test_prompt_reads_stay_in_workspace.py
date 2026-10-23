@@ -145,7 +145,7 @@ def test_init_infers_no_verify_command_from_a_hidden_agents_md(
         asked.append(question)
         return False
 
-    init._setup_verify_command(repo, ecosystem="", ask=ask, config_paths=(cfg,))
+    init._setup_verify_command(repo, ask=ask, config_paths=(cfg,))
     assert _MARKER not in "".join(asked) + capsys.readouterr().out
 
 

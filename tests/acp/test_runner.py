@@ -723,6 +723,99 @@ def test_cancelling_while_permission_is_open_releases_the_execution() -> None:
     assert answered == [None]
 
 
+def test_cancelled_permission_replies_are_ignored_over_stdio(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cancel answers the prompt before permission, and a stale allow cannot answer the next one."""
+    from agent6 import event_log
+    from agent6.sessions import ipc
+
+    monkeypatch.chdir(tmp_path)
+    answers: list[bool] = []
+    session_dirs: list[pathlib.Path] = []
+
+    def _gated_run(*_a: object, **kw: Any) -> int:
+        layout = sessions_layout.SessionLayout(
+            state_dir=paths.state_dir(tmp_path), session_id=str(kw["session_id"])
+        )
+        session_dirs.append(layout.session_dir)
+        events = event_log.EventSink(layout.logs_path)
+        prompts = operator_prompts.OperatorPrompts(
+            approver=kw["frontend"].build_approver(layout.session_dir),
+            journal=events.emit,
+            session_dir=layout.session_dir,
+        )
+        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit("tool.call", name="run_command", args={"argv": ["true"]}, call_id=1)
+        answers.append(prompts.approve("Allow true?", scope="command", call_id=1))
+        events.emit("tool.result", name="run_command", ok=False, summary="denied", call_id=1)
+        events.emit("session.end", reason="operator_stop", turns=1, all_passed=False)
+        return 0
+
+    monkeypatch.setattr(run, "run_task", _gated_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    wire = _Wire()
+    try:
+        session_id = wire.new_session(_repo(tmp_path))
+        wire.prompt(session_id, "ask permission")
+        pending = wire.until("session/request_permission")
+        wire.send(method="session/cancel", params={"sessionId": session_id})
+        deadline = time.monotonic() + 3.0
+        while (message := wire.recv(timeout=max(0.0, deadline - time.monotonic()))).get("id") != 3:
+            assert "error" not in message
+        assert message["result"]["stopReason"] == "cancelled"
+        assert answers == [False]
+
+        wire.prompt(session_id, "ask again", req_id=4)
+        current = wire.until("session/request_permission")
+        assert current["id"] != pending["id"]
+        allow_all = next(o for o in pending["params"]["options"] if o["kind"] == "allow_always")
+        wire.send(
+            id=pending["id"],
+            result={"outcome": {"outcome": "selected", "optionId": allow_all["optionId"]}},
+        )
+        # A round trip bounds the observation without sleeping for an absent response.
+        wire.send(id=5, method="session/new", params={"cwd": str(tmp_path)})
+        while (message := wire.recv()).get("id") != 5:
+            assert "error" not in message, message
+            assert message.get("id") != 4, "the stale answer released the next prompt"
+        assert answers == [False]
+        assert not any(ipc.session_allow_set(directory, "command") for directory in session_dirs)
+        wire.send(id=current["id"], result={"outcome": {"outcome": "cancelled"}})
+        while (message := wire.recv()).get("id") != 4:
+            assert "error" not in message
+        assert message["result"]["stopReason"] == "end_turn"
+        assert answers == [False, False]
+    finally:
+        wire.close()
+
+
+def test_a_permission_reply_cannot_win_over_an_observed_cancel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reply waking the waiter after cancellation must not become a standing grant."""
+    server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    cancelled = threading.Event()
+
+    def _reply_after_cancel(message: dict[str, Any]) -> None:
+        cancelled.set()
+        server._handle(  # pyright: ignore[reportPrivateUsage]
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": message["id"],
+                    "result": {"outcome": {"outcome": "selected", "optionId": "1"}},
+                }
+            ).encode()
+        )
+
+    monkeypatch.setattr(server, "notify_raw", _reply_after_cancel)
+    assert (
+        server.request("session/request_permission", {}, timeout_s=1.0, until=cancelled.is_set)
+        == {}
+    )
+
+
 def test_a_question_with_no_buttons_is_not_put_to_the_editor() -> None:
     """ACP v1 carries a question as a permission request, whose options ARE the buttons.
 

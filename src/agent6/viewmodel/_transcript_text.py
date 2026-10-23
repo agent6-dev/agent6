@@ -125,7 +125,7 @@ def parallel_compared_body(event: dict[str, Any]) -> str:
         event: The `loop.parallel.compared` event.
 
     Returns:
-        The head line naming who ranked, then one line per candidate.
+        The head line naming who ranked, one line per candidate, then the judge's rationale.
     """
     raw = event.get("ranking")
     rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
@@ -140,6 +140,8 @@ def parallel_compared_body(event: dict[str, Any]) -> str:
         if isinstance(cell, str) and cell:
             cost_s = cell
         lines.append(f"{rank}. {r.get('session_id', '?')}  {r.get('verify', '?')}  {cost_s}")
+    if rationale := str(event.get("rationale", "")).strip():
+        lines.append(f"judge: {rationale}")
     return "\n".join(lines)
 
 

@@ -188,6 +188,7 @@ Cross-vendor mixes are fine.
 ## `[sandbox]`
 
 The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox) and [Network](security.md#5-network).
+For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
 
 `extra_read_paths`, `extra_write_paths` and `hide_paths` take absolute paths with no `..` segment, and `extra_device_paths` only paths under `/dev`; anything else refuses at config load.
 

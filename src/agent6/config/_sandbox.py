@@ -98,7 +98,8 @@ class SandboxConfig(pydantic.BaseModel):
             "`partial` or `none`, which have no private tmpfs. Persistence is a cross-run "
             "channel inside the jail's world: a poisoned cache or a `~/.gitconfig` alias written "
             "by one run reaches the next jailed run in the same repository, never another "
-            "repository's runs and never your own tools."
+            "repository's runs and never your own tools. For Go builds, `cache` retains the "
+            "compiled-package cache across runs without granting your host cache."
         ),
     )
     # RLIMIT_DATA rather than RLIMIT_AS so V8, the JVM and ASAN, which reserve address space

@@ -51,11 +51,30 @@ The red-gate end block reads the session's first recorded baseline, including ea
 A fork starts its own log without the parent's baseline; its base is the commit it forked from.
 Only an unknown baseline prints the worktree recipe for checking the base; a timed-out gate instead names the timeout setting to raise.
 [`[harness]`](config.md#harness) has the inference order and `verify_when`.
+An inferred `cargo test --quiet` still needs a toolchain and dependencies inside the jail; see [Rust toolchains](security.md#rust-toolchains).
 
 The start banner's budget notices name each model once, with the roles that use it (`'m' (planner, worker)`).
 
 `agent6 run` streams in your terminal; `--tui` opens the full-screen view ([terminal UI](terminal.md)) and `-i` pauses for input after each automatic commit.
 `--tui` requires a terminal; `-i` requires a foreground terminal and cannot be combined with `--tui`.
+
+### Go build cache
+
+Go's build cache lives under the jail's HOME, not your own.
+Under `full` isolation, the default `sandbox.home = "auto"` discards that HOME with the run, so a new run starts with a cold cache.
+To reuse compiled packages across runs in this repository:
+
+```sh
+agent6 config set --repo sandbox.home cache
+agent6 exec --new -- go test ./...
+```
+
+The first build fills the private cache; later runs reuse it.
+Dependencies must already be available offline, or the operator must populate the cache with a network policy that permits fetching them.
+`go test -count=1 ./...` reruns tests while still reusing compiled packages.
+Under `partial` or `none`, `auto` already uses the persistent HOME.
+Persistence also lets a poisoned cache or tool configuration reach later runs in this repository; see the [sandbox boundaries](security.md#threat-model).
+`auto` under `full` stays temporary even when a persistent cache exists: reusing earlier runs' files requires an explicit opt-in.
 
 ## Follow and steer a run
 
@@ -324,6 +343,9 @@ agent6 system apparmor install                       # the AppArmor profile that
 agent6 completions bash|zsh|fish|xonsh [--print]
 agent6 config fill [--force]                         # write the defaults + global layers as one explicit global config
 ```
+
+`agent6 init` detects Go (`go.mod`), Node, Python and Rust manifests for its AGENTS.md advice and build-artifact ignores.
+`--ecosystem go|node|py|rust` overrides that choice, not verify inference.
 
 Memory (`<state_dir>/memory/`) holds facts the model may correct; a rule goes in the repo's committed `AGENTS.md` or the operator rulings file `<state_dir>/decisions.md`, which the harness appends to, the operator edits with any editor, and the model sees only as read-only text injected into its prompt.
 

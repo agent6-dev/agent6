@@ -56,6 +56,8 @@ agent6 check                # sandbox (isolation, boundaries, probes), config (p
 ```
 
 `agent6 check sandbox` runs the jail through live probes and reports the isolation level a run will use on your kernel.
+`agent6 check verify` infers a gate or checks its first executable without running it.
+For rustup's `cargo`, follow the [Rust toolchain setup](security.md#rust-toolchains) and test the gate with `agent6 exec --new`.
 
 ## Requirements
 

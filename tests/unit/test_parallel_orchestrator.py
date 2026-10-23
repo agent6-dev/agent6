@@ -3238,6 +3238,76 @@ def test_run_parallel_is_a_session_of_its_own(
     assert (row.status, row.reason) == ("finished", "lanes ranked")
 
 
+def test_the_compare_judge_streams_into_the_coordinators_journal(
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
+) -> None:
+    """Each judge delta reaches the live fold before the provider returns its ranking."""
+    from agent6.viewmodel import state, transcript
+
+    origin_state = paths.state_dir(origin)
+    log = origin_state / "sessions" / "runs" / "fan" / "logs.jsonl"
+    pieces = (
+        '{"ranking":["fan-l2","fan-l1"],"rationale":"Lane two ',
+        'covers the edge case."}',
+    )
+
+    def journal() -> list[dict[str, Any]]:
+        return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+
+    class StreamingJudge:
+        def call(self, **kw: Any) -> ProviderResponse:
+            on_text = kw.get("text_delta_callback")
+            assert callable(on_text), "the judge was called without a stream callback"
+            for index, piece in enumerate(pieces, start=1):
+                on_text(piece)
+                events = journal()
+                assert events[-1]["type"] == "role.text_delta"
+                assert events[-1]["role"] == "judge" and events[-1]["text"] == piece
+                assert not any(e["type"] == "loop.parallel.compared" for e in events)
+                live = state.initial_state()
+                for event in events:
+                    live = state.apply_event(live, event)
+                assert live.last_role is not None and live.last_role.in_flight
+                assert live.last_role.role == "judge"
+                assert live.last_role.streamed_text == "".join(pieces[:index])
+            return ProviderResponse(
+                text="".join(pieces),
+                tool_uses=(),
+                stop_reason="stop",
+                input_tokens=10,
+                output_tokens=20,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+            )
+
+    def build_provider(_cfg: Config, _sink: object, _budget: object) -> StreamingJudge:
+        return StreamingJudge()
+
+    cfg = _provider_cfg("judge-model")
+    rc = parallel.run_parallel(
+        "do the task",
+        _specs(tmp_path, cfg, "fan", "2"),
+        explicit_leaves=frozenset(),
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=dataclasses.replace(runtime, build_provider=build_provider),
+        spawner=_FakeSpawner(origin, origin_state, tmp_path / "lane-state"),
+        fanout_id="fan",
+    )
+
+    assert rc == 0
+    events = journal()
+    assert [e["text"] for e in events if e["type"] == "role.text_delta"] == list(pieces)
+    assert next(e for e in events if e["type"] == "role.call")["model"] == "judge-model"
+    compared = next(e for e in events if e["type"] == "loop.parallel.compared")
+    assert compared["ranked_by"] == "judge"
+    assert compared["rationale"] == "Lane two covers the edge case."
+    items = transcript.fold_transcript(events)
+    assert not any(item.kind == "text" for item in items), "the judge JSON is not agent speech"
+    assert sum("judge: Lane two covers the edge case." in item.body for item in items) == 1
+
+
 def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

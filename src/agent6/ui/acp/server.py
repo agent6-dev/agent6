@@ -171,7 +171,7 @@ class ACPServer:
             return None
         req_id = message.get("id")
         if "method" not in message and self._ours(req_id) and self._deliver(req_id, message):
-            # The client's answer to a request of ours; the waiting slot vouches for the frame.
+            # A reply to our request, including one whose wait already ended.
             return None
         if message.get("jsonrpc") != "2.0":
             self.reply(
@@ -233,15 +233,15 @@ class ACPServer:
             message: The client's frame.
 
         Returns:
-            Whether a slot was waiting; a frame with neither result nor error is not
-            a response, and would otherwise deny the approval it named.
+            Whether the frame is a response; a late one is consumed without an answer.
+            A frame with neither result nor error leaves the approval pending.
         """
         if "result" not in message and "error" not in message:
             return False
         with self._pending_lock:
             slot = self._pending.pop(req_id, None)
         if slot is None:
-            return False
+            return True
         slot.answer = message
         slot.arrived.set()
         return True
@@ -262,8 +262,8 @@ class ACPServer:
             method: The request's method.
             params: Its params.
             timeout_s: How long to wait before answering with nothing.
-            until: Polled every 0.2 s; True ends the wait with nothing, the prompt
-                having been answered by another route.
+            until: Polled every 0.2 s and checked when a reply arrives; True discards the
+                answer because the prompt was cancelled or answered by another route.
 
         Returns:
             The client's result object, or empty.
@@ -282,6 +282,8 @@ class ACPServer:
                 with self._pending_lock:
                     self._pending.pop(req_id, None)
                 return {}
+        if until is not None and until():
+            return {}
         answer = slot.answer or {}
         result = answer.get("result")
         return result if isinstance(result, dict) else {}

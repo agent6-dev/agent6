@@ -69,6 +69,8 @@ A session is one conversation in one directory.
 - `session/cancel` cuts a model call in flight and ends a running foreground command at once, without waiting for or signalling the worker (the ACP server itself).
   The prompt answers `cancelled` (ACP's word) and the run's record reads `stopped`, as every operator stop does; what it had not yet committed stays in the tree for the next prompt, which resumes it.
   A prompt still queued answers `cancelled` at once.
+  Cancellation releases an open permission wait without waiting for the client's reply.
+  A late permission reply is ignored and cannot grant permission to a later prompt.
 
 ## Not implemented
 

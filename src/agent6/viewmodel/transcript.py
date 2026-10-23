@@ -260,7 +260,8 @@ class TranscriptFold:
             self._thinking.clear()
             self._text.clear()
             return []
-        if etype in ("role.thinking_delta", "role.text_delta"):
+        # Side streams belong to the live pane, not the driving role's settled speech.
+        if etype in ("role.thinking_delta", "role.text_delta") and not self._is_side_call(event):
             buffer = self._thinking if etype == "role.thinking_delta" else self._text
             buffer.append(str(event.get("text", "")))
             return []

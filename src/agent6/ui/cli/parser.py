@@ -360,11 +360,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         # `--ecosystem`, since `--preset` is the strategy preset on run, plan and ask.
         "--ecosystem",
         dest="ecosystem",
-        choices=("py", "rust", "node"),
+        choices=("go", "node", "py", "rust"),
         default="",
         help=(
-            "Ecosystem for the .gitignore build-artifact entries. Auto-detected"
-            " from the repo's manifests when omitted (py/rust/node)."
+            "Ecosystem for the AGENTS.md advice and .gitignore build-artifact entries."
+            " Auto-detected from the repo's manifests when omitted."
         ),
     )
 

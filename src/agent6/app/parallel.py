@@ -312,6 +312,7 @@ def _drive_fanout(
         build_provider=runtime.build_provider,
         judging_status=runtime.judging_status,
         max_usd=max_usd,
+        events=events,
         reporter=reporter,
     )
     _parallel_results.stamp_compare_outcomes(
@@ -342,6 +343,7 @@ def _drive_fanout(
         "loop.parallel.compared",
         group=fanout_id,
         ranked_by=outcome.ranked_by,
+        rationale=outcome.rationale,
         ranking=[
             {
                 "session_id": rid,

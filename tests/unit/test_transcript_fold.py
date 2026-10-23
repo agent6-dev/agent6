@@ -954,6 +954,7 @@ def test_parallel_compared_renders_the_ranking() -> None:
                 "type": "loop.parallel.compared",
                 "group": "fan",
                 "ranked_by": "judge",
+                "rationale": "The first candidate covers the edge case.",
                 "ranking": [
                     {"session_id": "fan-l2", "verify": "passed", "cost_usd": 0.05},
                     {"session_id": "fan-l1", "verify": "failed", "cost_usd": 0.07},
@@ -968,6 +969,7 @@ def test_parallel_compared_renders_the_ranking() -> None:
     assert "1. fan-l2  passed  $0.05" in item.body
     assert "2. fan-l1  failed  $0.07" in item.body
     assert "3. fan-l3  passed  1pt" in item.body
+    assert "judge: The first candidate covers the edge case." in item.body
 
 
 def test_parallel_dispatched_counts_lanes_when_the_event_carries_them() -> None:

@@ -16,7 +16,8 @@ from collections.abc import Callable, Mapping
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6.app import _setup
+from agent6 import event_log
+from agent6.app import _setup, providers
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.harness import judge as harness_judge
@@ -26,7 +27,7 @@ from agent6.viewmodel import _session_status, format, listing
 
 # Builds the reviewer provider the judge call uses.
 BuildProvider = Callable[[Config, TranscriptSink, agent6_budget.BudgetTracker], Provider]
-# Shown around the judge call, which is silent for 50 to 60 seconds.
+# The CLI's progress indicator while the judge ranks the candidates.
 JudgingStatus = Callable[[], contextlib.AbstractContextManager[None]]
 
 
@@ -66,6 +67,7 @@ def rank(
     build_provider: BuildProvider,
     judging_status: JudgingStatus,
     max_usd: float | None = None,
+    events: event_log.EventSink | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> RankOutcome:
     """Rank candidates best first.
@@ -80,6 +82,7 @@ def rank(
         build_provider: Builds the reviewer provider.
         judging_status: Shown around the judge call.
         max_usd: Caps the judge like one more lane; None uses the config budget.
+        events: The coordinator's journal; when present, the judge streams role events into it.
         reporter: Where a failed judge is reported.
 
     Returns:
@@ -91,6 +94,16 @@ def rank(
         budget = _setup.budget_tracker(cfg, max_usd=max_usd)
         try:
             provider: Provider = build_provider(cfg, sink, budget)
+            if events is not None:
+                provider = providers.InstrumentedProvider(
+                    inner=provider,
+                    role="judge",
+                    model=reviewer.model,
+                    provider_name=reviewer.provider,
+                    events=events,
+                    budget=budget,
+                    stream_text=True,
+                )
             with judging_status():
                 verdict = harness_judge.compare(provider, reviewer.model, candidates)
             spent, unknown = budget.estimate_usd()

@@ -282,7 +282,7 @@ The agent works within the environment it is given and cannot expand it:
 - `sudo` cannot escalate, even passwordless: `NO_NEW_PRIVS` voids setuid, so jailed `sudo` fails under any `NOPASSWD` rule.
 - Package installs fail: `apt` / `dnf` / `apk` need root (blocked), a route to a mirror (the default `network` has none off the box), and `/usr` or `/var` writes (denied)
 - Host-installed toolchains compile and run; a networked build step needs `network` loosened.
-    - a toolchain that keeps its state under your home needs that directory granted and named, because the jail's `HOME` is its own: for rustup's `cargo`, `sandbox.extra_read_paths = ["/home/you/.rustup"]` and a gate of `env RUSTUP_HOME=/home/you/.rustup cargo test`
+    - a toolchain that keeps its state under your home needs that directory granted and named, because the jail's `HOME` is its own; see [Rust toolchains](#rust-toolchains) for rustup's `cargo`
 - Toolchains, venvs, and deps are installed outside agent6. Access widens through config (`extra_read_paths`, `network`, `[providers.*].base_url`), all visible in `config show`.
 - The setup command of an isolated workspace (`[workspace].setup_command`, or an AGENTS.md `## Setup command` block) is a jailed command like any other
     - Machine clones use the operator's configured command, else the AGENTS.md block at the starting commit recorded in `machine.begin`, never a block committed by a run state; read-only agent states run this setup too, under their command policy and jail
@@ -308,6 +308,22 @@ The agent works within the environment it is given and cannot expand it:
     - readable files include root-only ones (`/etc/shadow` under `partial`; `full`'s rootfs hides it)
 - Under `sudo`, agent6 reads the real user's config and secrets (`SUDO_UID` / `SUDO_USER`) and chowns state-dir writes back
     - it does not drop privileges in-process; confinement comes from the jail
+
+#### Rust toolchains
+
+Finding `cargo` on the jail's PATH does not mean rustup can find its toolchain.
+The jail exposes `~/.cargo/bin` read-only, but its own `HOME` has neither your rustup settings nor the toolchains under `~/.rustup`.
+The proxy can fail with `rustup could not choose a version of cargo to run` even when `agent6 check verify` finds it.
+That check only infers a command or checks its first executable; it does not execute the gate.
+
+For an installed rustup toolchain, grant `sandbox.extra_read_paths = ["/home/you/.rustup"]` and name that directory in the gate: `env RUSTUP_HOME=/home/you/.rustup cargo test`.
+Use your actual absolute path in both places.
+Test the command with `agent6 exec --new -- env RUSTUP_HOME=/home/you/.rustup cargo test` before a run.
+A system-installed Rust toolchain does not need this rustup grant.
+
+Cargo dependencies are separate from the toolchain: an offline build also needs vendored dependencies or a populated Cargo cache in the jail's HOME.
+Use `sandbox.home = "cache"` to retain that private cache across runs, and populate it with an operator command whose network policy permits the fetch.
+Do not grant all of your host `~/.cargo` just for its cache: it can contain registry credentials and configuration that jailed commands would then read.
 
 ### 5. Network
 
