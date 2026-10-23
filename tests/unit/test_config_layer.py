@@ -20,6 +20,7 @@ from agent6.config import (
     io,
     layer,
     load_config,
+    notices,
     write,
 )
 from agent6.viewmodel import config_view
@@ -92,6 +93,60 @@ def test_source_map_attribution(repo: pathlib.Path) -> None:
     assert eff.sources["sandbox.run_commands"] == "repo"  # repo wins
     # Untouched secure default:
     assert eff.sources["git.run_repo_hooks"] == "default"
+
+
+@pytest.mark.parametrize("name", ["alpha", "beta"])
+def test_mapping_entry_write_reports_only_its_masking_layer(repo: pathlib.Path, name: str) -> None:
+    """An entry edit names its masking layer without blaming a sibling's override."""
+    paths_mod.repo_config_path(repo).write_text(
+        '[skills.state]\nalpha = "enabled"\n', encoding="utf-8"
+    )
+    key = f"skills.state.{name}"
+    assert write.set_config_value(repo, key, '"disabled"') is None
+
+    message = notices.write_message(repo, [key], "Saved")
+
+    assert message == (
+        "Saved\nnote: the repo config overrides skills.state.alpha; a run here reads its value."
+        if name == "alpha"
+        else "Saved"
+    )
+
+
+@pytest.mark.parametrize("field", ["extra_body", "extra_headers", "extra_query"])
+def test_provider_mapping_entries_keep_their_values_and_origins(
+    repo: pathlib.Path, field: str
+) -> None:
+    """Provider mappings keep each entry whole and attribute it independently."""
+    assert write.set_config_value(repo, f"providers.anthropic.{field}.beta", '"global"') is None
+    alpha = "{ nested = { flag = true }, steps = [1, 2] }" if field == "extra_body" else '"repo"'
+    assert (
+        write.set_config_value(repo, f"providers.anthropic.{field}.alpha", alpha, to_repo=True)
+        is None
+    )
+    eff = layer.load_effective(repo)
+    prefix = f"providers.anthropic.{field}"
+    leaves = _layer_data.config_leaves(eff.config)
+    assert {key: val for key, val in leaves.items() if key.startswith(prefix)} == {
+        f"{prefix}.alpha": io.parse_cli_value(alpha),
+        f"{prefix}.beta": "global",
+    }
+    assert eff.sources[f"{prefix}.alpha"] == "repo"
+    assert eff.sources[f"{prefix}.beta"] == "global"
+
+
+def test_machine_overlay_attributes_only_the_mapping_entry_it_sets(repo: pathlib.Path) -> None:
+    """A machine override masks one entry without claiming its siblings."""
+    assert (
+        write.set_config_value(repo, "skills.state", '{ alpha = "disabled", beta = "always" }')
+        is None
+    )
+    eff = layer.load_effective_with_overlay(repo, {"skills": {"state": {"alpha": "enabled"}}})
+    assert eff.sources["skills.state.alpha"] == "machine"
+    assert eff.sources["skills.state.beta"] == "global"
+    above = layer.shadowing_layer(eff, "skills.state.alpha", "global")
+    assert above is not None and above.described == "the machine overlay"
+    assert layer.shadowing_layer(eff, "skills.state.beta", "global") is None
 
 
 def test_render_show_marks_overrides(repo: pathlib.Path) -> None:

@@ -32,7 +32,12 @@ It can be empty or absent when the global config supplies a provider and model; 
 - `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first unless `--yes` skips the prompts.
 - `agent6 config show`: every effective value and which layer set it.
   `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections) untruncated, meaning included.
+  Non-empty mappings show one row per entry with its origin.
+  Empty mappings keep a `{}` row.
+  Mapping entry values are masked except for fields marked display-safe (`skills.state`).
 - `agent6 config set|unset|add|remove <dotted.key> [value]` (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay); `agent6 config get <dotted.key>` prints the effective value and its layer.
+  `get` accepts a whole mapping or one entry and prints each entry with its own origin.
+  `set` and `unset` accept a whole mapping or one entry, such as `skills.state.alpha`.
   Every edit is re-validated; an invalid edit is rolled back when the config lock is held.
   A sibling pair that must move together is set as one inline table: `agent6 config set context '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
 - Writes are atomic; failure to take the edit lock does not block the write, but concurrent edits can lose updates.

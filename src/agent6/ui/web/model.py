@@ -395,24 +395,6 @@ def config_payload(
             if entry := write.entry_of(key):
                 table, name = entry
                 entry_sources[table.path, name] = source.source
-    for table in write.ENTRY_TABLES:
-        if not table.leaf or not (entries := write.leaf_entries(eff.config, table)):
-            continue
-        parent = payload.pop(table.path)
-        for name, value in entries.items():
-            source_name = entry_sources.get((table.path, name), "default")
-            payload[f"{table.path}.{name}"] = {
-                **parent,
-                "value": value,
-                "effective": value,
-                "default": None,
-                "source": source_name,
-                "modified": source_name != "default",
-                "type": "choice",
-                "choices": write.entry_choices(table)[table.fields[0]],
-                "display": config_view.format_value(value),
-                "default_display": config_view.format_value(None),
-            }
     for key, setting in payload.items():
         if entry := write.entry_of(key):
             table, name = entry

@@ -493,7 +493,7 @@ def _value_line_span(lines: list[str], start: int) -> int:
 
 
 def remove_toml_leaf(path: pathlib.Path, dotted_key: str) -> bool:
-    """Delete one `table.leaf` assignment.
+    """Delete one `table.leaf` value, including a value stored as a `[table]`.
 
     Removing a section's last leaf drops the empty `[table]` header too; a section that
     still holds comments is kept, they are the operator's.
@@ -520,6 +520,8 @@ def remove_toml_leaf(path: pathlib.Path, dotted_key: str) -> bool:
                 f" cannot be unset on its own. Set {owner} as a whole, or edit {path}"
                 " by hand."
             )
+        if remove_toml_table(path, dotted_key):
+            return True
         lines = errors.read_operator_file(path).splitlines()
         if table:
             start = _header_line(lines, table)

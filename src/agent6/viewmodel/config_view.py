@@ -37,6 +37,7 @@ class ConfigSetting:
         py_type: str, int, bool, float, choice, list or table.
         choices: The enum options for a picker, else None.
         display_safe: The model permits displaying mapping values.
+        mask_value: Hide the whole value of an entry in a mapping that is not display-safe.
         description: The leaf's operator-facing meaning, the docs table cell.
     """
 
@@ -52,6 +53,19 @@ class ConfigSetting:
     choices: tuple[str, ...] | None
     description: str
     display_safe: bool = False
+    mask_value: bool = False
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class FieldSchema:
+    """A field's editor type, default, meaning and display policy."""
+
+    py_type: str = "str"
+    choices: tuple[str, ...] | None = None
+    default: Any = None
+    description: str = ""
+    display_safe: bool = False
+    mask_value: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -118,7 +132,7 @@ def _value_models(ann: Any) -> tuple[type[pydantic.BaseModel], ...]:
 
 def _merge_field_schema(
     models: tuple[type[pydantic.BaseModel], ...], parts: list[str]
-) -> tuple[str, tuple[str, ...] | None, Any, str, bool] | None:
+) -> FieldSchema | None:
     """Resolve a field across discriminated-union members, merging their choices.
 
     A field shared by every member keeps its choices; the discriminator itself becomes
@@ -129,7 +143,7 @@ def _merge_field_schema(
         parts: The dotted path below the union.
 
     Returns:
-        `(py_type, choices, default, description, display_safe)`, or None for an unknown field.
+        The shared schema, or None for an unknown field.
     """
     results = [r for m in models if (r := field_schema(m, parts)) is not None]
     if not results:
@@ -137,21 +151,25 @@ def _merge_field_schema(
     if len(results) == 1:
         return results[0]
     choices: list[str] = []
-    for _, member_choices, _default, _desc, _safe in results:
-        for c in member_choices or ():
+    for result in results:
+        for c in result.choices or ():
             if c not in choices:
                 choices.append(c)
     merged = tuple(choices) or None
-    py_type = "choice" if merged else results[0][0]
-    default = next((d for _, _, d, _, _ in results if d is not None), results[0][2])
-    description = next((d for _, _, _, d, _ in results if d), "")
-    return py_type, merged, default, description, all(r[4] for r in results)
+    return FieldSchema(
+        py_type="choice" if merged else results[0].py_type,
+        choices=merged,
+        default=next((r.default for r in results if r.default is not None), results[0].default),
+        description=next((r.description for r in results if r.description), ""),
+        display_safe=all(r.display_safe for r in results),
+        mask_value=any(r.mask_value for r in results),
+    )
 
 
 def _type_label(ann: Any) -> str:
     """Return the `py_type` word for an annotation."""
     ann = _unwrap_optional(ann)
-    origin = get_origin(ann)
+    origin = get_origin(ann) or ann
     if origin is Literal:
         return "choice"
     if origin in (list, tuple):
@@ -166,9 +184,7 @@ def _type_label(ann: Any) -> str:
     return "str"
 
 
-def field_schema(
-    model_cls: type[pydantic.BaseModel], parts: list[str]
-) -> tuple[str, tuple[str, ...] | None, Any, str, bool] | None:
+def field_schema(model_cls: type[pydantic.BaseModel], parts: list[str]) -> FieldSchema | None:
     """Walk a model down a dotted path to a leaf field's schema.
 
     Args:
@@ -176,27 +192,37 @@ def field_schema(
         parts: The dotted path's parts.
 
     Returns:
-        `(py_type, choices, default, description, display_safe)`, or None when the path cannot be
-        resolved (a dynamic key whose value model is unknown).
+        The field's schema, or None when the path cannot be resolved.
     """
     name = parts[0]
     fi = getattr(model_cls, "model_fields", {}).get(name)
     if fi is None:
         return None
     ann = fi.annotation
+    extra = fi.json_schema_extra
+    safe = isinstance(extra, dict) and extra.get("display_safe") is True
     if len(parts) == 1:
         default = fi.default
         if default is pydantic_core.PydanticUndefined:
             default = fi.default_factory() if fi.default_factory is not None else None
-        extra = fi.json_schema_extra
-        safe = isinstance(extra, dict) and extra.get("display_safe") is True
-        return _type_label(ann), _literal_choices(ann), default, fi.description or "", safe
+        return FieldSchema(
+            _type_label(ann), _literal_choices(ann), default, fi.description or "", safe
+        )
     nested = _nested_model(ann)
     if nested is not None:
         return field_schema(nested, parts[1:])
     models = _value_models(ann)
     if models and len(parts) >= 3:
         return _merge_field_schema(models, parts[2:])
+    if not models and get_origin(ann) is dict:
+        value_type = get_args(ann)[1]
+        return FieldSchema(
+            py_type=_type_label(value_type),
+            choices=_literal_choices(value_type),
+            description=fi.description or "",
+            display_safe=safe,
+            mask_value=not safe,
+        )
     return None
 
 
@@ -250,10 +276,10 @@ def build_config_view(
         for leaf in by_section[section]:
             value = leaves[leaf]
             source = eff.sources.get(leaf, "default")
-            schema = field_schema(eff.config.__class__, leaf.split("."))
-            if schema is None:
-                schema = ("str", None, None, "", False)
-            py_type, choices, default, description, display_safe = schema
+            schema = field_schema(eff.config.__class__, leaf.split(".")) or FieldSchema()
+            py_type, choices = schema.py_type, schema.choices
+            if py_type == "Any":
+                py_type = _type_label(type(value))
             if choices is None:
                 choices = _configured_choices(eff, leaf)
                 if choices is not None:
@@ -265,15 +291,16 @@ def build_config_view(
                     section=section,
                     value=value,
                     effective_value=eff_val,
-                    default=default,
+                    default=schema.default,
                     source=source,
                     # Provenance, not "differs from the default": a layer may pin that value.
                     modified=source != "default",
                     is_adaptive=leaf in resolved and eff_val != value,
                     py_type=py_type,
                     choices=choices,
-                    description=description,
-                    display_safe=display_safe,
+                    description=schema.description,
+                    display_safe=schema.display_safe,
+                    mask_value=schema.mask_value,
                 )
             )
     return ConfigView(settings=tuple(settings), sections=tuple(ordered), layers=eff.layers)
@@ -282,17 +309,20 @@ def build_config_view(
 # Rendering: `config show`.
 
 
-def format_value(val: Any, *, display_safe: bool = False) -> str:
+def format_value(val: Any, *, display_safe: bool = False, mask_value: bool = False) -> str:
     """Return a config leaf value as every surface prints it.
 
     Args:
         val: The raw value.
         display_safe: Permit mapping values instead of masking them.
+        mask_value: Hide the whole value of a mapping entry.
 
     Returns:
         `(unset)` for None, `(empty)` for an empty string, TOML booleans, `[a, b]`
         lists, JSON-encoded objects for tables, with values masked unless display-safe.
     """
+    if mask_value:
+        val = "***"
     if val is None:
         return "(unset)"
     if isinstance(val, str):
@@ -329,9 +359,9 @@ def display_mapping(value: Any, *, display_safe: bool = False) -> Any:
 
 def display_value(s: ConfigSetting) -> str:
     """Return the value column: the resolved value marked `(adaptive)`, else the raw value."""
-    if s.is_adaptive:
-        return f"{format_value(s.effective_value, display_safe=s.display_safe)}  (adaptive)"
-    return format_value(s.value, display_safe=s.display_safe)
+    value = s.effective_value if s.is_adaptive else s.value
+    shown = format_value(value, display_safe=s.display_safe, mask_value=s.mask_value)
+    return f"{shown}  (adaptive)" if s.is_adaptive else shown
 
 
 def _truncate(text: str, width: int) -> str:
@@ -371,8 +401,10 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
         `display` and `default_display` for text rendering.
     """
     return {
-        "value": display_mapping(s.value, display_safe=s.display_safe),
-        "effective": display_mapping(s.effective_value, display_safe=s.display_safe),
+        "value": "***" if s.mask_value else display_mapping(s.value, display_safe=s.display_safe),
+        "effective": "***"
+        if s.mask_value
+        else display_mapping(s.effective_value, display_safe=s.display_safe),
         "default": display_mapping(s.default, display_safe=s.display_safe),
         "source": s.source,
         "modified": s.modified,

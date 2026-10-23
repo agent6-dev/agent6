@@ -18,7 +18,16 @@ from agent6.viewmodel import config_view
 
 # Sections keyed by an operator-chosen name; a leaf under them exists only once an entry does.
 _POPULATED: dict[str, Any] = {
-    "providers": {"acme": {"api_format": "openai", "base_url": "https://example.invalid/v1"}},
+    "providers": {
+        "acme": {
+            "api_format": "openai",
+            "base_url": "https://example.invalid/v1",
+            "extra_body": {"routing": {"order": ["fast"]}},
+            "extra_headers": {"X-Example": "value"},
+            "extra_query": {"api-version": "v1"},
+        }
+    },
+    "skills": {"state": {"alpha": "enabled"}},
     "mcp": {
         "enabled": True,
         "servers": {
@@ -44,7 +53,7 @@ def _leaf_paths(model: pydantic.BaseModel, prefix: str = "") -> set[str]:
                 if isinstance(entry, pydantic.BaseModel):
                     leaves |= _leaf_paths(entry, f"{path}.{key}.")
                 else:
-                    leaves.add(path)
+                    leaves.add(f"{path}.{key}")
         else:
             leaves.add(path)
     return leaves

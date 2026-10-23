@@ -57,9 +57,10 @@ def _sections_of(annotation: object) -> list[type[pydantic.BaseModel]]:
 
 
 def leaves() -> dict[str, tuple[str, str]]:
-    """Return every leaf's rendered default and description by dotted path, in model order.
+    """Return each schema field's rendered default and description in model order.
 
     A `dict[str, Section]` field is one section spelled `<name>`, documented once.
+    Other mappings keep one field row with their empty default, not runtime entry rows.
     """
     out: dict[str, tuple[str, str]] = {}
 
@@ -68,7 +69,7 @@ def leaves() -> dict[str, tuple[str, str]]:
             path = f"{prefix}{name}"
             if typing.get_origin(field.annotation) is dict:
                 entries = _sections_of(typing.get_args(field.annotation)[1])
-                # `dict[str, Section]` is a section map; `dict[str, str]` is one leaf with a table.
+                # Model-valued mappings document their fields under a placeholder name.
                 if entries:
                     for entry in entries:
                         walk(entry, f"{path}.<name>.")

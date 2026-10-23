@@ -17,7 +17,7 @@ import difflib
 import pathlib
 import shlex
 from collections.abc import Generator, Sequence
-from typing import Any, Literal, cast, get_args, get_origin
+from typing import Any, Literal, get_args, get_origin
 
 import pydantic
 import pydantic.fields
@@ -677,22 +677,6 @@ ENTRY_TABLES: tuple[EntryTable, ...] = (
     EntryTable("mcp.servers", "MCP server", ("command", "url", "token_env", "enabled", "approve")),
     EntryTable("skills.state", "skill", ("state",), leaf=True),
 )
-
-
-def leaf_entries(config: config_model.Config, table: EntryTable) -> dict[str, str]:
-    """Return a leaf table's entries by name, as the effective config holds them.
-
-    Args:
-        config: The effective config.
-        table: A table with `leaf` set.
-
-    Returns:
-        The entry values by name.
-    """
-    node: object = config
-    for part in table.path.split("."):
-        node = getattr(node, part)
-    return {name: str(value) for name, value in cast(dict[str, object], node).items()}
 
 
 def _is_argv(table: EntryTable, field: str) -> bool:

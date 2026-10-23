@@ -460,6 +460,33 @@ def test_config_payload_carries_round_trippable_editor_values(tmp_path: pathlib.
     assert "skills.state" not in payload
 
 
+def test_config_payload_masks_provider_mapping_entries(tmp_path: pathlib.Path) -> None:
+    """Provider entries keep their provenance without exposing values in any wire field."""
+    cfg = tmp_path / "c.toml"
+    cfg.write_text(
+        '[providers.demo]\napi_format = "openai"\n'
+        'extra_headers = { token = "header-secret" }\n'
+        'extra_query = { token = "query-secret" }\n'
+        'extra_body = { token = "body-secret", nested = { token = "nested-secret" } }\n',
+        encoding="utf-8",
+    )
+    payload = model.config_payload(tmp_path, (cfg,))
+    assert "-secret" not in json.dumps(payload)
+    for field in ("extra_body", "extra_headers", "extra_query"):
+        assert f"providers.demo.{field}" not in payload
+        setting = payload[f"providers.demo.{field}.token"]
+        assert setting["source"] == f"flag ({cfg})"
+        assert setting["type"] == "str"
+        assert (
+            setting["value"]
+            == setting["effective"]
+            == setting["input"]
+            == setting["display"]
+            == "***"
+        )
+    assert payload["providers.demo.extra_body.nested"]["value"] == "***"
+
+
 def test_config_entry_rows_name_the_whole_entrys_highest_layer(tmp_path: pathlib.Path) -> None:
     """Removal targets the entry's layer even from a default leaf or a nested sandbox row."""
     global_config = paths.global_config_path()

@@ -2399,6 +2399,14 @@ def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
             "providers.local.base_url",
         ),
         ("/entry/remove", {"table": "providers", "name": "local"}, "providers.local.base_url"),
+        ("", {"key": "skills.state.alpha", "value": "disabled"}, "skills.state.alpha"),
+        ("", {"key": "skills.state.alpha", "unset": True}, "skills.state.alpha"),
+        (
+            "/entry",
+            {"table": "skills.state", "name": "alpha", "fields": {"state": "disabled"}},
+            "skills.state.alpha",
+        ),
+        ("/entry/remove", {"table": "skills.state", "name": "alpha"}, "skills.state.alpha"),
         ("/reviewer", {"focus": "new"}, "review.reviewers"),
         ("/reviewer/remove", {"index": 0}, "review.reviewers"),
     ],
@@ -2419,12 +2427,14 @@ def test_config_writes_report_shadowing_layers(
         '[sandbox]\nrun_commands = "allow"\n'
         '[providers.local]\napi_format = "openai"\nbase_url = "https://old.test/v1"\n'
         '[review]\nreviewers = [{ focus = "old" }]\n'
+        '[skills.state]\nalpha = "always"\n'
     )
     target.write_text(initial)
     overlay = (
         '[sandbox]\nrun_commands = "deny"\n'
         '[providers.local]\napi_format = "openai"\nbase_url = "https://mask.test/v1"\n'
         '[review]\nreviewers = [{ focus = "mask" }]\n'
+        '[skills.state]\nalpha = "enabled"\n'
     )
     if source == "preset":
         target.write_text(

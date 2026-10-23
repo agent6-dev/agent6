@@ -18,6 +18,7 @@ from agent6.config import (
     _layer_data,
     _presets,
     layer,
+    write,
 )
 from agent6.models import choices as models_choices
 from agent6.sessions import process
@@ -216,9 +217,24 @@ def _complete_config_keys(
         The keys starting with prefix, sorted: only list keys for `config add` and
         `config remove`, and no operator-only key for a `--machine-file` write.
     """
+    from agent6.viewmodel import config_view  # noqa: PLC0415
+
     explicit = _explicit_config(kw)
     try:
         keys = set(layer.leaf_keys(layer.load_effective(pathlib.Path.cwd(), explicit)))
+        parents = {
+            ".".join(parts[:i])
+            for key in keys
+            for parts in (key.split("."),)
+            for i in range(1, len(parts))
+        }
+        keys |= {
+            key
+            for key in parents
+            if (schema := config_view.field_schema(Config, key.split("."))) is not None
+            and schema.py_type == "table"
+            and not write.names_a_section(key)
+        }
     except ConfigError:
         keys = set()
     if settable:

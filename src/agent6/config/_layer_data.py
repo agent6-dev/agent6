@@ -257,8 +257,9 @@ def flatten_leaves(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
 def config_leaves(config: config_model.Config) -> dict[str, Any]:
     """Flatten a validated config to dotted leaves.
 
-    A name-keyed section of models (`providers`) is traversed; a dict-typed value (a
-    provider's `extra_body`) is one leaf, whatever it holds.
+    A name-keyed section of models (`providers`) is traversed.
+    Other mappings yield one leaf per entry, keeping each entry's value whole.
+    An empty mapping stays one leaf.
 
     Args:
         config: The validated config.
@@ -274,13 +275,12 @@ def config_leaves(config: config_model.Config) -> dict[str, Any]:
             path = f"{prefix}{name}"
             if isinstance(value, pydantic.BaseModel):
                 walk(value, f"{path}.")
-            elif (
-                isinstance(value, dict)
-                and value
-                and all(isinstance(entry, pydantic.BaseModel) for entry in value.values())
-            ):
+            elif isinstance(value, dict) and value:
                 for key, entry in value.items():
-                    walk(entry, f"{path}.{key}.")
+                    if isinstance(entry, pydantic.BaseModel):
+                        walk(entry, f"{path}.{key}.")
+                    else:
+                        out[f"{path}.{key}"] = entry
             elif isinstance(value, tuple):
                 out[path] = tuple(
                     entry.model_dump(exclude_none=True)

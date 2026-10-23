@@ -356,4 +356,4 @@ A preset is one more layer, above the config that selected it.
 Every field has a default and the security-sensitive ones default safe, so a repo can be zero-config.
 `agent6 config show` prints every effective value with the layer that set it; the [configuration reference](config.md) documents each field.
 `agent6 config get KEY` and `agent6 config show KEY` print values without table-width truncation; the unfiltered table abbreviates long values.
-Mapping fields show their keys with masked values, except fields the config model marks display-safe (`skills.state`), whose entries print as JSON-encoded objects.
+Mapping fields show [per-entry values and origins](config.md#creating-and-inspecting), with values masked unless the config model marks the field display-safe (`skills.state`).

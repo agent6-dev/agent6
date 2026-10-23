@@ -917,10 +917,10 @@ def test_config_fix_reports_an_entry_it_cannot_auto_remove(
     assert "not an auto-removable entry" in err and "nope" in err
 
 
-def test_nonempty_table_leaf_stays_gettable_and_unsettable(
+def test_nonempty_mapping_stays_gettable_and_unsettable(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A dict-typed field is one config leaf even when its value is nonempty."""
+    """A mapping can be set, inspected per entry and unset as a whole table."""
     assert _run(["config", "set", "providers.demo.api_format", "openai"]) == 0
     assert (
         _run(
@@ -937,10 +937,83 @@ def test_nonempty_table_leaf_stays_gettable_and_unsettable(
 
     assert _run(["config", "get", "providers.demo.extra_body"]) == 0
     assert _run(["config", "show", "providers.demo.extra_body"]) == 0
-    assert "providers.demo.extra_body.route" not in capsys.readouterr().out
+    assert "providers.demo.extra_body.route" in capsys.readouterr().out
     assert _run(["config", "unset", "providers.demo.extra_body"]) == 0
     providers = _global_toml(iso)["providers"]
     assert isinstance(providers, dict)
     demo = providers["demo"]
     assert isinstance(demo, dict)
     assert "extra_body" not in demo
+
+
+@pytest.mark.parametrize(
+    ("target", "key", "first", "second"),
+    [
+        (target, key, first, second)
+        for target in ("global", "repo", "machine")
+        for key, first, second in (
+            ("skills.state", '"disabled"', '"always"'),
+            ("providers.demo.extra_headers", '"secret"', '"other"'),
+            ("providers.demo.extra_query", '"secret"', '"other"'),
+            ("providers.demo.extra_body", "{ nested = { enabled = true } }", "[1, 2]"),
+        )
+        if target != "machine" or key == "skills.state"
+    ],
+)
+def test_mapping_entries_can_be_read_written_and_unset(
+    iso: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    target: str,
+    key: str,
+    first: str,
+    second: str,
+) -> None:
+    """Entry reads and removals preserve siblings in global, repo and machine mappings."""
+    machine = iso / "m.asm.toml"
+    flags = (
+        ["--machine-file", str(machine)]
+        if target == "machine"
+        else ["--repo"]
+        if target == "repo"
+        else []
+    )
+    read_flags = flags if target == "machine" else []
+    path = (
+        machine
+        if target == "machine"
+        else paths.repo_config_path(iso)
+        if target == "repo"
+        else paths.global_config_path()
+    )
+    prefix = "config." if target == "machine" else ""
+    if key.startswith("providers."):
+        assert _run(["config", "set", *flags, "providers.demo.api_format", "openai"]) == 0
+    assert _run(["config", "set", *flags, f"{key}.alpha", first]) == 0
+    assert _run(["config", "set", *flags, f"{key}.beta", second]) == 0
+    capsys.readouterr()
+    assert _run(["config", "get", *read_flags, f"{key}.alpha"]) == 0
+    assert f"{key}.alpha = " in capsys.readouterr().out
+    assert _run(["config", "unset", *flags, f"{key}.alpha"]) == 0
+    assert io.read_toml_leaf(io.read_toml_file(path), prefix + key) == {
+        "beta": io.parse_cli_value(second)
+    }
+    assert _run(["config", "unset", *flags, key]) == 0
+    assert io.read_toml_leaf(io.read_toml_file(path), prefix + key) is None
+
+
+def test_mapping_writes_name_only_the_overridden_entries(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI set and unset report a repo override for the entry or its whole mapping."""
+    assert _run(["config", "set", "--repo", "skills.state.alpha", '"enabled"']) == 0
+    for key, value in (
+        ("skills.state.alpha", '"disabled"'),
+        ("skills.state", '{ alpha = "disabled", beta = "always" }'),
+    ):
+        capsys.readouterr()
+        assert _run(["config", "set", key, value]) == 0
+        assert "note: the repo config overrides skills.state.alpha;" in capsys.readouterr().out
+        assert _run(["config", "unset", key]) == 0
+        assert "note: the repo config overrides skills.state.alpha;" in capsys.readouterr().out
+    assert _run(["config", "set", "skills.state.beta", '"disabled"']) == 0
+    assert "note:" not in capsys.readouterr().out

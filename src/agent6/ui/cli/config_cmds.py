@@ -384,7 +384,7 @@ def _warn_if_still_broken() -> None:
 def _cmd_config_get(
     config_paths: tuple[pathlib.Path, ...], key: str, *, machine: pathlib.Path | None
 ) -> int:
-    """Print a leaf's effective value and the layer that set it.
+    """Print effective leaf values and their layers, expanding a mapping into entries.
 
     Args:
         config_paths: The invocation's `--config`.
@@ -395,17 +395,24 @@ def _cmd_config_get(
         The exit code.
     """
     eff = _effective_with_overlay(config_paths, machine)
-    found = layer.effective_leaf(eff, key)
-    if found is None:
-        _common.error(_config_key_error(key, eff))
-        return 2
-    value, source = found
-    parts = key.split(".")
-    if parts[0] == "presets":
-        parts = parts[2:]
-    schema = config_view.field_schema(type(eff.config), parts)
-    shown = config_view.format_value(value, display_safe=schema is not None and schema[4])
-    print(f"{key} = {shown}  [{source}]")
+    schema = config_view.field_schema(type(eff.config), key.split("."))
+    keys = [key]
+    if schema is not None and schema.py_type == "table" and not write.names_a_section(key):
+        keys = [leaf for leaf in layer.leaf_keys(eff) if leaf.startswith(key + ".")] or keys
+    for leaf in keys:
+        found = layer.effective_leaf(eff, leaf)
+        if found is None:
+            _common.error(_config_key_error(key, eff))
+            return 2
+        value, source = found
+        parts = leaf.split(".")
+        if parts[0] == "presets":
+            parts = parts[2:]
+        schema = config_view.field_schema(type(eff.config), parts) or config_view.FieldSchema()
+        shown = config_view.format_value(
+            value, display_safe=schema.display_safe, mask_value=schema.mask_value
+        )
+        print(f"{leaf} = {shown}  [{source}]")
     return 0
 
 
@@ -506,9 +513,10 @@ def _cmd_config_unset(
         return 2
     # An unset repairs a config that no longer loads, so a failing validation must not block it.
     try:
-        known_leaf = (
-            layer.effective_leaf(layer.load_effective(pathlib.Path.cwd(), config_paths), key)
-            is not None
+        eff = _effective_with_overlay(config_paths, machine)
+        schema = config_view.field_schema(type(eff.config), key.split("."))
+        known_leaf = layer.effective_leaf(eff, key) is not None or (
+            schema is not None and schema.py_type == "table" and not write.names_a_section(key)
         )
     except ConfigError:
         known_leaf = True

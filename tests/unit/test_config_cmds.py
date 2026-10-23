@@ -80,6 +80,23 @@ def test_config_key_completer_offers_user_profile_paths(
     )
 
 
+@pytest.mark.parametrize("command", ["get", "set", "show", "unset"])
+def test_mapping_key_completion_offers_the_table_and_its_entries(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """A populated mapping keeps whole-table completion alongside its entry keys."""
+    import argparse
+
+    from agent6.config import write
+    from agent6.ui.cli import completers
+
+    monkeypatch.chdir(tmp_path)
+    assert write.set_config_value(tmp_path, "skills.state.alpha", '"enabled"') is None
+    args = argparse.Namespace(config_command=command)
+    keys = completers._complete_config_keys("skills.state", parsed_args=args)  # pyright: ignore[reportPrivateUsage]
+    assert keys == ["skills.state", "skills.state.alpha"]
+
+
 def test_parallel_models_completer_completes_after_last_comma(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

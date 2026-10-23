@@ -9,6 +9,7 @@ import pathlib
 
 import pytest
 
+from agent6 import paths
 from agent6.app import _setup
 from agent6.config import Config, _layer_data, layer
 from agent6.models import registry
@@ -101,7 +102,8 @@ def test_mapping_setting_prints_its_contents(
 
     assert main(["config", verb, "skills.state"]) == 0
     output = capsys.readouterr().out
-    assert '"debugging": "disabled"' in output
+    assert "skills.state.debugging" in output
+    assert "disabled" in output
     assert "global" in output
     assert "{...}" not in output
 
@@ -278,9 +280,11 @@ def test_the_resolved_values_leave_the_sandbox_leaves_auto_without_a_jail_binary
     assert resolved == registry.resolved_adaptive_values(cfg)
 
 
+@pytest.mark.parametrize("entry", [False, True])
 @pytest.mark.parametrize("verb", ["get", "show"])
 @pytest.mark.parametrize("field", ["extra_body", "extra_headers", "extra_query"])
 def test_mapping_credentials_are_masked(
+    entry: bool,
     verb: str,
     field: str,
     tmp_path: pathlib.Path,
@@ -294,23 +298,59 @@ def test_mapping_credentials_are_masked(
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
-    args = ["--config", str(cfg), "config", verb, f"providers.demo.{field}"]
+    key = f"providers.demo.{field}" + (".token" if entry else "")
+    args = ["--config", str(cfg), "config", verb, key]
     assert main(args) == 0
     output = capsys.readouterr().out
-    assert '"token": "***"' in output
+    assert f"providers.demo.{field}.token" in output
+    assert "***" in output
     assert "secret-value" not in output
     if verb == "show":
         assert main([*args, "--json"]) == 0
         assert "secret-value" not in capsys.readouterr().out
 
 
-def test_long_mapping_keeps_table_width() -> None:
-    """The unfiltered table truncates long mappings instead of widening the value column."""
+def test_mapping_entries_show_each_origin(tmp_path: pathlib.Path) -> None:
+    """Text and JSON attribute each skill state to the layer that set it."""
+    global_config = paths.global_config_path()
+    global_config.parent.mkdir(parents=True, exist_ok=True)
+    global_config.write_text('[skills.state]\nbeta = "always"\n', encoding="utf-8")
+    repo_config = paths.repo_config_path(tmp_path)
+    repo_config.parent.mkdir(parents=True, exist_ok=True)
+    repo_config.write_text('[skills.state]\nalpha = "enabled"\n', encoding="utf-8")
+    eff = layer.load_effective(tmp_path)
+
+    rows = [line.split() for line in config_view.render_show(eff).splitlines()]
+    assert ["*", "skills.state.alpha", "enabled", "repo"] in rows
+    assert ["*", "skills.state.beta", "always", "global"] in rows
+    payload = json.loads(config_view.render_show(eff, as_json=True))
+    assert "skills.state" not in payload
+    for name, source in (("alpha", "repo"), ("beta", "global")):
+        setting = payload[f"skills.state.{name}"]
+        assert setting["source"] == source
+        assert setting["type"] == "choice"
+        assert setting["choices"] == ["enabled", "disabled", "always"]
+        assert setting["description"]
+
+
+def test_empty_mapping_keeps_its_field_row(tmp_path: pathlib.Path) -> None:
+    """An empty mapping still appears in text and JSON with its default origin."""
+    eff = layer.load_effective(tmp_path)
+    rows = [line.split() for line in config_view.render_show(eff).splitlines()]
+    assert ["skills.state", "{}", "default"] in rows
+    payload = json.loads(config_view.render_show(eff, as_json=True))
+    assert payload["skills.state"]["value"] == {}
+    assert payload["skills.state"]["source"] == "default"
+
+
+def test_long_mapping_entry_keeps_table_width() -> None:
+    """The unfiltered table truncates long mapping keys instead of widening the key column."""
     cfg = Config.model_validate({"skills": {"state": {"x" * 200: "disabled"}}})
     eff = _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
     row = next(line for line in config_view.render_show(eff).splitlines() if "skills.state" in line)
     assert "…" in row
     assert "x" * 200 not in row
+    assert "disabled" in row
     assert row.endswith("default")
     assert len(row) < 120
 

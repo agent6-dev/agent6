@@ -269,35 +269,9 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """Load the effective config and build the view over it."""
         eff = layer.load_effective(self.repo_root, self.config_paths)
         self._eff = eff
-        view = config_view.build_config_view(
+        self._view = config_view.build_config_view(
             eff, resolved=confine.resolved_config_values(eff.config)
         )
-        # The shared view keeps a leaf table whole; the page selects its entries by row.
-        leaf_tables = {t.path: t for t in write.ENTRY_TABLES if t.leaf}
-        settings: list[config_view.ConfigSetting] = []
-        for setting in view.settings:
-            table = leaf_tables.get(setting.key)
-            entries = write.leaf_entries(eff.config, table) if table is not None else {}
-            if table is None or not entries:
-                settings.append(setting)
-                continue
-            for name, state in entries.items():
-                key = f"{table.path}.{name}"
-                source = self._entry_source(key)
-                settings.append(
-                    dataclasses.replace(
-                        setting,
-                        key=key,
-                        value=state,
-                        effective_value=state,
-                        default=None,
-                        source=source,
-                        modified=source != "default",
-                        py_type="choice",
-                        choices=tuple(write.entry_choices(table)[table.fields[0]]),
-                    )
-                )
-        self._view = dataclasses.replace(view, settings=tuple(settings))
 
     def _entry_source(self, key: str) -> str:
         """Return the highest layer holding this entry or any of its leaves."""

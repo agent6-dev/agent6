@@ -1283,6 +1283,40 @@ def test_remove_entry_without_an_entry_row(repo: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
+def test_skill_form_reports_a_repo_override_of_its_global_write(repo: pathlib.Path) -> None:
+    """The skill form reports a masked write and the table retains the repo value."""
+    from agent6.config import write
+
+    assert write.set_config_value(repo, "skills.state.alpha", '"enabled"', to_repo=True) is None
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test(size=(120, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            screen.action_add_skill()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, _config_forms.EntryModal)
+            modal.query_one("#entry-name", widgets.Input).value = "alpha"
+            modal.query_one("#entry-state", forms.ChoiceField).select_value("disabled")
+            modal.query_one("#entry-target", forms.ChoiceField).select_value("global config")
+            modal.action_add()
+            await pilot.pause()
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert any("note: the repo config overrides skills.state.alpha;" in n for n in notes)
+            table = screen.query_one("#tbl-skills", widgets.DataTable)
+            row = next(
+                table.get_row_at(i)
+                for i in range(table.row_count)
+                if str(table.get_row_at(i)[0]) == "state.alpha"
+            )
+            assert "enabled" in str(row[1]) and "repo" in str(row[2])
+
+    asyncio.run(scenario())
+
+
 def test_add_provider_via_form_persists(repo: pathlib.Path) -> None:
     """The Add-provider form writes a validated [providers.<name>] block the page reflects."""
 
