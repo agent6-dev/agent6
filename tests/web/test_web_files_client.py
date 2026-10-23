@@ -288,3 +288,40 @@ assert.ok(view.querySelector('.blame-note').textContent.includes('changed since'
   'no note of the change');
 """
     )
+
+
+def test_a_stale_commit_response_leaves_another_tabs_url_alone() -> None:
+    """A commit response arriving after the user moved to Files rewrote the Files URL."""
+    _run("""
+const sha = 'a'.repeat(40);
+const commit = {sha, short: sha.slice(0,7), subject: 'late commit', parents: [], refs: [],
+  author: {name:'t', email:'t@t', date:'2026-01-01'},
+  committer: {name:'t', email:'t@t', date:'2026-01-01'}, files: [], base: sha};
+let holdRefs = false, releaseRefs;
+getJSON = async url => {
+  if (url === '/api/git/refs') {
+    if (!holdRefs) return {head: {sha}, refs: []};
+    return new Promise(resolve => { releaseRefs = () => resolve({head: {sha}, refs: []}); });
+  }
+  if (url === '/api/git/worktree') return {files: []};
+  if (url.startsWith('/api/git/graph')) return {commits: [commit], tips: [sha], has_more: false};
+  if (url === '/api/git/commit/' + sha) return new Promise(resolve => pending.push({url, resolve}));
+  if (url.startsWith('/api/git/tree')) return {rev: 'HEAD', files: [], truncated: false};
+  throw new Error('unexpected ' + url);
+};
+location.hash = '#/git';
+await route(); await tick();
+holdRefs = true;
+const opening = view.querySelector('.gc-row').onclick();
+await tick();
+assert.equal(location.hash, '#/git/commit/' + sha);
+assert.equal(pending.length, 1, 'the commit request did not go out');
+location.hash = '#/files';
+const files = route();
+await tick();
+pending[0].resolve(commit);
+await opening; await tick();
+assert.equal(location.hash, '#/files', 'a stale commit response rewrote the Files URL');
+releaseRefs(); await files; await tick();
+assert.equal(activeTab, 'files');
+""")

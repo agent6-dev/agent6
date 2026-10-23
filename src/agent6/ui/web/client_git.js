@@ -487,14 +487,15 @@ async function renderGit(gen, link = []) {
   const showCommit = async (sha) => {
     closeDiff();
     selected = sha;
+    const gen = routeGen; // a response landing after a route change paints and publishes nothing
     setViewHash('#/git/commit/' + encodeURIComponent(sha));
     graph.querySelectorAll('.gc-row').forEach(r => r.classList.toggle('sel', r.dataset.sha === sha));
     side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'muted page-pad', 'loading…'));
     openSide();
     let c;
     try { c = await getJSON('/api/git/commit/' + encodeURIComponent(sha)); }
-    catch (e) { if (selected === sha && app.isConnected) { side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'err page-pad', e.message)); } return; }
-    if (selected !== sha || !app.isConnected) return;
+    catch (e) { if (selected === sha && app.isConnected && gen === routeGen) { side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'err page-pad', e.message)); } return; }
+    if (selected !== sha || !app.isConnected || gen !== routeGen) return;
     selected = c.sha;
     setViewHash('#/git/commit/' + encodeURIComponent(c.sha), true);
     graph.querySelectorAll('.gc-row').forEach(r => { const match = r.dataset.sha === c.sha; r.classList.toggle('sel', match); if (match) r.scrollIntoView({ block: 'nearest' }); });
