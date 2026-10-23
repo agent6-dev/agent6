@@ -89,6 +89,13 @@
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
 }
 
+.a6-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin: 1.2rem 0;
+}
+
 /* The terminal demo video on the tour page. */
 .md-typeset video {
   width: 100%;

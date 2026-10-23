@@ -1,15 +1,15 @@
+<!-- --8<-- [start:overview] -->
 # agent6
-
-A coding agent for Git repositories.
 
 - Runs model commands in a [Linux sandbox](#security) using your installed toolchains, with configurable filesystem and network access.
 - Saves conversations, tool activity, and Git checkpoints so you can inspect, resume, or fork a session from an earlier turn.
 - Shows the task graph, usage, and context compaction, with pinned instructions and repository memory to carry information across context windows and runs.
 - Verifies work with a configured or inferred command, checking the starting tree by default, and reports whether the result passed, failed, or remains unverified.
-- Runs [parallel attempts](https://agent6.dev/architecture/#parallel-runs) in isolated clones with `--parallel N` or a list of models, then ranks the results for you to choose which to merge.
-- Defines long-running workflows in editable [TOML state machines](https://agent6.dev/state-machines/), combining agent runs, tool calls, waits, and branches with offline tests, crash recovery, and replay from recorded results.
-- Supports repository `AGENTS.md` instructions, [SKILL.md packs](https://agent6.dev/config/#skills), [MCP servers](https://agent6.dev/config/#mcp-and-mcpserversname-optional), and background commands for development servers and watchers.
+- Runs [parallel attempts][parallel-runs] in isolated clones with `--parallel N` or a list of models, then ranks the results for you to choose which to merge.
+- Defines long-running workflows in editable [TOML state machines][state-machines], combining agent runs, tool calls, waits, and branches with offline tests, crash recovery, and replay from recorded results.
+- Supports repository `AGENTS.md` instructions, [SKILL.md packs][skills], [MCP servers][mcp], and background commands for development servers and watchers.
 - Eight runtime dependencies, no telemetry, and no automatic updates.
+<!-- --8<-- [end:overview] -->
 
 <table>
   <tr>
@@ -24,17 +24,17 @@ A coding agent for Git repositories.
   </tr>
 </table>
 
-Also available as a [streaming CLI](https://agent6.dev/screenshots/out/hero-cli.gif) and through [ACP editor integration](https://agent6.dev/acp/).
+<!-- --8<-- [start:guide] -->
+Also available as a [streaming CLI][cli-demo] and through [ACP editor integration][acp].
 
-## [Installation](https://agent6.dev/installation/)
+## [Installation][installation]
 
-Requires **Python 3.12+** and **Git 2.40+**.
 Sandboxing supports **Linux on x86_64 and aarch64**; macOS runs without it, and Windows users should use WSL.
 
 Install with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/how-to/install-pipx/), then connect a provider and select a model:
 
 ```sh
-uv tool install agent6       # or: pipx install agent6
+uv tool install agent6      # or: pipx install agent6
 agent6 connect              # configure a provider
 agent6 model worker         # choose a model
 ```
@@ -43,7 +43,7 @@ Use Anthropic or any OpenAI-compatible endpoint, including OpenAI, OpenRouter, O
 For subscriptions, replace `agent6 connect` with `agent6 connect chatgpt` or `agent6 connect claude`; the latter uses your installed, signed-in Claude Code binary.
 `agent6 completions` installs tab completion for your shell.
 
-## [Usage](https://agent6.dev/usage/)
+## [Usage][usage]
 
 **Runs edit your current checkout by default.**
 Checkpoint commits go on a separate `agent6/<id>` branch; checkpointing leaves your current branch's history and index in place.
@@ -81,7 +81,7 @@ Other commands:
 
 To give a finished run more work, use `agent6 resume <id> --steer "next task"`.
 
-## [Configuration](https://agent6.dev/config/)
+## [Configuration][configuration]
 
 `agent6 config show` prints effective settings and where each value came from.
 Changes are global unless you add `--repo` for a repository override, for example:
@@ -91,9 +91,9 @@ agent6 config set --repo harness.verify_command '["uv", "run", "pytest"]'
 ```
 
 The worker, planner, and reviewer can use different models and reasoning effort; unset planner and reviewer roles use the worker.
-[Budgets](https://agent6.dev/config/#budget) limit spending, tokens for unpriced calls, and supported subscription usage.
+[Budgets][budgets] limit spending, tokens for unpriced calls, and supported subscription usage.
 
-## [Security](https://agent6.dev/security/)
+## [Security][security]
 
 The sandbox confines model commands; the agent6 process remains trusted, holds provider credentials, and connects to your configured providers.
 MCP is off by default, and locally spawned servers use the command sandbox unless explicitly configured otherwise.
@@ -109,3 +109,16 @@ agent6 is [Apache-2.0 licensed](https://github.com/agent6-dev/agent6/blob/master
 [Development conventions](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md) cover contributions, and the [benchmark and evaluation suites](https://github.com/agent6-dev/agent6/tree/master/bench) compare models and harness settings with task graders, repeated runs, and usage measurements.
 
 [Report bugs or confusing behavior](https://github.com/agent6-dev/agent6/issues), or [report vulnerabilities privately](https://github.com/agent6-dev/agent6/security/advisories/new).
+<!-- --8<-- [end:guide] -->
+
+[acp]: https://agent6.dev/acp/
+[budgets]: https://agent6.dev/config/#budget
+[cli-demo]: https://agent6.dev/screenshots/out/hero-cli.gif
+[configuration]: https://agent6.dev/config/
+[installation]: https://agent6.dev/installation/
+[mcp]: https://agent6.dev/config/#mcp-and-mcpserversname-optional
+[parallel-runs]: https://agent6.dev/architecture/#parallel-runs
+[security]: https://agent6.dev/security/
+[skills]: https://agent6.dev/config/#skills
+[state-machines]: https://agent6.dev/state-machines/
+[usage]: https://agent6.dev/usage/
