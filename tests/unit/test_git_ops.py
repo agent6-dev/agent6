@@ -2060,3 +2060,28 @@ def test_a_name_that_is_not_utf8_round_trips_through_every_listing(tmp_path: pat
     git_ops.stash_tracked_changes(tmp_path, "m", [name])
     assert git_read.modified_paths(tmp_path) == []
     assert (tmp_path / name).read_bytes() == b"one\n"
+
+
+def test_diff_since_sees_an_edit_made_in_the_index_entrys_second(tmp_path: pathlib.Path) -> None:
+    """A same-second, same-size rewrite reached the review diff as no change.
+
+    Git compares an entry's stat at second granularity and re-hashes only entries not older
+    than the index file itself; the index copy the diff reads had a fresh mtime, so a file
+    edited in the second its entry was recorded, with its size unchanged, read as clean.
+    ctime cannot be set from user space, so the pin stages the match with `trustctime` off
+    and the timestamps ten seconds in the past.
+    """
+    _init_repo(tmp_path)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "core.trustctime", "false"], check=True)
+    target = tmp_path / "README.md"
+    index = tmp_path / ".git" / "index"
+    past = target.stat().st_mtime_ns - 10_000_000_000
+    target.write_text("x = 1\n", encoding="utf-8")
+    os.utime(target, ns=(past, past))
+    subprocess.run(["git", "-C", str(tmp_path), "add", "README.md"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "seed"], check=True)
+    target.write_text("x = 2\n", encoding="utf-8")
+    os.utime(target, ns=(past, past))
+    os.utime(index, ns=(past, past))
+
+    assert "x = 2" in git_read.diff_since(tmp_path, "HEAD")

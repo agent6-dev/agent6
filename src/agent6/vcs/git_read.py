@@ -796,8 +796,10 @@ def diff_since(path: pathlib.Path, base_sha: str, *, exclude: Collection[str] = 
     try:
         index_copy = tmp / "index"
         real_index = path / ".git" / "index"
+        # The copy keeps the index's mtime: git re-hashes an entry recorded in the index
+        # file's own second, and a copy with a fresh mtime would trust it unchecked.
         if real_index.is_file():
-            shutil.copyfile(real_index, index_copy)
+            shutil.copy2(real_index, index_copy)
         env = {"GIT_INDEX_FILE": str(index_copy)}
         _git_command.run(path, "add", "-N", "--", ".", *specs, check=False, env_extra=env)
         res = _git_command.run(
