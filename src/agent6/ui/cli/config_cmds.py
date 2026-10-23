@@ -241,7 +241,7 @@ def _reject_machine_protected(key: str, machine: pathlib.Path | None) -> str | N
     """Return the error for an operator-only key in a machine overlay, by the loader's own rule."""
     if machine is None:
         return None
-    return protected_overlay_key_error(key)
+    return protected_overlay_key_error(io.render_key(io.split_key(key)))
 
 
 def _machine_is_valid(text: str | None) -> bool:
@@ -394,8 +394,9 @@ def _cmd_config_get(
     Returns:
         The exit code.
     """
+    key = io.render_key(io.split_key(key))
     eff = _effective_with_overlay(config_paths, machine)
-    schema = config_view.field_schema(type(eff.config), key.split("."))
+    schema = config_view.field_schema(type(eff.config), io.split_key(key))
     keys = [key]
     if schema is not None and schema.py_type == "table" and not write.names_a_section(key):
         keys = [leaf for leaf in layer.leaf_keys(eff) if leaf.startswith(key + ".")] or keys
@@ -405,7 +406,7 @@ def _cmd_config_get(
             _common.error(_config_key_error(key, eff))
             return 2
         value, source = found
-        parts = leaf.split(".")
+        parts = io.split_key(leaf)
         if parts[0] == "presets":
             parts = parts[2:]
         schema = config_view.field_schema(type(eff.config), parts) or config_view.FieldSchema()
@@ -436,6 +437,7 @@ def _cmd_config_set(
     Returns:
         The exit code.
     """
+    key = io.render_key(io.split_key(key))
     if err := _reject_machine_protected(key, machine):
         _common.error(f"{err}")
         return 2
@@ -458,7 +460,7 @@ def _cmd_config_set(
     message = f"Set {key} = {io.format_toml_value(parsed)} in {target}"
     if machine is None:
         keys = (
-            [f"{key}.{leaf}" for leaf in parsed]
+            [io.render_key((*io.split_key(key), leaf)) for leaf in parsed]
             if isinstance(parsed, dict) and write.names_a_section(key)
             else [key]
         )
@@ -484,8 +486,9 @@ def _not_a_leaf(
         eff = _effective_with_overlay(config_paths, machine)
     except ConfigError:
         return f"{key!r} is not a config leaf (see `agent6 config show`)."
-    name = key.removeprefix("mcp.servers.")
-    if name != key and "." not in name and name in eff.config.mcp.servers:
+    parts = io.split_key(key)
+    name = parts[-1]
+    if parts[:-1] == ["mcp", "servers"] and name in eff.config.mcp.servers:
         return f"{key!r} is an MCP server entry; remove it with `agent6 mcp remove {name}`."
     return _config_key_error(key, eff)
 
@@ -508,13 +511,14 @@ def _cmd_config_unset(
     Returns:
         The exit code.
     """
+    key = io.render_key(io.split_key(key))
     if err := _reject_machine_protected(key, machine):
         _common.error(f"{err}")
         return 2
     # An unset repairs a config that no longer loads, so a failing validation must not block it.
     try:
         eff = _effective_with_overlay(config_paths, machine)
-        schema = config_view.field_schema(type(eff.config), key.split("."))
+        schema = config_view.field_schema(type(eff.config), io.split_key(key))
         known_leaf = layer.effective_leaf(eff, key) is not None or (
             schema is not None and schema.py_type == "table" and not write.names_a_section(key)
         )
@@ -575,6 +579,7 @@ def _config_list_edit(
     Returns:
         The exit code.
     """
+    key = io.render_key(io.split_key(key))
     if err := _reject_machine_protected(key, machine):
         _common.error(f"{err}")
         return 2

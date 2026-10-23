@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The one pydantic ConfigDict every config model shares."""
+"""Shared config validation policy and operator-facing errors."""
 
 from __future__ import annotations
 
@@ -8,6 +8,13 @@ from typing import Annotated
 
 import pydantic
 import pydantic.fields
+
+from agent6 import errors
+
+
+class ConfigError(errors.OperatorError):
+    """The config file is missing, malformed or invalid: the operator's file, so a refusal."""
+
 
 # strict: TOML delivers native types, so a typo must not coerce ("5" is not an int).
 # allow_inf_nan=False: an inf timeout raises OverflowError; an inf or nan budget cap never binds.

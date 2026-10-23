@@ -458,10 +458,10 @@ def test_a_dict_typed_leaf_is_replaced_whole(
     assert "# prefer fast backends" in text
 
 
-def test_a_write_that_breaks_the_toml_is_rolled_back(
+def test_an_unquoted_non_bare_key_is_refused_before_writing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """A write that breaks the TOML is rolled back even though the revalidation read raises."""
+    """A non-bare key component requires quotes and cannot alter the config when unquoted."""
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     before = '[sandbox]\nnetwork = "none"\n'
@@ -470,9 +470,8 @@ def test_a_write_that_breaks_the_toml_is_rolled_back(
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
-    err = write.set_config_value(repo_root, "providers.openai.extra_headers.X Title", "b")
-
-    assert err is not None and "invalid TOML" in err
+    with pytest.raises(ConfigError, match=r"invalid config key.*X Title"):
+        write.set_config_value(repo_root, "providers.openai.extra_headers.X Title", "b")
     assert (gdir / "agent6" / "config.toml").read_text(encoding="utf-8") == before
 
 

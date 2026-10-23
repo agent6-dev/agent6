@@ -22,7 +22,7 @@ from agent6 import paths
 from agent6.app import _execution as app__execution
 from agent6.app import _setup, resume, run, stop
 from agent6.app import reporter as app_reporter
-from agent6.config import Config, _layer_data, model
+from agent6.config import Config, ConfigError, _layer_data
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
@@ -357,7 +357,7 @@ def test_a_run_that_cannot_start_says_why(
     monkeypatch.chdir(tmp_path)
 
     def _broken(*_a: object, **_kw: object) -> object:
-        raise model.ConfigError("Config file is not valid TOML (agent6.toml)")
+        raise ConfigError("Config file is not valid TOML (agent6.toml)")
 
     monkeypatch.setattr(_setup, "load_session_config", _broken)
     wire = _Wire()
@@ -1702,7 +1702,7 @@ def test_a_prompt_that_cannot_choose_its_run_says_why(
     monkeypatch.chdir(tmp_path)
 
     def _broken(*_a: object, **_kw: object) -> object:
-        raise model.ConfigError("Config file cannot be read (config.toml)")
+        raise ConfigError("Config file cannot be read (config.toml)")
 
     monkeypatch.setattr(paths, "state_dir", _broken)
     wire = _Wire()

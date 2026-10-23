@@ -533,6 +533,43 @@ def test_config_endpoint_sets_typed_values_and_unsets_to_the_next_layer(
     assert json.loads(body)["git.commit.name"]["source"] == "default"
 
 
+@pytest.mark.parametrize("entry_form", [False, True])
+def test_quoted_skill_config_route_round_trip(
+    server: tuple[web_server.WebServer, int], *, entry_form: bool
+) -> None:
+    """Web writes preserve a dotted skill name in the key and the entry metadata."""
+    _srv, port = server
+    key = 'skills.state."org.some.skill"'
+    route = "/api/config/entry" if entry_form else "/api/config"
+    request: dict[str, object] = (
+        {"table": "skills.state", "name": "org.some.skill", "fields": {"state": "always"}}
+        if entry_form
+        else {"key": key, "value": "always"}
+    )
+    status, data = _post(port, route, request)
+    assert status == 200 and data["ok"] is True, data
+    status, body, _ = _get(port, "/api/config")
+    assert status == 200
+    setting = json.loads(body)[key]
+    assert setting["value"] == "always"
+    assert setting["entry"] == {
+        "table": "skills.state",
+        "name": "org.some.skill",
+        "source": "global",
+    }
+    route = "/api/config/entry/remove" if entry_form else "/api/config"
+    request = (
+        {"table": "skills.state", "name": "org.some.skill"}
+        if entry_form
+        else {"key": key, "unset": True}
+    )
+    status, data = _post(port, route, request)
+    assert status == 200 and data["ok"] is True, data
+    _, body, _ = _get(port, "/api/config")
+    assert key not in json.loads(body)
+    assert not io.read_toml_file(paths.global_config_path()).get("skills", {}).get("state", {})
+
+
 def test_approve_writes_answer_file(
     server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:

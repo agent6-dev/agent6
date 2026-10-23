@@ -19,7 +19,7 @@ from agent6 import errors
 from agent6 import paths as agent6_paths
 from agent6.app import fork, stop, undo
 from agent6.app import reporter as app_reporter
-from agent6.config import ConfigError, notices, write
+from agent6.config import ConfigError, io, notices, write
 from agent6.machine import (
     JournalError,
     MachineError,
@@ -713,8 +713,12 @@ def add_entry(
         return False, str(exc)
     if err:
         return False, err
-    key = f"{table}.{name.strip()}"
-    keys = [key] if entry_table.leaf else [f"{key}.{f}" for f, raw in fields.items() if raw.strip()]
+    key = io.render_key((*io.split_key(table), name.strip()))
+    keys = (
+        [key]
+        if entry_table.leaf
+        else [io.render_key((*io.split_key(key), f)) for f, raw in fields.items() if raw.strip()]
+    )
     return True, notices.write_message(
         cwd,
         keys,
@@ -756,7 +760,7 @@ def remove_entry(
         return False, str(exc)
     if result.error:
         return False, result.error
-    key, source = f"{table}.{name}", "repo" if repo else "global"
+    key, source = io.render_key((*io.split_key(table), name)), "repo" if repo else "global"
     message = (
         f"removed {key} from {source} config"
         if result.removed

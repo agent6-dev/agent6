@@ -356,6 +356,7 @@ depends_on = [
   "agent6.budget",
   "agent6.config._layer_data",
   "agent6.config._presets",
+  "agent6.config.io",
   "agent6.config.layer",
   "agent6.graph.models",
   "agent6.kinds",
@@ -364,7 +365,7 @@ depends_on = [
   "agent6.machine.schema",
   "agent6.models.registry",
   "agent6.paths",
-  "agent6.providers",  # a transcript is provider-wire shaped; its one content-to-text reader lives there
+  "agent6.providers",
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
   "agent6.sessions.manifest",
@@ -451,12 +452,12 @@ depends_on = ["agent6.errors"]
 [[modules]]
 # The package __init__ re-exports the models as the public API.
 path = "agent6.config"
-depends_on = ["agent6.config._git", "agent6.config._harness", "agent6.config._providers", "agent6.config._sandbox", "agent6.config._surfaces", "agent6.config.model", "agent6.kinds"]
+depends_on = ["agent6.config._base", "agent6.config._git", "agent6.config._harness", "agent6.config._providers", "agent6.config._sandbox", "agent6.config._surfaces", "agent6.config.model", "agent6.kinds"]
 
 [[modules]]
-# The one pydantic ConfigDict every config model shares.
+# The config models share validation policy and the operator-facing error.
 path = "agent6.config._base"
-depends_on = []
+depends_on = ["agent6.errors"]
 
 [[modules]]
 # The [providers.*] entries, discriminated by wire format.
@@ -488,8 +489,6 @@ depends_on = ["agent6.config._base"]
 path = "agent6.config.model"
 # RoleName and the session-mode vocabulary: shared value types, so they live
 # at the leaf rather than in whichever model declared one first.
-# agent6.errors: ConfigError subclasses OperatorError, so a bad config presents
-# as the operator's mistake at the CLI boundary.
 depends_on = [
   "agent6.config._base",
   "agent6.config._git",
@@ -497,7 +496,7 @@ depends_on = [
   "agent6.config._providers",
   "agent6.config._sandbox",
   "agent6.config._surfaces",
-  "agent6.errors",
+  "agent6.config.io",
   "agent6.kinds",
 ]
 
@@ -518,15 +517,15 @@ depends_on = ["agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.config.io"
-depends_on = ["agent6.config.model", "agent6.errors", "agent6.portable"]
+depends_on = ["agent6.config._base", "agent6.errors", "agent6.portable"]
 
 [[modules]]
 path = "agent6.config.layer"
-depends_on = ["agent6.config._layer_data", "agent6.config._presets", "agent6.config.io", "agent6.config.model", "agent6.paths"]
+depends_on = ["agent6.config._base", "agent6.config._layer_data", "agent6.config._presets", "agent6.config.io", "agent6.config.model", "agent6.paths"]
 
 [[modules]]
 path = "agent6.config.notices"
-depends_on = ["agent6.config.layer", "agent6.config.model"]
+depends_on = ["agent6.config._base", "agent6.config.io", "agent6.config.layer"]
 
 [[modules]]
 path = "agent6.config.write"
@@ -560,7 +559,7 @@ depends_on = ["agent6.config", "agent6.config.layer", "agent6.directive", "agent
 # route, and TAB completion.
 path = "agent6.models.choices"
 # sessions.manifest: a resume row names the preset and model a run replays.
-depends_on = ["agent6.config", "agent6.config._layer_data", "agent6.config._presets", "agent6.config.layer", "agent6.kinds", "agent6.models.cache", "agent6.models.validate", "agent6.secret_store", "agent6.sessions.manifest"]
+depends_on = ["agent6.config", "agent6.config._layer_data", "agent6.config._presets", "agent6.config.io", "agent6.config.layer", "agent6.kinds", "agent6.models.cache", "agent6.models.validate", "agent6.secret_store", "agent6.sessions.manifest"]
 
 [[modules]]
 path = "agent6.sandbox.detect"
@@ -779,8 +778,8 @@ depends_on = ["agent6.machine._contracts", "agent6.machine._semantics", "agent6.
 
 [[modules]]
 path = "agent6.config._layer_data"
-depends_on = ["agent6.config.model", "agent6.paths"]
+depends_on = ["agent6.config._base", "agent6.config.io", "agent6.config.model", "agent6.paths"]
 
 [[modules]]
 path = "agent6.config._presets"
-depends_on = ["agent6.config._layer_data", "agent6.config.model"]
+depends_on = ["agent6.config._base", "agent6.config._layer_data", "agent6.config.model"]

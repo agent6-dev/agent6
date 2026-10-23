@@ -1036,16 +1036,24 @@ def test_arrows_flow_through_section_headers(repo: pathlib.Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("action", "section", "leaf", "field", "value"),
+    ("action", "section", "leaf", "field", "value", "name"),
     [
-        ("add_mcp_server", "mcp", "servers.openrouter.url", "url", "https://example.com/mcp"),
-        ("add_skill", "skills", "state.openrouter", "state", "always"),
+        (
+            "add_mcp_server",
+            "mcp",
+            "servers.openrouter.url",
+            "url",
+            "https://example.com/mcp",
+            "openrouter",
+        ),
+        ("add_skill", "skills", "state.openrouter", "state", "always", "openrouter"),
+        ("add_skill", "skills", 'state."org.some.skill"', "state", "always", "org.some.skill"),
     ],
 )
 def test_entry_form_and_remove_selected_entry(
-    repo: pathlib.Path, action: str, section: str, leaf: str, field: str, value: str
+    repo: pathlib.Path, action: str, section: str, leaf: str, field: str, value: str, name: str
 ) -> None:
-    """Non-provider forms add entries; Remove confirms and drops the selected entry whole."""
+    """Non-provider forms preserve dotted entry names through display and removal."""
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -1062,7 +1070,7 @@ def test_entry_form_and_remove_selected_entry(
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, _config_forms.EntryModal)
-            modal.query_one("#entry-name", widgets.Input).value = "openrouter"
+            modal.query_one("#entry-name", widgets.Input).value = name
             control = modal.query_one(f"#entry-{field}")
             if isinstance(control, forms.ChoiceField):
                 control.select_value(value)
@@ -1079,11 +1087,11 @@ def test_entry_form_and_remove_selected_entry(
             assert app.screen is screen
             cfg = layer.load_effective(repo).config
             if section == "mcp":
-                assert cfg.mcp.servers["openrouter"].url == value
-                assert cfg.mcp.servers["openrouter"].token_env == "MCP_TOKEN"
-                assert not cfg.mcp.servers["openrouter"].enabled
+                assert cfg.mcp.servers[name].url == value
+                assert cfg.mcp.servers[name].token_env == "MCP_TOKEN"
+                assert not cfg.mcp.servers[name].enabled
             else:
-                assert cfg.skills.state["openrouter"] == value
+                assert cfg.skills.state[name] == value
             table = screen.query_one(f"#tbl-{section}", widgets.DataTable)
             row = next(i for i in range(table.row_count) if str(table.get_row_at(i)[0]) == leaf)
             assert "repo" in str(table.get_row_at(row)[2])
@@ -1095,20 +1103,18 @@ def test_entry_form_and_remove_selected_entry(
             confirm = app.screen
             assert isinstance(confirm, modals.ConfirmModal)
             prompt = str(confirm.query_one("#confirm-box Static", widgets.Static).render())
-            assert "openrouter" in prompt and "repo" in prompt
+            assert name in prompt and "repo" in prompt
             assert ("skills.state" if section == "skills" else "mcp.servers") in prompt
             await pilot.press("escape")
             await pilot.pause()
-            assert "openrouter" in paths.repo_config_path(repo).read_text()
+            assert name in paths.repo_config_path(repo).read_text()
             screen.action_remove_entry()
             await pilot.pause()
             await pilot.press("y")
             await pilot.pause()
             assert app.screen is screen
-            assert "openrouter" not in paths.repo_config_path(repo).read_text()
-            assert not any(
-                "openrouter" in str(table.get_row_at(i)[0]) for i in range(table.row_count)
-            )
+            assert name not in paths.repo_config_path(repo).read_text()
+            assert not any(name in str(table.get_row_at(i)[0]) for i in range(table.row_count))
             footer_actions = {
                 active.binding.action
                 for active in screen.active_bindings.values()

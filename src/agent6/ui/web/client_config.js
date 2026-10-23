@@ -243,7 +243,7 @@ function editConfig(key, s, tables) {
     removeBtn.disabled = !['global', 'repo'].includes(entry.source);
     removeBtn.title = removeBtn.disabled
       ? 'This entry comes from ' + entry.source + '; Remove edits only global and repo config.'
-      : 'Remove ' + entry.table + '.' + entry.name + ' and all its values from ' + entry.source + ' config';
+      : 'Remove ' + table.label + " '" + entry.name + "' and all its values from " + entry.source + ' config';
     row.appendChild(removeBtn);
   }
   row.appendChild(cancel); box.appendChild(row);
@@ -302,7 +302,7 @@ function editConfig(key, s, tables) {
     } catch (e) { toast(e.message, true); unsetBtn.disabled = false; }
   };
   if (removeBtn) removeBtn.onclick = async () => {
-    if (!confirm('Remove ' + table.label + " '" + entry.name + "' (" + entry.table + '.' + entry.name + ') and all its values from ' + entry.source + ' config? Values from lower layers may become visible.')) return;
+    if (!confirm('Remove ' + table.label + " '" + entry.name + "' and all its values from " + entry.source + ' config? Values from lower layers may become visible.')) return;
     removeBtn.disabled = true;
     try {
       const d = await postJSON('/api/config/entry/remove', {table: entry.table, name: entry.name, repo: entry.source === 'repo'});

@@ -36,6 +36,7 @@ It can be empty or absent when the global config supplies a provider and model; 
   Empty mappings keep a `{}` row.
   Mapping entry values are masked except for fields marked display-safe (`skills.state`).
 - `agent6 config set|unset|add|remove <dotted.key> [value]` (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay); `agent6 config get <dotted.key>` prints the effective value and its layer.
+  A key component that is not a bare TOML key (`[A-Za-z0-9_-]+`) is written quoted, as in `skills.state."org.some.skill"` or `providers.demo.extra_body."a.b"` (keep those quotes inside a shell-quoted argument).
   `get` accepts a whole mapping or one entry and prints each entry with its own origin.
   `set` and `unset` accept a whole mapping or one entry, such as `skills.state.alpha`.
   Every edit is re-validated; an invalid edit is rolled back when the config lock is held.

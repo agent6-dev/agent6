@@ -202,7 +202,9 @@ def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: path
     m = tmp_path / "m.asm.toml"
     for key in (
         "providers.openai.base_url",
+        '"providers".openai.base_url',
         "presets.review.sandbox.run_commands",
+        """'presets' . review.sandbox.run_commands""",
         "machine.notify.on_event",
         "mcp.servers",
         "notify.on_complete",

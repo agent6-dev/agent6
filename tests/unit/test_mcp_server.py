@@ -757,14 +757,14 @@ def test_run_server_lets_a_config_fault_reach_the_cli_sorting(
     A `ConfigError` is already an operator error printed at exit 2, and a bug belongs on the crash
     path (exit 1, traceback saved); catching every exception around the config load pre-empts both.
     """
-    from agent6.config import model
+    from agent6.config import ConfigError
     from agent6.ui import mcp_server
     from agent6.ui.cli import cli_main
 
     monkeypatch.chdir(tmp_path)
     bad = tmp_path / "bad.toml"
     bad.write_text("[agent6]\nnope = 1\n", encoding="utf-8")
-    with pytest.raises(model.ConfigError):
+    with pytest.raises(ConfigError):
         mcp_server.run_server((bad,))
     assert cli_main(["--config", str(bad), "mcp", "serve"]) == 2
     err = capsys.readouterr().err

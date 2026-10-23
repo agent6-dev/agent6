@@ -215,6 +215,38 @@ def test_remove_toml_table_drops_header_body_and_subtables(tmp_path: pathlib.Pat
     assert data["budget"] == {"max_usd": 1.0}  # the sibling table is untouched
 
 
+@pytest.mark.parametrize("name", ["a.b", "my skill", 'a"b', "a=b", "a]b", "a#b", "", "a\nb"])
+def test_quoted_leaf_surgery_preserves_component_boundaries(
+    tmp_path: pathlib.Path, name: str
+) -> None:
+    """Quoted keys round-trip through lookup, replacement and removal without duplicates."""
+    path = tmp_path / "c.toml"
+    key = "table." + io.toml_key(name)
+    io.upsert_toml_leaf(path, key, "first")
+    assert tomllib.loads(path.read_text())["table"] == {name: "first"}
+    assert io.read_toml_leaf(io.read_toml_file(path), key) == "first"
+    io.upsert_toml_leaf(path, key, "second")
+    assert tomllib.loads(path.read_text())["table"] == {name: "second"}
+    assert io.remove_toml_leaf(path, key)
+    assert not tomllib.loads(path.read_text())
+
+
+def test_quoted_table_surgery_matches_toml_spelling(tmp_path: pathlib.Path) -> None:
+    """Equivalent quoted table spellings match without dropping a distinct nested table."""
+    path = tmp_path / "c.toml"
+    path.write_text(
+        "[ table . 'a].b' ] # keep\nx = 1\n[table.'a].b'.sub]\ny = 2\n[table.a.b]\nx = 3\n",
+        encoding="utf-8",
+    )
+    io.upsert_toml_leaf(path, 'table."a].b".x', 4)
+    assert tomllib.loads(path.read_text())["table"] == {
+        "a].b": {"x": 4, "sub": {"y": 2}},
+        "a": {"b": {"x": 3}},
+    }
+    assert io.remove_toml_table(path, 'table."a].b"')
+    assert tomllib.loads(path.read_text()) == {"table": {"a": {"b": {"x": 3}}}}
+
+
 def test_remove_toml_table_absent_returns_false(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "c.toml"
     path.write_text("[budget]\nmax_usd = 1.0\n", encoding="utf-8")

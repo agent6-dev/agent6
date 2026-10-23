@@ -28,7 +28,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6 import errors
 from agent6.app import confine
-from agent6.config import ConfigError, layer, notices, write
+from agent6.config import ConfigError, io, layer, notices, write
 from agent6.models import cache
 from agent6.models import choices as models_choices
 from agent6.ui.tui import _config_forms, menubar, modals, screen_chrome
@@ -86,7 +86,8 @@ def _columns(settings: Iterable[config_view.ConfigSetting]) -> tuple[tuple[str, 
 
 def _leaf(s: config_view.ConfigSetting) -> str:
     """Return the key under its section, as a row shows it."""
-    return s.key.split(".", 1)[1] if "." in s.key else s.key
+    parts = io.split_key(s.key)
+    return io.render_key(parts[1:] if len(parts) > 1 else parts)
 
 
 class _NavTable(textual_widgets.DataTable[str]):
@@ -618,7 +619,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             )
             return
         table, name = entry
-        key = f"{table.path}.{name}"
+        key = io.render_key((*io.split_key(table.path), name))
         source = self._entry_source(key)
         if source not in ("global", "repo"):
             self.notify(

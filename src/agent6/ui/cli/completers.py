@@ -17,6 +17,7 @@ from agent6.config import (
     ConfigError,
     _layer_data,
     _presets,
+    io,
     layer,
     write,
 )
@@ -223,15 +224,15 @@ def _complete_config_keys(
     try:
         keys = set(layer.leaf_keys(layer.load_effective(pathlib.Path.cwd(), explicit)))
         parents = {
-            ".".join(parts[:i])
+            io.render_key(parts[:i])
             for key in keys
-            for parts in (key.split("."),)
+            for parts in (io.split_key(key),)
             for i in range(1, len(parts))
         }
         keys |= {
             key
             for key in parents
-            if (schema := config_view.field_schema(Config, key.split("."))) is not None
+            if (schema := config_view.field_schema(Config, io.split_key(key))) is not None
             and schema.py_type == "table"
             and not write.names_a_section(key)
         }
@@ -244,14 +245,18 @@ def _complete_config_keys(
         keys &= _config_list_keys(explicit)
     if sections:
         keys |= {
-            ".".join(parts[:i])
+            io.render_key(parts[:i])
             for key in keys
-            for parts in (key.split("."),)
+            for parts in (io.split_key(key),)
             for i in range(1, len(parts))
         }
     if settable and prefix.startswith("preset"):
         pool = {k for k in keys if k != "preset"}
-        keys |= {f"presets.{name}.{k}" for name in _user_preset_names(explicit) for k in pool}
+        keys |= {
+            io.render_key(("presets", name, *io.split_key(k)))
+            for name in _user_preset_names(explicit)
+            for k in pool
+        }
     if command in ("set", "unset", "add", "remove") and isinstance(
         getattr(kw.get("parsed_args"), "machine_file", None), pathlib.Path
     ):
@@ -289,8 +294,8 @@ def _complete_config_values(
 
         if protected_overlay_key_error(key) is not None:
             return []
-    parts = key.split(".", 2)
-    schema_key = parts[2] if len(parts) == 3 and parts[0] == "presets" else key
+    parts = io.split_key(key)
+    schema_key = io.render_key(parts[2:] if len(parts) > 2 and parts[0] == "presets" else parts)
     config_paths = _explicit_config({"parsed_args": parsed_args})
     if getattr(parsed_args, "config_command", "") in (
         "add",

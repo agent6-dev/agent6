@@ -11,11 +11,55 @@ from __future__ import annotations
 import pathlib
 import re
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 from agent6 import errors, portable
-from agent6.config import model
+from agent6.config import _base
+
+_KEY_PART = r"""(?:[A-Za-z0-9_-]+|"(?:[^"\\\r\n]|\\[^\r\n])*"|'[^'\r\n]*')"""
+_DOTTED_KEY = rf"{_KEY_PART}(?:[ \t]*\.[ \t]*{_KEY_PART})*"
+_KEY_RE = re.compile(rf"[ \t]*{_DOTTED_KEY}[ \t]*")
+_HEADER_RE = re.compile(rf"\s*\[\s*({_DOTTED_KEY})\s*\]\s*(?:#.*)?$")
+_ARRAY_HEADER_RE = re.compile(rf"\s*\[\[\s*({_DOTTED_KEY})\s*\]\]\s*(?:#.*)?$")
+
+
+def split_key(key: str) -> list[str]:
+    """Parse a TOML dotted key into its literal components.
+
+    Args:
+        key: The dotted key, including quotes for non-bare components.
+
+    Returns:
+        The decoded components.
+
+    Raises:
+        ConfigError: The key is not one TOML dotted key.
+    """
+    message = f"invalid config key {key!r}: expected a TOML dotted key"
+    if _KEY_RE.fullmatch(key) is None:
+        raise _base.ConfigError(message)
+    try:
+        value = tomllib.loads(f"{key} = 0")
+    except tomllib.TOMLDecodeError as exc:
+        raise _base.ConfigError(f"{message}: {exc}") from exc
+    parts: list[str] = []
+    while isinstance(value, dict):
+        part, value = next(iter(value.items()))
+        parts.append(part)
+    return parts
+
+
+def render_key(parts: Iterable[str]) -> str:
+    """Render components as a TOML dotted key.
+
+    Args:
+        parts: Literal components; an empty iterable renders the root as an empty string.
+
+    Returns:
+        The dotted key with each non-bare component quoted.
+    """
+    return ".".join(toml_key(part) for part in parts)
 
 
 def _header_name(line: str) -> str | None:
@@ -28,18 +72,10 @@ def _header_name(line: str) -> str | None:
         line: One line of the file.
 
     Returns:
-        The name inside the brackets, stripped; None when the line is not a header.
+        The canonical dotted name; None when the line is not a header.
     """
-    stripped = line.strip()
-    if not stripped.startswith("["):
-        return None
-    end = stripped.find("]")
-    if end == -1:
-        return None
-    trailing = stripped[end + 1 :].strip()
-    if trailing and not trailing.startswith("#"):
-        return None
-    return stripped[1:end].strip()
+    match = _HEADER_RE.fullmatch(line)
+    return render_key(split_key(match[1])) if match else None
 
 
 def _section_name(line: str) -> str | None:
@@ -52,18 +88,10 @@ def _section_name(line: str) -> str | None:
         line: One line of the file.
 
     Returns:
-        The name, stripped; None when the line is not a header of either form.
+        The canonical dotted name; None when the line is not a header of either form.
     """
-    stripped = line.strip()
-    if stripped.startswith("[["):
-        close = stripped.find("]]")
-        if close == -1:
-            return None
-        trailing = stripped[close + 2 :].strip()
-        if trailing and not trailing.startswith("#"):
-            return None
-        return stripped[2:close].strip()
-    return _header_name(line)
+    match = _ARRAY_HEADER_RE.fullmatch(line)
+    return render_key(split_key(match[1])) if match else _header_name(line)
 
 
 def _toml_value(value: str | bool) -> str:
@@ -87,11 +115,12 @@ def upsert_toml_table(path: pathlib.Path, table: str, fields: dict[str, ConfigLe
     Raises:
         ConfigError: A value has no TOML form.
     """
+    table = render_key(split_key(table))
     block_lines = [f"[{table}]"]
     for key, val in fields.items():
         if val is None:
             continue
-        block_lines.append(f"{key} = {format_toml_value(val)}")
+        block_lines.append(f"{toml_key(key)} = {format_toml_value(val)}")
     block = "\n".join(block_lines)
 
     with portable.locked_file(path):
@@ -141,7 +170,7 @@ def format_toml_value(value: object) -> str:  # noqa: PLR0911
             return "{}"
         items = ", ".join(f"{toml_key(k)} = {format_toml_value(v)}" for k, v in value.items())
         return "{ " + items + " }"
-    raise model.ConfigError(f"cannot serialize {value!r} to TOML")
+    raise _base.ConfigError(f"cannot serialize {value!r} to TOML")
 
 
 def toml_key(key: object) -> str:
@@ -175,26 +204,6 @@ def parse_cli_value(value: str) -> object:
         return value
 
 
-def _split_dotted_key(dotted_key: str) -> tuple[str, str]:
-    """Split a dotted key into its table and leaf.
-
-    Args:
-        dotted_key: The key, `sandbox.network`.
-
-    Returns:
-        `(table, leaf)`; a single-segment key gives table `""`, the bare top region.
-
-    Raises:
-        ConfigError: A segment is empty.
-    """
-    parts = dotted_key.split(".")
-    if any(not p for p in parts):
-        raise model.ConfigError(
-            f"config key must be a dotted leaf path like 'sandbox.network', got {dotted_key!r}"
-        )
-    return ".".join(parts[:-1]), parts[-1]
-
-
 def upsert_toml_leaf(path: pathlib.Path, dotted_key: str, value: object) -> None:
     """Set one `table.leaf` key, preserving the rest of the file verbatim.
 
@@ -210,8 +219,10 @@ def upsert_toml_leaf(path: pathlib.Path, dotted_key: str, value: object) -> None
         ConfigError: The key is malformed, its ancestor is not a plain `[table]`, or the
             value has no TOML form.
     """
-    table, leaf = _split_dotted_key(dotted_key)
-    new_line = f"{leaf} = {format_toml_value(value)}"
+    parts = split_key(dotted_key)
+    dotted_key = render_key(parts)
+    table, leaf = render_key(parts[:-1]), parts[-1]
+    new_line = f"{toml_key(leaf)} = {format_toml_value(value)}"
     with portable.locked_file(path):
         text = errors.read_operator_file(path) if path.is_file() else ""
         lines = text.splitlines()
@@ -222,13 +233,13 @@ def upsert_toml_leaf(path: pathlib.Path, dotted_key: str, value: object) -> None
             # Raised here so every writer hits it; the header the surgery would emit collides
             # with the headerless ancestor, and _drop_top_region_key would then delete it whole.
             if owner := _undeclared_ancestor_in("\n".join(lines), dotted_key):
-                raise model.ConfigError(
+                raise _base.ConfigError(
                     f"{dotted_key} lives inside {owner}, which is not a plain [table]"
                     " (a value, an inline table, a dotted key, or an array-of-tables),"
                     f" so it cannot be set on its own. Set {owner} as a whole, or edit"
                     f" {path} by hand."
                 )
-            lines = _drop_top_region_key(lines, table.split(".", 1)[0])
+            lines = _drop_top_region_key(lines, parts[0])
             start = _header_line(lines, table)
             if start is None:
                 text = "\n".join(lines) + "\n" if lines else ""
@@ -237,7 +248,7 @@ def upsert_toml_leaf(path: pathlib.Path, dotted_key: str, value: object) -> None
                 return
             region = start + 1
         else:
-            lines, _ = _drop_table_lines(lines, leaf)
+            lines, _ = _drop_table_lines(lines, dotted_key)
             region = 0  # top-level key: the bare region before any [table] header
         end = _region_end(lines, region)
         j = _find_leaf_line(lines, region, end, leaf)
@@ -292,7 +303,7 @@ def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
 
 
 # A line that opens a `leaf = value` assignment; _value_line_span measures the value's lines.
-_ASSIGN_RE = re.compile(r"^\s*[^#\s=\[][^=]*=")
+_ASSIGN_RE = re.compile(rf"^[ \t]*(?P<key>{_DOTTED_KEY})[ \t]*=")
 
 
 def _region_end(lines: list[str], region: int) -> int:
@@ -334,10 +345,10 @@ def _find_leaf_line(lines: list[str], region: int, end: int, leaf: str) -> int |
     Returns:
         The line's index, or None.
     """
-    leaf_re = re.compile(rf"^\s*(\"|')?{re.escape(leaf)}(\"|')?\s*=")
     j = region
     while j < end:
-        if leaf_re.match(lines[j]):
+        match = _ASSIGN_RE.match(lines[j])
+        if match and split_key(match["key"]) == [leaf]:
             return j
         # _value_line_span is >= 1, so this always advances.
         j += _value_line_span(lines, j) if _ASSIGN_RE.match(lines[j]) else 1
@@ -392,14 +403,8 @@ def _drop_top_region_key(lines: list[str], key: str) -> list[str]:
         The remaining lines.
     """
     end = _region_end(lines, 0)
-    key_re = re.compile(rf"^\s*{re.escape(key)}\s*=")
-    j = 0
-    while j < end:
-        if key_re.match(lines[j]):
-            return lines[:j] + lines[j + _value_line_span(lines, j) :]
-        # A `key = ...`-looking line inside an earlier triple-quoted value is skipped.
-        j += _value_line_span(lines, j) if _ASSIGN_RE.match(lines[j]) else 1
-    return lines
+    j = _find_leaf_line(lines, 0, end, key)
+    return lines[:j] + lines[j + _value_line_span(lines, j) :] if j is not None else lines
 
 
 def _scan_toml_line(text: str, depth: int, triple: str | None) -> tuple[int, str | None]:
@@ -478,8 +483,8 @@ def _value_line_span(lines: list[str], start: int) -> int:
     Returns:
         The span, at least 1; an unterminated value spans to the end of the file.
     """
-    eq = lines[start].find("=")
-    text = lines[start][eq + 1 :] if eq != -1 else lines[start]
+    assignment = _ASSIGN_RE.match(lines[start])
+    text = lines[start][assignment.end() :] if assignment else lines[start]
     depth, triple = 0, None
     idx = start
     while True:
@@ -508,13 +513,15 @@ def remove_toml_leaf(path: pathlib.Path, dotted_key: str) -> bool:
     Raises:
         ConfigError: The key is malformed, or its ancestor is not a plain `[table]`.
     """
-    table, leaf = _split_dotted_key(dotted_key)
+    parts = split_key(dotted_key)
+    dotted_key = render_key(parts)
+    table, leaf = render_key(parts[:-1]), parts[-1]
     with portable.locked_file(path):
         if not path.is_file():
             return False
         # Without this a leaf inside an inline table reads "not found" while `config get` shows it.
         if table and (owner := undeclared_table_ancestor(path, dotted_key)):
-            raise model.ConfigError(
+            raise _base.ConfigError(
                 f"{dotted_key} lives inside {owner}, which is not a plain [table]"
                 " (an inline table, a dotted key, or an array-of-tables), so it"
                 f" cannot be unset on its own. Set {owner} as a whole, or edit {path}"
@@ -559,6 +566,7 @@ def remove_toml_table(path: pathlib.Path, table: str) -> bool:
     Returns:
         True when the table was present.
     """
+    table = render_key(split_key(table))
     with portable.locked_file(path):
         if not path.is_file():
             return False
@@ -589,9 +597,9 @@ def read_toml_file(path: pathlib.Path) -> dict[str, Any]:
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise model.ConfigError(f"{path}: invalid TOML: {exc}") from exc
+        raise _base.ConfigError(f"{path}: invalid TOML: {exc}") from exc
     except (OSError, UnicodeDecodeError) as exc:
-        raise model.ConfigError(f"{path}: cannot be read: {exc}") from exc
+        raise _base.ConfigError(f"{path}: cannot be read: {exc}") from exc
 
 
 def undeclared_table_ancestor(path: pathlib.Path, dotted_key: str) -> str | None:
@@ -620,9 +628,9 @@ def _undeclared_ancestor_in(text: str, dotted_key: str) -> str | None:
     except tomllib.TOMLDecodeError:
         return None  # a file that does not parse is refused earlier, with its own message
     headers = [name for _, name in _iter_headers(text.splitlines())]
-    parts = dotted_key.split(".")
+    parts = split_key(dotted_key)
     for i in range(1, len(parts)):  # proper ancestors, outermost first
-        prefix = ".".join(parts[:i])
+        prefix = render_key(parts[:i])
         val = read_toml_leaf(data, prefix)
         if val is None:
             continue  # absent: the surgery declares the [table] itself
@@ -630,7 +638,7 @@ def _undeclared_ancestor_in(text: str, dotted_key: str) -> str | None:
             return prefix  # an array-of-tables: a leaf can't be set on it
         if not isinstance(val, dict):
             # A scalar where a table belongs; `_drop_top_region_key` replaces a bare top-level one.
-            if "." in prefix:
+            if i > 1:
                 return prefix
             continue
         if any(h == prefix or h.startswith(f"{prefix}.") for h in headers):
@@ -650,7 +658,7 @@ def read_toml_leaf(data: dict[str, Any], dotted_key: str) -> object:
         The value, or None when any segment is absent.
     """
     cur: object = data
-    for part in dotted_key.split("."):
+    for part in split_key(dotted_key):
         if not isinstance(cur, dict) or part not in cur:
             return None
         cur = cur[part]

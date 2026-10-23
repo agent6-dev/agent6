@@ -8,6 +8,7 @@ layering are imported from `agent6.config.io` and `agent6.config.layer`.
 
 from __future__ import annotations
 
+from agent6.config import _base
 from agent6.config._git import GitCommitConfig, GitConfig  # noqa: ICN003  # re-export
 from agent6.config._harness import (  # noqa: ICN003  # re-export
     BudgetConfig,
@@ -51,12 +52,13 @@ from agent6.config._surfaces import (  # noqa: ICN003  # re-export
 from agent6.config.model import (  # noqa: ICN003  # re-export
     Agent6Section,
     Config,
-    ConfigError,
     ModelsConfig,
     load_config,
     validate_config,
 )
 from agent6.kinds import RoleName  # noqa: ICN003  # re-export
+
+ConfigError = _base.ConfigError
 
 __all__ = [
     "Agent6Section",

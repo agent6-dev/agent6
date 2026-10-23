@@ -17,7 +17,7 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin
 import pydantic
 import pydantic_core
 
-from agent6.config import _layer_data, _presets
+from agent6.config import _layer_data, _presets, io
 from agent6.config import layer as config_layer
 
 
@@ -242,7 +242,7 @@ def _configured_choices(eff: _layer_data.EffectiveConfig, leaf: str) -> tuple[st
     """
     if leaf == "preset":
         return eff.presets or tuple(_presets.preset_names(eff.layers))
-    parts = leaf.split(".")
+    parts = io.split_key(leaf)
     if len(parts) == 3 and parts[0] == "models" and parts[2] == "provider":
         return tuple(sorted(eff.config.providers)) or None
     return None
@@ -267,7 +267,7 @@ def build_config_view(
     leaves = _layer_data.config_leaves(eff.config)
     by_section: dict[str, list[str]] = {}
     for leaf in leaves:
-        by_section.setdefault(leaf.split(".", 1)[0], []).append(leaf)
+        by_section.setdefault(io.split_key(leaf)[0], []).append(leaf)
     ordered = [s for s in config_layer.SECTION_ORDER if s in by_section]
     ordered += [s for s in by_section if s not in config_layer.SECTION_ORDER]
 
@@ -276,7 +276,7 @@ def build_config_view(
         for leaf in by_section[section]:
             value = leaves[leaf]
             source = eff.sources.get(leaf, "default")
-            schema = field_schema(eff.config.__class__, leaf.split(".")) or FieldSchema()
+            schema = field_schema(eff.config.__class__, io.split_key(leaf)) or FieldSchema()
             py_type, choices = schema.py_type, schema.choices
             if py_type == "Any":
                 py_type = _type_label(type(value))
@@ -442,7 +442,7 @@ def render_key_detail(
     """
     view = build_config_view(eff, resolved=resolved)
     matched: list[ConfigSetting] = []
-    for key in keys:
+    for key in (io.render_key(io.split_key(raw)) for raw in keys):
         hits = [s for s in view.settings if s.key == key or s.key.startswith(key + ".")]
         if not hits:
             raise KeyError(key)

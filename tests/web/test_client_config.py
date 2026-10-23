@@ -130,17 +130,18 @@ async function run() {
   assert.deepEqual(config['mcp.servers.local.command'].value, ['server', 'two words']);
   assert.equal(config['mcp.servers.local.enabled'].value, false);
 
-  for (const name of ['alpha', 'beta']) {
+  for (const name of ['alpha', 'beta', 'org.some.skill']) {
     await button('Add skill…').onclick();
     assert.deepEqual(field('state').children.map(e => e.value), ['enabled', 'disabled', 'always']);
     field('name').value = name; field('state').value = 'always';
     await button('Add', overlay()).onclick();
-    assert.ok(row('skills.state.' + name));
+    assert.ok(row('skills.state.' + (name === 'org.some.skill' ? '"org.some.skill"' : name)));
   }
   for (const [key, label, table, name, repo] of [
     ['mcp.servers.local.url', 'MCP server', 'mcp.servers', 'local', true],
     ['providers.openrouter.base_url', 'provider', 'providers', 'openrouter', false],
     ['skills.state.alpha', 'skill', 'skills.state', 'alpha', false],
+    ['skills.state."org.some.skill"', 'skill', 'skills.state', 'org.some.skill', false],
   ]) {
     row(key).onclick();
     const remove = button('Remove ' + label, overlay());
@@ -149,7 +150,10 @@ async function run() {
     await remove.onclick();
     assert.equal(writes.length, before);
     assert.ok(overlay());
-    assert.ok(confirmations.at(-1).includes(table + '.' + name));
+    assert.ok(confirmations.at(-1).includes(label + " '" + name + "'"));
+    if (name === 'org.some.skill') {
+      assert.ok(!confirmations.at(-1).includes('skills.state.org.some.skill'));
+    }
     assert.ok(confirmations.at(-1).includes(repo ? 'repo' : 'global'));
     accept = true;
     await remove.onclick();

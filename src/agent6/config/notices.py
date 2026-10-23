@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 from collections.abc import Iterable
 
-from agent6.config import layer, model
+from agent6.config import _base, io, layer
 
 
 def write_message(
@@ -30,8 +30,9 @@ def write_message(
     """
     try:
         eff = layer.load_effective(repo_root, config_paths)
-    except model.ConfigError:
+    except _base.ConfigError:
         return message
+    keys = [io.render_key(io.split_key(key)) for key in keys]
     leaves = sorted(
         {leaf for key in keys for leaf in eff.sources if leaf == key or leaf.startswith(key + ".")}
     )

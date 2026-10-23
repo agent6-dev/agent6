@@ -498,7 +498,7 @@ def _print_disabled_notes(installed: list[str], config_paths: tuple[pathlib.Path
     disabled = sorted(n for n in installed if _state_map(config_paths).get(n) == "disabled")
     for name in disabled:
         print(
-            f'note: skills.state.{name} = "disabled" applies to this name;'
+            f'note: {io.render_key(("skills", "state", name))} = "disabled" applies to this name;'
             f" `agent6 skills enable {name}` clears it"
         )
     return bool(disabled)
@@ -772,13 +772,14 @@ def _cmd_skills_enable(
         _require_known(name, pathlib.Path.cwd(), config_paths)
     target = _state_target(repo)
     paths.mkdir_for_real_user(target.parent)
+    key = io.render_key(("skills", "state", name))
     try:
         if always:
-            io.upsert_toml_leaf(target, f"skills.state.{name}", "always")
-            print(f'Set skills.state.{name} = "always" in {target}')
+            io.upsert_toml_leaf(target, key, "always")
+            print(f'Set {key} = "always" in {target}')
         # Absent means enabled; removing the key keeps the config free of no-op entries.
-        elif io.remove_toml_leaf(target, f"skills.state.{name}") if target.is_file() else False:
-            print(f"Unset skills.state.{name} in {target} (enabled is the default)")
+        elif io.remove_toml_leaf(target, key) if target.is_file() else False:
+            print(f"Unset {key} in {target} (enabled is the default)")
         else:
             print(f"{name} is already enabled (no state entry in {target})")
     finally:
@@ -806,10 +807,10 @@ def _cmd_skills_disable(
     target = _state_target(repo)
     paths.mkdir_for_real_user(target.parent)
     try:
-        io.upsert_toml_leaf(target, f"skills.state.{name}", "disabled")
+        io.upsert_toml_leaf(target, io.render_key(("skills", "state", name)), "disabled")
     finally:
         paths.chown_to_real_user(target)
-    print(f'Set skills.state.{name} = "disabled" in {target}')
+    print(f'Set {io.render_key(("skills", "state", name))} = "disabled" in {target}')
     return 0
 
 
@@ -846,7 +847,8 @@ def _cmd_skills_remove(name: str, config_paths: tuple[pathlib.Path, ...] = ()) -
     print(f"removed {name}")
     if state := _state_map(config_paths).get(name, ""):
         print(
-            f'note: skills.state.{name} = "{state}" remains in config and applies if'
+            f'note: {io.render_key(("skills", "state", name))} = "{state}" remains in config'
+            " and applies if"
             f" {name!r} is installed again; `agent6 skills enable {name}` clears it"
         )
     return 0

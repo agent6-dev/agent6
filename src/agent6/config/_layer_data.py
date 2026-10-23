@@ -13,6 +13,7 @@ from typing import Any, Literal
 import pydantic
 
 from agent6 import paths
+from agent6.config import _base, io
 from agent6.config import model as config_model
 
 LayerName = Literal["default", "preset", "global", "repo", "flag", "machine", "state"]
@@ -86,9 +87,9 @@ def read_toml(path: pathlib.Path) -> dict[str, Any]:
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise config_model.ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
+        raise _base.ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
     except (OSError, UnicodeDecodeError) as exc:
-        raise config_model.ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
+        raise _base.ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
 
 
 def forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
@@ -106,7 +107,7 @@ def forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
         ConfigError: The table holds a top-level `preset`.
     """
     if "preset" in data:
-        raise config_model.ConfigError(
+        raise _base.ConfigError(
             f"top-level `preset` selects a config preset only from the global/repo"
             f" config or the --preset flag, not the {layer_name} config; use"
             f" --preset <name> or set it in your repo/global config."
@@ -138,7 +139,7 @@ def discover_layers(
         layers.append(Layer("repo", rpath, read_toml(rpath)))
     for explicit_path in explicit_paths:
         if not explicit_path.is_file():
-            raise config_model.ConfigError(f"--config file not found: {explicit_path}")
+            raise _base.ConfigError(f"--config file not found: {explicit_path}")
         data = read_toml(explicit_path)
         forbid_layer_preset("--config", data)
         layers.append(Layer("flag", explicit_path, data))
@@ -204,51 +205,51 @@ def merge_layers(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, str]]:
     sources: dict[str, str] = {}
 
     def walk(
-        base: dict[str, Any], override: dict[str, Any], layer_name: str, prefix: str
+        base: dict[str, Any], override: dict[str, Any], layer_name: str, prefix: tuple[str, ...]
     ) -> dict[str, Any]:
         out = dict(base)
         for key, val in override.items():
-            path = f"{prefix}{key}"
+            path = io.render_key((*prefix, key))
             existing = out.get(key)
             if (
                 isinstance(val, dict)
                 and isinstance(existing, dict)
                 and not format_changed(val, existing)
             ):
-                out[key] = walk(existing, val, layer_name, f"{path}.")
+                out[key] = walk(existing, val, layer_name, (*prefix, key))
             else:
                 for stale in [k for k in sources if k == path or k.startswith(f"{path}.")]:
                     del sources[stale]
                 out[key] = val
                 if isinstance(val, dict) and val:
-                    for leaf in flatten_leaves(val, prefix=f"{path}."):
+                    for leaf in flatten_leaves(val, prefix=(*prefix, key)):
                         sources[leaf] = layer_name
                 else:
                     sources[path] = layer_name
         return out
 
     for layer in layers:
-        merged = walk(merged, layer.data, layer.source, "")
+        merged = walk(merged, layer.data, layer.source, ())
     return merged, sources
 
 
-def flatten_leaves(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
+def flatten_leaves(data: dict[str, Any], prefix: tuple[str, ...] = ()) -> dict[str, Any]:
     """Flatten nested dicts to dotted leaf paths.
 
     A list, an array of tables included, is one leaf.
 
     Args:
         data: The nested table.
-        prefix: The dotted prefix of every path.
+        prefix: The literal components above every path.
 
     Returns:
         The leaves by dotted path.
     """
     out: dict[str, Any] = {}
     for key, val in data.items():
-        path = f"{prefix}{key}"
+        path = io.render_key((*prefix, key))
         if isinstance(val, dict) and val:
-            out.update(flatten_leaves(val, prefix=f"{path}."))
+            out.update(flatten_leaves(val, prefix=(*prefix, key)))
         else:
             out[path] = val
     return out
@@ -269,18 +270,19 @@ def config_leaves(config: config_model.Config) -> dict[str, Any]:
     """
     out: dict[str, Any] = {}
 
-    def walk(model: pydantic.BaseModel, prefix: str) -> None:
+    def walk(model: pydantic.BaseModel, prefix: tuple[str, ...]) -> None:
         for name in type(model).model_fields:
             value = getattr(model, name)
-            path = f"{prefix}{name}"
+            parts = (*prefix, name)
+            path = io.render_key(parts)
             if isinstance(value, pydantic.BaseModel):
-                walk(value, f"{path}.")
+                walk(value, parts)
             elif isinstance(value, dict) and value:
                 for key, entry in value.items():
                     if isinstance(entry, pydantic.BaseModel):
-                        walk(entry, f"{path}.{key}.")
+                        walk(entry, (*parts, key))
                     else:
-                        out[f"{path}.{key}"] = entry
+                        out[io.render_key((*parts, key))] = entry
             elif isinstance(value, tuple):
                 out[path] = tuple(
                     entry.model_dump(exclude_none=True)
@@ -291,7 +293,7 @@ def config_leaves(config: config_model.Config) -> dict[str, Any]:
             else:
                 out[path] = value
 
-    walk(config, "")
+    walk(config, ())
     return out
 
 

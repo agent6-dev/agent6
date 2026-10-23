@@ -19,7 +19,7 @@ from typing import Any
 import pydantic
 
 from agent6 import paths
-from agent6.config import _layer_data, _presets, io
+from agent6.config import _base, _layer_data, _presets, io
 from agent6.config import model as config_model
 
 # The `config show` and `config fill` order, from the model so a new section is never omitted.
@@ -68,7 +68,8 @@ def shadowing_layer(
         The layer whose value a run reads over the target's; None when the leaf is a table or
         the target's own value, a lower layer's or the default is in force.
     """
-    source = eff.sources.get(leaf)
+    found = effective_leaf(eff, leaf)
+    source = found[1] if found is not None else None
     if source is None:
         return None
     names = [lyr.name for lyr in eff.layers]
@@ -236,9 +237,9 @@ def _removable_for(
     Returns:
         `(file_key, layer, is_table)`, or None when no config file is at fault.
     """
-    parts = loc.split(".") if loc else []
+    parts = io.split_key(loc) if loc else []
     for i in range(len(parts), 0, -1):
-        cand = ".".join(parts[:i])
+        cand = io.render_key(parts[:i])
         if cand in origin:
             return cand, origin[cand], False
     prefix = f"{loc}." if loc else ""
@@ -265,7 +266,7 @@ def _diagnose_errors(
     blocked: list[str] = []
     seen: set[str] = set()
     for issue in exc.errors():
-        loc = ".".join(str(part) for part in issue["loc"])
+        loc = io.render_key(str(part) for part in issue["loc"])
         note = f"  - {loc or '<root>'}: {issue['msg']}"
         match = _removable_for(loc, origin)
         if match is None:
@@ -278,7 +279,7 @@ def _diagnose_errors(
         if layer.path is None or (only_layer is not None and layer.name != only_layer):
             blocked.append(note)
             continue
-        file_key = f"config.{key}" if layer.name == "machine" else key
+        file_key = io.render_key(("config", *io.split_key(key))) if layer.name == "machine" else key
         value = io.read_toml_leaf(io.read_toml_file(layer.path), file_key)
         removable.append(
             InvalidEntry(
@@ -307,7 +308,7 @@ def _diagnose_layers(layers: list[_layer_data.Layer], *, only_layer: str | None)
     merged, origin = _merge_with_origin(layers)
     try:
         config_model.Config.model_validate(merged)
-    except config_model.ConfigError as exc:
+    except _base.ConfigError as exc:
         return ConfigDiagnosis((), str(exc))
     except pydantic.ValidationError as exc:
         return _diagnose_errors(exc, origin, only_layer=only_layer)
@@ -342,11 +343,11 @@ def _diagnose_presets(repo_root: pathlib.Path) -> ConfigDiagnosis:
                 return ConfigDiagnosis(
                     (
                         InvalidEntry(
-                            leaf=f"presets.{name}",
+                            leaf=io.render_key(("presets", name)),
                             value=body,
                             layer=layer.name,
                             path=layer.path,
-                            file_key=f"presets.{name}",
+                            file_key=io.render_key(("presets", name)),
                             error_type="dict_type",
                         ),
                     ),
@@ -366,13 +367,14 @@ def _diagnose_presets(repo_root: pathlib.Path) -> ConfigDiagnosis:
             return ConfigDiagnosis(
                 tuple(
                     InvalidEntry(
-                        leaf=f"presets.{name}.{entry.leaf}",
+                        leaf=io.render_key(("presets", name, *io.split_key(entry.leaf))),
                         value=io.read_toml_leaf(
-                            io.read_toml_file(entry.path), f"presets.{name}.{entry.file_key}"
+                            io.read_toml_file(entry.path),
+                            io.render_key(("presets", name, *io.split_key(entry.file_key))),
                         ),
                         layer=entry.layer,
                         path=entry.path,
-                        file_key=f"presets.{name}.{entry.file_key}",
+                        file_key=io.render_key(("presets", name, *io.split_key(entry.file_key))),
                         is_table=entry.is_table,
                         error_type=entry.error_type,
                     )
@@ -412,7 +414,7 @@ def find_invalid_entries(
                 if leaves:
                     return ConfigDiagnosis(leaves, None)
         layers = _fix_scope_layers(repo_root, machine)
-    except config_model.ConfigError as exc:
+    except _base.ConfigError as exc:
         return ConfigDiagnosis((), str(exc))
     return _diagnose_layers(layers, only_layer=only)
 
@@ -441,10 +443,11 @@ def effective_leaf(eff: _layer_data.EffectiveConfig, dotted_key: str) -> tuple[A
         leaf no layer authored; None when the key is not a leaf.
     """
     leaves = _layer_data.config_leaves(eff.config)
-    parts = dotted_key.split(".")
+    parts = io.split_key(dotted_key)
+    dotted_key = io.render_key(parts)
     if parts[0] == "presets" and len(parts) > 2:
         # A preset leaf may name a role or provider absent from the effective config.
-        name, leaf = parts[1], ".".join(parts[2:])
+        name, leaf = parts[1], io.render_key(parts[2:])
         for layer in reversed(eff.layers):
             table = _file_presets(layer.path).get(name)
             if isinstance(table, dict) and (value := io.read_toml_leaf(table, leaf)) is not None:
@@ -452,9 +455,13 @@ def effective_leaf(eff: _layer_data.EffectiveConfig, dotted_key: str) -> tuple[A
         if leaf in leaves:
             return None, "unset"
         return None
-    if dotted_key not in leaves:
+    if dotted_key in leaves:
+        return leaves[dotted_key], eff.sources.get(dotted_key, "default")
+    nested = _layer_data.flatten_leaves(eff.config.model_dump(mode="python"))
+    if dotted_key not in nested:
         return None
-    return leaves[dotted_key], eff.sources.get(dotted_key, "default")
+    _, sources = _layer_data.merge_layers(list(eff.layers))
+    return nested[dotted_key], sources.get(dotted_key, "default")
 
 
 def _emit_table(path: str, data: dict[str, Any], lines: list[str]) -> None:
@@ -481,11 +488,12 @@ def _emit_table(path: str, data: dict[str, Any], lines: list[str]) -> None:
         for key, value in scalars.items():
             lines.append(f"{io.toml_key(key)} = {io.format_toml_value(value)}")
         lines.append("")
+    parts = io.split_key(path) if path else []
     for key, sub in subtables.items():
-        _emit_table(f"{path}.{io.toml_key(key)}" if path else io.toml_key(key), sub, lines)
+        _emit_table(io.render_key((*parts, key)), sub, lines)
     for key, arr in arraytables.items():
         for item in arr:
-            lines.append(f"[[{path}.{io.toml_key(key)}]]" if path else f"[[{io.toml_key(key)}]]")
+            lines.append(f"[[{io.render_key((*parts, key))}]]")
             for k2, v2 in item.items():
                 if v2 is not None:
                     lines.append(f"{io.toml_key(k2)} = {io.format_toml_value(v2)}")

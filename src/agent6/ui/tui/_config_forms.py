@@ -25,7 +25,7 @@ from agent6.viewmodel import config_view
 
 def _provider_preset_base_url(key: str) -> str:
     """Return the preset base_url for a known provider's `base_url` setting, else ""."""
-    parts = key.split(".")
+    parts = io.split_key(key)
     if len(parts) == 3 and parts[0] == "providers" and parts[2] == "base_url":
         return write.PROVIDER_DEFAULTS.get(parts[1], {}).get("base_url", "")
     return ""
@@ -515,11 +515,13 @@ class EntryModal(_FormModal[None]):
         if err:
             self.notify(f"Invalid: {err}", severity="error", timeout=8.0)
             return
-        key = f"{self._table.path}.{name}"
+        key = io.render_key((*io.split_key(self._table.path), name))
         keys = (
             [key]
             if self._table.leaf
-            else [f"{key}.{f}" for f, raw in fields.items() if raw.strip()]
+            else [
+                io.render_key((*io.split_key(key), f)) for f, raw in fields.items() if raw.strip()
+            ]
         )
         self.notify(
             notices.write_message(

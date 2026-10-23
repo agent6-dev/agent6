@@ -60,14 +60,16 @@ def test_provider_writers_use_the_schema_name_refusal(tmp_path: pathlib.Path, ed
             case "remove":
                 error = write.remove_entry(tmp_path, table, name).error
             case "leaf":
-                error = write.set_config_value(tmp_path, f"providers.{name}.api_format", "openai")
+                error = write.set_config_value(
+                    tmp_path, f"providers.{io.toml_key(name)}.api_format", "openai"
+                )
             case "table":
                 error = write.set_config_table(
-                    tmp_path, f"providers.{name}", {"api_format": "openai"}
+                    tmp_path, f"providers.{io.toml_key(name)}", {"api_format": "openai"}
                 )
             case "leaves":
                 error = write.set_config_leaves(
-                    tmp_path, f"providers.{name}", {"api_format": "openai"}
+                    tmp_path, f"providers.{io.toml_key(name)}", {"api_format": "openai"}
                 )
             case "whole":
                 error = write.set_config_value(
@@ -75,7 +77,7 @@ def test_provider_writers_use_the_schema_name_refusal(tmp_path: pathlib.Path, ed
                 )
             case _:
                 error = write.set_config_value(
-                    tmp_path, f"presets.custom.providers.{name}.api_format", "openai"
+                    tmp_path, f"presets.custom.providers.{io.toml_key(name)}.api_format", "openai"
                 )
     except ConfigError as exc:
         error = str(exc)
@@ -107,7 +109,7 @@ def test_cli_provider_names_use_the_schema_refusal(
     argv = (
         ["connect", "bad name"]
         if command == "connect"
-        else ["config", "set", "providers.bad name.api_format", "openai"]
+        else ["config", "set", 'providers."bad name".api_format', "openai"]
     )
     assert main(argv) == 2
     assert (

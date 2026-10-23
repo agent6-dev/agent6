@@ -10,7 +10,7 @@ import pathlib
 from collections.abc import Iterable
 from typing import Any
 
-from agent6.config import _layer_data
+from agent6.config import _base, _layer_data
 from agent6.config import model as config_model
 
 # The generated config table prints each note.
@@ -73,14 +73,12 @@ def resolve_preset(name: str, user_presets: dict[str, Any]) -> dict[str, Any]:
     if name in user_presets:
         prof = user_presets[name]
         if not isinstance(prof, dict):
-            raise config_model.ConfigError(
-                f"[presets.{name}] must be a table, got {type(prof).__name__}"
-            )
+            raise _base.ConfigError(f"[presets.{name}] must be a table, got {type(prof).__name__}")
         return prof
     if name in BUILTIN_PRESETS:
         return BUILTIN_PRESETS[name]
     known = ", ".join(sorted({"none", *BUILTIN_PRESETS, *user_presets}))
-    raise config_model.ConfigError(f"unknown preset {name!r}. Known presets: {known}.")
+    raise _base.ConfigError(f"unknown preset {name!r}. Known presets: {known}.")
 
 
 def preset_names(layers: Iterable[_layer_data.Layer]) -> list[str]:
@@ -181,7 +179,7 @@ def preset_catalog(
             continue
         for name, body in prof.items():
             if not isinstance(body, dict):
-                raise config_model.ConfigError(
+                raise _base.ConfigError(
                     f"[presets.{name}] must be a table, got {type(body).__name__}"
                 )
             origins[name] = f"{origins[name]}+{layer.name}" if name in origins else layer.name
@@ -218,7 +216,7 @@ def own_preset(layer: _layer_data.Layer) -> str:
         return ""
     if not isinstance(raw, str):
         shape = "a [preset] table" if isinstance(raw, dict) else f"a {type(raw).__name__}"
-        raise config_model.ConfigError(
+        raise _base.ConfigError(
             f"top-level `preset` in the {layer.name} config must be a preset name"
             f' string (e.g. preset = "review"), got {shape};'
             f" set it with `agent6 config set preset <name>`."
@@ -303,7 +301,7 @@ def strip_presets(
         prof = data.pop("presets", None)
         if isinstance(prof, dict):
             if "none" in prof:
-                raise config_model.ConfigError(
+                raise _base.ConfigError(
                     '[presets.none] is refused: "none" is reserved for selecting no preset.'
                 )
             user_presets = _layer_data.deep_merge(user_presets, prof)

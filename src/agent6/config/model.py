@@ -16,12 +16,8 @@ from typing import Annotated, Literal
 
 import pydantic
 
-from agent6 import errors, kinds
-from agent6.config import _base, _git, _harness, _providers, _sandbox, _surfaces
-
-
-class ConfigError(errors.OperatorError):
-    """The config file is missing, malformed or invalid: the operator's file, so a refusal."""
+from agent6 import kinds
+from agent6.config import _base, _git, _harness, _providers, _sandbox, _surfaces, io
 
 
 def preset_name(name: str) -> str:
@@ -37,7 +33,7 @@ def preset_name(name: str) -> str:
         ConfigError: The selector is empty.
     """
     if not name:
-        raise ConfigError('preset must not be empty; use "none" to select no preset.')
+        raise _base.ConfigError('preset must not be empty; use "none" to select no preset.')
     return name
 
 
@@ -344,20 +340,20 @@ class Config(pydantic.BaseModel):
         raw_spec = spec
         spec = spec.strip()
         if not spec:
-            raise ConfigError(f"{raw_spec!r}: no model id.")
+            raise _base.ConfigError(f"{raw_spec!r}: no model id.")
         provider, slash, model = spec.partition("/")
         known = ", ".join(sorted(self.providers)) or "(none)"
         if slash and not provider:
-            raise ConfigError(
+            raise _base.ConfigError(
                 f"{raw_spec!r}: name the provider as provider/model"
                 f" (configured providers: {known})."
             )
         if slash and not model:
-            raise ConfigError(f"{raw_spec!r}: no model id after the slash.")
+            raise _base.ConfigError(f"{raw_spec!r}: no model id after the slash.")
         if not slash or provider not in self.providers:
             current = self.models.resolve(role)
             if current is None:
-                raise ConfigError(
+                raise _base.ConfigError(
                     f"{raw_spec!r}: name the provider as provider/model"
                     f" (configured providers: {known})."
                 )
@@ -542,20 +538,20 @@ class Config(pydantic.BaseModel):
                 unknown.
         """
         if not self.providers:
-            raise ConfigError(
+            raise _base.ConfigError(
                 "No providers configured. Run `agent6 connect` to add one"
                 " (stored in your global config), or add a [providers.*]"
                 " block to the per-repo config."
             )
         rm = self.models.resolve(role)
         if rm is None:
-            raise ConfigError(
+            raise _base.ConfigError(
                 f"No model configured for the {role!r} role. Run `agent6 model`"
                 " to set it, or add a [models.worker] block to your config."
             )
         if rm.provider not in self.providers:
             known = ", ".join(sorted(self.providers)) or "(none)"
-            raise ConfigError(
+            raise _base.ConfigError(
                 f"models.{role}.provider = {rm.provider!r} but [providers.{rm.provider}]"
                 f" is not configured. Known providers: {known}."
             )
@@ -584,7 +580,7 @@ def _format_validation_error(
     """
     lines = [f"Config validation failed: {source}"]
     for issue in err.errors():
-        loc = ".".join(str(part) for part in issue["loc"]) or "<root>"
+        loc = io.render_key(str(part) for part in issue["loc"]) or "<root>"
         msg = issue["msg"]
         if issue["type"] == "union_tag_not_found" and loc.startswith("providers."):
             msg = _MISSING_API_FORMAT
@@ -619,7 +615,7 @@ def validate_config(
     try:
         return Config.model_validate(raw)
     except pydantic.ValidationError as exc:
-        raise ConfigError(_format_validation_error(exc, source, locate)) from exc
+        raise _base.ConfigError(_format_validation_error(exc, source, locate)) from exc
 
 
 def load_config(path: pathlib.Path) -> Config:
@@ -635,11 +631,11 @@ def load_config(path: pathlib.Path) -> Config:
         ConfigError: The file is missing, unreadable, not TOML, or invalid.
     """
     if not path.is_file():
-        raise ConfigError(f"Config file not found: {path}")
+        raise _base.ConfigError(f"Config file not found: {path}")
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
+        raise _base.ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
     except (OSError, UnicodeDecodeError) as exc:
-        raise ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
+        raise _base.ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
     return validate_config(raw, source=str(path))

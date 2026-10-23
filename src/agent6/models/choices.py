@@ -12,7 +12,7 @@ from __future__ import annotations
 import pathlib
 
 from agent6 import kinds, secret_store
-from agent6.config import Config, ConfigError, _layer_data, _presets, layer
+from agent6.config import Config, ConfigError, _layer_data, _presets, io, layer
 from agent6.models import cache, validate
 from agent6.sessions import manifest as sessions_manifest
 
@@ -203,7 +203,7 @@ def model_role_provider(eff: _layer_data.EffectiveConfig, key: str) -> str | Non
     Returns:
         The provider's name, or None for any other leaf.
     """
-    parts = key.split(".")
+    parts = io.split_key(key)
     if len(parts) != 3 or parts[0] != "models" or parts[2] != "model":
         return None
     role = getattr(eff.config.models, parts[1], None)

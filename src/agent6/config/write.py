@@ -132,7 +132,7 @@ def target_unparseable(target: pathlib.Path) -> bool:
     """
     try:
         io.read_toml_file(target)
-    except config_model.ConfigError:
+    except _base.ConfigError:
         return True
     return False
 
@@ -151,7 +151,7 @@ def merged_config_error(repo_root: pathlib.Path) -> str | None:
     """
     try:
         layer.load_effective(repo_root, ())
-    except config_model.ConfigError as exc:
+    except _base.ConfigError as exc:
         return str(exc)
     return None
 
@@ -248,7 +248,7 @@ def unknown_key_error(
     """
     try:
         pool = layer.leaf_keys(eff if eff is not None else layer.load_effective(repo_root, ()))
-    except config_model.ConfigError:
+    except _base.ConfigError:
         pool = sorted(_layer_data.flatten_leaves(config_model.Config().model_dump(mode="python")))
     close = difflib.get_close_matches(key, pool, n=2)
     hint = f". Did you mean {' or '.join(repr(c) for c in close)}?" if close else ""
@@ -268,7 +268,7 @@ def _section_leaves(doc: dict[str, Any], key: str) -> dict[str, Any]:
     Returns:
         The siblings by name; {} when the section is absent.
     """
-    parts = key.split(".")[:-1]
+    parts = io.split_key(key)[:-1]
     cur: Any = doc
     for part in parts:
         if not isinstance(cur, dict) or part not in cur:
@@ -281,7 +281,7 @@ def _section_leaves(doc: dict[str, Any], key: str) -> dict[str, Any]:
 
 def _provider_key_refusal(key: str, value: object = None) -> str | None:
     """Return a provider-name refusal before a dotted-key write loses name boundaries."""
-    parts = key.split(".")
+    parts = io.split_key(key)
     if parts[0] == "presets":
         parts = parts[2:]
     if not parts or parts[0] != "providers":
@@ -320,12 +320,17 @@ def written_value_error(
         acceptable or the only complaint is a missing child, which means the written
         container is partial and the merged revalidation still catches a genuine absence.
     """
-    parts = key.split(".")
+    parts = io.split_key(key)
+    key = io.render_key(parts)
     if parts[0] == "presets":
         # The schema forbids the table itself; a preset's leaf validates as the Config leaf.
         if len(parts) > 2:
             return written_value_error(
-                ".".join(parts[2:]), value, repo_root=repo_root, section=section, to_repo=to_repo
+                io.render_key(parts[2:]),
+                value,
+                repo_root=repo_root,
+                section=section,
+                to_repo=to_repo,
             )
         return None
     if parts[0] == "providers" and len(parts) == 3:
@@ -344,7 +349,7 @@ def written_value_error(
             message = _error_about(err, key, value, repo_root, to_repo=to_repo)
             if message is not None:
                 return message
-    except config_model.ConfigError as exc:
+    except _base.ConfigError as exc:
         return str(exc)
     return None
 
@@ -369,7 +374,7 @@ def _error_about(
     Returns:
         The message, or None.
     """
-    loc = ".".join(str(x) for x in err["loc"])
+    loc = io.render_key(str(x) for x in err["loc"])
     if err["type"] == "extra_forbidden" and (loc == key or key.startswith(loc + ".")):
         # An unknown top-level section errors at the section, not the leaf.
         return unknown_key_error(key, repo_root)
@@ -424,7 +429,7 @@ def revalidate_write(
     """
     try:
         doc = io.read_toml_file(target)
-    except config_model.ConfigError as exc:
+    except _base.ConfigError as exc:
         # Unparseable TOML is always this edit's doing; a raise would escape the rollback.
         return keep_or_rollback(target, prior, str(exc), held=held)
     for wkey, wvalue in written:
@@ -440,7 +445,7 @@ def revalidate_write(
             return keep_or_rollback(target, prior, value_err, held=held)
     try:
         layer.load_effective(repo_root, ())
-    except config_model.ConfigError as exc:
+    except _base.ConfigError as exc:
         err = str(exc) + _whole_table_hint(exc, written, to_repo=to_repo)
     else:
         return None
@@ -451,7 +456,7 @@ def revalidate_write(
 
 
 def _whole_table_hint(
-    exc: config_model.ConfigError, written: Sequence[tuple[str, object]], *, to_repo: bool
+    exc: _base.ConfigError, written: Sequence[tuple[str, object]], *, to_repo: bool
 ) -> str:
     """Return the line naming the one write that sets a table's required fields together.
 
@@ -473,12 +478,13 @@ def _whole_table_hint(
     for issue in cause.errors():
         if issue["type"] == "missing":
             *table, field = (str(part) for part in issue["loc"])
-            missing.setdefault(".".join(table), []).append(field)
-    for key, _ in written:
-        table, _, _leaf = key.rpartition(".")
+            missing.setdefault(io.render_key(table), []).append(field)
+    written_parts = [io.split_key(key) for key, _ in written]
+    for parts in written_parts:
+        table = io.render_key(parts[:-1])
         if table in missing:
-            wrote = [k.rpartition(".")[2] for k, _ in written if k.rpartition(".")[0] == table]
-            fields = ", ".join(f"{name} = ..." for name in (*wrote, *missing[table]))
+            wrote = [p[-1] for p in written_parts if p[:-1] == parts[:-1]]
+            fields = ", ".join(f"{io.toml_key(name)} = ..." for name in (*wrote, *missing[table]))
             flag = " --repo" if to_repo else ""
             return (
                 "\nset the table's fields in one write: "
@@ -542,7 +548,7 @@ def names_a_section(dotted_key: str) -> bool:
     """
     models: tuple[type[pydantic.BaseModel], ...] = (config_model.Config,)
     keyed = False  # the previous part was a name-keyed table, so this part is a name
-    for part in dotted_key.split("."):
+    for part in io.split_key(dotted_key):
         if keyed:
             keyed = False
             continue
@@ -590,16 +596,18 @@ def set_config_value(
         was_valid = merged_config_error(repo_root) is None
         if isinstance(parsed, dict) and names_a_section(dotted_key):
             if not parsed:
-                raise config_model.ConfigError(
-                    f"{dotted_key} = {{}} sets nothing; name the leaves to set"
-                )
+                raise _base.ConfigError(f"{dotted_key} = {{}} sets nothing; name the leaves to set")
             try:
                 for leaf, val in parsed.items():
-                    io.upsert_toml_leaf(target, f"{dotted_key}.{leaf}", val)
-            except config_model.ConfigError as exc:
+                    io.upsert_toml_leaf(
+                        target, io.render_key((*io.split_key(dotted_key), leaf)), val
+                    )
+            except _base.ConfigError as exc:
                 # A refusal mid-way leaves earlier leaves on disk.
                 return keep_or_rollback(target, prior, str(exc), held=held)
-            written = [(f"{dotted_key}.{leaf}", v) for leaf, v in parsed.items()]
+            written = [
+                (io.render_key((*io.split_key(dotted_key), leaf)), v) for leaf, v in parsed.items()
+            ]
         else:
             io.upsert_toml_leaf(target, dotted_key, parsed)
             written = [(dotted_key, parsed)]
@@ -651,7 +659,11 @@ def set_config_table(
             was_valid=was_valid,
             held=held,
             # Per leaf: a whole-table pair would hide every leaf-level error.
-            written=[(f"{table}.{k}", v) for k, v in fields.items() if v is not None],
+            written=[
+                (io.render_key((*io.split_key(table), k)), v)
+                for k, v in fields.items()
+                if v is not None
+            ],
         )
 
 
@@ -695,7 +707,7 @@ def _entry_fields(table: EntryTable, field: str) -> tuple[pydantic.fields.FieldI
         The member fields, or the mapping field for a scalar entry such as a skill state.
     """
     models: tuple[type[pydantic.BaseModel], ...] = (config_model.Config,)
-    for part in table.path.split("."):
+    for part in io.split_key(table.path):
         resolved = tuple(m for model in models for m in (_models_at(model, part) or ()))
         if not resolved:
             return tuple(model.model_fields[part] for model in models)
@@ -865,7 +877,9 @@ def add_entry(
         return set_config_leaves(
             repo_root, table.path, {name: values.get(table.fields[0])}, to_repo=to_repo
         )
-    return set_config_leaves(repo_root, f"{table.path}.{name}", values, to_repo=to_repo)
+    return set_config_leaves(
+        repo_root, io.render_key((*io.split_key(table.path), name)), values, to_repo=to_repo
+    )
 
 
 def remove_entry(
@@ -884,7 +898,7 @@ def remove_entry(
     """
     if table.path == "providers" and (refusal := _providers.provider_name_refusal(name)):
         return UnsetResult(removed=False, error=refusal)
-    key = f"{table.path}.{name}"
+    key = io.render_key((*io.split_key(table.path), name))
     unset = unset_config_value if table.leaf else unset_config_table
     return unset(repo_root, key, to_repo=to_repo)
 
@@ -898,11 +912,13 @@ def entry_of(key: str) -> tuple[EntryTable, str] | None:
     Returns:
         The entry table and name, including for a leaf in an entry's subtable.
     """
+    parts = io.split_key(key)
     for table in ENTRY_TABLES:
-        if key.startswith(table.path + "."):
-            name, separator, _leaf = key[len(table.path) + 1 :].partition(".")
-            if name and bool(separator) == (not table.leaf):
-                return table, name
+        prefix = io.split_key(table.path)
+        if parts[: len(prefix)] == prefix:
+            tail = parts[len(prefix) :]
+            if len(tail) == 1 if table.leaf else len(tail) > 1:
+                return table, tail[0]
     return None
 
 
@@ -953,19 +969,21 @@ def set_config_leaves(
         try:
             for key, val in fields.items():
                 if val is not None:
-                    io.upsert_toml_leaf(target, f"{table}.{key}", val)
-        except config_model.ConfigError as exc:
+                    io.upsert_toml_leaf(target, io.render_key((*io.split_key(table), key)), val)
+        except _base.ConfigError as exc:
             # Earlier leaves may already have landed.
-            raise config_model.ConfigError(
-                keep_or_rollback(target, prior, str(exc), held=held)
-            ) from exc
+            raise _base.ConfigError(keep_or_rollback(target, prior, str(exc), held=held)) from exc
         return revalidate_write(
             repo_root,
             target,
             prior,
             was_valid=was_valid,
             held=held,
-            written=[(f"{table}.{k}", v) for k, v in fields.items() if v is not None],
+            written=[
+                (io.render_key((*io.split_key(table), k)), v)
+                for k, v in fields.items()
+                if v is not None
+            ],
         )
 
 
