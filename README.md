@@ -1,9 +1,10 @@
 <!-- --8<-- [start:overview] -->
 # agent6
 
-- Runs model commands in a [Linux sandbox](#security) using your installed toolchains, with configurable filesystem and network access.
+- Runs the model's commands in a [Linux sandbox](#security) with the file and network access you set.
 - Saves conversations, tool activity, and Git checkpoints so you can inspect, resume, or fork a session from an earlier turn.
-- Shows the task graph, usage, and context compaction, with pinned instructions and repository memory to carry information across context windows and runs.
+- Shows the task graph, token usage and compaction as they happen.
+- Pinned instructions survive compaction; repository memory carries facts across runs.
 - Verifies work with a configured or inferred command, checking the starting tree by default, and reports whether the result passed, failed, or remains unverified.
 - Runs [parallel attempts][parallel-runs] in isolated clones with `--parallel N` or a list of models, then ranks the results for you to choose which to merge.
 - Defines long-running workflows in editable [TOML state machines][state-machines], combining agent runs, tool calls, waits, and branches with offline tests, crash recovery, and replay from recorded results.
@@ -45,7 +46,7 @@ For subscriptions, replace `agent6 connect` with `agent6 connect chatgpt` or `ag
 
 ## [Usage][usage]
 
-**Runs edit your current checkout by default.**
+A run edits your current checkout.
 Checkpoint commits go on a separate `agent6/<id>` branch; checkpointing leaves your current branch's history and index in place.
 For a separate checkout, use `agent6 run --worktree "your task"`, which starts from committed HEAD without copying uncommitted changes or untracked dependencies.
 
@@ -70,14 +71,14 @@ Other commands:
 
 | Command | Purpose |
 | --- | --- |
-| `agent6 plan "task"` | Plan a change; `agent6 run --from <plan-id>` carries it out. |
-| `agent6 ask "question"` | Ask about the repository. |
-| `agent6 review` | Review a diff. |
-| `agent6 attach <id>` | Follow a live session. |
-| `agent6 steer <id> "instruction"` | Direct the next steps. |
-| `agent6 stop <id> --after-step` | Stop after the current step. |
-| `agent6 resume <id>` | Continue an interrupted run. |
-| `agent6 fork <id> --at-turn 7` | Fork a coding run from an earlier turn into a separate worktree. |
+| `agent6 plan "task"` | plan a change; `agent6 run --from <plan-id>` carries it out |
+| `agent6 ask "question"` | ask about the repository |
+| `agent6 review` | review a diff |
+| `agent6 attach <id>` | follow a live session |
+| `agent6 steer <id> "instruction"` | direct the next steps |
+| `agent6 stop <id> --after-step` | stop after the current step |
+| `agent6 resume <id>` | continue an interrupted run |
+| `agent6 fork <id> --at-turn 7` | fork a coding run from an earlier turn into a separate worktree |
 
 To give a finished run more work, use `agent6 resume <id> --steer "next task"`.
 
@@ -104,10 +105,6 @@ The defaults are `sandbox.network = "auto"`, `sandbox.run_commands = "ask"` and 
 `agent6 check sandbox` shows the effective file and command boundaries, network and approval settings, and live probe results.
 
 ## Development
-
-agent6 is [Apache-2.0 licensed](https://github.com/agent6-dev/agent6/blob/master/LICENSE) and under active development before 1.0; commands, configuration, and stored formats can change.
-[Development conventions](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md) cover contributions, and the [benchmark and evaluation suites](https://github.com/agent6-dev/agent6/tree/master/bench) compare models and harness settings with task graders, repeated runs, and usage measurements.
-
 [Report bugs or confusing behavior](https://github.com/agent6-dev/agent6/issues), or [report vulnerabilities privately](https://github.com/agent6-dev/agent6/security/advisories/new).
 <!-- --8<-- [end:guide] -->
 
