@@ -8,17 +8,21 @@ gating block_on (no network).
 
 from __future__ import annotations
 
-from typing import Any
+import json
+import pathlib
+from typing import Any, Literal
 from unittest import mock
 
 import pytest
 
-from agent6.harness import _chain, _conversation, _reviewer, loop
+from agent6.harness import _chain, _conversation, _panel, _reviewer, loop
 from agent6.tools import results
 from tests.unit.test_review_gate import (
+    _exec,  # pyright: ignore[reportPrivateUsage]
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
     _resp,  # pyright: ignore[reportPrivateUsage]
     _resp_with_tool_use,  # pyright: ignore[reportPrivateUsage]
+    _verify_pass_tool_use,  # pyright: ignore[reportPrivateUsage]
     _wf,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -35,6 +39,22 @@ _BLOCK = (
     '"severity":"block","file_line":"foo.py:11","title":"hardcoded key","detail":"x"}]}'
 )
 _PASS = '{"verdict":"pass","summary":"ok","findings":[]}'
+_BLOCK_AND_NEW = json.dumps(
+    {
+        "verdict": "block",
+        "summary": "leak and data loss",
+        "findings": [
+            *json.loads(_BLOCK)["findings"],
+            {
+                "category": "data-loss",
+                "severity": "block",
+                "file_line": "foo.py:11",
+                "title": "overwrites data",
+                "detail": "x",
+            },
+        ],
+    }
+)
 _NONGATING = (  # grounded but a non-block-eligible category -> downgraded, never gates
     '{"verdict":"block","summary":"style","findings":[{"category":"style",'
     '"severity":"block","file_line":"foo.py:11","title":"rename it","detail":"x"}]}'
@@ -110,6 +130,125 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
     assert "rejected your finish_session" in injected and "hardcoded key" in injected
 
 
+@pytest.mark.parametrize(
+    ("second_panel", "rejections"), [(_BLOCK, 1), (_BLOCK_AND_NEW, 2)], ids=["duplicate", "new"]
+)
+def test_panels_count_and_inject_each_finding_once(
+    tmp_path: pathlib.Path, second_panel: str, rejections: int
+) -> None:
+    """A repeat neither rejects nor injects again, while a new finding still does both."""
+    worker = mock.MagicMock()
+    worker.call.side_effect = [
+        _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(4)
+    ]
+    seat_provider = mock.MagicMock()
+    seat_provider.call.side_effect = [
+        _resp(_BLOCK),
+        _resp(second_panel),
+        _resp(second_panel),
+        _resp(_PASS),
+    ]
+    snapshot = tmp_path / "loop_state.json"
+    wf = _wf(
+        provider=worker,
+        dispatcher=_disp(),
+        review=_reviewer.ReviewSettings(
+            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+        ),
+        base_sha="b",
+        resume_state_path=snapshot,
+    )
+    messages = _begin()
+    result = _drive(wf, messages)
+    assert json.loads(snapshot.read_text())["review_rejections_total"] == rejections
+    assert result.reason == "finish_session" and result.turns == rejections + 1
+    feedback = [
+        b["text"]
+        for m in messages
+        for b in m.get("content", [])
+        if b.get("type") == "text" and b["text"].startswith("[review]")
+    ]
+    assert len(feedback) == rejections
+    assert "".join(feedback).count("hardcoded key") == 1
+    assert "".join(feedback).count("overwrites data") == rejections - 1
+
+    # A resume keeps the rejection count but lets a prior execution's finding count again.
+    worker.call.side_effect = [
+        _resp_with_tool_use(f"resumed{i}", _finish_tool_use(f"r{i}", "done")) for i in range(3)
+    ]
+    seat_provider.call.reset_mock()
+    seat_provider.call.side_effect = [_resp(_BLOCK), _resp(_BLOCK), _resp(_PASS)]
+    with mock.patch.object(_chain.RunChain, "diff_since_base", return_value=_DIFF):
+        resumed = wf.resume()
+    assert json.loads(snapshot.read_text())["review_rejections_total"] == rejections + 1
+    assert resumed.reason == "finish_session" and resumed.turns == rejections + 3
+    prompt = seat_provider.call.call_args_list[0].kwargs["messages"][0]["content"]
+    assert "ALREADY RAISED" not in prompt
+
+
+def test_second_panel_prompt_names_prior_finding() -> None:
+    """The second seat call receives the finding injected after the first panel."""
+    worker = mock.MagicMock()
+    worker.call.side_effect = [
+        _resp_with_tool_use("f1", _finish_tool_use("a", "done")),
+        _resp_with_tool_use("f2", _finish_tool_use("b", "done")),
+    ]
+    seat_provider = mock.MagicMock()
+    seat_provider.call.side_effect = [_resp(_BLOCK), _resp(_PASS)]
+    wf = _wf(
+        provider=worker,
+        dispatcher=_disp(),
+        review=_reviewer.ReviewSettings(
+            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+        ),
+        base_sha="b",
+    )
+    _drive(wf, _begin())
+    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"]
+    assert "ALREADY RAISED (do not repeat): foo.py:11 security" in prompt
+
+
+@pytest.mark.parametrize("trigger", ["periodic", "on_verify_fail"])
+def test_observe_only_panels_do_not_repeat_findings(
+    trigger: Literal["periodic", "on_verify_fail"],
+) -> None:
+    """Advisory panels carry their injected findings to the next seat call."""
+    worker = mock.MagicMock()
+    worker.call.side_effect = [
+        _resp_with_tool_use("t1", _verify_pass_tool_use("v1")),
+        _resp_with_tool_use("t2", _verify_pass_tool_use("v2")),
+        _resp_with_tool_use("done", _finish_tool_use("f", "done")),
+    ]
+    dispatcher = _disp()
+    dispatcher.dispatch.side_effect = [
+        _exec(1, stderr="test x failed"),
+        _exec(1, stderr="test x failed"),
+        results.RawResult({"ok": True}),
+    ]
+    seat_provider = mock.MagicMock()
+    seat_provider.call.side_effect = [_resp(_BLOCK), _resp(_BLOCK), _resp(_PASS)]
+    wf = _wf(
+        provider=worker,
+        dispatcher=dispatcher,
+        review=_reviewer.ReviewSettings(
+            reviewers=[_seat(seat_provider)], trigger=trigger, interval_turns=1
+        ),
+        base_sha="b",
+    )
+    messages = _begin()
+    result = _drive(wf, messages)
+    assert result.reason == "finish_session" and result.turns == 3
+    feedback = "".join(
+        b["text"]
+        for m in messages
+        for b in m.get("content", [])
+        if b.get("type") == "text" and b["text"].startswith("[review]")
+    )
+    assert feedback.count("hardcoded key") == 1
+    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"]
+    assert "ALREADY RAISED (do not repeat): foo.py:11 security" in prompt
+
+
 def test_panel_skipped_when_budget_fraction_low() -> None:
     """Below `min_remaining_budget_fraction` the panel is skipped and the finish stands.
 
@@ -182,12 +321,21 @@ def test_the_configured_cap_counts_rejected_finishes(cap: int) -> None:
     through early: the default cap of 4 means four rejections, not two.
     """
     worker = mock.MagicMock()
-    # the worker keeps trying to finish; the seat keeps blocking
+    # Each panel finds a distinct grounded block while the worker keeps trying to finish.
     worker.call.side_effect = [
         _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(8)
     ]
     seat_provider = mock.MagicMock()
-    seat_provider.call.return_value = _resp(_BLOCK)
+    seat_provider.call.side_effect = [
+        _resp(_BLOCK.replace('"security"', f'"{category}"'))
+        for category in (
+            "security",
+            "sandbox-bypass",
+            "off-topic-edit",
+            "data-loss",
+            "verify-uncovered-correctness",
+        )
+    ]
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
@@ -239,3 +387,63 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     assert "inconclusive" in out.text and "abstained" in out.text
     assert "No blocking findings" not in out.text
     assert out.satisfied is True  # never deadlocks the run
+
+
+def test_findings_the_notice_cut_are_not_remembered_as_injected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A finding the notice cut was remembered as injected, so later panels dropped it unseen."""
+    monkeypatch.setattr(_panel, "REVIEW_NOTICE_BYTES", 1_000)
+    big = json.dumps(
+        {
+            "verdict": "block",
+            "summary": "three",
+            "findings": [
+                {
+                    "category": category,
+                    "severity": "block",
+                    "file_line": "foo.py:11",
+                    "title": f"finding {i}",
+                    "detail": "d" * 500,
+                }
+                for i, category in enumerate(("security", "data-loss", "sandbox-bypass"), 1)
+            ],
+        }
+    )
+    worker = mock.MagicMock()
+    worker.call.side_effect = [
+        _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(4)
+    ]
+    seat_provider = mock.MagicMock()
+    seat_provider.call.side_effect = [_resp(big), _resp(big), _resp(big), _resp(_PASS)]
+    wf = _wf(
+        provider=worker,
+        dispatcher=_disp(),
+        review=_reviewer.ReviewSettings(
+            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+        ),
+        base_sha="b",
+    )
+    messages = _begin()
+    result = _drive(wf, messages)
+    notices = [
+        b["text"]
+        for m in messages
+        for b in m.get("content", [])
+        if b.get("type") == "text" and b["text"].startswith("[review]")
+    ]
+    assert result.reason == "finish_session" and result.turns == 4
+    shown = [[f"finding {i}" for i in (1, 2, 3) if f"finding {i}" in n] for n in notices]
+    assert sorted(title for titles in shown for title in titles) == [
+        "finding 1",
+        "finding 2",
+        "finding 3",
+    ]
+    assert [len(titles) for titles in shown] == [1, 1, 1]
+    assert "[2 more findings not shown]" in notices[0]
+    assert "[1 more finding not shown]" in notices[1]
+    assert "not shown" not in notices[2]
+    category = {"finding 1": "security", "finding 2": "data-loss", "finding 3": "sandbox-bypass"}
+    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"]
+    assert f"foo.py:11 {category[shown[0][0]]}" in prompt
+    assert all(f"foo.py:11 {category[t[0]]}" not in prompt for t in shown[1:])

@@ -19,6 +19,7 @@ from agent6.harness import (
     _finish_gates,
     _guards,
     _metric,
+    _panel,
     _quiet_turns,
     _snapshot,
     _spiral,
@@ -67,6 +68,7 @@ class LoopState:
         reach: The reachability guard.
         focus: The DAG focus guard.
         gates: The finish gates' state.
+        review_findings: Findings injected by panels in this execution; a resume starts empty.
         budget_nudges: The budget nudge state.
     """
 
@@ -97,6 +99,7 @@ class LoopState:
     reach: _guards.ReachabilityGuard = dataclasses.field(default_factory=_guards.ReachabilityGuard)
     focus: _guards.FocusGuard = dataclasses.field(default_factory=_guards.FocusGuard)
     gates: _finish_gates.FinishGates = dataclasses.field(default_factory=_finish_gates.FinishGates)
+    review_findings: tuple[_panel.Finding, ...] = ()
     budget_nudges: _guards.BudgetNudges = dataclasses.field(default_factory=_guards.BudgetNudges)
 
 

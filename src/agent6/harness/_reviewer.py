@@ -423,6 +423,9 @@ __all__ = [
 
 
 # The before-finish panel's rejection by the ending it rejected; the findings follow.
+# Room in the review notice for a rejection prefix and the "more findings" line.
+_NOTICE_ROOM = 256
+
 REVIEW_REJECTED = {
     "finish_session": (
         "The review panel rejected your finish_session call. Address the"
@@ -592,6 +595,7 @@ class Reviewer:
             diff=diff,
             verify_ok=state.verify.last_ok,
             verify_output=state.verify.last_tail,
+            prior_findings=state.review_findings,
         )
         self.emit(
             "loop.review.start",
@@ -643,7 +647,14 @@ class Reviewer:
         if _panel.panel_is_inconclusive(result):
             text = _panel.inconclusive_note(result)
         else:
-            text = _panel.render_findings(result.merged_findings) or "No blocking findings."
+            # Only a finding the worker is shown counts as injected; a cut one comes back.
+            shown = _panel.findings_within(
+                result.merged_findings, _panel.REVIEW_NOTICE_BYTES - _NOTICE_ROOM
+            )
+            state.review_findings += shown
+            text = _panel.render_findings(shown) or "No blocking findings."
+            if cut := len(result.merged_findings) - len(shown):
+                text += f"\n[{cut} more finding{'s' if cut > 1 else ''} not shown]"
         return CritiqueResult(
             text=text,
             satisfied=not effective_blocked,

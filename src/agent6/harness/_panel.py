@@ -518,6 +518,14 @@ def aggregate_verdicts(
     )
 
 
+def findings_within(findings: tuple[Finding, ...], budget: int) -> tuple[Finding, ...]:
+    """Return the longest leading run of findings whose rendering fits the budget in bytes."""
+    for n in range(len(findings), 0, -1):
+        if len(render_findings(findings[:n]).encode()) <= budget:
+            return findings[:n]
+    return ()
+
+
 def render_findings(findings: tuple[Finding, ...]) -> str:
     """Return merged findings as a `[review]` block for the worker or the CLI, "" when empty."""
     if not findings:
@@ -541,6 +549,7 @@ __all__ = [
     "ReviewVerdict",
     "aggregate_verdicts",
     "diff_hunks",
+    "findings_within",
     "is_grounded",
     "render_findings",
 ]
