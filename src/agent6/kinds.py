@@ -342,12 +342,12 @@ class SandboxReport:
 
     Attributes:
         name: The test's name.
-        ok: Whether it passed.
+        status: PASS, FAIL or SKIP when the probe does not apply.
         detail: What it found.
     """
 
     name: str
-    ok: bool
+    status: Literal["PASS", "FAIL", "SKIP"]
     detail: str
 
 

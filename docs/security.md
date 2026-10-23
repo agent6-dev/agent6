@@ -72,8 +72,11 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 
 ## Defense layers
 
-`agent6 check sandbox` prints a table for the file tools and one for the jailed commands: a root row, a home-directory row and a row per path, a parent before its children.
+`agent6 check sandbox` prints separate filesystem enforcement sections for the file tools and jailed commands, with one row per policy path in each scope, parents before children and root and home boundary rows where no grant covers them.
+The `rw`, `ro` and `--` markers show access; `sys`, `net` and `tool` tags show purpose, and annotations combine discovery and configuration details.
+The Git row shows configured and effective protection, and each granted device has its own row.
 It also prints a line per MCP server, the network, the approval mode and the secrets posture, then runs the jail probes.
+The network probe reads `[SKIP]` under `partial` and `none`, which have no network namespace.
 
 ### 1. Trust boundary
 

@@ -24,7 +24,7 @@ from agent6.sandbox import (
     tool_paths,
 )
 from agent6.tools import mcp_client
-from agent6.ui.cli import _check_sandbox
+from agent6.ui.cli import _check_render, _check_sandbox, _common
 
 
 def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
@@ -58,7 +58,7 @@ def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
         checks.append(kinds.DoctorCheck(name="config_load", status="FAIL", detail=load_error))
 
     if cfg is not None and section in {"all", "sandbox"}:
-        print("== sandbox ==")
+        print(_common.sgr("== sandbox ==", "1"))
         checks.extend(_check_sandbox.check_sandbox_section(cfg))
         print()
 
@@ -77,10 +77,10 @@ def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
         checks.extend(_doctor_check_verify(cfg))
         print()
 
-    print("== summary ==")
+    print(_common.sgr("== summary ==", "1"))
     failed = False
     for c in checks:
-        print(f"[{c.status}] {c.name}: {c.detail}")
+        _check_render.result(c.status, c.name, c.detail)
         failed = failed or c.status == "FAIL"
     return 1 if failed else 0
 

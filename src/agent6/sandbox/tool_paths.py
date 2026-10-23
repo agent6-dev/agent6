@@ -57,15 +57,17 @@ class ToolMount:
 
     Attributes:
         path: The dir, at its real location.
-        why: Why the jail mounts it: a bin dir on the jail's PATH, the tool that links into
-            it, or uv's interpreters.
+        on_path: The directory is on the jail's PATH.
+        links: Symlink sources whose targets live in this directory.
+        runtimes: Established runtime dependencies supplied by this directory.
     """
 
     path: pathlib.Path
-    why: str
+    on_path: bool = False
+    links: tuple[pathlib.Path, ...] = ()
+    runtimes: tuple[str, ...] = ()
 
 
-_ON_PATH = "on the jail's PATH"
 _UV_PYTHONS = "uv-managed interpreters"
 
 
@@ -77,15 +79,16 @@ def operator_tool_mounts() -> tuple[ToolMount, ...]:
     symlink resolves to, also needs the mount.
 
     Returns:
-        The mounts. A dir mounted for several reasons gets one `why`: the jail's PATH,
-        else uv's interpreters, else its first link with a count of the rest.
+        The mounts, with every discovery source retained for each directory.
     """
+    on_path: set[pathlib.Path] = set()
+    links: dict[pathlib.Path, list[pathlib.Path]] = {}
     whys: dict[pathlib.Path, list[str]] = {}
     for d in _tool_bin_dirs():
         if not d.is_dir():
             continue
         if not _under_system_root(d) and not _never_mounted(d):
-            whys.setdefault(d, []).append(_ON_PATH)
+            on_path.add(d)
         try:
             entries = list(d.iterdir())
         except OSError:
@@ -98,7 +101,7 @@ def operator_tool_mounts() -> tuple[ToolMount, ...]:
             except OSError:
                 continue
             if real.is_file() and not _under_system_root(real) and not _never_mounted(real.parent):
-                whys.setdefault(real.parent, []).append(f"{entry} links here")
+                links.setdefault(real.parent, []).append(entry)
     # uv-managed CPython lives under XDG data; without this mount an in-jail `uv run` sees the
     # venv's interpreter missing and recreates the operator's .venv. A mount, never a PATH entry.
     data_home = pathlib.Path(
@@ -107,16 +110,10 @@ def operator_tool_mounts() -> tuple[ToolMount, ...]:
     uv_pythons = data_home / "uv" / "python"
     if uv_pythons.is_dir():
         whys.setdefault(uv_pythons, []).append(_UV_PYTHONS)
-    out: list[ToolMount] = []
-    for path in sorted(whys):
-        reasons = whys[path]
-        if _ON_PATH in reasons or _UV_PYTHONS in reasons:
-            why = _ON_PATH if _ON_PATH in reasons else _UV_PYTHONS
-        else:
-            more = f", {len(reasons) - 1} more" if len(reasons) > 1 else ""
-            why = f"{reasons[0]}{more}"
-        out.append(ToolMount(path, why))
-    return tuple(out)
+    return tuple(
+        ToolMount(path, path in on_path, tuple(links.get(path, ())), tuple(whys.get(path, ())))
+        for path in sorted(on_path | links.keys() | whys.keys())
+    )
 
 
 def operator_tool_paths() -> tuple[str, tuple[pathlib.Path, ...]]:

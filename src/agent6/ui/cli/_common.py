@@ -183,8 +183,10 @@ def editor_argv() -> list[str] | None:
 
 
 def sgr(text: str, code: str) -> str:
-    """Return the text in an ANSI style on a tty, plain otherwise."""
-    return f"\x1b[{code}m{text}\x1b[0m" if sys.stdout.isatty() else text
+    """Return the text in an ANSI style on a tty, plain otherwise; blank text stays bare."""
+    if not text.strip() or not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
+        return text
+    return f"\x1b[{code}m{text}\x1b[0m"
 
 
 def _runs_dir(repo_root: pathlib.Path) -> pathlib.Path:
