@@ -128,7 +128,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
 
     Streams to the terminal, so it cannot go through git_ops; it carries the same host-RCE
     hardening (a poisoned `.git/config` `diff.external`, textconv, `core.fsmonitor` or hook
-    must not execute on the host) plus `DIFF_SHOW_SAFETY_FLAGS`, which force the builtin
+    must not execute on the host) plus `DIFF_SAFETY_FLAGS`, which force the builtin
     renderer (git 2.53 executes even an empty `diff.external` override) and disable the
     per-file textconv driver the `-c` flags do not reach.
 
@@ -170,7 +170,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
 
     head_ref = ref.head_ref
     # Printed without the -c hardening overrides, as git_ops error messages are; executed with them.
-    args: list[str] = ["diff", *git_policy.DIFF_SHOW_SAFETY_FLAGS]
+    args: list[str] = ["diff", *git_policy.DIFF_SAFETY_FLAGS]
     if stat:
         args.append("--stat")
     args.extend([f"{base_sha}..{head_ref}"])
@@ -184,7 +184,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
     # Probe first so a zero-commit run says so; a probe error falls through to git's message.
     probe_args = [
         "diff",
-        *git_policy.DIFF_SHOW_SAFETY_FLAGS,
+        *git_policy.DIFF_SAFETY_FLAGS,
         "--quiet",
         f"{base_sha}..{head_ref}",
     ]

@@ -166,6 +166,27 @@ def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: pathli
     assert not marker.exists(), "an include-hidden clean filter ran a host command"
 
 
+def test_blame_and_the_other_diff_family_verbs_do_not_run_a_repo_textconv(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The web Git tab's blame does not run a repo-configured `diff.<d>.textconv`.
+
+    The runner forced the builtin renderer for `diff` and `show` only; `blame`, `diff-tree`
+    and `log` take the same flags.
+    """
+    from agent6.vcs import git_files
+
+    root = _repo(tmp_path / "r")
+    marker = tmp_path / "pwned"
+    _git(root, "config", "diff.pwn.textconv", f"touch {marker}; cat")
+    (root / ".gitattributes").write_text("*.txt diff=pwn\n", encoding="utf-8")
+    git_policy.set_repo_driver_policy(False)
+    head = _git(root, "rev-parse", "HEAD").stdout.strip()
+    rows = git_files.blame_lines(root, head, "f.txt", b"v1\n", lines=1)
+    assert rows and rows[0].sha == head
+    assert not marker.exists(), "a repo-configured textconv ran as a host command"
+
+
 def test_the_review_diff_does_not_run_a_repo_clean_filter(tmp_path: pathlib.Path) -> None:
     """`agent6 review`'s working-tree diff carries the per-name driver overrides.
 

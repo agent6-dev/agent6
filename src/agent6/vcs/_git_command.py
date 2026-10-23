@@ -45,11 +45,11 @@ def spawn(
         {**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C", **(env_extra or {})}
     )
     hardening = git_policy.git_hardening_flags(cwd)
-    # git 2.53 dies rc=128 on the empty `diff.external` override, so diff and show force the
-    # builtin renderer by flag.
+    # git 2.53 dies rc=128 on the empty `diff.external` override, so every verb that renders
+    # a diff forces the builtin renderer by flag; `blame` runs textconv too.
     argv = list(args)
-    if argv and argv[0] in ("diff", "show"):
-        argv[1:1] = git_policy.DIFF_SHOW_SAFETY_FLAGS
+    if argv and argv[0] in ("blame", "diff", "diff-tree", "log", "show"):
+        argv[1:1] = git_policy.DIFF_SAFETY_FLAGS
     # Drivers are blanked on every op: a list of driver-running verbs would enumerate badness.
     full_argv = (git_policy.git(), *hardening, *argv)
     index_lock = cwd / ".git" / "index.lock"

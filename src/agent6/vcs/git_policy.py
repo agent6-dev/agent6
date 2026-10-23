@@ -132,16 +132,17 @@ def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
     return tuple(overrides)
 
 
-# Force git's builtin diff/show renderer: `diff.external` and per-file `diff.<d>.textconv` run
-# host commands the `-c` overrides do not cover. Placed after the subcommand.
-DIFF_SHOW_SAFETY_FLAGS: tuple[str, ...] = ("--no-ext-diff", "--no-textconv")
+# Force git's builtin renderer on every diff-family verb (diff, diff-tree, log, show, blame):
+# `diff.external` and per-file `diff.<d>.textconv` run host commands the `-c` overrides do not
+# cover. Placed after the subcommand.
+DIFF_SAFETY_FLAGS: tuple[str, ...] = ("--no-ext-diff", "--no-textconv")
 
 
 def git_hardening_flags(cwd: pathlib.Path) -> tuple[str, ...]:
     """Return the `-c` overrides every agent6 git invocation carries, placed before the subcommand.
 
     Public so the callers that shell out to git outside this module carry the same
-    hardening; diff and show callers also add `DIFF_SHOW_SAFETY_FLAGS` after the subcommand.
+    hardening; diff and show callers also add `DIFF_SAFETY_FLAGS` after the subcommand.
 
     Args:
         cwd: The repository, for its content drivers.

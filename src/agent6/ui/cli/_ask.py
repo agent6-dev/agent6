@@ -92,7 +92,7 @@ def _git_diff_text(cwd: pathlib.Path, range_spec: str) -> tuple[int, str, str]:
             "git",
             *git_policy.git_hardening_flags(cwd),
             "diff",
-            *git_policy.DIFF_SHOW_SAFETY_FLAGS,
+            *git_policy.DIFF_SAFETY_FLAGS,
             range_spec,
         ],
         cwd=cwd,

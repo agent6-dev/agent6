@@ -459,7 +459,7 @@ Below `full` there is no network namespace: `auto` degrades to the agent process
 
 **Repo-controlled host code in a poisoned `.git/config`**
 
-- `core.fsmonitor` and `diff.external` are always off.
+- `core.fsmonitor`, `diff.external` and `diff.<d>.textconv` are always off.
 - `blame.ignoreRevsFile` is honoured only for a regular file inside the repository; the Files view's blame refuses any other value, since git would open the file on the host and quote its first unparsable line.
 - `.git/hooks/*` run only under `git.run_repo_hooks = true` (default false); `core.hooksPath` points away, so a hook cannot fire on agent6's auto-commit.
 - Content drivers (`filter.<n>.clean` / `smudge` / `process`, `merge.<n>.driver`) are off by default (`git.run_repo_drivers`), neutralized per name

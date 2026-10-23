@@ -111,7 +111,7 @@ def _collect_review_diff(
             git,
             *hardening,
             "diff",
-            *git_policy.DIFF_SHOW_SAFETY_FLAGS,
+            *git_policy.DIFF_SAFETY_FLAGS,
             "--end-of-options",
             rev,
         ]
