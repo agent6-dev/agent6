@@ -33,7 +33,7 @@ _ENV = detect.Environment(
 _MOUNTS = (
     tool_paths.ToolMount(pathlib.Path("/opt/tools/bin"), on_path=True),
     tool_paths.ToolMount(
-        pathlib.Path("/opt/tools/lib/x/bin"), links=(pathlib.Path("/opt/tools/bin/x"),)
+        pathlib.Path("/opt/tools/lib/x"), links=(pathlib.Path("/opt/tools/bin/x"),)
     ),
 )
 
@@ -229,7 +229,7 @@ def test_check_sandbox_degraded_names_why(
     assert f"'full' is unavailable because {why}" in out
     # Under partial nothing is mounted: the tool dirs are Landlock read grants, one row each.
     assert "    ro  tool  /opt/tools/bin  (on the jail's PATH)" in out
-    assert "    ro  tool  /opt/tools/lib/x/bin  (/opt/tools/bin/x links into this directory)" in out
+    assert "    ro  tool  /opt/tools/lib/x  (/opt/tools/bin/x links into /opt/tools/lib/x)" in out
     assert "    --        /  (denied except the paths below)" in out
 
 
@@ -243,9 +243,7 @@ def test_every_operator_tool_mount_is_a_row(
     _check_sandbox.check_sandbox_section(Config())
     rows = _commands_block(capsys.readouterr().out)
     assert "    ro  tool  /opt/tools/bin  (on the jail's PATH)" in rows
-    assert (
-        "    ro  tool  /opt/tools/lib/x/bin  (/opt/tools/bin/x links into this directory)" in rows
-    )
+    assert "    ro  tool  /opt/tools/lib/x  (/opt/tools/bin/x links into /opt/tools/lib/x)" in rows
 
 
 def test_rows_sort_by_path_with_a_root_and_a_home_row(
@@ -599,7 +597,7 @@ def test_report_colours_and_plain_modes_carry_the_same_words(
         assert capsys.readouterr().out == plain
 
 
-def test_tool_discovery_retains_links_beside_path_and_runtime_reasons(
+def test_tool_discovery_retains_links_beside_path_reason(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -626,10 +624,161 @@ def test_tool_discovery_retains_links_beside_path_and_runtime_reasons(
     rows = _commands_block(capsys.readouterr().out)
     bin_row = next(line for line in rows if f" {bins}  " in line)
     assert "on the jail's PATH" in bin_row
-    assert f"{bins}/a links into this directory, 1 more" in bin_row
+    assert f"{bins}/a links into {bins}, 1 more" in bin_row
     runtime_row = next(line for line in rows if f" {runtime}  " in line)
-    assert "uv-managed interpreters" in runtime_row
-    assert f"{bins}/python links into this directory" in runtime_row
+    assert "uv-managed interpreters" not in runtime_row
+    assert f"{bins}/python links into {runtime}" in runtime_row
+
+
+def test_regular_path_tools_have_no_install_root_row(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A regular PATH tool has no link annotation or row exposing sibling credentials."""
+    root = tmp_path / "x"
+    bins = root / "bin"
+    bins.mkdir(parents=True)
+    (bins / "tool").touch()
+    (root / "credentials.toml").touch()
+    monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
+
+    rows = _sandbox_paths._tool_rows()
+
+    assert rows == [_sandbox_paths.Row("ro", bins, "on the jail's PATH", "tool")]
+    _check_render.rows(rows)
+    assert capsys.readouterr().out.strip() == f"ro  tool  {bins}  (on the jail's PATH)"
+
+
+@pytest.mark.parametrize("path_subdir", [".", "bin", "other/bin"])
+def test_linked_tool_keeps_bin_when_the_install_root_holds_path(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    path_subdir: str,
+) -> None:
+    """A PATH directory at or under the install root prevents widening and names the reason."""
+    bins = tmp_path / "pathdir"
+    bins.mkdir()
+    root = tmp_path / "y"
+    target = root / "bin" / "py"
+    target.parent.mkdir(parents=True)
+    target.touch()
+    link = bins / "py"
+    link.symlink_to(target)
+    path_dir = root / path_subdir
+    path_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins, path_dir))
+
+    rows = _sandbox_paths._tool_rows()
+
+    assert {r.path for r in rows} == {bins, path_dir, target.parent}
+    bin_row = next(r for r in rows if r.path == target.parent)
+    note = "on the jail's PATH; " if path_subdir == "bin" else ""
+    note += (
+        f"{link} links into {target.parent}; "
+        f"install root not widened: {root} holds a PATH directory"
+    )
+    assert bin_row == _sandbox_paths.Row("ro", target.parent, note, "tool")
+    _check_render.rows([bin_row])
+    assert capsys.readouterr().out.strip() == f"ro  tool  {target.parent}  ({note})"
+
+
+@pytest.mark.parametrize("target_dir", ["bin", "libexec"])
+def test_linked_tools_grant_the_install_root_only_for_bin_targets(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    target_dir: str,
+) -> None:
+    """Linked bin tools grant their install root; other targets grant only their directory."""
+    home = tmp_path / "home"
+    bins = home / ".local" / "bin"
+    bins.mkdir(parents=True)
+    root = tmp_path / "package"
+    target = root / target_dir / "py"
+    target.parent.mkdir(parents=True)
+    target.touch()
+    for name in ("py", "python3"):
+        (bins / name).symlink_to(target)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
+    grant = root if target_dir == "bin" else root / "libexec"
+
+    _, mounts = tool_paths.operator_tool_paths()
+    assert mounts == tuple(sorted((bins, grant)))
+    rows = [r for r in _sandbox_paths._tool_rows() if r.path == grant]
+    assert rows == [
+        _sandbox_paths.Row("ro", grant, f"{bins}/py links into {grant}, 1 more", "tool")
+    ]
+    _check_render.rows(rows)
+    assert capsys.readouterr().out.strip() == (
+        f"ro  tool  {grant}  ({bins}/py links into {grant}, 1 more)"
+    )
+
+
+@pytest.mark.parametrize(
+    "root_kind", ["ancestor", "filesystem", "home", "home-link", "private", "private-link"]
+)
+def test_linked_tool_keeps_bin_when_the_install_root_is_unsafe(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    root_kind: str,
+) -> None:
+    """A blocked install root keeps the bin grant and names the refusal in its annotation."""
+    home = tmp_path / "home"
+    bins = home / ".local" / "bin"
+    bins.mkdir(parents=True)
+    root = {
+        "ancestor": tmp_path,
+        "filesystem": pathlib.Path("/"),
+        "home": home,
+        "home-link": home,
+        "private": tmp_path / "private-holder",
+        "private-link": tmp_path / "private-holder",
+    }[root_kind]
+    target = root / "bin" / "sh"
+    if root_kind != "filesystem":
+        target.parent.mkdir(parents=True)
+        target.touch()
+    if root_kind.startswith("private"):
+        config = root / "config"
+        config.mkdir()
+        if root_kind == "private-link":
+            alias = tmp_path / "config-link"
+            alias.symlink_to(config, target_is_directory=True)
+            config = alias
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    link = bins / "sh"
+    link.symlink_to(target)
+    if root_kind == "filesystem":
+        # Model an unmerged /bin on hosts where /bin resolves to /usr/bin.
+        resolve = pathlib.Path.resolve
+
+        def unmerged(path: pathlib.Path, strict: bool = False) -> pathlib.Path:
+            return target if path == link else resolve(path, strict=strict)
+
+        monkeypatch.setattr(pathlib.Path, "resolve", unmerged)
+    if root_kind == "home-link":
+        alias = tmp_path / "home-link"
+        alias.symlink_to(home, target_is_directory=True)
+        home = alias
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
+
+    _, mounts = tool_paths.operator_tool_paths()
+    assert root not in mounts
+    if root_kind != "filesystem":
+        assert target.parent in mounts
+    rows = [r for r in _sandbox_paths._tool_rows() if r.path == target.parent]
+    assert rows == [
+        _sandbox_paths.Row(
+            "ro",
+            target.parent,
+            f"{link} links into {target.parent}; install root not widened: {root}",
+            "tool",
+        )
+    ]
 
 
 def test_resource_annotations_follow_explicit_grants(

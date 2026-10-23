@@ -101,11 +101,12 @@ def _tool_rows() -> list[Row]:
     rows: list[Row] = []
     for mount in tool_paths.operator_tool_mounts():
         notes = ["on the jail's PATH"] if mount.on_path else []
-        notes.extend(mount.runtimes)
         if mount.links:
             first, *others = mount.links
             more = f", {len(others)} more" if others else ""
-            notes.append(f"{first} links into this directory{more}")
+            notes.append(f"{first} links into {mount.path}{more}")
+        if mount.root_refusal:
+            notes.append(f"install root not widened: {mount.root_refusal}")
         rows.append(Row("ro", mount.path, "; ".join(notes), "tool"))
     return rows
 

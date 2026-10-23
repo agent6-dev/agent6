@@ -1981,24 +1981,95 @@ def test_operator_tool_paths_extends_path_and_mounts_are_nonsystem() -> None:
         assert m.is_dir()
 
 
-def test_operator_tool_paths_mounts_uv_managed_pythons(
+def test_regular_path_tools_do_not_grant_the_install_root(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A repo venv made by uv can symlink python to a uv-managed CPython under
-    # XDG data; without the RO mount an in-jail `uv run` sees a "non-existent
-    # interpreter" and deletes + recreates the operator's .venv.
+    """A regular PATH tool grants neither its install root nor sibling credentials."""
     from agent6.sandbox import tool_paths
 
-    pythons = tmp_path / "uv" / "python"
-    pythons.mkdir(parents=True)
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    path, mounts = tool_paths.operator_tool_paths()
-    assert pythons in mounts
-    assert str(pythons) not in path  # mount-only: interpreters are not PATH dirs
+    root = tmp_path / "x"
+    bins = root / "bin"
+    bins.mkdir(parents=True)
+    (bins / "tool").touch()
+    (root / "credentials.toml").touch()
+    monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
 
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "elsewhere"))
     _, mounts = tool_paths.operator_tool_paths()
-    assert pythons not in mounts  # absent dir -> no mount
+
+    assert mounts == (bins,)
+    assert tool_paths.operator_tool_mounts() == (tool_paths.ToolMount(bins, on_path=True),)
+
+
+@pytest.mark.parametrize("path_subdir", [None, ".", "bin", "other/bin"])
+def test_linked_tool_widens_only_roots_without_path_directories(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, path_subdir: str | None
+) -> None:
+    """A linked bin tool widens its grant only when its root contains no PATH directory."""
+    from agent6.sandbox import tool_paths
+
+    bins = tmp_path / "pathdir"
+    bins.mkdir()
+    root = tmp_path / "y"
+    target = root / "bin" / "py"
+    target.parent.mkdir(parents=True)
+    target.touch()
+    link = bins / "py"
+    link.symlink_to(target)
+    path_dirs = [bins]
+    if path_subdir is not None:
+        path_dir = root / path_subdir
+        path_dir.mkdir(parents=True, exist_ok=True)
+        path_dirs.append(path_dir)
+    monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: tuple(path_dirs))
+
+    _, mounts = tool_paths.operator_tool_paths()
+
+    grant = root if path_subdir is None else target.parent
+    assert mounts == tuple(sorted({*path_dirs, grant}))
+    mount = next(m for m in tool_paths.operator_tool_mounts() if m.path == grant)
+    assert mount.links == (link,)
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_operator_tool_paths_grants_uv_python_only_through_a_shim(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, linked: bool
+) -> None:
+    """An interpreter needs a PATH shim, not a grant of every uv Python installation."""
+    from agent6.sandbox import tool_paths
+
+    home = tmp_path / "home"
+    bins = home / ".local" / "bin"
+    bins.mkdir(parents=True)
+    data = home / ".local" / "share"
+    pythons = data / "uv" / "python"
+    root = pythons / "cpython-3.12"
+    target = root / "bin" / "python3.12"
+    target.parent.mkdir(parents=True)
+    target.touch()
+    other = pythons / "cpython-3.13"
+    other.mkdir()
+    shim = bins / "python3.12"
+    if linked:
+        shim.symlink_to(target)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_DATA_HOME", str(data))
+    monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
+
+    path, mounts = tool_paths.operator_tool_paths()
+
+    assert mounts == tuple(sorted((bins, root) if linked else (bins,)))
+    assert str(root) not in path.split(":")
+    if linked:
+        mount = next(m for m in tool_paths.operator_tool_mounts() if m.path == root)
+        assert mount.links == (shim,)
+
+
+def test_tool_mounts_have_no_uv_specific_description() -> None:
+    """Tool discovery and its documentation must not describe a uv-specific grant."""
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    for directory, suffix in (("src", ".py"), ("docs", ".md")):
+        for path in (repo / directory).rglob(f"*{suffix}"):
+            assert "uv-managed interpreters" not in path.read_text(encoding="utf-8"), path
 
 
 def test_ask_user_accepts_flat_single_question(tmp_path: pathlib.Path) -> None:
@@ -2094,15 +2165,7 @@ def test_ask_prompts_before_the_verify_gate_runs(tmp_path: pathlib.Path) -> None
 def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A tool symlink must not drag agent6's private dirs into the jail.
-
-    `operator_tool_paths` mounts `real.parent` for every symlink in a bin dir.
-    A symlink resolving into the config dir mounted `secrets.toml` (provider API
-    keys) read-only into the jail; one into the state dir mounted notes,
-    memories and transcripts -- against the invariant docs/security.md states.
-    Not model-reachable (a jailed `ln -s` into a bin dir is refused), but the
-    invariant should hold by construction, not by luck of directory layout.
-    """
+    """A tool symlink must not drag agent6's private dirs into the jail."""
     from agent6.sandbox import tool_paths
 
     home = tmp_path / "home"
@@ -2115,7 +2178,7 @@ def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
     private = {
         "cfg": home / ".config" / "agent6",
         "state": home / ".local" / "state" / "agent6" / "repo-1",
-        "ordinary": home / "tools" / "bin",  # the control: this MUST still mount
+        "ordinary": home / "tools" / "bin",
     }
     for name, d in private.items():
         d.mkdir(parents=True)
@@ -2130,7 +2193,7 @@ def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
     assert private["state"] not in mounts, "a symlink mounted the per-repo state dir"
     # The converse, so the fix cannot degrade into "mount nothing": an ordinary
     # tool dir a symlink resolves into is still mounted.
-    assert private["ordinary"] in mounts, "a legitimate tool mount was dropped"
+    assert home / "tools" in mounts, "a legitimate tool mount was dropped"
 
 
 def test_a_tool_mount_never_contains_a_private_dir(
