@@ -47,7 +47,9 @@ OUT="$ROOT/docs/screenshots/out"
 
 command -v ffmpeg >/dev/null 2>&1 || { echo "hero.sh: missing required tool: ffmpeg" >&2; exit 1; }
 
-BG="0x161618"   # agent6-dark's background; see src/agent6/ui/tui/theme.py
+BG="0x0f1414"   # agent6-dark's background; see src/agent6/ui/tui/theme.py
+WIDTH=1440
+HEIGHT=810
 FPS=24
 GIF_FPS=14      # every frame of a scrolling transcript is a full redraw, so the
                 # gif's size scales with fps; 14 keeps the 10s cuts under the 5 MB cap
@@ -75,7 +77,7 @@ WEB_SEGMENTS=(
 )
 
 build() {
-  local name="$1" w="$2" h="$3" gif_w="$4"; shift 4
+  local name="$1"; shift
   local segments=("$@")
 
   local missing=0
@@ -92,8 +94,8 @@ build() {
     # setpts retimes the cut window onto its target; scale+pad normalises onto
     # one canvas without cropping; tpad rests on the last frame for the hold.
     chain+="[${i}:v]setpts=PTS*${target}/${window},"
-    chain+="scale=${w}:${h}:force_original_aspect_ratio=decrease,"
-    chain+="pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=${BG},fps=${FPS},"
+    chain+="scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos,"
+    chain+="pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=${BG},fps=${FPS},"
     chain+="tpad=stop_mode=clone:stop_duration=${hold},setsar=1[v${i}];"
     labels+="[v${i}]"
     i=$((i + 1))
@@ -104,7 +106,7 @@ build() {
     -map "[out]" -an -c:v libvpx-vp9 -crf 32 -b:v 0 "$OUT/hero-$name.webm"
 
   ffmpeg -v error -y -i "$OUT/hero-$name.webm" \
-    -vf "fps=${GIF_FPS},scale=${gif_w}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=5" \
+    -vf "fps=${GIF_FPS},split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=5" \
     "$OUT/hero-$name.gif"
 
   printf 'hero-%s: %s (%ss), gif %s\n' "$name" \
@@ -113,13 +115,11 @@ build() {
     "$(du -h "$OUT/hero-$name.gif" | cut -f1)"
 }
 
-# The TUI/CLI sources are 1600x900 recordings; their gifs downscale to 1440
-# (the last ~0.5 MB under the proxy cap). The web tour records 1280x800 and
-# stays at its native size.
+# All three sources record at 1600x900; WebM and GIF share the 1440x810 canvas.
 fail=0
-build tui 1600 900 1440 "${TUI_SEGMENTS[@]}" || fail=1
-build cli 1600 900 1440 "${CLI_SEGMENTS[@]}" || fail=1
-build web 1280 800 1280 "${WEB_SEGMENTS[@]}" || fail=1
+build tui "${TUI_SEGMENTS[@]}" || fail=1
+build cli "${CLI_SEGMENTS[@]}" || fail=1
+build web "${WEB_SEGMENTS[@]}" || fail=1
 if [ "$fail" != 0 ]; then
   cat >&2 <<'EOF'
 hero.sh: record the missing sources first:

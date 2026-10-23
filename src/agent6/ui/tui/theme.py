@@ -10,6 +10,7 @@ never the agent config.
 
 from __future__ import annotations
 
+import json
 import math
 from typing import Any, ClassVar, cast
 
@@ -176,19 +177,19 @@ GRIMM = Theme(
     },
 )
 
-# The light ANSI theme: each colour at 4.5:1 or more on agent6's light backgrounds and surfaces.
+# ANSI defaults and status colours match agent6-light, at 4.5:1 on its background and surface.
 ANSI_THEME_LIGHT = TerminalTheme(
-    (247, 247, 247),
-    (0, 0, 0),
+    (244, 245, 248),
+    (42, 46, 63),
     [
-        (0, 0, 0),  # black
-        (170, 55, 49),  # red
-        (48, 120, 10),  # green
-        (140, 98, 5),  # yellow
-        (50, 92, 192),  # blue
+        (42, 46, 63),  # black
+        (192, 57, 43),  # red
+        (69, 111, 43),  # green
+        (131, 94, 0),  # yellow
+        (46, 91, 168),  # blue
         (122, 62, 157),  # magenta
-        (4, 116, 131),  # cyan
-        (105, 105, 105),  # white
+        (30, 111, 168),  # cyan
+        (42, 46, 63),  # white
     ],
     [
         (105, 105, 105),  # bright black
@@ -202,32 +203,52 @@ ANSI_THEME_LIGHT = TerminalTheme(
     ],
 )
 
-# The dark ANSI theme: textual's Monokai with its red and magenta, which every red text on
-# agent6-dark paints, at 4.5:1 or more on agent6-dark's background, surface and panel.
+# Dark ANSI black is a background; text colours clear 4.5:1 on the background and surface.
 ANSI_THEME_DARK = TerminalTheme(
-    (12, 12, 12),
-    (217, 217, 217),
+    (15, 20, 20),
+    (192, 202, 245),
     [
-        (26, 26, 26),  # black
-        (255, 55, 133),  # red
-        (152, 224, 36),  # green
-        (253, 151, 31),  # yellow
-        (157, 101, 255),  # blue
-        (255, 55, 133),  # magenta
-        (88, 209, 235),  # cyan
-        (196, 197, 181),  # white
+        (22, 28, 28),  # black
+        (247, 118, 142),  # red
+        (158, 206, 106),  # green
+        (224, 175, 104),  # yellow
+        (122, 162, 247),  # blue
+        (187, 154, 247),  # magenta
+        (6, 245, 243),  # cyan
+        (192, 202, 245),  # white
     ],
     [
-        (98, 94, 76),  # bright black
-        (255, 55, 133),  # bright red
-        (152, 224, 36),  # bright green
-        (224, 213, 97),  # bright yellow
-        (157, 101, 255),  # bright blue
-        (255, 55, 133),  # bright magenta
-        (88, 209, 235),  # bright cyan
-        (246, 246, 239),  # bright white
+        (130, 130, 140),  # bright black
+        (255, 143, 163),  # bright red
+        (180, 224, 127),  # bright green
+        (255, 166, 43),  # bright yellow
+        (156, 188, 255),  # bright blue
+        (211, 180, 255),  # bright magenta
+        (102, 255, 253),  # bright cyan
+        (242, 244, 255),  # bright white
     ],
 )
+
+
+def render_vhs_theme() -> str:
+    """Render the agent6-dark palette as a VHS Set Theme JSON object.
+
+    Returns:
+        The theme JSON, without the Set Theme prefix.
+    """
+    names = ("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white")
+    names += tuple(f"bright{name.title()}" for name in names)
+    return json.dumps(
+        {
+            "name": AGENT6_DARK.name,
+            "background": ANSI_THEME_DARK.background_color.hex,
+            "foreground": ANSI_THEME_DARK.foreground_color.hex,
+            "cursor": AGENT6_DARK.accent,
+            "selection": AGENT6_DARK.panel,
+        }
+        | {name: ANSI_THEME_DARK.ansi_colors[n].hex for n, name in enumerate(names)}
+    )
+
 
 # The command palette restyled as a dialog; added to an App's CSS, since the palette is pushed
 # on the App. Targets textual-internal ids.

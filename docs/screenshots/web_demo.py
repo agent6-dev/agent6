@@ -4,7 +4,7 @@
 """Record a web-UI tour with Playwright (dev tool, not run in CI by default).
 
 Drives `agent6 web` in a headless Chromium, recording a .webm at a given
-viewport (desktop or phone) while touring the hub, a run view, the
+viewport (desktop, phone or hero) while touring the hub, a run view, the
 conversation, and the config page. A virtual circle cursor glides between targets
 and a bottom-center toast narrates each step, the browser analogue of the TUI
 reel's keystroke overlay (keystroke_overlay.py).
@@ -35,6 +35,7 @@ except ImportError:  # pragma: no cover - dev tool
 
 VIEWPORTS = {
     "desktop": {"width": 1280, "height": 800},
+    "hero": {"width": 1600, "height": 900},
     "phone": {"width": 390, "height": 844},
     # The state-machine tour records at the desktop viewport; it is a separate
     # mode because it needs the replay-proxy environment (web_machine_demo.sh),
@@ -338,7 +339,8 @@ def main() -> None:
             trim_s = drive_machine(page, args.url, t0)
         else:
             shot = args.out.parent / "web-shot.png" if args.mode == "desktop" else None
-            trim_s = drive(page, args.url, args.mode, t0, shot=shot)
+            mode = "desktop" if args.mode == "hero" else args.mode
+            trim_s = drive(page, args.url, mode, t0, shot=shot)
         video = page.video
         context.close()  # flushes the recording
         browser.close()

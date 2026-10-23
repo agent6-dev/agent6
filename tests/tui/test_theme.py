@@ -8,6 +8,7 @@ import asyncio
 import pathlib
 
 import pytest
+from rich.terminal_theme import TerminalTheme
 from textual import app as textual_app
 from textual import color as textual_color
 from textual import theme as textual_theme
@@ -84,10 +85,8 @@ def test_a_light_theme_paints_every_ansi_colour_at_4_5_to_1(cfg: pathlib.Path) -
 def test_an_agent6_theme_paints_its_text_at_4_5_to_1(cfg: pathlib.Path, name: str) -> None:
     """An agent6 theme's text colours read at 4.5:1 or more on its background and surface.
 
-    The footer's colours are measured on the footer's own ground, the panel. agent6-light
-    painted its warning at 3.86:1 on its surface; agent6-dark painted every red through
-    textual's Monokai ANSI red at 4.12:1. A dark theme's ANSI black is a background (Rich
-    paints code spans on it) and its bright black is dim by design, so those two are left out.
+    The footer's colours are measured on its panel background.
+    Dark ANSI black is a background for Rich code spans, not a text colour.
     """
 
     async def scenario() -> None:
@@ -114,7 +113,7 @@ def test_an_agent6_theme_paints_its_text_at_4_5_to_1(cfg: pathlib.Path, name: st
                 assert isinstance(value, str), slot
                 text[slot] = parse(value).rgb
             text["ANSI foreground"] = ansi.foreground_color
-            skipped = {0, 8} if current.dark else set[int]()
+            skipped = {0} if current.dark else set[int]()
             text |= {f"ANSI {n}": ansi.ansi_colors[n] for n in range(16) if n not in skipped}
             low: list[str] = []
             for ground in ("background", "surface"):
@@ -136,6 +135,30 @@ def test_an_agent6_theme_paints_its_text_at_4_5_to_1(cfg: pathlib.Path, name: st
             assert not low, low
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("ansi", "branded"),
+    [(theme.ANSI_THEME_DARK, theme.AGENT6_DARK), (theme.ANSI_THEME_LIGHT, theme.AGENT6_LIGHT)],
+    ids=["dark", "light"],
+)
+def test_ansi_colours_match_the_agent6_palette(
+    ansi: TerminalTheme, branded: textual_theme.Theme
+) -> None:
+    """Tool output uses the same background, foreground and status colours as the TUI."""
+    slots = [
+        (ansi.background_color, branded.background),
+        (ansi.foreground_color, branded.foreground),
+        (ansi.ansi_colors[1], branded.error),
+        (ansi.ansi_colors[2], branded.success),
+        (ansi.ansi_colors[3], branded.warning),
+        (ansi.ansi_colors[4], branded.primary),
+        (ansi.ansi_colors[6], branded.accent if branded.dark else branded.secondary),
+        (ansi.ansi_colors[7], branded.foreground),
+    ]
+    for rgb, value in slots:
+        assert value is not None
+        assert rgb == textual_color.Color.parse(value).rgb
 
 
 def test_setup_registers_applies_saved_and_persists(cfg: pathlib.Path) -> None:

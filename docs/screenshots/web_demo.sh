@@ -57,13 +57,12 @@ curl -sf "http://127.0.0.1:$PORT/" >/dev/null 2>&1 || {
   exit 1
 }
 
-# `hero` records the desktop tour WITHOUT the narration banner, for the README
-# hero (hero.sh), which carries no overlay of any kind.
+# The hero records the desktop tour at 1600x900 without the narration banner.
 if [ "${1:-}" = "hero" ]; then
   rm -f "$OUT"/hero-src-web.webm
   "$PW_PY" docs/screenshots/web_demo.py --url "http://127.0.0.1:$PORT" --out "$OUT/hero-src-web.webm" \
-    --mode desktop --no-narration
-  rm -rf "$OUT"/_web_desktop_raw
+    --mode hero --no-narration
+  rm -rf "$OUT"/_web_hero_raw
   [ -s "$OUT/hero-src-web.webm" ] || { echo "web_demo.sh: failed to produce hero-src-web.webm" >&2; exit 1; }
   echo "web_demo: done -> $OUT/hero-src-web.webm"
   exit 0

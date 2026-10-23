@@ -26,7 +26,7 @@ Set Padding 14
 # agent6-dark, the TUI's own branded palette (src/agent6/ui/tui/theme.py):
 # a near-black teal, the cyan brand's neutral, so the recordings look like
 # the product rather than like a generic terminal theme.
-Set Theme { "name": "agent6-dark", "background": "#0f1414", "foreground": "#C0CAF5", "cursor": "#06F5F3", "selection": "#1e2626", "black": "#161c1c", "red": "#F7768E", "green": "#9ECE6A", "yellow": "#E0AF68", "blue": "#7AA2F7", "magenta": "#BB9AF7", "cyan": "#06F5F3", "white": "#C0CAF5", "brightBlack": "#6E6E78", "brightRed": "#FF8FA3", "brightGreen": "#B4E07F", "brightYellow": "#FFA62B", "brightBlue": "#9CBCFF", "brightMagenta": "#D3B4FF", "brightCyan": "#66FFFD", "brightWhite": "#F2F4FF" }
+Set Theme {"name": "agent6-dark", "background": "#0f1414", "foreground": "#c0caf5", "cursor": "#06F5F3", "selection": "#1e2626", "black": "#161c1c", "red": "#f7768e", "green": "#9ece6a", "yellow": "#e0af68", "blue": "#7aa2f7", "magenta": "#bb9af7", "cyan": "#06f5f3", "white": "#c0caf5", "brightBlack": "#82828c", "brightRed": "#ff8fa3", "brightGreen": "#b4e07f", "brightYellow": "#ffa62b", "brightBlue": "#9cbcff", "brightMagenta": "#d3b4ff", "brightCyan": "#66fffd", "brightWhite": "#f2f4ff"}
 Set Framerate 8
 
 Hide

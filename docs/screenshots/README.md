@@ -9,9 +9,10 @@ We commit the **tape, scripts, and seed fixtures only**. Generated media
 (`out/`, `*.png`, `*.webm`) is gitignored and rebuilt on demand.
 
 Every tape sets the terminal to agent6's own `agent6-dark` palette (the same
-colours `src/agent6/ui/tui/theme.py` defines, inlined as a vhs theme object),
+colours `src/agent6/ui/tui/theme.py` defines, generated as a vhs theme object),
 so the terminal frame and the TUI inside it share one background instead of
 framing the product in an unrelated theme's.
+Run `uv run python docs/screenshots/sync_theme.py` after editing the palette to update every tape's `Set Theme` line.
 
 ## Files
 
@@ -45,12 +46,14 @@ framing the product in an unrelated theme's.
   `hero_run.sh`, `hero-src-cli.webm` from `hero_cli.sh`, `hero-src-web.webm`
   from `web_demo.sh hero` -- no keystroke toasts, no narration banner) and
   retimes each onto its target length in one ffmpeg pass per surface.
+  Both formats use a 1440x810 canvas.
 - `web_demo.py` + `web_demo.sh`: the web-UI tour (`web-desktop.webm`,
   `web-phone.webm`). Drives `agent6 web` against the same `seed/` fixtures in a
   headless Chromium via Playwright, at desktop (1280x800) and phone (390x844)
   viewports, with an on-page caption banner per step (the browser analogue of
-  `keystroke_overlay.py`); `web_demo.sh hero` records the desktop tour with
-  `--no-narration` to `hero-src-web.webm` for the hero. Each video is trimmed
+  `keystroke_overlay.py`).
+  `web_demo.sh hero` records the desktop tour at 1600x900 with `--mode hero --no-narration` to `hero-src-web.webm`.
+  Each video is trimmed
   (ffmpeg) to drop the SPA loading-screen head so it opens on the hub, the
   poster frame shown before play.
   Deterministic, no key, no live LLM. Needs a Playwright-capable Python and
