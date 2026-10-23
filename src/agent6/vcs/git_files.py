@@ -8,6 +8,7 @@ import datetime
 import os
 import pathlib
 import stat
+import tempfile
 
 from agent6 import errors
 from agent6.vcs import _git_command, git_history, git_read
@@ -86,27 +87,45 @@ def worktree_blob(path: pathlib.Path, name: str, *, max_bytes: int) -> Blob | No
             or not git_history.worktree_entry(path, name)
         ):
             return None
-        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
-        # Descriptor-relative opens keep an ancestor swap from escaping the checked root.
-        with contextlib.ExitStack() as stack:
-            parent = os.open(root, flags | os.O_DIRECTORY)
-            stack.callback(os.close, parent)
-            for part in parts[:-1]:
-                parent = os.open(part, flags | os.O_DIRECTORY, dir_fd=parent)
-                stack.callback(os.close, parent)
-            if not stat.S_ISREG(os.stat(parts[-1], dir_fd=parent, follow_symlinks=False).st_mode):
-                return None
-            fd = os.open(parts[-1], flags, dir_fd=parent)
-            with os.fdopen(fd, "rb") as fh:
-                st = os.fstat(fh.fileno())
-                if not stat.S_ISREG(st.st_mode):
-                    return None
-                if st.st_size > max_bytes:
-                    return Blob(st.st_size, None)
-                data = fh.read(max_bytes + 1)
+        with os.fdopen(_open_regular(root, parts), "rb") as fh:
+            size = os.fstat(fh.fileno()).st_size
+            if size > max_bytes:
+                return Blob(size, None)
+            data = fh.read(max_bytes + 1)
     except (OSError, RuntimeError):
         return None
     return Blob(len(data), None if len(data) > max_bytes else data)
+
+
+def _open_regular(root: pathlib.Path, parts: tuple[str, ...]) -> int:
+    """Open a regular file under the root through descriptor-relative opens that follow no link.
+
+    Args:
+        root: The resolved repository root.
+        parts: The file's path components under the root.
+
+    Returns:
+        The descriptor, fstat-checked as a regular file after the open.
+
+    Raises:
+        FileNotFoundError: A component is missing or a link, or the leaf is not a regular file.
+        OSError: The open itself fails.
+    """
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    # Descriptor-relative opens keep an ancestor swap from escaping the checked root.
+    with contextlib.ExitStack() as stack:
+        parent = os.open(root, flags | os.O_DIRECTORY)
+        stack.callback(os.close, parent)
+        for part in parts[:-1]:
+            parent = os.open(part, flags | os.O_DIRECTORY, dir_fd=parent)
+            stack.callback(os.close, parent)
+        if not stat.S_ISREG(os.stat(parts[-1], dir_fd=parent, follow_symlinks=False).st_mode):
+            raise FileNotFoundError("/".join(parts))
+        fd = os.open(parts[-1], flags, dir_fd=parent)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            raise FileNotFoundError("/".join(parts))
+        return fd
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -119,15 +138,21 @@ class BlameLine:
     date: str
 
 
-def _ignore_revs_refusal(path: pathlib.Path) -> str:
-    """Return why blame must not run, or "" when every ignore-revs file is a repository file.
+# An ignore-revs file lists shas, one per line; a larger one is not that.
+_IGNORE_REVS_MAX_BYTES = 1 << 20
 
-    Git opens each `blame.ignoreRevsFile` on the host, quotes its first unparsable line in
-    its error and blocks on a FIFO; a blank `-c` override clears the list only after the
-    files are read, so the paths are checked here instead.
+
+def _ignore_revs_copies(path: pathlib.Path, into: pathlib.Path) -> str:
+    """Copy each `blame.ignoreRevsFile` into blame's work tree, or return why blame must not run.
+
+    Git opens each configured file by its path when blame starts, after any check made here,
+    so a jailed command could swap the real file for a link in between: blame runs with a
+    private work tree holding copies read through descriptors that follow no link, and an
+    absolute or outside path is refused.
 
     Args:
         path: The repository.
+        into: The private work tree blame runs in.
 
     Returns:
         The refusal naming the offending value, or "".
@@ -138,12 +163,23 @@ def _ignore_revs_refusal(path: pathlib.Path) -> str:
     root = path.resolve()
     # NUL-delimited: a value holding a newline is one path to git, and must be one here.
     for value in filter(None, res.stdout.split("\0")):
-        real = (root / value).resolve()
-        if not (real.is_relative_to(root) and real.is_file()):
-            return (
-                f"blame refused: blame.ignoreRevsFile names {value}, which is not a regular "
-                "file inside the repository"
-            )
+        parts = pathlib.PurePosixPath(value).parts
+        refusal = (
+            f"blame refused: blame.ignoreRevsFile names {value}, which is not a regular file "
+            "inside the repository, named relative to it"
+        )
+        if not parts or pathlib.PurePosixPath(value).is_absolute() or ".." in parts:
+            return refusal
+        try:
+            with os.fdopen(_open_regular(root, parts), "rb") as fh:
+                data = fh.read(_IGNORE_REVS_MAX_BYTES + 1)
+        except OSError:
+            return refusal
+        if len(data) > _IGNORE_REVS_MAX_BYTES:
+            return f"blame refused: blame.ignoreRevsFile names {value}, which is larger than 1 MiB"
+        copy = into.joinpath(*parts)
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        copy.write_bytes(data)
     return ""
 
 
@@ -163,7 +199,8 @@ def blame_lines(
         Attribution in displayed line order, with UTC dates.
 
     Raises:
-        GitError: Git cannot attribute the file, or a `blame.ignoreRevsFile` leaves the repository.
+        GitError: Git cannot attribute the file, or a `blame.ignoreRevsFile` is not a
+            repository-relative regular file.
     """
     if not lines:
         return ()
@@ -173,24 +210,28 @@ def blame_lines(
         or not git_history.head_commit(path)[0]
     ):
         return tuple(BlameLine(n, "", "not committed", "") for n in range(1, lines + 1))
-    if reason := _ignore_revs_refusal(path):
-        raise errors.GitError(reason)
     args = ("--contents", "-") if working else ()
     revs = () if working else (rev,)
-    # Git 2.53 blame needs the verified sha before --end-of-options when a path follows --.
-    out = _git_command.run(
-        path,
-        "blame",
-        "--porcelain",
-        "-L",
-        f"1,{lines}",
-        *args,
-        *revs,
-        "--end-of-options",
-        "--",
-        name,
-        stdin_text=os.fsdecode(data) if working else None,
-    ).stdout
+    with tempfile.TemporaryDirectory(prefix="agent6-blame-") as tmp:
+        if reason := _ignore_revs_copies(path, pathlib.Path(tmp)):
+            raise errors.GitError(reason)
+        gitdir = _git_command.run(path, "rev-parse", "--absolute-git-dir").stdout.strip()
+        # Git 2.53 blame needs the verified sha before --end-of-options when a path follows --.
+        out = _git_command.run(
+            pathlib.Path(tmp),
+            "blame",
+            "--porcelain",
+            "-L",
+            f"1,{lines}",
+            *args,
+            *revs,
+            "--end-of-options",
+            "--",
+            name,
+            env_extra={"GIT_DIR": gitdir, "GIT_WORK_TREE": tmp},
+            stdin_text=os.fsdecode(data) if working else None,
+            repo=path,
+        ).stdout
     metadata: dict[str, dict[str, str]] = {}
     rows: list[BlameLine] = []
     sha, number = "", 0

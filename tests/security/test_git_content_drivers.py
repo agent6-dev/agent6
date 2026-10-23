@@ -264,3 +264,33 @@ def test_blame_refuses_an_ignore_revs_file_whose_name_holds_a_newline(
         git_files.blame_lines(root, head, "f.txt", b"v1\n", lines=1)
     assert "TOKEN-4711" not in str(caught.value)
     assert "blame.ignoreRevsFile" in str(caught.value)
+
+
+def test_blame_reads_a_private_copy_of_the_ignore_revs_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Git opened the configured ignore-revs path itself, after the check of the real file.
+
+    A jailed command that swapped the file for a link between the check and git's open had
+    git read a host file; blame now runs in a private work tree holding a copy.
+    """
+    from agent6.vcs import _git_command, git_files
+
+    root = _repo(tmp_path / "r")
+    secret = tmp_path / "token.txt"
+    secret.write_text("TOKEN-4711\n", encoding="utf-8")
+    first = _git(root, "rev-parse", "HEAD").stdout.strip()
+    (root / "ignore.txt").write_text(first + "\n", encoding="utf-8")
+    _git(root, "config", "blame.ignoreRevsFile", "ignore.txt")
+    git_policy.set_repo_driver_policy(False)
+    real_run = _git_command.run
+
+    def swapping(cwd: pathlib.Path, *args: str, **kwargs: object) -> object:
+        if args and args[0] == "blame":
+            (root / "ignore.txt").unlink()
+            (root / "ignore.txt").symlink_to(secret)
+        return real_run(cwd, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(_git_command, "run", swapping)
+    rows = git_files.blame_lines(root, first, "f.txt", b"v1\n", lines=1)
+    assert rows and "TOKEN" not in repr(rows)

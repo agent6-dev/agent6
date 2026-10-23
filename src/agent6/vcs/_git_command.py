@@ -24,14 +24,17 @@ def spawn(
     args: tuple[str, ...],
     env_extra: dict[str, str] | None,
     stdin_text: str | None,
+    repo: pathlib.Path | None = None,
 ) -> tuple[tuple[str, ...], int, bytes, bytes]:
     """Run one hardened git command.
 
     Args:
-        cwd: The repository.
+        cwd: The directory git runs in: the repository, unless `repo` names it.
         args: The git subcommand and its arguments.
         env_extra: Environment entries added for this call.
         stdin_text: Text fed to git's stdin.
+        repo: The repository whose drivers are blanked and whose index lock is awaited,
+            when git runs elsewhere; None means `cwd`.
 
     Returns:
         The full argv, the exit code, stdout and stderr as bytes.
@@ -44,7 +47,7 @@ def spawn(
     env = child_env.without_provider_keys(
         {**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C", **(env_extra or {})}
     )
-    hardening = git_policy.git_hardening_flags(cwd)
+    hardening = git_policy.git_hardening_flags(repo or cwd)
     # git 2.53 dies rc=128 on the empty `diff.external` override, so every verb that renders
     # a diff forces the builtin renderer by flag; `blame` runs textconv too.
     argv = list(args)
@@ -52,7 +55,7 @@ def spawn(
         argv[1:1] = git_policy.DIFF_SAFETY_FLAGS
     # Drivers are blanked on every op: a list of driver-running verbs would enumerate badness.
     full_argv = (git_policy.git(), *hardening, *argv)
-    index_lock = cwd / ".git" / "index.lock"
+    index_lock = (repo or cwd) / ".git" / "index.lock"
     lock_preexisted = index_lock.exists()
     proc = subprocess.Popen(
         full_argv,
@@ -115,15 +118,17 @@ def run(
     check: bool = True,
     env_extra: dict[str, str] | None = None,
     stdin_text: str | None = None,
+    repo: pathlib.Path | None = None,
 ) -> kinds.CommandResult:
     """Run one hardened git command in the repository.
 
     Args:
-        cwd: The repository.
+        cwd: The directory git runs in: the repository, unless `repo` names it.
         *args: The git subcommand and its arguments.
         check: Raise on a non-zero exit.
         env_extra: Environment entries added for this call.
         stdin_text: Text fed to git's stdin.
+        repo: The repository, when git runs elsewhere; None means `cwd`.
 
     Returns:
         The command's result, its output decoded lossily.
@@ -131,7 +136,7 @@ def run(
     Raises:
         GitError: The command failed with check set, or timed out.
     """
-    full_argv, returncode, out, err = spawn(cwd, args, env_extra, stdin_text)
+    full_argv, returncode, out, err = spawn(cwd, args, env_extra, stdin_text, repo=repo)
     result = kinds.CommandResult(
         argv=full_argv,
         returncode=returncode,
