@@ -12,7 +12,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import threading
-import time
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -246,10 +245,9 @@ def repo_review(
     dispatch: ReviewDispatch,
     max_turns: int = 6,
     max_tokens: int = 2000,
-    deadline_s: float = 90.0,
     temperature: float | None = 0.0,
 ) -> _panel.ReviewVerdict:
-    """Run one repo-scope seat: a bounded loop of read-only tool calls, then a verdict.
+    """Run one repo-scope seat with at most `max_turns` provider calls.
 
     Args:
         provider: The seat's provider.
@@ -260,20 +258,14 @@ def repo_review(
         dispatch: The dispatch that refuses every other tool.
         max_turns: The provider calls allowed.
         max_tokens: The output cap of each call.
-        deadline_s: The wall-clock budget.
         temperature: The sampling temperature on every call.
 
     Returns:
-        The seat's verdict; a provider error, the deadline or no verdict in time abstains.
+        The seat's verdict; a provider error or no valid verdict abstains with `error` set.
     """
     system = review.REPO_REVIEW_SYSTEM_PROMPT.format(focus=ctx.focus or "general correctness")
     messages: list[dict[str, Any]] = [{"role": "user", "content": _build_user_message(ctx)}]
-    start = time.monotonic()
     for i in range(max_turns):
-        if time.monotonic() - start > deadline_s:
-            return _panel.ReviewVerdict(
-                seat=seat, model=model, verdict="pass", error="repo: deadline exceeded"
-            )
         try:
             resp = provider.call(
                 system=system,

@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import itertools
+import time
 from typing import Any, cast
 from unittest import mock
 
@@ -346,13 +348,17 @@ class _RepoProvider:
         return self._responses.pop(0)
 
 
-def test_repo_review_uses_tools_then_verdicts() -> None:
+def test_repo_review_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Five tool rounds leave the sixth call for a verdict, however long they took."""
+    clock = itertools.count(0, 100.0)
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
     tu = {"name": "find_references", "id": "t1", "input": {"symbol": "read_doc"}}
     provider = _RepoProvider(
         [
-            _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
-            _RepoResp(text=_BLOCK_JSON),  # final verdict, no tool calls
+            _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]})
+            for _ in range(5)
         ]
+        + [_RepoResp(text=_BLOCK_JSON)]
     )
     dispatched: list[str] = []
 
@@ -363,13 +369,14 @@ def test_repo_review_uses_tools_then_verdicts() -> None:
     v = _reviewer.repo_review(
         cast(Provider, provider), _ctx(), seat="security", model="m1", tools=[], dispatch=dispatch
     )
-    assert provider.calls == 2 and dispatched == ["find_references"]  # investigated, then judged
     assert v.error is None and v.verdict == "block" and v.findings[0].category == "security"
+    assert provider.calls == 6
+    assert dispatched == ["find_references"] * 5
 
 
-def test_repo_review_abstains_when_no_verdict_in_budget() -> None:
+def test_repo_review_abstains_after_six_calls_without_a_verdict() -> None:
+    """A seat that keeps requesting tools abstains after six provider calls."""
     tu = {"name": "list_dir", "id": "t1", "input": {"path": "."}}
-    # provider keeps calling tools, never emits a verdict -> abstain after max_turns
     provider = _RepoProvider(
         [
             _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]})
@@ -383,9 +390,9 @@ def test_repo_review_abstains_when_no_verdict_in_budget() -> None:
         model="m1",
         tools=[],
         dispatch=lambda n, i: results.RawResult({"entries": []}),
-        max_turns=3,
     )
-    assert v.error is not None and provider.calls == 3  # bounded, abstains (never false-pass)
+    assert v.error == "repo: no verdict within max_turns"
+    assert provider.calls == 6
 
 
 def test_repo_review_skips_dispatch_on_final_turn() -> None:
