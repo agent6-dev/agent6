@@ -12,12 +12,12 @@ import pathlib
 
 from agent6 import errors
 from agent6.config import GitCommitConfig
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 _DIRTY_NOTE_CAP = 500  # paths a dirty-worktree note counts before it says "+"
 
 
-def commit_identity(commit: GitCommitConfig, trailer: str | None) -> git_ops.CommitIdentity | None:
+def commit_identity(commit: GitCommitConfig, trailer: str | None) -> git_read.CommitIdentity | None:
     """Return the author and provenance trailer of the run's commits.
 
     `[git.commit].name` and `.email` are the only identity on a machine whose git
@@ -32,7 +32,7 @@ def commit_identity(commit: GitCommitConfig, trailer: str | None) -> git_ops.Com
     """
     if not (commit.name or commit.email or trailer):
         return None
-    return git_ops.CommitIdentity(
+    return git_read.CommitIdentity(
         name=commit.name or None, email=commit.email or None, trailer=trailer
     )
 
@@ -69,7 +69,7 @@ class RunChain:
     branch: str | None = None
     fallback_parent: str | None = None
     untracked_at_start: frozenset[str] = frozenset()
-    identity: git_ops.CommitIdentity | None = None
+    identity: git_read.CommitIdentity | None = None
     per_turn: bool = True
     base_sha: str = ""
 
@@ -112,7 +112,7 @@ class RunChain:
         untracked = tuple(p for p in paths if p in self.untracked_at_start)
         rest = tuple(p for p in paths if p not in self.untracked_at_start)
         try:
-            kept = git_ops.unignored(self.root, rest)
+            kept = git_read.unignored(self.root, rest)
         except (errors.GitError, OSError):
             return (), untracked
         return tuple(p for p in rest if p not in kept), untracked
@@ -127,7 +127,7 @@ class RunChain:
         if self.ref is None:
             return ""
         try:
-            return git_ops.chain_tip(self.root, self.ref) or self.fallback_parent or ""
+            return git_read.chain_tip(self.root, self.ref) or self.fallback_parent or ""
         except (errors.GitError, OSError):
             return ""
 
@@ -146,10 +146,10 @@ class RunChain:
             OSError: The repository could not be read.
         """
         if self.ref is not None:
-            return git_ops.chain_dirty(
+            return git_read.chain_dirty(
                 self.root, self.ref, self.fallback_parent, exclude=self.untracked_at_start
             )
-        return not git_ops.status(self.root, exclude=self.untracked_at_start).is_clean
+        return not git_read.status(self.root, exclude=self.untracked_at_start).is_clean
 
     def dirty(self) -> bool:
         """Return `is_dirty`, reading clean when git cannot say.
@@ -174,7 +174,7 @@ class RunChain:
         if self.ref is None:
             return ""
         try:
-            paths = git_ops.chain_dirty_paths(
+            paths = git_read.chain_dirty_paths(
                 self.root,
                 self.ref,
                 self.fallback_parent,
@@ -196,7 +196,7 @@ class RunChain:
             The sha, seeded on the chain tip like a chain commit; "" when git cannot say.
         """
         try:
-            return git_ops.worktree_tree(
+            return git_read.worktree_tree(
                 self.root, self.tip() or self.fallback_parent, self.untracked_at_start
             )
         except (errors.GitError, OSError):
@@ -215,7 +215,7 @@ class RunChain:
         if self.ref is not None:
             return self.tip()
         try:
-            return git_ops.status(self.root).head_sha
+            return git_read.status(self.root).head_sha
         except (errors.GitError, OSError):
             return ""
 
@@ -225,7 +225,7 @@ class RunChain:
         Returns:
             The pairs in `git status` order.
         """
-        return git_ops.worktree_name_status(self.root, exclude=self.untracked_at_start)
+        return git_read.worktree_name_status(self.root, exclude=self.untracked_at_start)
 
     def diff_since_base(self) -> str:
         """Return the run's cumulative change: the base commit against the working tree.
@@ -239,4 +239,4 @@ class RunChain:
         """
         if not self.base_sha:
             return ""
-        return git_ops.diff_since(self.root, self.base_sha, exclude=self.untracked_at_start)
+        return git_read.diff_since(self.root, self.base_sha, exclude=self.untracked_at_start)

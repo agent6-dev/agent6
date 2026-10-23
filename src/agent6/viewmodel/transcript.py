@@ -13,13 +13,11 @@ live tailers feed the same fold one event at a time.
 from __future__ import annotations
 
 import dataclasses
-import difflib
-import shlex
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from typing import Any, Literal
 
 from agent6 import budget, kinds, terminal
-from agent6.viewmodel import _session_status, format
+from agent6.viewmodel import _session_status, _transcript_text, format
 from agent6.viewmodel import events as viewmodel_events
 
 # Text characters, not graphics, so every terminal font renders them.
@@ -109,279 +107,6 @@ class TranscriptItem:
     detail: str = ""
     tail: str = ""
     call_id: str = ""
-
-
-_PRIMARY_ARGS = ("path", "file", "pattern", "query", "command", "cmd", "url", "title", "summary")
-
-
-def _clip(text: str, n: int = 60) -> str:
-    """Return the text as one line of at most `n` characters, an ellipsis marking a cut."""
-    text = " ".join(text.split())
-    return text if len(text) <= n else text[: n - 3] + "…"
-
-
-def _call_preview(name: str, args: Any) -> str:
-    """Return a bounded preview of an `apply_edit` call's first hunk, "" for other tools.
-
-    Args:
-        name: The tool's name.
-        args: The raw args.
-
-    Returns:
-        The changed lines of the first edit, clipped, with counts of what was left out.
-    """
-    if name != "apply_edit" or not isinstance(args, dict):
-        return ""
-    edits = args.get("edits")
-    if not isinstance(edits, (list, tuple)) or not edits:
-        return ""
-    first = edits[0]
-    if not isinstance(first, dict):
-        return ""
-    old = str(first.get("old_string", ""))
-    new = str(first.get("new_string", ""))
-    # The changed lines only: an anchor line the edit re-emits unchanged is not news.
-    changed = [
-        ln
-        for ln in difflib.ndiff(old.splitlines(), new.splitlines())
-        if ln[:1] in "+-" and ln[2:].strip()
-    ]
-    lines = [_clip(ln, 120) for ln in changed[:4]]
-    if len(changed) > 4:
-        lines.append(f"…(+{len(changed) - 4} more changed lines)")
-    more = len(edits) - 1
-    if more > 0:
-        lines.append(f"…(+{more} more edit{'' if more == 1 else 's'})")
-    return "\n".join(lines)
-
-
-def salient_arg(args: Any) -> str:
-    """Return the one argument worth showing beside a tool name.
-
-    Args:
-        args: The raw args; a non-dict is tolerated.
-
-    Returns:
-        An argv as a shell line, a question's text, the first primary arg found, else
-        the first pair; "" when there are no args.
-    """
-    if not isinstance(args, dict) or not args:
-        return ""
-    argv = args.get("argv")
-    if isinstance(argv, (list, tuple)) and argv:
-        return _clip(shlex.join(str(a) for a in argv))
-    questions = args.get("questions")
-    if isinstance(questions, (list, tuple)) and questions:
-        first = questions[0]
-        q = first.get("question", "") if isinstance(first, dict) else str(first)
-        more = f" (+{len(questions) - 1})" if len(questions) > 1 else ""
-        return _clip(str(q)) + more
-    for key in _PRIMARY_ARGS:
-        value = args.get(key)
-        if isinstance(value, (str, int)):
-            text = format.tool_path(str(value)) if key in format.PATH_KEYS else str(value)
-            return _clip(text)
-    key, value = next(iter(args.items()))
-    return _clip(f"{key}={value}")
-
-
-def _parallel_group_label(event: dict[str, Any]) -> str:
-    """Return the group's label: `group <name>`, or "parallel" for an unnamed one."""
-    group = str(event.get("group", "")).strip()
-    return f"group {group}" if group else "parallel"
-
-
-def _parallel_dispatched_body(event: dict[str, Any]) -> str:
-    """Word a dispatched group: how many lanes for how many tasks, and which.
-
-    Args:
-        event: The `loop.parallel.dispatched` event.
-
-    Returns:
-        The head line, then one bullet per task; an event carrying no lane count
-        names the tasks alone.
-    """
-    tasks_raw = event.get("tasks")
-    tasks = [str(t).strip() for t in tasks_raw] if isinstance(tasks_raw, list) else []
-    n = len(tasks)
-    lanes = event.get("lanes")
-    if isinstance(lanes, int) and not isinstance(lanes, bool):
-        what = format.lane_count(lanes) + (f" for {n} tasks" if n > 1 else "")
-    else:
-        what = f"{n} parallel task{'' if n == 1 else 's'}"
-    head = (
-        f"dispatched {what} ({_parallel_group_label(event)});"
-        " lanes run detached, listed under this session"
-    )
-    return "\n".join([head, *(f"• {_clip(t, 80)}" for t in tasks if t)])
-
-
-def _parallel_compared_body(event: dict[str, Any]) -> str:
-    """Word a fan-out's ranking: best first, each with its gate verdict and cost.
-
-    Args:
-        event: The `loop.parallel.compared` event.
-
-    Returns:
-        The head line naming who ranked, then one line per candidate.
-    """
-    raw = event.get("ranking")
-    rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
-    by = str(event.get("ranked_by", "")).strip() or "?"
-    head = f"compared {_parallel_group_label(event)}: {len(rows)} candidate(s), ranked by {by}"
-    lines = [head]
-    for rank, r in enumerate(rows, start=1):
-        cost = r.get("cost_usd")
-        cost_s = budget.format_usd(float(cost)) if isinstance(cost, (int, float)) else "?"
-        # The listings' cell, when the event carries it (plan points, or both).
-        cell = r.get("cost")
-        if isinstance(cell, str) and cell:
-            cost_s = cell
-        lines.append(f"{rank}. {r.get('session_id', '?')}  {r.get('verify', '?')}  {cost_s}")
-    return "\n".join(lines)
-
-
-def _parallel_joined_body(event: dict[str, Any]) -> str:
-    """Word a joined group: one line per lane with its status, id, branch and sha.
-
-    Args:
-        event: The `loop.parallel.joined` event.
-
-    Returns:
-        The head line, then one line per lane.
-    """
-    lanes_raw = event.get("lanes")
-    lanes = [ln for ln in lanes_raw if isinstance(ln, dict)] if isinstance(lanes_raw, list) else []
-    head = f"joined {_parallel_group_label(event)}: {len(lanes)} lane(s)"
-    rows: list[str] = []
-    for ln in lanes:
-        status = str(ln.get("status", "?"))
-        parts = [str(ln.get("session_id", "?"))]
-        branch = str(ln.get("branch", "")).strip()
-        if branch:
-            parts.append(branch)
-        sha = str(ln.get("sha", "")).strip()
-        if sha:
-            parts.append(sha[:12])
-        detail = str(ln.get("detail", "")).strip()
-        if detail:
-            parts.append(detail)
-        rows.append(f"{status}  {'  '.join(parts)}")
-    return "\n".join([head, *rows])
-
-
-def _parallel_failed_body(event: dict[str, Any]) -> str | None:
-    """Word a dispatch failure or a fan-out's failed lanes.
-
-    Args:
-        event: The `loop.parallel.failed` event.
-
-    Returns:
-        The dispatch error when the event carries one; a fan-out's failed lanes
-        otherwise; None for a post-join failure, whose joined event already showed
-        each lane's status.
-    """
-    error = str(event.get("error", "")).strip()
-    if error:
-        return f"{_parallel_group_label(event)} dispatch failed: {error}"
-    if event.get("fanout") is not True:
-        return None
-    raw = event.get("lanes")
-    lanes = [lane for lane in raw if isinstance(lane, dict)] if isinstance(raw, list) else []
-    lines = [f"failed lanes in {_parallel_group_label(event)}:"]
-    for lane in lanes:
-        session_id = str(lane.get("session_id", "?")).strip() or "?"
-        detail = str(lane.get("detail", "")).strip()
-        lines.append(f"{session_id}: {detail}" if detail else session_id)
-    return "\n".join(lines)
-
-
-def _mcp_unavailable_body(event: dict[str, Any]) -> str:
-    """Word an MCP server that did not start: the error and the tools it costs.
-
-    Args:
-        event: The `mcp.server_unavailable` event.
-
-    Returns:
-        The error, which names the server, and the consequence.
-    """
-    error = str(event.get("error", "")).strip()
-    if not error:
-        server = str(event.get("server", "")).strip() or "(unnamed)"
-        return f"MCP server {server!r} is unavailable; its tools are missing"
-    return f"{error}; its tools are missing"
-
-
-def _compact_requested_body(event: dict[str, Any]) -> str:
-    """Return the line for a compaction request, with its focus."""
-    focus = str(event.get("focus", "")).strip()
-    return f"compaction requested: {focus}" if focus else "compaction requested"
-
-
-def _task_queued_body(event: dict[str, Any]) -> str:
-    """Return the line for a queued task; it reaches the model when the frontier gets there."""
-    return f"task queued: {str(event.get('title', '')).strip()}".rstrip(": ")
-
-
-def _task_retired_body(event: dict[str, Any]) -> str:
-    """Return the line for a retired task."""
-    return f"task retired: {str(event.get('title', '')).strip()}".rstrip(": ")
-
-
-def _standing_set_body(event: dict[str, Any]) -> str:
-    """Return the line for the standing goal the operator set."""
-    return f"standing goal: {str(event.get('title', '')).strip()}".rstrip(": ")
-
-
-def _compact_done_body(event: dict[str, Any]) -> str:
-    """Return the line for a tier-2 compaction: the summary's size and the messages kept."""
-    chars = viewmodel_events.as_int(event.get("summary_chars"))
-    kept = viewmodel_events.as_int(event.get("kept_messages"))
-    return f"context compacted: {chars:,}-char summary, {kept} recent messages kept verbatim"
-
-
-def _request_refused_body(event: dict[str, Any]) -> str:
-    """Return the line for a refused operator request, which takes the composer's word back."""
-    kind, text = str(event.get("kind", "")), str(event.get("text", "")).strip()
-    error = str(event.get("error", "")).strip()
-    return f"{kind} request refused ({text[:60]}): {error}"
-
-
-def _compact_failed_body(event: dict[str, Any]) -> str:
-    """Return the line for a failed compaction, with its error."""
-    error = str(event.get("error", "")).strip()
-    return f"compaction failed: {error}" if error else "compaction failed"
-
-
-def _compact_refused_body(event: dict[str, Any]) -> str:
-    """Return the line for a refused compaction, with its reason."""
-    reason = str(event.get("reason", "")).strip()
-    return f"compaction refused: {reason}" if reason else "compaction refused"
-
-
-def _jail_degraded_body(event: dict[str, Any]) -> str:
-    """Return the line for a degraded sandbox, with its reason."""
-    detail = " ".join(str(event.get("detail", "")).split())
-    return f"sandbox degraded: {detail}" if detail else "sandbox degraded"
-
-
-# Events that render as a marker between turns; a builder returning None renders nothing.
-_MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
-    "mcp.server_unavailable": _mcp_unavailable_body,
-    "jail.degraded": _jail_degraded_body,
-    "loop.parallel.dispatched": _parallel_dispatched_body,
-    "loop.parallel.joined": _parallel_joined_body,
-    "loop.parallel.failed": _parallel_failed_body,
-    "loop.parallel.compared": _parallel_compared_body,
-    "loop.task.queued": _task_queued_body,
-    "loop.task.retired": _task_retired_body,
-    "loop.standing.set": _standing_set_body,
-    "loop.request.refused": _request_refused_body,
-    "loop.compact.requested": _compact_requested_body,
-    "loop.compact.summarise.done": _compact_done_body,
-    "loop.compact.summarise.failed": _compact_failed_body,
-    "loop.compact.refused": _compact_refused_body,
-}
 
 
 def _pending_key(event: dict[str, Any], name: str) -> int | str:
@@ -495,7 +220,7 @@ class TranscriptFold:
         )
         parts.append(counts)
         if self._commit_subject:
-            parts.append(_clip(self._commit_subject, 60))
+            parts.append(_transcript_text.clip(self._commit_subject, 60))
         return " · ".join(parts)
 
     def _pin_items(self, event: dict[str, Any], etype: str) -> list[TranscriptItem]:
@@ -567,7 +292,7 @@ class TranscriptFold:
             n = len(str(event.get("patch", "")).splitlines())
             sha = str(event.get("sha", ""))[:12]
             return [TranscriptItem("commit", detail=f"{sha} · {n} lines" if sha else f"{n} lines")]
-        build = _MARKER_BODIES.get(etype)
+        build = _transcript_text.MARKER_BODIES.get(etype)
         if build is not None:
             body = build(event)
             if body is None:
@@ -670,8 +395,10 @@ class TranscriptFold:
         if key in self._pending:
             first, _preview = self._pending.pop(key)
             out.append(dataclasses.replace(first, ok=False, detail="no result (superseded)"))
-        pending = TranscriptItem("tool", name=name, arg=salient_arg(args), call_id=str(key))
-        self._pending[key] = (pending, _call_preview(name, args))
+        pending = TranscriptItem(
+            "tool", name=name, arg=_transcript_text.salient_arg(args), call_id=str(key)
+        )
+        self._pending[key] = (pending, _transcript_text.call_preview(name, args))
         self._verify = None
         out.append(pending)
         return out
@@ -829,7 +556,7 @@ def restate(events: list[dict[str, Any]], *, worker_dead: bool = False) -> str:
         return "nothing to restate: this session has no operator input yet"
     anchor = events[last]
     said = str(anchor.get(_OPERATOR_TEXT[str(anchor["type"])], "")).strip()
-    lines = [f"you said: {_clip(said, 200)}"]
+    lines = [f"you said: {_transcript_text.clip(said, 200)}"]
     for item in fold_transcript(events[last:], worker_dead=worker_dead):
         if item.kind in ("thinking", "operator"):
             continue
@@ -839,7 +566,7 @@ def restate(events: list[dict[str, Any]], *, worker_dead: bool = False) -> str:
                 lines.extend(("", body))
         elif item.kind == "tool":
             arg = f" {item.arg}" if item.arg else ""
-            detail = f": {_clip(item.detail, 80)}" if item.detail else ""
+            detail = f": {_transcript_text.clip(item.detail, 80)}" if item.detail else ""
             lines.append(f"  [{_outcome_word(item)}] {item.name}{arg}{detail}")
         else:
             body = (item.body or item.detail).strip()

@@ -41,7 +41,7 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli import run as cli_run
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import listing
 
 
@@ -210,9 +210,9 @@ def test_the_run_works_in_its_own_worktree_and_the_checkout_stays_as_it_was(
     assert (worktree / "new.txt").read_text(encoding="utf-8") == "made by the run\n"
     assert (worktree / "a.py").read_text(encoding="utf-8") == "x = 1\n"
     assert not (worktree / "notes.md").exists()
-    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-AAAA01"))
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("wt-AAAA01"))
     assert tip is not None
-    assert git_ops.tree_diff_paths(repo, manifest.base_sha, tip) == ["new.txt"]
+    assert git_read.tree_diff_paths(repo, manifest.base_sha, tip) == ["new.txt"]
 
     assert _checkout_facts(repo) == before
     assert not (repo / "new.txt").exists()
@@ -242,9 +242,9 @@ def test_resume_from_the_checkout_continues_in_the_worktree(
     assert (worktree / "more.txt").read_text(encoding="utf-8") == "two\n"
     assert not (repo / "more.txt").exists()
     assert _checkout_facts(repo) == before
-    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-RESU01"))
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("wt-RESU01"))
     assert tip is not None
-    assert git_ops.tree_diff_paths(repo, before[0].strip(), tip) == ["more.txt", "new.txt"]
+    assert git_read.tree_diff_paths(repo, before[0].strip(), tip) == ["more.txt", "new.txt"]
 
 
 @pytest.mark.parametrize("forked", [False, True], ids=["worktree-run", "fork"])
@@ -281,7 +281,7 @@ def test_resume_stash_restore_command_targets_the_sessions_worktree(
     assert cli_main(["resume", session_id, "--steer", "add more.txt"]) == 0
 
     err = capsys.readouterr().err
-    entry = git_ops.find_stash(repo, git_ops.auto_stash_message(session_id))
+    entry = git_read.find_stash(repo, git_ops.auto_stash_message(session_id))
     assert entry is not None
     restore = next(
         line.partition("restore them with: ")[2]
@@ -326,7 +326,7 @@ def test_resume_auto_stash_pop_keeps_the_run_branch_checked_out_in_its_worktree(
     assert (worktree / "more.txt").read_text(encoding="utf-8") == "two\n"
     assert _git(worktree, "branch", "--show-current").strip() == "agent6/wt-STAS02"
     assert _checkout_facts(repo)[:3] == before
-    assert git_ops.find_stash(repo, git_ops.auto_stash_message(session_id)) is None
+    assert git_read.find_stash(repo, git_ops.auto_stash_message(session_id)) is None
     assert f"restored your pre-run changes in the worktree {worktree}" in capsys.readouterr().err
 
 
@@ -371,8 +371,8 @@ def test_a_worktree_run_resumed_after_its_merge_shows_only_its_unlanded_work(
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _edit("one.txt", "1\n"))
     assert cli_main(["run", "--worktree", "--session-id", "wt-LAND01", "add one.txt"]) == 0
-    chain = git_ops.chain_ref_for("wt-LAND01")
-    first_tip = git_ops.chain_tip(repo, chain)
+    chain = git_read.chain_ref_for("wt-LAND01")
+    first_tip = git_read.chain_tip(repo, chain)
     assert first_tip is not None
     assert cli_main(["sessions", "merge", "wt-LAND01"]) == 0
     landed = _git(repo, "rev-parse", "main").strip()
@@ -454,7 +454,7 @@ def test_rm_typed_in_the_worktree_removes_the_chain_ref_too(
     out, err = capsys.readouterr()
     assert "removed wt-SELF01, its worktree and its chain ref" in out
     assert f"this shell's directory is gone; cd {repo}" in err
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-SELF01")) is None
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("wt-SELF01")) is None
     assert _nothing_was_created(repo, "wt-SELF01")
 
 
@@ -554,7 +554,7 @@ def test_a_worktree_run_starts_while_another_run_drives_the_checkout(
     finally:
         lock.release_single_writer(held)
     assert "PARKED" not in capsys.readouterr().err
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-BUSY01")) is not None
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("wt-BUSY01")) is not None
 
 
 def test_a_repository_with_no_commit_refuses(
@@ -723,7 +723,7 @@ def test_prune_removes_the_worktree_of_a_run_that_committed_nothing(
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch)
     assert cli_main(["run", "--worktree", "--session-id", "wt-NOOP01", "look around"]) == 0
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-NOOP01")) is None
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("wt-NOOP01")) is None
     assert len(_worktrees(repo)) == 2
     capsys.readouterr()
 
@@ -861,9 +861,9 @@ def test_the_setup_command_runs_in_the_new_worktree_before_the_first_turn(
     assert "setup command: sh -c 'echo ready > .setup-ran && echo synced'" in err
     assert "synced" in err
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU01"))
-    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-SETU01"))
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("wt-SETU01"))
     assert tip is not None
-    assert git_ops.tree_diff_paths(repo, manifest.base_sha, tip) == ["new.txt"]
+    assert git_read.tree_diff_paths(repo, manifest.base_sha, tip) == ["new.txt"]
 
 
 def test_a_failed_setup_command_ends_the_session_before_any_turn(
@@ -1230,7 +1230,7 @@ def test_a_setup_on_resume_leaves_the_runs_own_files_in_its_commits(
     assert cli_main(["resume", "wt-SETU10", "--steer", "rewrite new.txt"]) == 0
     assert "setup command: sh -c" in capsys.readouterr().err
 
-    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("wt-SETU10"))
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("wt-SETU10"))
     assert tip is not None
     assert _git(repo, "show", f"{tip}:new.txt") == "two\n"
     assert ".setup-ran" not in _git(repo, "ls-tree", "--name-only", tip)

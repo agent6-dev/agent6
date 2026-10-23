@@ -31,7 +31,8 @@ from agent6.harness import (
     _advice,
     _chain,
     _checkpoint,
-    _compaction,
+    _compaction_result,
+    _compaction_window,
     _compactor,
     _context,
     _conversation,
@@ -139,8 +140,8 @@ class Harness:
     call: _provider_call.CallSettings = dataclasses.field(
         default_factory=_provider_call.CallSettings
     )
-    compaction: _compaction.CompactionSettings = dataclasses.field(
-        default_factory=_compaction.CompactionSettings
+    compaction: _compaction_window.CompactionSettings = dataclasses.field(
+        default_factory=_compaction_window.CompactionSettings
     )
     review: _reviewer.ReviewSettings = dataclasses.field(default_factory=_reviewer.ReviewSettings)
     revision: _prompt_revision.RevisionSettings = dataclasses.field(
@@ -429,7 +430,7 @@ class Harness:
                 conversation=conversation,
                 state=state,
                 ctx=ctx,
-                prefix_chars=_compaction.request_prefix_chars(system, tools),
+                prefix_chars=_compaction_window.request_prefix_chars(system, tools),
             )
             if isinstance(wire, _snapshot.SessionResult):
                 return wire
@@ -840,7 +841,7 @@ class Harness:
             turn.tool_results.append(
                 _conversation.ToolResultItem(
                     tool_use_id=tu.id,
-                    content=_compaction.cap_tool_result(
+                    content=_compaction_result.cap_tool_result(
                         served if served is not None else content,
                         tool_name=name,
                         cap=self.compaction.tool_result_cap_bytes,

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.config import layer, model
+from agent6.config import _presets, model
 from agent6.ui.cli import _common, completers
 
 # `run -i` and `resume -i` share one hook (`app/_execution.py`), so they share one help.
@@ -137,7 +137,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default=argparse.SUPPRESS,
         type=model.preset_name,
         help=(
-            f"Apply a built-in strategy preset ({'/'.join(layer.BUILTIN_PRESETS)}) or a custom"
+            f"Apply a built-in strategy preset ({'/'.join(_presets.BUILTIN_PRESETS)}) or a custom"
             " presets.NAME. This overrides any `preset` selected in a config file and values"
             " from the global and per-repository configs. Values from --config FILE and other"
             " command flags still win. Use none to select no preset."

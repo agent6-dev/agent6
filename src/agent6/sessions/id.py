@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from agent6._data import words
 from agent6.graph import ulid
 from agent6.sessions import layout
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -61,7 +61,7 @@ def validate_explicit_session_id(session_id: str) -> str:
         raise SessionIdError(
             f"invalid --session-id {session_id!r}: must be a single name with no '/', '\\', or '..'"
         )
-    if not git_ops.valid_branch_name(session_id):
+    if not git_read.valid_branch_name(session_id):
         raise SessionIdError(
             f"invalid --session-id {session_id!r}: must be usable as a git branch name "
             "(no spaces or any of ~^:?*[\\, no '..' or '@{', "

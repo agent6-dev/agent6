@@ -17,7 +17,7 @@ from agent6.app import finalize as _finalize
 from agent6.app import reporter
 from agent6.harness import _advice, _snapshot
 from agent6.sessions import layout as sessions_layout
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 
 def _layout(
@@ -536,7 +536,7 @@ def test_end_banner_of_a_branchless_run_names_its_chain_ref(
     repo = _seeded_repo(tmp_path)
     monkeypatch.chdir(repo)
     (repo / "work.txt").write_text("agent work\n", encoding="utf-8")
-    chain = git_ops.chain_ref_for("nobranch")
+    chain = git_read.chain_ref_for("nobranch")
     sp.run(["git", "update-ref", chain, "HEAD"], cwd=repo, check=True)
     manifest: dict[str, object] = {
         "session_id": "nobranch",
@@ -562,7 +562,7 @@ def test_end_banner_of_a_merged_branchless_run_says_merged(
 
     repo = _seeded_repo(tmp_path)
     monkeypatch.chdir(repo)
-    chain = git_ops.chain_ref_for("nbmerged")
+    chain = git_read.chain_ref_for("nbmerged")
     sp.run(["git", "update-ref", chain, "HEAD"], cwd=repo, check=True)
     tip = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
@@ -628,12 +628,12 @@ def test_end_banner_of_a_run_cut_from_a_detached_head_names_the_into_form(
     repo = _seeded_repo(tmp_path)
     sp.run(["git", "checkout", "-q", "--detach"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
-    sp.run(["git", "update-ref", git_ops.chain_ref_for("det"), "HEAD"], cwd=repo, check=True)
+    sp.run(["git", "update-ref", git_read.chain_ref_for("det"), "HEAD"], cwd=repo, check=True)
     manifest: dict[str, object] = {
         "session_id": "det",
         "run_branch": None,
         # What the preflight records as the base on this checkout.
-        "base_branch": git_ops.status(repo).branch,
+        "base_branch": git_read.status(repo).branch,
     }
     out = _end_footer(tmp_path, repo, "det", manifest, capsys)
     assert "  merge with:  agent6 sessions merge det --into BRANCH\n" in out
@@ -650,12 +650,12 @@ def test_interrupt_end_prints_cost_resume_and_branch_hints(
         json.dumps({"run_branch": "agent6/r4", "base_branch": "main"}), encoding="utf-8"
     )
 
-    def _on_run_branch(_p: pathlib.Path) -> git_ops.GitStatus:
-        return git_ops.GitStatus(
+    def _on_run_branch(_p: pathlib.Path) -> git_read.GitStatus:
+        return git_read.GitStatus(
             branch="agent6/r4", head_sha="x", is_clean=True, untracked_count=0, modified_count=0
         )
 
-    monkeypatch.setattr(git_ops, "status", _on_run_branch)
+    monkeypatch.setattr(git_read, "status", _on_run_branch)
     _finalize.print_interrupt_end(
         layout=layout,
         cwd=tmp_path,
@@ -729,7 +729,7 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
         )
         if session_id == "r-401-committed":
             sp.run(
-                ["git", "update-ref", git_ops.chain_ref_for(session_id), "HEAD"],
+                ["git", "update-ref", git_read.chain_ref_for(session_id), "HEAD"],
                 cwd=repo,
                 check=True,
             )
@@ -1136,7 +1136,7 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
     def _boom(_path: pathlib.Path, **_kw: object) -> object:
         raise errors.GitError("git unreadable here")
 
-    monkeypatch.setattr(git_ops, "status", _boom)
+    monkeypatch.setattr(git_read, "status", _boom)
     result = _snapshot.SessionResult(
         completed=True, reason="finish_session", summary="", turns=1, tool_calls=1
     )

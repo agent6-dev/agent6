@@ -20,7 +20,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
 from agent6.ui.cli import _common
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import (
     LogScan,
     SessionSummary,
@@ -333,7 +333,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     model_from_flag = manifest.models.driver_from_flag
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
     changes = _changes(target.name, manifest, undone=scan.finished and scan.end_reason == "undone")
-    tips = git_ops.run_ref_tips(pathlib.Path.cwd())
+    tips = git_read.run_ref_tips(pathlib.Path.cwd())
     summary = summarize_session_dir(target, branch_tips=tips)
     lanes = _fanout_lanes(layout, manifest, tips)
     lane_manifests = _lane_manifests(layout.state_dir, lanes)
@@ -485,9 +485,11 @@ def _changes(
             format.format_branch(run_branch, manifest.base_branch, stamp.into), stamp.into
         )
     merge_hint = f"merge with: {merge.merge_command(session_id, manifest.base_branch)}"
-    chain = git_ops.chain_ref_for(session_id)
-    branch_kept = git_ops.branch_exists(cwd, run_branch)
-    tip = git_ops.branch_tip_sha(cwd, run_branch) if branch_kept else git_ops.chain_tip(cwd, chain)
+    chain = git_read.chain_ref_for(session_id)
+    branch_kept = git_read.branch_exists(cwd, run_branch)
+    tip = (
+        git_read.branch_tip_sha(cwd, run_branch) if branch_kept else git_read.chain_tip(cwd, chain)
+    )
     if tip is None or tip == manifest.base_sha:
         # A fork cut before its source's first commit sits on the base with no commit of its own.
         return _Changes("none (the run made no commit)", "")

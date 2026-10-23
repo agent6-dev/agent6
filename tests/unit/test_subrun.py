@@ -10,7 +10,7 @@ import subprocess
 import pytest
 
 from agent6.harness import subrun
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 
 def _git(repo: pathlib.Path, *args: str) -> None:
@@ -76,7 +76,7 @@ def test_import_run_lands_branch_and_moves_run_dir(tmp_path: pathlib.Path) -> No
     assert imported == origin_state / "sessions" / "runs" / "01ABC"
     assert (imported / "manifest.json").read_text(encoding="utf-8") == "{}\n"
     assert not lane_session_dir.exists()
-    assert git_ops.branch_exists(origin, branch)
+    assert git_read.branch_exists(origin, branch)
 
 
 def test_import_run_lands_a_lane_that_never_committed(tmp_path: pathlib.Path) -> None:
@@ -98,7 +98,7 @@ def test_import_run_lands_a_lane_that_never_committed(tmp_path: pathlib.Path) ->
     )
 
     assert (imported / "manifest.json").is_file()
-    assert not git_ops.branch_exists(origin, "agent6/lane-1")
+    assert not git_read.branch_exists(origin, "agent6/lane-1")
 
 
 def test_import_run_refuses_existing_branch(tmp_path: pathlib.Path) -> None:
@@ -141,5 +141,5 @@ def test_import_run_refuses_existing_run_dir(tmp_path: pathlib.Path) -> None:
     with pytest.raises(subrun.SubrunError):
         subrun.import_run(origin, lane_repo, branch, lane_session_dir, origin_state)
     # Refused before fetching or moving anything.
-    assert not git_ops.branch_exists(origin, branch)
+    assert not git_read.branch_exists(origin, branch)
     assert lane_session_dir.exists()

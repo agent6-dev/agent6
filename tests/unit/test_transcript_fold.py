@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agent6.viewmodel import _session_status, fold_transcript, restate, salient_arg
+from agent6.viewmodel import _session_status, _transcript_text, fold_transcript, restate
 
 
 def _read(path: str) -> list[dict[str, object]]:
@@ -276,21 +276,24 @@ def test_parallel_failed_renders_the_dispatch_error_but_not_the_join_subset() ->
 
 
 def test_salient_arg_prefers_a_primary_key() -> None:
-    assert salient_arg({"recursive": True, "path": "src/x.py"}) == "src/x.py"
-    assert salient_arg({}) == ""
-    assert salient_arg({"n": 3}) == "n=3"
+    assert _transcript_text.salient_arg({"recursive": True, "path": "src/x.py"}) == "src/x.py"
+    assert _transcript_text.salient_arg({}) == ""
+    assert _transcript_text.salient_arg({"n": 3}) == "n=3"
 
 
 def test_salient_arg_renders_argv_as_a_shell_line() -> None:
     # Not a Python list repr: the operator reads it as a command; a token with a
     # space is quoted the way a shell needs.
-    assert salient_arg({"argv": ["cargo", "build", "--release"]}) == "cargo build --release"
-    assert salient_arg({"argv": ["echo", "a b"]}) == "echo 'a b'"
+    assert (
+        _transcript_text.salient_arg({"argv": ["cargo", "build", "--release"]})
+        == "cargo build --release"
+    )
+    assert _transcript_text.salient_arg({"argv": ["echo", "a b"]}) == "echo 'a b'"
 
 
 def test_salient_arg_renders_ask_user_questions_as_text() -> None:
     args = {"questions": [{"question": "Which theme?"}, {"question": "Apply to TUI?"}]}
-    assert salient_arg(args) == "Which theme? (+1)"
+    assert _transcript_text.salient_arg(args) == "Which theme? (+1)"
 
 
 def test_interleaved_tool_calls_pair_by_name() -> None:
@@ -618,7 +621,9 @@ def test_edit_preview_shows_the_changed_lines_only() -> None:
 
 def test_salient_arg_is_always_one_line() -> None:
     """The clip flattens whitespace so a multi-line arg value keeps the tool head on one line."""
-    arg = salient_arg({"_raw_arguments": '{"argv": [".venv/bin/python", "-c", "\nfrom x"]}'})
+    arg = _transcript_text.salient_arg(
+        {"_raw_arguments": '{"argv": [".venv/bin/python", "-c", "\nfrom x"]}'}
+    )
     assert "\n" not in arg
 
 

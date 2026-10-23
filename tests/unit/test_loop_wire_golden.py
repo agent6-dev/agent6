@@ -20,7 +20,7 @@ import pathlib
 import types
 from typing import Any
 
-from agent6.harness import _chain, _compaction, _conversation, _operator, loop
+from agent6.harness import _chain, _compaction_window, _conversation, _operator, loop
 from agent6.providers import ProviderResponse
 from agent6.tools import mcp_client, results
 
@@ -247,7 +247,7 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
         provider=worker,  # type: ignore[arg-type]
         dispatcher=_Dispatcher(compact_flag),  # type: ignore[arg-type]
         logger=lambda _msg: None,
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=summariser,  # type: ignore[arg-type]
             drop_at_chars=2_000,
         ),
@@ -292,7 +292,7 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
         provider=resume_worker,  # type: ignore[arg-type]
         dispatcher=_Dispatcher([False]),  # type: ignore[arg-type]
         logger=lambda _msg: None,
-        compaction=_compaction.CompactionSettings(drop_at_chars=2_000),
+        compaction=_compaction_window.CompactionSettings(drop_at_chars=2_000),
         resume_state_path=resume_snap,
     )
     resumed = wf2.resume()

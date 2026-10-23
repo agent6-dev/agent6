@@ -24,6 +24,7 @@ from agent6.app import _setup, confine
 from agent6.config import (
     Config,
     MCPServerEntry,
+    _layer_data,
     io,
     is_cleartext_url,
     is_loopback_url,
@@ -306,7 +307,7 @@ def _repo_flag(to_repo: bool) -> str:
     return "--repo " if to_repo else ""
 
 
-def _layers_holding(effective: config_layer.EffectiveConfig, name: str) -> set[str]:
+def _layers_holding(effective: _layer_data.EffectiveConfig, name: str) -> set[str]:
     """Return the config layers whose own file declares `[mcp.servers.<name>]`."""
     return {
         layer.name
@@ -315,7 +316,7 @@ def _layers_holding(effective: config_layer.EffectiveConfig, name: str) -> set[s
     }
 
 
-def _written_line(effective: config_layer.EffectiveConfig, name: str, to_repo: bool) -> str:
+def _written_line(effective: _layer_data.EffectiveConfig, name: str, to_repo: bool) -> str:
     """Return where the entry went, and what that means beside the other layer's entry.
 
     The repo layer wins over the global one.

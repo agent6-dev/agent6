@@ -41,7 +41,7 @@ from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import _session_log, listing
 
 
@@ -111,7 +111,7 @@ def covering_stamp(
     stamp = manifest.merged
     if stamp is None or not stamp.into:
         return None
-    holds = git_ops.merge_stamp_holds(
+    holds = git_read.merge_stamp_holds(
         repo, manifest.session_id, manifest.run_branch or "", stamp.tip
     )
     return stamp if holds else None
@@ -128,13 +128,13 @@ def commits_note(repo: pathlib.Path, manifest: sessions_manifest.SessionManifest
         The run branch, the merge that landed them, the chain ref, or "it recorded
         no commits".
     """
-    if manifest.run_branch and git_ops.branch_exists(repo, manifest.run_branch):
+    if manifest.run_branch and git_read.branch_exists(repo, manifest.run_branch):
         return f"its commits are on {manifest.run_branch}"
     stamp = covering_stamp(repo, manifest)
     if stamp is not None:
         return f"its commits are {stamp.landed()}"
-    chain = git_ops.chain_ref_for(manifest.session_id)
-    if git_ops.chain_tip(repo, chain) is not None:
+    chain = git_read.chain_ref_for(manifest.session_id)
+    if git_read.chain_tip(repo, chain) is not None:
         return f"its commits are on {chain}"
     return "it recorded no commits"
 
@@ -166,12 +166,12 @@ def snapshot_head_mismatch(
     if not snap_head:
         return None
     try:
-        current_head = git_ops.chain_tip(repo_root, chain_ref)
+        current_head = git_read.chain_tip(repo_root, chain_ref)
     except errors.GitError:
         return None
     if current_head is None or current_head == snap_head:
         return None
-    if git_ops.is_ancestor(repo_root, snap_head, current_head):
+    if git_read.is_ancestor(repo_root, snap_head, current_head):
         # The tip moved forward on the same line: the run's own commits.
         return None
     return (snap_head, current_head)
@@ -411,7 +411,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         # A rewritten chain ref would leave the model reasoning about a changed record.
         mismatch = (
-            snapshot_head_mismatch(snapshot_path, cwd, chain_ref=git_ops.chain_ref_for(session_id))
+            snapshot_head_mismatch(snapshot_path, cwd, chain_ref=git_read.chain_ref_for(session_id))
             if writes_code
             else None
         )
@@ -497,11 +497,11 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         except preflight.SessionRefusedError as refusal:
             return refusal.rc
 
-        identity = git_ops.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
+        identity = git_read.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
         # The no-repo guard ran above.
         if writes_code:
             try:
-                git_ops.verify_git_identity(cwd, identity)
+                git_read.verify_git_identity(cwd, identity)
             except errors.GitError as exc:
                 reporter.error(str(exc))
                 return 2
@@ -613,19 +613,19 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             except ValueError:
                 flight = None  # the loop names and drops it when it resumes
             died_in_turn = flight is not None and flight.turn == snapshot.next_turn
-            chain_ref = git_ops.chain_ref_for(session_id)
+            chain_ref = git_read.chain_ref_for(session_id)
             end_tree = scan.end_tree
-            seed = git_ops.chain_tip(cwd, chain_ref) or resume_base_sha or None
+            seed = git_read.chain_tip(cwd, chain_ref) or resume_base_sha or None
             written = _paths_the_run_wrote(layout.logs_path)
             if landed is not None:
                 # The run's work is in HEAD, so what differs from HEAD is the operator's.
                 end_tree, seed = f"{landed.head}^{{tree}}", landed.head
             try:
                 arrived = (
-                    git_ops.untracked_paths(cwd)
+                    git_read.untracked_paths(cwd)
                     - untracked_at_start
-                    - git_ops.tree_paths(cwd, chain_ref)
-                    - (git_ops.tree_paths(cwd, end_tree) if end_tree else frozenset())
+                    - git_read.tree_paths(cwd, chain_ref)
+                    - (git_read.tree_paths(cwd, end_tree) if end_tree else frozenset())
                     - written
                 )
                 shown = _first_four(arrived)
@@ -726,9 +726,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             # The next auto-commit takes the previous execution's tail and any operator edit
             # since; the operator's untracked files stay out.
             with contextlib.suppress(errors.GitError, OSError):
-                dirty = git_ops.chain_dirty_paths(
+                dirty = git_read.chain_dirty_paths(
                     cwd,
-                    git_ops.chain_ref_for(session_id),
+                    git_read.chain_ref_for(session_id),
                     resume_base_sha,
                     5,
                     exclude=untracked_at_start,

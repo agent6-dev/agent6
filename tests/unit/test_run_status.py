@@ -21,7 +21,7 @@ from agent6.ui.cli import (
     _common,  # pyright: ignore[reportPrivateUsage]
     sessions_show,  # pyright: ignore[reportPrivateUsage]
 )
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 
 def _ts(off_s: float) -> str:
@@ -1091,7 +1091,7 @@ def test_status_of_a_run_cut_from_a_detached_head_offers_merge_into(
     branch = "agent6/winsome-dawn-YWH5ZS"
     subprocess.run(["git", "branch", branch], cwd=cwd, check=True)
     # What the preflight records as the base on this checkout.
-    _stamp_manifest(d, run_branch=branch, base_branch=git_ops.status(cwd).branch)
+    _stamp_manifest(d, run_branch=branch, base_branch=git_read.status(cwd).branch)
 
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out

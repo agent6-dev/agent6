@@ -28,6 +28,7 @@ from agent6.config import (
     OpenAIProviderEntry,
     RoleModel,
     SandboxConfig,
+    _layer_data,
     layer,
 )
 from agent6.models import validate
@@ -35,7 +36,7 @@ from agent6.sessions import layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import run
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -78,8 +79,8 @@ _seen_at_stop: list[bool] = []
 
 
 def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_policy: bool) -> None:
-    def _load_effective(*a: object, **k: object) -> layer.EffectiveConfig:
-        return layer.EffectiveConfig(config=cfg, sources={}, layers=())
+    def _load_effective(*a: object, **k: object) -> _layer_data.EffectiveConfig:
+        return _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _noop(*a: object, **k: object) -> None:
         return None
@@ -93,13 +94,13 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
         return validate.ModelValidation(unknown=(), suggestions={}, can_validate=False)
 
     def _stop(*_a: object, **_k: object) -> object:
-        _seen_at_stop.append(git_ops.status(pathlib.Path.cwd()).modified_count == 0)
+        _seen_at_stop.append(git_read.status(pathlib.Path.cwd()).modified_count == 0)
         raise _Stop
 
     monkeypatch.setattr(layer, "load_effective", _load_effective)
     monkeypatch.setattr(_setup, "apply_git_ops_policy", _noop)
     monkeypatch.setattr(validate, "validate_configured_model", _model_ok)
-    monkeypatch.setattr(git_ops, "verify_git_identity", _noop)
+    monkeypatch.setattr(git_read, "verify_git_identity", _noop)
     if stop_after_policy:
         # The first step after the tree policy and the untracked snapshot: the
         # execution body's provider session.
@@ -278,7 +279,7 @@ def test_auto_stash_stashes_without_asking(
     assert asked == []
     # auto_stash without auto_stash_pop: stashed for the run, left stashed after.
     assert _seen_at_stop[-1] is True
-    assert git_ops.status(repo).is_clean
+    assert git_read.status(repo).is_clean
     assert "agent6 auto-stash before run" in _git(repo, "stash", "list")
 
 
@@ -321,7 +322,7 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     (repo / "seed.txt").write_text("edited by the prior run\n", encoding="utf-8")
     head = _git(repo, "rev-parse", "HEAD").strip()
     assert git_ops.chain_commit(
-        repo, "agent6 turn 1", ref=git_ops.chain_ref_for(prior.name), fallback_parent=head
+        repo, "agent6 turn 1", ref=git_read.chain_ref_for(prior.name), fallback_parent=head
     )
     _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
 

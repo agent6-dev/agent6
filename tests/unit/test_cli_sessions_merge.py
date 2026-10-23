@@ -17,7 +17,7 @@ from agent6.app import providers as app_providers
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import main
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -84,7 +84,7 @@ def test_merge_follows_the_chain_when_the_branch_stopped_tracking_it(
     """
     monkeypatch.chdir(tmp_path)
     base = _setup_run(tmp_path, "frozen-branch1", commits=[("a.txt", "one\n", "turn 1")])
-    chain = git_ops.chain_ref_for("frozen-branch1")
+    chain = git_read.chain_ref_for("frozen-branch1")
     _git(tmp_path, "update-ref", chain, "agent6/frozen-branch1")
     # The operator's own commit moves the branch off the chain.
     _git(tmp_path, "checkout", "-q", "agent6/frozen-branch1")
@@ -119,7 +119,7 @@ def test_commits_follows_the_chain_when_the_visible_branch_diverged(
     """Commits lists the chain when the visible branch diverged, not a pruned branch."""
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "frozen-commits1", commits=[("a.txt", "one\n", "agent6 turn 1")])
-    chain = git_ops.chain_ref_for("frozen-commits1")
+    chain = git_read.chain_ref_for("frozen-commits1")
     _git(tmp_path, "update-ref", chain, "agent6/frozen-commits1")
     _git(tmp_path, "checkout", "-q", "agent6/frozen-commits1")
     (tmp_path / "theirs.txt").write_text("the operator's\n", encoding="utf-8")
@@ -150,7 +150,7 @@ def test_a_fork_of_a_squash_merged_run_lands_only_its_own_work(
     guarded = "def f(x):\n    if not x:\n        return 0\n    return 1\n"
     base = _setup_run(tmp_path, "parent-run1", commits=[("f.py", guarded, "guard")])
     parent_tip = _git(tmp_path, "rev-parse", "agent6/parent-run1")
-    _git(tmp_path, "update-ref", git_ops.chain_ref_for("parent-run1"), parent_tip)
+    _git(tmp_path, "update-ref", git_read.chain_ref_for("parent-run1"), parent_tip)
     assert main(["sessions", "merge", "parent-run1"]) == 0
     # The fork continues the parent's chain past its merged tip.
     _git(tmp_path, "checkout", "-q", "-b", "agent6/fork-run1", "agent6/parent-run1")
@@ -160,7 +160,7 @@ def test_a_fork_of_a_squash_merged_run_lands_only_its_own_work(
     _git(tmp_path, "commit", "-q", "-m", "docstring")
     _git(tmp_path, "checkout", "-q", "main")
     fork_tip = _git(tmp_path, "rev-parse", "agent6/fork-run1")
-    _git(tmp_path, "update-ref", git_ops.chain_ref_for("fork-run1"), fork_tip)
+    _git(tmp_path, "update-ref", git_read.chain_ref_for("fork-run1"), fork_tip)
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="fork-run1"
     )
@@ -368,7 +368,7 @@ def test_merge_of_a_run_cut_from_a_detached_head_says_head_is_detached(
     ).manifest_path
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     # What the preflight records as the base on this checkout.
-    manifest["base_branch"] = git_ops.status(tmp_path).branch
+    manifest["base_branch"] = git_read.status(tmp_path).branch
     manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
 
     assert main(["sessions", "merge", "run-DETA11"]) == 2
@@ -663,7 +663,7 @@ def test_merging_a_pruned_run_reports_its_recorded_merge(
         commits=[("a.txt", "one\n", "turn 1"), ("b.txt", "two\n", "turn 2")],
         run_branch="<auto>" if branch_per_run else None,
     )
-    _git(tmp_path, "update-ref", git_ops.chain_ref_for("pruned11"), "agent6/pruned11")
+    _git(tmp_path, "update-ref", git_read.chain_ref_for("pruned11"), "agent6/pruned11")
     if not branch_per_run:
         _git(tmp_path, "branch", "-D", "agent6/pruned11")
     assert main(["sessions", "merge", "pruned11", "--method", method]) == 0
@@ -673,8 +673,8 @@ def test_merging_a_pruned_run_reports_its_recorded_merge(
     )
     record = layout.manifest_path.read_text(encoding="utf-8")
     assert main(["sessions", "prune", "--delete-squashed"]) == 0
-    assert git_ops.chain_tip(tmp_path, "agent6/pruned11") is None
-    assert git_ops.chain_tip(tmp_path, git_ops.chain_ref_for("pruned11")) is None
+    assert git_read.chain_tip(tmp_path, "agent6/pruned11") is None
+    assert git_read.chain_tip(tmp_path, git_read.chain_ref_for("pruned11")) is None
     capsys.readouterr()
 
     assert main(["sessions", "merge", "pruned11"]) == 0
@@ -719,7 +719,7 @@ def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
         manifest.NO_MERGE_COMMIT,
         branch_tip,
     )
-    row = summarize_session_dir(layout.session_dir, branch_tips=git_ops.run_ref_tips(tmp_path))
+    row = summarize_session_dir(layout.session_dir, branch_tips=git_read.run_ref_tips(tmp_path))
     assert row.unmerged is False
 
     assert main(["sessions", "merge", "run-SAME11"]) == 0
@@ -768,7 +768,7 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     stamp = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
     assert (stamp["into"], stamp["sha"], stamp["tip"]) == ("main", manifest.NO_MERGE_COMMIT, tip2)
     assert stamp["tip"] != first["tip"] and main_tip[:12] not in stamp["sha"]
-    row = summarize_session_dir(layout.session_dir, branch_tips=git_ops.run_ref_tips(tmp_path))
+    row = summarize_session_dir(layout.session_dir, branch_tips=git_read.run_ref_tips(tmp_path))
     assert row.unmerged is False
 
     assert main(["sessions", "merge", "run-RSTP11", "--method", "squash"]) == 0
@@ -864,7 +864,7 @@ def test_diff_of_a_branch_per_run_off_run_reads_the_chain(
     git_ops.chain_commit(
         tmp_path,
         "agent6 turn 1: work",
-        ref=git_ops.chain_ref_for("run-HEADF1"),
+        ref=git_read.chain_ref_for("run-HEADF1"),
         fallback_parent="HEAD",
     )
 
@@ -886,14 +886,14 @@ def test_commits_of_a_branch_per_run_off_run_lists_the_chain_like_diff(
     git_ops.chain_commit(
         tmp_path,
         "agent6 turn 1: work",
-        ref=git_ops.chain_ref_for("run-HEADF2"),
+        ref=git_read.chain_ref_for("run-HEADF2"),
         fallback_parent="HEAD",
     )
 
     assert main(["sessions", "commits", "run-HEADF2"]) == 0
     captured = capsys.readouterr()
     assert "agent6 turn 1: work" in captured.out
-    assert git_ops.chain_ref_for("run-HEADF2") in captured.err
+    assert git_read.chain_ref_for("run-HEADF2") in captured.err
 
 
 def test_merge_with_a_branch_but_no_base_sha_refuses_before_mutating(
@@ -1335,7 +1335,7 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
         return []
 
     monkeypatch.setattr(app_providers, "build_role_provider", _brp)
-    monkeypatch.setattr(git_ops, "range_name_status", _no_files)
+    monkeypatch.setattr(git_read, "range_name_status", _no_files)
     sink = _Sink()
     tracker = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     msg = merge_mod._model_squash_message(  # pyright: ignore[reportPrivateUsage]
@@ -1456,7 +1456,7 @@ def test_a_resumed_run_merges_again_from_its_own_landed_tip(
     monkeypatch.chdir(tmp_path)
     guarded = "def f(x):\n    if not x:\n        return 0\n    return 1\n"
     base = _setup_run(tmp_path, "resume-run1", commits=[("f.py", guarded, "guard")])
-    _git(tmp_path, "update-ref", git_ops.chain_ref_for("resume-run1"), "agent6/resume-run1")
+    _git(tmp_path, "update-ref", git_read.chain_ref_for("resume-run1"), "agent6/resume-run1")
     assert main(["sessions", "merge", "resume-run1"]) == 0
     # The resumed execution keeps committing on the same branch and chain.
     _git(tmp_path, "checkout", "-q", "agent6/resume-run1")
@@ -1465,7 +1465,7 @@ def test_a_resumed_run_merges_again_from_its_own_landed_tip(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "docstring")
     _git(tmp_path, "checkout", "-q", "main")
-    _git(tmp_path, "update-ref", git_ops.chain_ref_for("resume-run1"), "agent6/resume-run1")
+    _git(tmp_path, "update-ref", git_read.chain_ref_for("resume-run1"), "agent6/resume-run1")
 
     assert main(["sessions", "merge", "resume-run1"]) == 0, capsys.readouterr().out
 
@@ -1508,7 +1508,7 @@ def test_diff_reads_the_chain_ref_when_the_branch_is_gone(
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-GONE01", commits=[("a.py", "x = 1\n", "step 1")])
     tip = _git(tmp_path, "rev-parse", "agent6/run-GONE01")
-    _git(tmp_path, "update-ref", git_ops.chain_ref_for("run-GONE01"), tip)
+    _git(tmp_path, "update-ref", git_read.chain_ref_for("run-GONE01"), tip)
     _git(tmp_path, "branch", "-D", "agent6/run-GONE01")
 
     assert main(["sessions", "diff", "run-GONE01"]) == 0

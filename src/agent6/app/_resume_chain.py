@@ -18,7 +18,7 @@ import pathlib
 from agent6.app import merge
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import wire
 
 
@@ -60,14 +60,14 @@ def landed_start(
     if stamp is None or not stamp.into or manifest.git_control != "agent6":
         return None
     landing = stamp.into_tip if stamp.sha == sessions_manifest.NO_MERGE_COMMIT else stamp.sha
-    status = git_ops.status(cwd)
+    status = git_read.status(cwd)
     if not landing or not status.head_sha:
         return None
-    if not git_ops.is_ancestor(cwd, landing, status.head_sha):
+    if not git_read.is_ancestor(cwd, landing, status.head_sha):
         return None
     # What a merge would land now: the run branch while it covers the chain, else the chain.
     ref = wire.commits_ref(manifest, cwd)
-    tip = git_ops.chain_tip(cwd, ref) if ref else None
+    tip = git_read.chain_tip(cwd, ref) if ref else None
     if tip is not None and tip != stamp.tip:
         return None
     branch = stamp.into if status.branch == stamp.into else manifest.base_branch
@@ -78,7 +78,7 @@ def continue_from_head(
     cwd: pathlib.Path,
     landed: LandedStart,
     manifest: sessions_manifest.SessionManifest,
-    identity: git_ops.CommitIdentity,
+    identity: git_read.CommitIdentity,
 ) -> str:
     """Move the run's refs so its chain continues from the checkout's HEAD.
 
@@ -101,7 +101,7 @@ def continue_from_head(
         cwd,
         landed.head,
         f"agent6: continue from {landed.into} after the merge",
-        ref=git_ops.chain_ref_for(manifest.session_id),
+        ref=git_read.chain_ref_for(manifest.session_id),
         tip=landed.tip,
         identity=identity,
         also_branch=wire.existing_run_branch(manifest, cwd) or None,
@@ -127,18 +127,18 @@ def unlanded_base(
         The commit, or None when the base the manifest records already says so.
     """
     ref = wire.commits_ref(manifest, cwd)
-    tip = git_ops.chain_tip(cwd, ref) if ref else None
+    tip = git_read.chain_tip(cwd, ref) if ref else None
     if tip is None or not manifest.base_sha or manifest.git_control != "agent6":
         return None
     stamp, target = manifest.merged, manifest.base_branch
     own = stamp is not None and stamp.into == target and stamp.tip
-    if stamp is not None and own and git_ops.is_ancestor(cwd, stamp.tip, tip):
+    if stamp is not None and own and git_read.is_ancestor(cwd, stamp.tip, tip):
         base = stamp.tip
     else:
         base = merge.landed_base(cwd, layout, manifest, target, tip)
     if not base or base == manifest.base_sha:
         return None
-    return base if git_ops.is_ancestor(cwd, manifest.base_sha, base) else None
+    return base if git_read.is_ancestor(cwd, manifest.base_sha, base) else None
 
 
 def branch_off_the_chain(
@@ -155,11 +155,11 @@ def branch_off_the_chain(
         lands it whole); None when the branch is at the tip or either is missing.
     """
     branch = wire.existing_run_branch(manifest, cwd)
-    chain = git_ops.chain_tip(cwd, git_ops.chain_ref_for(manifest.session_id))
-    tip = git_ops.branch_tip_sha(cwd, branch) if branch else None
+    chain = git_read.chain_tip(cwd, git_read.chain_ref_for(manifest.session_id))
+    tip = git_read.branch_tip_sha(cwd, branch) if branch else None
     if not branch or chain is None or tip is None or tip == chain:
         return None
-    return branch, tip, git_ops.is_ancestor(cwd, chain, tip)
+    return branch, tip, git_read.is_ancestor(cwd, chain, tip)
 
 
 def off_chain_refusal(session_id: str, branch: str, tip: str, *, ahead: bool) -> str:

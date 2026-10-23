@@ -156,7 +156,7 @@ class Config(pydantic.BaseModel):
     web: _surfaces.WebConfig = pydantic.Field(default_factory=_surfaces.WebConfig)
     parallel: _surfaces.ParallelConfig = pydantic.Field(default_factory=_surfaces.ParallelConfig)
     workspace: _surfaces.WorkspaceConfig = pydantic.Field(default_factory=_surfaces.WorkspaceConfig)
-    # The injection order and stacking rules live in config.layer._apply_preset.
+    # The injection order and stacking rules live in config._presets.apply_preset.
     preset: Annotated[str, pydantic.AfterValidator(preset_name)] = pydantic.Field(
         default="none",
         description=(

@@ -12,7 +12,7 @@ from __future__ import annotations
 import pathlib
 
 from agent6 import kinds, secret_store
-from agent6.config import Config, ConfigError, layer
+from agent6.config import Config, ConfigError, _layer_data, _presets, layer
 from agent6.models import cache, validate
 from agent6.sessions import manifest as sessions_manifest
 
@@ -115,7 +115,7 @@ def default_preset(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...]) ->
         The selected preset, "none" for no preset, or "" on any config error.
     """
     try:
-        return layer.preset_catalog(cwd, config_paths).selected
+        return _presets.preset_catalog(cwd, config_paths).selected
     except ConfigError:
         return ""
 
@@ -193,7 +193,7 @@ def resume_defaults(
     )
 
 
-def model_role_provider(eff: layer.EffectiveConfig, key: str) -> str | None:
+def model_role_provider(eff: _layer_data.EffectiveConfig, key: str) -> str | None:
     """Return the provider whose model ids a `models.<role>.model` leaf takes.
 
     Args:
@@ -210,7 +210,7 @@ def model_role_provider(eff: layer.EffectiveConfig, key: str) -> str | None:
     return getattr(role, "provider", None) or None
 
 
-def config_value_choices(eff: layer.EffectiveConfig, key: str) -> list[str]:
+def config_value_choices(eff: _layer_data.EffectiveConfig, key: str) -> list[str]:
     """Return what a chooser offers for an open-text config leaf.
 
     Enum leaves carry their choices in the config view.

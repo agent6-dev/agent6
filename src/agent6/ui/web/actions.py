@@ -31,9 +31,9 @@ from agent6.sessions import ipc, layout, manifest, process
 from agent6.ui import directives, spawn
 from agent6.ui.web import model
 from agent6.viewmodel import (
+    _machine_logs,
     listing,
     machine_state,
-    newest_state_log,
     open_approval,
     open_question,
     session_is_live,
@@ -391,7 +391,7 @@ def _machine_state_dir(cwd: pathlib.Path, name: str, state: str = "") -> pathlib
             return None
         target = machine_dir / "states" / state
         return target if target.is_dir() else None
-    log = newest_state_log(machine_dir)
+    log = _machine_logs.newest_state_log(machine_dir)
     return log.parent if log is not None else None
 
 
@@ -470,7 +470,7 @@ def _state_dir_for_verb(
     agent_state = _machine_state_dir(cwd, name, state)
     if agent_state is None:
         return False, f"no active agent state for machine {name!r}"
-    newest = newest_state_log(machine_dir)
+    newest = _machine_logs.newest_state_log(machine_dir)
     if newest is not None and agent_state != newest.parent:
         return False, (
             f"machine {name!r} has moved on from {agent_state.name} to {newest.parent.name}:"

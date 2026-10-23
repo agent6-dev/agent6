@@ -22,7 +22,13 @@ import pydantic
 from agent6 import budget
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
-from agent6.harness import _advice, _compaction, _conversation
+from agent6.harness import (
+    _advice,
+    _compaction,
+    _compaction_result,
+    _compaction_window,
+    _conversation,
+)
 from agent6.prompts import revision
 from agent6.providers import Provider, ProviderError
 
@@ -48,7 +54,7 @@ class Compactor:
         emit_graph_snapshot: Re-snapshots the graph after a check-off.
     """
 
-    settings: _compaction.CompactionSettings
+    settings: _compaction_window.CompactionSettings
     provider: Provider
     curator: graph_curator.GraphCurator | None
     mode: Literal["run", "plan", "ask", "agent"]
@@ -108,10 +114,10 @@ class Compactor:
         if self.settings.keep_thinking_turns > 0 and (
             n_deduped
             or n_elided
-            or _compaction.context_chars(conversation) > self.settings.drop_at_chars
+            or _compaction_window.context_chars(conversation) > self.settings.drop_at_chars
         ):
             # As with dedup: only at tier-1 pressure, never as a rolling per-turn rewrite.
-            n_messages, n_chars = _compaction.strip_old_thinking(
+            n_messages, n_chars = _compaction_window.strip_old_thinking(
                 conversation, keep_messages=self.settings.keep_thinking_turns
             )
             if n_messages:
@@ -139,7 +145,7 @@ class Compactor:
             )
         # The whole request: tier 1 bounded the results alone, and the window bounds the
         # prefix too.
-        total = _compaction.context_chars(conversation) + prefix_chars
+        total = _compaction_window.context_chars(conversation) + prefix_chars
         # Below four messages a restart loses more than it saves; a forced compaction skips
         # the growth floor.
         over = total > self.settings.summarise_at_chars and total >= state.tier2_floor_chars
@@ -153,7 +159,7 @@ class Compactor:
             self.emit("loop.compact.refused", reason="too little history to summarise")
         return False
 
-    def distill_gists(self, requests: tuple[_compaction.GistRequest, ...]) -> dict[str, str]:
+    def distill_gists(self, requests: tuple[_compaction_result.GistRequest, ...]) -> dict[str, str]:
         """Distill about-to-be-elided file reads into one-line gists.
 
         The summariser seat does the call. A provider error returns {} and every
@@ -180,7 +186,9 @@ class Compactor:
             self.log(f"  gist distillation failed: {exc}; eliding without gists")
             self.emit("loop.compact.gist.failed", error=str(exc)[:200])
             return {}
-        return _compaction.parse_gist_lines(resp.text or "", paths=[r.path for r in requests])
+        return _compaction_result.parse_gist_lines(
+            resp.text or "", paths=[r.path for r in requests]
+        )
 
     def summarise_and_restart(
         self,
@@ -210,7 +218,7 @@ class Compactor:
         provider = self.settings.summariser or self.provider
         messages = conversation.messages
         # The verbatim tail survives the restart; the summary covers only what is dropped.
-        tail_start = _compaction.recent_tail_start(messages, self.settings.keep_recent_chars)
+        tail_start = _compaction_window.recent_tail_start(messages, self.settings.keep_recent_chars)
         if tail_start <= 1:
             # A tail holding the whole history would grow the context; keep nothing.
             tail_start = len(messages)
@@ -280,7 +288,7 @@ class Compactor:
             self.emit("loop.compact.summarise.failed", error=str(exc)[:200])
             return False
         raw = (resp.text or "").strip()
-        summary = _compaction.strip_checkoff(raw) if open_tasks else raw
+        summary = _compaction_window.strip_checkoff(raw) if open_tasks else raw
         if not summary:
             self.emit("loop.compact.summarise.failed", error="empty summary")
             return False
@@ -301,7 +309,7 @@ class Compactor:
         )
         # Measured as the trigger is, prefix included, or tier 2 re-fires next turn.
         state.tier2_floor_chars = int(
-            (_compaction.context_chars(conversation) + prefix_chars) * 1.25
+            (_compaction_window.context_chars(conversation) + prefix_chars) * 1.25
         )
         self.emit(
             "loop.compact.summarise.done",
@@ -326,7 +334,7 @@ class Compactor:
         """
         if self.curator is None:
             return
-        completed, new_tasks = _compaction.parse_checkoff(summary_text)
+        completed, new_tasks = _compaction_window.parse_checkoff(summary_text)
         completed = [cid for cid in completed if cid in valid_ids]  # ignore hallucinated ids
         if not completed and not new_tasks:
             return

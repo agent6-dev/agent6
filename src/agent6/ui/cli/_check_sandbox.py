@@ -25,7 +25,7 @@ from agent6.sandbox import (
 )
 from agent6.tools import _path_safety
 from agent6.tools import policy as tools_policy
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 # Mirrors SYSTEM_BINDS in the jail's main.rs; tests/security pins the two against each other.
 FULL_SYSTEM_BINDS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/alternatives")
@@ -156,7 +156,7 @@ def _fork_git_grant(
     if selected == "none":
         return None
     try:
-        repo = git_ops.git_common_dir(ws.root).parent
+        repo = git_read.git_common_dir(ws.root).parent
     except errors.GitError:
         return None
     for worktree, sessions in fork_worktrees.worktree_owners(agent6_paths.state_dir(repo)).items():

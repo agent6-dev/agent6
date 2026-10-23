@@ -16,7 +16,7 @@ from agent6.app import preflight
 from agent6.config import Config, ConfigError
 from agent6.ui.cli import init, main
 from agent6.ui.cli import init_cmds as ic
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 
 def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -81,7 +81,7 @@ def test_offer_git_setup_noninteractive_just_notes(
     ic._offer_git_setup(tmp_path, (tmp_path / "AGENTS.md",), interactive=False)
     out = capsys.readouterr().out
     assert "not a git repository" in out
-    assert git_ops.is_git_repo(tmp_path) is False  # did NOT create a repo non-interactively
+    assert git_read.is_git_repo(tmp_path) is False  # did NOT create a repo non-interactively
 
 
 def test_offer_git_setup_instructions_stage_only_the_scaffold(
@@ -145,7 +145,7 @@ def test_offer_git_setup_interactive_inits_and_commits(
         interactive=True,
     )
 
-    assert git_ops.is_git_repo(tmp_path) is True
+    assert git_read.is_git_repo(tmp_path) is True
     tracked = subprocess.run(
         ["git", "-C", str(tmp_path), "ls-files"], capture_output=True, text=True, check=True
     ).stdout.split()
@@ -271,7 +271,7 @@ def test_failed_init_hands_new_scaffold_back_to_the_sudo_user(
 
     handed_back: list[pathlib.Path] = []
     monkeypatch.setattr(paths, "repo_config_path", _target)
-    monkeypatch.setattr(git_ops, "is_git_repo", _not_a_repo)
+    monkeypatch.setattr(git_read, "is_git_repo", _not_a_repo)
     monkeypatch.setattr(init, "init_workspace", _fail)
     monkeypatch.setattr(paths, "chown_to_real_user", handed_back.append)
 

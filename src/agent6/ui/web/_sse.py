@@ -24,7 +24,7 @@ from agent6.machine import MachineError
 from agent6.sessions import layout
 from agent6.ui.web import model
 from agent6.viewmodel import (
-    NewestExecutionFold,
+    _machine_logs,
     apply_event,
     died_without_end,
     initial_state,
@@ -199,7 +199,9 @@ def stream_machine(chan: SseChannel, machine_dir: pathlib.Path) -> None:
     """
     prev = ""
     idle = 0.0
-    fold = NewestExecutionFold()  # the newest state log, read once per poll for both halves
+    fold = (
+        _machine_logs.NewestExecutionFold()
+    )  # the newest state log, read once per poll for both halves
     while True:
         try:
             reasoning = model.machine_reasoning_snapshot(machine_dir, fold=fold)

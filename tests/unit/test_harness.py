@@ -23,7 +23,7 @@ from agent6.config import Config
 from agent6.harness import (
     _advice,
     _chain,
-    _compaction,
+    _compaction_window,
     _conversation,
     _finish_gates,
     _guards,
@@ -1318,7 +1318,7 @@ def test_the_first_model_call_carries_the_red_start_gate(
     """A fresh run's first request holds the start gate's red verdict and the base-red notice."""
     base = "b" * 40
     monkeypatch.setattr(
-        "agent6.vcs.git_ops.status",
+        "agent6.vcs.git_read.status",
         lambda _root, **_kw: types_.SimpleNamespace(is_clean=True, head_sha=base),  # pyright: ignore[reportUnknownLambdaType]
     )
     provider = mock.MagicMock()
@@ -3454,7 +3454,7 @@ def test_tier1_compact_event_names_what_was_elided() -> None:
     ev = _EventCapture()
     wf = _wf(
         events=ev,
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             drop_at_chars=1500, summarise_at_chars=10**9, elision_gists=False
         ),
     )
@@ -3472,7 +3472,7 @@ def test_tier1_gist_event_carries_paths() -> None:
     summariser.call.return_value = _resp("docs/spec.md: spec facts distilled")
     wf = _wf(
         events=ev,
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=summariser, drop_at_chars=1800, summarise_at_chars=10**9, elision_gists=True
         ),
     )
@@ -3490,7 +3490,7 @@ def test_summarise_done_event_carries_summary_text() -> None:
     ev = _EventCapture()
     summariser = mock.MagicMock()
     summariser.call.return_value = _resp("done: tried A; best=42 at sha9")
-    wf = _wf(events=ev, compaction=_compaction.CompactionSettings(summariser=summariser))
+    wf = _wf(events=ev, compaction=_compaction_window.CompactionSettings(summariser=summariser))
     _restart_via_wire(wf, _long_history(6))
     done = [e for e in ev.events if e["type"] == "loop.compact.summarise.done"]
     assert done and done[-1]["summary"] == "done: tried A; best=42 at sha9"
@@ -3504,7 +3504,7 @@ def test_forced_compact_threads_focus_to_summariser() -> None:
     cleared: list[bool] = []
     wf = _wf(
         events=ev,
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=summariser, drop_at_chars=10**9, summarise_at_chars=10**9
         ),
         bridge=_operator.OperatorBridge(
@@ -3528,7 +3528,7 @@ def test_forced_compact_below_the_floor_says_it_was_refused() -> None:
     cleared: list[bool] = []
     wf = _wf(
         events=ev,
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=summariser, drop_at_chars=10**9, summarise_at_chars=10**9
         ),
         bridge=_operator.OperatorBridge(
@@ -3549,7 +3549,7 @@ def test_forced_compact_plain_keeps_prompt_unfocused() -> None:
     summariser = mock.MagicMock()
     summariser.call.return_value = _resp("s")
     wf = _wf(
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=summariser, drop_at_chars=10**9, summarise_at_chars=10**9
         ),
         bridge=_operator.OperatorBridge(compact_requested=lambda: ""),
@@ -3562,7 +3562,7 @@ def test_summarise_and_restart_reinjects_pins_verbatim() -> None:
     """Pins are re-shown verbatim in the restart message; the summariser does not restate them."""
     summariser = mock.MagicMock()
     summariser.call.return_value = _resp("progress summary text")
-    wf = _wf(compaction=_compaction.CompactionSettings(summariser=summariser))
+    wf = _wf(compaction=_compaction_window.CompactionSettings(summariser=summariser))
     st = _state(pins=["never touch schema files", "goal:\nship X"])
     messages = _long_history(6)
     _restart_via_wire(wf, messages, state=st)
@@ -3577,7 +3577,7 @@ def test_summarise_and_restart_reinjects_pins_verbatim() -> None:
 def test_summarise_and_restart_replaces_history() -> None:
     summariser = mock.MagicMock()
     summariser.call.return_value = _resp("done: tried A (kept), B (reverted); best=42 at sha9")
-    wf = _wf(compaction=_compaction.CompactionSettings(summariser=summariser))
+    wf = _wf(compaction=_compaction_window.CompactionSettings(summariser=summariser))
     messages = _long_history(6)
     original = messages[0]
 
@@ -3633,7 +3633,7 @@ def test_summarise_and_restart_applies_dag_checkoff() -> None:
     )
     logged: list[str] = []
     wf = _wf(
-        compaction=_compaction.CompactionSettings(summariser=summariser),
+        compaction=_compaction_window.CompactionSettings(summariser=summariser),
         curator=fake,
         logger=logged.append,
     )
@@ -4205,7 +4205,9 @@ def test_maybe_compact_returns_restart_signal() -> None:
     summariser = mock.MagicMock()
     summariser.call.return_value = _resp("progress summary")
     wf = _wf(
-        compaction=_compaction.CompactionSettings(summariser=summariser, summarise_at_chars=500_000)
+        compaction=_compaction_window.CompactionSettings(
+            summariser=summariser, summarise_at_chars=500_000
+        )
     )
     # Below the tier-2 threshold -> no restart, returns False.
     short = [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]
@@ -4222,7 +4224,9 @@ def test_tier2_summariser_is_told_the_task() -> None:
     summariser = mock.MagicMock()
     summariser.call.return_value = _resp("progress summary")
     wf = _wf(
-        compaction=_compaction.CompactionSettings(summariser=summariser, summarise_at_chars=500_000)
+        compaction=_compaction_window.CompactionSettings(
+            summariser=summariser, summarise_at_chars=500_000
+        )
     )
     big = _big_text_history("TASK: x", blocks=8, block_chars=100_000)
     st = _state()
@@ -4242,7 +4246,9 @@ def test_a_restart_does_not_re_fire_on_the_next_turn() -> None:
     summariser.call.return_value = _resp("progress summary")
     # The prefix alone clears the threshold, so the floor is all that spaces the summariser calls.
     wf = _wf(
-        compaction=_compaction.CompactionSettings(summariser=summariser, summarise_at_chars=60_000)
+        compaction=_compaction_window.CompactionSettings(
+            summariser=summariser, summarise_at_chars=60_000
+        )
     )
     msgs = _big_text_history("TASK: x", blocks=8, block_chars=20_000)
     st = _state()
@@ -4263,7 +4269,7 @@ def test_compact_request_forces_a_tier2_restart() -> None:
     summariser.call.return_value = _resp("progress summary")
     pending = {"req": True}
     wf = _wf(
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=summariser, summarise_at_chars=500_000
         ),
         bridge=_operator.OperatorBridge(
@@ -4441,7 +4447,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
         config=config,
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=SummariserStub(), drop_at_chars=256_000, summarise_at_chars=5_000
         ),
         events=events,
@@ -4474,7 +4480,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
 def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
     worker = mock.MagicMock()
     worker.call.return_value = _resp("summary text")
-    wf = _wf(provider=worker, compaction=_compaction.CompactionSettings(summariser=None))
+    wf = _wf(provider=worker, compaction=_compaction_window.CompactionSettings(summariser=None))
     messages = _long_history(4)
 
     _restart_via_wire(wf, messages)
@@ -4486,7 +4492,7 @@ def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
 def test_summarise_and_restart_keeps_history_on_empty_summary() -> None:
     summariser = mock.MagicMock()
     summariser.call.return_value = _resp("   ")
-    wf = _wf(compaction=_compaction.CompactionSettings(summariser=summariser))
+    wf = _wf(compaction=_compaction_window.CompactionSettings(summariser=summariser))
     messages = _long_history(5)
     before = list(messages)
 
@@ -4512,7 +4518,9 @@ def test_summarise_and_restart_rejects_checkoff_without_a_summary() -> None:
             },
         }
     )
-    wf = _wf(compaction=_compaction.CompactionSettings(summariser=summariser), curator=curator)
+    wf = _wf(
+        compaction=_compaction_window.CompactionSettings(summariser=summariser), curator=curator
+    )
     conversation = _conversation.Conversation.from_wire(_long_history(5))
     before = conversation.to_wire()
 
@@ -4526,7 +4534,7 @@ def test_summarise_and_restart_rejects_checkoff_without_a_summary() -> None:
 def test_summarise_and_restart_keeps_history_on_provider_error() -> None:
     summariser = mock.MagicMock()
     summariser.call.side_effect = ProviderError("boom")
-    wf = _wf(compaction=_compaction.CompactionSettings(summariser=summariser))
+    wf = _wf(compaction=_compaction_window.CompactionSettings(summariser=summariser))
     messages = _long_history(5)
     before = list(messages)
 
@@ -5053,7 +5061,7 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: pathlib.Pat
 
 
 def _ctx_chars(messages: list[dict[str, Any]]) -> int:
-    return _compaction.context_chars(_conversation.Conversation.from_wire(messages))
+    return _compaction_window.context_chars(_conversation.Conversation.from_wire(messages))
 
 
 def _big_text_history(task: str, *, blocks: int, block_chars: int) -> list[dict[str, Any]]:
@@ -5079,7 +5087,7 @@ def test_tier2_summarise_fires_and_restarts_past_threshold(tmp_path: pathlib.Pat
     summ = SummariserStub()
     wf = _wf(
         root=tmp_path,
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=summ, drop_at_chars=256_000, summarise_at_chars=500_000
         ),
     )
@@ -5105,7 +5113,7 @@ def test_tier2_summarise_failsafe_keeps_context_on_empty_summary(tmp_path: pathl
 
     wf = _wf(
         root=tmp_path,
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=EmptySummariser(), summarise_at_chars=500_000
         ),
     )
@@ -5194,7 +5202,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
         config=config,
         provider=ProviderStub(),
         dispatcher=DispatcherStub(),
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=summ, drop_at_chars=256_000, summarise_at_chars=5_000
         ),
         events=events,  # low so it fires mid-run
@@ -7433,7 +7441,7 @@ def test_a_second_restart_carries_the_first_summary_forward() -> None:
     summariser = mock.MagicMock()
     summariser.call.return_value = _resp("second summary")
     wf = _wf(
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=summariser, drop_at_chars=10**9, summarise_at_chars=10**9
         ),
         bridge=_operator.OperatorBridge(compact_requested=lambda: ""),
@@ -7730,7 +7738,7 @@ def test_tier2_growth_floor_prevents_zero_growth_refire(tmp_path: pathlib.Path) 
     summ = SummariserStub()
     wf = _wf(
         root=tmp_path,
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             summariser=summ, drop_at_chars=2_000, summarise_at_chars=3_000
         ),
     )

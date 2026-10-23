@@ -29,7 +29,6 @@ from agent6.app.machine._states import (  # noqa: ICN003  # re-export
     resolve_configs,
     sandbox_widening,
 )
-from agent6.viewmodel.machine_state import Spend, machine_spend, read_budget_totals  # noqa: ICN003  # re-export
 
 # `create` and `run` are not re-exported: both import `app.machine_agent`, which imports `_spend`.
 __all__ = [
@@ -37,7 +36,6 @@ __all__ = [
     "MachineFileSummary",
     "OfflineTestOutcome",
     "SandboxWidenedError",
-    "Spend",
     "StateConfig",
     "available_tools",
     "book_crashed_attempt",
@@ -45,8 +43,6 @@ __all__ = [
     "lint_and_typecheck",
     "machine_pass_env_refusal",
     "machine_protect_paths",
-    "machine_spend",
-    "read_budget_totals",
     "resolve_configs",
     "run_offline_tests",
     "sandbox_widening",

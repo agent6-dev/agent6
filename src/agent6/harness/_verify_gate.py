@@ -26,7 +26,7 @@ from agent6.harness import (
 )
 from agent6.tools import dispatch, results
 from agent6.tools import errors as tool_errors
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 if TYPE_CHECKING:
     from agent6.harness import _loop_state
@@ -234,7 +234,7 @@ class VerifyGate:
         ):
             return False
         try:
-            status = git_ops.status(self.chain.root, exclude=self.chain.untracked_at_start)
+            status = git_read.status(self.chain.root, exclude=self.chain.untracked_at_start)
         except (errors.GitError, OSError):
             return False
         return status.is_clean and status.head_sha == self.chain.base_sha
@@ -588,7 +588,7 @@ class VerifyGate:
         if not tree:
             return ()
         try:
-            paths = git_ops.tree_diff_paths(self.chain.root, red_tree, tree)
+            paths = git_read.tree_diff_paths(self.chain.root, red_tree, tree)
         except (errors.GitError, OSError):
             return ()
         if paths and all(_nudges.is_test_path(p) for p in paths):

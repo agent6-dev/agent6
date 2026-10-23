@@ -415,7 +415,8 @@ Below `full` there is no network namespace: `auto` degrades to the agent process
 
 **agent6's own git**
 
-- agent6's own git writes go through `vcs/git_ops.py`, and the web Git and Files tabs' reads through `vcs/git_history.py` and `vcs/git_files.py`; only the `vcs` package's modules may import the private runner, `_git_command.py`, enforced by tach and `test_only_the_vcs_package_imports_the_runner`
+- agent6's own git writes go through `vcs/git_ops.py`, its queries through `vcs/git_read.py`, and the web Git and Files tabs' reads through `vcs/git_history.py` and `vcs/git_files.py`.
+  Only the `vcs` package's modules may import the private runner, `_git_command.py`, enforced by tach and `test_only_the_vcs_package_imports_the_runner`.
     - it wraps the safe ops (status, add, commit, diff, branch, checkout)
     - it spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable.
       `test_the_vcs_package_never_spells_a_destructive_verb` pins every verb but `filter-repo` in every module of the package, exempting two argv: `push` inside a `git stash push`, and the one `branch -D` below
@@ -539,7 +540,7 @@ Everything the model can influence runs through `run_in_jail` ([Sandbox](#2-sand
 A fixed set of modules also shells out directly with `subprocess.run` / `Popen`, each with fixed argv depending only on operator input.
 `tests/security/test_subprocess_allowlist.py` pins the file list; audit with `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 
-- `vcs/_git_command.py`, `vcs/git_ops.py` and `vcs/git_history.py`: agent6's own git operations ([Git](#7-git)).
+- `vcs/_git_command.py`, `vcs/git_ops.py`, `vcs/git_read.py` and `vcs/git_history.py`: agent6's own git operations ([Git](#7-git)).
 - `vcs/git_policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `isolation = "none"`.

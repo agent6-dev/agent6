@@ -15,7 +15,7 @@ from agent6.app import finalize as finmod
 from agent6.app import reporter
 from agent6.config import layer
 from agent6.sessions import layout as sessions_layout
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -144,7 +144,7 @@ def test_auto_merge_lands_the_hidden_chain_ref(
         commits=[("a.txt", "a\n", "agent6 turn 1: add a")],
         run_branch=None,
     )
-    _git(tmp_path, "update-ref", git_ops.chain_ref_for("run-AMREF1"), "agent6/run-AMREF1")
+    _git(tmp_path, "update-ref", git_read.chain_ref_for("run-AMREF1"), "agent6/run-AMREF1")
     _git(tmp_path, "checkout", "-q", "--detach")
     _git(tmp_path, "branch", "-D", "agent6/run-AMREF1")  # only the chain ref remains
     _git(tmp_path, "checkout", "-q", "main")

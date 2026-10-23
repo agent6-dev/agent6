@@ -30,7 +30,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import steer
 from agent6.ui.acp import frontend as acp_frontend
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import listing
 
 # The preflight accepts this snapshot and Conversation.from_wire rejects it: a result with no call.
@@ -668,7 +668,7 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
     (repo / "a.txt").write_text("run work\n", encoding="utf-8")
     git("commit", "-qam", "step")
     tip = git("rev-parse", branch)
-    git("update-ref", git_ops.chain_ref_for(layout.session_id), tip)
+    git("update-ref", git_read.chain_ref_for(layout.session_id), tip)
     git("checkout", "-q", "main")
     (repo / "a.txt").write_text("run work\n", encoding="utf-8")
     layout.manifest_path.write_text(
@@ -1184,7 +1184,7 @@ def test_an_escape_before_the_harness_exists_records_the_tree_too(
     """
     import subprocess
 
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_read
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -1240,7 +1240,7 @@ def test_an_escape_before_the_harness_exists_records_the_tree_too(
 
     ended = json.loads(layout.logs_path.read_text(encoding="utf-8").splitlines()[-1])
     assert ended["reason"] == "crashed"
-    assert ended["tree"] == git_ops.worktree_tree(repo, head, frozenset())
+    assert ended["tree"] == git_read.worktree_tree(repo, head, frozenset())
 
 
 def test_a_plan_under_auto_merge_prints_no_skipped_note(

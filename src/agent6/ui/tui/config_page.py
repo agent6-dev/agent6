@@ -14,6 +14,8 @@ import pathlib
 from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
+from agent6.config import _layer_data
+
 try:
     import textual
     from rich import markup, text
@@ -218,7 +220,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         super().__init__()
         self.repo_root = repo_root
         self.config_paths = config_paths
-        self._eff: layer.EffectiveConfig | None = None
+        self._eff: _layer_data.EffectiveConfig | None = None
         self._view: config_view.ConfigView | None = None
         self._table_rows: dict[
             str, list[config_view.ConfigSetting]
@@ -303,7 +305,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             for source in reversed(self._eff.layers):
                 if any(
                     leaf == key or leaf.startswith(key + ".")
-                    for leaf in layer.flatten_leaves(source.data)
+                    for leaf in _layer_data.flatten_leaves(source.data)
                 ):
                     return source.source
         return "default"

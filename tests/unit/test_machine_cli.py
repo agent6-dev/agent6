@@ -447,7 +447,7 @@ def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
 ) -> None:
     # The dirty-file gate fails open on a GitError but never silently.
     from agent6.app.machine import run as machine_run
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_read
 
     _git_init(tmp_path)
     f = tmp_path / "m.asm.toml"
@@ -456,7 +456,7 @@ def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
     def _boom(*_a: object, **_k: object) -> bool:
         raise errors.GitError("git index is corrupt")
 
-    monkeypatch.setattr(git_ops, "paths_dirty", _boom)
+    monkeypatch.setattr(git_read, "paths_dirty", _boom)
     assert machine_run.uncommitted_refusal(f, tmp_path) is None  # fail-open preserved
     err = capsys.readouterr().err
     assert "could not check" in err and "git index is corrupt" in err
@@ -1032,7 +1032,7 @@ def test_machine_start_and_resume_share_one_begin_and_setup_source(
     from agent6.config import Config
     from agent6.machine import journal as machine_journal
     from agent6.sessions import layout
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_read
 
     config_home = tmp_path.parent / f"{tmp_path.name}-config"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
@@ -1059,7 +1059,7 @@ model = "x"
     agents.write_text("## Setup command\n\n```sh\ntrue\n```\n")
     subprocess.run(["git", "add", "wait.asm.toml", "AGENTS.md"], check=True)
     subprocess.run(["git", "commit", "-qm", "machine base"], check=True)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     carried: list[tuple[str, ...]] = []
     real_overlay = machine_agent.state_overlay
 
@@ -1078,7 +1078,7 @@ model = "x"
     assert first.base_commit == base
     agents.write_text("## Setup command\n\n```sh\nfalse\n```\n")
     subprocess.run(["git", "commit", "-qam", "move checkout"], check=True)
-    assert git_ops.status(tmp_path).head_sha != base
+    assert git_read.status(tmp_path).head_sha != base
     assert main(argv) == 0
     assert carried == [("true",), ("true",)]
     begins = [event for event in journal.read() if isinstance(event, machine_journal.MachineBegin)]

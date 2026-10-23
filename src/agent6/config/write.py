@@ -25,7 +25,7 @@ import pydantic_core
 
 from agent6 import errors as agent6_errors
 from agent6 import paths, portable
-from agent6.config import _base, _harness, _providers, io, layer
+from agent6.config import _base, _harness, _layer_data, _providers, io, layer
 from agent6.config import model as config_model
 
 
@@ -232,7 +232,7 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
 
 
 def unknown_key_error(
-    key: str, repo_root: pathlib.Path, *, eff: layer.EffectiveConfig | None = None
+    key: str, repo_root: pathlib.Path, *, eff: _layer_data.EffectiveConfig | None = None
 ) -> str:
     """Return the message for a key the schema forbids, with a did-you-mean.
 
@@ -249,7 +249,7 @@ def unknown_key_error(
     try:
         pool = layer.leaf_keys(eff if eff is not None else layer.load_effective(repo_root, ()))
     except config_model.ConfigError:
-        pool = sorted(layer.flatten_leaves(config_model.Config().model_dump(mode="python")))
+        pool = sorted(_layer_data.flatten_leaves(config_model.Config().model_dump(mode="python")))
     close = difflib.get_close_matches(key, pool, n=2)
     hint = f". Did you mean {' or '.join(repr(c) for c in close)}?" if close else ""
     return f"unknown config key {key!r}{hint} (see `agent6 config show`)"

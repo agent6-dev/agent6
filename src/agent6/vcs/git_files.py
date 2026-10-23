@@ -10,7 +10,7 @@ import pathlib
 import stat
 
 from agent6 import errors
-from agent6.vcs import _git_command, git_history, git_ops
+from agent6.vcs import _git_command, git_history, git_read
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -42,7 +42,7 @@ def blob_at(path: pathlib.Path, rev: str, name: str, *, max_bytes: int) -> Blob 
     Raises:
         GitError: The rev cannot be read.
     """
-    metadata = git_ops.tree_entry(path, rev, name)
+    metadata = git_read.tree_entry(path, rev, name)
     if not metadata.startswith(("100644 blob ", "100755 blob ")):
         return None
     sha = metadata.split()[2]

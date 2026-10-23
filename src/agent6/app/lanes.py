@@ -23,7 +23,7 @@ from agent6.models import validate
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import format, produced_result, summarize_session_dir
 
 
@@ -166,7 +166,7 @@ def bridge_spawner(
         The lane's result once its session dir is located, the run still going;
         `ok=False` when the clone or spawn failed.
     """
-    branch = git_ops.run_branch_for(spec.session_id)
+    branch = git_read.run_branch_for(spec.session_id)
     try:
         subrun.clone_workspace(origin, spec.workdir)
         if at is not None:

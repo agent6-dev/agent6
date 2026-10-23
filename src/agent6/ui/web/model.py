@@ -16,13 +16,13 @@ from typing import Any
 
 from agent6 import paths
 from agent6.app import _workdirs, confine
-from agent6.config import ConfigError, io, layer, write
+from agent6.config import ConfigError, _layer_data, _presets, io, layer, write
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import (
     MachineSummary,
-    NewestExecutionFold,
+    _machine_logs,
     config_view,
     fold_session,
     fold_transcript,
@@ -32,7 +32,6 @@ from agent6.viewmodel import (
     listing,
     machine_files,
     machine_instance_dirs,
-    newest_state_log,
     operator_inputs,
     restate,
     session_dirs,
@@ -145,7 +144,7 @@ def draft_step_diff_payload(
     return _diff_payload(
         workspace,
         sha,
-        base=git_ops.EMPTY_TREE,
+        base=git_read.EMPTY_TREE,
         cumulative=cumulative,
         miss="not a commit of this draft",
     )
@@ -169,7 +168,7 @@ def _diff_payload(
     if not re.fullmatch(r"[0-9a-f]{7,40}", sha):
         return None, f"not a commit sha: {sha!r}"
     whole = cumulative and bool(base)
-    patch = git_ops.diff_range(repo, base, sha) if whole else git_ops.commit_diff(repo, sha)
+    patch = git_read.diff_range(repo, base, sha) if whole else git_read.commit_diff(repo, sha)
     if not patch:
         return None, f"no diff for {sha[:12]} ({miss})"
     return {"cumulative": whole, "patch": patch}, ""
@@ -186,7 +185,7 @@ def draft_dir_paths(cwd: pathlib.Path) -> list[pathlib.Path]:
 
 def _list_sessions(cwd: pathlib.Path) -> list[dict[str, Any]]:
     """Return every session the hub lists, newest first, a fan-out's lanes under its row."""
-    tips = git_ops.run_ref_tips(cwd)
+    tips = git_read.run_ref_tips(cwd)
     dirs = session_dirs(paths.state_dir(cwd))
     winners = {p.name for p in dirs if is_winner(p)}
     rows = listing.nested_rows(summarize_session_dir(p, branch_tips=tips) for p in dirs)
@@ -276,7 +275,7 @@ def hub_payload(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()) 
         "machines": _list_machines(cwd),
         "machine_files": list_machine_files(cwd),
         "drafts": _list_drafts(cwd),
-        "presets": layer.available_preset_names(cwd, config_paths),
+        "presets": _presets.available_preset_names(cwd, config_paths),
         "preset_default_label": choices.default_label(choices.default_preset(cwd, config_paths)),
     }
 
@@ -327,7 +326,7 @@ def restate_payload(session_dir: pathlib.Path) -> dict[str, Any]:
 
 def machine_conversation_payload(machine_dir: pathlib.Path) -> dict[str, Any]:
     """Return the conversation of the machine's newest agent-state execution, or no items."""
-    log = newest_state_log(machine_dir)
+    log = _machine_logs.newest_state_log(machine_dir)
     if log is None:
         return {"items": []}
     events = list(tail_events(log, follow=False))
@@ -340,7 +339,7 @@ def machine_conversation_payload(machine_dir: pathlib.Path) -> dict[str, Any]:
 
 
 def machine_reasoning_snapshot(
-    machine_dir: pathlib.Path, *, fold: NewestExecutionFold | None = None
+    machine_dir: pathlib.Path, *, fold: _machine_logs.NewestExecutionFold | None = None
 ) -> dict[str, Any]:
     """Return the session state of the machine's newest agent-state execution.
 
@@ -358,7 +357,7 @@ def machine_reasoning_snapshot(
     if fold is not None:
         log, state = fold.refresh(machine_dir), fold.state
     else:
-        log = newest_state_log(machine_dir)
+        log = _machine_logs.newest_state_log(machine_dir)
         state = fold_session(tail_events(log, follow=False)) if log is not None else None
     if log is None or state is None:
         return {}
@@ -392,7 +391,7 @@ def config_payload(
     )
     entry_sources: dict[tuple[str, str], str] = {}
     for source in eff.layers:
-        for key in layer.flatten_leaves(source.data):
+        for key in _layer_data.flatten_leaves(source.data):
             if entry := write.entry_of(key):
                 table, name = entry
                 entry_sources[table.path, name] = source.source
@@ -448,7 +447,7 @@ def config_suggestions(
         offers, or [] on a config error.
     """
     if key == "preset":
-        return layer.available_preset_names(cwd, config_paths)
+        return _presets.available_preset_names(cwd, config_paths)
     try:
         eff = layer.load_effective(cwd, config_paths)
     except ConfigError:

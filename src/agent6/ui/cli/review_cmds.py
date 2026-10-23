@@ -30,7 +30,7 @@ from agent6.providers import (
 )
 from agent6.tools import dispatch as tools_dispatch
 from agent6.ui.cli import _common
-from agent6.vcs import git_ops, git_policy
+from agent6.vcs import git_policy, git_read
 
 
 def _reviewed_head(base: str, head: str) -> str:
@@ -172,8 +172,8 @@ def _is_checked_out(git: str, root: pathlib.Path, rev: str) -> bool:
     Returns:
         True when HEAD is the rev's commit and no tracked file has changes.
     """
-    checked_out = git_ops.chain_tip(root, "HEAD")
-    if checked_out is None or git_ops.chain_tip(root, rev) != checked_out:
+    checked_out = git_read.chain_tip(root, "HEAD")
+    if checked_out is None or git_read.chain_tip(root, rev) != checked_out:
         return False
     status = subprocess.run(
         [

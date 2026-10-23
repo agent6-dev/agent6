@@ -14,6 +14,8 @@ import pathlib
 from collections.abc import Callable
 from typing import ClassVar
 
+from agent6.viewmodel import _machine_logs, _machine_watch
+
 try:
     import textual
     from rich import text as rich_text
@@ -46,15 +48,11 @@ from agent6.ui.tui import composer, forms, menubar, modals, screen_chrome, theme
 from agent6.ui.tui import prompts as tui_prompts
 from agent6.viewmodel import (
     MachineState,
-    MachineWatchCursor,
-    NewestExecutionFold,
     fold_machine,
     format,
-    machine_spend,
     machine_state,
     machine_verb_refusal,
     machine_verb_refusals,
-    newest_state_log,
     probe_instance,
     verb_answer,
 )
@@ -169,13 +167,13 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         self._root = instance_dir
         self._spec = spec
         self._journal = MachineJournal(instance_dir)
-        self._cursor = MachineWatchCursor()
+        self._cursor = _machine_watch.MachineWatchCursor()
         self._pending = ""  # thinking and answer text, flushed in readable chunks
         self._ended = False
         # Every verb's refusal, read once per poll: the footer, the keys and the prompt gate agree.
         self._refusals = machine_verb_refusals(self._root, self._root.name)
         # The newest state log, folded incrementally, one fold per poll.
-        self._execution_fold = NewestExecutionFold()
+        self._execution_fold = _machine_logs.NewestExecutionFold()
         self._prompts = tui_prompts.PromptDispatcher(
             self.app, answerable=self._answerable, lost=_ANSWER_LOST
         )
@@ -220,7 +218,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
 
     def _current_state_dir(self) -> pathlib.Path | None:
         """Return the current agent state's dir, where its answer files live."""
-        log = newest_state_log(self._root)
+        log = _machine_logs.newest_state_log(self._root)
         return log.parent if log is not None else None
 
     def action_close(self) -> None:
@@ -386,7 +384,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         else:
             status = f"{probes.status_word(ms)} · {ms.current}"
         # A machine runs unattended against the USD ceiling, so the header carries its spend.
-        spend, _in_flight = machine_spend(
+        spend, _in_flight = _machine_logs.machine_spend(
             events, self._root, alive=process.worker_is_alive(self._root)
         )
         cost = budget.format_usd(spend.usd, partial=spend.partial)

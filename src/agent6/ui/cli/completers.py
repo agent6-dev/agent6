@@ -15,6 +15,8 @@ from agent6 import paths
 from agent6.config import (
     Config,
     ConfigError,
+    _layer_data,
+    _presets,
     layer,
 )
 from agent6.models import choices as models_choices
@@ -77,7 +79,7 @@ def _complete_providers(prefix: str, **kw: object) -> list[str]:
 @_never_raises
 def _complete_presets(prefix: str, **kw: object) -> list[str]:
     """Return the built-in presets and the configured `[presets.*]` names."""
-    names = layer.available_preset_names(pathlib.Path.cwd(), _explicit_config(kw))
+    names = _presets.available_preset_names(pathlib.Path.cwd(), _explicit_config(kw))
     return [n for n in names if n.startswith(prefix)]
 
 
@@ -145,11 +147,11 @@ def _config_enum_choices(
     except ConfigError:
         # A config that does not load still completes: the schema carries the choices.
         view = config_view.build_config_view(
-            layer.EffectiveConfig(
+            _layer_data.EffectiveConfig(
                 config=Config(),
                 sources={},
                 layers=(),
-                presets=tuple(layer.available_preset_names(pathlib.Path.cwd(), config_paths)),
+                presets=tuple(_presets.available_preset_names(pathlib.Path.cwd(), config_paths)),
             )
         )
     out: dict[str, tuple[str, ...]] = {}
@@ -190,7 +192,7 @@ def _user_preset_names(config_paths: tuple[pathlib.Path, ...] = ()) -> list[str]
     try:
         return [
             p.name
-            for p in layer.preset_catalog(pathlib.Path.cwd(), config_paths).presets
+            for p in _presets.preset_catalog(pathlib.Path.cwd(), config_paths).presets
             if p.origin != "built-in"
         ]
     except ConfigError:

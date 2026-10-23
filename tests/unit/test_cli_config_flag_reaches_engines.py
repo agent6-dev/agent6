@@ -20,7 +20,7 @@ from agent6.sandbox import jail
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import sessions_cmds, sessions_merge
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 
 def test_merge_planner_passes_the_explicit_config_path(
@@ -60,7 +60,7 @@ def test_merge_planner_passes_the_explicit_config_path(
         return True
 
     monkeypatch.setattr(sessions_cmds, "_resolve_session_manifest", _resolved)
-    monkeypatch.setattr(git_ops, "branch_exists", _exists)
+    monkeypatch.setattr(git_read, "branch_exists", _exists)
     explicit = tmp_path / "special.toml"
     rc = sessions_merge._plan_merge(  # pyright: ignore[reportPrivateUsage]
         tmp_path, "sid", None, None, config_paths=(explicit,)

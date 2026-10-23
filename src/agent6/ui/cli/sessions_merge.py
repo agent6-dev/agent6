@@ -22,7 +22,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
 from agent6.ui.cli import _common, sessions_cmds
-from agent6.vcs import commit_message, git_ops
+from agent6.vcs import commit_message, git_ops, git_read
 from agent6.viewmodel import listing, scan_session_log, tail_events, worker_models
 
 _UNSTARTED_FORK = "unmerged; fork has not started"
@@ -57,7 +57,7 @@ class _MergePlan:
     target: str
     base_sha: str
     method: str
-    identity: git_ops.CommitIdentity
+    identity: git_read.CommitIdentity
     cfg: Config
 
 
@@ -118,7 +118,7 @@ def _plan_merge(  # noqa: PLR0911
     if (
         (stamp := resume.covering_stamp(cwd, manifest)) is not None
         and not layout.session_dir.is_symlink()
-        and (not ref.head_ref or git_ops.chain_tip(cwd, ref.head_ref) is None)
+        and (not ref.head_ref or git_read.chain_tip(cwd, ref.head_ref) is None)
     ):
         already = "already " if stamp.commit else ""
         print(f"[agent6] {already}{stamp.landed()} (run refs were pruned).")
@@ -160,25 +160,25 @@ def _plan_merge(  # noqa: PLR0911
             state_dir=layout.state_dir, session_id=layout.session_id
         )
     # chain_tip resolves both shapes of head_ref: a branch name and the hidden chain ref.
-    if git_ops.chain_tip(cwd, run_branch) is None:
+    if git_read.chain_tip(cwd, run_branch) is None:
         if sessions_cmds._committed_nothing(cwd, manifest.session_id):
             # Not a failure: there is no work to land.
             print("[agent6] nothing to merge: this run committed nothing.")
             return 0
         _common.error(
             f"run ref {run_branch!r} no longer exists; its commits survive at"
-            f" {git_ops.chain_ref_for(manifest.session_id)}."
+            f" {git_read.chain_ref_for(manifest.session_id)}."
         )
         return 2
-    if not git_ops.branch_exists(cwd, target):
+    if not git_read.branch_exists(cwd, target):
         why = (
             "the run started on a detached HEAD, so it has no base branch"
-            if not into and target == git_ops.DETACHED_HEAD
+            if not into and target == git_read.DETACHED_HEAD
             else f"target branch {target!r} does not exist"
         )
         _common.error(f"{why}; pass --into <existing-branch>.")
         return 2
-    identity = git_ops.CommitIdentity(
+    identity = git_read.CommitIdentity(
         name=cfg.git.commit.name,
         email=cfg.git.commit.email,
         trailer=commit_message.render_commit_trailer(
@@ -190,7 +190,7 @@ def _plan_merge(  # noqa: PLR0911
         ),
     )
     try:
-        git_ops.verify_git_identity(cwd, identity)  # refuse cleanly before mutating anything
+        git_read.verify_git_identity(cwd, identity)  # refuse cleanly before mutating anything
     except errors.GitError as exc:
         _common.error(f"{exc}")
         return 2
@@ -222,7 +222,7 @@ def _manual_merge_cmd(cwd: pathlib.Path, plan: _MergePlan) -> str:
     """
     steps: list[str] = []
     with contextlib.suppress(errors.GitError):
-        st = git_ops.status(cwd)
+        st = git_read.status(cwd)
         if st.modified_count:
             steps.append("git stash")
         if st.branch != plan.target:
@@ -259,7 +259,7 @@ def _cmd_merge(
     plan = _plan_merge(cwd, session_id, into, method, config_paths=config_paths)
     if isinstance(plan, int):
         return plan
-    if not git_ops.list_run_commits(cwd, plan.base_sha, plan.run_branch):
+    if not git_read.list_run_commits(cwd, plan.base_sha, plan.run_branch):
         # A success line here would be indistinguishable from a real merge.
         print(f"[agent6] nothing to merge: run branch {plan.run_branch} has no commits.")
         return 0
@@ -357,9 +357,9 @@ def _squash_unconfirmed(cwd: pathlib.Path, stamp: sessions_manifest.MergeStamp) 
     if stamp.sha == sessions_manifest.NO_MERGE_COMMIT:
         if not stamp.into_tip:
             return "the record names no commit to check"
-        if not git_ops.is_ancestor(cwd, stamp.into_tip, stamp.into):
+        if not git_read.is_ancestor(cwd, stamp.into_tip, stamp.into):
             return f"{stamp.into} no longer holds its content"
-    elif not git_ops.is_ancestor(cwd, stamp.sha, stamp.into):
+    elif not git_read.is_ancestor(cwd, stamp.sha, stamp.into):
         return f"{stamp.into} no longer holds the merge commit"
     return ""
 
@@ -396,9 +396,9 @@ def landed(
     Returns:
         The verdict, with the keep reason when it is `keep`.
     """
-    if not git_ops.branch_exists(cwd, stamp.into):
+    if not git_read.branch_exists(cwd, stamp.into):
         return Landed("keep", _base_gone(stamp.into))
-    if tip is not None and git_ops.is_ancestor(cwd, tip, stamp.into):
+    if tip is not None and git_read.is_ancestor(cwd, tip, stamp.into):
         return Landed("merged")
     if tip is not None and stamp.tip and stamp.tip != tip:
         # A resumed run committed on after the merge: those commits are in no other ref.
@@ -450,7 +450,7 @@ def _prune_branch(
     if state.verdict == "keep":
         print(_keep_branch_line(br, stamp, state.why))
         return False
-    sha = git_ops.branch_tip_sha(cwd, br)
+    sha = git_read.branch_tip_sha(cwd, br)
     if sha is not None and git_ops.force_delete_squash_merged_branch(cwd, br):
         print(f"[agent6] deleted {br} (squash-merged into {stamp.into})")
         print(_common.sgr(f"          undelete: git branch {br} {sha[:12]}", "2"))
@@ -481,12 +481,12 @@ def _cmd_prune(
         The exit code; 2 when git refuses.
     """
     cwd = fork_worktrees.sweep_checkout(pathlib.Path.cwd())
-    if not git_ops.is_git_repo(cwd):
+    if not git_read.is_git_repo(cwd):
         _common.error("not a git repository")
         return 2
-    branches = git_ops.list_run_branches(cwd)
+    branches = git_read.list_run_branches(cwd)
     try:
-        current = git_ops.status(cwd).branch
+        current = git_read.status(cwd).branch
     except errors.GitError as exc:
         _common.error(f"{exc}")
         return 2
@@ -497,7 +497,7 @@ def _cmd_prune(
         if br == current:
             print(f"[agent6] skipped {br} (checked out)", file=sys.stderr)
             continue
-        layout = sessions_layout.session_layout(repo_state, br.removeprefix(git_ops.BRANCH_PREFIX))
+        layout = sessions_layout.session_layout(repo_state, br.removeprefix(git_read.BRANCH_PREFIX))
         if layout is not None and process.worker_is_alive(layout.session_dir):
             # The run is still committing to it, whatever git makes of its tip.
             live_kept += 1
@@ -513,7 +513,9 @@ def _cmd_prune(
             kept_why[label] += 1
             print(f"[agent6] kept {br} ({label}; review, then: git branch -D {br})")
             continue
-        state = landed(cwd, stamp, git_ops.branch_tip_sha(cwd, br), delete_squashed=delete_squashed)
+        state = landed(
+            cwd, stamp, git_read.branch_tip_sha(cwd, br), delete_squashed=delete_squashed
+        )
         if _prune_branch(cwd, br, stamp, state, current):
             squashed_deleted += 1
         else:
@@ -605,7 +607,7 @@ def _prune_chain_refs(
     """
     refs_deleted = 0
     kept: collections.Counter[str] = collections.Counter()
-    for sid, sha in git_ops.list_chain_refs(cwd):
+    for sid, sha in git_read.list_chain_refs(cwd):
         layout = sessions_layout.session_layout(repo_state, sid)
         if layout is None:
             # A machine's chain (`machine_chain_ref_for`) has no session record.
@@ -625,7 +627,7 @@ def _prune_chain_refs(
         if state.verdict == "keep":
             kept[state.why] += 1
             continue
-        ref = git_ops.chain_ref_for(sid)
+        ref = git_read.chain_ref_for(sid)
         git_ops.delete_ref(cwd, ref)
         refs_deleted += 1
         how = "merged" if state.verdict == "merged" else "squash-merged"

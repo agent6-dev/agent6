@@ -13,7 +13,7 @@ from unittest import mock
 import pytest
 
 from agent6 import errors, kinds
-from agent6.vcs import _git_command, commit_message, git_ops, git_policy
+from agent6.vcs import _git_command, commit_message, git_ops, git_policy, git_read
 
 
 def _init_repo(path: pathlib.Path) -> None:
@@ -39,20 +39,20 @@ def _stash_change(path: pathlib.Path, name: str, content: str, message: str) -> 
 def test_modified_and_untracked_paths_split_the_operators_work(tmp_path: pathlib.Path) -> None:
     """Tracked modifications are the run's start question; untracked files are the operator's."""
     _init_repo(tmp_path)
-    assert git_ops.modified_paths(tmp_path) == []
-    assert git_ops.untracked_paths(tmp_path) == frozenset()
+    assert git_read.modified_paths(tmp_path) == []
+    assert git_read.untracked_paths(tmp_path) == frozenset()
     (tmp_path / "new.txt").write_text("x\n", encoding="utf-8")  # untracked
     (tmp_path / "odd name:here.txt").write_text("x\n", encoding="utf-8")
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")  # modified
-    assert git_ops.modified_paths(tmp_path) == ["README.md"]
-    assert git_ops.untracked_paths(tmp_path) == {"new.txt", "odd name:here.txt"}
-    st = git_ops.status(tmp_path)
+    assert git_read.modified_paths(tmp_path) == ["README.md"]
+    assert git_read.untracked_paths(tmp_path) == {"new.txt", "odd name:here.txt"}
+    st = git_read.status(tmp_path)
     assert (st.modified_count, st.untracked_count, st.is_clean) == (1, 2, False)
     # The run's untracked_at_start set makes them invisible to status.
     (tmp_path / "README.md").write_text("hi\n", encoding="utf-8")
-    scoped = git_ops.status(tmp_path, exclude={"new.txt", "odd name:here.txt"})
+    scoped = git_read.status(tmp_path, exclude={"new.txt", "odd name:here.txt"})
     assert (scoped.modified_count, scoped.untracked_count, scoped.is_clean) == (0, 0, True)
-    assert git_ops.status(tmp_path, exclude={"new.txt"}).untracked_count == 1
+    assert git_read.status(tmp_path, exclude={"new.txt"}).untracked_count == 1
 
 
 def test_worktree_name_status_leaves_out_the_operators_untracked_files(
@@ -64,10 +64,10 @@ def test_worktree_name_status_leaves_out_the_operators_untracked_files(
     """
     _init_repo(tmp_path)
     (tmp_path / "notes.txt").write_text("mine\n", encoding="utf-8")  # the operator's
-    mine = git_ops.untracked_paths(tmp_path)
+    mine = git_read.untracked_paths(tmp_path)
     (tmp_path / "feature.py").write_text("x = 1\n", encoding="utf-8")  # the run's
 
-    changes = git_ops.worktree_name_status(tmp_path, exclude=mine)
+    changes = git_read.worktree_name_status(tmp_path, exclude=mine)
     assert ("A", "feature.py") in changes
     assert not any(path == "notes.txt" for _status, path in changes)
 
@@ -79,7 +79,7 @@ def test_stash_tracked_changes_leaves_untracked_files_in_place(tmp_path: pathlib
     git_ops.stash_tracked_changes(tmp_path, "agent6 auto-stash")
     assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "mine\n"
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == "hi\n"
-    assert git_ops.untracked_paths(tmp_path) == {"notes.txt"}
+    assert git_read.untracked_paths(tmp_path) == {"notes.txt"}
 
 
 @pytest.mark.parametrize("rename", [False, True], ids=["staged-delete", "staged-rename"])
@@ -107,7 +107,7 @@ def test_path_limited_stash_keeps_staged_deletions_and_renames(
     assert not (tmp_path / destination).exists()
     assert (tmp_path / "run [work].py").read_text(encoding="utf-8") == "x = 5\n"
     assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "operator notes\n"
-    entry = git_ops.find_stash(tmp_path, "selected edits")
+    entry = git_read.find_stash(tmp_path, "selected edits")
     assert entry is not None
     saved_run = subprocess.run(
         ["git", "show", f"{entry.sha}:run [work].py"],
@@ -158,7 +158,7 @@ def test_status_handles_unborn_head(tmp_path: pathlib.Path) -> None:
     """A repo with an unborn HEAD does not crash `status()`, which every entry point loads first."""
     subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
     (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
-    st = git_ops.status(tmp_path)
+    st = git_read.status(tmp_path)
     assert st.branch == "main"
     assert st.head_sha == ""
     assert not st.is_clean
@@ -175,7 +175,7 @@ def test_git_ops_neutralizes_repo_fsmonitor(tmp_path: pathlib.Path) -> None:
     )
     (tmp_path / "new.txt").write_text("x\n", encoding="utf-8")
     # Index-refreshing op through agent6's hardened command runner.
-    git_ops.status(tmp_path)
+    git_read.status(tmp_path)
     git_ops.commit_all(tmp_path, "msg")
     assert not marker.exists(), "repo core.fsmonitor command executed on the host"
 
@@ -226,7 +226,7 @@ def test_git_ops_neutralizes_repo_diff_external(tmp_path: pathlib.Path) -> None:
         check=True,
     )
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
-    out = git_ops.diff_since(tmp_path, "HEAD")
+    out = git_read.diff_since(tmp_path, "HEAD")
     assert not marker.exists(), "repo diff.external command executed on the host"
     # git >= 2.53 runs an empty `-c diff.external=` and the patch dies; --no-ext-diff keeps it.
     assert "README.md" in out, "diff.external neutralization silently emptied the diff"
@@ -244,9 +244,9 @@ def test_diff_range_reports_a_branch_diff_and_empty_on_bad_ref(tmp_path: pathlib
     (tmp_path / "feature.txt").write_text("new\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "feat"], check=True)
-    out = git_ops.diff_range(tmp_path, base, "agent6/x")
+    out = git_read.diff_range(tmp_path, base, "agent6/x")
     assert "feature.txt" in out
-    assert git_ops.diff_range(tmp_path, base, "no-such-branch") == ""  # unresolvable range -> ""
+    assert git_read.diff_range(tmp_path, base, "no-such-branch") == ""  # unresolvable range -> ""
 
 
 def test_diff_range_survives_poisoned_diff_external(tmp_path: pathlib.Path) -> None:
@@ -266,7 +266,7 @@ def test_diff_range_survives_poisoned_diff_external(tmp_path: pathlib.Path) -> N
     subprocess.run(["git", "-C", str(tmp_path), "checkout", "-q", "-b", "agent6/x"], check=True)
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-aq", "-m", "change"], check=True)
-    out = git_ops.diff_range(tmp_path, base, "agent6/x")
+    out = git_read.diff_range(tmp_path, base, "agent6/x")
     assert not marker.exists(), "repo diff.external command executed on the host"
     assert "README.md" in out, "diff.external neutralization silently emptied the diff"
 
@@ -280,7 +280,7 @@ def test_commit_diff_survives_poisoned_diff_external(tmp_path: pathlib.Path) -> 
     )
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
     sha = git_ops.commit_all(tmp_path, "change readme")
-    out = git_ops.commit_diff(tmp_path, sha)
+    out = git_read.commit_diff(tmp_path, sha)
     assert not marker.exists(), "repo diff.external command executed on the host"
     assert "README.md" in out, "git show honored the external diff and lost the patch"
 
@@ -301,7 +301,7 @@ def test_git_ops_neutralizes_repo_diff_textconv(tmp_path: pathlib.Path) -> None:
     marker = tmp_path / "PWNED_TEXTCONV_DIFF"
     _poison_textconv(tmp_path, marker)
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
-    out = git_ops.diff_since(tmp_path, "HEAD")
+    out = git_read.diff_since(tmp_path, "HEAD")
     assert not marker.exists(), "repo diff.*.textconv command executed on the host"
     assert "README.md" in out, "textconv neutralization silently emptied the diff"
 
@@ -312,7 +312,7 @@ def test_commit_diff_survives_poisoned_textconv(tmp_path: pathlib.Path) -> None:
     _poison_textconv(tmp_path, marker)
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
     sha = git_ops.commit_all(tmp_path, "change readme")
-    out = git_ops.commit_diff(tmp_path, sha)
+    out = git_read.commit_diff(tmp_path, sha)
     assert not marker.exists(), "git show ran the repo textconv driver on the host"
     assert "README.md" in out, "git show lost the patch under --no-textconv"
 
@@ -335,13 +335,13 @@ def test_git_ops_neutralizes_repo_gpg_signing(tmp_path: pathlib.Path) -> None:
 
 
 def test_is_git_repo_false_for_tmp(tmp_path: pathlib.Path) -> None:
-    assert git_ops.is_git_repo(tmp_path) is False
+    assert git_read.is_git_repo(tmp_path) is False
 
 
 def test_init_repo_creates_repository(tmp_path: pathlib.Path) -> None:
-    assert git_ops.is_git_repo(tmp_path) is False
+    assert git_read.is_git_repo(tmp_path) is False
     git_ops.init_repo(tmp_path)
-    assert git_ops.is_git_repo(tmp_path) is True
+    assert git_read.is_git_repo(tmp_path) is True
 
 
 def test_unignored_filters_gitignored_paths(tmp_path: pathlib.Path) -> None:
@@ -350,7 +350,7 @@ def test_unignored_filters_gitignored_paths(tmp_path: pathlib.Path) -> None:
     (tmp_path / ".agent6").mkdir()
     (tmp_path / ".agent6" / "config.toml").write_text("x", encoding="utf-8")
     (tmp_path / "AGENTS.md").write_text("y", encoding="utf-8")
-    keep = git_ops.unignored(tmp_path, (".agent6/config.toml", "AGENTS.md", ".gitignore"))
+    keep = git_read.unignored(tmp_path, (".agent6/config.toml", "AGENTS.md", ".gitignore"))
     assert ".agent6/config.toml" not in keep  # gitignored
     assert "AGENTS.md" in keep
     assert ".gitignore" in keep
@@ -358,7 +358,7 @@ def test_unignored_filters_gitignored_paths(tmp_path: pathlib.Path) -> None:
 
 def test_status_clean_repo(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
-    st = git_ops.status(tmp_path)
+    st = git_read.status(tmp_path)
     assert st.branch == "main"
     assert st.is_clean is True
     assert st.modified_count == 0
@@ -367,7 +367,7 @@ def test_status_clean_repo(tmp_path: pathlib.Path) -> None:
 def test_status_dirty_repo(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
     (tmp_path / "new.txt").write_text("x", encoding="utf-8")
-    st = git_ops.status(tmp_path)
+    st = git_read.status(tmp_path)
     assert st.is_clean is False
     assert st.untracked_count == 1
 
@@ -377,25 +377,25 @@ def test_commit_all_returns_sha_and_log(tmp_path: pathlib.Path) -> None:
     (tmp_path / "f.txt").write_text("y", encoding="utf-8")
     sha = git_ops.commit_all(tmp_path, "add f", trailers={"agent6-step": "x"})
     assert len(sha) == 40
-    log = git_ops.recent_log(tmp_path, n=5)
+    log = git_read.recent_log(tmp_path, n=5)
     assert "add f" in log
 
 
 def test_create_branch(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
     git_ops.create_branch(tmp_path, "agent6/test")
-    assert git_ops.status(tmp_path).branch == "agent6/test"
+    assert git_read.status(tmp_path).branch == "agent6/test"
 
 
 def test_create_branch_at_is_additive_no_checkout(tmp_path: pathlib.Path) -> None:
     """create_branch_at points a new branch at a sha WITHOUT moving HEAD."""
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     # Advance HEAD so base != current; the fork branch must land on base.
     (tmp_path / "b.txt").write_text("b\n", encoding="utf-8")
     git_ops.commit_all(tmp_path, "second")
     git_ops.create_branch_at(tmp_path, "agent6/fork", base)
-    assert git_ops.status(tmp_path).branch == "main", "must not check out the new branch"
+    assert git_read.status(tmp_path).branch == "main", "must not check out the new branch"
     forked = subprocess.run(
         ["git", "-C", str(tmp_path), "rev-parse", "agent6/fork"],
         capture_output=True,
@@ -411,7 +411,7 @@ def test_create_branch_at_idempotent_and_refuses_move(tmp_path: pathlib.Path) ->
     Moving a branch would be a rewrite, which git_ops refuses.
     """
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     git_ops.create_branch_at(tmp_path, "agent6/fork", base)
     git_ops.create_branch_at(tmp_path, "agent6/fork", base)  # idempotent: no raise
     (tmp_path / "c.txt").write_text("c\n", encoding="utf-8")
@@ -504,20 +504,20 @@ def gm_run_name(call: ast.Call) -> str | None:
 
 def test_status_on_non_repo(tmp_path: pathlib.Path) -> None:
     with pytest.raises(errors.GitError):
-        git_ops.status(tmp_path)
+        git_read.status(tmp_path)
 
 
 def test_verify_git_identity_uses_repo_config(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)  # configures user.name=t, user.email=t@t
-    name, email = git_ops.verify_git_identity(tmp_path, git_ops.CommitIdentity())
+    name, email = git_read.verify_git_identity(tmp_path, git_read.CommitIdentity())
     assert name == "t"
     assert email == "t@t"
 
 
 def test_verify_git_identity_override_wins(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
-    name, email = git_ops.verify_git_identity(
-        tmp_path, git_ops.CommitIdentity(name="bot", email="bot@example.com")
+    name, email = git_read.verify_git_identity(
+        tmp_path, git_read.CommitIdentity(name="bot", email="bot@example.com")
     )
     assert name == "bot"
     assert email == "bot@example.com"
@@ -535,7 +535,7 @@ def test_verify_git_identity_missing_raises(
     repo.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
     with pytest.raises(errors.GitError, match="Git identity not configured"):
-        git_ops.verify_git_identity(repo, git_ops.CommitIdentity())
+        git_read.verify_git_identity(repo, git_read.CommitIdentity())
 
 
 def test_commit_all_with_identity_overrides_author(tmp_path: pathlib.Path) -> None:
@@ -544,7 +544,7 @@ def test_commit_all_with_identity_overrides_author(tmp_path: pathlib.Path) -> No
     sha = git_ops.commit_all(
         tmp_path,
         "add f",
-        identity=git_ops.CommitIdentity(
+        identity=git_read.CommitIdentity(
             name="agent6",
             email="agent6@example.com",
             trailer="Co-authored-by: Alice <alice@example.com>",
@@ -580,7 +580,7 @@ def test_restore_stash_clean_apply_restores_and_drops(tmp_path: pathlib.Path) ->
     _init_repo(tmp_path)
     _stash_change(tmp_path, "wip.txt", "work in progress\n", "agent6 auto-stash")
     assert (tmp_path / "wip.txt").read_text(encoding="utf-8") == ""  # stashed away, tree clean
-    entry = git_ops.find_stash(tmp_path, "agent6 auto-stash")
+    entry = git_read.find_stash(tmp_path, "agent6 auto-stash")
     assert entry is not None
     assert git_ops.restore_stash(tmp_path, entry) is True
     assert (tmp_path / "wip.txt").read_text(encoding="utf-8") == "work in progress\n"
@@ -597,7 +597,7 @@ def test_restore_stash_conflict_keeps_stash(tmp_path: pathlib.Path) -> None:
     # A conflicting commit on the same line means the stash cannot apply cleanly.
     (tmp_path / "README.md").write_text("committed change\n", encoding="utf-8")
     git_ops.commit_all(tmp_path, "conflicting commit")
-    entry = git_ops.find_stash(tmp_path, "agent6 auto-stash")
+    entry = git_read.find_stash(tmp_path, "agent6 auto-stash")
     assert entry is not None
     assert git_ops.restore_stash(tmp_path, entry) is False
     listing = subprocess.run(
@@ -615,7 +615,7 @@ def test_find_stash_targets_the_run_stash_not_the_latest(tmp_path: pathlib.Path)
     _stash_change(
         tmp_path, "mid.txt", "mid-run stash by someone else\n", "user work stashed mid-run"
     )
-    entry = git_ops.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
+    entry = git_read.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None
     assert entry.ref == "stash@{1}"
     assert git_ops.restore_stash(tmp_path, entry) is True
@@ -640,7 +640,7 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
     _stash_change(
         tmp_path, "pre.txt", "pre-run work\n", git_ops.auto_stash_message("sunny-otter-AAA111")
     )
-    entry = git_ops.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
+    entry = git_read.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None
 
     real_run = _git_command.run
@@ -688,7 +688,7 @@ def test_find_stash_does_not_prefix_match_another_runs_stash(tmp_path: pathlib.P
     _stash_change(tmp_path, "one.txt", "lane l1 work\n", git_ops.auto_stash_message("fanout-l1"))
     # newer: listed first
     _stash_change(tmp_path, "ten.txt", "lane l10 work\n", git_ops.auto_stash_message("fanout-l10"))
-    entry = git_ops.find_stash(tmp_path, git_ops.auto_stash_message("fanout-l1"))
+    entry = git_read.find_stash(tmp_path, git_ops.auto_stash_message("fanout-l1"))
     assert entry is not None
     assert entry.ref == "stash@{1}"  # the l1 stash, not the newer l10 one
 
@@ -705,7 +705,7 @@ def test_raced_drop_failed_putback_raises_with_recovery(
     _stash_change(
         tmp_path, "pre.txt", "pre-run work\n", git_ops.auto_stash_message("sunny-otter-AAA111")
     )
-    entry = git_ops.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
+    entry = git_read.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None
 
     real_run = _git_command.run
@@ -869,7 +869,7 @@ def test_timeout_clears_the_lock_its_own_child_created(tmp_path: pathlib.Path) -
 
 def test_find_stash_missing_returns_none(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
-    assert git_ops.find_stash(tmp_path, git_ops.auto_stash_message("nope")) is None
+    assert git_read.find_stash(tmp_path, git_ops.auto_stash_message("nope")) is None
 
 
 def test_restore_stash_survives_index_shift_after_lookup(tmp_path: pathlib.Path) -> None:
@@ -881,7 +881,7 @@ def test_restore_stash_survives_index_shift_after_lookup(tmp_path: pathlib.Path)
     _stash_change(
         tmp_path, "pre.txt", "pre-run work\n", git_ops.auto_stash_message("sunny-otter-AAA111")
     )
-    entry = git_ops.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
+    entry = git_read.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None and entry.ref == "stash@{0}"
     # A stash pushed after the lookup makes the recorded position point at someone else's work.
     _stash_change(tmp_path, "mid.txt", "mid work\n", "pushed after lookup")
@@ -899,7 +899,7 @@ def _commit_file(repo: pathlib.Path, name: str, content: str, msg: str) -> str:
     (repo / name).write_text(content, encoding="utf-8")
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", msg], check=True)
-    return git_ops.status(repo).head_sha
+    return git_read.status(repo).head_sha
 
 
 def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: pathlib.Path) -> None:
@@ -909,7 +909,7 @@ def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: pathli
     dirt.
     """
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     run_tip = _lane_commit(tmp_path, base, "feat.txt", "x\n")
     subprocess.run(
         ["git", "-C", str(tmp_path), "update-ref", "refs/agent6/r1", run_tip], check=True
@@ -922,7 +922,7 @@ def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: pathli
         "refs/agent6/r1",
         method="merge",
         message="Merge refs/agent6/r1",
-        identity=git_ops.CommitIdentity(trailer="Assisted-by: agent6:m1"),
+        identity=git_read.CommitIdentity(trailer="Assisted-by: agent6:m1"),
     )
     assert not res.conflicted
     assert _rev(tmp_path, "main") == res.merged_sha
@@ -940,30 +940,30 @@ def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: pathli
         check=True,
     ).stdout
     assert head_msg.count("Assisted-by: agent6:m1") == 1
-    assert git_ops.status(tmp_path).is_clean  # main is checked out: index brought forward
+    assert git_read.status(tmp_path).is_clean  # main is checked out: index brought forward
 
 
 def test_a_merge_stamp_stops_holding_once_the_run_commits_past_it(tmp_path: pathlib.Path) -> None:
     """The run's record is its chain, so a branchless run's later commits are not called merged."""
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     tip = _lane_commit(tmp_path, base, "a.txt", "one\n")
     subprocess.run(
-        ["git", "-C", str(tmp_path), "update-ref", git_ops.chain_ref_for("branchless1"), tip],
+        ["git", "-C", str(tmp_path), "update-ref", git_read.chain_ref_for("branchless1"), tip],
         check=True,
     )
 
-    assert git_ops.merge_stamp_holds(tmp_path, "branchless1", "", tip)
+    assert git_read.merge_stamp_holds(tmp_path, "branchless1", "", tip)
 
     later = _lane_commit(tmp_path, tip, "b.txt", "two\n")
     subprocess.run(
-        ["git", "-C", str(tmp_path), "update-ref", git_ops.chain_ref_for("branchless1"), later],
+        ["git", "-C", str(tmp_path), "update-ref", git_read.chain_ref_for("branchless1"), later],
         check=True,
     )
 
-    assert not git_ops.merge_stamp_holds(tmp_path, "branchless1", "", tip)
+    assert not git_read.merge_stamp_holds(tmp_path, "branchless1", "", tip)
     # No chain and no branch (auto_prune took both): the claim stands.
-    assert git_ops.merge_stamp_holds(tmp_path, "gone-run111", "", tip)
+    assert git_read.merge_stamp_holds(tmp_path, "gone-run111", "", tip)
 
 
 def test_a_merge_stamp_on_the_chain_holds_through_an_operator_commit_on_the_branch(
@@ -971,10 +971,10 @@ def test_a_merge_stamp_on_the_chain_holds_through_an_operator_commit_on_the_bran
 ) -> None:
     """The stamp names the chain tip a merge took, so the listing accepts either tip as merged."""
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     chain = _lane_commit(tmp_path, base, "a.txt", "one\n")
     subprocess.run(
-        ["git", "-C", str(tmp_path), "update-ref", git_ops.chain_ref_for("stamped1"), chain],
+        ["git", "-C", str(tmp_path), "update-ref", git_read.chain_ref_for("stamped1"), chain],
         check=True,
     )
     own = _lane_commit(tmp_path, chain, "b.txt", "two\n")
@@ -982,9 +982,9 @@ def test_a_merge_stamp_on_the_chain_holds_through_an_operator_commit_on_the_bran
         ["git", "-C", str(tmp_path), "update-ref", "refs/heads/agent6/stamped1", own], check=True
     )
 
-    assert git_ops.merge_stamp_holds(tmp_path, "stamped1", "agent6/stamped1", chain)
-    assert git_ops.merge_stamp_holds(tmp_path, "stamped1", "agent6/stamped1", own)
-    assert not git_ops.merge_stamp_holds(tmp_path, "stamped1", "agent6/stamped1", base)
+    assert git_read.merge_stamp_holds(tmp_path, "stamped1", "agent6/stamped1", chain)
+    assert git_read.merge_stamp_holds(tmp_path, "stamped1", "agent6/stamped1", own)
+    assert not git_read.merge_stamp_holds(tmp_path, "stamped1", "agent6/stamped1", base)
 
 
 def test_plumb_merge_names_the_files_the_checkout_kept_its_own_version_of(
@@ -996,7 +996,7 @@ def test_plumb_merge_names_the_files_the_checkout_kept_its_own_version_of(
     nothing.
     """
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     run_tip = _lane_commit(tmp_path, base, "feat.txt", "the run's line\n")
     subprocess.run(
         ["git", "-C", str(tmp_path), "update-ref", "refs/agent6/r1", run_tip], check=True
@@ -1044,12 +1044,12 @@ def test_add_worktree_is_detached_shares_refs_and_is_removed_alone(tmp_path: pat
     assert (wt / ".git").is_file()
     assert _rev(wt, "HEAD") == base
     assert (wt / "README.md").read_text(encoding="utf-8") == "hi\n"
-    assert git_ops.git_common_dir(wt) == (repo / ".git").resolve()
+    assert git_read.git_common_dir(wt) == (repo / ".git").resolve()
     (wt / "new.txt").write_text("n\n", encoding="utf-8")
     sha = git_ops.chain_commit(wt, "step", ref="refs/agent6/w/head", fallback_parent=base)
     assert sha is not None and _rev(repo, "refs/agent6/w/head") == sha
     assert (
-        _rev(repo, "HEAD") != base and git_ops.status(repo).is_clean
+        _rev(repo, "HEAD") != base and git_read.status(repo).is_clean
     )  # the main checkout: untouched
 
     other = tmp_path / "other"
@@ -1093,16 +1093,16 @@ def test_plumb_merge_from_a_linked_worktree_brings_the_main_checkout_forward(
     assert not res.conflicted
     assert _rev(repo, "main") == res.merged_sha
     assert (repo / "feat.txt").read_text(encoding="utf-8") == "x\n"
-    assert git_ops.status(repo).is_clean
+    assert git_read.status(repo).is_clean
     assert not (wt / "feat.txt").exists()  # the worktree is not the target's checkout
 
 
 def test_plumb_merge_conflict_moves_nothing(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     theirs = _lane_commit(tmp_path, base, "README.md", "run change\n")
     _commit_file(tmp_path, "README.md", "main change\n", "main edit")  # same line
-    main_tip = git_ops.status(tmp_path).head_sha
+    main_tip = git_read.status(tmp_path).head_sha
     res = git_ops.plumb_merge(tmp_path, "main", theirs, method="merge", message=None)
     assert res.conflicted
     # The conflicted paths only; merge-tree's informational lines follow a blank line and stay out.
@@ -1113,12 +1113,12 @@ def test_plumb_merge_conflict_moves_nothing(tmp_path: pathlib.Path) -> None:
 
 def test_plumb_merge_ff_only_moves_the_ref_and_refuses_divergence(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     theirs = _lane_commit(tmp_path, base, "feat.txt", "x\n")
     (tmp_path / "feat.txt").write_text("x\n", encoding="utf-8")
     res = git_ops.plumb_merge(tmp_path, "main", theirs, method="ff_only")
     assert res.merged_sha == theirs == _rev(tmp_path, "main")
-    assert git_ops.status(tmp_path).is_clean
+    assert git_read.status(tmp_path).is_clean
 
     diverged = _lane_commit(tmp_path, base, "other.txt", "y\n")
     with pytest.raises(errors.GitError):
@@ -1128,7 +1128,7 @@ def test_plumb_merge_ff_only_moves_the_ref_and_refuses_divergence(tmp_path: path
 
 def test_plumb_merge_squash_is_one_commit_and_noop_when_contained(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     step1 = _lane_commit(tmp_path, base, "a.txt", "a\n")
     step2 = _lane_commit(tmp_path, step1, "b.txt", "b\n")
     for name, content in (("a.txt", "a\n"), ("b.txt", "b\n")):
@@ -1139,7 +1139,7 @@ def test_plumb_merge_squash_is_one_commit_and_noop_when_contained(tmp_path: path
         step2,
         method="squash",
         message="the task",
-        identity=git_ops.CommitIdentity(trailer="Assisted-by: agent6:m1"),
+        identity=git_read.CommitIdentity(trailer="Assisted-by: agent6:m1"),
     )
     assert not res.conflicted
     parents = subprocess.run(
@@ -1149,7 +1149,7 @@ def test_plumb_merge_squash_is_one_commit_and_noop_when_contained(tmp_path: path
         check=True,
     ).stdout.split()
     assert parents == [base]  # ONE commit, single parent
-    assert git_ops.status(tmp_path).is_clean
+    assert git_read.status(tmp_path).is_clean
     # Landing the same rev again is a clean no-op returning the unchanged tip.
     again = git_ops.plumb_merge(tmp_path, "main", step2, method="squash", message="again")
     assert again.merged_sha == res.merged_sha and not again.conflicted
@@ -1158,7 +1158,7 @@ def test_plumb_merge_squash_is_one_commit_and_noop_when_contained(tmp_path: path
 def test_plumb_merge_preserves_the_operators_own_staging(tmp_path: pathlib.Path) -> None:
     """Index entries the operator staged survive the bring-forward; only old-tip entries move."""
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     theirs = _lane_commit(tmp_path, base, "feat.txt", "x\n")
     (tmp_path / "feat.txt").write_text("x\n", encoding="utf-8")
     (tmp_path / "README.md").write_text("operator wip\n", encoding="utf-8")
@@ -1181,7 +1181,7 @@ def test_clone_repo_local_clone(tmp_path: pathlib.Path) -> None:
     dest = tmp_path / "clone"
     git_ops.clone_repo(origin, dest)
     assert (dest / "README.md").read_text(encoding="utf-8") == "hi\n"
-    assert git_ops.status(dest).head_sha == git_ops.status(origin).head_sha
+    assert git_read.status(dest).head_sha == git_read.status(origin).head_sha
 
 
 def test_clone_repo_raises_on_existing_dest(tmp_path: pathlib.Path) -> None:
@@ -1210,7 +1210,7 @@ def test_fetch_branch_lands_branch_from_path(tmp_path: pathlib.Path) -> None:
         text=True,
         check=True,
     ).stdout.strip()
-    assert sha == git_ops.status(clone).head_sha
+    assert sha == git_read.status(clone).head_sha
 
 
 def test_fetch_branch_refuses_non_ff_update(tmp_path: pathlib.Path) -> None:
@@ -1220,7 +1220,7 @@ def test_fetch_branch_refuses_non_ff_update(tmp_path: pathlib.Path) -> None:
     _init_repo(origin)
     git_ops.create_branch(origin, "agent6/r1")
     _commit_file(origin, "ours.txt", "o\n", "origin r1")
-    origin_sha = git_ops.status(origin).head_sha
+    origin_sha = git_read.status(origin).head_sha
     git_ops.create_branch(origin, "main")
     clone = tmp_path / "clone"
     git_ops.clone_repo(origin, clone)
@@ -1241,21 +1241,21 @@ def test_fetch_branch_refuses_non_ff_update(tmp_path: pathlib.Path) -> None:
 
 def test_list_run_commits_oldest_first(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     git_ops.create_branch(tmp_path, "agent6/r1")
     _commit_file(tmp_path, "a.txt", "a\n", "agent6 turn 1: add a")
     _commit_file(tmp_path, "b.txt", "b\n", "agent6 turn 2: add b")
-    rows = git_ops.list_run_commits(tmp_path, base, "agent6/r1")
+    rows = git_read.list_run_commits(tmp_path, base, "agent6/r1")
     assert [r.subject for r in rows] == ["agent6 turn 1: add a", "agent6 turn 2: add b"]
 
 
 def test_condense_strips_prefix_and_bullets(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     git_ops.create_branch(tmp_path, "agent6/r1")
     _commit_file(tmp_path, "a.txt", "a\n", "agent6 turn 1: add a")
     _commit_file(tmp_path, "b.txt", "b\n", "agent6 turn 2: add b")
-    rows = git_ops.list_run_commits(tmp_path, base, "agent6/r1")
+    rows = git_read.list_run_commits(tmp_path, base, "agent6/r1")
     message = commit_message.condense_commit_message(rows, subject="implement parse_url")
     assert message.splitlines()[0] == "implement parse_url"  # headline = the task
     assert "- add a" in message and "- add b" in message  # prefix stripped, bulleted
@@ -1326,7 +1326,7 @@ def test_commit_all_appends_the_identity_trailer_once(tmp_path: pathlib.Path) ->
     _init_repo(tmp_path)
     (tmp_path / "f.txt").write_text("x", encoding="utf-8")
     line = "Assisted-by: agent6:m1 (worker)"
-    git_ops.commit_all(tmp_path, "add f", identity=git_ops.CommitIdentity(trailer=line))
+    git_ops.commit_all(tmp_path, "add f", identity=git_read.CommitIdentity(trailer=line))
     head_msg = subprocess.run(
         ["git", "-C", str(tmp_path), "log", "-1", "--format=%B"],
         capture_output=True,
@@ -1351,25 +1351,25 @@ def test_render_commit_trailer_joins_the_code_writers() -> None:
 def test_diff_of_non_utf8_file_does_not_crash(tmp_path: pathlib.Path) -> None:
     # A latin-1 text file put non-UTF-8 bytes in the diff, and the strict decode raised mid-run.
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     (tmp_path / "latin1.txt").write_bytes(b"caf\xe9 au lait\n")
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add latin1"], check=True)
-    sha = git_ops.status(tmp_path).head_sha
+    sha = git_read.status(tmp_path).head_sha
 
-    since = git_ops.diff_since(tmp_path, base)
+    since = git_read.diff_since(tmp_path, base)
     assert "latin1.txt" in since  # the diff was produced, not dropped to a crash
-    shown = git_ops.commit_diff(tmp_path, sha)
+    shown = git_read.commit_diff(tmp_path, sha)
     assert "latin1.txt" in shown
 
 
 def test_list_run_commits_preserves_body_with_separator_bytes(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     git_ops.create_branch(tmp_path, "agent6/r1")
     body = "line A \x1f mid \x1e end\n\nCo-authored-by: Op <op@x>"
     _commit_file(tmp_path, "a.txt", "a\n", f"agent6 turn 1: add a\n\n{body}")
-    rows = git_ops.list_run_commits(tmp_path, base, "agent6/r1")
+    rows = git_read.list_run_commits(tmp_path, base, "agent6/r1")
     assert len(rows) == 1  # \x1e in the body did not split it into two records
     assert "Co-authored-by: Op <op@x>" in rows[0].message  # \x1f did not truncate the body
 
@@ -1460,7 +1460,7 @@ def test_chain_commit_brings_a_checked_out_run_branch_index_forward(tmp_path: pa
     )
 
     assert sha == _rev(tmp_path, "HEAD")
-    assert git_ops.status(tmp_path).is_clean
+    assert git_read.status(tmp_path).is_clean
 
 
 def test_chain_merge_lands_a_lane_on_a_checked_out_run_branch(tmp_path: pathlib.Path) -> None:
@@ -1494,7 +1494,7 @@ def test_chain_merge_lands_a_lane_on_a_checked_out_run_branch(tmp_path: pathlib.
     assert sha is not None
     assert sha == _rev(tmp_path, "HEAD")
     assert (tmp_path / "lane.txt").read_text(encoding="utf-8") == "lane\n"
-    assert git_ops.status(tmp_path).is_clean
+    assert git_read.status(tmp_path).is_clean
 
 
 def test_chain_commit_skips_identical_trees_and_survives_branch_switches(
@@ -1536,7 +1536,7 @@ def test_chain_commit_root_and_trailer(tmp_path: pathlib.Path) -> None:
         "agent6 turn 1",
         ref="refs/agent6/t2",
         fallback_parent=None,
-        identity=git_ops.CommitIdentity(name="A", email="a@a", trailer="Assisted-by: agent6:m1"),
+        identity=git_read.CommitIdentity(name="A", email="a@a", trailer="Assisted-by: agent6:m1"),
     )
     assert sha is not None
     body = subprocess.run(
@@ -1655,10 +1655,10 @@ def test_chain_commit_keeps_tracked_but_ignored_files(tmp_path: pathlib.Path) ->
     head = _rev(repo, "HEAD")
 
     # No edits: the worktree matches the chain base exactly.
-    assert git_ops.chain_dirty(repo, ref, head) is False
+    assert git_read.chain_dirty(repo, ref, head) is False
 
     (repo / "code.py").write_text("print('v2')\n", encoding="utf-8")
-    assert git_ops.chain_dirty_paths(repo, ref, head, 10) == ["code.py"]
+    assert git_read.chain_dirty_paths(repo, ref, head, 10) == ["code.py"]
     sha = git_ops.chain_commit(repo, "step", ref=ref, fallback_parent=head)
     assert sha is not None
     files = _run_git(repo, "ls-tree", "-r", "--name-only", sha).splitlines()
@@ -1676,11 +1676,11 @@ def test_chain_commit_leaves_the_operators_untracked_files_out(tmp_path: pathlib
     (tmp_path / "notes.txt").write_text("mine\n", encoding="utf-8")
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "we ird:name.txt").write_text("mine too\n", encoding="utf-8")
-    mine = git_ops.untracked_paths(tmp_path)
+    mine = git_read.untracked_paths(tmp_path)
     assert mine == {"notes.txt", "sub/we ird:name.txt"}
 
-    assert git_ops.chain_dirty(tmp_path, ref, head, exclude=mine) is False
-    assert git_ops.chain_dirty(tmp_path, ref, head) is True  # the same tree, unscoped
+    assert git_read.chain_dirty(tmp_path, ref, head, exclude=mine) is False
+    assert git_read.chain_dirty(tmp_path, ref, head) is True  # the same tree, unscoped
     assert (
         git_ops.chain_commit(tmp_path, "nothing", ref=ref, fallback_parent=head, exclude=mine)
         is None
@@ -1688,7 +1688,7 @@ def test_chain_commit_leaves_the_operators_untracked_files_out(tmp_path: pathlib
 
     (tmp_path / "README.md").write_text("edited\n", encoding="utf-8")
     (tmp_path / "sub" / "made.py").write_text("print(1)\n", encoding="utf-8")  # the model's
-    assert git_ops.chain_dirty_paths(tmp_path / "sub", ref, head, 10, exclude=mine) == [
+    assert git_read.chain_dirty_paths(tmp_path / "sub", ref, head, 10, exclude=mine) == [
         "README.md",
         "sub/made.py",
     ]
@@ -1698,7 +1698,7 @@ def test_chain_commit_leaves_the_operators_untracked_files_out(tmp_path: pathlib
     assert sha is not None
     files = _run_git(tmp_path, "ls-tree", "-r", "--name-only", sha).splitlines()
     assert files == ["README.md", "sub/made.py"], files
-    assert git_ops.chain_dirty(tmp_path, ref, head, exclude=mine) is False
+    assert git_read.chain_dirty(tmp_path, ref, head, exclude=mine) is False
     assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "mine\n"
 
 
@@ -1732,7 +1732,7 @@ def test_diff_since_excludes_untracked_at_start(tmp_path: pathlib.Path) -> None:
     base = _run_git(tmp_path, "rev-parse", "HEAD").strip()
     (tmp_path / "operator-notes.toml").write_text("k = 1\n", encoding="utf-8")
     (tmp_path / "new-work.py").write_text("x = 1\n", encoding="utf-8")
-    out = git_ops.diff_since(tmp_path, base, exclude=frozenset({"operator-notes.toml"}))
+    out = git_read.diff_since(tmp_path, base, exclude=frozenset({"operator-notes.toml"}))
     assert "new-work.py" in out
     assert "operator-notes.toml" not in out
 
@@ -1742,7 +1742,7 @@ def test_diff_since_leaves_the_real_index_untouched(tmp_path: pathlib.Path) -> N
     _init_repo(tmp_path)
     base = _run_git(tmp_path, "rev-parse", "HEAD").strip()
     (tmp_path / "new-work.py").write_text("x = 1\n", encoding="utf-8")
-    out = git_ops.diff_since(tmp_path, base)
+    out = git_read.diff_since(tmp_path, base)
     assert "new-work.py" in out
     porcelain = _run_git(tmp_path, "status", "--porcelain")
     assert "?? new-work.py" in porcelain
@@ -1757,12 +1757,12 @@ def test_tree_diff_paths_names_what_changed_between_two_worktree_trees(
     The worktree is staged into a temp index, the shared index untouched.
     """
     _init_repo(tmp_path)
-    before = git_ops.worktree_tree(tmp_path, "HEAD", ())
+    before = git_read.worktree_tree(tmp_path, "HEAD", ())
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
     (tmp_path / "new.txt").write_text("x\n", encoding="utf-8")
-    after = git_ops.worktree_tree(tmp_path, "HEAD", ())
-    assert git_ops.tree_diff_paths(tmp_path, before, after) == ["README.md", "new.txt"]
-    assert git_ops.tree_diff_paths(tmp_path, before, before) == []
+    after = git_read.worktree_tree(tmp_path, "HEAD", ())
+    assert git_read.tree_diff_paths(tmp_path, before, after) == ["README.md", "new.txt"]
+    assert git_read.tree_diff_paths(tmp_path, before, before) == []
     staged = subprocess.run(
         ["git", "-C", str(tmp_path), "diff", "--cached", "--quiet"], check=False
     )
@@ -1776,12 +1776,12 @@ def test_tree_diff_paths_reads_every_name_as_git_stores_it(tmp_path: pathlib.Pat
     had.
     """
     _init_repo(tmp_path)
-    before = git_ops.worktree_tree(tmp_path, "HEAD", ())
+    before = git_read.worktree_tree(tmp_path, "HEAD", ())
     names = ["café.txt", 'say "hi".txt', "notes\\draft.txt", "a\nb.txt", "c\u2028d.txt"]
     for name in names:
         (tmp_path / name).write_text("x\n", encoding="utf-8")
-    after = git_ops.worktree_tree(tmp_path, "HEAD", ())
-    assert sorted(git_ops.tree_diff_paths(tmp_path, before, after)) == sorted(names)
+    after = git_read.worktree_tree(tmp_path, "HEAD", ())
+    assert sorted(git_read.tree_diff_paths(tmp_path, before, after)) == sorted(names)
 
 
 def test_a_name_that_does_not_print_as_it_is_prints_escaped_on_one_line() -> None:
@@ -1906,7 +1906,7 @@ def test_a_chain_commit_never_rewinds_the_run_branch(tmp_path: pathlib.Path) -> 
     )
 
     assert second is not None
-    assert git_ops.chain_tip(tmp_path, "refs/agent6/t2") == second  # the chain still advances
+    assert git_read.chain_tip(tmp_path, "refs/agent6/t2") == second  # the chain still advances
     # By full ref name: `agent6/t2` alone resolves to the CHAIN ref first.
     assert _rev(tmp_path, "refs/heads/agent6/t2") == theirs, "the operator's commit was rewound"
 
@@ -1918,7 +1918,7 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
     from agent6 import kinds
 
     _init_repo(tmp_path)
-    base = git_ops.status(tmp_path).head_sha
+    base = git_read.status(tmp_path).head_sha
     theirs = _lane_commit(tmp_path, base, "README.md", "run change\n")
     _commit_file(tmp_path, "README.md", "main change\n", "main edit")
     real_run = _git_command.run
@@ -1985,7 +1985,7 @@ def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: pat
     ):
         subprocess.run(["git", "-C", str(tmp_path), "config", key, value], check=True)
     (tmp_path / "README.md").write_text("hi\nthere\n", encoding="utf-8")
-    diff = git_ops.diff_since(tmp_path, base)
+    diff = git_read.diff_since(tmp_path, base)
     assert "diff --git a/README.md b/README.md" in diff
     assert "--- a/README.md" in diff and "+++ b/README.md" in diff
     assert _panel.is_grounded("README.md:2", _panel.diff_hunks(diff))
@@ -1999,8 +1999,8 @@ def test_worktree_matches_reads_repo_relative_paths_from_a_subdirectory(
     (tmp_path / "sub").mkdir()
     (tmp_path / "README.md").write_text("edited\n", encoding="utf-8")
 
-    assert not git_ops.worktree_matches(tmp_path, "HEAD", ["README.md"])
-    assert not git_ops.worktree_matches(tmp_path / "sub", "HEAD", ["README.md"])
+    assert not git_read.worktree_matches(tmp_path, "HEAD", ["README.md"])
+    assert not git_read.worktree_matches(tmp_path / "sub", "HEAD", ["README.md"])
 
 
 def test_an_excluded_path_that_git_now_ignores_does_not_fail_the_tree(
@@ -2018,14 +2018,14 @@ def test_an_excluded_path_that_git_now_ignores_does_not_fail_the_tree(
     (tmp_path / "node_modules" / "left.js").write_text("x\n", encoding="utf-8")
     (tmp_path / "notes.txt").write_text("the operator's\n", encoding="utf-8")
     (tmp_path / "kept.txt").write_text("the operator's too\n", encoding="utf-8")
-    exclude = git_ops.untracked_paths(tmp_path)
+    exclude = git_read.untracked_paths(tmp_path)
     assert exclude  # the three untracked entries, as a run records them at its start
     (tmp_path / ".gitignore").write_text("node_modules/\nnotes.txt\n", encoding="utf-8")
     (tmp_path / "calc.py").write_text("def multiply(a, b):\n    return a * b\n", encoding="utf-8")
 
-    tree = git_ops.worktree_tree(tmp_path, "HEAD", exclude)
+    tree = git_read.worktree_tree(tmp_path, "HEAD", exclude)
 
-    held = set(git_ops.tree_paths(tmp_path, tree))
+    held = set(git_read.tree_paths(tmp_path, tree))
     assert held == {"README.md", ".gitignore", "calc.py"}
 
 
@@ -2034,13 +2034,13 @@ def test_a_name_handed_to_git_is_the_file_and_never_a_glob(tmp_path: pathlib.Pat
     _init_repo(tmp_path)
     (tmp_path / "a*.txt").write_text("star\n", encoding="utf-8")
     (tmp_path / "ab.txt").write_text("other\n", encoding="utf-8")
-    assert git_ops.paths_dirty(tmp_path, ("a*.txt",))
+    assert git_read.paths_dirty(tmp_path, ("a*.txt",))
     git_ops.commit_paths(tmp_path, "one file", ("a*.txt",))
     tracked = subprocess.run(
         ["git", "-C", str(tmp_path), "ls-files"], capture_output=True, text=True, check=True
     ).stdout.split()
     assert "a*.txt" in tracked and "ab.txt" not in tracked
-    assert not git_ops.paths_dirty(tmp_path, ("a*.txt",))
+    assert not git_read.paths_dirty(tmp_path, ("a*.txt",))
 
 
 def test_a_name_that_is_not_utf8_round_trips_through_every_listing(tmp_path: pathlib.Path) -> None:
@@ -2050,13 +2050,13 @@ def test_a_name_that_is_not_utf8_round_trips_through_every_listing(tmp_path: pat
     (tmp_path / name).write_bytes(b"one\n")
     subprocess.run(["git", "-C", str(tmp_path), "add", "--", name], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "latin-1 name"], check=True)
-    assert name in git_ops.tracked_files(tmp_path)
-    assert name in git_ops.tree_paths(tmp_path, "HEAD")
-    assert git_ops.tree_diff_paths(tmp_path, "HEAD~1", "HEAD") == [name]
-    assert git_ops.read_file_at(tmp_path, "HEAD", name) == "one\n"
-    assert git_ops.unignored(tmp_path, (name,)) == (name,)
+    assert name in git_read.tracked_files(tmp_path)
+    assert name in git_read.tree_paths(tmp_path, "HEAD")
+    assert git_read.tree_diff_paths(tmp_path, "HEAD~1", "HEAD") == [name]
+    assert git_read.read_file_at(tmp_path, "HEAD", name) == "one\n"
+    assert git_read.unignored(tmp_path, (name,)) == (name,)
     (tmp_path / name).write_bytes(b"two\n")
-    assert git_ops.modified_paths(tmp_path) == [name]
+    assert git_read.modified_paths(tmp_path) == [name]
     git_ops.stash_tracked_changes(tmp_path, "m", [name])
-    assert git_ops.modified_paths(tmp_path) == []
+    assert git_read.modified_paths(tmp_path) == []
     assert (tmp_path / name).read_bytes() == b"one\n"

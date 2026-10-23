@@ -19,7 +19,7 @@ from agent6.config import Config, ConfigError, validate_config
 from agent6.harness import loop as harness_loop
 from agent6.machine import AgentRequest
 from agent6.tools import dispatch
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 
 def _cfg(network: str = "session") -> Config:
@@ -192,7 +192,7 @@ def test_run_one_hands_the_commit_identity_to_the_chain_and_the_jail_not_the_pro
         overlay={"models": {"worker": {"provider": "anthropic", "model": "claude-x"}}},
         isolation="none",
         transcript_dir=tmp_path / "t",
-        commit_identity=git_ops.CommitIdentity(name="Machine Bot", email="bot@example.com"),
+        commit_identity=git_read.CommitIdentity(name="Machine Bot", email="bot@example.com"),
         request=AgentRequest(prompt="go", timeout_s=5.0, mode="run"),
     )
     out = machine_agent.run_one(req)

@@ -13,7 +13,7 @@ from agent6 import directive, errors
 from agent6.app import parallel, preflight
 from agent6.harness import _parallel_dispatch as pd
 from agent6.harness import subrun
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 
 def _res(*, ok: bool, error: str = "", branch: str = "agent6/lane-1") -> subrun.LaneResult:
@@ -164,7 +164,7 @@ def test_a_dirty_origin_fans_out_under_stash_and_include(
     def _clear(_cfg: Config) -> None:
         return None
 
-    monkeypatch.setattr(git_ops, "modified_paths", _dirty)
+    monkeypatch.setattr(git_read, "modified_paths", _dirty)
     monkeypatch.setattr(preflight, "budget_preflight", _clear)
     monkeypatch.setattr(cli_parallel, "_parallel_approval_refusal", _clear)
     fanned: list[str] = []
@@ -207,7 +207,7 @@ def test_a_fan_out_prints_the_sandbox_degrades_a_run_prints(
 
     monkeypatch.setattr(preflight, "budget_preflight", _clear)
     monkeypatch.setattr(cli_parallel, "_parallel_approval_refusal", _clear)
-    monkeypatch.setattr(git_ops, "modified_paths", _clean)
+    monkeypatch.setattr(git_read, "modified_paths", _clean)
     monkeypatch.setattr(parallel, "run_parallel", _fake_run_parallel)
     cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
     assert (
@@ -248,7 +248,7 @@ def test_the_coordinator_takes_sigterm_as_a_ctrl_c_stop(
     def _clear(_cfg: Config) -> None:
         return None
 
-    monkeypatch.setattr(git_ops, "modified_paths", _clean)
+    monkeypatch.setattr(git_read, "modified_paths", _clean)
     monkeypatch.setattr(preflight, "budget_preflight", _clear)
     monkeypatch.setattr(cli_parallel, "_parallel_approval_refusal", _clear)
 

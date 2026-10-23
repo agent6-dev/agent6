@@ -9,18 +9,14 @@ folds through `SessionState`.
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
-import json
 import pathlib
 from collections.abc import Sequence
 from typing import Any, Literal
 
 from agent6.machine import MachineError, MachineResult, journal, load_machine, schema
 from agent6.sessions import layout, process
-from agent6.viewmodel import _state_types, format
-from agent6.viewmodel import state as viewmodel_state
-from agent6.viewmodel import tail as viewmodel_tail
+from agent6.viewmodel import _machine_logs, format
 
 # Front-ends render notifications as ephemeral surfaces, so only the tail travels.
 _NOTIFY_KEEP = 20
@@ -225,106 +221,6 @@ def machine_status_word(
     return "stopped"
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
-class AgentExecution:
-    """The newest agent state's execution as the operator verbs see it.
-
-    Attributes:
-        open: The execution has begun and not ended, so a steer has a reader.
-        blocked_in: The state dir (`0001-attempt`) holding an unanswered approval or
-            question, else "".
-    """
-
-    open: bool = False
-    blocked_in: str = ""
-
-
-def execution_of(state: _state_types.SessionState, log: pathlib.Path) -> AgentExecution:
-    """Return the execution a folded state log describes.
-
-    Args:
-        state: The log's fold.
-        log: The log's path; its parent names the state dir.
-
-    Returns:
-        The execution facts.
-    """
-    open_prompts = [*state.pending_approvals, *state.pending_questions]
-    return AgentExecution(
-        open=state.started and not state.finished,
-        blocked_in=log.parent.name if any(not p.answered for p in open_prompts) else "",
-    )
-
-
-def newest_agent_execution(machine_dir: pathlib.Path) -> AgentExecution:
-    """Return the newest state log's execution from one fold of that log.
-
-    A poll loop holds a `NewestExecutionFold` instead.
-
-    Args:
-        machine_dir: The instance's dir.
-
-    Returns:
-        The execution facts, empty when no agent state has a log yet.
-    """
-    log = newest_state_log(machine_dir)
-    if log is None:
-        return AgentExecution()
-    return execution_of(
-        viewmodel_state.fold_session(viewmodel_tail.tail_events(log, follow=False)), log
-    )
-
-
-class NewestExecutionFold:
-    """The newest state log folded across a poll loop.
-
-    Each `refresh` folds the bytes appended since the last one into the held state,
-    and starts over when the machine entered a newer agent state or the log was
-    rewritten, so a tick reads the log once instead of whole.
-
-    Attributes:
-        state: The held fold.
-    """
-
-    def __init__(self) -> None:
-        self._log: pathlib.Path | None = None
-        self._tail: viewmodel_tail.LogTail | None = None
-        self.state: _state_types.SessionState = viewmodel_state.initial_state()
-
-    def refresh(self, machine_dir: pathlib.Path) -> pathlib.Path | None:
-        """Fold what the newest state log gained since the last refresh.
-
-        Args:
-            machine_dir: The instance's dir.
-
-        Returns:
-            The newest state log, None when no agent state has one yet.
-        """
-        log = newest_state_log(machine_dir)
-        if log != self._log:
-            self._log, self._tail, self.state = (
-                log,
-                viewmodel_tail.LogTail(log) if log else None,
-                viewmodel_state.initial_state(),
-            )
-        if self._tail is not None:
-            events = self._tail.read()
-            if self._tail.rewound:
-                self.state = viewmodel_state.initial_state()
-            for event in events:
-                self.state = viewmodel_state.apply_event(self.state, event)
-        return log
-
-    @property
-    def log(self) -> pathlib.Path | None:
-        """The state log the held fold describes, None before any exists."""
-        return self._log
-
-    def execution(self) -> AgentExecution:
-        """Return the execution facts of the held fold."""
-        return execution_of(self.state, self._log) if self._log is not None else AgentExecution()
-
-
 def armed_wait(machine_dir: pathlib.Path, ms: MachineState) -> journal.PendingWait | None:
     """Return the persisted wait record when it belongs to this visit of the current state.
 
@@ -362,7 +258,7 @@ class InstanceProbes:
 
     alive: bool
     parked: bool
-    execution: AgentExecution
+    execution: _machine_logs.AgentExecution
     wait_error: str = ""
 
     def status_word(self, ms: MachineState) -> str:
@@ -395,14 +291,17 @@ class InstanceProbes:
 
 
 def probe_instance(
-    machine_dir: pathlib.Path, ms: MachineState, *, execution: AgentExecution | None = None
+    machine_dir: pathlib.Path,
+    ms: MachineState,
+    *,
+    execution: _machine_logs.AgentExecution | None = None,
 ) -> InstanceProbes:
     """Probe an instance dir beside its fold.
 
     Args:
         machine_dir: The instance's dir.
         ms: The folded state.
-        execution: The newest execution from a caller's `NewestExecutionFold`; without
+        execution: The newest execution from a caller's `_machine_logs.NewestExecutionFold`; without
             it the log is folded here, for a live, unended machine.
 
     Returns:
@@ -411,7 +310,9 @@ def probe_instance(
     alive = process.worker_is_alive(machine_dir)
     if execution is None:
         execution = (
-            newest_agent_execution(machine_dir) if ms.ended is None and alive else AgentExecution()
+            _machine_logs.newest_agent_execution(machine_dir)
+            if ms.ended is None and alive
+            else _machine_logs.AgentExecution()
         )
     try:
         parked = armed_wait(machine_dir, ms) is not None
@@ -440,128 +341,6 @@ class MachineSummary:
     status: str
     reason: str
     mtime: float
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class Spend:
-    """A dollar and token spend, summable so booked and live spend fold.
-
-    Attributes:
-        usd: The dollar figure.
-        input_tokens: Input tokens.
-        output_tokens: Output tokens.
-        partial: An unpriced model contributed $0, so `usd` is a lower bound; it ORs
-            across folds and the render adds the shared "~" marker.
-        cache_read_tokens: The cached side of the input; 0 where never recorded.
-        cache_creation_tokens: Cache-creation tokens; 0 where never recorded.
-    """
-
-    usd: float = 0.0
-    input_tokens: int = 0
-    output_tokens: int = 0
-    partial: bool = False
-    cache_read_tokens: int = 0
-    cache_creation_tokens: int = 0
-
-    def __add__(self, other: Spend) -> Spend:
-        """Return the field-wise sum, `partial` ORed."""
-        return Spend(
-            self.usd + other.usd,
-            self.input_tokens + other.input_tokens,
-            self.output_tokens + other.output_tokens,
-            self.partial or other.partial,
-            self.cache_read_tokens + other.cache_read_tokens,
-            self.cache_creation_tokens + other.cache_creation_tokens,
-        )
-
-
-def read_budget_totals(log_path: pathlib.Path, *, from_offset: int = 0) -> Spend:
-    """Read the latest running budget totals from an agent state's event log.
-
-    Each `budget.update` carries cumulative totals from its call's own tracker, so
-    the last one is that call's running total. This recovers the spend of a killed
-    subprocess whose `result.json` never landed, and the live total of an in-flight
-    state whose `StepEvent` is not written yet.
-
-    Args:
-        log_path: The state's journal.
-        from_offset: Read only events appended after this byte offset; a caller
-            salvaging one call on a shared log passes the size captured before its
-            spawn, or a call that died before its first update double-books the prior one.
-
-    Returns:
-        The totals, or an empty `Spend` when there are none or the log is unreadable.
-    """
-    usd, tin, tout, cr, cc = 0.0, 0, 0, 0, 0
-    partial = False
-    with contextlib.suppress(OSError):
-        with log_path.open("rb") as fh:
-            if from_offset > 0:
-                fh.seek(from_offset)
-            body = fh.read().decode("utf-8", errors="replace")
-        for line in body.splitlines():
-            try:
-                e = json.loads(line)
-            except ValueError:
-                continue
-            if e.get("type") == "budget.update":
-                usd = float(e.get("usd_total", usd) or 0.0)
-                tin = int(e.get("input_total", tin) or 0)
-                tout = int(e.get("output_total", tout) or 0)
-                cr = int(e.get("cache_read_total", cr) or 0)
-                cc = int(e.get("cache_creation_total", cc) or 0)
-                partial = partial or bool(e.get("usd_partial", False))
-    return Spend(usd, tin, tout, partial, cr, cc)
-
-
-def state_dir_seq(dir_name: str) -> int | None:
-    """Return the transition seq a `<seq>-<state>` dir name encodes, None when it has none."""
-    head = dir_name.split("-", 1)[0]
-    return int(head) if head.isdigit() else None
-
-
-def machine_spend(
-    events: Sequence[object], root: pathlib.Path, *, alive: bool
-) -> tuple[Spend, str]:
-    """Sum a machine instance's spend, the in-flight state's live figure included.
-
-    A state books its StepEvent only when it completes, so the running state's log
-    dir carries a seq no StepEvent holds: that log is the in-flight state, folded only
-    while the worker is alive so a crashed in-flight log is ignored.
-
-    Args:
-        events: The journal's events.
-        root: The instance's dir.
-        alive: The worker pid is live.
-
-    Returns:
-        The total and the in-flight state's name, "" when none is running.
-    """
-    total = Spend()
-    step_seqs: set[int] = set()
-    for event in events:
-        if isinstance(event, journal.StepEvent):
-            step_seqs.add(event.seq)
-            if isinstance(event.fact, journal.AgentFact):
-                total += Spend(
-                    event.fact.usd,
-                    event.fact.input_tokens,
-                    event.fact.output_tokens,
-                    event.fact.usd_partial,
-                )
-        elif isinstance(event, journal.AttemptSpend):
-            total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
-        elif isinstance(event, journal.MachineEnd):
-            # An unbooked slice rides on the end; gating on its usd would drop an unpriced one.
-            total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
-    inflight_state = ""
-    newest = newest_state_log(root) if alive else None
-    if newest is not None:
-        seq = state_dir_seq(newest.parent.name)
-        if seq is not None and seq not in step_seqs:
-            total += read_budget_totals(newest)
-            inflight_state = newest.parent.name.split("-", 1)[-1]
-    return total, inflight_state
 
 
 def machine_mtime(machine_dir: pathlib.Path) -> float:
@@ -773,136 +552,11 @@ def machine_word_for_dir(ms: MachineState, machine_dir: pathlib.Path) -> str:
     return probe_instance(machine_dir, ms).status_word(ms)
 
 
-def notification_key(n: NotificationView) -> tuple[str, str, str]:
-    """Return a notification's identity for dedup across the sliding window.
-
-    Args:
-        n: A notification from `MachineState.notifications`.
-
-    Returns:
-        Its `(ts, state, message)`, mirroring the web client's `ts|state|message`.
-    """
-    return (n.ts, n.state, n.message)
-
-
-def newest_state_log(root: pathlib.Path) -> pathlib.Path | None:
-    """Return the newest agent state's journal, the one a watcher follows live, or None."""
-    states = root / "states"
-    if not states.is_dir():
-        return None
-
-    def seq_of(p: pathlib.Path) -> int:
-        """Return the dir's seq, -1 for a dir without one."""
-        head = p.name.split("-", 1)[0]
-        return int(head) if head.isdigit() else -1
-
-    for d in sorted((p for p in states.iterdir() if p.is_dir()), key=seq_of, reverse=True):
-        log = d / layout.LOGS_NAME
-        if log.is_file():
-            return log
-    return None
-
-
-def read_complete_lines(path: pathlib.Path, offset: int) -> tuple[list[str], int]:
-    """Read the complete lines a file gained past a byte offset.
-
-    Reads bytes: a poll can hit EOF inside a multibyte sequence, where a text-mode
-    readline would raise. Only complete lines are decoded.
-
-    Args:
-        path: The file.
-        offset: Where the last read stopped.
-
-    Returns:
-        The new lines and the new offset, the start of any partial trailing line.
-    """
-    lines: list[str] = []
-    pos = offset
-    try:
-        with path.open("rb") as fh:
-            fh.seek(offset)
-            while True:
-                pos = fh.tell()
-                raw = fh.readline()
-                if not raw.endswith(b"\n"):
-                    break
-                lines.append(raw.decode("utf-8", errors="replace"))
-    except OSError:
-        pass
-    return lines, pos
-
-
-@dataclasses.dataclass
-class MachineWatchCursor:
-    """What a live machine watcher has already surfaced.
-
-    The three dedup rules every front-end agrees on: transitions by count,
-    notifications by identity (the tuple is a sliding window, so a count would miss
-    every notify past its cap), and the newest state log by path and byte offset.
-
-    Attributes:
-        seen_steps: How many transitions were surfaced.
-        seen_notifications: The keys of the notifications surfaced; None before seeding.
-        log_path: The state log being followed.
-        log_offset: Where the last complete line of that log ended.
-    """
-
-    seen_steps: int = 0
-    seen_notifications: set[tuple[str, str, str]] | None = None
-    log_path: pathlib.Path | None = None
-    log_offset: int = 0
-
-    def seed_notifications(self, ms: MachineState) -> None:
-        """Mark every recorded notification as seen, so opening a watch does not replay them."""
-        self.seen_notifications = {notification_key(n) for n in ms.notifications}
-
-    def new_transitions(self, ms: MachineState) -> list[TransitionView]:
-        """Return the transitions not yet surfaced and mark them seen."""
-        out = list(ms.transitions[self.seen_steps :])
-        self.seen_steps = len(ms.transitions)
-        return out
-
-    def new_notifications(self, ms: MachineState) -> list[NotificationView]:
-        """Return the notifications not yet surfaced and mark them seen."""
-        if self.seen_notifications is None:
-            self.seen_notifications = set()
-        out: list[NotificationView] = []
-        for n in ms.notifications:
-            key = notification_key(n)
-            if key not in self.seen_notifications:
-                self.seen_notifications.add(key)
-                out.append(n)
-        return out
-
-    def advance_log(self, root: pathlib.Path) -> tuple[pathlib.Path | None, bool]:
-        """Follow the newest per-state log under the instance dir.
-
-        Args:
-            root: The instance's dir.
-
-        Returns:
-            The current log and whether it changed; on a change the caller resets its
-            render state and announces the new agent state.
-        """
-        newest = newest_state_log(root)
-        if newest != self.log_path:
-            self.log_path, self.log_offset = newest, 0
-            return newest, True
-        return newest, False
-
-    def read_log_lines(self) -> list[str]:
-        """Return the complete lines the current state log gained since the last poll."""
-        if self.log_path is None:
-            return []
-        lines, self.log_offset = read_complete_lines(self.log_path, self.log_offset)
-        return lines
-
-
 def machine_state_as_dict(
     ms: MachineState,
     machine_dir: pathlib.Path | None = None,
     *,
-    execution: AgentExecution | None = None,
+    execution: _machine_logs.AgentExecution | None = None,
 ) -> dict[str, Any]:
     """Return the wire form of a `MachineState`, what `attach --json` and the web serialize.
 
@@ -911,7 +565,7 @@ def machine_state_as_dict(
         machine_dir: The instance's dir; with it `status` is the dir-aware word, so a
             client can tell a parked instance from a running one, and every verb's
             refusal rides along so a front-end gates its buttons from the one decision.
-        execution: The newest execution from a caller's `NewestExecutionFold`.
+        execution: The newest execution from a caller's `_machine_logs.NewestExecutionFold`.
 
     Returns:
         The state's fields, plus `status`, `level`, `refusals` and, for a stopped

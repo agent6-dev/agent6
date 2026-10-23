@@ -14,8 +14,9 @@ from agent6 import budget
 from agent6.machine import MachineJournal, load_machine
 from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import (
+    _machine_logs,
     _session_log,
     _session_status,
     _state_view,
@@ -43,7 +44,7 @@ def existing_run_branch(
         The branch name, or "" when the manifest names none or the repo lacks it.
     """
     name = manifest.run_branch or ""
-    if not name or (repo is not None and not git_ops.branch_exists(repo, name)):
+    if not name or (repo is not None and not git_read.branch_exists(repo, name)):
         return ""
     return name
 
@@ -63,10 +64,10 @@ def commits_ref(manifest: sessions_manifest.SessionManifest, repo: pathlib.Path)
         The run branch while it exists and still covers the chain, else the chain ref
         while it has a tip, else "" (the run recorded nothing).
     """
-    chain = git_ops.chain_ref_for(manifest.session_id)
-    head = git_ops.chain_tip(repo, chain)
+    chain = git_read.chain_ref_for(manifest.session_id)
+    head = git_read.chain_tip(repo, chain)
     branch = existing_run_branch(manifest, repo)
-    if branch and (head is None or git_ops.is_ancestor(repo, head, branch)):
+    if branch and (head is None or git_read.is_ancestor(repo, head, branch)):
         return branch
     return chain if head is not None else ""
 
@@ -121,7 +122,7 @@ def branch_facts(
     stamp = manifest.merged
     merged_into = ""
     if stamp and stamp.into:
-        holds = repo is None or git_ops.merge_stamp_holds(
+        holds = repo is None or git_read.merge_stamp_holds(
             repo, manifest.session_id, manifest.run_branch or "", stamp.tip
         )
         merged_into = stamp.into if holds else ""
@@ -165,7 +166,7 @@ def manifest_header(
             status, _reason = _session_status.status_for_session_dir(
                 session_dir, scan.status_facts()
             )
-        header["unmerged"] = listing.unmerged(m, status, git_ops.run_ref_tips(repo))
+        header["unmerged"] = listing.unmerged(m, status, git_read.run_ref_tips(repo))
     header["git_control"] = m.git_control
     header["base_sha"] = m.base_sha
     lineage = format.format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)
@@ -228,7 +229,7 @@ def session_snapshot(
 
 
 def machine_snapshot(
-    machine_dir: pathlib.Path, *, execution: machine_state.AgentExecution | None = None
+    machine_dir: pathlib.Path, *, execution: _machine_logs.AgentExecution | None = None
 ) -> dict[str, Any]:
     """Fold a machine instance's state into the wire dict.
 
@@ -250,7 +251,7 @@ def machine_snapshot(
     events = MachineJournal(machine_dir).read()
     ms = machine_state.fold_machine(spec, events)
     d = machine_state.machine_state_as_dict(ms, machine_dir, execution=execution)
-    spend, in_flight = machine_state.machine_spend(
+    spend, in_flight = _machine_logs.machine_spend(
         events, machine_dir, alive=process.worker_is_alive(machine_dir)
     )
     d["spend"] = {

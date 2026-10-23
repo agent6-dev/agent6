@@ -16,6 +16,7 @@ from agent6.config import (
     Config,
     ConfigError,
     OpenAIProviderEntry,
+    _layer_data,
     io,
     layer,
     load_config,
@@ -519,14 +520,14 @@ def test_deep_merge_replaces_provider_when_kind_changes() -> None:
 
     base = {"providers": {"p": {"api_format": "anthropic", "api_key_env": "X"}}}
     override = {"providers": {"p": {"api_format": "openai", "base_url": "Y"}}}
-    merged = layer._deep_merge(base, override)
+    merged = _layer_data.deep_merge(base, override)
     assert merged["providers"]["p"] == {"api_format": "openai", "base_url": "Y"}
 
 
 def test_deep_merge_still_merges_when_kind_unchanged() -> None:
     base = {"providers": {"p": {"api_format": "openai", "base_url": "Y", "api_key_env": "X"}}}
     override = {"providers": {"p": {"base_url": "Z"}}}
-    merged = layer._deep_merge(base, override)
+    merged = _layer_data.deep_merge(base, override)
     assert merged["providers"]["p"] == {"api_format": "openai", "base_url": "Z", "api_key_env": "X"}
 
 

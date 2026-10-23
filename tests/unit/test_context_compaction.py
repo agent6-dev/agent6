@@ -10,7 +10,13 @@ from typing import Any
 import pydantic
 import pytest
 
-from agent6.harness import _chain, _compaction, _conversation
+from agent6.harness import (
+    _chain,
+    _compaction,
+    _compaction_result,
+    _compaction_window,
+    _conversation,
+)
 
 
 def _add_exchange(
@@ -56,17 +62,17 @@ def test_parse_checkoff_valid_block() -> None:
         "Progress summary here.\n\n"
         '```checkoff\n{"completed_ids": ["01A", "01B"], "new_tasks": ["fix the parser", ""]}\n```'
     )
-    completed, new_tasks = _compaction.parse_checkoff(text)
+    completed, new_tasks = _compaction_window.parse_checkoff(text)
     assert completed == ["01A", "01B"]
     assert new_tasks == ["fix the parser"]  # empty title filtered
 
 
 def test_parse_checkoff_absent_or_malformed() -> None:
-    assert _compaction.parse_checkoff("no block at all") == ([], [])
-    assert _compaction.parse_checkoff("```checkoff\nnot json\n```") == ([], [])
-    assert _compaction.parse_checkoff('```checkoff\n["not", "a", "dict"]\n```') == ([], [])
+    assert _compaction_window.parse_checkoff("no block at all") == ([], [])
+    assert _compaction_window.parse_checkoff("```checkoff\nnot json\n```") == ([], [])
+    assert _compaction_window.parse_checkoff('```checkoff\n["not", "a", "dict"]\n```') == ([], [])
     # non-string ids/titles are dropped
-    assert _compaction.parse_checkoff(
+    assert _compaction_window.parse_checkoff(
         '```checkoff\n{"completed_ids": [1, "ok"], "new_tasks": [2]}\n```'
     ) == (
         ["ok"],
@@ -77,7 +83,7 @@ def test_parse_checkoff_absent_or_malformed() -> None:
 def test_parse_checkoff_present_but_non_list_field_is_total() -> None:
     # A present but non-list value (null, a number, a bool) yields [] instead of a TypeError.
     for bad in ("null", "0", "false", '"a string"'):
-        assert _compaction.parse_checkoff(
+        assert _compaction_window.parse_checkoff(
             f'```checkoff\n{{"completed_ids": {bad}, "new_tasks": {bad}}}\n```'
         ) == (
             [],
@@ -87,8 +93,8 @@ def test_parse_checkoff_present_but_non_list_field_is_total() -> None:
 
 def test_strip_checkoff_removes_block() -> None:
     text = 'the summary\n\n```checkoff\n{"completed_ids": []}\n```'
-    assert _compaction.strip_checkoff(text) == "the summary"
-    assert _compaction.strip_checkoff("no block") == "no block"
+    assert _compaction_window.strip_checkoff(text) == "the summary"
+    assert _compaction_window.strip_checkoff("no block") == "no block"
 
 
 def test_context_chars_counts_text_tool_use_and_tool_results() -> None:
@@ -108,7 +114,7 @@ def test_context_chars_counts_text_tool_use_and_tool_results() -> None:
             )
         ]  # 6
     )
-    total = _compaction.context_chars(conv)
+    total = _compaction_window.context_chars(conv)
     # Every value of the tool_use block counts: id and name go on the wire with the input.
     assert total == 4 + 5 + 6 + len("t1") + len("grep") + len(str({"q": "x"}))
     assert total > 6
@@ -128,7 +134,7 @@ def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
     # The oldest (tiny) block is skipped, not ballooned; its eligible sibling is elided.
     assert contents[0] == tiny
     assert "elided" in contents[1]
-    assert len(tiny) < len(_compaction.ELISION_PLACEHOLDER)  # the premise the skip guards
+    assert len(tiny) < len(_compaction_result.ELISION_PLACEHOLDER)  # the premise the skip guards
 
 
 def test_an_operator_answer_is_never_elided() -> None:
@@ -184,10 +190,10 @@ def test_tier2_measures_the_request_not_just_the_conversation() -> None:
     )
     system = "s" * 4096
 
-    prefix = _compaction.request_prefix_chars(system, tools)
+    prefix = _compaction_window.request_prefix_chars(system, tools)
 
     assert prefix > len(system), "the tool definitions ride in every request too"
-    assert _compaction.request_prefix_chars("", ()) == 0
+    assert _compaction_window.request_prefix_chars("", ()) == 0
 
 
 def test_compact_noop_when_under_threshold() -> None:
@@ -362,22 +368,24 @@ def test_restart_notice_omits_dag_recovery_without_a_curator() -> None:
 
 
 def test_elision_placeholder_names_the_call() -> None:
-    p = _compaction.elision_placeholder(
+    p = _compaction_result.elision_placeholder(
         "read_file", {"path": "src/x.py", "start_line": 10, "limit": 50}
     )
-    assert p.startswith(_compaction.ELISION_PREFIX)
+    assert p.startswith(_compaction_result.ELISION_PREFIX)
     assert "read_file src/x.py" in p and "start_line=10" in p
-    g = _compaction.elision_placeholder("find_definition", {"symbol": "foo"})
+    g = _compaction_result.elision_placeholder("find_definition", {"symbol": "foo"})
     assert "find_definition foo" in g
     # Unknown pairing (orphan result) falls back to the generic marker.
 
-    assert _compaction.elision_placeholder("", None) == _compaction.ELISION_PLACEHOLDER
     assert (
-        _compaction.elision_placeholder("read_file", "not-a-dict")
-        == _compaction.ELISION_PLACEHOLDER
+        _compaction_result.elision_placeholder("", None) == _compaction_result.ELISION_PLACEHOLDER
+    )
+    assert (
+        _compaction_result.elision_placeholder("read_file", "not-a-dict")
+        == _compaction_result.ELISION_PLACEHOLDER
     )
     # A pathological arg is clipped, keeping the placeholder short.
-    long = _compaction.elision_placeholder("read_file", {"path": "x" * 5000})
+    long = _compaction_result.elision_placeholder("read_file", {"path": "x" * 5000})
     assert len(long) < 500
 
 
@@ -448,39 +456,48 @@ def test_compact_placeholder_carries_tool_identity() -> None:
 
 
 def test_call_label_identities() -> None:
-    assert _compaction.call_label("read_file", {"path": "src/foo.py"}) == "read_file src/foo.py"
     assert (
-        _compaction.call_label("read_file", {"path": "a.py", "start_line": 10, "limit": 40})
+        _compaction_result.call_label("read_file", {"path": "src/foo.py"}) == "read_file src/foo.py"
+    )
+    assert (
+        _compaction_result.call_label("read_file", {"path": "a.py", "start_line": 10, "limit": 40})
         == "read_file a.py (start_line=10, limit=40)"
     )
-    assert _compaction.call_label("list_dir", {"path": "src"}) == "list_dir src"
+    assert _compaction_result.call_label("list_dir", {"path": "src"}) == "list_dir src"
     # Every tool with an identifying argument: a compacted run_command with no command says nothing.
-    assert _compaction.call_label("run_command", {"argv": ["pytest", "-x", "tests/t.py"]}) == (
-        "run_command pytest -x tests/t.py"
-    )
+    assert _compaction_result.call_label(
+        "run_command", {"argv": ["pytest", "-x", "tests/t.py"]}
+    ) == ("run_command pytest -x tests/t.py")
     assert (
-        _compaction.call_label("apply_edit", {"path": "src/a.py", "edits": []})
+        _compaction_result.call_label("apply_edit", {"path": "src/a.py", "edits": []})
         == "apply_edit src/a.py"
     )
-    assert _compaction.call_label("use_skill", {"name": "debugging"}) == "use_skill debugging"
-    assert _compaction.call_label("read_background", {"id": "bg1"}) == "read_background bg1"
-    assert _compaction.call_label("fetch", {"url": "https://x.test/s"}) == "fetch https://x.test/s"
-    assert _compaction.call_label("read_session", {"query": "parser regression"}) == (
+    assert (
+        _compaction_result.call_label("use_skill", {"name": "debugging"}) == "use_skill debugging"
+    )
+    assert _compaction_result.call_label("read_background", {"id": "bg1"}) == "read_background bg1"
+    assert (
+        _compaction_result.call_label("fetch", {"url": "https://x.test/s"})
+        == "fetch https://x.test/s"
+    )
+    assert _compaction_result.call_label("read_session", {"query": "parser regression"}) == (
         "read_session parser regression"
     )
     # An argv is rendered as a command line, so a quoted pattern stays readable.
-    assert _compaction.call_label("run_command", {"argv": ["rg", "-n", "def f"]}) == (
+    assert _compaction_result.call_label("run_command", {"argv": ["rg", "-n", "def f"]}) == (
         "run_command rg -n 'def f'"
     )
     # Nothing identifying: the bare name, not an invented hint.
-    assert _compaction.call_label("finish_session", {"summary": "done"}) == "finish_session"
-    assert _compaction.call_label("find_definition", {"symbol": "Foo"}) == "find_definition Foo"
-    assert _compaction.call_label("frobnicate", {"x": 1}) == "frobnicate"
-    assert _compaction.call_label("frobnicate", None) == "frobnicate"
-    assert _compaction.call_label("", None) == ""
+    assert _compaction_result.call_label("finish_session", {"summary": "done"}) == "finish_session"
+    assert (
+        _compaction_result.call_label("find_definition", {"symbol": "Foo"}) == "find_definition Foo"
+    )
+    assert _compaction_result.call_label("frobnicate", {"x": 1}) == "frobnicate"
+    assert _compaction_result.call_label("frobnicate", None) == "frobnicate"
+    assert _compaction_result.call_label("", None) == ""
     long_path = "d/" * 80
     assert (
-        _compaction.call_label("read_file", {"path": long_path})
+        _compaction_result.call_label("read_file", {"path": long_path})
         == f"read_file {long_path[:120]}..."
     )
 
@@ -490,7 +507,7 @@ def test_elision_placeholder_unchanged_by_label_refactor() -> None:
 
     The idempotency walk and the model key on them.
     """
-    assert _compaction.elision_placeholder("read_file", {"path": "src/foo.py"}) == (
+    assert _compaction_result.elision_placeholder("read_file", {"path": "src/foo.py"}) == (
         "<elided by context compaction: the result of read_file src/foo.py was"
         " replaced with this short marker to keep the loop's cumulative input"
         " bounded. If you still need it, re-read only the part you need"
@@ -524,7 +541,7 @@ def test_context_chars_counts_a_reasoning_model_s_thinking() -> None:
             {"type": "text", "text": "ok"},
         ]
     )
-    total = _compaction.context_chars(conv)
+    total = _compaction_window.context_chars(conv)
     assert total >= 10_000, f"thinking is on the wire but counted as {total}"
 
 
@@ -532,7 +549,7 @@ def test_context_chars_counts_an_unknown_block_type() -> None:
     """Context chars count a block type nobody has met yet."""
     conv = _conversation.Conversation()
     conv.assistant([{"type": "something_new", "payload": "P" * 5_000}])
-    assert _compaction.context_chars(conv) >= 5_000
+    assert _compaction_window.context_chars(conv) >= 5_000
 
 
 def test_recent_tail_start_respects_cap_and_boundaries() -> None:
@@ -553,15 +570,15 @@ def test_recent_tail_start_respects_cap_and_boundaries() -> None:
     messages = conv.messages
 
     # Cap covering only the final text message: the tail starts there.
-    assert _compaction.recent_tail_start(messages, 150) == 3
+    assert _compaction_window.recent_tail_start(messages, 150) == 3
     # A results-message start is unsafe (its call was summarised away), so the cap advances past it.
-    assert _compaction.recent_tail_start(messages, 210) == 3
+    assert _compaction_window.recent_tail_start(messages, 210) == 3
     # Cap covering the balanced call+result+text triple keeps all three.
-    assert _compaction.recent_tail_start(messages, 100_000) == 1
+    assert _compaction_window.recent_tail_start(messages, 100_000) == 1
     # Cap 0 keeps nothing.
-    assert _compaction.recent_tail_start(messages, 0) == len(messages)
+    assert _compaction_window.recent_tail_start(messages, 0) == len(messages)
     # A cap smaller than the newest exchange keeps that exchange: its results may be undelivered.
-    assert _compaction.recent_tail_start(messages, 50) == 3
+    assert _compaction_window.recent_tail_start(messages, 50) == 3
 
 
 def _conv_with_repeated_reads(payload: str) -> _conversation.Conversation:
@@ -601,7 +618,7 @@ def test_tier1_dedupes_identical_results_keeping_the_newest() -> None:
         if isinstance(item, _conversation.ToolResultItem)
     ]
     assert sum(c == payload for c in contents) == 1  # only the newest copy keeps the bytes
-    assert any(c.startswith(f"{_compaction.ELISION_PREFIX} (duplicate)") for c in contents)
+    assert any(c.startswith(f"{_compaction_result.ELISION_PREFIX} (duplicate)") for c in contents)
     assert stats.deduped_calls == ("read_file a.py", "read_file a.py")
 
 
@@ -635,7 +652,7 @@ def test_a_duplicate_marker_claims_no_copy_the_same_pass_elides() -> None:
         for item in t.items
         if isinstance(item, _conversation.ToolResultItem)
     ]
-    assert any(c.startswith(f"{_compaction.ELISION_PREFIX} (duplicate)") for c in contents)
+    assert any(c.startswith(f"{_compaction_result.ELISION_PREFIX} (duplicate)") for c in contents)
     assert payload not in contents[:2], "the deduped read still holds a full copy"
     assert not any("newer result" in c for c in contents)
 
@@ -740,14 +757,14 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
     cfg = Config.model_validate({"context": context})
     if keep_messages is None:
         assert cfg.context.keep_thinking_turns == -1
-        assert _compaction.CompactionSettings().keep_thinking_turns == -1
+        assert _compaction_window.CompactionSettings().keep_thinking_turns == -1
     wf = loop.Harness(
         chain=_chain.RunChain(tmp_path),
         config=cfg,
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(),
         logger=lambda _m: None,
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             drop_at_chars=1500,
             summarise_at_chars=10**9,
             keep_thinking_turns=cfg.context.keep_thinking_turns,
@@ -799,13 +816,13 @@ def test_strip_old_thinking_clears_all_but_the_newest_messages() -> None:
                 {"type": "text", "text": f"answer {i}"},
             ]
         )
-    n_messages, n_chars = _compaction.strip_old_thinking(conv, keep_messages=1)
+    n_messages, n_chars = _compaction_window.strip_old_thinking(conv, keep_messages=1)
     assert n_messages == 2 and n_chars > 200
     assistants = [t for t in conv.messages if isinstance(t, _conversation.AssistantMessage)]
     kinds = [[b["type"] for b in t.raw_content] for t in assistants]
     assert kinds == [["text"], ["text"], ["thinking", "text"]]
     # Idempotent: nothing left to strip on the older messages.
-    assert _compaction.strip_old_thinking(conv, keep_messages=1) == (0, 0)
+    assert _compaction_window.strip_old_thinking(conv, keep_messages=1) == (0, 0)
 
 
 def test_strip_thinking_preserves_tool_use_pairing() -> None:

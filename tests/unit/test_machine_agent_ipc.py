@@ -12,7 +12,7 @@ import pathlib
 
 from agent6.app import machine_agent
 from agent6.machine import AgentExecResult, AgentRequest, schema
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 _REQUEST = machine_agent.MachineAgentRequest(
     cwd=pathlib.Path("/work/repo"),
@@ -23,7 +23,7 @@ _REQUEST = machine_agent.MachineAgentRequest(
     events_log=pathlib.Path("/state/machines/m/i/states/0002-review/logs.jsonl"),
     protect_paths=(pathlib.Path("/work/repo/m.asm.toml"),),
     shared_writes=(pathlib.Path("/srv/outbox"),),
-    commit_identity=git_ops.CommitIdentity(name="Machine Bot", email="bot@example.com"),
+    commit_identity=git_read.CommitIdentity(name="Machine Bot", email="bot@example.com"),
     request=AgentRequest(
         prompt="review the queue",
         timeout_s=600.0,

@@ -13,7 +13,7 @@ import pytest
 
 from agent6.machine import journal as machine_journal
 from agent6.machine import load_machine
-from agent6.viewmodel import machine_state, tail
+from agent6.viewmodel import _machine_logs, _machine_watch, machine_state, tail
 
 # A branch -> terminal machine: two states, no I/O, valid to load.
 TINY = """
@@ -259,8 +259,8 @@ def test_newest_state_log_picks_highest_seq(tmp_path: pathlib.Path) -> None:
         (states / name / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     # A dir without a log yet (the agent hasn't written) must be ignored.
     (states / "0009-pending").mkdir()
-    assert machine_state.newest_state_log(tmp_path) == states / "0002-review" / "logs.jsonl"
-    assert machine_state.newest_state_log(tmp_path / "absent") is None
+    assert _machine_logs.newest_state_log(tmp_path) == states / "0002-review" / "logs.jsonl"
+    assert _machine_logs.newest_state_log(tmp_path / "absent") is None
 
 
 def test_fold_collects_notifications(tmp_path: pathlib.Path) -> None:
@@ -302,7 +302,7 @@ def test_notifications_are_a_capped_sliding_window(tmp_path: pathlib.Path) -> No
 
 def test_notification_key_is_stable_identity() -> None:
     n = machine_state.NotificationView(ts="t1", state="poll", message="hi", level="warn")
-    assert machine_state.notification_key(n) == ("t1", "poll", "hi")
+    assert _machine_watch.notification_key(n) == ("t1", "poll", "hi")
 
 
 def test_machine_state_as_dict_is_json_serializable(tmp_path: pathlib.Path) -> None:
@@ -393,10 +393,10 @@ def test_an_open_prompt_in_the_newest_state_blocks_the_machine(tmp_path: pathlib
     log = states / "0001-attempt" / "logs.jsonl"
     prompt = {"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: pytest"}
     log.write_text(json.dumps(prompt) + "\n", encoding="utf-8")
-    assert machine_state.newest_agent_execution(tmp_path).blocked_in == "0001-attempt"
+    assert _machine_logs.newest_agent_execution(tmp_path).blocked_in == "0001-attempt"
     answer = {"type": "approval.answer", "id": "a1", "approved": True}
     log.write_text(json.dumps(prompt) + "\n" + json.dumps(answer) + "\n", encoding="utf-8")
-    assert machine_state.newest_agent_execution(tmp_path).blocked_in == ""
+    assert _machine_logs.newest_agent_execution(tmp_path).blocked_in == ""
     ms = machine_state.fold_machine(_spec(tmp_path), [])
     assert (
         machine_state.machine_status_word(ms, parked=False, alive=True, blocked=True) == "waiting"
@@ -559,9 +559,9 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: path
     log = d / "states" / "0000-route" / "logs.jsonl"
     log.parent.mkdir(parents=True)
     log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
-    fold = machine_state.NewestExecutionFold()
+    fold = _machine_logs.NewestExecutionFold()
     assert fold.refresh(d) == log
-    assert fold.execution() == machine_state.AgentExecution(open=True, blocked_in="")
+    assert fold.execution() == _machine_logs.AgentExecution(open=True, blocked_in="")
 
     def no_full_read(*_a: object, **_k: object) -> Any:
         raise AssertionError("the whole log was read again")
@@ -572,7 +572,7 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: path
         with log.open("a", encoding="utf-8") as fh:
             fh.write('{"type":"question.prompt","id":"q1","questions":[{"question":"?"}]}\n')
         fold.refresh(d)
-        assert fold.execution() == machine_state.AgentExecution(open=True, blocked_in="0000-route")
+        assert fold.execution() == _machine_logs.AgentExecution(open=True, blocked_in="0000-route")
         # A newer agent state: the fold moves to its log.
         newer = d / "states" / "0001-work" / "logs.jsonl"
         newer.parent.mkdir(parents=True)
@@ -580,12 +580,12 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: path
             '{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8"
         )
         assert fold.refresh(d) == newer
-        assert fold.execution() == machine_state.AgentExecution(open=True, blocked_in="")
+        assert fold.execution() == _machine_logs.AgentExecution(open=True, blocked_in="")
         # A rewritten (shorter) log: the fold starts over rather than folding
         # the new bytes onto the old state.
         newer.write_text('{"type":"session.end","reason":"finish_session"}\n', encoding="utf-8")
         fold.refresh(d)
-        assert fold.execution() == machine_state.AgentExecution(open=False, blocked_in="")
+        assert fold.execution() == _machine_logs.AgentExecution(open=False, blocked_in="")
     finally:
         tail.tail_events = real_tail
 

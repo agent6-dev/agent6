@@ -25,7 +25,7 @@ from agent6.app import reporter as app_reporter
 from agent6.config import Config, RoleName
 from agent6.harness import (
     _chain,
-    _compaction,
+    _compaction_window,
     _operator,
     _prompt_revision,
     _provider_call,
@@ -40,7 +40,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, operator_prompts
 from agent6.tools import policy as tools_policy
-from agent6.vcs import commit_message, git_ops
+from agent6.vcs import commit_message, git_read
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -205,8 +205,8 @@ def _tree_left_before_the_loop(cwd: pathlib.Path, inputs: ExecutionInputs) -> st
     if inputs.mode != "run":
         return ""
     try:
-        chain_tip = git_ops.chain_tip(cwd, git_ops.chain_ref_for(inputs.session_id))
-        return git_ops.worktree_tree(
+        chain_tip = git_read.chain_tip(cwd, git_read.chain_ref_for(inputs.session_id))
+        return git_read.worktree_tree(
             cwd, chain_tip or inputs.base_sha or None, inputs.untracked_at_start
         )
     except (errors.GitError, OSError, KeyboardInterrupt):
@@ -371,7 +371,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         untracked_at_start = inputs.untracked_at_start
         if workspace_setup.session_needs_setup(layout.session_dir):
             # The run's own earlier files read untracked too: the chain never moves the index.
-            before = git_ops.untracked_paths(cwd) if mode == "run" else frozenset[str]()
+            before = git_read.untracked_paths(cwd) if mode == "run" else frozenset[str]()
             prepared = workspace_setup.prepare(cfg, cwd, runner=dispatcher, reporter=reporter)
             unready = prepared.problem
             if prepared.ran:
@@ -380,7 +380,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 except (sessions_manifest.ManifestError, OSError) as exc:
                     reporter.note(f"could not record that this workspace is set up: {exc}")
                 if mode == "run":
-                    untracked_at_start |= git_ops.untracked_paths(cwd) - before
+                    untracked_at_start |= git_read.untracked_paths(cwd) - before
                     sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
 
         def _undo_forker() -> tuple[str, str] | None:
@@ -403,7 +403,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             chain=_chain.RunChain(
                 cwd,
                 # `git.control = "model"` suspends the chain: the model's commits are the record.
-                ref=git_ops.chain_ref_for(inputs.session_id)
+                ref=git_read.chain_ref_for(inputs.session_id)
                 if mode == "run" and cfg.git.control != "model"
                 else None,
                 branch=inputs.chain_branch,
@@ -485,7 +485,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 ),
             ),
             call=_provider_call.CallSettings(temperature=providers.role_temperature(cfg, role)),
-            compaction=_compaction.CompactionSettings(
+            compaction=_compaction_window.CompactionSettings(
                 drop_at_chars=tools.compact_drop_at_chars,
                 summarise_at_chars=tools.compact_summarise_at_chars,
                 tool_result_cap_bytes=_session.tool_result_cap_bytes(cfg, role),

@@ -12,7 +12,7 @@ import datetime
 import pathlib
 
 from agent6.machine import AttemptSpend, MachineJournal, StepEvent
-from agent6.viewmodel import machine_state
+from agent6.viewmodel import _machine_logs
 
 
 def book_crashed_attempt(journal: MachineJournal, root: pathlib.Path) -> None:
@@ -27,10 +27,10 @@ def book_crashed_attempt(journal: MachineJournal, root: pathlib.Path) -> None:
         journal: The machine's journal.
         root: The machine instance's directory.
     """
-    newest = machine_state.newest_state_log(root)
+    newest = _machine_logs.newest_state_log(root)
     if newest is None:
         return
-    seq = machine_state.state_dir_seq(newest.parent.name)
+    seq = _machine_logs.state_dir_seq(newest.parent.name)
     if seq is None:
         return
     if any(isinstance(e, StepEvent) and e.seq == seq for e in journal.read()):
@@ -41,7 +41,7 @@ def book_crashed_attempt(journal: MachineJournal, root: pathlib.Path) -> None:
     ts = datetime.datetime.now(datetime.UTC).isoformat(timespec="microseconds")
     retired = newest.parent.with_name(f"crashed-{ts.replace(':', '')}-{newest.parent.name}")
     newest.parent.rename(retired)
-    spend = machine_state.read_budget_totals(retired / newest.name)
+    spend = _machine_logs.read_budget_totals(retired / newest.name)
     if spend.usd or spend.input_tokens or spend.output_tokens:
         journal.append(
             AttemptSpend(

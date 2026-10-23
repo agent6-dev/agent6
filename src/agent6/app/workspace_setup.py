@@ -27,7 +27,7 @@ from agent6.config import Config
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import errors as tools_errors
 from agent6.tools import policy as tools_policy
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 # The lines of the command's output a failure's summary carries.
 _TAIL_LINES = 20
@@ -131,7 +131,7 @@ def gate_refusal(
     agents_md = verify_infer.read_agents_md(origin, cfg.sandbox.hide_paths, at=at)
     if verify_infer.setup_from_agents_md(agents_md) is not None:
         return None
-    if path in git_ops.tree_paths(origin, at or "HEAD"):
+    if path in git_read.tree_paths(origin, at or "HEAD"):
         return None
     return _no_setup_text(gate[0], workspace)
 

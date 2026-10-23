@@ -127,7 +127,7 @@ def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: pathli
     """
     import subprocess as sp
 
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_ops, git_read
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -142,15 +142,15 @@ def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: pathli
     base = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
-    ref = git_ops.chain_ref_for("resume-run-A1")
+    ref = git_read.chain_ref_for("resume-run-A1")
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # the run's own execution-1 work
     git_ops.chain_commit(repo, "turn 1", ref=ref, fallback_parent=base)
 
-    assert git_ops.chain_dirty_paths(repo, ref, base, 5) == []
+    assert git_read.chain_dirty_paths(repo, ref, base, 5) == []
 
     (repo / "a.py").write_text("x = 2\n# the operator's note\n", encoding="utf-8")
 
-    assert git_ops.chain_dirty_paths(repo, ref, base, 5) == ["a.py"]
+    assert git_read.chain_dirty_paths(repo, ref, base, 5) == ["a.py"]
 
 
 def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pathlib.Path) -> None:

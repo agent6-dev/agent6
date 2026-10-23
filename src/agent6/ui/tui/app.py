@@ -20,6 +20,7 @@ import time
 from collections.abc import Iterable
 from typing import ClassVar
 
+from agent6.config import _presets
 from agent6.viewmodel import _session_status
 
 try:
@@ -36,14 +37,13 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6 import paths
 from agent6.app import fork, reporter, stop, undo
-from agent6.config import layer
 from agent6.models import choices
 from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import background
 from agent6.ui import directives, spawn
 from agent6.ui.tui import composer, conversation, dashboard, modals, prompts, theme
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import (
     SessionState,
     context_fill,
@@ -168,7 +168,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         # The preset and model a composer resume continues under ("" is no flag).
         self.resume_preset = ""
         self.resume_model = ""
-        presets = layer.available_preset_names(pathlib.Path.cwd(), config_paths)
+        presets = _presets.available_preset_names(pathlib.Path.cwd(), config_paths)
         routes = choices.available_routes(pathlib.Path.cwd(), config_paths)
         self._dash = dashboard.DashboardScreen(
             presets=presets, routes=routes, prompts=self._prompts
@@ -356,7 +356,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
                     self._dirty = True
                 if self.state.finished:
                     has_unmerged = listing.unmerged(
-                        manifest, status[0], git_ops.run_ref_tips(pathlib.Path.cwd())
+                        manifest, status[0], git_read.run_ref_tips(pathlib.Path.cwd())
                     )
         if status != self.dir_status or has_unmerged != self._unmerged:
             self.dir_status = status

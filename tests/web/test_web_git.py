@@ -22,7 +22,7 @@ import pytest
 
 from agent6.ui.web import git_model, page
 from agent6.ui.web import server as web_server
-from agent6.vcs import git_files, git_ops
+from agent6.vcs import git_files, git_read
 from tests.unit.test_git_history import (
     PNG_BLUE_2X2,
     PNG_RED_1X1,
@@ -201,7 +201,7 @@ def test_commit_lists_its_files_against_the_first_parent(
     assert {r["name"] for r in merge["refs"]} == {"main", "origin/main", "v2"}
 
     root = _ok(port, f"/api/git/commit/{shas['root'][:8]}")
-    assert root["base"] == git_ops.EMPTY_TREE and root["parents"] == []
+    assert root["base"] == git_read.EMPTY_TREE and root["parents"] == []
     assert sorted(f["path"] for f in root["files"]) == ["a.txt", "d.txt", "img.bin"]
     feature = _ok(port, "/api/git/commit/feature")
     assert feature["body"] == "A second paragraph."
@@ -230,7 +230,7 @@ def test_compare_reads_like_the_commits_own_diff(
         "img.bin",
         "logo.png",
     ]
-    empty = _ok(port, f"/api/git/compare?base={git_ops.EMPTY_TREE}&head=v1")
+    empty = _ok(port, f"/api/git/compare?base={git_read.EMPTY_TREE}&head=v1")
     assert empty["base"]["subject"] == "(empty tree)"
     assert len(empty["files"]) == 3
     assert _ok(port, "/api/git/compare?base=main&head=main")["files"] == []
@@ -583,7 +583,9 @@ def test_a_rev_or_path_shaped_like_a_flag_is_refused(
     assert "unknown revision 'nope'" in _refused(port, "/api/git/commit/nope")
     assert "unknown revision" in _refused(port, "/api/git/compare?base=main&head=nope")
     assert "a revision is required" in _refused(port, "/api/git/compare?base=&head=main")
-    assert "not a commit" in _refused(port, f"/api/git/compare?base=main&head={git_ops.EMPTY_TREE}")
+    assert "not a commit" in _refused(
+        port, f"/api/git/compare?base=main&head={git_read.EMPTY_TREE}"
+    )
     assert "not a revision" in _refused(port, "/api/git/commit/a%0Ab")
     assert "no file" in _refused(port, "/api/git/diff?base=v1&head=v2&path=nope.txt")
     assert "no file" in _refused(port, "/api/git/diff?base=v1&head=v2&path=dir")  # a directory

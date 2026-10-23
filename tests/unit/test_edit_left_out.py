@@ -17,7 +17,7 @@ from agent6.app import finalize, reporter
 from agent6.harness import _chain, _conversation, _loop_state, _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import results
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from tests.unit import test_harness
 from tests.unit.turn_context import turn_context
 
@@ -233,7 +233,7 @@ def _commit_run_branch(repo: pathlib.Path, session_id: str, *force: str) -> None
     for rel in force:
         _git(repo, "add", "-f", rel)
     _git(repo, "commit", "-qm", "agent6 turn 1")
-    _git(repo, "update-ref", git_ops.chain_ref_for(session_id), "HEAD")
+    _git(repo, "update-ref", git_read.chain_ref_for(session_id), "HEAD")
     _git(repo, "switch", "-q", "main")
     # The run's work stays in the checkout, as a run leaves it.
     _git(repo, "checkout", f"agent6/{session_id}", "--", ".")

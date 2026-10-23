@@ -20,7 +20,7 @@ from agent6 import paths, portable
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import _steer, main
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 _ID = "dead-run-BBBB22"
 
@@ -41,7 +41,7 @@ def _ended_unmerged_run(repo: pathlib.Path) -> sessions_layout.SessionLayout:
     _git(repo, "commit", "-q", "-m", "init")
     base = _git(repo, "rev-parse", "HEAD")
     work = _git(repo, "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "the run's work")
-    _git(repo, "update-ref", git_ops.chain_ref_for(_ID), work)
+    _git(repo, "update-ref", git_read.chain_ref_for(_ID), work)
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=_ID)
     layout.ensure()
     layout.manifest_path.write_text(
@@ -142,7 +142,7 @@ def test_a_bare_rm_on_a_terminal_names_the_session_and_asks(
     finally:
         os.close(master)
     assert layout.session_dir.exists() is not deleted
-    assert bool(git_ops.chain_tip(tmp_path, git_ops.chain_ref_for(_ID))) is not deleted
+    assert bool(git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID))) is not deleted
     assert (f"removed {_ID}" in after) is deleted
     assert ("nothing was deleted" in after) is not deleted
 
@@ -214,7 +214,7 @@ def test_rm_without_a_terminal_refuses_without_an_id(
     """A bare `sessions rm` without a terminal must not delete an unnamed session."""
     monkeypatch.chdir(tmp_path)
     layout = _ended_unmerged_run(tmp_path)
-    chain_tip = git_ops.chain_tip(tmp_path, git_ops.chain_ref_for(_ID))
+    chain_tip = git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID))
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
 
     def never(*_args: object, **_kwargs: object) -> str | None:
@@ -228,7 +228,7 @@ def test_rm_without_a_terminal_refuses_without_an_id(
     assert "--yes" in out.err
     assert "removed" not in out.out
     assert layout.session_dir.exists()
-    assert git_ops.chain_tip(tmp_path, git_ops.chain_ref_for(_ID)) == chain_tip
+    assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID)) == chain_tip
 
 
 def test_rm_with_an_id_without_a_terminal_deletes_without_asking(
@@ -246,7 +246,7 @@ def test_rm_with_an_id_without_a_terminal_deletes_without_asking(
     assert main(["sessions", "rm", _ID]) == 0
     assert f"removed {_ID}" in capsys.readouterr().out
     assert not layout.session_dir.exists()
-    assert git_ops.chain_tip(tmp_path, git_ops.chain_ref_for(_ID)) is None
+    assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID)) is None
 
 
 @pytest.mark.parametrize("flag", ["--yes", "-y"])
@@ -268,7 +268,7 @@ def test_rm_yes_without_a_terminal_deletes_without_asking(
     assert main(["sessions", "rm", flag]) == 0
     assert f"removed {_ID}" in capsys.readouterr().out
     assert not layout.session_dir.exists()
-    assert git_ops.chain_tip(tmp_path, git_ops.chain_ref_for(_ID)) is None
+    assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID)) is None
 
 
 def test_rm_asks_without_a_terminal_refuses_without_yes(

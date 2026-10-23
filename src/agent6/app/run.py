@@ -37,7 +37,7 @@ from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import listing
 
 
@@ -338,10 +338,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         )
         # The branch is advanced by the first chain commit; nothing is cut or checked out.
         if cfg.git.branch_per_run and mode == "run" and cfg.git.control != "model":
-            run_branch = git_ops.run_branch_for(effective_session_id)
+            run_branch = git_read.run_branch_for(effective_session_id)
 
         # A run that would have to ask about tracked changes but cannot refuses here.
-        modified = git_ops.modified_paths(cwd) if mode == "run" else []
+        modified = git_read.modified_paths(cwd) if mode == "run" else []
         must_ask = bool(modified) and cfg.git.dirty_tree == "ask"
         answerable = frontend.capabilities.can_ask or ipc.away_mode(layout.session_dir) == "wait"
         unmerged_run = (
@@ -461,7 +461,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                             "stash failed", f"stashing the working tree's changes failed: {exc}"
                         )
             # The operator's files, untracked after any stash; every commit leaves them out.
-            untracked_at_start = git_ops.untracked_paths(cwd)
+            untracked_at_start = git_read.untracked_paths(cwd)
             sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
             if unmerged_run and not stashed:
                 # Included: when the tree is exactly that run's tip, this run's merge lands it.

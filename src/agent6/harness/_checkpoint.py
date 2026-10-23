@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from agent6 import errors
 from agent6.harness import _chain
 from agent6.providers import Provider, ProviderError, call_for_text
-from agent6.vcs import commit_message, git_ops
+from agent6.vcs import commit_message, git_read
 
 if TYPE_CHECKING:
     from agent6.harness import _loop_state
@@ -94,7 +94,9 @@ class Checkpoints:
         self.emit("loop.auto_commit", turn=turn, sha=sha, subject=subject)
         # Every fold tallies commits and the latest diff from diff.updated alone.
         self.emit(
-            "diff.updated", sha=sha, patch=git_ops.commit_diff(self.chain.root, sha, max_bytes=8000)
+            "diff.updated",
+            sha=sha,
+            patch=git_read.commit_diff(self.chain.root, sha, max_bytes=8000),
         )
         return sha
 
@@ -116,7 +118,7 @@ class Checkpoints:
         self.log(f"  auto-commit failed: {exc}")
         worktree_status = ""
         try:
-            st = git_ops.status(self.chain.root, exclude=self.chain.untracked_at_start)
+            st = git_read.status(self.chain.root, exclude=self.chain.untracked_at_start)
             worktree_status = (
                 f"branch={st.branch}"
                 f" head={st.head_sha[:12]}"

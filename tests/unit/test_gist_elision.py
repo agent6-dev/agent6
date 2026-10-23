@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agent6.harness import _compaction, _conversation
+from agent6.harness import _compaction, _compaction_result, _conversation
 
 
 def _add_call(
@@ -48,9 +48,9 @@ def _contents(conv: _conversation.Conversation) -> list[str]:
 class _SpyGister:
     def __init__(self, replies: dict[str, str]) -> None:
         self.replies = replies
-        self.calls: list[tuple[_compaction.GistRequest, ...]] = []
+        self.calls: list[tuple[_compaction_result.GistRequest, ...]] = []
 
-    def __call__(self, requests: tuple[_compaction.GistRequest, ...]) -> dict[str, str]:
+    def __call__(self, requests: tuple[_compaction_result.GistRequest, ...]) -> dict[str, str]:
         self.calls.append(requests)
         return {r.path: self.replies[r.path] for r in requests if r.path in self.replies}
 
@@ -68,7 +68,7 @@ def test_large_read_decays_to_gist_placeholder() -> None:
     assert len(stats.elided_calls) == 1
     assert len(stats.gist_paths) == 1
     got = _contents(conv)[0]
-    assert got.startswith(_compaction.ELISION_GIST_PREFIX)
+    assert got.startswith(_compaction_result.ELISION_GIST_PREFIX)
     assert "rules/r01.md" in got
     assert "gist: R01: headers <80 chars; END: lines exempt (R10)" in got
     # The distiller saw the unwrapped file text, not the JSON envelope.
@@ -88,8 +88,8 @@ def test_no_gister_and_failed_gister_fall_back_to_bare() -> None:
         assert len(stats.elided_calls) == 1
         assert len(stats.gist_paths) == 0
         got = _contents(conv)[0]
-        assert got.startswith(_compaction.ELISION_PREFIX)
-        assert not got.startswith(_compaction.ELISION_GIST_PREFIX)
+        assert got.startswith(_compaction_result.ELISION_PREFIX)
+        assert not got.startswith(_compaction_result.ELISION_GIST_PREFIX)
 
 
 def test_small_protected_and_non_read_results_are_never_gisted() -> None:
@@ -130,9 +130,9 @@ def test_newest_read_per_path_wins_the_gist() -> None:
     assert gister.calls[0][0].content.startswith("NEW spec text")
     # The newer read keeps the gist; the older one gets the bare marker.
     contents = _contents(conv)
-    assert contents[0].startswith(_compaction.ELISION_PREFIX)
-    assert not contents[0].startswith(_compaction.ELISION_GIST_PREFIX)
-    assert contents[1].startswith(_compaction.ELISION_GIST_PREFIX)
+    assert contents[0].startswith(_compaction_result.ELISION_PREFIX)
+    assert not contents[0].startswith(_compaction_result.ELISION_GIST_PREFIX)
+    assert contents[1].startswith(_compaction_result.ELISION_GIST_PREFIX)
 
 
 def test_continued_pressure_demotes_gists_oldest_first() -> None:
@@ -147,7 +147,7 @@ def test_continued_pressure_demotes_gists_oldest_first() -> None:
     )
     assert (len(first.gist_paths), len(first.demoted_paths)) == (1, 0)
     gist_ph = _contents(conv)[0]
-    assert gist_ph.startswith(_compaction.ELISION_GIST_PREFIX)
+    assert gist_ph.startswith(_compaction_result.ELISION_GIST_PREFIX)
     # Re-running under the same budget is a no-op (idempotent).
     again = _compaction.compact_old_tool_results(
         conv, max_total_bytes=1800, keep_recent=2, gister=gister
@@ -160,8 +160,8 @@ def test_continued_pressure_demotes_gists_oldest_first() -> None:
     )
     assert len(tighter.demoted_paths) == 1
     got = _contents(conv)[0]
-    assert got.startswith(_compaction.ELISION_PREFIX)
-    assert not got.startswith(_compaction.ELISION_GIST_PREFIX)
+    assert got.startswith(_compaction_result.ELISION_PREFIX)
+    assert not got.startswith(_compaction_result.ELISION_GIST_PREFIX)
     assert "docs/spec.md" in got
 
 
@@ -206,8 +206,8 @@ def test_a_short_gist_frees_headroom_for_an_older_gist() -> None:
     _add_read(conv, "tail2.py", "b" * 300)
     before = _contents(conv)
     budget = (
-        len(_compaction.elision_placeholder("read_file", {"path": "old.py"}))
-        + len(_compaction.elision_placeholder("read_file", {"path": "new.py"}))
+        len(_compaction_result.elision_placeholder("read_file", {"path": "old.py"}))
+        + len(_compaction_result.elision_placeholder("read_file", {"path": "new.py"}))
         + len(before[2])
         + len(before[3])
     )
@@ -234,13 +234,13 @@ def test_a_gist_the_budget_cannot_hold_is_never_reported_as_kept() -> None:
     )
 
     assert (len(stats.gist_paths), len(stats.demoted_paths)) == (0, 0)
-    assert not _contents(conv)[0].startswith(_compaction.ELISION_GIST_PREFIX)
+    assert not _contents(conv)[0].startswith(_compaction_result.ELISION_GIST_PREFIX)
 
 
 def test_elision_gist_placeholder_shares_the_elision_prefix() -> None:
-    ph = _compaction.elision_gist_placeholder("docs/a.md", "facts")
-    assert ph.startswith(_compaction.ELISION_PREFIX)
-    assert ph.startswith(_compaction.ELISION_GIST_PREFIX)
+    ph = _compaction_result.elision_gist_placeholder("docs/a.md", "facts")
+    assert ph.startswith(_compaction_result.ELISION_PREFIX)
+    assert ph.startswith(_compaction_result.ELISION_GIST_PREFIX)
     assert "docs/a.md" in ph and "gist: facts" in ph
 
 
@@ -252,21 +252,25 @@ def test_parse_gist_lines_is_tolerant() -> None:
         "no separator line\n"
         "docs/c.md:\n"  # empty gist: skipped
     )
-    got = _compaction.parse_gist_lines(text, paths=["docs/a.md", "docs/b.md", "docs/c.md"])
+    got = _compaction_result.parse_gist_lines(text, paths=["docs/a.md", "docs/b.md", "docs/c.md"])
     assert got == {"docs/a.md": "A requires X; threshold 80", "docs/b.md": "B forbids Y"}
 
 
 def test_read_file_text_from_result_unwraps_shapes() -> None:
     assert (
-        _compaction.read_file_text_from_result(json.dumps({"content": "text", "size": 4})) == "text"
+        _compaction_result.read_file_text_from_result(json.dumps({"content": "text", "size": 4}))
+        == "text"
     )
     truncated = json.dumps(
         {"_tool_result_truncated": True, "head": "the head", "tool": "read_file"}
     )
-    assert _compaction.read_file_text_from_result(truncated) == "the head"
-    assert _compaction.read_file_text_from_result(json.dumps({"error": "Not a file: x"})) == ""
+    assert _compaction_result.read_file_text_from_result(truncated) == "the head"
     assert (
-        _compaction.read_file_text_from_result("plain non-json payload") == "plain non-json payload"
+        _compaction_result.read_file_text_from_result(json.dumps({"error": "Not a file: x"})) == ""
+    )
+    assert (
+        _compaction_result.read_file_text_from_result("plain non-json payload")
+        == "plain non-json payload"
     )
 
 
@@ -297,14 +301,14 @@ def test_gist_placeholder_identity_matches_bare_for_long_paths() -> None:
 
     long_path = "docs/" + "d" * 130 + ".md"
     ident = re.compile(r": the result of (.+?) was replaced")
-    label = _compaction.call_label("read_file", {"path": long_path})
-    gist_m = ident.search(_compaction.elision_gist_placeholder(label, "the gist"))
-    bare_m = ident.search(_compaction.elision_placeholder("read_file", {"path": long_path}))
+    label = _compaction_result.call_label("read_file", {"path": long_path})
+    gist_m = ident.search(_compaction_result.elision_gist_placeholder(label, "the gist"))
+    bare_m = ident.search(_compaction_result.elision_placeholder("read_file", {"path": long_path}))
     assert gist_m is not None and bare_m is not None
     assert (
         gist_m.group(1)
         == bare_m.group(1)
-        == _compaction.call_label("read_file", {"path": long_path})
+        == _compaction_result.call_label("read_file", {"path": long_path})
     )
 
 
@@ -321,12 +325,12 @@ def test_gist_placeholder_identity_matches_bare_for_a_ranged_read() -> None:
     )
 
     text = str(conv.messages[1].items[0].content)  # pyright: ignore[reportAttributeAccessIssue]
-    assert text.startswith(_compaction.ELISION_GIST_PREFIX)
+    assert text.startswith(_compaction_result.ELISION_GIST_PREFIX)
     ident = re.compile(r": the result of (.+?) was replaced")
     got = ident.search(text)
     full_input = {"path": "a.py", "start_line": 100, "limit": 500}
-    bare = ident.search(_compaction.elision_placeholder("read_file", full_input))
+    bare = ident.search(_compaction_result.elision_placeholder("read_file", full_input))
     assert got is not None and bare is not None
     assert got.group(1) == bare.group(1)  # gist and bare marker share ONE identity
-    assert got.group(1) == _compaction.call_label("read_file", full_input)
+    assert got.group(1) == _compaction_result.call_label("read_file", full_input)
     assert "start_line=100" in got.group(1)  # the range is part of the identity

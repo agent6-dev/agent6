@@ -11,11 +11,11 @@ import subprocess
 import pytest
 
 from agent6.harness import _context, _prompt_blocks
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 
 def _repo_map(root: pathlib.Path) -> str:
-    return _context._build_repo_map(git_ops.tracked_files(root))
+    return _context._build_repo_map(git_read.tracked_files(root))
 
 
 def _init_repo(root: pathlib.Path, files: dict[str, str]) -> None:

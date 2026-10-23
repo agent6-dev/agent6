@@ -20,7 +20,7 @@ from agent6 import directive, errors
 from agent6.graph import curator as graph_curator
 from agent6.graph import models as graph_models
 from agent6.harness import _chain, _dag_focus, subrun
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 if TYPE_CHECKING:
     from agent6.harness import _conversation, _loop_state
@@ -75,7 +75,7 @@ def join_lane_result(
     *,
     ref: str,
     fallback_parent: str | None,
-    identity: git_ops.CommitIdentity | None,
+    identity: git_read.CommitIdentity | None,
     also_branch: str | None,
 ) -> LaneJoin:
     """Join one returned lane's branch onto the coordinator's chain.
@@ -458,7 +458,7 @@ class ParallelDispatcher:
                 self.emit(
                     "diff.updated",
                     sha=sha,
-                    patch=git_ops.commit_diff(self.chain.root, sha, max_bytes=8000),
+                    patch=git_read.commit_diff(self.chain.root, sha, max_bytes=8000),
                 )
         except (errors.GitError, OSError) as exc:
             self.log(f"PARALLEL: pre-dispatch checkpoint failed: {exc}")

@@ -17,7 +17,7 @@ from agent6 import paths
 from agent6.app import _session as app__session
 from agent6.app import _setup, machine_agent
 from agent6.app.machine import create as _create
-from agent6.config import Config, layer
+from agent6.config import Config, _layer_data, layer
 from agent6.machine import (
     AgentExecResult,
     AgentRequest,
@@ -1248,8 +1248,8 @@ def test_create_runs_the_shared_isolation_preflight(
         models=ModelsConfig(worker=RoleModel(provider="openrouter", model="kimi")),
     )
 
-    def _load(*_a: object, **_k: object) -> layer.EffectiveConfig:
-        return layer.EffectiveConfig(config=cfg, sources={}, layers=())
+    def _load(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
+        return _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _keys_ok(*_a: object, **_k: object) -> None:
         return None

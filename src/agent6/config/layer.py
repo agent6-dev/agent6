@@ -7,701 +7,28 @@ The layers, lowest precedence first: `default` (the model's defaults), `global`
 `flag` (`--config FILE`), `machine` (a machine's `[config]` overlay) and `state` (one
 state's `config` table). The raw tables are
 deep-merged in that order and validated once; every leaf remembers the layer that set it.
-A selected preset is spliced in just above the layer that selected it, per `_apply_preset`.
+A selected preset is spliced in just above the layer that selected it, per `_presets.apply_preset`.
 """
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import pathlib
-import tomllib
-from collections.abc import Callable, Iterable
-from typing import Any, Literal
+from typing import Any
 
 import pydantic
 
 from agent6 import paths
-from agent6.config import io
+from agent6.config import _layer_data, _presets, io
 from agent6.config import model as config_model
-
-LayerName = Literal["default", "preset", "global", "repo", "flag", "machine", "state"]
 
 # The `config show` and `config fill` order, from the model so a new section is never omitted.
 SECTION_ORDER = tuple(config_model.Config.model_fields)
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
-class Layer:
-    """One config source.
-
-    Attributes:
-        name: The layer name.
-        path: The file it was read from; None for a preset or an in-memory overlay.
-        data: The raw parsed table.
-    """
-
-    name: LayerName
-    path: pathlib.Path | None
-    data: dict[str, Any]
-
-    @property
-    def source(self) -> str:
-        """Identify the layer, including the path for command-line files."""
-        return f"flag ({self.path})" if self.name == "flag" and self.path else self.name
-
-    @property
-    def described(self) -> str:
-        """Name the layer as a sentence does: `the repo config`, `--config FILE`, `the preset`."""
-        if self.name == "flag":
-            return f"--config {self.path}"
-        if self.name in ("global", "repo"):
-            return f"the {self.name} config"
-        return f"the {self.name}" if self.name == "preset" else f"the {self.name} overlay"
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class EffectiveConfig:
-    """One load: the validated config with the provenance of every leaf.
-
-    Attributes:
-        config: The validated config.
-        sources: The layer name that set each dotted leaf.
-        layers: The layers that contributed, in precedence order.
-        presets: The preset names this load knew, built-ins and `[presets.*]` tables, sorted.
-    """
-
-    config: config_model.Config
-    sources: dict[str, str]
-    layers: tuple[Layer, ...]
-    presets: tuple[str, ...] = ()
-
-    @property
-    def explicit_leaves(self) -> frozenset[str]:
-        """The leaves a config layer set: a demand to honor or refuse, not a default to degrade."""
-        return frozenset(leaf for leaf, layer in self.sources.items() if layer != "default")
-
-
-def _read_toml(path: pathlib.Path) -> dict[str, Any]:
-    """Parse a config file.
-
-    Args:
-        path: The file.
-
-    Returns:
-        The parsed table.
-
-    Raises:
-        ConfigError: The file is not valid TOML or cannot be read (a root-owned file after a
-            sudo run, a directory at the path): the operator's file, so a refusal and never a
-            crash report.
-    """
-    try:
-        return tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise config_model.ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
-    except (OSError, UnicodeDecodeError) as exc:
-        raise config_model.ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
-
-
-def _forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
-    """Refuse a top-level `preset` key in a layer that cannot select one.
-
-    Only the global and repo configs and `--preset` select one; merged in from elsewhere the
-    key would show as effective while never applying, and honoring it would let a machine
-    overlay pick a preset that loosens the sandbox.
-
-    Args:
-        layer_name: The layer, for the message.
-        data: The layer's raw table.
-
-    Raises:
-        ConfigError: The table holds a top-level `preset`.
-    """
-    if "preset" in data:
-        raise config_model.ConfigError(
-            f"top-level `preset` selects a config preset only from the global/repo"
-            f" config or the --preset flag, not the {layer_name} config; use"
-            f" --preset <name> or set it in your repo/global config."
-        )
-
-
-def discover_layers(
-    repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...]
-) -> list[Layer]:
-    """Read the config files that exist, in precedence order.
-
-    Args:
-        repo_root: The repo whose state-dir config is the `repo` layer.
-        explicit_paths: The `--config FILE` layers in command-line order.
-
-    Returns:
-        The layers, lowest precedence first.
-
-    Raises:
-        ConfigError: A file is unreadable or invalid, a file in `explicit_paths` is
-            missing, or one carries a top-level `preset`.
-    """
-    layers: list[Layer] = []
-    gpath = paths.global_config_path()
-    if gpath.is_file():
-        layers.append(Layer("global", gpath, _read_toml(gpath)))
-    rpath = paths.repo_config_path(repo_root)
-    if rpath.is_file():
-        layers.append(Layer("repo", rpath, _read_toml(rpath)))
-    for explicit_path in explicit_paths:
-        if not explicit_path.is_file():
-            raise config_model.ConfigError(f"--config file not found: {explicit_path}")
-        data = _read_toml(explicit_path)
-        _forbid_layer_preset("--config", data)
-        layers.append(Layer("flag", explicit_path, data))
-    return layers
-
-
-# The generated config table prints each note.
-BUILTIN_PRESET_NOTES: dict[str, str] = {
-    "no_review": "turns off the review panel",
-    "review": "three review seats that can block the finish",
-    "deep_review": "five repo-scope review seats that can block the finish",
-}
-BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
-    "no_review": {
-        "review": {"trigger": "off"},
-    },
-    "review": {
-        "review": {
-            "trigger": "before_finish",
-            # The seats share one model, so a model quorum above one is unreachable.
-            "block_on": "any",
-            "reviewers": [{"focus": "security"}, {"focus": "correctness"}, {"focus": "tests"}],
-            "concurrency": 3,
-        },
-    },
-    "deep_review": {
-        "review": {
-            "trigger": "before_finish",
-            "block_on": "any",
-            "scope": "repo",
-            "reviewers": [
-                {"focus": "security"},
-                {"focus": "correctness"},
-                {"focus": "tests"},
-                {"focus": "edge-cases"},
-                {"focus": "over-engineering"},
-            ],
-            "concurrency": 5,
-        },
-    },
-}
-
-
-def resolve_preset(name: str, user_presets: dict[str, Any]) -> dict[str, Any]:
-    """Return the overrides a preset applies.
-
-    A user preset replaces a built-in of the same name wholesale.
-
-    Args:
-        name: The preset name; "none" selects nothing.
-        user_presets: The `[presets.*]` tables, merged.
-
-    Returns:
-        The nested config dict; {} for "none".
-
-    Raises:
-        ConfigError: The name is unknown, or the user table is not a table.
-    """
-    config_model.preset_name(name)
-    if name == "none":
-        return {}
-    if name in user_presets:
-        prof = user_presets[name]
-        if not isinstance(prof, dict):
-            raise config_model.ConfigError(
-                f"[presets.{name}] must be a table, got {type(prof).__name__}"
-            )
-        return prof
-    if name in BUILTIN_PRESETS:
-        return BUILTIN_PRESETS[name]
-    known = ", ".join(sorted({"none", *BUILTIN_PRESETS, *user_presets}))
-    raise config_model.ConfigError(f"unknown preset {name!r}. Known presets: {known}.")
-
-
-def preset_names(layers: Iterable[Layer]) -> list[str]:
-    """Return the preset names a chooser offers.
-
-    Args:
-        layers: The layers whose `[presets.*]` tables add to the built-ins.
-
-    Returns:
-        The names, sorted and de-duplicated.
-    """
-    names: set[str] = {"none", *BUILTIN_PRESETS}
-    for layer in layers:
-        prof = layer.data.get("presets")
-        if isinstance(prof, dict):
-            names.update(prof.keys())
-    return sorted(names)
-
-
-def available_preset_names(
-    repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...] = ()
-) -> list[str]:
-    """Return the preset names over the repo's discovered layers.
-
-    A config-read failure degrades to the built-ins alone, so a chooser never blocks on a
-    bad config.
-
-    Args:
-        repo_root: The repo.
-        explicit_paths: The `--config FILE` layers in command-line order.
-
-    Returns:
-        The names, sorted.
-    """
-    layers: list[Layer] = []
-    with contextlib.suppress(Exception):
-        layers = discover_layers(repo_root, explicit_paths)
-    return preset_names(layers)
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class PresetInfo:
-    """One preset as `config presets` shows it.
-
-    Attributes:
-        name: The preset name.
-        overrides: The nested config dict it applies; {} applies no overrides.
-        origin: `built-in`, `global`, `repo` or `global+repo`.
-        replaces_builtin: A user preset with a built-in's name replaces it whole.
-    """
-
-    name: str
-    overrides: dict[str, Any]
-    origin: str
-    replaces_builtin: bool
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class PresetCatalog:
-    """Everything `config presets` lists.
-
-    Attributes:
-        presets: The built-ins in definition order, then the user's, sorted.
-        selected: The selected preset's name; "none" selects no preset.
-        source: `repo`, `global` or `default`.
-    """
-
-    presets: tuple[PresetInfo, ...]
-    selected: str
-    source: str
-
-
-def preset_catalog(
-    repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...] = ()
-) -> PresetCatalog:
-    """Build the `config presets` listing.
-
-    A user table replaces a same-named built-in, so only the effective body is reported.
-    An audit surface, so unlike `available_preset_names` a broken config raises.
-
-    Args:
-        repo_root: The repo.
-        explicit_paths: The `--config FILE` layers in command-line order.
-
-    Returns:
-        The catalog.
-
-    Raises:
-        ConfigError: A layer is unreadable, a preset name is unknown or reserved, or a body
-            is not a table.
-    """
-    layers = discover_layers(repo_root, explicit_paths)
-    _, user = _strip_presets(layers)
-    origins: dict[str, str] = {}
-    for layer in layers:
-        prof = layer.data.get("presets")
-        if not isinstance(prof, dict):
-            continue
-        for name, body in prof.items():
-            if not isinstance(body, dict):
-                raise config_model.ConfigError(
-                    f"[presets.{name}] must be a table, got {type(body).__name__}"
-                )
-            origins[name] = f"{origins[name]}+{layer.name}" if name in origins else layer.name
-    selected, source = _select_preset(layers, "")
-    resolve_preset(selected, user)
-    builtins = tuple(
-        PresetInfo(name, user[name], origins[name], replaces_builtin=True)
-        if name in user
-        else PresetInfo(name, body, "built-in", replaces_builtin=False)
-        for name, body in BUILTIN_PRESETS.items()
-    )
-    customs = tuple(
-        PresetInfo(name, user[name], origins[name], replaces_builtin=False)
-        for name in sorted(user)
-        if name not in BUILTIN_PRESETS
-    )
-    return PresetCatalog((*builtins, *customs), selected, source)
-
-
-def _format_changed(val: object, existing: object) -> bool:
-    """Return whether an override replaces the existing dict whole instead of merging.
-
-    The one rule the merge and the provenance walk share: a provider entry whose `api_format`
-    changes between layers replaces, or the lower layer's format-specific keys would survive
-    as an `extra_forbidden` error under the new format.
-
-    Args:
-        val: The overriding value.
-        existing: The value beneath it.
-
-    Returns:
-        True when both are dicts whose `api_format` differs.
-    """
-    return (
-        isinstance(val, dict)
-        and isinstance(existing, dict)
-        and "api_format" in val
-        and "api_format" in existing
-        and val.get("api_format") != existing.get("api_format")
-    )
-
-
-def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Merge an override into a base, recursing into dicts unless `_format_changed`.
-
-    Args:
-        base: The lower-precedence table.
-        override: The higher-precedence table.
-
-    Returns:
-        A new merged table; neither input is modified.
-    """
-    out = dict(base)
-    for key, val in override.items():
-        existing = out.get(key)
-        if isinstance(val, dict) and isinstance(existing, dict):
-            out[key] = val if _format_changed(val, existing) else _deep_merge(existing, val)
-        else:
-            out[key] = val
-    return out
-
-
-def _merge_layers(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, str]]:
-    """Deep-merge the layers and stamp per-leaf provenance in the same walk.
-
-    One walk, so the two never diverge: on a wholesale replace the stale sub-provenance dies
-    with the subtree before the winner's leaves are stamped.
-
-    Args:
-        layers: The layers, lowest precedence first.
-
-    Returns:
-        The merged table, and the layer name that set each dotted leaf.
-    """
-    merged: dict[str, Any] = {}
-    sources: dict[str, str] = {}
-
-    def walk(
-        base: dict[str, Any], override: dict[str, Any], layer_name: str, prefix: str
-    ) -> dict[str, Any]:
-        out = dict(base)
-        for key, val in override.items():
-            path = f"{prefix}{key}"
-            existing = out.get(key)
-            if (
-                isinstance(val, dict)
-                and isinstance(existing, dict)
-                and not _format_changed(val, existing)
-            ):
-                out[key] = walk(existing, val, layer_name, f"{path}.")
-            else:
-                for stale in [k for k in sources if k == path or k.startswith(f"{path}.")]:
-                    del sources[stale]
-                out[key] = val
-                if isinstance(val, dict) and val:
-                    for leaf in flatten_leaves(val, prefix=f"{path}."):
-                        sources[leaf] = layer_name
-                else:
-                    sources[path] = layer_name
-        return out
-
-    for layer in layers:
-        merged = walk(merged, layer.data, layer.source, "")
-    return merged, sources
-
-
-def flatten_leaves(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
-    """Flatten nested dicts to dotted leaf paths.
-
-    A list, an array of tables included, is one leaf.
-
-    Args:
-        data: The nested table.
-        prefix: The dotted prefix of every path.
-
-    Returns:
-        The leaves by dotted path.
-    """
-    out: dict[str, Any] = {}
-    for key, val in data.items():
-        path = f"{prefix}{key}"
-        if isinstance(val, dict) and val:
-            out.update(flatten_leaves(val, prefix=f"{path}."))
-        else:
-            out[path] = val
-    return out
-
-
-def config_leaves(config: config_model.Config) -> dict[str, Any]:
-    """Flatten a validated config to dotted leaves.
-
-    A name-keyed section of models (`providers`) is traversed; a dict-typed value (a
-    provider's `extra_body`) is one leaf, whatever it holds.
-
-    Args:
-        config: The validated config.
-
-    Returns:
-        The leaves by dotted path.
-    """
-    out: dict[str, Any] = {}
-
-    def walk(model: pydantic.BaseModel, prefix: str) -> None:
-        for name in type(model).model_fields:
-            value = getattr(model, name)
-            path = f"{prefix}{name}"
-            if isinstance(value, pydantic.BaseModel):
-                walk(value, f"{path}.")
-            elif (
-                isinstance(value, dict)
-                and value
-                and all(isinstance(entry, pydantic.BaseModel) for entry in value.values())
-            ):
-                for key, entry in value.items():
-                    walk(entry, f"{path}.{key}.")
-            elif isinstance(value, tuple):
-                out[path] = tuple(
-                    entry.model_dump(exclude_none=True)
-                    if isinstance(entry, pydantic.BaseModel)
-                    else entry
-                    for entry in value
-                )
-            else:
-                out[path] = value
-
-    walk(config, "")
-    return out
-
-
-def _leaf_fix_hint(
-    layers: list[Layer], source_of_leaf: dict[str, str]
-) -> Callable[[str, str], str | None]:
-    """Build the locator `validate_config` appends to each error line.
-
-    Args:
-        layers: The layers.
-        source_of_leaf: The layer name that set each dotted leaf.
-
-    Returns:
-        A function from (dotted leaf, pydantic error type) to a line naming the layer that
-        set it, with the file and the fix command when the layer has one (an unknown key
-        points at `agent6 config fix`); None for a built-in default.
-    """
-    by_name = {layer.source: layer for layer in layers}
-
-    def locate(leaf: str, error_type: str) -> str | None:
-        layer = by_name.get(source_of_leaf.get(leaf, ""))
-        if layer is None:
-            return None
-        if layer.path is None:
-            # A preset's override or a file-less machine overlay: no single file to point at.
-            return f"    set by the {layer.name} layer"
-        if layer.name == "flag":
-            fix = f"edit {layer.path}"
-        elif error_type == "extra_forbidden":
-            fix = "agent6 config fix"
-        elif layer.name == "repo":
-            fix = f"agent6 config set --repo {leaf} <value>"
-        else:
-            fix = f"agent6 config set {leaf} <value>"
-        return f"    set in the {layer.name} config: {layer.path}\n    fix: {fix}"
-
-    return locate
-
-
-def _effective_from_layers(
-    layers: list[Layer], *, source: str, presets: list[str]
-) -> EffectiveConfig:
-    """Merge the layers, validate, and attribute every effective leaf to its layer.
-
-    Args:
-        layers: The layers, lowest precedence first.
-        source: The name validation errors report.
-        presets: The preset names this load knew.
-
-    Returns:
-        The effective config.
-
-    Raises:
-        ConfigError: The merged config fails validation.
-    """
-    merged, source_of_leaf = _merge_layers(layers)
-    config = config_model.validate_config(
-        merged, source=source, locate=_leaf_fix_hint(layers, source_of_leaf)
-    )
-    effective_leaves = config_leaves(config)
-    layer_order = [layer.source for layer in layers]
-
-    def source_for(leaf: str) -> str:
-        contributors = {
-            source
-            for path, source in source_of_leaf.items()
-            if path == leaf or path.startswith(f"{leaf}.")
-        }
-        return next((name for name in reversed(layer_order) if name in contributors), "default")
-
-    sources = {leaf: source_for(leaf) for leaf in effective_leaves}
-    return EffectiveConfig(
-        config=config, sources=sources, layers=tuple(layers), presets=tuple(presets)
-    )
-
-
-def _own_preset(layer: Layer) -> str:
-    """Return a layer's own raw top-level `preset`, or "".
-
-    Args:
-        layer: The layer.
-
-    Returns:
-        The preset name the layer itself sets; "" when it sets none.
-
-    Raises:
-        ConfigError: The value is empty or not a string.
-    """
-    raw = layer.data.get("preset")
-    if raw is None:
-        return ""
-    if not isinstance(raw, str):
-        shape = "a [preset] table" if isinstance(raw, dict) else f"a {type(raw).__name__}"
-        raise config_model.ConfigError(
-            f"top-level `preset` in the {layer.name} config must be a preset name"
-            f' string (e.g. preset = "review"), got {shape};'
-            f" set it with `agent6 config set preset <name>`."
-        )
-    return config_model.preset_name(raw)
-
-
-def _select_preset(cleaned: list[Layer], preset_override: str) -> tuple[str, str]:
-    """Pick the selected preset, most specific source first, never stacking.
-
-    Args:
-        cleaned: The layers with their `[presets.*]` tables stripped.
-        preset_override: The `--preset` flag, or "".
-
-    Returns:
-        `(name, source)`: the flag, else the repo layer's own `preset`, else the global
-        layer's, else `("none", "default")`.
-
-    Raises:
-        ConfigError: A layer's `preset` is not a string.
-    """
-    if preset_override:
-        return preset_override, "flag"
-    by_name = {layer.name: layer for layer in cleaned}
-    for source in ("repo", "global"):
-        layer = by_name.get(source)
-        if layer is not None and (name := _own_preset(layer)):
-            return name, source
-    return "none", "default"
-
-
-def _insert_preset(cleaned: list[Layer], preset: Layer, source: str) -> list[Layer]:
-    """Splice the preset layer in at the position its source dictates.
-
-    Args:
-        cleaned: The layers with their `[presets.*]` tables stripped.
-        preset: The preset layer.
-        source: `global` or `repo` put it right after that layer; `flag` puts it just below
-            a `--config FILE` or machine overlay, else last.
-
-    Returns:
-        The layers with the preset inserted.
-    """
-    out: list[Layer] = []
-    inserted = False
-    for layer in cleaned:
-        if source == "flag" and not inserted and layer.name in ("flag", "machine", "state"):
-            out.append(preset)
-            inserted = True
-        out.append(layer)
-        if not inserted and layer.name == source:  # source in {"global", "repo"}
-            out.append(preset)
-            inserted = True
-    if not inserted:
-        out.append(preset)
-    return out
-
-
-def _strip_presets(layers: list[Layer]) -> tuple[list[Layer], dict[str, Any]]:
-    """Strip the `[presets.*]` tables out of the layers and merge them.
-
-    Presets are meta-config the Config schema forbids, so every path that validates a layer
-    strips them first.
-
-    Args:
-        layers: The layers.
-
-    Returns:
-        The stripped layers, and the user presets merged low to high.
-
-    Raises:
-        ConfigError: A layer defines the reserved `[presets.none]` table.
-    """
-    cleaned: list[Layer] = []
-    user_presets: dict[str, Any] = {}
-    for layer in layers:
-        data = dict(layer.data)
-        prof = data.pop("presets", None)
-        if isinstance(prof, dict):
-            if "none" in prof:
-                raise config_model.ConfigError(
-                    '[presets.none] is refused: "none" is reserved for selecting no preset.'
-                )
-            user_presets = _deep_merge(user_presets, prof)
-        cleaned.append(Layer(layer.name, layer.path, data))
-    return cleaned, user_presets
-
-
-def _apply_preset(layers: list[Layer], preset_override: str) -> list[Layer]:
-    """Strip the `[presets]` tables and splice the selected preset in above its selector.
-
-    The precedence, lowest first: default, global, a global-selected preset, repo, a
-    repo-selected preset, a `--preset` preset, `--config FILE`, the machine overlay.
-
-    Args:
-        layers: The layers.
-        preset_override: The `--preset` flag, or "".
-
-    Returns:
-        The layers ready to merge.
-
-    Raises:
-        ConfigError: The selected preset is unknown, or a preset value is malformed.
-    """
-    cleaned, user_presets = _strip_presets(layers)
-    name, source = _select_preset(cleaned, preset_override)
-    overrides = resolve_preset(name, user_presets)
-    if source == "flag":
-        cleaned.append(Layer("flag", None, {"preset": name}))
-    if not overrides:
-        return cleaned
-    return _insert_preset(cleaned, Layer("preset", None, overrides), source)
-
-
 def load_effective(
     repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...] = (), *, preset: str = ""
-) -> EffectiveConfig:
+) -> _layer_data.EffectiveConfig:
     """Load the effective config of a repo.
 
     Args:
@@ -715,13 +42,17 @@ def load_effective(
     Raises:
         ConfigError: A layer is unreadable or the merged config is invalid.
     """
-    layers = discover_layers(repo_root, explicit_paths)
-    presets = preset_names(layers)
-    layers = _apply_preset(layers, preset)
-    return _effective_from_layers(layers, source="(merged config layers)", presets=presets)
+    layers = _layer_data.discover_layers(repo_root, explicit_paths)
+    presets = _presets.preset_names(layers)
+    layers = _presets.apply_preset(layers, preset)
+    return _layer_data.effective_from_layers(
+        layers, source="(merged config layers)", presets=presets
+    )
 
 
-def shadowing_layer(eff: EffectiveConfig, leaf: str, target: LayerName) -> Layer | None:
+def shadowing_layer(
+    eff: _layer_data.EffectiveConfig, leaf: str, target: _layer_data.LayerName
+) -> _layer_data.Layer | None:
     """Return the layer above the target that sets a leaf, or None.
 
     A write to the target changes what a run reads only when no layer above it sets the leaf.
@@ -750,7 +81,7 @@ def shadowing_layer(eff: EffectiveConfig, leaf: str, target: LayerName) -> Layer
     return next((lyr for lyr in above if lyr.source == source), None)
 
 
-def load_global_only() -> EffectiveConfig:
+def load_global_only() -> _layer_data.EffectiveConfig:
     """Load the defaults plus the global config: what `agent6 config fill` materializes.
 
     A fill writes the global file, so the repo layer would follow the operator to every
@@ -764,9 +95,15 @@ def load_global_only() -> EffectiveConfig:
         ConfigError: The global config is unreadable or invalid.
     """
     gpath = paths.global_config_path()
-    layers = [Layer("global", gpath, _read_toml(gpath))] if gpath.is_file() else []
-    cleaned, _ = _strip_presets(layers)
-    return _effective_from_layers(cleaned, source="(global config)", presets=preset_names(layers))
+    layers = (
+        [_layer_data.Layer("global", gpath, _layer_data.read_toml(gpath))]
+        if gpath.is_file()
+        else []
+    )
+    cleaned, _ = _presets.strip_presets(layers)
+    return _layer_data.effective_from_layers(
+        cleaned, source="(global config)", presets=_presets.preset_names(layers)
+    )
 
 
 def load_effective_with_overlay(
@@ -775,7 +112,7 @@ def load_effective_with_overlay(
     *,
     explicit_paths: tuple[pathlib.Path, ...] = (),
     state_overlay: dict[str, Any] | None = None,
-) -> EffectiveConfig:
+) -> _layer_data.EffectiveConfig:
     """Load the effective config with a machine's overlays as the highest layers.
 
     Args:
@@ -792,16 +129,16 @@ def load_effective_with_overlay(
         ConfigError: A layer is unreadable, an overlay selects a preset, or the merged
             config is invalid.
     """
-    layers = discover_layers(repo_root, explicit_paths)
+    layers = _layer_data.discover_layers(repo_root, explicit_paths)
     if overlay:
-        _forbid_layer_preset("machine overlay", overlay)
-        layers = [*layers, Layer("machine", None, overlay)]
+        _layer_data.forbid_layer_preset("machine overlay", overlay)
+        layers = [*layers, _layer_data.Layer("machine", None, overlay)]
     if state_overlay:
-        _forbid_layer_preset("state overlay", state_overlay)
-        layers = [*layers, Layer("state", None, state_overlay)]
-    presets = preset_names(layers)
-    layers = _apply_preset(layers, "")
-    return _effective_from_layers(
+        _layer_data.forbid_layer_preset("state overlay", state_overlay)
+        layers = [*layers, _layer_data.Layer("state", None, state_overlay)]
+    presets = _presets.preset_names(layers)
+    layers = _presets.apply_preset(layers, "")
+    return _layer_data.effective_from_layers(
         layers, source="(merged config layers + machine overlay)", presets=presets
     )
 
@@ -823,7 +160,7 @@ class InvalidEntry:
 
     leaf: str
     value: Any
-    layer: LayerName
+    layer: _layer_data.LayerName
     path: pathlib.Path
     file_key: str
     is_table: bool = False
@@ -843,7 +180,9 @@ class ConfigDiagnosis:
     blocked: str | None
 
 
-def _fix_scope_layers(repo_root: pathlib.Path, machine: pathlib.Path | None) -> list[Layer]:
+def _fix_scope_layers(
+    repo_root: pathlib.Path, machine: pathlib.Path | None
+) -> list[_layer_data.Layer]:
     """Return the layers `config fix` repairs, with presets applied as in a real load.
 
     Args:
@@ -856,16 +195,18 @@ def _fix_scope_layers(repo_root: pathlib.Path, machine: pathlib.Path | None) -> 
     Raises:
         ConfigError: A layer is unreadable, or the overlay selects a preset.
     """
-    layers = discover_layers(repo_root, ())
+    layers = _layer_data.discover_layers(repo_root, ())
     if machine is not None:
         overlay = io.read_toml_file(machine).get("config", {})
         if isinstance(overlay, dict) and overlay:
-            _forbid_layer_preset("machine overlay", overlay)
-            layers = [*layers, Layer("machine", machine, overlay)]
-    return _apply_preset(layers, "")
+            _layer_data.forbid_layer_preset("machine overlay", overlay)
+            layers = [*layers, _layer_data.Layer("machine", machine, overlay)]
+    return _presets.apply_preset(layers, "")
 
 
-def _merge_with_origin(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, Layer]]:
+def _merge_with_origin(
+    layers: list[_layer_data.Layer],
+) -> tuple[dict[str, Any], dict[str, _layer_data.Layer]]:
     """Deep-merge the layers and map each dotted leaf to the layer that set it.
 
     Args:
@@ -874,12 +215,14 @@ def _merge_with_origin(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, L
     Returns:
         The merged table, and the layer of each leaf.
     """
-    merged, sources = _merge_layers(layers)
+    merged, sources = _layer_data.merge_layers(layers)
     by_name = {layer.source: layer for layer in layers}
     return merged, {leaf: by_name[name] for leaf, name in sources.items() if name in by_name}
 
 
-def _removable_for(loc: str, origin: dict[str, Layer]) -> tuple[str, Layer, bool] | None:
+def _removable_for(
+    loc: str, origin: dict[str, _layer_data.Layer]
+) -> tuple[str, _layer_data.Layer, bool] | None:
     """Return what to drop for a validation error at a location.
 
     Three shapes: the location is a file leaf; it is under a file leaf (the longest present
@@ -906,7 +249,7 @@ def _removable_for(loc: str, origin: dict[str, Layer]) -> tuple[str, Layer, bool
 
 
 def _diagnose_errors(
-    exc: pydantic.ValidationError, origin: dict[str, Layer], *, only_layer: str | None
+    exc: pydantic.ValidationError, origin: dict[str, _layer_data.Layer], *, only_layer: str | None
 ) -> ConfigDiagnosis:
     """Turn validation errors into droppable entries and a note for the rest.
 
@@ -951,7 +294,7 @@ def _diagnose_errors(
     return ConfigDiagnosis(tuple(removable), "\n".join(blocked) if blocked else None)
 
 
-def _diagnose_layers(layers: list[Layer], *, only_layer: str | None) -> ConfigDiagnosis:
+def _diagnose_layers(layers: list[_layer_data.Layer], *, only_layer: str | None) -> ConfigDiagnosis:
     """Validate a layer prefix and locate its invalid entries.
 
     Args:
@@ -987,14 +330,14 @@ def _diagnose_presets(repo_root: pathlib.Path) -> ConfigDiagnosis:
     Raises:
         ConfigError: A layer is unreadable.
     """
-    by_name: dict[str, list[Layer]] = {}
-    for layer in discover_layers(repo_root, ()):
+    by_name: dict[str, list[_layer_data.Layer]] = {}
+    for layer in _layer_data.discover_layers(repo_root, ()):
         presets = layer.data.get("presets")
         if not isinstance(presets, dict):
             continue
         for name, body in presets.items():
             if not isinstance(body, dict):
-                if layer.path is None:  # discover_layers always attaches file paths
+                if layer.path is None:  # _layer_data.discover_layers always attaches file paths
                     continue
                 return ConfigDiagnosis(
                     (
@@ -1009,7 +352,7 @@ def _diagnose_presets(repo_root: pathlib.Path) -> ConfigDiagnosis:
                     ),
                     None,
                 )
-            by_name.setdefault(name, []).append(Layer(layer.name, layer.path, body))
+            by_name.setdefault(name, []).append(_layer_data.Layer(layer.name, layer.path, body))
     for name, layers in by_name.items():
         for end in range(1, len(layers) + 1):
             diagnosis = _diagnose_layers(layers[:end], only_layer=None)
@@ -1062,7 +405,7 @@ def find_invalid_entries(
         if machine is None and (preset_diagnosis := _diagnose_presets(repo_root)).removable:
             return preset_diagnosis
         if machine is None:
-            cleaned, _ = _strip_presets(discover_layers(repo_root, ()))
+            cleaned, _ = _presets.strip_presets(_layer_data.discover_layers(repo_root, ()))
             for end in range(1, len(cleaned) + 1):
                 diagnosis = _diagnose_layers(cleaned[:end], only_layer=None)
                 leaves = tuple(entry for entry in diagnosis.removable if not entry.is_table)
@@ -1074,7 +417,7 @@ def find_invalid_entries(
     return _diagnose_layers(layers, only_layer=only)
 
 
-def leaf_keys(eff: EffectiveConfig) -> list[str]:
+def leaf_keys(eff: _layer_data.EffectiveConfig) -> list[str]:
     """Return every dotted leaf path of the effective config, sorted.
 
     Args:
@@ -1083,10 +426,10 @@ def leaf_keys(eff: EffectiveConfig) -> list[str]:
     Returns:
         The paths.
     """
-    return sorted(config_leaves(eff.config))
+    return sorted(_layer_data.config_leaves(eff.config))
 
 
-def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | None:
+def effective_leaf(eff: _layer_data.EffectiveConfig, dotted_key: str) -> tuple[Any, str] | None:
     """Return a leaf's value and the layer that set it, as `config show` reports them.
 
     Args:
@@ -1097,7 +440,7 @@ def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | N
         `(value, source)`, the source `default` when no layer set it and `unset` for a preset
         leaf no layer authored; None when the key is not a leaf.
     """
-    leaves = config_leaves(eff.config)
+    leaves = _layer_data.config_leaves(eff.config)
     parts = dotted_key.split(".")
     if parts[0] == "presets" and len(parts) > 2:
         # A preset leaf may name a role or provider absent from the effective config.
@@ -1190,10 +533,10 @@ def materialize(
     """
     data = config.model_dump(mode="python")
     if explicit_leaves is not None:
-        defaults = config_leaves(config_model.Config())
+        defaults = _layer_data.config_leaves(config_model.Config())
         selected = {
             leaf
-            for leaf, value in config_leaves(config).items()
+            for leaf, value in _layer_data.config_leaves(config).items()
             if leaf in explicit_leaves or leaf not in defaults or value != defaults[leaf]
         }
 
@@ -1254,5 +597,5 @@ def _file_presets(path: pathlib.Path | None) -> dict[str, Any]:
     """
     if path is None or not path.is_file():
         return {}
-    presets = _read_toml(path).get("presets")
+    presets = _layer_data.read_toml(path).get("presets")
     return presets if isinstance(presets, dict) else {}

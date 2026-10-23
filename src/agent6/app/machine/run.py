@@ -51,8 +51,8 @@ from agent6.sandbox import detect, jail
 from agent6.sessions import layout, process
 from agent6.tools import _result_format
 from agent6.tools import policy as tools_policy
-from agent6.vcs import git_ops
-from agent6.viewmodel import machine_state
+from agent6.vcs import git_ops, git_read
+from agent6.viewmodel import _machine_logs, machine_state
 
 
 def _fail(
@@ -85,7 +85,7 @@ def uncommitted_refusal(path: pathlib.Path, cwd: pathlib.Path) -> str | None:
     Returns:
         The refusal naming the first uncommitted piece, or None.
     """
-    if not git_ops.is_git_repo(cwd):
+    if not git_read.is_git_repo(cwd):
         return None
     scripts = path.parent / "scripts"
     pieces = [(path, "machine")] + ([(scripts, "scripts bundle")] if scripts.exists() else [])
@@ -96,7 +96,7 @@ def uncommitted_refusal(path: pathlib.Path, cwd: pathlib.Path) -> str | None:
         except ValueError:
             continue
         try:
-            dirty = git_ops.paths_dirty(cwd, (rel,))
+            dirty = git_read.paths_dirty(cwd, (rel,))
         except errors.GitError as exc:
             # A review-discipline gate, not a security boundary: fail open, never silently.
             print(
@@ -172,7 +172,7 @@ def machine_tool_runner(
         dest = clone_root / f"tool-{uuid.uuid4().hex[:12]}"
         try:
             machine_agent.clone_at_machine_chain(
-                cwd, dest, git_ops.machine_chain_ref_for(machine_id)
+                cwd, dest, git_read.machine_chain_ref_for(machine_id)
             )
         except (subrun.SubrunError, errors.GitError) as exc:
             shutil.rmtree(dest, ignore_errors=True)
@@ -418,7 +418,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     return 2
                 base_commit = begin.base_commit
             else:
-                base_commit = git_ops.status(cwd).head_sha
+                base_commit = git_read.status(cwd).head_sha
         except (errors.GitError, JournalError) as exc:
             reporter.refuse(f"cannot resolve the machine's starting commit: {exc}")
             return 2
@@ -505,15 +505,15 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     reporter.refuse(f"{name}: {budget_err}")
                     return 2
             # Resolved on the host: a confined agent cannot read ~/.gitconfig.
-            commit_identity: git_ops.CommitIdentity | None = None
+            commit_identity: git_read.CommitIdentity | None = None
             if has_run_agent:
-                base = git_ops.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
+                base = git_read.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
                 try:
-                    name, email = git_ops.verify_git_identity(cwd, base)
+                    name, email = git_read.verify_git_identity(cwd, base)
                 except errors.GitError as exc:
                     reporter.error(str(exc))
                     return 2
-                commit_identity = git_ops.CommitIdentity(name=name, email=email)
+                commit_identity = git_read.CommitIdentity(name=name, email=email)
             agent_runner = machine_agent.build_machine_agent_runner(
                 {
                     state_name: machine_agent.state_overlay(
@@ -584,10 +584,10 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             app_frontend.apply_spawned_away_default(root, app_frontend.approval_scopes(cfg))
             if not journal.exists():
                 # The chain ref outlives an archived instance dir; its tip is that instance's work.
-                ref = git_ops.machine_chain_ref_for(spec.machine)
-                branch = git_ops.machine_branch_for(spec.machine)
-                tip = git_ops.chain_tip(cwd, ref) if has_run_agent else None
-                if tip is not None and git_ops.is_ancestor(cwd, tip, "HEAD"):
+                ref = git_read.machine_chain_ref_for(spec.machine)
+                branch = git_read.machine_branch_for(spec.machine)
+                tip = git_read.chain_tip(cwd, ref) if has_run_agent else None
+                if tip is not None and git_read.is_ancestor(cwd, tip, "HEAD"):
                     git_ops.delete_ref(cwd, ref)
                     reporter.note(
                         f"the previous instance's work on {branch!r} is in HEAD;"
@@ -702,7 +702,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     except (JournalError, EngineError) as exc:
         reporter.error(str(exc))
         return 1
-    spend, _ = machine_state.machine_spend(journal.read(), root, alive=False)
+    spend, _ = _machine_logs.machine_spend(journal.read(), root, alive=False)
     spend_line = (
         f"spent {budget.format_usd(spend.usd, partial=spend.partial)}"
         f" (in={spend.input_tokens} tok, out={spend.output_tokens} tok)"
@@ -725,11 +725,11 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             f" {spend_line}"
         )
     # A machine with run states commits to its own branch: the ending names it, as a run's does.
-    branch = git_ops.machine_branch_for(spec.machine)
+    branch = git_read.machine_branch_for(spec.machine)
     if (
         has_run_agent
-        and git_ops.branch_exists(cwd, branch)
-        and not git_ops.is_ancestor(cwd, branch, "HEAD")
+        and git_read.branch_exists(cwd, branch)
+        and not git_read.is_ancestor(cwd, branch, "HEAD")
     ):
         reporter.out(f"\nchanges are on {branch}")
         reporter.out(f"  merge with:  git merge {branch}")

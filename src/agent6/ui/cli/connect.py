@@ -23,6 +23,7 @@ from agent6.config import (
     ConfigError,
     OpenAIProviderEntry,
     ProviderEntry,
+    _layer_data,
     io,
     layer,
     provider_name_refusal,
@@ -101,7 +102,7 @@ class _Current:
 
     effective: _Leaves
     target: _Leaves
-    shadowed: dict[str, layer.Layer]
+    shadowed: dict[str, _layer_data.Layer]
 
 
 def _target_leaves(name: str, target: pathlib.Path) -> _Leaves:

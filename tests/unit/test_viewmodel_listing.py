@@ -290,7 +290,7 @@ def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: pathlib.P
     """
     import subprocess
 
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_read
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -307,7 +307,7 @@ def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: pathlib.P
         json.dumps({"session_id": "x", "run_branch": None, "base_branch": "main"}), encoding="utf-8"
     )
     assert "commits_ref" not in manifest_branches(d, repo=repo)
-    chain = git_ops.chain_ref_for("x")
+    chain = git_read.chain_ref_for("x")
     subprocess.run(["git", "-C", str(repo), "update-ref", chain, "HEAD"], check=True)
     assert manifest_branches(d, repo=repo)["commits_ref"] == chain
     (d / "manifest.json").write_text(

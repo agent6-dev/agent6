@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from agent6 import errors, paths, terminal
 from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import session_dirs
 
 
@@ -49,7 +49,7 @@ def add_session_worktree(repo: pathlib.Path, path: pathlib.Path, sha: str) -> Ch
     Raises:
         GitError: Git refused the worktree.
     """
-    checkout = Checkout(path, git_ops.git_common_dir(repo))
+    checkout = Checkout(path, git_read.git_common_dir(repo))
     git_ops.add_worktree(repo, path, sha)
     return checkout
 
@@ -73,14 +73,14 @@ def remove_fork_worktree(
         Whether it was removed, and the reason when not ("" on success).
     """
     try:
-        head = git_ops.status(worktree).head_sha if worktree.is_dir() else ""
+        head = git_read.status(worktree).head_sha if worktree.is_dir() else ""
     except (errors.GitError, OSError):
         head = ""  # a vanished directory, or no git there: nothing of its own to keep
     if (
         head
         and head not in tips
-        and not any(git_ops.is_ancestor(repo, head, tip) for tip in tips)
-        and not git_ops.commit_is_reachable(repo, head)
+        and not any(git_read.is_ancestor(repo, head, tip) for tip in tips)
+        and not git_read.commit_is_reachable(repo, head)
     ):
         return False, "holds a commit no branch or chain has"
     dirt = uncommitted_in_worktree(worktree, tips)
@@ -115,9 +115,9 @@ def uncommitted_in_worktree(worktree: pathlib.Path, tips: tuple[str, ...]) -> st
     tips = tips or ("HEAD",)
     try:
         for tip in tips:
-            if not git_ops.chain_dirty(worktree, tip, None):
+            if not git_read.chain_dirty(worktree, tip, None):
                 return ""
-        held = git_ops.chain_dirty_paths(worktree, tips[-1], None, 5)
+        held = git_read.chain_dirty_paths(worktree, tips[-1], None, 5)
     except (errors.GitError, OSError):
         # git runs with cwd=worktree, so a directory that vanished is an OSError: not dirt.
         return ""
@@ -183,10 +183,10 @@ def _still_needs_worktree(
     """
     if process.worker_is_alive(session_dir):
         return "live"
-    chain = git_ops.chain_ref_for(session_dir.name)
-    if manifest.merged is None and git_ops.chain_tip(repo, chain) is None:
+    chain = git_read.chain_ref_for(session_dir.name)
+    if manifest.merged is None and git_read.chain_tip(repo, chain) is None:
         return ""
-    merged = manifest.merged is not None and git_ops.merge_stamp_holds(
+    merged = manifest.merged is not None and git_read.merge_stamp_holds(
         repo, session_dir.name, manifest.run_branch or "", manifest.merged.tip
     )
     return "" if merged else "unmerged"
@@ -210,7 +210,7 @@ def _landed_tips(
     """
     tips: list[str] = []
     for d, m in sessions:
-        landed = git_ops.chain_tip(repo, git_ops.chain_ref_for(d.name)) or (
+        landed = git_read.chain_tip(repo, git_read.chain_ref_for(d.name)) or (
             m.merged.tip if m.merged else ""
         )
         tips += [tip for tip in (landed, m.base_sha, m.forked_from_sha or "") if tip]

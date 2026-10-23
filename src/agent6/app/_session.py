@@ -19,7 +19,7 @@ from agent6.app import _setup, confine, frontend, preflight, providers
 from agent6.app import reporter as app_reporter
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.graph import curator as graph_curator
-from agent6.harness import _compaction, _reviewer
+from agent6.harness import _compaction_result, _reviewer
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import detect, jail
 from agent6.sessions import layout as sessions_layout
@@ -64,8 +64,8 @@ def tool_result_cap_bytes(cfg: Config, role: RoleName) -> int:
     rm = cfg.models.resolve(role)
     entry = cfg.providers.get(rm.provider) if rm is not None else None
     if isinstance(entry, ClaudeCodeProviderEntry):
-        return _compaction.CLAUDE_CODE_RESULT_CAP_BYTES
-    return _compaction.TOOL_RESULT_CAP_BYTES
+        return _compaction_result.CLAUDE_CODE_RESULT_CAP_BYTES
+    return _compaction_result.TOOL_RESULT_CAP_BYTES
 
 
 def select_isolation(

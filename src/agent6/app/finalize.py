@@ -23,7 +23,7 @@ from agent6.config import Config, NotifyConfig
 from agent6.harness import _advice, _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import commit_message, git_ops
+from agent6.vcs import commit_message, git_ops, git_read
 from agent6.viewmodel import (
     _session_status,
     format,
@@ -96,7 +96,7 @@ def stranded_edits(
         return False
     if not manifest.policy.commit_per_turn:
         return False
-    merged = manifest.merged is not None and git_ops.merge_stamp_holds(
+    merged = manifest.merged is not None and git_read.merge_stamp_holds(
         cwd, manifest.session_id, manifest.run_branch or "", manifest.merged.tip
     )
     if merged or wire.commits_ref(manifest, cwd):
@@ -104,7 +104,7 @@ def stranded_edits(
     dirty = False
     with contextlib.suppress(errors.GitError):
         exclude = sessions_layout.read_untracked_at_start(layout.session_dir)
-        dirty = not git_ops.status(cwd, exclude=exclude).is_clean
+        dirty = not git_read.status(cwd, exclude=exclude).is_clean
     return dirty
 
 
@@ -255,8 +255,8 @@ def _print_unverified(
     """
     if result.verified != "unverified":
         return
-    chain = git_ops.chain_ref_for(layout.session_id)
-    if not result.completed and git_ops.chain_tip(cwd, chain) is None:
+    chain = git_read.chain_ref_for(layout.session_id)
+    if not result.completed and git_read.chain_tip(cwd, chain) is None:
         return
     reporter.out(
         "\nnothing verified the final tree: no verify ran this execution, or edits landed"
@@ -409,7 +409,7 @@ def _print_run_branch_footer(
         manifest = sessions_manifest.read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         base_branch = manifest.base_branch
-        if manifest.merged is not None and git_ops.merge_stamp_holds(
+        if manifest.merged is not None and git_read.merge_stamp_holds(
             cwd, manifest.session_id, run_branch, manifest.merged.tip
         ):
             merged_into = manifest.merged.into or base_branch
@@ -418,7 +418,7 @@ def _print_run_branch_footer(
         current = ""
         head = ""
         with contextlib.suppress(errors.GitError):
-            st = git_ops.status(cwd)
+            st = git_read.status(cwd)
             current = st.branch
             head = st.head_sha[:12]
         where = current or head or "the current checkout"
@@ -438,7 +438,7 @@ def _print_run_branch_footer(
         # An operator who checked the run branch out should know how to leave it.
         current = ""
         with contextlib.suppress(errors.GitError):
-            current = git_ops.status(cwd).branch
+            current = git_read.status(cwd).branch
         if run_branch and current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
     elif result.completed and manifest is not None and not manifest.policy.commit_per_turn:
@@ -485,7 +485,7 @@ def _print_left_out(
     if not left_out:
         return
     try:
-        held = git_ops.tree_paths(cwd, ref) if ref else frozenset[str]()
+        held = git_read.tree_paths(cwd, ref) if ref else frozenset[str]()
     except errors.GitError:
         return
     reasons = {"ignored": "ignored by git", "untracked": "untracked before the run"}
@@ -523,7 +523,7 @@ def _print_no_commit_footer(
     """
     try:
         exclude = sessions_layout.read_untracked_at_start(layout.session_dir)
-        tree_clean: bool | None = git_ops.status(cwd, exclude=exclude).is_clean
+        tree_clean: bool | None = git_read.status(cwd, exclude=exclude).is_clean
     except errors.GitError as exc:
         tree_clean = None
         reporter.out(
@@ -584,7 +584,7 @@ def print_interrupt_end(
     if run_branch:
         current = ""
         with contextlib.suppress(errors.GitError):
-            current = git_ops.status(cwd).branch
+            current = git_read.status(cwd).branch
         if current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
 
@@ -617,10 +617,10 @@ def finalize_auto_merge(
         return
     base_branch = manifest.base_branch
     # The visible branch, else the chain ref; an unborn ref has nothing to land.
-    run_branch = manifest.run_branch or git_ops.chain_ref_for(manifest.session_id)
-    if not base_branch or git_ops.chain_tip(cwd, run_branch) is None:
+    run_branch = manifest.run_branch or git_read.chain_ref_for(manifest.session_id)
+    if not base_branch or git_read.chain_tip(cwd, run_branch) is None:
         return
-    identity = git_ops.CommitIdentity(
+    identity = git_read.CommitIdentity(
         name=cfg.git.commit.name,
         email=cfg.git.commit.email,
         trailer=commit_message.render_commit_trailer(
@@ -632,7 +632,7 @@ def finalize_auto_merge(
         ),
     )
     try:
-        git_ops.verify_git_identity(cwd, identity)
+        git_read.verify_git_identity(cwd, identity)
     except errors.GitError as exc:
         reporter.note(
             f"auto_merge skipped: {exc}",
@@ -706,7 +706,7 @@ def _stash_apply_cmd(cwd: pathlib.Path, sha: str, base_branch: str, *, in_worktr
     apply = f"git stash apply {sha}"
     current = ""
     with contextlib.suppress(errors.GitError):
-        current = git_ops.status(cwd).branch
+        current = git_read.status(cwd).branch
     return f"git checkout {base_branch} && {apply}" if current != base_branch else apply
 
 
@@ -724,7 +724,7 @@ def stash_recovery_hint(
     Returns:
         The command, or None when the run pushed no stash.
     """
-    entry = git_ops.find_stash(cwd, git_ops.auto_stash_message(session_id))
+    entry = git_read.find_stash(cwd, git_ops.auto_stash_message(session_id))
     if entry is None:
         return None
     return _stash_apply_cmd(cwd, entry.sha, base_branch, in_worktree=in_worktree)
@@ -757,7 +757,7 @@ def finalize_auto_stash(
         reporter: Receives the notes.
     """
     message = git_ops.auto_stash_message(session_id)
-    entry = git_ops.find_stash(cwd, message)
+    entry = git_read.find_stash(cwd, message)
     if entry is None:
         reporter.note("pre-run auto-stash not found (already restored?); nothing to pop")
         return
@@ -768,12 +768,12 @@ def finalize_auto_stash(
         reporter.note(f"pre-run changes are stashed; restore them with: {recover}")
         return
     try:
-        st = git_ops.status(cwd, exclude=exclude)
+        st = git_read.status(cwd, exclude=exclude)
     except errors.GitError as exc:
         reporter.note(f"could not read the worktree ({exc}); restore with: {recover}")
         return
     if not in_worktree and run_branch and st.branch == run_branch:
-        if not git_ops.branch_exists(cwd, base_branch):
+        if not git_read.branch_exists(cwd, base_branch):
             reporter.note(
                 f"base branch {base_branch} no longer exists; pre-run changes left "
                 f"stashed (recover with: {apply})"

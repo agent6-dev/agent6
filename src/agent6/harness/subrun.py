@@ -15,7 +15,7 @@ from typing import Protocol
 
 from agent6 import errors, kinds, paths
 from agent6.sessions import layout
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 
 class SubrunError(Exception):
@@ -138,12 +138,12 @@ def import_run(
     Raises:
         SubrunError: When the branch or run dir already exists in the origin, or the fetch fails.
     """
-    if git_ops.branch_exists(origin, branch):
+    if git_read.branch_exists(origin, branch):
         raise SubrunError(f"branch {branch!r} already exists in {origin}")
     dest_session_dir = layout.bucket_dir(origin_state, "runs") / lane_session_dir.name
     if dest_session_dir.exists():
         raise SubrunError(f"run dir already exists: {dest_session_dir}")
-    if git_ops.branch_exists(lane_repo, branch):
+    if git_read.branch_exists(lane_repo, branch):
         try:
             git_ops.fetch_branch(origin, lane_repo, f"{branch}:{branch}")
         except errors.GitError as exc:

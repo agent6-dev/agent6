@@ -15,7 +15,7 @@ import re
 from collections.abc import Sequence
 
 from agent6 import errors
-from agent6.vcs import _git_command, git_ops
+from agent6.vcs import _git_command, git_read
 
 # The revision that names the working tree as the head of a diff or compare.
 WORKTREE = "WORKTREE"
@@ -35,7 +35,7 @@ def tree_has_entry(path: pathlib.Path, rev: str, name: str) -> bool:
     Returns:
         True for a blob or a gitlink entry.
     """
-    metadata = git_ops.tree_entry(path, rev, name)
+    metadata = git_read.tree_entry(path, rev, name)
     return " blob " in metadata or " commit " in metadata
 
 
@@ -476,7 +476,7 @@ def worktree_entry(path: pathlib.Path, name: str) -> str:
         "--",
         name,
         check=False,
-        env_extra=git_ops.LITERAL_PATHSPECS,
+        env_extra=git_read.LITERAL_PATHSPECS,
     )
     for entry in fields:
         tag, _, found = entry.partition(" ")
@@ -572,7 +572,7 @@ def _patch(
     Raises:
         GitError: git exited with another code.
     """
-    _argv, rc, out, err = _git_command.spawn(path, args, git_ops.LITERAL_PATHSPECS, None)
+    _argv, rc, out, err = _git_command.spawn(path, args, git_read.LITERAL_PATHSPECS, None)
     if rc not in ok:
         raise errors.GitError(
             _git_command.failure(

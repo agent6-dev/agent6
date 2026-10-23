@@ -26,7 +26,7 @@ from collections.abc import Callable
 from agent6.sandbox import tool_paths
 from agent6.tools import _path_safety
 from agent6.tools import errors as tools_errors
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 # A command line with any of these, or a leading assignment, is shell, wrapped in `sh -c`.
 _SHELL_META = re.compile(r"[|&;<>`$*]")
@@ -238,7 +238,7 @@ def read_agents_md(
     Raises:
         GitError: A requested commit cannot be read or git fails.
     """
-    base, here = git_ops.toplevel(repo_root), repo_root.resolve()
+    base, here = git_read.toplevel(repo_root), repo_root.resolve()
     if base is None or not here.is_relative_to(base.resolve()):
         return (
             "" if at is not None else _path_safety.read_workspace_text(repo_root, "AGENTS.md", hide)
@@ -251,7 +251,7 @@ def read_agents_md(
         _path_safety.host_workspace(root, hide).resolve_read(name)
     except (OSError, tools_errors.ToolError):
         return ""
-    return git_ops.read_file_at(root, at, name)
+    return git_read.read_file_at(root, at, name)
 
 
 def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:

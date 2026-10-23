@@ -23,7 +23,7 @@ from agent6.providers import ProviderResponse
 from agent6.sessions import ipc
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import cli_main, run
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 _CONFIG = """
 [sandbox]
@@ -185,7 +185,7 @@ def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[sc
 
 
 def _chain_file(repo: pathlib.Path, session_id: str, path: str) -> str:
-    return _git(repo, "show", f"{git_ops.chain_ref_for(session_id)}:{path}")
+    return _git(repo, "show", f"{git_read.chain_ref_for(session_id)}:{path}")
 
 
 def test_session_end_records_the_tree_the_run_left(
@@ -199,8 +199,8 @@ def test_session_end_records_the_tree_the_run_left(
         for line in (_session_dir(repo, "tree-END001") / "logs.jsonl").read_text().splitlines()
     ]
     (end,) = [e for e in events if e["type"] == "session.end"]
-    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("tree-END001"))
-    assert end["tree"] == git_ops.worktree_tree(repo, tip, frozenset())
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("tree-END001"))
+    assert end["tree"] == git_read.worktree_tree(repo, tip, frozenset())
     assert _git(repo, "log", "--oneline", "-1", "--format=%s").strip() == "seed"  # no commit made
 
 
@@ -273,7 +273,7 @@ def test_resume_stashes_a_staged_rename_without_taking_run_work(
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
     assert (repo / "b.py").read_text(encoding="utf-8") == "y = 1\n"
     assert not (repo / "b.rst").exists()
-    entry = git_ops.find_stash(repo, git_ops.auto_stash_message(session_id))
+    entry = git_read.find_stash(repo, git_ops.auto_stash_message(session_id))
     assert entry is not None
     assert "restore them with:" in capsys.readouterr().err
 
@@ -331,7 +331,7 @@ def test_auto_stash_pop_keeps_a_stash_that_would_overwrite_run_work(
     assert cli_main(["run", "--session-id", "tree-POP002", "task"]) == 0
 
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
-    entry = git_ops.find_stash(repo, git_ops.auto_stash_message("tree-POP002"))
+    entry = git_read.find_stash(repo, git_ops.auto_stash_message("tree-POP002"))
     assert entry is not None
     err = capsys.readouterr().err
     assert "stash is preserved" in err and f"git stash apply {entry.sha}" in err
@@ -345,7 +345,7 @@ def test_resume_refuses_to_stash_a_file_the_run_also_changed(
     """A stash would take the run's own work on the file with the operator's edit: refused."""
     repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\n')
     _stopped_run(repo, monkeypatch, "tree-BOTH01", _edit("a.py", "x = 5  # the run\n"))
-    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("tree-BOTH01"))
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("tree-BOTH01"))
     (repo / "a.py").write_text("x = 6  # operator on top\n", encoding="utf-8")
     capsys.readouterr()
 
@@ -355,7 +355,7 @@ def test_resume_refuses_to_stash_a_file_the_run_also_changed(
     assert "a.py" in err and "the run also changed" in err
     assert _git(repo, "stash", "list") == ""
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 6  # operator on top\n"
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("tree-BOTH01")) == tip
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("tree-BOTH01")) == tip
 
 
 @pytest.mark.parametrize("policy", ["stash", "ask"])
@@ -486,7 +486,7 @@ def test_resume_refuses_an_outside_edit_nobody_can_answer_for(
     """Under `dirty_tree = "ask"` with nobody to answer, the resume refuses and names the file."""
     repo = _setup(tmp_path, monkeypatch, "")
     _stopped_run(repo, monkeypatch, "tree-ASK001", _edit("z.txt", "1\n"))
-    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("tree-ASK001"))
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("tree-ASK001"))
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
     capsys.readouterr()
 
@@ -494,7 +494,7 @@ def test_resume_refuses_an_outside_edit_nobody_can_answer_for(
 
     err = capsys.readouterr().err
     assert "a.py" in err and "no terminal and no front-end" in err
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("tree-ASK001")) == tip
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("tree-ASK001")) == tip
     assert not (_session_dir(repo, "tree-ASK001") / "worker.pid").exists()
 
 
@@ -594,7 +594,7 @@ def test_a_killed_runs_own_edit_to_a_committed_file_is_not_stashed(
     _stopped_run(repo, monkeypatch, "tree-KILL02", _edit("z.txt", "1\n"))
     # A file a run command wrote and the run committed: no tool result names it.
     (repo / "w.txt").write_text("1\n", encoding="utf-8")
-    ref = git_ops.chain_ref_for("tree-KILL02")
+    ref = git_read.chain_ref_for("tree-KILL02")
     assert git_ops.chain_commit(
         repo, "agent6 turn 2: w", ref=ref, fallback_parent=None, also_branch="agent6/tree-KILL02"
     )

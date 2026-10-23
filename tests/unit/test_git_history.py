@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 
-from agent6.vcs import git_files, git_history, git_ops
+from agent6.vcs import git_files, git_history, git_read
 
 _CLOCK = {"n": 0}
 # Two valid PNGs, so an image's "before" and "after" differ in size and dimensions.
@@ -161,7 +161,7 @@ def test_resolve_commit_takes_names_and_refuses_the_unknown(tmp_path: pathlib.Pa
     assert git_history.resolve_commit(tmp_path, "-x") == ""
     assert git_history.resolve_commit(tmp_path, "--all") == ""
     assert git_history.resolve_commit(tmp_path, "no-such-rev") == ""
-    assert git_history.resolve_commit(tmp_path, git_ops.EMPTY_TREE) == ""  # a tree, not a commit
+    assert git_history.resolve_commit(tmp_path, git_read.EMPTY_TREE) == ""  # a tree, not a commit
 
 
 def test_log_commits_walk_topologically_and_page(tmp_path: pathlib.Path) -> None:
@@ -217,7 +217,7 @@ def test_changed_files_detect_renames_binaries_and_deletions(tmp_path: pathlib.P
     dropped = {f.path: f for f in git_history.changed_files(tmp_path, shas["root"], shas["main"])}
     assert dropped["d.txt"].status == "D"
     assert dropped["dir/f.txt"].status == "A"
-    root_files = git_history.changed_files(tmp_path, git_ops.EMPTY_TREE, shas["root"])
+    root_files = git_history.changed_files(tmp_path, git_read.EMPTY_TREE, shas["root"])
     assert sorted((f.status, f.path) for f in root_files) == [
         ("A", "a.txt"),
         ("A", "d.txt"),
@@ -255,7 +255,7 @@ def test_tree_has_entry_sees_files_only_in_that_tree(tmp_path: pathlib.Path) -> 
     assert git_history.tree_has_entry(tmp_path, shas["root"], "a.txt")
     assert git_history.tree_has_entry(tmp_path, shas["main"], "dir/f.txt")
     assert not git_history.tree_has_entry(tmp_path, shas["main"], "dir")  # a tree, not a file
-    assert not git_history.tree_has_entry(tmp_path, git_ops.EMPTY_TREE, "a.txt")
+    assert not git_history.tree_has_entry(tmp_path, git_read.EMPTY_TREE, "a.txt")
 
 
 def test_search_log_matches_message_text_literally(tmp_path: pathlib.Path) -> None:
@@ -307,7 +307,7 @@ def test_worktree_files_on_an_unborn_branch_list_against_the_empty_tree(
     (tmp_path / "s.txt").write_text("staged\n", encoding="utf-8")
     _git(tmp_path, "add", "s.txt")
     (tmp_path / "u.txt").write_text("no newline", encoding="utf-8")
-    rows = git_history.worktree_files(tmp_path, git_ops.EMPTY_TREE)
+    rows = git_history.worktree_files(tmp_path, git_read.EMPTY_TREE)
     assert rows == (
         git_history.ChangedFile("A", "s.txt", "", 1, 0, False),
         git_history.ChangedFile("A", "u.txt", "", 1, 0, False),
@@ -376,7 +376,7 @@ def test_blob_at_reads_a_regular_files_bytes_within_the_cap(tmp_path: pathlib.Pa
     assert over == git_files.Blob(len(PNG_RED_1X1), None)
     assert git_files.blob_at(tmp_path, shas["root"], "logo.png", max_bytes=1 << 20) is None
     assert git_files.blob_at(tmp_path, shas["main"], "dir", max_bytes=1 << 20) is None
-    assert git_files.blob_at(tmp_path, git_ops.EMPTY_TREE, "a.txt", max_bytes=1 << 20) is None
+    assert git_files.blob_at(tmp_path, git_read.EMPTY_TREE, "a.txt", max_bytes=1 << 20) is None
 
 
 def test_worktree_blob_reads_only_a_regular_file_git_lists(tmp_path: pathlib.Path) -> None:
@@ -417,7 +417,7 @@ def test_tree_files_list_a_commits_files_with_size_and_kind(tmp_path: pathlib.Pa
         "d.txt",
         "img.bin",
     ]
-    assert git_files.tree_files(tmp_path, git_ops.EMPTY_TREE) == ()
+    assert git_files.tree_files(tmp_path, git_read.EMPTY_TREE) == ()
 
 
 def test_worktree_tree_files_list_tracked_and_unignored_untracked_files(

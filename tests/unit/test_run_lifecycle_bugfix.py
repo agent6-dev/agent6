@@ -273,7 +273,7 @@ def test_a_resumed_plan_execution_makes_no_commit_notes(
     notes ("left out of this run's commits", "the tree holds changes no commit has") are false
     there, and untracked-at-start is not written into a plan dir nothing reads.
     """
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_read
 
     repo = _setup(tmp_path, monkeypatch)
     prov = _Scripted([_plan("# Plan: p\n\n1. one\n")])
@@ -291,7 +291,7 @@ def test_a_resumed_plan_execution_makes_no_commit_notes(
     assert "commit" not in err
     sd = paths.state_dir(repo) / "sessions" / "plans" / "p-PLAN01"
     assert not (sd / "untracked-at-start").exists()
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("p-PLAN01")) is None
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("p-PLAN01")) is None
 
 
 def test_an_ask_out_of_budget_exits_three(

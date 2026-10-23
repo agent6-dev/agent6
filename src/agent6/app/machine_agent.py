@@ -35,14 +35,14 @@ from agent6 import errors, event_log, kinds, paths
 from agent6.app import _session, _setup, confine, providers, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
-from agent6.harness import _chain, _compaction, _operator, loop, subrun
+from agent6.harness import _chain, _compaction_window, _operator, loop, subrun
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import jail
 from agent6.sessions import ipc, process
 from agent6.tools import dispatch, operator_prompts
-from agent6.vcs import commit_message, git_ops
-from agent6.viewmodel import machine_state
+from agent6.vcs import commit_message, git_ops, git_read
+from agent6.viewmodel import _machine_logs
 
 
 def _no_console(_events: event_log.EventSink) -> None:
@@ -81,7 +81,7 @@ class MachineAgentRequest(pydantic.BaseModel):
     events_log: pathlib.Path | None = None
     protect_paths: tuple[pathlib.Path, ...] = ()
     shared_writes: tuple[pathlib.Path, ...] = ()
-    commit_identity: git_ops.CommitIdentity | None = None
+    commit_identity: git_read.CommitIdentity | None = None
     request: AgentRequest
 
 
@@ -95,7 +95,7 @@ def _machine_head_sha(root: pathlib.Path) -> str | None:
         The sha, or None for an unborn or unreadable repo.
     """
     try:
-        return git_ops.status(root).head_sha or None
+        return git_read.status(root).head_sha or None
     except (errors.GitError, OSError):
         return None
 
@@ -438,7 +438,7 @@ def run_one(
             return _result("setup_command_failed", None, budget)
         if prepared.ran:
             # What the command left untracked is the environment, never the state's work.
-            setup_left = git_ops.untracked_paths(req.root)
+            setup_left = git_read.untracked_paths(req.root)
     rm = cfg.models.resolve("worker")
     compact_drop, compact_summarise, keep_recent = providers.resolve_compaction_thresholds(
         cfg, rm, log=reporter.err
@@ -448,7 +448,7 @@ def run_one(
         # A run-mode state commits on its own chain, named by the instance dir.
         chain=_chain.RunChain(
             req.root,
-            ref=git_ops.machine_chain_ref_for(req.transcript_dir.parent.name)
+            ref=git_read.machine_chain_ref_for(req.transcript_dir.parent.name)
             if not read_only
             else None,
             fallback_parent=_machine_head_sha(req.root) if not read_only else None,
@@ -468,7 +468,7 @@ def run_one(
         logger=reporter.err,
         mode="agent" if mode == "agent" else "run",
         state_dir=paths.state_dir(req.cwd),
-        compaction=_compaction.CompactionSettings(
+        compaction=_compaction_window.CompactionSettings(
             drop_at_chars=compact_drop,
             summarise_at_chars=compact_summarise,
             tool_result_cap_bytes=_session.tool_result_cap_bytes(cfg, "worker"),
@@ -526,7 +526,7 @@ def build_machine_agent_runner(
     cwd: pathlib.Path,
     transcript_dir: pathlib.Path,
     protect_paths: tuple[pathlib.Path, ...] = (),
-    commit_identity: git_ops.CommitIdentity | None = None,
+    commit_identity: git_read.CommitIdentity | None = None,
     machine_id: str | None = None,
     clone_root: pathlib.Path | None = None,
     shared_writes: tuple[pathlib.Path, ...] = (),
@@ -565,9 +565,9 @@ def build_machine_agent_runner(
         def salvaged(reason: str) -> AgentExecResult:
             # Without a result file the spend comes from the event log, so the guard trips.
             spend = (
-                machine_state.read_budget_totals(events_log, from_offset=start_offset)
+                _machine_logs.read_budget_totals(events_log, from_offset=start_offset)
                 if events_log is not None
-                else machine_state.Spend()
+                else _machine_logs.Spend()
             )
             return AgentExecResult(
                 reason=reason,
@@ -582,7 +582,7 @@ def build_machine_agent_runner(
         if resolved is None:
             return salvaged(f"error: no config was resolved for state {request.state_name!r}")
         clone: pathlib.Path | None = None
-        chain = git_ops.machine_chain_ref_for(machine_id) if machine_id is not None else None
+        chain = git_read.machine_chain_ref_for(machine_id) if machine_id is not None else None
         if chain is not None and clone_root is not None:
             clone = clone_root / f"state-{request.step_seq:04d}"
             try:
@@ -651,7 +651,7 @@ def build_machine_agent_runner(
                             result = salvaged("error")
         if clone is not None and chain is not None and machine_id is not None:
             result = _land_machine_clone(
-                cwd, clone, chain, git_ops.machine_branch_for(machine_id), result
+                cwd, clone, chain, git_read.machine_branch_for(machine_id), result
             )
         return result
 
@@ -677,7 +677,7 @@ def clone_at_machine_chain(origin: pathlib.Path, dest: pathlib.Path, chain_ref: 
         shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     subrun.clone_workspace(origin, dest)
-    tip = git_ops.chain_tip(origin, chain_ref)
+    tip = git_read.chain_tip(origin, chain_ref)
     if tip is not None:
         git_ops.fetch_branch(dest, origin, f"{chain_ref}:{chain_ref}")
         git_ops.checkout_detached(dest, tip)
@@ -701,8 +701,8 @@ def _land_machine_clone(
     Returns:
         The result, or a failed one when the import failed.
     """
-    advanced = git_ops.chain_tip(clone, chain_ref)
-    if advanced is None or advanced == git_ops.chain_tip(origin, chain_ref):
+    advanced = git_read.chain_tip(clone, chain_ref)
+    if advanced is None or advanced == git_read.chain_tip(origin, chain_ref):
         _drop_clone(clone)
         return result
     try:

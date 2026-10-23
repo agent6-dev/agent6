@@ -17,7 +17,7 @@ from agent6.sessions import process
 from agent6.ui import notify, spawn
 from agent6.ui.tui import composer, modals
 from agent6.ui.tui import machines as machmod
-from agent6.viewmodel import machine_files, machine_state
+from agent6.viewmodel import _machine_logs, machine_files, machine_state
 from tests.tui._waits import answerable, focus_answers, wait_for
 
 # A no-I/O machine that reaches a terminal at once, so `machine run` finishes with no model or jail.
@@ -1375,7 +1375,7 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
     log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
     (instance / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
     counts = {"fold": 0, "execution": 0}
-    real_fold, real_execution = vm_mod.fold_machine, vm_mod.newest_agent_execution
+    real_fold, real_execution = vm_mod.fold_machine, _machine_logs.newest_agent_execution
 
     def counting_fold(*args: object, **kwargs: object) -> object:
         counts["fold"] += 1
@@ -1397,13 +1397,13 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
             assert isinstance(screen, machmod.MachineWatchScreen)
             machines.fold_machine = counting_fold  # type: ignore[assignment]
             vm_mod.fold_machine = counting_fold  # type: ignore[assignment]
-            vm_mod.newest_agent_execution = counting_execution  # type: ignore[assignment]
+            _machine_logs.newest_agent_execution = counting_execution  # type: ignore[assignment]
             try:
                 screen._poll()  # pyright: ignore[reportPrivateUsage]
             finally:
                 machines.fold_machine = real_fold
                 vm_mod.fold_machine = real_fold
-                vm_mod.newest_agent_execution = real_execution
+                _machine_logs.newest_agent_execution = real_execution
             assert counts == {"fold": 1, "execution": 0}
 
     asyncio.run(scenario())

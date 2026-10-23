@@ -13,7 +13,7 @@ from typing import Any
 import pydantic
 import pytest
 
-from agent6.config import Config, layer
+from agent6.config import Config, _layer_data
 from agent6.viewmodel import config_view
 
 # Sections keyed by an operator-chosen name; a leaf under them exists only once an entry does.
@@ -57,7 +57,7 @@ def _rendered_keys(config: Config) -> set[str]:
     `mcp.servers.notes.sandbox.network`.
     """
     view = config_view.build_config_view(
-        layer.EffectiveConfig(config=config, sources={}, layers=())
+        _layer_data.EffectiveConfig(config=config, sources={}, layers=())
     )
     return {s.key for s in view.settings}
 
@@ -95,7 +95,7 @@ def test_security_sensitive_defaults_are_the_safe_value(path: str, safe: object)
 def test_every_rendered_leaf_carries_its_meaning() -> None:
     """The JSON view describes every leaf it renders, unset section holders included."""
     for config in (Config(), Config.model_validate(_POPULATED)):
-        eff = layer.EffectiveConfig(config=config, sources={}, layers=())
+        eff = _layer_data.EffectiveConfig(config=config, sources={}, layers=())
         view = json.loads(config_view.render_show(eff, as_json=True))
         undescribed = sorted(k for k, leaf in view.items() if not leaf["description"])
         assert not undescribed, f"leaves with no description: {undescribed}"

@@ -12,7 +12,7 @@ import pathlib
 
 from agent6 import kinds, terminal
 from agent6.tools import _path_safety
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6
@@ -36,7 +36,7 @@ def _agents_md_sources(
         (path, text) pairs, toplevel first.
     """
     base, directories = root, [pathlib.PurePath()]
-    top = git_ops.toplevel(root)
+    top = git_read.toplevel(root)
     if top is not None and root.resolve().is_relative_to(top.resolve()):
         base = top.resolve()
         for part in root.resolve().relative_to(base).parts:
@@ -63,7 +63,7 @@ def agents_md_text(root: pathlib.Path, hide: tuple[str, ...] = ()) -> str:
     Returns:
         The files' texts joined by blank lines, "" when none is readable.
     """
-    top = git_ops.toplevel(root)
+    top = git_read.toplevel(root)
     parts: list[str] = []
     for path, text in _agents_md_sources(root, hide):
         directory = path.parent.resolve()
@@ -91,7 +91,7 @@ def agents_md_notices(root: pathlib.Path, hide: tuple[str, ...] = ()) -> tuple[s
         The lines, empty when there is nothing to say.
     """
     out: list[str] = []
-    top = git_ops.toplevel(root)
+    top = git_read.toplevel(root)
     sources = _agents_md_sources(root, hide)
     if top is not None and top.resolve() != root.resolve():
         own = any(path.parent.resolve() == root.resolve() for path, _ in sources)
@@ -170,8 +170,8 @@ def load_repo_summary(root: pathlib.Path, hide: tuple[str, ...] = ()) -> kinds.R
     Returns:
         The layout, AGENTS.md, recent commits and the repo map.
     """
-    in_git = git_ops.is_git_repo(root)
-    st = git_ops.status(root) if in_git else None
+    in_git = git_read.is_git_repo(root)
+    st = git_read.status(root) if in_git else None
     top = tuple(
         sorted(
             terminal.printable_name(p.name) + ("/" if p.is_dir() else "")
@@ -180,7 +180,7 @@ def load_repo_summary(root: pathlib.Path, hide: tuple[str, ...] = ()) -> kinds.R
         )
     )
     # An unfiltered rglob would count .git/.venv/build junk and walk the tree every startup.
-    tracked = git_ops.tracked_files(root) if in_git else ()
+    tracked = git_read.tracked_files(root) if in_git else ()
     return kinds.RepoSummary(
         root=root,
         branch=st.branch if st is not None else "",
@@ -188,7 +188,7 @@ def load_repo_summary(root: pathlib.Path, hide: tuple[str, ...] = ()) -> kinds.R
         file_count=len(tracked),
         top_level=top,
         agents_md=agents_md_text(root, hide),
-        recent_log=git_ops.recent_log(root, n=20) if in_git else "",
+        recent_log=git_read.recent_log(root, n=20) if in_git else "",
         repo_map=_build_repo_map(tracked),
         is_git=in_git,
     )

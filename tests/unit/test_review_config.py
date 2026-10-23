@@ -14,7 +14,7 @@ import pydantic
 import pytest
 
 from agent6.app import providers
-from agent6.config import Config, ReviewConfig, io, layer
+from agent6.config import Config, ReviewConfig, _layer_data, io
 from agent6.harness import _panel, _reviewer
 from agent6.viewmodel import config_view
 
@@ -160,12 +160,14 @@ def test_reviewer_sampling_reaches_provider_call(
 def test_reviewers_are_one_serializable_config_leaf() -> None:
     """Config surfaces can render the roster as TOML and JSON without losing explicit off."""
     cfg = Config.model_validate({"review": {"reviewers": [{"focus": "security", "effort": "off"}]}})
-    roster = layer.config_leaves(cfg)["review.reviewers"]
+    roster = _layer_data.config_leaves(cfg)["review.reviewers"]
     assert json.loads(json.dumps(roster)) == [{"focus": "security", "effort": "off"}]
     assert tomllib.loads("reviewers = " + io.format_toml_value(roster)) == {
         "reviewers": [{"focus": "security", "effort": "off"}]
     }
-    view = config_view.build_config_view(layer.EffectiveConfig(config=cfg, sources={}, layers=()))
+    view = config_view.build_config_view(
+        _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
+    )
     setting = next(s for s in view.settings if s.key == "review.reviewers")
     assert config_view.display_value(setting) == '[{"focus": "security", "effort": "off"}]'
 

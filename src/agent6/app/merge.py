@@ -23,7 +23,7 @@ from agent6.config import Config, ConfigError
 from agent6.providers import ProviderError, TranscriptSink, call_for_text
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import commit_message, git_ops
+from agent6.vcs import commit_message, git_ops, git_read
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -113,7 +113,7 @@ def dispatch_merge(
     manifest: sessions_manifest.SessionManifest,
     message: str | None,
     cfg: Config,
-    identity: git_ops.CommitIdentity,
+    identity: git_read.CommitIdentity,
     *,
     transcript_dir: pathlib.Path | None = None,
     budget: agent6_budget.BudgetTracker | None = None,
@@ -202,11 +202,11 @@ def landed_base(
     for _ in range(64):  # a lineage deeper than this is not a fork chain
         stamp = node.merged
         if stamp is not None and stamp.into == target and stamp.tip:
-            if git_ops.is_ancestor(cwd, stamp.tip, target):
+            if git_read.is_ancestor(cwd, stamp.tip, target):
                 break  # a real merge: git relates the two histories itself
-            if git_ops.is_ancestor(cwd, stamp.tip, tip):
+            if git_read.is_ancestor(cwd, stamp.tip, tip):
                 return stamp.tip
-            if fork_point and git_ops.is_ancestor(cwd, fork_point, stamp.tip):
+            if fork_point and git_read.is_ancestor(cwd, fork_point, stamp.tip):
                 return fork_point
             break
         fork_point = node.forked_from_sha
@@ -236,7 +236,7 @@ def _squash_message(
 ) -> str | None:
     """Return the squash message per `[git.commit.squash].message`; None lets git combine."""
     style = cfg.git.commit.squash.message
-    rows = git_ops.list_run_commits(cwd, base_sha, run_branch)
+    rows = git_read.list_run_commits(cwd, base_sha, run_branch)
     if style == "combine":
         # Git's own SQUASH_MSG shape; the plumbing merge never runs `merge --squash`.
         parts = ["Squashed commit of the following:\n"]
@@ -253,7 +253,7 @@ def _squash_message(
             rows, subject=task, summary=summary, fit=False
         ).splitlines()
         subject = commit_message.conventional_commit_subject(
-            git_ops.range_name_status(cwd, base_sha, run_branch), summary=whole[0]
+            git_read.range_name_status(cwd, base_sha, run_branch), summary=whole[0]
         )
         return "\n".join([subject, *whole[1:]])
     base_msg = commit_message.condense_commit_message(rows, subject=task, summary=summary)
@@ -331,9 +331,9 @@ def _model_squash_message(
             )
         steps = "\n".join(f"- {r.subject}" for r in rows[:100])
         files = "\n".join(
-            f"{s}\t{p}" for s, p in git_ops.range_name_status(cwd, base_sha, run_branch)[:200]
+            f"{s}\t{p}" for s, p in git_read.range_name_status(cwd, base_sha, run_branch)[:200]
         )
-        diff = git_ops.diff_range(cwd, base_sha, run_branch)
+        diff = git_read.diff_range(cwd, base_sha, run_branch)
         diff_bytes = diff.encode("utf-8")
         if len(diff_bytes) > 65536:
             # Keep whole lines, including when one line alone exceeds the byte budget.
@@ -408,7 +408,7 @@ def execute_merge(
     method: str,
     message: str | None,
     cfg: Config,
-    identity: git_ops.CommitIdentity,
+    identity: git_read.CommitIdentity,
     budget: agent6_budget.BudgetTracker | None = None,
     events: event_log.EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
@@ -442,15 +442,15 @@ def execute_merge(
         NO_BASE_SHA
         if not base_sha
         else f"target branch {target!r} does not exist"
-        if not git_ops.branch_exists(cwd, target)
+        if not git_read.branch_exists(cwd, target)
         else None
     )
     if refusal is not None:
         return MergeOutcome("error", error=refusal)
     if (
         method == "ff_only"
-        and not git_ops.is_ancestor(cwd, target, run_branch)
-        and not git_ops.is_ancestor(cwd, run_branch, target)
+        and not git_read.is_ancestor(cwd, target, run_branch)
+        and not git_read.is_ancestor(cwd, run_branch, target)
     ):
         # A run the target already contains is not refused: that is a clean noop below.
         return MergeOutcome(
@@ -462,10 +462,10 @@ def execute_merge(
             ),
         )
     # Every method that merges something moves the target; unmoved means nothing to merge.
-    target_tip_before = git_ops.branch_tip_sha(cwd, target) or ""
+    target_tip_before = git_read.branch_tip_sha(cwd, target) or ""
     try:
         merge_base = landed_base(
-            cwd, layout, manifest, target, git_ops.chain_tip(cwd, run_branch) or ""
+            cwd, layout, manifest, target, git_read.chain_tip(cwd, run_branch) or ""
         )
         result = dispatch_merge(
             cwd,
@@ -489,7 +489,7 @@ def execute_merge(
     if result.conflicted:
         return MergeOutcome("conflict", conflicts=result.conflicts)
     noop = bool(result.merged_sha) and result.merged_sha == target_tip_before
-    merged_tip = git_ops.chain_tip(cwd, run_branch) or ""
+    merged_tip = git_read.chain_tip(cwd, run_branch) or ""
     if noop and manifest.merged is not None and manifest.merged.tip == merged_tip:
         # Stamping the target's tip over the record would credit the run with later commits.
         return MergeOutcome("noop", merged_sha=result.merged_sha)
@@ -540,7 +540,7 @@ def _land_included_run(
             return
     except sessions_manifest.ManifestError:
         return
-    if git_ops.chain_tip(cwd, git_ops.chain_ref_for(included.session_id)) != included.tip:
+    if git_read.chain_tip(cwd, git_read.chain_ref_for(included.session_id)) != included.tip:
         return
     record_merge_in_manifest(
         theirs,
@@ -556,12 +556,12 @@ def merge_command(session_id: str, base_branch: str) -> str:
 
     Args:
         session_id: The run to land.
-        base_branch: The run's base branch; `git_ops.DETACHED_HEAD` for a detached HEAD.
+        base_branch: The run's base branch; `git_read.DETACHED_HEAD` for a detached HEAD.
 
     Returns:
         The command; on a detached HEAD it ends in `--into BRANCH` for the operator to fill in.
     """
-    into = " --into BRANCH" if base_branch == git_ops.DETACHED_HEAD else ""
+    into = " --into BRANCH" if base_branch == git_read.DETACHED_HEAD else ""
     return f"agent6 sessions merge {session_id}{into}"
 
 

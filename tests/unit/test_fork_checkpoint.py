@@ -34,7 +34,7 @@ from agent6.ui.cli import (
     main,
     resume,  # pyright: ignore[reportPrivateUsage]
 )
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import session_state_as_dict
 
 
@@ -398,7 +398,7 @@ def test_a_plan_fork_creates_no_git_refs(
             "for-each-ref",
             "--format=%(refname)",
             "refs/heads/agent6/plan-fork-BBBB22",
-            git_ops.chain_ref_for("plan-fork-BBBB22"),
+            git_read.chain_ref_for("plan-fork-BBBB22"),
         ],
         cwd=repo,
         capture_output=True,
@@ -1007,7 +1007,7 @@ def test_resume_diverged_branch_refuses_without_checkout(
     # The head guard reads the chain ref tip: a rewritten chain refuses, the checkout untouched.
     repo = tmp_path / "repo"
     base = _git_repo(repo)
-    sp.run(["git", "update-ref", git_ops.chain_ref_for("divg-AAAA11"), base], cwd=repo, check=True)
+    sp.run(["git", "update-ref", git_read.chain_ref_for("divg-AAAA11"), base], cwd=repo, check=True)
     (repo / "seed.txt").write_text("moved on\n")
     sp.run(["git", "commit", "-aqm", "advance main"], cwd=repo, check=True)
     new_head = sp.run(
@@ -1303,10 +1303,10 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
 
     (worktree / "fork.txt").write_text("fork\n", encoding="utf-8")
     sha = git_ops.chain_commit(
-        worktree, "fork step", ref=git_ops.chain_ref_for("child-BBBB22"), fallback_parent=turn1
+        worktree, "fork step", ref=git_read.chain_ref_for("child-BBBB22"), fallback_parent=turn1
     )
     assert sha is not None
-    assert git_ops.tree_diff_paths(repo, turn1, sha) == ["fork.txt"]
+    assert git_read.tree_diff_paths(repo, turn1, sha) == ["fork.txt"]
 
     # The source checkout: HEAD, its uncommitted edit, and the operator's file.
     assert sp.run(rev, cwd=repo, capture_output=True, text=True, check=True).stdout.strip() == head
@@ -1473,7 +1473,7 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
         check=True,
     ).stdout.strip()
     sp.run(
-        ["git", "update-ref", git_ops.chain_ref_for("child-BBBB22"), later], cwd=repo, check=True
+        ["git", "update-ref", git_read.chain_ref_for("child-BBBB22"), later], cwd=repo, check=True
     )
     sp.run(["git", "branch", "-D", "agent6/child-BBBB22"], cwd=repo, check=True)
     shutil.rmtree(manifest["worktree"])
@@ -1486,7 +1486,7 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
         == 2
     )
     err = capsys.readouterr().err
-    assert f"its commits are on {git_ops.chain_ref_for('child-BBBB22')}" in err
+    assert f"its commits are on {git_read.chain_ref_for('child-BBBB22')}" in err
     assert "merged into main" not in err
 
 
@@ -1665,7 +1665,7 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
     assert fork._cmd_fork((), "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
 
     assert "could not cut fork refs" in capsys.readouterr().err
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("brave-yak-BBBB22")) is None
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("brave-yak-BBBB22")) is None
     assert not sessions_layout.SessionLayout(
         state_dir=state, session_id="brave-yak-BBBB22"
     ).session_dir.exists()
@@ -1674,11 +1674,11 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
     anchor = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
-    git_ops.set_ref(repo, git_ops.chain_ref_for("brave-yak-BBBB22"), anchor)
+    git_ops.set_ref(repo, git_read.chain_ref_for("brave-yak-BBBB22"), anchor)
 
     assert fork._cmd_fork((), "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
 
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("brave-yak-BBBB22")) == anchor
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("brave-yak-BBBB22")) == anchor
 
 
 def test_fork_refuses_a_run_the_model_controls_git_in(

@@ -13,6 +13,8 @@ import pathlib
 from collections.abc import Callable, Iterable
 from typing import Any, ClassVar
 
+from agent6.config import _presets
+
 try:
     from rich import text
     from textual import app, events, widgets
@@ -38,7 +40,7 @@ from agent6.ui.tui import (
     screen_chrome,
     theme,
 )
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
     SessionSummary,
@@ -211,7 +213,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         # both, or every cursor-indexed action past the gap maps to the wrong session.
         survivors: list[pathlib.Path] = []
         rows: dict[str, SessionSummary] = {}
-        tips = git_ops.run_ref_tips(self.repo_cwd)
+        tips = git_read.run_ref_tips(self.repo_cwd)
         dirs = {rd.name: rd for rd in session_dirs(self.agent6_dir) if rd.is_dir()}
         listing = viewmodel_listing.nested_rows(
             summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values()
@@ -345,7 +347,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             new_work.NewWorkScreen(
                 self.repo_cwd,
                 self.config_paths,
-                presets=layer.available_preset_names(self.repo_cwd, self.config_paths),
+                presets=_presets.available_preset_names(self.repo_cwd, self.config_paths),
                 routes=choices.available_routes(self.repo_cwd, self.config_paths),
             )
         )

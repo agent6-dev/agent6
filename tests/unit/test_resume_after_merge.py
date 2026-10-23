@@ -19,7 +19,7 @@ from agent6.app import _session, providers
 from agent6.providers import ProviderResponse
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 _CONFIG = """
 [sandbox]
@@ -158,7 +158,7 @@ def test_a_resume_after_a_squash_merge_continues_from_head(
 
     assert "holds changes no commit has" not in capfd.readouterr().err
     base = _manifest(repo, "land-SQUASH").base_sha
-    chain = git_ops.chain_ref_for("land-SQUASH")
+    chain = git_read.chain_ref_for("land-SQUASH")
     assert _git(repo, "rev-parse", f"{base}^{{tree}}") == _git(
         repo, "rev-parse", f"{head}^{{tree}}"
     )
@@ -184,7 +184,7 @@ def test_a_resumed_run_merges_cleanly_after_prune_delete_squashed(
     assert cli_main(["sessions", "merge", "land-PRUNED"]) == 0
     _commit_on_main(repo, "r.md")
     assert cli_main(["sessions", "prune", "--delete-squashed"]) == 0
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("land-PRUNED")) is None
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("land-PRUNED")) is None
     head = _git(repo, "rev-parse", "HEAD")
 
     resume = ["resume", "land-PRUNED", "--steer", "more"]
@@ -207,20 +207,20 @@ def test_a_resume_keeps_its_chain_when_the_checkout_lacks_the_landing_commit(
     run = ["run", "--session-id", "land-OTHER1", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
     base = _manifest(repo, "land-OTHER1").base_sha
-    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("land-OTHER1"))
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("land-OTHER1"))
     assert cli_main(["sessions", "merge", "land-OTHER1", "--into", "other"]) == 0
 
     resume = ["resume", "land-OTHER1", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
 
     assert _manifest(repo, "land-OTHER1").base_sha == base
-    chain = git_ops.chain_ref_for("land-OTHER1")
+    chain = git_read.chain_ref_for("land-OTHER1")
     assert _git(repo, "rev-parse", f"{chain}~1") == tip
 
 
 def _commit_on_the_run_branch(repo: pathlib.Path, session_id: str) -> str:
     """Add a commit to `agent6/<id>` the way an operator in another worktree would."""
-    branch = f"refs/heads/{git_ops.run_branch_for(session_id)}"
+    branch = f"refs/heads/{git_read.run_branch_for(session_id)}"
     tree = _git(repo, "rev-parse", f"{branch}^{{tree}}")
     sha = _git(repo, "commit-tree", tree, "-p", branch, "-m", "operator note")
     _git(repo, "update-ref", branch, sha)
@@ -238,8 +238,8 @@ def test_resume_refuses_when_the_run_branch_holds_a_commit_the_chain_lacks(
     repo = _setup(tmp_path, monkeypatch)
     run = ["run", "--session-id", "land-BRANCH", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
-    chain = git_ops.chain_ref_for("land-BRANCH")
-    tip = git_ops.chain_tip(repo, chain)
+    chain = git_read.chain_ref_for("land-BRANCH")
+    tip = git_read.chain_tip(repo, chain)
     theirs = _commit_on_the_run_branch(repo, "land-BRANCH")
     capsys.readouterr()
 
@@ -249,13 +249,13 @@ def test_resume_refuses_when_the_run_branch_holds_a_commit_the_chain_lacks(
     err = capsys.readouterr().err
     assert "agent6/land-BRANCH" in err and theirs[:12] in err
     assert "agent6 sessions merge land-BRANCH" in err and "--force" in err
-    assert git_ops.chain_tip(repo, chain) == tip
-    assert git_ops.branch_tip_sha(repo, "agent6/land-BRANCH") == theirs
+    assert git_read.chain_tip(repo, chain) == tip
+    assert git_read.branch_tip_sha(repo, "agent6/land-BRANCH") == theirs
 
     forced = [*resume, "--force"]
     assert _play(monkeypatch, forced, [_edit("y.txt", "1\n"), _finish()]) == 0
     assert "agent6/land-BRANCH stays at" in capsys.readouterr().err
-    assert git_ops.branch_tip_sha(repo, "agent6/land-BRANCH") == theirs
+    assert git_read.branch_tip_sha(repo, "agent6/land-BRANCH") == theirs
     assert _git(repo, "rev-parse", f"{chain}~1") == tip
 
 
@@ -273,9 +273,9 @@ def test_a_resume_after_landing_an_operator_commit_on_the_run_branch_continues_f
     resume = ["resume", "land-BOTH01", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
 
-    chain = git_ops.chain_ref_for("land-BOTH01")
+    chain = git_read.chain_ref_for("land-BOTH01")
     assert _changed(repo, _manifest(repo, "land-BOTH01").base_sha, chain) == ["y.txt"]
-    assert git_ops.branch_tip_sha(repo, "agent6/land-BOTH01") == git_ops.chain_tip(repo, chain)
+    assert git_read.branch_tip_sha(repo, "agent6/land-BOTH01") == git_read.chain_tip(repo, chain)
     assert cli_main(["sessions", "merge", "land-BOTH01"]) == 0
     assert _changed(repo, head, "main") == ["y.txt"]
 
@@ -353,11 +353,11 @@ def test_a_run_merged_into_another_branch_continues_there_once_it_is_checked_out
 
     manifest = _manifest(repo, "land-INTO01")
     assert manifest.base_branch == "other"
-    assert _changed(repo, manifest.base_sha, git_ops.chain_ref_for("land-INTO01")) == ["y.txt"]
+    assert _changed(repo, manifest.base_sha, git_read.chain_ref_for("land-INTO01")) == ["y.txt"]
 
     assert cli_main(["sessions", "merge", "land-INTO01"]) == 0
     _git(repo, "switch", "-q", "-c", "side")
     assert _play(monkeypatch, resume, [_edit("x.txt", "1\n"), _finish()]) == 0
     manifest = _manifest(repo, "land-INTO01")
     assert manifest.base_branch == "other"
-    assert _changed(repo, manifest.base_sha, git_ops.chain_ref_for("land-INTO01")) == ["x.txt"]
+    assert _changed(repo, manifest.base_sha, git_read.chain_ref_for("land-INTO01")) == ["x.txt"]

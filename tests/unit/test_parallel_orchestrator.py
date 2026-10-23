@@ -45,7 +45,7 @@ from agent6.sessions import ipc, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main, main
 from agent6.ui.cli import parallel as parallel_cmd
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import _session_log, _session_status, listing
 
 
@@ -1176,8 +1176,8 @@ def test_run_parallel_imports_branches_and_stamps_lineage(
 
     assert rc == 0
     # Both lane branches landed in the origin.
-    assert git_ops.branch_exists(origin, "agent6/fan-l1")
-    assert git_ops.branch_exists(origin, "agent6/fan-l2")
+    assert git_read.branch_exists(origin, "agent6/fan-l1")
+    assert git_read.branch_exists(origin, "agent6/fan-l2")
     # The live symlink was replaced by the real imported dir.
     imported = origin_state / "sessions" / "runs" / "fan-l1"
     assert imported.is_dir() and not imported.is_symlink()
@@ -1443,9 +1443,9 @@ def test_failed_lane_does_not_stop_others(
     )
 
     assert rc == 0  # lanes 1 and 3 still produced candidates
-    assert git_ops.branch_exists(origin, "agent6/fan-l1")
-    assert git_ops.branch_exists(origin, "agent6/fan-l3")
-    assert not git_ops.branch_exists(origin, "agent6/fan-l2")
+    assert git_read.branch_exists(origin, "agent6/fan-l1")
+    assert git_read.branch_exists(origin, "agent6/fan-l3")
+    assert not git_read.branch_exists(origin, "agent6/fan-l2")
     assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
     assert not (origin_state / "sessions" / "runs" / "fan-l2").exists()
     from agent6.viewmodel import transcript as viewmodel_transcript
@@ -1672,7 +1672,7 @@ def test_a_lane_with_no_commit_does_not_claim_a_branch_was_imported(
             == 1
         )
         shown = capsys.readouterr().out
-    assert not git_ops.branch_exists(origin, f"agent6/{spec.session_id}")
+    assert not git_read.branch_exists(origin, f"agent6/{spec.session_id}")
     assert (state / "sessions" / "runs" / spec.session_id / "logs.jsonl").exists()
     assert "no result (failed · setup command failed)" in shown
     assert "branch imported as" not in shown
@@ -1795,8 +1795,8 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
     )
 
     assert rc == 0  # both lanes still imported despite the stamp failure
-    assert git_ops.branch_exists(origin, "agent6/fan-l1")
-    assert git_ops.branch_exists(origin, "agent6/fan-l2")
+    assert git_read.branch_exists(origin, "agent6/fan-l1")
+    assert git_read.branch_exists(origin, "agent6/fan-l2")
     assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
     assert (origin_state / "sessions" / "runs" / "fan-l2").is_dir()
     err = capsys.readouterr().err
@@ -1840,11 +1840,11 @@ def test_ctrl_c_during_spawn_loop_stops_imports_and_reports(
 
     assert rc == 130
     # Lane 1 (started before the interrupt) was stopped + imported...
-    assert git_ops.branch_exists(origin, "agent6/fan-l1")
+    assert git_read.branch_exists(origin, "agent6/fan-l1")
     assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
     # ...lanes 2 and 3 never produced a candidate.
-    assert not git_ops.branch_exists(origin, "agent6/fan-l2")
-    assert not git_ops.branch_exists(origin, "agent6/fan-l3")
+    assert not git_read.branch_exists(origin, "agent6/fan-l2")
+    assert not git_read.branch_exists(origin, "agent6/fan-l3")
     assert "interrupted; stopping lanes" in capsys.readouterr().err
 
 
@@ -1902,7 +1902,7 @@ def test_await_waits_for_worker_pid_to_clear(
 
     assert rc == 0
     assert polls["n"] >= 2  # the gate really held through the live-pid poll
-    assert git_ops.branch_exists(origin, "agent6/fan-l1")
+    assert git_read.branch_exists(origin, "agent6/fan-l1")
     imported = origin_state / "sessions" / "runs" / "fan-l1"
     assert imported.is_dir() and not imported.is_symlink()
     assert "failed lanes" not in capsys.readouterr().out
@@ -1946,7 +1946,7 @@ def test_cleanup_preserves_unimported_lane(
     assert rc == 0  # lane 2 still imported
     # Lane 1 kept: clone (with its branch), fabricated run state, live symlink.
     assert lanes[0].workdir.is_dir()
-    assert git_ops.branch_exists(lanes[0].workdir, "agent6/fan-l1")
+    assert git_read.branch_exists(lanes[0].workdir, "agent6/fan-l1")
     assert (tmp_path / "lane-state" / "lane1" / "sessions" / "runs" / "fan-l1").is_dir()
     assert (origin_state / "sessions" / "runs" / "fan-l1").is_symlink()
     # Lane 2 imported and cleaned: real dir in origin state, clone gone.
@@ -1995,7 +1995,7 @@ def test_await_uses_real_run_dir_not_symlink(
     )
 
     assert rc == 0
-    assert git_ops.branch_exists(origin, "agent6/fan-l1")
+    assert git_read.branch_exists(origin, "agent6/fan-l1")
     assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
     # The lane's real terminal status was observed (not the missing-link "?").
     assert "lane 1 [fan-l1]: passed" in capsys.readouterr().err
@@ -2055,7 +2055,7 @@ def test_run_lane_to_completion_imports_and_stamps(
 
     assert res.ok
     assert seen["symlink_during_life"] is True  # a hub could see + answer the lane
-    assert git_ops.branch_exists(origin, "agent6/co-p1-l1")
+    assert git_read.branch_exists(origin, "agent6/co-p1-l1")
     # The lane's memory came back before its state dir went (the coordinator
     # path cleaned up with no carry at all).
     assert "The flaky test is test_clock." in memory.show(origin_state, "lane-fact")
@@ -2091,7 +2091,7 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
     )
 
     assert not res.ok and res.error == "boom"
-    assert not git_ops.branch_exists(origin, "agent6/co-p1-l1")
+    assert not git_read.branch_exists(origin, "agent6/co-p1-l1")
 
 
 def test_a_failed_lane_never_joins_the_coordinator(
@@ -2130,7 +2130,7 @@ def test_a_failed_lane_never_joins_the_coordinator(
     assert "failed" in res.error and "provider error" in res.error
     # The work is not lost: the branch was imported before the verdict.
     assert "agent6/co-pf-l1" in res.error
-    assert git_ops.branch_exists(origin, "agent6/co-pf-l1")
+    assert git_read.branch_exists(origin, "agent6/co-pf-l1")
 
 
 def test_a_crashed_lane_never_joins_the_coordinator(
@@ -2165,7 +2165,7 @@ def test_a_crashed_lane_never_joins_the_coordinator(
 
     assert res.ok is False
     assert "stale" in res.error and "agent6/co-ps-l1" in res.error
-    assert git_ops.branch_exists(origin, "agent6/co-ps-l1")
+    assert git_read.branch_exists(origin, "agent6/co-ps-l1")
 
 
 def test_build_lane_spawner_over_cap_refused(

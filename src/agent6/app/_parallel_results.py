@@ -23,7 +23,7 @@ from agent6.harness import judge, subrun
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import _session_log, format, listing, produced_result, summarize_session_dir
 
 
@@ -38,7 +38,7 @@ def imported_branch_note(origin: pathlib.Path, branch: str) -> str:
         "branch imported as <branch>", or "no branch (the run made no commit)" when the
         origin has no such branch.
     """
-    if git_ops.branch_exists(origin, branch):
+    if git_read.branch_exists(origin, branch):
         return f"branch imported as {branch}"
     return "no branch (the run made no commit)"
 
@@ -293,7 +293,7 @@ def import_lanes(
             judge.CandidateBrief(
                 session_id=res.spec.session_id,
                 task=app_compare.manifest_task(dest, task),
-                diff=git_ops.diff_since(res.spec.workdir, base_sha),
+                diff=git_read.diff_since(res.spec.workdir, base_sha),
                 verify_ok=summary.verify_ok,
                 cost_usd=summary.cost_usd,
             )

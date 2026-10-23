@@ -17,7 +17,7 @@ from agent6.harness import judge
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common, _compare, sessions_cmds
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
     died_without_end,
@@ -46,15 +46,15 @@ def _candidate_diff(
     base_sha, run_branch = manifest.base_sha, manifest.run_branch or ""
     if not base_sha:
         return "", False
-    if run_branch and git_ops.branch_exists(cwd, run_branch):
-        return git_ops.diff_range(cwd, base_sha, run_branch), False
+    if run_branch and git_read.branch_exists(cwd, run_branch):
+        return git_read.diff_range(cwd, base_sha, run_branch), False
     merged = manifest.merged
     if merged is None:
         return "", False
     for ref in (merged.tip, merged.sha):
         if ref and ref != sessions_manifest.NO_MERGE_COMMIT:
             try:
-                return git_ops.diff_range(cwd, base_sha, ref), True
+                return git_read.diff_range(cwd, base_sha, ref), True
             except errors.GitError:
                 continue
     return "", False
@@ -225,7 +225,7 @@ def _cmd_compare(
     }
     # A branch-per-run run's branch appears at its first commit; a chain run's is unknown here.
     committed = {
-        layout.session_id: git_ops.branch_exists(cwd, manifest.run_branch)
+        layout.session_id: git_read.branch_exists(cwd, manifest.run_branch)
         for layout, manifest in resolved
         if manifest.run_branch
     }

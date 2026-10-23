@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6.viewmodel import MachineWatchCursor, machine_state, read_complete_lines
+from agent6.viewmodel import _machine_logs, _machine_watch, machine_state
 
 
 def _ms(
@@ -38,7 +38,7 @@ def _n(ts: str, message: str = "hi") -> machine_state.NotificationView:
 
 
 def test_new_transitions_are_yielded_once() -> None:
-    cur = MachineWatchCursor()
+    cur = _machine_watch.MachineWatchCursor()
     assert cur.new_transitions(_ms(transitions=(_t(1), _t(2)))) == [_t(1), _t(2)]
     assert cur.new_transitions(_ms(transitions=(_t(1), _t(2)))) == []
     assert cur.new_transitions(_ms(transitions=(_t(1), _t(2), _t(3)))) == [_t(3)]
@@ -46,14 +46,14 @@ def test_new_transitions_are_yielded_once() -> None:
 
 def test_notifications_dedup_by_identity_across_the_sliding_window() -> None:
     """Identity dedup keeps working when old notifications slide out of the capped window."""
-    cur = MachineWatchCursor()
+    cur = _machine_watch.MachineWatchCursor()
     assert cur.new_notifications(_ms(notifications=(_n("1"), _n("2")))) == [_n("1"), _n("2")]
     # Window slid: "1" dropped out, "3" arrived. Only "3" is new.
     assert cur.new_notifications(_ms(notifications=(_n("2"), _n("3")))) == [_n("3")]
 
 
 def test_seed_notifications_silences_history() -> None:
-    cur = MachineWatchCursor()
+    cur = _machine_watch.MachineWatchCursor()
     cur.seed_notifications(_ms(notifications=(_n("1"),)))
     assert cur.new_notifications(_ms(notifications=(_n("1"), _n("2")))) == [_n("2")]
 
@@ -62,7 +62,7 @@ def test_advance_log_switches_and_resets_offset(tmp_path: pathlib.Path) -> None:
     s1 = tmp_path / "states" / "001-first"
     s1.mkdir(parents=True)
     (s1 / "logs.jsonl").write_text('{"a":1}\n', encoding="utf-8")
-    cur = MachineWatchCursor()
+    cur = _machine_watch.MachineWatchCursor()
 
     log, switched = cur.advance_log(tmp_path)
     assert switched and log == s1 / "logs.jsonl"
@@ -85,15 +85,15 @@ def test_advance_log_switches_and_resets_offset(tmp_path: pathlib.Path) -> None:
 def test_read_complete_lines_leaves_partial_tail_unconsumed(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_bytes(b'{"a":1}\n{"b":')
-    lines, off = read_complete_lines(p, 0)
+    lines, off = _machine_logs.read_complete_lines(p, 0)
     assert lines == ['{"a":1}\n']
     assert off == len(b'{"a":1}\n')  # the partial line is re-read next poll
     # Writer finishes the line (multibyte content flushed across syscalls).
     p.write_bytes(b'{"a":1}\n{"b":"\xc3\xa9"}\n')
-    lines, off = read_complete_lines(p, off)
+    lines, off = _machine_logs.read_complete_lines(p, off)
     assert lines == ['{"b":"é"}\n']
 
 
 def test_read_complete_lines_missing_file(tmp_path: pathlib.Path) -> None:
-    lines, off = read_complete_lines(tmp_path / "absent.jsonl", 7)
+    lines, off = _machine_logs.read_complete_lines(tmp_path / "absent.jsonl", 7)
     assert lines == [] and off == 7

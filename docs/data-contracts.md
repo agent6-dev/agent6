@@ -17,7 +17,7 @@ The loop-owned conversation: typed messages over the provider wire.
 **Conversation** &mdash; The history as frozen messages plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
-- **Read by:** harness/{_compaction, _compactor, _loop_resume, _loop_state, _loop_steer, _operator, _parallel_dispatch, _snapshot, _standing, _verify_gate}
+- **Read by:** harness/{_compaction, _compaction_window, _compactor, _loop_resume, _loop_state, _loop_steer, _operator, _parallel_dispatch, _snapshot, _standing, _verify_gate}
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (26 test files exercise it)
 
 ## SessionManifest
@@ -67,7 +67,7 @@ Type the logs.jsonl event families the session fold consumes.
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommit`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionStranded`, `SessionUndone`, `RawEvent`
 
 - **Written by:** viewmodel/events
-- **Read by:** harness/run_review, ui/cli/{_console_view, _repl, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, _session_log, _state_view, log_line, state, transcript}
+- **Read by:** harness/run_review, ui/cli/{_console_view, _repl, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, _session_log, _state_view, _transcript_text, log_line, state, transcript}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (6 test files exercise it)
 
 ## MachineSpec
@@ -102,7 +102,7 @@ The append-only journal, the snapshots and the single-writer lock of one machine
 Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpend`
 
 - **Written by:** machine/{engine, journal}
-- **Read by:** app/machine/{_spend, run}, machine/{__init__, _contracts, _execution, dryrun, live_world}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/{machine_state, wire}
+- **Read by:** app/machine/{_spend, run}, machine/{__init__, _contracts, _execution, dryrun, live_world}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/{_machine_logs, machine_state, wire}
 - **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (12 test files exercise it)
 
 ## TaskNode

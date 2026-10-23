@@ -20,11 +20,11 @@ from agent6.app import _session as app__session
 from agent6.app import _setup as app__setup
 from agent6.app import confine, preflight, stamps
 from agent6.app import providers as app_providers
-from agent6.config import Config, layer
+from agent6.config import Config, _layer_data, layer
 from agent6.harness import _chain, _prompt_blocks, _snapshot, _verify_verdict
 from agent6.sandbox import detect
 from agent6.tools import dispatch
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 
 def _cfg(*, verify: bool) -> Config:
@@ -342,9 +342,9 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
         encoding="utf-8",
     )
     cfg = _role_cfg({"sandbox": {"run_commands": "allow"}})
-    effective = layer.EffectiveConfig(config=cfg, sources={}, layers=())
+    effective = _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
-    def _effective(*_a: object, **_k: object) -> layer.EffectiveConfig:
+    def _effective(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
         return effective
 
     def _full(*_a: object, **_k: object) -> str:
@@ -356,7 +356,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     monkeypatch.setattr(layer, "load_effective", _effective)
     monkeypatch.setattr(app__session, "select_isolation", _full)
     monkeypatch.setattr(app__setup, "check_provider_keys", _none)
-    monkeypatch.setattr(git_ops, "verify_git_identity", _none)
+    monkeypatch.setattr(git_read, "verify_git_identity", _none)
     used: list[tuple[str, ...]] = []
 
     def _execution(
@@ -427,8 +427,8 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
 
     # The real type: preflight reads `explicit_leaves` to tell a default this
     # host cannot honour (degrade) from a value the operator set (refuse).
-    def _load(*_a: object, **_k: object) -> layer.EffectiveConfig:
-        return layer.EffectiveConfig(config=cfg, sources={}, layers=())
+    def _load(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
+        return _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _full(*_a: object, **_k: object) -> str:
         return "full"
@@ -448,7 +448,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     monkeypatch.setattr(preflight, "budget_preflight", _none)
     monkeypatch.setattr(app_providers, "build_role_provider", _provider)
     monkeypatch.setattr(app__setup, "check_provider_keys", _none)
-    monkeypatch.setattr(git_ops, "verify_git_identity", _none)
+    monkeypatch.setattr(git_read, "verify_git_identity", _none)
     monkeypatch.setattr(stamps, "pin_gate", _capture_pin(pinned))
 
     said: list[str] = []
@@ -507,7 +507,7 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
     monkeypatch.setattr(confine, "check_network_support", _none)
     monkeypatch.setattr(preflight, "budget_preflight", _none)
     monkeypatch.setattr(app_providers, "build_role_provider", _provider)
-    monkeypatch.setattr(git_ops, "verify_git_identity", _none)
+    monkeypatch.setattr(git_read, "verify_git_identity", _none)
     monkeypatch.setattr(stamps, "pin_gate", _capture_pin(pinned))
 
     said: list[str] = []
@@ -882,13 +882,13 @@ def test_a_resumes_key_check_precedes_isolation(
         ),
         encoding="utf-8",
     )
-    effective = layer.EffectiveConfig(config=_role_cfg({}), sources={}, layers=())
+    effective = _layer_data.EffectiveConfig(config=_role_cfg({}), sources={}, layers=())
     seen: list[str] = []
 
     class _Stop(Exception):  # noqa: N818  # a signal, not an error  # a signal, not an error
         pass
 
-    def _effective(*_a: object, **_k: object) -> layer.EffectiveConfig:
+    def _effective(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
         return effective
 
     def _route(*_a: object, **_k: object) -> bool:
@@ -960,9 +960,9 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     )
     harness = {"verify_command": list(gate)} if configured else {}
     cfg = _role_cfg({"sandbox": {"run_commands": "deny"}, "harness": harness})
-    effective = layer.EffectiveConfig(config=cfg, sources={}, layers=())
+    effective = _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
-    def _effective(*_a: object, **_k: object) -> layer.EffectiveConfig:
+    def _effective(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
         return effective
 
     def _full(*_a: object, **_k: object) -> str:
@@ -974,7 +974,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     monkeypatch.setattr(layer, "load_effective", _effective)
     monkeypatch.setattr(app__session, "select_isolation", _full)
     monkeypatch.setattr(app__setup, "check_provider_keys", _none)
-    monkeypatch.setattr(git_ops, "verify_git_identity", _none)
+    monkeypatch.setattr(git_read, "verify_git_identity", _none)
 
     def _execution(
         _cfg: Config, _layout: object, inputs: app__execution.ExecutionInputs, **_kw: object

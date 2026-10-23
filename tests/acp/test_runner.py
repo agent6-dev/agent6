@@ -22,7 +22,7 @@ from agent6 import paths
 from agent6.app import _execution as app__execution
 from agent6.app import _setup, resume, run, stop
 from agent6.app import reporter as app_reporter
-from agent6.config import Config, layer, model
+from agent6.config import Config, _layer_data, model
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
@@ -98,9 +98,9 @@ def _repo(path: pathlib.Path) -> pathlib.Path:
     return path
 
 
-def _loaded(*_a: object, **_k: object) -> layer.EffectiveConfig:
+def _loaded(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
     """The loader's result for a test that stubs `run_task`: the real type, unconfigured."""
-    return layer.EffectiveConfig(config=Config(), sources={}, layers=())
+    return _layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
 
 
 def test_the_reporter_never_writes_to_stdout(capsys: pytest.CaptureFixture[str]) -> None:

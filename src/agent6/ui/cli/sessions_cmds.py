@@ -22,7 +22,7 @@ from agent6.sessions import id, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common, _steer
-from agent6.vcs import git_ops, git_policy
+from agent6.vcs import git_ops, git_policy, git_read
 from agent6.viewmodel import (
     _session_status,
     format,
@@ -59,7 +59,7 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
         )  # the empty listing is output, not an error
         return 0
     winners = {d.name for d in dirs if is_winner(d)}  # fan-out compare winners
-    tips = git_ops.run_ref_tips(cwd)
+    tips = git_read.run_ref_tips(cwd)
     listing = viewmodel_listing.nested_rows(
         summarize_session_dir(d, branch_tips=tips) for d in dirs
     )
@@ -285,7 +285,7 @@ def _commits_ref(cwd: pathlib.Path, manifest: sessions_manifest.SessionManifest)
         return _CommitsRef(head_ref=ref, reason="")
     if (
         manifest.run_branch
-        and git_ops.chain_tip(cwd, git_ops.chain_ref_for(manifest.session_id)) is None
+        and git_read.chain_tip(cwd, git_read.chain_ref_for(manifest.session_id)) is None
     ):
         return _CommitsRef(head_ref=manifest.run_branch, reason="")
     if manifest.parked_task:
@@ -375,7 +375,7 @@ def _committed_nothing(cwd: pathlib.Path, session_id: str) -> bool:
         True when the chain ref it commits to was never created, so its branch was never
         cut either.
     """
-    return git_ops.chain_tip(cwd, git_ops.chain_ref_for(session_id)) is None
+    return git_read.chain_tip(cwd, git_read.chain_ref_for(session_id)) is None
 
 
 def _pruned_branch_note(
@@ -393,7 +393,7 @@ def _pruned_branch_note(
         covering every commit), a branch deleted past its stamp or with no merge recorded
         (the chain ref keeps the commits), and a run that committed nothing.
     """
-    if git_ops.branch_exists(cwd, run_branch):
+    if git_read.branch_exists(cwd, run_branch):
         return None
     stamp = resume.covering_stamp(cwd, manifest)
     if stamp is not None:
@@ -403,7 +403,7 @@ def _pruned_branch_note(
         return note
     if _committed_nothing(cwd, manifest.session_id):
         return f"[agent6] this run committed nothing, so {run_branch} was never cut."
-    chain = git_ops.chain_ref_for(manifest.session_id)
+    chain = git_read.chain_ref_for(manifest.session_id)
     if manifest.merged is not None:
         return (
             f"[agent6] run branch {run_branch} is gone; its commits survive at {chain},"
@@ -447,7 +447,7 @@ def _cmd_commits(*, session_id: str) -> int:
     if pruned is not None:
         print(pruned)
         return 0
-    rows = git_ops.list_run_commits(cwd, base_sha, head_ref)
+    rows = git_read.list_run_commits(cwd, base_sha, head_ref)
     if not rows:
         print(f"[agent6] no commits on {head_ref}.")
         return 0
@@ -562,7 +562,7 @@ def _rm_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) -> str
     Returns:
         The id, task and state lines, then for unmerged commits whether a branch keeps them.
     """
-    tips = git_ops.run_ref_tips(cwd)
+    tips = git_read.run_ref_tips(cwd)
     summary = summarize_session_dir(layout.session_dir, branch_tips=tips)
     task = summary.task_label.line(100).replace("\n", "\n" + " " * 11)
     lines = [
@@ -571,7 +571,7 @@ def _rm_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) -> str
         f"  state:   {format.status_label(summary.status, summary.reason)}",
     ]
     if summary.unmerged:
-        branch = git_ops.run_branch_for(layout.session_id)
+        branch = git_read.run_branch_for(layout.session_id)
         kept = f"branch {branch} keeps them" if branch in tips else "they go with it"
         lines.append(f"  commits: not merged; {kept}")
     return "\n".join(lines)
@@ -632,7 +632,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
         if worktree is not None
         else []
     )
-    landed = git_ops.chain_tip(cwd, git_ops.chain_ref_for(layout.session_id)) or ""
+    landed = git_read.chain_tip(cwd, git_read.chain_ref_for(layout.session_id)) or ""
     tips = (landed,) if landed else ()
     reason = _rm_refusal(layout, worktree if not sharing else None, tips)
     if not reason and not yes:
@@ -682,11 +682,11 @@ def _rm_session(
             went.append("its worktree")
         elif why:
             stays = f"; its worktree stays: it {why} ({worktree})"
-    chain = git_ops.chain_ref_for(layout.session_id)
+    chain = git_read.chain_ref_for(layout.session_id)
     try:
-        if (chain_head := git_ops.chain_tip(cwd, chain)) is not None:
-            branch = git_ops.run_branch_for(layout.session_id)
-            branch_kept = git_ops.branch_exists(cwd, branch)
+        if (chain_head := git_read.chain_tip(cwd, chain)) is not None:
+            branch = git_read.run_branch_for(layout.session_id)
+            branch_kept = git_read.branch_exists(cwd, branch)
             git_ops.delete_ref(cwd, chain)
             # A chain ref has no reflog: the sha on the deleting line is the only way back.
             went.append(

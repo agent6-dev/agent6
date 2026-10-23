@@ -15,6 +15,8 @@ from agent6.app import _setup, confine
 from agent6.app.machine import sandbox_widening
 from agent6.config import (
     ConfigError,
+    _layer_data,
+    _presets,
     io,
     layer,
     notices,
@@ -69,7 +71,7 @@ def _read_machine_overlay(machine: pathlib.Path | None) -> dict[str, object] | N
 
 def _effective_with_overlay(
     config_paths: tuple[pathlib.Path, ...], machine: pathlib.Path | None
-) -> layer.EffectiveConfig:
+) -> _layer_data.EffectiveConfig:
     """Return the effective config, with a machine file's `[config]` overlay on top when named."""
     overlay = _read_machine_overlay(machine)
     if overlay is None:
@@ -156,7 +158,7 @@ def _cmd_config_presets(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     Returns:
         The exit code.
     """
-    cat = layer.preset_catalog(pathlib.Path.cwd(), config_paths)
+    cat = _presets.preset_catalog(pathlib.Path.cwd(), config_paths)
     if cat.selected != "none":
         print(f"preset = {cat.selected}  [{cat.source}]")
     else:
@@ -167,7 +169,7 @@ def _cmd_config_presets(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
             tag += ", replaces the built-in"
         sel = "  (selected)" if info.name == cat.selected else ""
         print(f"\n{info.name}  [{tag}]{sel}")
-        leaves = layer.flatten_leaves(info.overrides)
+        leaves = _layer_data.flatten_leaves(info.overrides)
         if not leaves:
             print("  (plain defaults, no overrides)")
         for key, val in leaves.items():
@@ -460,7 +462,7 @@ def _cmd_config_set(
     return 0
 
 
-def _config_key_error(key: str, eff: layer.EffectiveConfig) -> str:
+def _config_key_error(key: str, eff: _layer_data.EffectiveConfig) -> str:
     """Return the error for a key that is a section or unknown, with its did-you-mean."""
     if any(candidate.startswith(key + ".") for candidate in layer.leaf_keys(eff)):
         return f"{key!r} is not a config leaf (see `agent6 config show`)."

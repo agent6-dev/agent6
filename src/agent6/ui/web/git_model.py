@@ -14,7 +14,7 @@ import pathlib
 from typing import Any
 
 from agent6.ui.web import highlight
-from agent6.vcs import git_files, git_history, git_ops
+from agent6.vcs import git_files, git_history, git_read
 from agent6.viewmodel import format
 
 # Commits per graph page, and the most a request may ask for.
@@ -71,7 +71,7 @@ class BlobResponse:
 
 
 def _repo(repo: pathlib.Path) -> None:
-    if not git_ops.is_git_repo(repo):
+    if not git_read.is_git_repo(repo):
         raise GitRequestError(f"not a git repository: {repo}")
 
 
@@ -123,7 +123,7 @@ def _resolve(
     Args:
         repo: The repository.
         rev: The revision as the browser sent it.
-        tree_ok: Accept `git_ops.EMPTY_TREE`, the base a root commit diffs against.
+        tree_ok: Accept `git_read.EMPTY_TREE`, the base a root commit diffs against.
         worktree_ok: Accept `git_history.WORKTREE`, the working tree as a head.
 
     Returns:
@@ -137,7 +137,7 @@ def _resolve(
         if worktree_ok:
             return rev
         raise GitRequestError(f"{rev} names the working tree: it is only a diff or compare head")
-    if rev == git_ops.EMPTY_TREE:
+    if rev == git_read.EMPTY_TREE:
         if tree_ok:
             return rev
         raise GitRequestError(f"not a commit: {rev}")
@@ -284,7 +284,7 @@ def commit_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
     _repo(repo)
     sha = _resolve(repo, rev)
     info = git_history.commit_info(repo, sha)
-    base = info.parents[0] if info.parents else git_ops.EMPTY_TREE
+    base = info.parents[0] if info.parents else git_read.EMPTY_TREE
     files, truncated = _files(repo, base, sha)
     return {
         "sha": sha,
@@ -317,7 +317,7 @@ def worktree_payload(repo: pathlib.Path) -> dict[str, Any]:
     """
     _repo(repo)
     sha, _branch = git_history.head_commit(repo)
-    base = sha or git_ops.EMPTY_TREE
+    base = sha or git_read.EMPTY_TREE
     files, truncated = _files(repo, base, git_history.WORKTREE)
     return {"base": base, "files": files, "truncated": truncated}
 
@@ -326,7 +326,7 @@ def _endpoint(repo: pathlib.Path, rev: str, sha: str) -> dict[str, Any]:
     """Return one side of a compare: the rev as sent, the sha it names, and its subject."""
     if sha == git_history.WORKTREE:
         subject = "(working tree)"
-    elif sha == git_ops.EMPTY_TREE:
+    elif sha == git_read.EMPTY_TREE:
         subject = "(empty tree)"
     else:
         subject = git_history.commit_info(repo, sha).subject

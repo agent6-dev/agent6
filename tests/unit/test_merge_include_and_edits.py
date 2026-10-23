@@ -18,7 +18,7 @@ from agent6.app import _session, providers
 from agent6.providers import ProviderResponse
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 _CONFIG = """
 [sandbox]
@@ -137,7 +137,7 @@ def test_merging_the_including_run_lands_the_run_it_absorbed(
     """
     repo = _setup(tmp_path, monkeypatch)
     _run(monkeypatch, "inc-FIRST1", [_edit("a.py", _SEED.replace("x = 1", "x = 2")), _finish()])
-    first_tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("inc-FIRST1"))
+    first_tip = git_read.chain_tip(repo, git_read.chain_ref_for("inc-FIRST1"))
     _run(monkeypatch, "inc-SECOND", [_edit("a.py", _SEED.replace("x = 1", "x = 3")), _finish()])
 
     included = _manifest(repo, "inc-SECOND").includes
@@ -177,7 +177,7 @@ def test_an_included_run_that_committed_again_is_not_stamped(
     _run(monkeypatch, "inc-FIRST3", [_edit("a.py", _SEED.replace("x = 1", "x = 2")), _finish()])
     _run(monkeypatch, "inc-FOURTH", [_edit("c.py", "c = 1\n"), _finish()])
     assert _manifest(repo, "inc-FOURTH").includes is not None
-    chain = git_ops.chain_ref_for("inc-FIRST3")
+    chain = git_read.chain_ref_for("inc-FIRST3")
     later = _git(repo, "commit-tree", f"{chain}^{{tree}}", "-p", chain, "-m", "a later step")
     _git(repo, "update-ref", chain, later)
 

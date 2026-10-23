@@ -17,7 +17,7 @@ from textual import app, message, widgets
 
 from agent6.sessions import manifest
 from agent6.ui.tui import forms
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import SessionState, format
 
 
@@ -100,8 +100,8 @@ class DiffPane(forms.ScrollPane):
             with contextlib.suppress(manifest.ManifestError):
                 base = manifest.read_manifest(self._session_dir).base_sha
                 if base:
-                    return git_ops.diff_range(pathlib.Path.cwd(), base, sha) or "(no diff)"
-        return git_ops.commit_diff(pathlib.Path.cwd(), sha) or "(no diff)"
+                    return git_read.diff_range(pathlib.Path.cwd(), base, sha) or "(no diff)"
+        return git_read.commit_diff(pathlib.Path.cwd(), sha) or "(no diff)"
 
     def on_select_changed(self, event: widgets.Select.Changed) -> None:
         """Follow the step picker."""

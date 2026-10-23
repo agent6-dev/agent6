@@ -26,7 +26,7 @@ import pytest
 from textual import app as textual_app
 from textual import screen, widgets
 
-from agent6.config import layer
+from agent6.config import _presets as config_presets
 from agent6.models import choices
 from agent6.sessions import process
 from agent6.ui import spawn
@@ -122,7 +122,7 @@ def test_end_hold_title_uses_the_listing_label(
 ) -> None:
     """A finished TUI title includes the unmerged mark its hub row shows."""
     from agent6.sessions import manifest
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_read
 
     monkeypatch.chdir(tmp_path)
     subprocess.run(["git", "init", "-q"], check=True)
@@ -139,7 +139,7 @@ def test_end_hold_title_uses_the_listing_label(
         manifest.SessionManifest(session_id=d.name, mode="run", base_sha=base).model_dump_json(),
         encoding="utf-8",
     )
-    subprocess.run(["git", "update-ref", git_ops.chain_ref_for(d.name), tip], check=True)
+    subprocess.run(["git", "update-ref", git_read.chain_ref_for(d.name), tip], check=True)
     (d / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "work"})
         + "\n"
@@ -386,7 +386,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
     def _routes(_cwd: pathlib.Path, _cp: object) -> list[str]:
         return ["o/a", "o/b"]
 
-    monkeypatch.setattr(layer, "available_preset_names", _presets)
+    monkeypatch.setattr(config_presets, "available_preset_names", _presets)
     monkeypatch.setattr(choices, "available_routes", _routes)
     _mk_parked(tmp_path / "parked2")
 
@@ -466,7 +466,7 @@ def test_the_resume_rows_name_what_a_bare_resume_runs_under(
     ) -> tuple[str, str]:
         return "fast (as recorded)", f"o/{preset or 'a'} (config default)"
 
-    monkeypatch.setattr(layer, "available_preset_names", _presets)
+    monkeypatch.setattr(config_presets, "available_preset_names", _presets)
     monkeypatch.setattr(choices, "available_routes", _routes)
     monkeypatch.setattr(choices, "resume_defaults", _defaults)
     _mk_parked(tmp_path / "parked3")

@@ -27,7 +27,7 @@ import pytest
 from agent6 import kinds
 from agent6.config import Config, load_config
 from agent6.graph import curator, models
-from agent6.harness import _compaction, _nudges
+from agent6.harness import _compaction_result, _nudges
 from agent6.sandbox import jail_session
 from agent6.sessions import layout
 from agent6.tools import _result_format, dispatch, errors, operator_prompts
@@ -287,7 +287,7 @@ def test_command_escape_bytes_do_not_consume_the_wire_cap() -> None:
     """The harness's byte cap sees command text without the escape bytes."""
     text = "\x1b[32m.\x1b[0m" * 1000
     payload = _dumps(_result_format.exec_result(_cmd_result(stdout=text)))
-    capped = _compaction.cap_tool_result(payload, tool_name="run_command", cap=2000)
+    capped = _compaction_result.cap_tool_result(payload, tool_name="run_command", cap=2000)
     assert json.loads(capped)["stdout"] == "." * 1000
 
 

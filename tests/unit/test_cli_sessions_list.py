@@ -351,7 +351,7 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
     """A branch_per_run-off run's hidden chain carries the unmerged mark like a visible branch."""
     import subprocess
 
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_ops, git_read
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -375,7 +375,7 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
     git_ops.chain_commit(
         repo,
         "agent6 turn 1: work",
-        ref=git_ops.chain_ref_for(session_id),
+        ref=git_read.chain_ref_for(session_id),
         fallback_parent=base,
     )
 
@@ -407,7 +407,7 @@ def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
     """
     import subprocess
 
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_ops, git_read
     from agent6.viewmodel import summarize_session_dir
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -433,7 +433,7 @@ def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
     chain = git_ops.chain_commit(
         repo,
         "agent6 turn 1: work",
-        ref=git_ops.chain_ref_for(session_id),
+        ref=git_read.chain_ref_for(session_id),
         fallback_parent=base,
         also_branch=branch,
     )
@@ -451,12 +451,13 @@ def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
     }
     (session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     assert (
-        summarize_session_dir(session_dir, branch_tips=git_ops.run_ref_tips(repo)).unmerged is True
+        summarize_session_dir(session_dir, branch_tips=git_read.run_ref_tips(repo)).unmerged is True
     )
     manifest["merged"] = {"into": "main", "sha": own, "tip": own}
     (session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     assert (
-        summarize_session_dir(session_dir, branch_tips=git_ops.run_ref_tips(repo)).unmerged is False
+        summarize_session_dir(session_dir, branch_tips=git_read.run_ref_tips(repo)).unmerged
+        is False
     )
 
     from agent6.ui.cli import sessions_show  # pyright: ignore[reportPrivateUsage]

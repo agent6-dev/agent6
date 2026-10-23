@@ -38,7 +38,7 @@ from agent6.providers import TranscriptSink
 from agent6.sessions import ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 
 def run_parallel(
@@ -99,7 +99,7 @@ def run_parallel(
     if note := memory.migrate_legacy_decisions(origin_state):
         reporter.note(note)
     try:
-        origin_status = git_ops.status(origin)
+        origin_status = git_read.status(origin)
     except errors.GitError as exc:
         reporter.error(str(exc))
         return 2
@@ -327,7 +327,9 @@ def _drive_fanout(
         rows=batch.rows,
         # A lane that made no commit imports no branch.
         committed={
-            spec.session_id: git_ops.branch_exists(origin, git_ops.run_branch_for(spec.session_id))
+            spec.session_id: git_read.branch_exists(
+                origin, git_read.run_branch_for(spec.session_id)
+            )
             for spec in batch.imported
         },
         fanout_id=fanout_id,

@@ -27,6 +27,7 @@ from agent6 import budget as agent6_budget
 from agent6 import portable
 from agent6.app import providers
 from agent6.config import Config
+from agent6.harness import _compaction_result
 from agent6.providers import (
     ProviderAborted,
     ProviderError,
@@ -1357,7 +1358,7 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     weigh.
     """
     from agent6.app import _session
-    from agent6.harness import _compaction, _nudges, _panel, _verify_gate
+    from agent6.harness import _nudges, _panel, _verify_gate
     from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
     from agent6.tools import results
 
@@ -1368,10 +1369,17 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
         }
     )
     cap = _session.tool_result_cap_bytes(cc, "worker")
-    assert cap == _compaction.CLAUDE_CODE_RESULT_CAP_BYTES < _compaction.TOOL_RESULT_CAP_BYTES
-    assert _session.tool_result_cap_bytes(Config(), "worker") == _compaction.TOOL_RESULT_CAP_BYTES
-    assert _compaction.CLAUDE_CODE_RESULT_CAP_BYTES < CLAUDE_CODE_PERSIST_BYTES
-    wide = _compaction.cap_tool_result("\u6f22" * 45_000, tool_name="read_file", cap=cap)
+    assert (
+        cap
+        == _compaction_result.CLAUDE_CODE_RESULT_CAP_BYTES
+        < _compaction_result.TOOL_RESULT_CAP_BYTES
+    )
+    assert (
+        _session.tool_result_cap_bytes(Config(), "worker")
+        == _compaction_result.TOOL_RESULT_CAP_BYTES
+    )
+    assert _compaction_result.CLAUDE_CODE_RESULT_CAP_BYTES < CLAUDE_CODE_PERSIST_BYTES
+    wide = _compaction_result.cap_tool_result("\u6f22" * 45_000, tool_name="read_file", cap=cap)
     gate = results.ExecResult(
         returncode=1,
         stdout="\U0001f600" * (2 * _verify_gate.VERIFY_TAIL_CHARS),
@@ -1402,7 +1410,6 @@ def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
     """The result cap follows the role that drives the session, the planner's on a plan."""
     from agent6.app import _session
     from agent6.config import Config
-    from agent6.harness import _compaction
 
     cfg = Config.model_validate(
         {
@@ -1417,9 +1424,10 @@ def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
         }
     )
     assert (
-        _session.tool_result_cap_bytes(cfg, "planner") == _compaction.CLAUDE_CODE_RESULT_CAP_BYTES
+        _session.tool_result_cap_bytes(cfg, "planner")
+        == _compaction_result.CLAUDE_CODE_RESULT_CAP_BYTES
     )
-    assert _session.tool_result_cap_bytes(cfg, "worker") == _compaction.TOOL_RESULT_CAP_BYTES
+    assert _session.tool_result_cap_bytes(cfg, "worker") == _compaction_result.TOOL_RESULT_CAP_BYTES
 
 
 def test_the_turns_notices_survive_a_turn_the_cli_refused_whole(tmp_path: pathlib.Path) -> None:

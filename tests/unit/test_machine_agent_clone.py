@@ -23,10 +23,10 @@ from agent6.config import Config
 from agent6.machine import AgentRequest
 from agent6.providers import ProviderResponse
 from agent6.sandbox import jail as sandbox_jail
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 BRANCH = "agent6/machine-m1"
-CHAIN = git_ops.chain_ref_for("machine-m1")
+CHAIN = git_read.chain_ref_for("machine-m1")
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -126,7 +126,7 @@ def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
     # State 1 built on state 0's tree, and the visible branch tracks the chain's tip.
     files = _git(origin, "ls-tree", "--name-only", BRANCH)
     assert "work0.txt" in files and "work1.txt" in files
-    assert git_ops.chain_tip(origin, CHAIN) == git_ops.chain_tip(origin, BRANCH)
+    assert git_read.chain_tip(origin, CHAIN) == git_read.chain_tip(origin, BRANCH)
     # The operator's checkout never moved and holds neither file.
     assert _git(origin, "branch", "--show-current") == "main"
     assert not (origin / "work0.txt").exists()
@@ -164,12 +164,12 @@ def test_read_only_states_see_the_machine_tree_and_land_nothing(
     _FakeChild.seen_files = []
     runner = _runner(origin, tmp_path)
     assert runner(_req(0), None).reason == "finish_session"
-    tip_after_run = git_ops.chain_tip(origin, BRANCH)
+    tip_after_run = git_read.chain_tip(origin, BRANCH)
     assert runner(_req(1, mode="agent"), None).reason == "finish_session"
     judge_dir = _FakeChild.workdirs[-1]
     assert judge_dir != origin
     assert "work0.txt" in _FakeChild.seen_files[-1]  # the run state's committed work
-    assert git_ops.chain_tip(origin, BRANCH) == tip_after_run  # nothing landed
+    assert git_read.chain_tip(origin, BRANCH) == tip_after_run  # nothing landed
     assert not any((tmp_path / "clones").glob("state-*"))  # cleaned up
 
 
@@ -612,7 +612,7 @@ def test_import_failure_keeps_the_clone_and_routes_failed(
     r = runner(_req(0), None)
     assert r.reason.startswith("import of")
     assert r.payload is None
-    assert git_ops.chain_tip(origin, CHAIN) is None  # nothing landed
+    assert git_read.chain_tip(origin, CHAIN) is None  # nothing landed
     assert list((tmp_path / "clones").glob("state-*"))  # evidence kept
 
 

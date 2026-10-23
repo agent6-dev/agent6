@@ -26,6 +26,7 @@ from agent6.config import (
     ConfigError,
     MCPServerEntry,
     ProviderEntry,
+    _layer_data,
     layer,
     plan_metered,
 )
@@ -278,7 +279,7 @@ def load_session_config(
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
     model: str | kinds.ModelRoute | None = None,
-) -> layer.EffectiveConfig:
+) -> _layer_data.EffectiveConfig:
     """Load the config a session starts or resumes under, the same way at every entry point.
 
     Args:

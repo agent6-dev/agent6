@@ -19,7 +19,7 @@ from agent6.app import reporter, undo
 from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, process
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import _session_log, _session_status
 
 
@@ -106,7 +106,7 @@ def _run_that_moved_on(
     c2 = git_ops.chain_commit(
         repo,
         "step",
-        ref=git_ops.chain_ref_for("run-AAAA11"),
+        ref=git_read.chain_ref_for("run-AAAA11"),
         fallback_parent=c1,
         also_branch="agent6/run-AAAA11",
         exclude={"notes.md"},
@@ -166,7 +166,7 @@ def test_undo_of_a_model_controlled_run_refuses_before_committing(
     )
     assert got is None
     assert any("managed git itself" in s for s in said), said
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("model-AAAA11")) is None
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("model-AAAA11")) is None
 
 
 def test_undo_puts_the_checkout_back_and_keeps_the_tree_as_it_stood(
@@ -193,13 +193,13 @@ def test_undo_puts_the_checkout_back_and_keeps_the_tree_as_it_stood(
     assert (repo / "notes.md").read_text(encoding="utf-8") == "mine\n"
     assert _git(repo, "rev-parse", "HEAD") == c1  # HEAD and the index untouched
     assert _git(repo, "diff", "--cached", "--name-only") == ""
-    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("run-AAAA11"))
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("run-AAAA11"))
     assert tip is not None and tip != c2
     assert _git(repo, "rev-parse", f"{tip}^") == c2  # the pre-undo commit sits on c2
     assert _git(repo, "show", f"{tip}:a.txt") == "three"  # the in-flight edit, kept
     assert _git(repo, "show", f"{tip}:more.txt") == "in flight"  # the mid-run file, kept
     assert _git(repo, "rev-parse", "agent6/run-AAAA11") == tip
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for(child)) == c1
+    assert git_read.chain_tip(repo, git_read.chain_ref_for(child)) == c1
     text = "\n".join(said)
     assert "a.txt" in text and "gen.txt" in text and "more.txt" in text
     assert f"commit {tip[:12]} on agent6/run-AAAA11" in text
@@ -249,7 +249,7 @@ def test_undo_puts_back_only_the_paths_the_run_changed(
     repo, c1, c2 = _run_that_moved_on(tmp_path, monkeypatch)
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
     # The run ended on the tree as it stands; the operator then edited two files.
-    tree = git_ops.worktree_tree(repo, c2, {"notes.md"})
+    tree = git_read.worktree_tree(repo, c2, {"notes.md"})
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
         {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
@@ -267,7 +267,7 @@ def test_undo_puts_back_only_the_paths_the_run_changed(
     assert not (repo / "gen.txt").exists() and not (repo / "more.txt").exists()
     assert (repo / "same.txt").read_text(encoding="utf-8") == "same\noperator note\n"
     assert _git(repo, "rev-parse", "HEAD") == c1
-    tip = git_ops.chain_tip(repo, git_ops.chain_ref_for("run-AAAA11"))
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("run-AAAA11"))
     assert tip is not None and _git(repo, "show", f"{tip}:a.txt") == "three\noperator note"
     text = "\n".join(said)
     assert "put 2 path(s) back" in text and "): gen.txt, more.txt (HEAD" in text
@@ -280,7 +280,7 @@ def test_an_undo_that_leaves_every_path_says_it_put_nothing_back(
     """An undo that leaves every differing path as the operator's says it put nothing back."""
     repo, _c1, c2 = _run_that_moved_on(tmp_path, monkeypatch)
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
-    tree = git_ops.worktree_tree(repo, c2, {"notes.md"})
+    tree = git_read.worktree_tree(repo, c2, {"notes.md"})
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
         {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
@@ -309,7 +309,7 @@ def test_undo_puts_back_a_path_git_quotes_or_reads_as_a_glob_and_only_it(
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
     (repo / "café.txt").write_text("made by the run\n", encoding="utf-8")
     (repo / "page[1].txt").write_text("made by the run\n", encoding="utf-8")
-    tree = git_ops.worktree_tree(repo, c2, {"notes.md"})
+    tree = git_read.worktree_tree(repo, c2, {"notes.md"})
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
         {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
@@ -335,7 +335,7 @@ def test_undo_puts_back_a_name_git_quotes_and_prints_it_on_one_line(
     quoted, forged = 'say "hi".txt', "x\n[agent6] the checkout already matches turn 1"
     for name in (quoted, forged):
         (repo / name).write_text("made by the run\n", encoding="utf-8")
-    tree = git_ops.worktree_tree(repo, c2, {"notes.md"})
+    tree = git_read.worktree_tree(repo, c2, {"notes.md"})
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
         {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
@@ -373,7 +373,7 @@ def test_undo_of_a_run_whose_work_landed_refuses_and_names_the_merge(
     assert result is None
     assert any(f"merged into main as {c2[:12]}" in line for line in said), said
     assert (repo / "a.txt").read_text(encoding="utf-8") == "three\n"
-    assert git_ops.chain_tip(repo, git_ops.chain_ref_for("run-AAAA11")) == c2
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("run-AAAA11")) == c2
     assert sorted(p.name for p in (layout.state_dir / "sessions" / "runs").iterdir()) == before
 
 
@@ -415,7 +415,7 @@ def test_undo_refuses_while_another_live_run_drives_the_checkout(
         assert result is None
         assert any(holder in line for line in said)
         assert (repo / "a.txt").read_text(encoding="utf-8") == "three\n"
-        assert git_ops.chain_tip(repo, git_ops.chain_ref_for("run-AAAA11")) == c2
+        assert git_read.chain_tip(repo, git_read.chain_ref_for("run-AAAA11")) == c2
         assert not (state / "lineage.jsonl").exists()
 
 
@@ -465,7 +465,7 @@ def test_undo_of_a_live_plan_session_refuses(
 
         assert result is None
         assert any("plan-AAAA11" in line for line in said)
-        assert git_ops.chain_tip(repo, git_ops.chain_ref_for("plan-AAAA11")) is None
+        assert git_read.chain_tip(repo, git_read.chain_ref_for("plan-AAAA11")) is None
     finally:
         proc.terminate()
         proc.wait()
@@ -586,7 +586,7 @@ def test_undo_names_the_turn_every_other_surface_names(
         )
     )
     assert child_manifest["forked_from_turn"] == 3
-    subject = _git(repo, "log", "-1", "--format=%s", git_ops.chain_ref_for("fork-BBBB22"))
+    subject = _git(repo, "log", "-1", "--format=%s", git_read.chain_ref_for("fork-BBBB22"))
     assert subject == "agent6 undo: the tree before turn 3 was taken back"
 
 

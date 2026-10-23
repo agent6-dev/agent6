@@ -27,7 +27,7 @@ from agent6.harness import _snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import _session_log
 
 _STEER_NOTICE = "OPERATOR STEERING"
@@ -251,13 +251,13 @@ def _rewind_checkout(
     Returns:
         The paths put back and the paths left as the operator's.
     """
-    current = git_ops.worktree_tree(checkout, tip, exclude)
-    differing = git_ops.tree_diff_paths(checkout, sha, current)
+    current = git_read.worktree_tree(checkout, tip, exclude)
+    differing = git_read.tree_diff_paths(checkout, sha, current)
     if not end_tree:
         put_back, left = differing, []
     else:
-        own = set(git_ops.tree_diff_paths(checkout, sha, end_tree))
-        since = set(git_ops.tree_diff_paths(checkout, end_tree, current))
+        own = set(git_read.tree_diff_paths(checkout, sha, end_tree))
+        since = set(git_read.tree_diff_paths(checkout, end_tree, current))
         put_back = [p for p in differing if p in own and p not in since]
         left = [p for p in differing if p not in put_back]
     if put_back:
@@ -392,7 +392,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         return None
     # A live source's own loop journals its undone end; a finished one gets it here.
     offline = process.read_worker_pid(undone.session_dir) != os.getpid()
-    ref = git_ops.chain_ref_for(undone.session_id)
+    ref = git_read.chain_ref_for(undone.session_id)
     where = manifest.run_branch or ref
     exclude = sessions_layout.read_untracked_at_start(undone.session_dir)
     try:
@@ -402,7 +402,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
                 f"agent6 undo: the tree before turn {target.turn} was taken back",
                 ref=ref,
                 fallback_parent=manifest.base_sha or None,
-                identity=git_ops.CommitIdentity(
+                identity=git_read.CommitIdentity(
                     name=cfg.git.commit.name, email=cfg.git.commit.email
                 ),
                 also_branch=manifest.run_branch,
@@ -438,7 +438,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         try:
             rewound = _rewind_checkout(
                 checkout,
-                tip=git_ops.chain_tip(checkout, ref) or sha,
+                tip=git_read.chain_tip(checkout, ref) or sha,
                 sha=sha,
                 end_tree=_session_log.scan_session_log(undone.logs_path).end_tree,
                 exclude=exclude,

@@ -25,7 +25,7 @@ from typing import Any, cast
 import pydantic
 import pydantic_core
 
-from agent6.config import io, layer
+from agent6.config import _presets, io
 from agent6.config import model as config_model
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -155,9 +155,9 @@ def _flatten(prefix: str, node: dict[str, Any]) -> list[str]:
 def render_presets_table() -> list[str]:
     """Return the built-in presets table's lines."""
     rows = ["| Preset | For | Sets |", "|---|---|---|"]
-    for name, overrides in layer.BUILTIN_PRESETS.items():
+    for name, overrides in _presets.BUILTIN_PRESETS.items():
         sets = ", ".join(_flatten("", overrides)) or "nothing (the defaults)"
-        rows.append(f"| `{name}` | {layer.BUILTIN_PRESET_NOTES[name]} | {sets} |")
+        rows.append(f"| `{name}` | {_presets.BUILTIN_PRESET_NOTES[name]} | {sets} |")
     return rows
 
 

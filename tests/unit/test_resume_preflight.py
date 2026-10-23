@@ -20,14 +20,14 @@ from agent6 import paths
 from agent6.app import _execution as app__execution
 from agent6.app import _session, _setup, confine, preflight, providers, run
 from agent6.app import resume as resume_mod
-from agent6.config import layer
+from agent6.config import _layer_data, layer
 from agent6.harness import _snapshot
 from agent6.sandbox import detect
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import resume as cli_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli import run as cli_run
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 
 def _git_repo(path: pathlib.Path) -> None:
@@ -274,8 +274,8 @@ def _stub_load_effective(
     # The real type: preflight reads `explicit_leaves` off it to tell a DEFAULT
     # this host cannot honour (degrade) from a value the operator wrote down
     # (refuse), and a stand-in cannot answer for that.
-    def _load(*_a: object, **_k: object) -> layer.EffectiveConfig:
-        return layer.EffectiveConfig(config=cfg, sources={}, layers=())
+    def _load(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
+        return _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
     monkeypatch.setattr(layer, "load_effective", _load)
 
@@ -327,7 +327,7 @@ def test_resume_preset_flag_is_recorded_for_later_executions(
 
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)  # no key in a unit test
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
-    monkeypatch.setattr(git_ops, "verify_git_identity", _nothing)
+    monkeypatch.setattr(git_read, "verify_git_identity", _nothing)
     monkeypatch.setattr(app__execution, "run_execution", _finished_execution)
     assert cli_resume._cmd_resume((), "plan-PRESET1", force=False, preset="no_review") == 0
     stamp = sessions_manifest.read_manifest(session_dir).harness
@@ -468,7 +468,7 @@ def test_a_resume_after_a_death_mid_turn_asks_nothing_and_keeps_the_record_for_t
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)
-    monkeypatch.setattr(git_ops, "verify_git_identity", _nothing)
+    monkeypatch.setattr(git_read, "verify_git_identity", _nothing)
 
     def _fail_startup(*_a: object, **_k: object) -> object:
         raise _Stop()
@@ -700,8 +700,10 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
     cfg_path.write_text(_PLANNER_AND_WORKER + "[harness]\nmax_turns = 7\n", encoding="utf-8")
     cfg = load_config(cfg_path)
 
-    def _load(*_a: object, **_k: object) -> layer.EffectiveConfig:
-        return layer.EffectiveConfig(config=cfg, sources={"harness.max_turns": "global"}, layers=())
+    def _load(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
+        return _layer_data.EffectiveConfig(
+            config=cfg, sources={"harness.max_turns": "global"}, layers=()
+        )
 
     monkeypatch.setattr(layer, "load_effective", _load)
     monkeypatch.setattr(_setup, "check_provider_keys", _nothing)  # no key in a unit test
@@ -918,7 +920,7 @@ def test_plan_resume_builds_the_planner_provider(
     monkeypatch.setattr(confine, "check_network_support", _none)
     monkeypatch.setattr(_setup, "check_provider_keys", _none)
     monkeypatch.setattr(preflight, "budget_preflight", _none)
-    monkeypatch.setattr(git_ops, "verify_git_identity", _none)
+    monkeypatch.setattr(git_read, "verify_git_identity", _none)
 
     captured: list[str] = []
 
@@ -1332,7 +1334,7 @@ def test_resume_model_flag_is_recorded_and_replayed(
 
     monkeypatch.setattr(preflight, "route_preflight", _route)
     monkeypatch.setattr(_session, "select_isolation", _unconfined)
-    monkeypatch.setattr(git_ops, "verify_git_identity", _nothing)
+    monkeypatch.setattr(git_read, "verify_git_identity", _nothing)
     monkeypatch.setattr(app__execution, "run_execution", _finished_execution)
     assert cli_resume._cmd_resume((), "plan-MODEL1", force=False, model="claude-refused") == 2
     assert sessions_manifest.read_manifest(session_dir).models.driver_from_flag is False

@@ -28,7 +28,7 @@ from agent6.config import Config
 from agent6.models import validate
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, manifest
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 
 def test_repo_writer_second_acquire_refused_and_holder_named(tmp_path: pathlib.Path) -> None:
@@ -774,7 +774,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     (repo / "built.txt").write_text("a build output\n", encoding="utf-8")
     (repo / "réponse.txt").write_text("git quotes this name in ls-tree\n", encoding="utf-8")
     assert git_ops.chain_commit(
-        repo, "turn 1", ref=git_ops.chain_ref_for("run-U"), fallback_parent=None
+        repo, "turn 1", ref=git_read.chain_ref_for("run-U"), fallback_parent=None
     )
     (repo / "note.md").write_text("the operator's\n", encoding="utf-8")
     seen: list[frozenset[str]] = []
@@ -805,7 +805,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     def _broken(_cwd: pathlib.Path) -> frozenset[str]:
         raise errors.GitError("git status failed: index.lock exists")
 
-    monkeypatch.setattr(git_ops, "untracked_paths", _broken)
+    monkeypatch.setattr(git_read, "untracked_paths", _broken)
     seen.clear()
     rc = resume_mod.resume_task(
         (), "run-U", started_at=time.time(), frontend=mock.MagicMock(), force=False

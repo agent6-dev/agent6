@@ -135,7 +135,7 @@ def inconclusive_note(result: PanelResult) -> str:
 
 
 # A critique rides into the worker's next turn beside the tool results, findings first.
-# `_compaction.CLAUDE_CODE_NOTICE_ROOM_BYTES` sizes the result cap with this much critique in mind.
+# `_compaction_result.CLAUDE_CODE_NOTICE_ROOM_BYTES` reserves this critique space.
 REVIEW_NOTICE_BYTES = 4_000
 
 

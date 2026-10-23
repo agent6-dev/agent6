@@ -241,7 +241,7 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: pathlib.Pa
     import subprocess
 
     from agent6.sessions import layout as sessions_layout
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_read
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -271,7 +271,7 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: pathlib.Pa
             finalize.stranded_edits(result, branchless, repo) is True
         )  # dirty, no chain: nothing landed
         subprocess.run(
-            ["git", "-C", str(repo), "update-ref", git_ops.chain_ref_for("b1"), "HEAD"], check=True
+            ["git", "-C", str(repo), "update-ref", git_read.chain_ref_for("b1"), "HEAD"], check=True
         )
         assert (
             finalize.stranded_edits(result, branchless, repo) is False
@@ -293,7 +293,7 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: pathlib.Pa
         )
         assert finalize.stranded_edits(result, branch_lost, repo) is True  # no branch, no chain
         subprocess.run(
-            ["git", "-C", str(repo), "update-ref", git_ops.chain_ref_for("c1"), "HEAD"], check=True
+            ["git", "-C", str(repo), "update-ref", git_read.chain_ref_for("c1"), "HEAD"], check=True
         )
         assert (
             finalize.stranded_edits(result, branch_lost, repo) is False

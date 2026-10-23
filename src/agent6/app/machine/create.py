@@ -27,7 +27,7 @@ from agent6.machine import (
     load_machine,
 )
 from agent6.sessions import id, layout, process
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 _CREATE_TIMEOUT_S = 900.0
 
@@ -241,8 +241,8 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     overlay["harness"] = {**overlay.get("harness", {}), "metric": None}
     # Resolved on the host: the confined execution cannot read ~/.gitconfig.
     try:
-        name, email = git_ops.verify_git_identity(
-            workspace, git_ops.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
+        name, email = git_read.verify_git_identity(
+            workspace, git_read.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
         )
     except errors.GitError as exc:
         reporter.error(str(exc))
@@ -253,7 +253,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         {"": machine_agent.StateOverlay(overlay, isolation)},
         workspace,
         scratch / "agent_transcripts",
-        commit_identity=git_ops.CommitIdentity(name=name, email=email),
+        commit_identity=git_read.CommitIdentity(name=name, email=email),
     )
 
     diagnostics: list[str] | None = None

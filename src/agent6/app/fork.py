@@ -32,7 +32,7 @@ from agent6.harness import _snapshot
 from agent6.sandbox import detect
 from agent6.sessions import id, layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import newest_session_dir
 
 # The DAG artifacts copied verbatim when there is no version to rebuild at.
@@ -347,7 +347,7 @@ def _plan_fork(
         # the base.
         base_sha=(
             forked_from_sha
-            if sm.merged is not None and not git_ops.is_ancestor(cwd, sm.base_sha, forked_from_sha)
+            if sm.merged is not None and not git_read.is_ancestor(cwd, sm.base_sha, forked_from_sha)
             else sm.base_sha
         ),
         base_branch=sm.base_branch,
@@ -494,7 +494,7 @@ def _materialize_fork(
     # The files the fork's commits leave out: observed in a fresh worktree, given for an
     # existing checkout (where the run's own work still reads untracked), else the source's.
     if fresh_checkout and checkout is not None:
-        excluded = git_ops.untracked_paths(checkout.worktree)
+        excluded = git_read.untracked_paths(checkout.worktree)
     elif checkout_untracked is not None:
         excluded = checkout_untracked
     else:
@@ -502,7 +502,7 @@ def _materialize_fork(
     layout.write_untracked_at_start(dst.session_dir, excluded)
 
     run_branch = (
-        git_ops.run_branch_for(dst.session_id)
+        git_read.run_branch_for(dst.session_id)
         if plan.mode == "run" and plan.cfg.git.branch_per_run
         else None
     )
@@ -535,7 +535,7 @@ def _materialize_fork(
         if run_branch is not None:
             git_ops.create_branch_at(cwd, run_branch, plan.forked_from_sha)
         if plan.mode == "run":
-            git_ops.set_ref(cwd, git_ops.chain_ref_for(dst.session_id), plan.forked_from_sha)
+            git_ops.set_ref(cwd, git_read.chain_ref_for(dst.session_id), plan.forked_from_sha)
     except errors.GitError as exc:
         reporter.error(f"could not cut fork refs at {plan.forked_from_sha[:12]}: {exc}")
         # A fork exists only with its refs; a chain ref under this id predates the fork.
@@ -555,7 +555,7 @@ def _materialize_fork(
     at = (
         f"(branch {run_branch} "
         if run_branch
-        else f"({git_ops.chain_ref_for(dst.session_id)} "
+        else f"({git_read.chain_ref_for(dst.session_id)} "
         if plan.mode == "run"
         else "("
     )

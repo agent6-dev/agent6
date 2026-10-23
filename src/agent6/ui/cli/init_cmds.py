@@ -10,7 +10,7 @@ import sys
 from agent6 import errors, paths
 from agent6.config import Config, ConfigError, layer
 from agent6.ui.cli import _common, init
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 _SCAFFOLD_COMMIT_MESSAGE = "chore: scaffold agent6 config"
 
@@ -36,8 +36,8 @@ def _scaffold_rel_paths(root: pathlib.Path, created: tuple[pathlib.Path, ...]) -
     Returns:
         The paths; empty when nothing is left to commit.
     """
-    candidates = git_ops.unignored(root, _workspace_rel_paths(root, created))
-    return tuple(rel for rel in candidates if git_ops.paths_dirty(root, (rel,)))
+    candidates = git_read.unignored(root, _workspace_rel_paths(root, created))
+    return tuple(rel for rel in candidates if git_read.paths_dirty(root, (rel,)))
 
 
 def _offer_git_setup(
@@ -54,7 +54,7 @@ def _offer_git_setup(
         created: The paths init wrote.
         interactive: Ask before acting.
     """
-    if git_ops.is_git_repo(root):
+    if git_read.is_git_repo(root):
         _offer_scaffold_commit(root, created, interactive=interactive)
         return
     print()
@@ -108,7 +108,7 @@ def _offer_scaffold_commit(
     if not rel:
         return
     try:
-        if not git_ops.paths_dirty(root, rel):
+        if not git_read.paths_dirty(root, rel):
             # Already committed; a whole-tree check would false-trigger on unrelated work.
             return
     except errors.GitError:
@@ -180,9 +180,9 @@ def _cmd_init(
     # A scaffold path init leaves untouched is the operator's: excluded from the commit, reported.
     scaffold_all = (cwd / "AGENTS.md", cwd / ".gitignore")
     missing_before = tuple(p for p in scaffold_all if not p.exists())
-    if git_ops.is_git_repo(cwd):
+    if git_read.is_git_repo(cwd):
         theirs = tuple(
-            p for p in scaffold_all if git_ops.paths_dirty(cwd, (str(p.relative_to(cwd)),))
+            p for p in scaffold_all if git_read.paths_dirty(cwd, (str(p.relative_to(cwd)),))
         )
     else:
         theirs = tuple(p for p in scaffold_all if p.exists())
@@ -208,8 +208,8 @@ def _cmd_init(
             )
             # Only where a scaffold commit was on the table: outside a repo nothing was left out.
             dirty = (
-                tuple(p for p in theirs if git_ops.paths_dirty(cwd, (str(p.relative_to(cwd)),)))
-                if git_ops.is_git_repo(cwd)
+                tuple(p for p in theirs if git_read.paths_dirty(cwd, (str(p.relative_to(cwd)),)))
+                if git_read.is_git_repo(cwd)
                 else ()
             )
             if dirty:

@@ -18,7 +18,7 @@ import time
 from typing import Any
 
 from agent6 import budget, errors, paths
-from agent6.app.machine import listing, machine_spend
+from agent6.app.machine import listing
 from agent6.machine import (
     EngineError,
     JournalError,
@@ -35,14 +35,14 @@ from agent6.ui import notify
 from agent6.ui.cli import _common, machine_check, plan_watch
 from agent6.viewmodel import (
     MachineState,
-    MachineWatchCursor,
+    _machine_logs,
+    _machine_watch,
     armed_wait,
     event_epoch,
     fold_machine,
     format,
     machine_state,
     machine_word_for_dir,
-    newest_agent_execution,
 )
 
 
@@ -283,7 +283,7 @@ def _cmd_machine_status(machine_id: str) -> int:
     pending, pending_note = _armed_wait_tolerant(root, ms)
 
     alive = process.worker_is_alive(root)
-    spend, inflight_state = machine_spend(events, root, alive=alive)
+    spend, inflight_state = _machine_logs.machine_spend(events, root, alive=alive)
     # machine_word_for_dir owns running/waiting/stopped for every surface; parked beats alive.
     word = machine_word_for_dir(ms, root)
 
@@ -298,7 +298,7 @@ def _cmd_machine_status(machine_id: str) -> int:
             + (
                 f" (an approval open in {blocked_in}: answer it in the TUI machine view"
                 " or the web page)"
-                if alive and (blocked_in := newest_agent_execution(root).blocked_in)
+                if alive and (blocked_in := _machine_logs.newest_agent_execution(root).blocked_in)
                 else ""
             )
         )
@@ -495,7 +495,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
         f"agent6 machine poke {machine_id} [--message TEXT]",
         file=sys.stderr,
     )
-    cursor = MachineWatchCursor(seen_steps=len(ms.transitions))
+    cursor = _machine_watch.MachineWatchCursor(seen_steps=len(ms.transitions))
     cursor.seed_notifications(ms)  # history already rendered by the overview
     anchor: float | None = None
     try:

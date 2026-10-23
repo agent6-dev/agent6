@@ -16,7 +16,7 @@ from agent6.harness import subrun
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 
 def subordinate_workdir_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
@@ -77,13 +77,13 @@ def adopt_orphan_lane(
     if (
         not manifest.run_branch
         or manifest.parallel is None
-        or git_ops.branch_exists(origin, manifest.run_branch)
+        or git_read.branch_exists(origin, manifest.run_branch)
         or not layout.session_dir.is_symlink()
     ):
         return None
     lineage = manifest.parallel
     clone = subordinate_workdir_root(cfg, origin, lineage.group) / f"lane-{lineage.lane}"
-    if not (clone / ".git").exists() or not git_ops.branch_exists(clone, manifest.run_branch):
+    if not (clone / ".git").exists() or not git_read.branch_exists(clone, manifest.run_branch):
         return None
     real = layout.session_dir.resolve()
     layout.session_dir.unlink()
@@ -110,7 +110,7 @@ def recorded_merged(origin: pathlib.Path, clone: pathlib.Path, tip: str) -> bool
         Whether a merge stamp covers it.
     """
     state = paths.state_dir(origin)
-    for branch in git_ops.list_run_branches(clone):
+    for branch in git_read.list_run_branches(clone):
         layout = sessions_layout.session_layout(state, branch.removeprefix("agent6/"))
         if layout is None:
             continue
@@ -118,7 +118,7 @@ def recorded_merged(origin: pathlib.Path, clone: pathlib.Path, tip: str) -> bool
             merged = sessions_manifest.read_manifest(layout.session_dir).merged
         except sessions_manifest.ManifestError:
             continue
-        if merged is not None and merged.tip == tip and git_ops.branch_exists(origin, merged.into):
+        if merged is not None and merged.tip == tip and git_read.branch_exists(origin, merged.into):
             return True
     return False
 
@@ -181,15 +181,15 @@ def sweep_fanout_clones(
         why = ""
         for clone in clones:
             try:
-                tips = [git_ops.chain_tip(clone, br) for br in git_ops.list_run_branches(clone)]
+                tips = [git_read.chain_tip(clone, br) for br in git_read.list_run_branches(clone)]
                 # A machine-state clone's work rides its chain ref, not a branch.
-                tips += [sha for _ref, sha in git_ops.list_chain_refs(clone)]
+                tips += [sha for _ref, sha in git_read.list_chain_refs(clone)]
                 if not tips and (why := lane_keep_reason(clone)):
                     break
                 # Reachability, not existence: a loose object is one `git gc` from gone.
                 if any(
                     tip is not None
-                    and not git_ops.commit_is_reachable(origin, tip)
+                    and not git_read.commit_is_reachable(origin, tip)
                     and not recorded_merged(origin, clone, tip)
                     for tip in tips
                 ):

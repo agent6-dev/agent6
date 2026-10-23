@@ -18,7 +18,7 @@ from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import _common, _steer
-from agent6.vcs import git_ops, git_policy
+from agent6.vcs import git_policy, git_read
 from agent6.viewmodel import _session_log, newest_session_dir
 
 
@@ -126,7 +126,7 @@ def _diff_via_merge_stamp(
     merged = manifest.merged
     if merged is None or not run_branch or not merged.sha:
         return None
-    gone = git_ops.branch_tip_sha(cwd, run_branch) is None
+    gone = git_read.branch_tip_sha(cwd, run_branch) is None
     why = "run branch pruned" if gone else "base unreachable"
     if merged.sha == sessions_manifest.NO_MERGE_COMMIT:
         # A merge that added nothing names no commit; the run's work is its stamped tip's.
@@ -208,7 +208,7 @@ def build_session_seed(cwd: pathlib.Path, session_id: str, *, latest: bool) -> S
                 diff_label, rc, diff, err = fallback
         if (
             rc != 0
-            and not git_ops.branch_exists(cwd, run_branch)
+            and not git_read.branch_exists(cwd, run_branch)
             and not _session_log.scan_session_log(layout.logs_path).finished
         ):
             # The branch is cut by the first commit; before it there is nothing to diff.

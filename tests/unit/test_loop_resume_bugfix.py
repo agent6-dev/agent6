@@ -21,6 +21,7 @@ import pytest
 from agent6.config import Config
 from agent6.harness import (
     _chain,
+    _compaction_result,
     _compactor,
     _conversation,
     _loop_resume,
@@ -945,8 +946,6 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: pathlib.Path
 
 def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
     """A fork re-announces its elision markers: it copies the checkpoint but not logs.jsonl."""
-    from agent6.harness import _compaction
-
     config = types.SimpleNamespace(
         sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
@@ -994,7 +993,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
                     {
                         "type": "tool_result",
                         "tool_use_id": "a",
-                        "content": f"{_compaction.ELISION_PREFIX}: x",
+                        "content": f"{_compaction_result.ELISION_PREFIX}: x",
                     }
                 ],
             },
@@ -1008,7 +1007,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
                     {
                         "type": "tool_result",
                         "tool_use_id": "b",
-                        "content": f"{_compaction.ELISION_PREFIX}: y",
+                        "content": f"{_compaction_result.ELISION_PREFIX}: y",
                     }
                 ],
             },
@@ -1022,7 +1021,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
                     {
                         "type": "tool_result",
                         "tool_use_id": "c",
-                        "content": f"{_compaction.ELISION_GIST_PREFIX}: z",
+                        "content": f"{_compaction_result.ELISION_GIST_PREFIX}: z",
                     }
                 ],
             },
@@ -1355,7 +1354,7 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pat
     """The snapshot's `head_sha` is the run's chain tip; the carry asks for dirt relative to it."""
     import subprocess
 
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_ops, git_read
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -1395,7 +1394,7 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pat
             "head_sha": wf.chain.checkpoint_head_sha(),
         }
     )
-    assert snap.head_sha == git_ops.chain_tip(repo, chain) != git_ops.status(repo).head_sha
+    assert snap.head_sha == git_read.chain_tip(repo, chain) != git_read.status(repo).head_sha
 
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     _loop_resume.carry_verify_verdict(wf, state, snap)

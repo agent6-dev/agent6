@@ -426,7 +426,7 @@ def test_session_payload_names_the_ref_holding_the_commits(
     """
     import subprocess as sp
 
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_read
 
     _srv, port = server
     sp.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
@@ -453,7 +453,7 @@ def test_session_payload_names_the_ref_holding_the_commits(
     )
     status, body, _ = _get(port, "/api/session/run-chain")
     assert status == 200 and "commits_ref" not in json.loads(body)  # nothing committed yet
-    chain = git_ops.chain_ref_for("run-chain")
+    chain = git_read.chain_ref_for("run-chain")
     sp.run(["git", "update-ref", chain, "HEAD"], cwd=tmp_path, check=True)
     status, body, _ = _get(port, "/api/session/run-chain")
     assert status == 200 and json.loads(body)["commits_ref"] == chain
@@ -1809,13 +1809,13 @@ def test_session_api_hub_and_attach_give_one_label(
 ) -> None:
     """The run snapshot and attach keep the listing's unmerged mark, including after merge."""
     from agent6.sessions import manifest
-    from agent6.vcs import git_ops
+    from agent6.vcs import git_read
     from agent6.viewmodel import listing, wire
 
     monkeypatch.chdir(tmp_path)
     base, _c1, tip = _git_chain(tmp_path)
     sid = "parity-run"
-    subprocess.run(["git", "update-ref", git_ops.chain_ref_for(sid), tip], check=True)
+    subprocess.run(["git", "update-ref", git_read.chain_ref_for(sid), tip], check=True)
     _make_run(
         tmp_path,
         sid,
@@ -1836,7 +1836,7 @@ def test_session_api_hub_and_attach_give_one_label(
     )
     expected = "passed" if merged else "passed · unmerged"
     row = listing.summary_row(
-        listing.summarize_session_dir(d, branch_tips=git_ops.run_ref_tips(tmp_path))
+        listing.summarize_session_dir(d, branch_tips=git_read.run_ref_tips(tmp_path))
     )
     assert row["label"] == expected
     assert wire.session_snapshot(d, repo=tmp_path)["status_label"] == expected

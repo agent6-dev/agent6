@@ -15,7 +15,7 @@ from collections.abc import Container, Iterable, Mapping, Sequence
 
 from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import _session_log, _session_status, format
 
 
@@ -475,7 +475,7 @@ def unmerged(
     Args:
         manifest: The run's manifest.
         word: The dir-aware status word; an undone run's child carries its work.
-        branch_tips: The caller's `git_ops.run_ref_tips` snapshot.
+        branch_tips: The caller's `git_read.run_ref_tips` snapshot.
 
     Returns:
         Whether its chain or branch has a tip beyond the base and outside the stamp.
@@ -485,7 +485,7 @@ def unmerged(
     tips = {
         tip
         for tip in (
-            branch_tips.get(git_ops.chain_ref_for(manifest.session_id)),
+            branch_tips.get(git_read.chain_ref_for(manifest.session_id)),
             branch_tips.get(manifest.run_branch or ""),
         )
         if tip
@@ -508,7 +508,7 @@ def summarize_session_dir(
 
     Args:
         session_dir: The session's state dir.
-        branch_tips: The caller's `git_ops.run_ref_tips` snapshot; with it the row says
+        branch_tips: The caller's `git_read.run_ref_tips` snapshot; with it the row says
             whether the chain or branch still holds commits no merge stamped, without
             it `unmerged` stays False (no mark, never a wrong one).
 

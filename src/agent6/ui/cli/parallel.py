@@ -22,7 +22,7 @@ from agent6.sessions import id
 from agent6.ui import spawn as ui_spawn
 from agent6.ui import steer
 from agent6.ui.cli import _common, _compare, _interact
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 
 
 def lane_runtime() -> app_lanes.LaneRuntime:
@@ -151,7 +151,7 @@ def dispatch_parallel(
             _common.refuse(f"{err}")
             return 2
     try:
-        modified = git_ops.modified_paths(origin)
+        modified = git_read.modified_paths(origin)
     except errors.GitError as exc:
         _common.error(f"{exc}")
         return 2

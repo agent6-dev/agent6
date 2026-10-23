@@ -23,7 +23,7 @@ from agent6 import errors, terminal
 from agent6.app import preflight
 from agent6.app import reporter as app_reporter
 from agent6.tools import schema
-from agent6.vcs import git_ops
+from agent6.vcs import git_ops, git_read
 
 _LISTED = 10
 
@@ -51,12 +51,12 @@ def outside_edits(
         The differing paths; with no recorded tree, what differs from the seed that no tool
         of the run wrote; empty when nothing changed.
     """
-    tree = git_ops.worktree_tree(cwd, seed, exclude)
+    tree = git_read.worktree_tree(cwd, seed, exclude)
     if end_tree:
-        return git_ops.tree_diff_paths(cwd, end_tree, tree)
+        return git_read.tree_diff_paths(cwd, end_tree, tree)
     if seed is None:
         return []
-    return [p for p in git_ops.tree_diff_paths(cwd, seed, tree) if p not in written]
+    return [p for p in git_read.tree_diff_paths(cwd, seed, tree) if p not in written]
 
 
 def _description(end_tree: str) -> str:
@@ -85,7 +85,7 @@ def _also_the_runs(cwd: pathlib.Path, left: str, outside: Sequence[str]) -> list
     """
     if not left:
         return []
-    changed = set(git_ops.tree_diff_paths(cwd, "HEAD", left))
+    changed = set(git_read.tree_diff_paths(cwd, "HEAD", left))
     return [p for p in outside if p in changed]
 
 
@@ -104,8 +104,8 @@ def _shared_refusal(
     source = end_tree
     if (
         run_branch
-        and git_ops.branch_exists(cwd, run_branch)
-        and not git_ops.tree_diff_paths(cwd, run_branch, end_tree)
+        and git_read.branch_exists(cwd, run_branch)
+        and not git_read.tree_diff_paths(cwd, run_branch, end_tree)
     ):
         source = run_branch
     # Literal pathspecs: a name holding `*`, `?` or `[` would restore other files too. A name

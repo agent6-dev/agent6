@@ -25,7 +25,7 @@ from agent6.models import pricing, validate
 from agent6.providers import TranscriptSink
 from agent6.sessions import ipc, manifest
 from agent6.tools import schema
-from agent6.vcs import git_ops
+from agent6.vcs import git_read
 from agent6.viewmodel import format, listing
 
 
@@ -226,14 +226,14 @@ def git_preflight(
         SessionRefusedError: A check refused; the refusal is already reported.
     """
     _setup.apply_git_ops_policy(cfg)
-    identity = git_ops.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
+    identity = git_read.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
     # ask is read-only and may run outside a git repo.
     if mode == "ask":
         return GitPreflight(base_sha="", base_branch="")
     try:
-        git_ops.verify_git_identity(cwd, identity)
+        git_read.verify_git_identity(cwd, identity)
         # Captured before a run branch exists: `sessions diff` needs the start point.
-        pre_status = git_ops.status(cwd)
+        pre_status = git_read.status(cwd)
     except errors.GitError as exc:
         reporter.error(str(exc))
         raise SessionRefusedError(2) from exc
@@ -281,11 +281,11 @@ def unmerged_run_holding_the_tree(
         with contextlib.suppress(manifest.ManifestError):
             if manifest.read_manifest(d).merged is not None:
                 continue
-        tip = git_ops.chain_tip(cwd, git_ops.chain_ref_for(d.name))
+        tip = git_read.chain_tip(cwd, git_read.chain_ref_for(d.name))
         if tip is None:
             continue
         try:
-            if git_ops.worktree_matches(cwd, tip, modified):
+            if git_read.worktree_matches(cwd, tip, modified):
                 return d.name
         except errors.GitError:
             return ""
@@ -310,11 +310,11 @@ def included_run(
         The run and its chain tip, or None.
     """
     try:
-        tip = git_ops.chain_tip(cwd, git_ops.chain_ref_for(session_id))
+        tip = git_read.chain_tip(cwd, git_read.chain_ref_for(session_id))
         if tip is None:
             return None
-        start = git_ops.worktree_tree(cwd, base_sha or None, exclude)
-        if git_ops.tree_diff_paths(cwd, tip, start):
+        start = git_read.worktree_tree(cwd, base_sha or None, exclude)
+        if git_read.tree_diff_paths(cwd, tip, start):
             return None
     except errors.GitError:
         return None
@@ -326,7 +326,7 @@ def _dirty_tree_listing(paths: Sequence[str], *, cap: int = 10, unmerged_run: st
     n = len(paths)
     head = f"{n} tracked {'file has' if n == 1 else 'files have'} uncommitted changes"
     head += (
-        f" (the unmerged work of run {unmerged_run}, on {git_ops.run_branch_for(unmerged_run)}):"
+        f" (the unmerged work of run {unmerged_run}, on {git_read.run_branch_for(unmerged_run)}):"
         if unmerged_run
         else ":"
     )
@@ -419,7 +419,7 @@ def git_repo_refusal(cwd: pathlib.Path) -> str | None:
     if not cwd.is_dir():
         # git cannot chdir into a missing directory; the error would read as internal.
         return f"{cwd} is not a directory."
-    if git_ops.is_git_repo(cwd):
+    if git_read.is_git_repo(cwd):
         return None
     return (
         f"{cwd} is not a git repository.\n"
