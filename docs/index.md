@@ -94,7 +94,7 @@ Forking a coding run creates a separate worktree.
 ### Terminal, browser, and editor
 
 The CLI, terminal UI, browser UI, and editor integration share the same engine and session records.
-The terminal and browser interfaces let you follow live runs, answer questions, and steer work.
+The terminal and browser interfaces let you follow live runs, answer questions, and steer work; the browser also reads the repository's history and files.
 Run headers show the model, resolved isolation level, command approval setting, and verification command.
 [Interfaces and live controls](usage.md#follow-and-steer-a-run)
 
