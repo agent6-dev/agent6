@@ -21,7 +21,7 @@ from urllib import parse
 import httpx2
 
 from agent6 import secret_store
-from agent6.providers import types
+from agent6.providers import _transport, types
 
 TOKEN_TIMEOUT_S = 30.0
 # The refresh token itself is dead; re-consent is the only repair.
@@ -98,12 +98,21 @@ def post_form(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Respon
         },
         content=parse.urlencode(data).encode("ascii"),
         timeout=timeout_s,
+        follow_redirects=False,
+        trust_env=_transport.trust_env_for(url),
     )
 
 
 def post_json(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Response:
     """Return an endpoint's response to a JSON POST; the seam tests stub."""
-    return httpx2.post(url, json=data, headers={"accept": "application/json"}, timeout=timeout_s)
+    return httpx2.post(
+        url,
+        json=data,
+        headers={"accept": "application/json"},
+        timeout=timeout_s,
+        follow_redirects=False,
+        trust_env=_transport.trust_env_for(url),
+    )
 
 
 def grant_from_response(resp: httpx2.Response, *, operation: str, label: str) -> TokenGrant:
@@ -176,6 +185,15 @@ def scrub(text: str, secrets: tuple[str, ...]) -> str:
         for spelling in {value, json.dumps(value)[1:-1]}:
             text = text.replace(spelling, "<REDACTED>")
     return text
+
+
+def redirect_refusal(resp: httpx2.Response, *, operation: str, label: str) -> types.ProviderError:
+    """Return the error for a token endpoint that answered with a redirect, never followed."""
+    return types.ProviderError(
+        f"{label} token {operation} redirected (HTTP {resp.status_code}) to"
+        f" {resp.headers.get('location', '?')}; refusing to follow with credentials",
+        status_code=resp.status_code,
+    )
 
 
 def token_error(
@@ -261,6 +279,8 @@ def exchange_code(
         )
     except httpx2.HTTPError as exc:
         raise types.ProviderError(f"could not reach {token_endpoint}: {exc}") from exc
+    if 300 <= resp.status_code < 400:
+        raise redirect_refusal(resp, operation="exchange", label=label)
     if resp.status_code >= 400:
         raise token_error(
             resp, operation="exchange", provider=provider, label=label, secrets=(code, verifier)
@@ -305,6 +325,8 @@ def refresh_grant(
         )
     except httpx2.HTTPError as exc:
         raise types.ProviderError(f"could not reach {token_endpoint}: {exc}") from exc
+    if 300 <= resp.status_code < 400:
+        raise redirect_refusal(resp, operation="refresh", label=label)
     if resp.status_code >= 400:
         raise token_error(
             resp, operation="refresh", provider=provider, label=label, secrets=(refresh_token,)
@@ -342,7 +364,13 @@ def revoke_tokens(
     if hint == "refresh_token":
         body["client_id"] = client_id
     try:
-        resp = httpx2.post(revocation_endpoint, json=body, timeout=timeout_s)
+        resp = httpx2.post(
+            revocation_endpoint,
+            json=body,
+            timeout=timeout_s,
+            follow_redirects=False,
+            trust_env=_transport.trust_env_for(revocation_endpoint),
+        )
     except httpx2.HTTPError as exc:
         return f"could not reach {revocation_endpoint}: {exc}"
     if resp.status_code >= 400:

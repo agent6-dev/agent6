@@ -58,10 +58,25 @@ def http_stream(
 
     Yields:
         The open response.
+
+    Raises:
+        ProviderError: The provider answered with a redirect, which is never followed.
     """
     with httpx2.stream(
-        method, url, headers=headers, content=content, timeout=_transport.granular_timeout(timeout)
+        method,
+        url,
+        headers=headers,
+        content=content,
+        timeout=_transport.granular_timeout(timeout),
+        follow_redirects=False,
+        trust_env=_transport.trust_env_for(url),
     ) as resp:
+        if 300 <= resp.status_code < 400:
+            raise types.ProviderError(
+                f"provider redirected (HTTP {resp.status_code}) to"
+                f" {resp.headers.get('location', '?')}; refusing to follow with credentials",
+                status_code=resp.status_code,
+            )
         yield resp
 
 

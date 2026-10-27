@@ -493,10 +493,13 @@ class ChatGPTProvider:
         """
         try:
             token = self.credential.token()
+            url = f"{self.base_url.rstrip('/')}/usage"
             resp = httpx2.get(
-                f"{self.base_url.rstrip('/')}/usage",
+                url,
                 headers=self._build_headers(token),
                 timeout=20.0,
+                follow_redirects=False,
+                trust_env=_transport.trust_env_for(url),
             )
             if resp.status_code != 200:
                 return None

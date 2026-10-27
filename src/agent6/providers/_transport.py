@@ -15,10 +15,12 @@ import dataclasses
 import json
 from collections.abc import Callable
 from typing import Any
+from urllib import parse
 
 import httpx2
 
 from agent6 import budget as agent6_budget
+from agent6.config import _surfaces
 from agent6.providers import types
 
 # The handshake bound; only a blackholed connect takes longer, and the watchdog cannot cut one.
@@ -32,6 +34,21 @@ def granular_timeout(timeout: float) -> httpx2.Timeout:
 
 # A full-window reply is a few MiB; the cap stops a hostile endpoint from being buffered whole.
 MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+
+
+def trust_env_for(url: str) -> bool:
+    """Return whether a request to the URL may use the ambient proxy settings.
+
+    A plaintext loopback destination is the one place a credential is not readable on the
+    wire; an `HTTP_PROXY` would carry it off the host, so it is never consulted for one.
+
+    Args:
+        url: The destination.
+
+    Returns:
+        False for a loopback host, True otherwise.
+    """
+    return not _surfaces.is_loopback_host(parse.urlsplit(url).hostname or "")
 
 
 def http_post(
@@ -52,7 +69,13 @@ def http_post(
         ProviderError: The body exceeded `MAX_RESPONSE_BYTES` (retryable).
     """
     with httpx2.stream(
-        "POST", url, headers=headers, content=content, timeout=granular_timeout(timeout)
+        "POST",
+        url,
+        headers=headers,
+        content=content,
+        timeout=granular_timeout(timeout),
+        follow_redirects=False,
+        trust_env=trust_env_for(url),
     ) as resp:
         body = bytearray()
         for chunk in resp.iter_bytes():
@@ -302,6 +325,13 @@ class ProviderCall:
                 recorded = True
                 if cred.invalidate(resp.status_code):
                     continue
+            if 300 <= resp.status_code < 400:
+                # Redirects are never followed: the bearer would go wherever `location` says.
+                raise types.ProviderError(
+                    f"{self.api_label} API redirected (HTTP {resp.status_code}) to"
+                    f" {resp.headers.get('location', '?')}; refusing to follow with credentials",
+                    status_code=resp.status_code,
+                )
             if not 200 <= resp.status_code < 300:
                 if not recorded:
                     self.record(headers, resp.status_code, resp.text[:8192])

@@ -29,7 +29,7 @@ from agent6.config import (
     ProviderEntry,
 )
 from agent6.models import pricing as models_pricing
-from agent6.providers import types, wire
+from agent6.providers import _transport, types, wire
 
 __all__ = ["cached_context_window", "list_models"]
 
@@ -304,12 +304,24 @@ def _fetch(
         return [], {}, {}  # no endpoint: the binary resolves model names itself
     if isinstance(entry, ChatGPTProviderEntry):
         url, headers = _chatgpt_models_endpoint(provider_name, entry)
-        resp = httpx2.get(url, headers=headers, timeout=timeout_s)
+        resp = httpx2.get(
+            url,
+            headers=headers,
+            timeout=timeout_s,
+            follow_redirects=False,
+            trust_env=_transport.trust_env_for(url),
+        )
         resp.raise_for_status()
         ids, context = _chatgpt_listing(resp.json())
         return ids, {}, context  # a subscription prices nothing
     url, headers = _models_endpoint(entry, api_key)
-    resp = httpx2.get(url, headers=headers, timeout=timeout_s)
+    resp = httpx2.get(
+        url,
+        headers=headers,
+        timeout=timeout_s,
+        follow_redirects=False,
+        trust_env=_transport.trust_env_for(url),
+    )
     resp.raise_for_status()
     payload = resp.json()
     return _parse_models(payload), _parse_pricing(payload), _parse_context(payload)
@@ -371,7 +383,13 @@ def probe_provider_key(
     if host == "openrouter.ai" or host.endswith(".openrouter.ai"):
         url = entry.base_url.rstrip("/") + "/key"
     try:
-        resp = httpx2.get(url, headers=headers, timeout=timeout_s)
+        resp = httpx2.get(
+            url,
+            headers=headers,
+            timeout=timeout_s,
+            follow_redirects=False,
+            trust_env=_transport.trust_env_for(url),
+        )
     except (httpx2.HTTPError, OSError) as exc:
         return KeyProbeResult(ok=False, status="unreachable", detail=str(exc)[:200])
     if resp.status_code in (401, 403):

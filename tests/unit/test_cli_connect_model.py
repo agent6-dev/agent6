@@ -887,7 +887,7 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
     monkeypatch.setattr("agent6.ui.cli.connect.secrets.token_urlsafe", lambda n=24: "STATE1")
     exchanges: list[dict[str, str]] = []
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _TokenResp:
+    def fake_post(url: str, data: dict[str, str], timeout_s: float, **_kw: object) -> _TokenResp:
         exchanges.append(data)
         return _TokenResp()
 
@@ -1011,7 +1011,9 @@ def test_connect_logout_revokes_and_removes_tokens(
         status_code = 200
         text = ""
 
-    def fake_post(url: str, *, json: dict[str, object], timeout: float) -> _RevokeResp:
+    def fake_post(
+        url: str, *, json: dict[str, object], timeout: float, **_kw: object
+    ) -> _RevokeResp:
         revoked.append({"url": url, **json})
         return _RevokeResp()
 

@@ -345,6 +345,7 @@ Do not grant all of your host `~/.cargo` just for its cache: it can contain regi
 ### 5. Network
 
 The agent process's own egress is unbounded.
+Its own provider and credential requests follow no redirect, so a bearer goes only where the configured URL says; a request to a loopback destination ignores the proxy variables, so a plaintext loopback bearer stays on the host; a `base_url` or OAuth endpoint carries no userinfo and no fragment.
 Everything below bounds a child of it.
 
 `agent6 telemetry export` is host egress too: it dials `[telemetry].endpoint` from the agent6 process with the header values `secrets.toml` holds, outside `sandbox.network`, and only when the operator selected a signal.

@@ -23,7 +23,7 @@ def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathl
 
 
 def _ok_response(ids: list[str]) -> object:
-    def _get(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
+    def _get(url: str, headers: dict[str, str], timeout: float, **_kw: object) -> httpx2.Response:
         return httpx2.Response(
             200, json={"data": [{"id": i} for i in ids]}, request=httpx2.Request("GET", url)
         )
@@ -125,7 +125,7 @@ def test_unsafe_provider_name_still_fetches(
 
 
 def _ok_full(models: list[dict[str, object]]) -> object:
-    def _get(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
+    def _get(url: str, headers: dict[str, str], timeout: float, **_kw: object) -> httpx2.Response:
         return httpx2.Response(200, json={"data": models}, request=httpx2.Request("GET", url))
 
     return _get
@@ -216,7 +216,7 @@ def test_pricing_catalog_refresh_prices_a_bare_claude_id(
     """
     from agent6.models import pricing as models_pricing
 
-    def _get(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
+    def _get(url: str, headers: dict[str, str], timeout: float, **_kw: object) -> httpx2.Response:
         assert "openrouter.ai" in url
         assert "Authorization" not in headers, "catalog fetch must be keyless"
         return httpx2.Response(
@@ -257,7 +257,7 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
     )
     seen: dict[str, object] = {}
 
-    def _get(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
+    def _get(url: str, headers: dict[str, str], timeout: float, **_kw: object) -> httpx2.Response:
         seen["url"] = url
         seen["headers"] = headers
         body = {

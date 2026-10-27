@@ -196,6 +196,7 @@ depends_on = [
   "agent6",  # serverInfo.version on the claude_code MCP handshake
   "agent6.budget",
   "agent6.child_env",  # the claude_code child's curated environment
+  "agent6.config._surfaces",  # is_loopback_host: no ambient proxy carries a loopback bearer off the host
   "agent6.paths",
   "agent6.portable",
   "agent6.sandbox",  # die_with_parent ties the claude_code child to the agent

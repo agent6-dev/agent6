@@ -47,7 +47,7 @@ def validate_base_url(url: str, field: str = "base_url") -> None:
         field: The field name for the message.
 
     Raises:
-        ValueError: No http(s) scheme, no host, or an out-of-range port.
+        ValueError: No http(s) scheme, no host, userinfo, a fragment, or an out-of-range port.
     """
     try:
         parts = parse.urlsplit(url)
@@ -58,6 +58,10 @@ def validate_base_url(url: str, field: str = "base_url") -> None:
         raise ValueError(f"{field} {url!r} must start with http:// or https://")
     if not parts.hostname:
         raise ValueError(f"{field} {url!r} has no host")
+    if parts.username is not None or parts.password is not None:
+        raise ValueError(f"{field} {url!r} carries userinfo; credentials never ride a URL")
+    if parts.fragment:
+        raise ValueError(f"{field} {url!r} carries a fragment, which no request can send")
     if port is not None and not (1 <= port <= 65535):
         raise ValueError(f"{field} {url!r} has an invalid port")
 
