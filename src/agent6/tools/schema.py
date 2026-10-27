@@ -41,8 +41,9 @@ class ReadFileInput(_ToolInput):
         "Read UTF-8 text (`start_line` is 1-based, `limit` selects lines, large files"
         " return `truncated: true`) or a static PNG/JPEG/GIF/WebP image or PDF attachment"
         " from a repo-relative path (absolute only inside granted directories)."
-        " Media requires the default line range, with images limited to 2 MiB each,"
-        " four and 4 MiB total per turn/request, and PDFs to 10 MiB each and one per turn/request."
+        " Media ignores `limit`, refuses a `start_line` other than 1, and is limited to 2 MiB"
+        " per image, four and 4 MiB total per turn/request, and PDFs to 10 MiB each and one per"
+        " turn/request."
     )
 
     path: str = pydantic.Field(min_length=1)

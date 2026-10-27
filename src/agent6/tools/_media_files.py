@@ -137,16 +137,13 @@ def _jpeg(data: bytes) -> bool:
     return False
 
 
-def inspect_media(
-    data: bytes, source_path: str, *, start_line: int = 1, limit: int | None = None
-) -> kinds.MediaAttachment:
+def inspect_media(data: bytes, source_path: str, *, start_line: int = 1) -> kinds.MediaAttachment:
     """Recognize one bounded static image or a PDF header by content, not its filename.
 
     Args:
         data: The complete file bytes, read under the document cap plus one byte.
         source_path: The requested contained path.
-        start_line: Only the default line range is accepted for media.
-        limit: Only None is accepted for media.
+        start_line: A page other than the first refuses; a line limit is ignored for media.
 
     Returns:
         The attachment after container and size checks.
@@ -155,8 +152,8 @@ def inspect_media(
         ToolError: The file is unsupported, animated, malformed, oversized or paginated.
     """
     advice = "Crop or convert the image, or extract document text, with a jailed command."
-    if start_line != 1 or limit is not None:
-        raise errors.ToolError(f"Cannot read a line range from media {source_path!r}. {advice}")
+    if start_line != 1:
+        raise errors.ToolError(f"Cannot read a page of media {source_path!r}. {advice}")
     is_pdf = data.startswith(b"%PDF-")
     cap = media.DOCUMENT_MAX_BYTES if is_pdf else media.IMAGE_MAX_BYTES
     if len(data) > cap:

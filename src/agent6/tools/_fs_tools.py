@@ -84,9 +84,7 @@ def read_file(
         data.startswith(b"RIFF") and data[8:12] == b"WEBP"
     ):
         return results.ReadMediaResult(
-            _media_files.inspect_media(
-                data, args.path, start_line=args.start_line, limit=args.limit
-            )
+            _media_files.inspect_media(data, args.path, start_line=args.start_line)
         )
     del data
     try:

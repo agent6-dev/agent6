@@ -725,7 +725,7 @@ It catches prompt regressions; the structural defenses above confine a model tha
 The read uses `Workspace.resolve_read` and `open_contained`, retaining hidden-path, regular-file and symlink-race checks.
 It reads media under the 10 MiB document cap plus one byte, checks image containers without decoding pixels, and recognizes PDFs by their header.
 Image limits are 2 MiB each, 4 MiB total and four per turn and request; PDFs allow 10 MiB each and one per turn and request.
-It refuses media line ranges, unsupported formats and detected animation rather than resizing or truncating them.
+It refuses a media page other than the first, unsupported formats and detected animation rather than resizing or truncating them.
 The in-memory `MediaAttachment` carries bytes separately from tool-result text.
 Transcripts, snapshots and checkpoints omit recognized payloads and retain metadata (path, media type, SHA-256 and byte size).
 A resume or fork needs a fresh `read_file`; it never reopens a saved path automatically.

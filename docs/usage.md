@@ -90,7 +90,7 @@ Persistence also lets a poisoned cache or tool configuration reach later runs in
 
 `read_file` returns UTF-8 text, a static PNG/JPEG/GIF/WebP image, or a PDF attachment.
 It identifies media by content, not the filename.
-Media reads require the default line range (`start_line = 1`, `limit = null`).
+A media read ignores `limit` and refuses a `start_line` other than 1.
 
 - Images: 2 MiB each, at most four and 4 MiB total per turn and outbound request.
 - PDFs: 10 MiB each, at most one per turn and outbound request, counted separately from images.

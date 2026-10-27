@@ -2975,20 +2975,19 @@ def test_media_inspection_refuses_malformed_or_animated_files(data: bytes) -> No
         _media_files.inspect_media(data, "page.png")
 
 
-@pytest.mark.parametrize("page", [{"start_line": 2}, {"limit": 1}])
-def test_media_inspection_and_read_file_refuse_pagination(
-    tmp_path: pathlib.Path, page: dict[str, int]
-) -> None:
-    """Media reads refuse non-default line ranges rather than returning a partial payload."""
+def test_media_reads_ignore_a_limit_and_refuse_a_later_page(tmp_path: pathlib.Path) -> None:
+    """A model's habitual `limit` still delivers media; a page other than the first refuses."""
     from agent6.tools import _media_files
 
     data = b"%PDF-1.7\n%%EOF"
-    with pytest.raises(errors.ToolError, match="line range"):
+    with pytest.raises(errors.ToolError, match="page of media"):
         _media_files.inspect_media(data, "p.pdf", start_line=2)
     (tmp_path / "p.pdf").write_bytes(data)
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    with pytest.raises(errors.ToolError, match="line range"):
-        d.dispatch("read_file", {"path": "p.pdf", **page})
+    with pytest.raises(errors.ToolError, match="page of media"):
+        d.dispatch("read_file", {"path": "p.pdf", "start_line": 2})
+    delivered = d.dispatch("read_file", {"path": "p.pdf", "start_line": 1, "limit": 1})
+    assert delivered.attachment is not None and delivered.attachment.media_type == "application/pdf"
 
 
 @pytest.mark.parametrize(
