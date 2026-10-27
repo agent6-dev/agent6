@@ -8,16 +8,75 @@ recent commits.
 
 from __future__ import annotations
 
+import dataclasses
+import os
 import pathlib
 
-from agent6 import kinds, terminal
+from agent6 import errors, kinds, review_records, terminal
 from agent6.tools import _path_safety
-from agent6.vcs import git_read
+from agent6.vcs import git_read, review
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6
 # AGENTS.md is injected whole; past this size the operator is warned at session start.
 AGENTS_MD_WARN_CHARS = 40_000
+
+
+def ancestor_directories(root: pathlib.Path) -> tuple[pathlib.Path, tuple[pathlib.PurePath, ...]]:
+    """Return the git root and its relative directories through the working directory."""
+    base, directories = root, [pathlib.PurePath()]
+    top = git_read.toplevel(root)
+    if top is not None and root.resolve().is_relative_to(top.resolve()):
+        base = top.resolve()
+        for part in root.resolve().relative_to(base).parts:
+            directories.append(directories[-1] / part)
+    return base, tuple(directories)
+
+
+def review_rules(
+    root: pathlib.Path, base_tree: str, hide: tuple[str, ...] = ()
+) -> review_records.ReviewRules:
+    """Load whole AGENTS.md and REVIEW.md blobs from base, from the git root through cwd.
+
+    Args:
+        root: The review's working directory.
+        base_tree: The immutable reviewed base tree.
+        hide: `[sandbox].hide_paths`.
+
+    Returns:
+        The complete rule set, or an incomplete set with a named reason.
+    """
+    base, directories = ancestor_directories(root)
+    workspace = _path_safety.host_workspace(base, hide)
+    # A checkout symlink cannot move a denial away from its historical path.
+    lexical_hidden = tuple(pathlib.Path(os.path.abspath(p)) for p in hide)  # noqa: PTH100
+    workspace = dataclasses.replace(workspace, denied=(*workspace.denied, *lexical_hidden))
+    sources: list[review_records.RuleSource] = []
+    texts: list[str] = []
+    remaining = 64 * 1024
+    name = "base tree"
+    try:
+        for directory in directories:
+            for filename in ("AGENTS.md", "REVIEW.md"):
+                name = (directory / filename).as_posix()
+                if workspace.is_denied(base / name) and git_read.tree_entry(base, base_tree, name):
+                    return review_records.ReviewRules(
+                        complete=False,
+                        reason=f"review rules incomplete: {name}: path is hidden",
+                    )
+                entry = review.rule_blob(base, base_tree, name, max_bytes=remaining)
+                if entry is None:
+                    continue
+                source, text = entry
+                sources.append(source)
+                texts.append(f"{name} (blob {source.blob_id}):\n{text}")
+                remaining -= source.supplied_bytes
+    except (errors.GitError, OSError, UnicodeError) as exc:
+        reason = exc.safe_message if isinstance(exc, errors.GitError) else str(exc)
+        return review_records.ReviewRules(
+            complete=False, reason=f"review rules incomplete: {name}: {reason}"
+        )
+    return review_records.ReviewRules(tuple(sources), "\n\n".join(texts))
 
 
 def _agents_md_sources(
@@ -35,12 +94,7 @@ def _agents_md_sources(
     Returns:
         (path, text) pairs, toplevel first.
     """
-    base, directories = root, [pathlib.PurePath()]
-    top = git_read.toplevel(root)
-    if top is not None and root.resolve().is_relative_to(top.resolve()):
-        base = top.resolve()
-        for part in root.resolve().relative_to(base).parts:
-            directories.append(directories[-1] / part)
+    base, directories = ancestor_directories(root)
     names = [(directory / "AGENTS.md").as_posix() for directory in directories]
     return tuple(
         (base / name, text)

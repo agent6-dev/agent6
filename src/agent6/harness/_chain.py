@@ -244,11 +244,15 @@ class RunChain:
     def review_target(self) -> review_records.ReviewTarget | None:
         """Return the base and chain tip a panel reviews, without capturing the workspace."""
         tip = self.tip()
-        if not self.base_sha or not tip:
+        if not tip:
             return None
         return review_records.ReviewTarget(
-            base_commit=self.base_sha,
-            base_tree=git_read.tree_sha(self.root, self.base_sha),
+            base_commit=self.base_sha or None,
+            base_tree=(
+                git_read.tree_sha(self.root, self.base_sha)
+                if self.base_sha
+                else git_read.EMPTY_TREE
+            ),
             head_commit=tip,
             head_tree=git_read.tree_sha(self.root, tip),
             snapshot_commit=tip,

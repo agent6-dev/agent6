@@ -61,7 +61,10 @@ def run(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> layout.Sessi
             "target": target,
             "findings": tuple(
                 dataclasses.replace(
-                    f, line_origin=review.classify_line_origin(tmp_path, target, f.finding.location)
+                    f,
+                    line_origin=review.classify_line_origin(
+                        tmp_path, target, f.finding.location, hide=()
+                    ),
                 )
                 for f in panel.findings
             ),

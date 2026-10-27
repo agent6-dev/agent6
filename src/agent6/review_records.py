@@ -16,6 +16,25 @@ Identifier = Annotated[str, pydantic.StringConstraints(strip_whitespace=True, mi
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class RuleSource:
+    """Identify one base-tree rule blob supplied whole to the reviewer."""
+
+    path: str
+    blob_id: str
+    supplied_bytes: int
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ReviewRules:
+    """Hold the complete rule text, or a refusal with no text supplied."""
+
+    sources: tuple[RuleSource, ...] = ()
+    text: str = ""
+    complete: bool = True
+    reason: str | None = None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ReviewTarget:
     """Identify the immutable trees and path coverage of a review."""
 

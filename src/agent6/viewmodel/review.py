@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 import pydantic
 
-from agent6 import review_records
+from agent6 import review_records, terminal
 
 Completion = Literal["unknown", "running", "complete", "inconclusive", "skipped"]
 Freshness = Literal["unknown", "current", "stale"]
@@ -80,6 +80,9 @@ class PanelView:
     result: review_records.ReviewPanel | None = None
     completion: Completion = "running"
     reason: str | None = None
+    rule_sources: tuple[review_records.RuleSource, ...] = ()
+    rules_complete: bool | None = None
+    rules_reason: str | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -113,6 +116,16 @@ class ReviewView:
     read_failure: str | None = None
     comparison: review_records.ReviewTarget | None = None
     event_ids: tuple[str, ...] = ()
+
+    @property
+    def rule_sources(self) -> tuple[review_records.RuleSource, ...]:
+        """Return the latest panel's recorded rule sources."""
+        return self.panels[-1].rule_sources if self.panels else ()
+
+    @property
+    def rules_complete(self) -> bool | None:
+        """Return rule completeness, or None when no source metadata was recorded."""
+        return self.panels[-1].rules_complete if self.panels else None
 
     @property
     def merge_guard(self) -> MergeReviewGuard:
@@ -167,6 +180,9 @@ class _Start(pydantic.BaseModel):
     execution_id: review_records.Identifier
     target: review_records.ReviewTarget
     seats: tuple[SeatAssignment, ...]
+    rule_sources: tuple[review_records.RuleSource, ...] = ()
+    rules_complete: bool | None = None
+    rules_reason: str | None = None
 
 
 class _Skipped(pydantic.BaseModel):
@@ -178,7 +194,13 @@ class _Skipped(pydantic.BaseModel):
 
 
 _PANEL_EVENTS = frozenset(
-    {"loop.review.start", "loop.review.seat", "loop.review.panel", "loop.review.skipped"}
+    {
+        "loop.review.start",
+        "loop.review.seat",
+        "loop.review.panel",
+        "loop.review.skipped",
+        "loop.review.freeform",
+    }
 )
 _ACTION_EVENTS = frozenset(
     {
@@ -230,7 +252,19 @@ def _panel_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
     old = next((p for p in view.panels if p.panel_id == event.get("panel_id")), None)
     if kind == "loop.review.start":
         start = _Start.model_validate(event)
-        panel = PanelView(start.panel_id, start.execution_id, start.target, start.seats)
+        panel = PanelView(
+            start.panel_id,
+            start.execution_id,
+            start.target,
+            start.seats,
+            rule_sources=start.rule_sources,
+            rules_complete=start.rules_complete,
+            rules_reason=start.rules_reason,
+        )
+    elif kind == "loop.review.freeform":
+        if old is None or old.execution_id != event.get("execution_id"):
+            raise ReviewReadError("freeform review has no matching start")
+        panel = dataclasses.replace(old, completion="complete")
     elif kind == "loop.review.skipped":
         skipped = _Skipped.model_validate(event)
         panel = dataclasses.replace(
@@ -427,4 +461,35 @@ def as_dict(view: ReviewView) -> dict[str, Any]:
     result["merge_guard"] = dataclasses.asdict(view.merge_guard)
     for row, finding in zip(result["findings"], view.findings, strict=True):
         row["line_origin"] = finding.line_origin.model_dump(mode="json")
+    result["rule_sources"] = [dataclasses.asdict(source) for source in view.rule_sources]
+    result["rules_complete"] = view.rules_complete
     return result
+
+
+def rules_notice(event: Mapping[str, Any] | PanelView) -> str:
+    """Render recorded rule sources for text surfaces.
+
+    Args:
+        event: A review start event or folded panel.
+
+    Returns:
+        The source metadata and completeness, or a named validation failure.
+    """
+    try:
+        start = event if isinstance(event, PanelView) else _Start.model_validate(event)
+    except pydantic.ValidationError as exc:
+        return f"Review rules unavailable: {exc}"
+    if start.rules_complete is None:
+        status = "rule sources not recorded"
+    else:
+        status = "rules complete" if start.rules_complete else "rules incomplete"
+    base_tree = start.target.base_tree if start.target else "unrecorded"
+    lines = [f"Panel {start.panel_id}: {status} (base tree {base_tree})"]
+    if start.rules_reason:
+        lines.append(terminal.printable_name(start.rules_reason))
+    if start.rules_complete and not start.rule_sources:
+        lines.append("No base rules exist.")
+    for source in start.rule_sources:
+        name = terminal.printable_name(source.path)
+        lines.append(f"{name}: blob {source.blob_id}, {source.supplied_bytes} bytes")
+    return "\n".join(lines)

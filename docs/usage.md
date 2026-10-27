@@ -290,12 +290,35 @@ agent6 ask "how does the task-graph curator work?"
 - `sessions review` reports how the run ended, what went wrong, what you corrected, the questions nobody answered, and candidate memory facts and AGENTS.md lines with their evidence; it touches no repo or memory file (`agent6 memory add` lands a candidate)
 - every review is saved under `<state-dir>/reviews/`; the path prints on stderr
 
+Working-tree reviews name selected, non-hidden dirty submodules on stderr because their contents are not reviewed.
+Run `agent6 review` inside a submodule to review its changes.
+
 In-loop panels record their findings and reviewed tree IDs in the session journal.
 An exact repeat on the same cited blob keeps its finding ID across rounds and resumes.
 The worker receives each finding once unless the feedback notice cut it.
 A later pass, a skipped panel, or the rejection cap does not erase recorded findings.
 `agent6 attach --json` includes structured review evidence, open counts, action history and completion state.
 Review freshness is unknown until a reader supplies the requested base tree, head tree and path coverage.
+
+### Code-review rules
+
+Code reviews load `AGENTS.md` and `REVIEW.md` independently from the reviewed base tree, from the repository root through the working directory.
+Within each directory, `AGENTS.md` comes first.
+A head-side edit or deletion does not change the rules supplied to that review.
+Rule-file changes remain in the reviewed diff unless the selected paths exclude them.
+
+Missing files are optional.
+An unborn repository has no base rules.
+A present rule file that is hidden, unreadable, a symlink, non-text, or not a regular file makes the review incomplete with a named reason.
+The combined rule text must fit within 64 KiB of UTF-8 bytes; an oversized set refuses the review rather than supplying a prefix.
+Reduce the base-tree rule files to proceed.
+
+The review journal records each supplied path, blob ID and byte count once at panel start.
+The CLI prints these sources and rule completeness; the conversation, TUI log and ACP messages show the same metadata.
+Web source links open the recorded base revision.
+Standalone `agent6 review` also records the base and head tree IDs it compared, without creating review refs or a checkout.
+`REVIEW.md` supplies guidance, not permissions: it grants no tools or network access and overrides neither operator settings nor aggregator severity restrictions.
+These rules apply to the in-loop panel and `agent6 review`, not to `sessions review` or the worker's own `AGENTS.md` loading.
 
 ## Session findings
 

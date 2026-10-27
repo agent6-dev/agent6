@@ -61,6 +61,12 @@ Reasons must be nonblank and at most 2,000 characters.
 Live disposition actions use the worker's IPC queue; their notices arrive when recorded.
 Fix does not support mid-run steering through ACP.
 
+## Code-review rule sources
+
+Code-review starts appear as session messages with the panel ID, base tree, rule completeness, source paths, blob IDs and byte counts.
+An incomplete rule set names its refusal reason; an empty complete set says that no base rules exist.
+See [Code-review rules](usage.md#code-review-rules) for discovery and limits.
+
 ## Approvals
 
 `session/request_permission` carries every approval the CLI would prompt for.

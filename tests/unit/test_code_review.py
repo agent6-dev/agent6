@@ -8,6 +8,7 @@ import dataclasses
 
 import pytest
 
+from agent6 import review_records
 from agent6.harness import code_review
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 
@@ -52,7 +53,7 @@ def test_code_review_passes_diff_and_context() -> None:
     out = code_review.review_diff(
         provider,  # type: ignore[arg-type]
         diff="diff --git a/x b/x\n+pass\n",
-        agents_md="# project rules",
+        rules=review_records.ReviewRules(text="# project rules"),
         recent_log="abc fix bug",
         extra_context="PR title: fix bug",
     )
@@ -68,7 +69,7 @@ def test_code_review_sends_the_whole_large_diff() -> None:
     provider = _FakeProvider()
     huge = "start\n" + "x" * 200_000 + "\nend"
     code_review.review_diff(provider, diff=huge)  # type: ignore[arg-type]
-    assert provider.last_user == f"DIFF:\n{huge}"
+    assert provider.last_user == f"REVIEW RULES (base tree):\nNo base rules exist.\n\nDIFF:\n{huge}"
 
 
 def test_code_review_rejects_empty_response() -> None:

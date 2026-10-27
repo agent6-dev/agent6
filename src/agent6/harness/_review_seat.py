@@ -29,8 +29,7 @@ ReviewDispatch = Callable[[str, dict[str, Any]], results.ToolResult]
 def build_user_message(ctx: _panel.ReviewContext) -> str:
     """Return the task, verify result, prior findings and diff for one seat."""
     parts: list[str] = [f"TASK:\n{ctx.task.strip()[:4000]}"]
-    if ctx.agents_md.strip():
-        parts.append(f"AGENTS.md:\n{ctx.agents_md.strip()[:8000]}")
+    parts.append(_panel.rules_message(ctx.rules))
     if ctx.verify_ok is None:
         parts.append("VERIFY: not run.")
     else:

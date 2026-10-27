@@ -82,7 +82,9 @@
     "merge_guard": {
       "open_block_ids": [],
       "read_failure": null
-    }
+    },
+    "rule_sources": [],
+    "rules_complete": null
   },
   "budget": {
     "input_total": 0,

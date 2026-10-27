@@ -11,7 +11,7 @@ from typing import Any
 
 from agent6 import budget
 from agent6.viewmodel import events as viewmodel_events
-from agent6.viewmodel import format
+from agent6.viewmodel import format, review
 
 PRIMARY_ARGS = ("path", "file", "pattern", "query", "command", "cmd", "url", "title", "summary")
 
@@ -271,6 +271,7 @@ def jail_degraded_body(event: dict[str, Any]) -> str:
 
 # Events that render as a marker between turns; a builder returning None renders nothing.
 MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
+    "loop.review.start": review.rules_notice,
     "mcp.server_unavailable": mcp_unavailable_body,
     "jail.degraded": jail_degraded_body,
     "loop.parallel.dispatched": parallel_dispatched_body,

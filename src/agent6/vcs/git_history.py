@@ -574,11 +574,10 @@ def _patch(
     """
     _argv, rc, out, err = _git_command.spawn(path, args, git_read.LITERAL_PATHSPECS, None)
     if rc not in ok:
-        raise errors.GitError(
-            _git_command.failure(
-                args, rc, out.decode(errors="replace"), err.decode(errors="replace")
-            )
+        error = _git_command.failure(
+            args, rc, out.decode(errors="replace"), err.decode(errors="replace")
         )
+        raise error
     if max_bytes is None or len(out) <= max_bytes:
         return out.decode(errors="replace"), False
     cut = out.rfind(b"\n", 0, max_bytes) + 1

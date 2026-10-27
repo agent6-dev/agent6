@@ -67,3 +67,39 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
     assert seat_row["findings"] == []
     assert seat_row["seat_index"] == 0
     assert panel["completion"] == "complete"
+
+
+def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Path) -> None:
+    git = test_review_diff_collect._git
+    git(tmp_path, "init", "-q")
+    (tmp_path / "REVIEW.md").write_text("head-only rule")
+    chain = _chain.RunChain(
+        tmp_path, ref="refs/agent6/unborn/head", fallback_parent=None, base_sha=""
+    )
+    chain.commit("first change")
+    provider = mock.Mock()
+    provider.call.return_value = test_review_gate._resp('{"verdict":"pass","findings":[]}')
+    rows: list[dict[str, object]] = []
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    sink.subscribe(rows.append)
+    reviewer = _reviewer.Reviewer(
+        _reviewer.ReviewSettings(reviewers=[_reviewer.ReviewSeat("s", "m", provider)]),
+        chain,
+        (),
+        lambda: ([], mock.Mock()),
+        lambda: None,
+        lambda _s: None,
+        sink.emit,
+    )
+    reviewer.critique(
+        _loop_state.LoopState(original_task="t", tool_calls=0), trigger="periodic", turn=1
+    )
+    starts = [row for row in rows if row["type"] == "loop.review.start"]
+    assert len(starts) == 1
+    target = starts[0]["target"]
+    assert isinstance(target, dict)
+    assert target["base_commit"] is None
+    assert target["base_tree"] == git_read.EMPTY_TREE
+    assert starts[0]["rules_complete"] is True and starts[0]["rule_sources"] == []
+    message = provider.call.call_args.kwargs["messages"][0]["content"]
+    assert "REVIEW RULES (base tree):\nNo base rules exist." in message

@@ -265,6 +265,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
                 blocked=panel.result.blocked,
                 disarmed=panel.result.disarmed,
             )
+        body += "\n" + review.rules_notice(panel)
         detail.update(body)
         self.query_one(_diff_pane.DiffPane).show_review(self._cwd, panel.target, report.location)
 

@@ -8,7 +8,7 @@ import shlex
 from typing import Any
 
 from agent6 import terminal
-from agent6.viewmodel import events, format
+from agent6.viewmodel import events, format, review
 
 
 def _edit_kind(edit: dict[str, object]) -> str:
@@ -94,6 +94,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
     etype = str(event.get("type", "?"))
     salient = ""
     match etype:
+        case "loop.review.start":
+            salient = review.rules_notice(event)
         case "graph.update":
             nodes = event.get("nodes", {})
             salient = f"{len(nodes)} tasks" if isinstance(nodes, dict) else ""

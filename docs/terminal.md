@@ -72,6 +72,12 @@ The screen shows open severity counts and the panel's rejection decision separat
 Fix leaves the finding open, and a failed or unknown delivery stays visible.
 `r` refreshes the journal; the screen also polls while open.
 
+## Code-review rule sources
+
+The conversation, log and selected finding's panel details show the panel ID, base tree, rule completeness, source paths, blob IDs and byte counts.
+Missing source metadata in an older journal is marked as unrecorded.
+See [Code-review rules](usage.md#code-review-rules) for discovery and limits.
+
 ## Event log
 
 The View menu's Full log opens the structural events of the run's log, formatted as the dashboard's log pane formats them, scrollable over the whole run.

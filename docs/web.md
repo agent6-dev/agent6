@@ -235,6 +235,12 @@ Its tooltip describes line evidence, not the age of the defect; the [severity an
 Finding routes include `line_origin` on each observation and the latest evidence on each finding.
 Finding text and operator reasons render as text, never HTML.
 
+## Code-review rule sources
+
+The Findings panel and reviewed comparison show rule completeness, source paths, blob IDs and supplied byte counts.
+A source link opens the recorded base-tree file, not the current checkout.
+See [Code-review rules](usage.md#code-review-rules) for discovery and limits.
+
 ## Remote access (Tailscale)
 
 The server binds `127.0.0.1` by default and speaks plain HTTP.

@@ -11,6 +11,7 @@ import stat
 import tempfile
 
 from agent6 import errors
+from agent6.tools import _path_safety
 from agent6.vcs import _git_command, git_history, git_read
 
 
@@ -53,11 +54,10 @@ def blob_at(path: pathlib.Path, rev: str, name: str, *, max_bytes: int) -> Blob 
     args = ("cat-file", "blob", sha)
     _argv, rc, out, err = _git_command.spawn(path, args, None, None)
     if rc != 0:
-        raise errors.GitError(
-            _git_command.failure(
-                args, rc, out.decode(errors="replace"), err.decode(errors="replace")
-            )
+        error = _git_command.failure(
+            args, rc, out.decode(errors="replace"), err.decode(errors="replace")
         )
+        raise error
     return Blob(size, out)
 
 
@@ -142,7 +142,7 @@ class BlameLine:
 _IGNORE_REVS_MAX_BYTES = 1 << 20
 
 
-def _ignore_revs_copies(path: pathlib.Path, into: pathlib.Path) -> str:
+def _ignore_revs_copies(path: pathlib.Path, into: pathlib.Path, hide: tuple[str, ...]) -> str:
     """Copy each `blame.ignoreRevsFile` into blame's work tree, or return why blame must not run.
 
     Git opens each configured file by its path when blame starts, after any check made here,
@@ -153,30 +153,36 @@ def _ignore_revs_copies(path: pathlib.Path, into: pathlib.Path) -> str:
     Args:
         path: The repository.
         into: The private work tree blame runs in.
+        hide: `[sandbox].hide_paths`, refused before opening a configured file.
 
     Returns:
-        The refusal naming the offending value, or "".
+        The refusal naming the setting and failed constraint, or "".
     """
     res = _git_command.run(
         path, "config", "--get-all", "-z", "--type=path", "blame.ignoreRevsFile", check=False
     )
     root = path.resolve()
+    workspace = _path_safety.host_workspace(root, hide)
+    lexical_hidden = tuple(pathlib.Path(os.path.abspath(p)) for p in hide)  # noqa: PTH100
+    workspace = dataclasses.replace(workspace, denied=(*workspace.denied, *lexical_hidden))
     # NUL-delimited: a value holding a newline is one path to git, and must be one here.
     for value in filter(None, res.stdout.split("\0")):
         parts = pathlib.PurePosixPath(value).parts
         refusal = (
-            f"blame refused: blame.ignoreRevsFile names {value}, which is not a regular file "
-            "inside the repository, named relative to it"
+            "blame refused: blame.ignoreRevsFile must name a readable, "
+            "repository-relative regular file"
         )
         if not parts or pathlib.PurePosixPath(value).is_absolute() or ".." in parts:
             return refusal
+        if workspace.is_denied(root.joinpath(*parts)):
+            return "blame refused: blame.ignoreRevsFile is hidden by sandbox.hide_paths"
         try:
             with os.fdopen(_open_regular(root, parts), "rb") as fh:
                 data = fh.read(_IGNORE_REVS_MAX_BYTES + 1)
         except OSError:
             return refusal
         if len(data) > _IGNORE_REVS_MAX_BYTES:
-            return f"blame refused: blame.ignoreRevsFile names {value}, which is larger than 1 MiB"
+            return "blame refused: blame.ignoreRevsFile exceeds 1 MiB"
         copy = into.joinpath(*parts)
         copy.parent.mkdir(parents=True, exist_ok=True)
         copy.write_bytes(data)
@@ -184,7 +190,14 @@ def _ignore_revs_copies(path: pathlib.Path, into: pathlib.Path) -> str:
 
 
 def blame_lines(
-    path: pathlib.Path, rev: str, name: str, data: bytes, *, lines: int, start_line: int = 1
+    path: pathlib.Path,
+    rev: str,
+    name: str,
+    data: bytes,
+    *,
+    lines: int,
+    start_line: int = 1,
+    hide: tuple[str, ...] = (),
 ) -> tuple[BlameLine, ...]:
     """Return attribution from one porcelain read, using checked bytes for the working tree.
 
@@ -195,13 +208,14 @@ def blame_lines(
         data: The bytes the regular-file reader returned, never reopened by blame.
         lines: The number of lines to attribute.
         start_line: The first line to attribute, counted from one.
+        hide: `[sandbox].hide_paths`, refused for ignore-revs inputs.
 
     Returns:
         Attribution in displayed line order, with UTC dates.
 
     Raises:
         GitError: The range is invalid, Git cannot attribute the file, or a
-            `blame.ignoreRevsFile` is not a repository-relative regular file.
+            `blame.ignoreRevsFile` is hidden or not a repository-relative regular file.
     """
     if start_line < 1 or lines < 0:
         raise errors.GitError("blame requires a positive start line and a nonnegative line count")
@@ -217,7 +231,7 @@ def blame_lines(
     args = ("--contents", "-") if working else ()
     revs = () if working else (rev,)
     with tempfile.TemporaryDirectory(prefix="agent6-blame-") as tmp:
-        if reason := _ignore_revs_copies(path, pathlib.Path(tmp)):
+        if reason := _ignore_revs_copies(path, pathlib.Path(tmp), hide):
             raise errors.GitError(reason)
         gitdir = _git_command.run(path, "rev-parse", "--absolute-git-dir").stdout.strip()
         # Git 2.53 blame needs the verified sha before --end-of-options when a path follows --.

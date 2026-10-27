@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Literal
 
 import pydantic
 
-from agent6 import budget, errors, review_records
+from agent6 import budget, errors, review_records, terminal
 from agent6.config import ReviewScope
 from agent6.harness import _chain, _context, _panel, _review_history, _review_seat
 from agent6.providers import Provider, ToolDefinition
@@ -139,6 +139,10 @@ def run_panel(
             temperature=s.temperature,
         )
 
+    if not ctx.rules.complete:
+        return _panel.PanelResult(
+            panel_id, block_on, False, (), (), 0, 0, skipped_reason=ctx.rules.reason
+        )
     if concurrency > 1 and len(seats) > 1:
         verdicts = _run_seats_concurrently(seats, _run, concurrency)
     else:
@@ -388,7 +392,7 @@ class Reviewer:
         )
         ctx = _panel.ReviewContext(
             task=state.original_task,
-            agents_md=_context.agents_md_text(self.chain.root, self.hide),
+            rules=_context.review_rules(self.chain.root, target.base_tree, self.hide),
             diff=diff,
             verify_ok=state.verify.last_ok,
             verify_output=state.verify.last_tail,
@@ -400,6 +404,9 @@ class Reviewer:
             target=pydantic.TypeAdapter(review_records.ReviewTarget).dump_python(
                 target, mode="json"
             ),
+            rule_sources=[dataclasses.asdict(s) for s in ctx.rules.sources],
+            rules_complete=ctx.rules.complete,
+            rules_reason=ctx.rules.reason,
             seats=[
                 dict(
                     seat_index=i,
@@ -411,6 +418,10 @@ class Reviewer:
                 for i, s in enumerate(self.settings.reviewers)
             ],
         )
+        if not ctx.rules.complete:
+            self.log(terminal.printable_name(ctx.rules.reason or "review rules incomplete"))
+            self.emit("loop.review.skipped", **identity, reason=ctx.rules.reason)
+            return None
         tools: list[ToolDefinition] | None = None
         dispatch: _review_seat.ReviewDispatch | None = None
         if any(s.scope == "repo" for s in self.settings.reviewers):
@@ -449,7 +460,7 @@ class Reviewer:
             )
         )
         observations = _review_history.observations(
-            panel_id, result.per_seat, known, root=self.chain.root, target=target
+            panel_id, result.per_seat, known, root=self.chain.root, target=target, hide=self.hide
         )
         shown_keys = {review_records.finding_key(f) for f in shown}
         record = review_records.ReviewPanel(

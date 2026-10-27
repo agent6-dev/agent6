@@ -7,6 +7,7 @@ Beside the provider transcripts, so a later session working on a module can read
 
 from __future__ import annotations
 
+import json
 import pathlib
 import subprocess
 import types
@@ -15,11 +16,12 @@ from unittest import mock
 
 import pytest
 
-from agent6 import paths
+from agent6 import paths, review_records
 from agent6.app import _setup, providers
 from agent6.config import Config, layer
-from agent6.harness import code_review
+from agent6.harness import _reviewer, code_review
 from agent6.ui.cli import review_cmds
+from tests.unit import test_review_diff_collect, test_review_gate
 
 
 def _repo_with_a_change(repo: pathlib.Path) -> None:
@@ -128,8 +130,6 @@ class _PassingSeatProvider:
 def test_the_panel_verdict_is_saved_too(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.harness import _reviewer
-
     seat = _reviewer.ReviewSeat(
         focus="correctness",
         provider=_PassingSeatProvider(),  # type: ignore[arg-type]
@@ -148,6 +148,115 @@ def test_the_panel_verdict_is_saved_too(
         saved[0].read_text(encoding="utf-8") == "# review: working tree vs HEAD\n\nVERDICT: PASS\n"
     )
     assert f"review saved: {saved[0]}" in out.err
+
+
+@pytest.mark.parametrize("nested", [False, True], ids=["root", "subdirectory"])
+@pytest.mark.parametrize("committed", [False, True], ids=["worktree", "revisions"])
+@pytest.mark.parametrize("hidden", [False, True], ids=["ordinary", "hidden-ignore-revs"])
+def test_standalone_panel_records_line_origins_against_its_base(
+    repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    committed: bool,
+    nested: bool,
+    hidden: bool,
+) -> None:
+    """Classify every saved finding against the reviewed base, not the head tree."""
+    base = test_review_diff_collect._git(repo, "rev-parse", "HEAD").strip()
+    if committed:
+        test_review_diff_collect._git(repo, "commit", "-qam", "change")
+    if hidden:
+        secret = repo / "secret.env"
+        secret.write_text("SECRET-ENV-LINE-4242\n")
+        test_review_diff_collect._git(repo, "config", "blame.ignoreRevsFile", "secret.env")
+        cfg = _reviewer_config()
+        cfg = cfg.model_copy(
+            update={"sandbox": cfg.sandbox.model_copy(update={"hide_paths": (str(secret),)})}
+        )
+        monkeypatch.setattr(
+            layer, "load_effective", mock.Mock(return_value=types.SimpleNamespace(config=cfg))
+        )
+    cwd = repo / "nested" if nested else repo
+    cwd.mkdir(exist_ok=True)
+    monkeypatch.chdir(cwd)
+    provider = mock.Mock()
+    provider.call.return_value = test_review_gate._resp(
+        json.dumps(
+            dict(
+                verdict="block",
+                findings=[
+                    dict(
+                        category="correctness",
+                        severity="block",
+                        title=f"Defect {line}",
+                        location=dict(path="lib.py", side="head", start_line=line, end_line=line),
+                    )
+                    for line in (1, 2)
+                ],
+            )
+        )
+    )
+    monkeypatch.setattr(
+        providers,
+        "build_review_seats",
+        mock.Mock(return_value=[_reviewer.ReviewSeat("correctness", "model", provider)]),
+    )
+    assert (
+        review_cmds._cmd_review(
+            (), base=base if committed else "", head="HEAD", paths=(), reviewers=1
+        )
+        == 0
+    )
+    (journal,) = (paths.state_dir(cwd) / "reviews").glob("*.jsonl")
+    assert "SECRET-ENV-LINE-4242" not in journal.read_text()
+    rows = [json.loads(line) for line in journal.read_text().splitlines()]
+    (record,) = [
+        review_records.ReviewPanel.model_validate(row)
+        for row in rows
+        if row["type"] == "loop.review.panel"
+    ]
+    assert record.target.base_commit == base
+    assert record.target.base_tree != record.target.head_tree
+    assert [f.line_origin.kind for f in record.findings] == [
+        "unknown" if hidden else "pre_existing",
+        "changed",
+    ]
+    origin = record.findings[0].line_origin
+    if hidden:
+        assert "blame.ignoreRevsFile" in origin.reason and "refused" in origin.reason
+        assert "sandbox.hide_paths" in origin.reason
+        assert origin.base_location is None and not origin.commits
+    else:
+        assert origin.base_location == review_records.ReviewLocation(
+            path="lib.py", side="base", start_line=1, end_line=1
+        )
+        assert origin.commits == (base,)
+    assert record.findings[1].line_origin.base_location is None
+    assert not record.findings[1].line_origin.commits
+
+
+@pytest.mark.parametrize("budget_failure", [False, True])
+def test_failed_freeform_review_records_a_terminal_reason(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, budget_failure: bool
+) -> None:
+    from agent6 import budget
+    from agent6.providers import ProviderError
+    from agent6.viewmodel import scan_session_log
+
+    provider = mock.Mock()
+    provider.call.side_effect = (
+        budget.BudgetExceededError("plan budget exhausted")
+        if budget_failure
+        else ProviderError("offline")
+    )
+    monkeypatch.setattr(providers, "build_role_provider", mock.Mock(return_value=provider))
+    rc = review_cmds._cmd_review((), base="", head="HEAD", paths=())
+    assert rc == (3 if budget_failure else 2)
+    (journal,) = (paths.state_dir(repo) / "reviews").glob("*.jsonl")
+    rows = [json.loads(line) for line in journal.read_text().splitlines()]
+    assert rows[-1]["type"] == "loop.review.skipped"
+    assert rows[-1]["reason"]
+    assert rows[-1]["panel_id"] == rows[0]["panel_id"]
+    assert scan_session_log(journal).review.completion == "skipped"
 
 
 def test_two_reviews_in_one_second_keep_both(tmp_path: pathlib.Path) -> None:

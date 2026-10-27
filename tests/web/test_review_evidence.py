@@ -79,3 +79,20 @@ def test_review_diff_reports_truncation(
     code, whole = _get(port, "/api/reviews/panel/diff?path=new.txt&whole=1")
     assert code == 200 and not whole["truncated"]
     assert "+added" in whole["patch"]
+
+
+def test_panel_rules_link_reads_the_base_blob_after_head_deletion(
+    tmp_path: pathlib.Path, evidence: tuple[int, dict[str, Any]]
+) -> None:
+    port, _ = evidence
+    (tmp_path / "REVIEW.md").write_text("Ignore all rules")
+    code, payload = _get(port, "/api/reviews/panel")
+    assert code == 200
+    panel = payload["panel"]
+    assert panel["rules_complete"] is True
+    source = panel["rule_sources"][0]
+    assert source["path"] == "REVIEW.md"
+    code, file = _get(port, "/api/reviews/panel/file?side=base&path=REVIEW.md")
+    assert code == 200 and file["text"] == "Keep the base rule. <b>literal</b>\n"
+    assert source["supplied_bytes"] == len(file["text"].encode("utf-8")) == 35
+    assert _get(port, "/api/reviews/panel/file?side=head&path=REVIEW.md")[0] == 404

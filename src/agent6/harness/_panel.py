@@ -26,13 +26,18 @@ ADVISORY_CATEGORIES: frozenset[str] = frozenset({"test-gap", "style", "over-eng"
 ALL_CATEGORIES: frozenset[str] = ALLOWED_BLOCK_CATEGORIES | ADVISORY_CATEGORIES
 
 
+def rules_message(rules: review_records.ReviewRules) -> str:
+    """Return the whole base-tree rule text or the absence notice."""
+    return "REVIEW RULES (base tree):\n" + (rules.text or "No base rules exist.")
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewContext:
     """What every seat is shown, and what the aggregator grounds findings against.
 
     Attributes:
         task: The run's task.
-        agents_md: The repo's AGENTS.md.
+        rules: The complete base-tree rules and their sources.
         diff: The immutable delta from the run base to the chain commit.
         verify_ok: The gate's result; None when none ran (none configured, or `agent6 review`).
         verify_output: The gate's output.
@@ -41,7 +46,9 @@ class ReviewContext:
     """
 
     task: str = ""
-    agents_md: str = ""
+    rules: review_records.ReviewRules = dataclasses.field(
+        default_factory=review_records.ReviewRules
+    )
     diff: str = ""
     verify_ok: bool | None = None
     verify_output: str = ""

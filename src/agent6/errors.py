@@ -23,6 +23,16 @@ class OperatorError(Exception):
 class GitError(Exception):
     """Generic git failure."""
 
+    def __init__(self, message: str, *, safe_message: str | None = None) -> None:
+        """Keep a diagnostic and a reason safe to record in model-visible review evidence.
+
+        Args:
+            message: The full diagnostic for the operator.
+            safe_message: A reason without subprocess output, or None for a checked message.
+        """
+        super().__init__(message)
+        self.safe_message = message if safe_message is None else safe_message
+
 
 def read_operator_file(path: pathlib.Path) -> str:
     """Read a file the operator named, the one reader for operator-supplied files.

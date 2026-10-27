@@ -268,6 +268,16 @@ Every path they take resolves through `Workspace`:
 - The existence probes (a root `verify.sh`, a manifest, loose `test_*.py` files) and the model call's top-level listing leave out a file under the hidden set, by its name or its link target.
   A link out of the root still counts as present.
 
+**Code-review rules.** The reviewer reads historical `AGENTS.md` and `REVIEW.md` blobs from the base tree, not the checkout.
+The workspace hidden-path policy applies before reading a rule blob.
+A checkout symlink cannot redirect a configured hidden path away from its historical name.
+Historical symlinks are refused, including ancestor symlinks; current checkout links do not redirect a historical read.
+A present file that cannot be read safely makes the review incomplete; missing optional files do not.
+`REVIEW.md` cannot grant tools, network access or operator permissions, and cannot alter the aggregator's severity restrictions.
+Model obedience is not a security boundary.
+Review text notices escape control characters in rule paths and refusal reasons.
+See [Code-review rules](usage.md#code-review-rules) for discovery, limits and recorded sources.
+
 **Repo memory** is a prompt-injection persistence channel: the rendered index joins the system prompt of later runs on the same repo.
 Memory (`<state_dir>/memory/`) holds facts the model may correct; rules belong in the repo's committed `AGENTS.md` or the operator rulings file `<state_dir>/decisions.md`, which the harness appends to, the operator edits with any editor, and the model sees only as read-only text injected into its prompt.
 
@@ -458,7 +468,12 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - it spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable.
       `test_the_vcs_package_never_spells_a_destructive_verb` pins every verb but `filter-repo` in every module of the package, exempting two argv: `push` inside a `git stash push`, and the one `branch -D` below
     - the collectors on the [subprocess allowlist](#12-host-side-subprocess-allowlist) carry the same hardening flags.
-      `sessions diff` and `ask` read only; `review` stages untracked files with `add -N` so they appear in its diff, undoing it with `reset` in a `finally`; `skills install` clones with fixed argv
+      `sessions diff` and `ask` read only.
+      `skills install` clones with fixed argv.
+      By default, `review` runs no repository code.
+      It leaves the shared index and checkout untouched.
+      It writes Git objects only for selected, non-hidden changes.
+      Ignored untracked files stay out.
 - One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch or chain ref the manifest confirms was squash-merged.
   A branch's commit survives in its reflog; a chain ref's line carries the sha to undelete it.
 - `_git_command.py` runs git with the configured `api_key_env` names removed from its environment: a credential helper or content driver never inherits one
@@ -483,6 +498,10 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - `core.fsmonitor`, `diff.external` and `diff.<d>.textconv` are always off.
 - `blame.ignoreRevsFile` is honoured for a repository-relative regular file, which blame reads as a private copy in a private work tree, since git opens the configured path itself after any check; the Files view's blame refuses any other value, since git would open the file on the host and quote its first unparsable line.
   Finding line-origin classification uses the same bounded blame reader and records an unknown reason on refusal.
+  Review refuses a `blame.ignoreRevsFile` hidden by `sandbox.hide_paths` before opening it.
+  Blame refusals name the setting and failed constraint, not the configured value.
+  Line origins remain unknown when the citation or any changed path is hidden, so rename detection cannot read hidden candidates.
+  Line-origin and rule-loading records omit Git subprocess output from failure reasons.
 - `.git/hooks/*` run only under `git.run_repo_hooks = true` (default false); `core.hooksPath` points away, so a hook cannot fire on agent6's auto-commit.
 - Content drivers (`filter.<n>.clean` / `smudge` / `process`, `merge.<n>.driver`) are off by default (`git.run_repo_drivers`), neutralized per name
     - the clean filter runs on the auto-commit's `git add`, the merge driver on the chain merge's `merge-tree`: a cloned poisoned repo fires one without any model action

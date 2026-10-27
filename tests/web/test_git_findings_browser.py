@@ -154,3 +154,23 @@ def test_findings_card_resolves_with_literal_reason_and_reopens(
     expect(card).to_contain_text("<b>operator conclusion</b>")
     assert card.locator("b").count() == 0
     assert not errors
+
+
+def test_rule_link_opens_the_recorded_base_blob(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    evidence: tuple[int, dict[str, Any]],
+) -> None:
+    from playwright.sync_api import expect
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    rules = page.locator(".card-findings .review-rules")
+    expect(rules).to_contain_text("Rules complete")
+    expect(rules).to_contain_text("35 bytes")
+    rules.get_by_role("link", name="REVIEW.md", exact=True).click()
+    expect(page.locator(".files-text")).to_contain_text("Keep the base rule. <b>literal</b>")
+    assert "side=base" in page.url
+    page.reload()
+    expect(page.locator(".files-text")).to_contain_text("Keep the base rule.")
+    assert not errors

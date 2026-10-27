@@ -466,6 +466,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
         sum.appendChild(el('span', 'mono', d.base.short)); sum.appendChild(el('span', null, ' ' + d.base.subject + '  →  '));
         sum.appendChild(el('span', 'mono', d.head.short)); sum.appendChild(el('span', null, ' ' + d.head.subject));
         result.appendChild(sum);
+        if (reviewed) result.appendChild(reviewRules(panel.panel));
         const path = query.get('path');
         let selectedFile = d.files.findIndex(f => path === f.path || path === f.old_path);
         if (reviewed && path && selectedFile < 0) {

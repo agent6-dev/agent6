@@ -7,14 +7,19 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import pathlib
 import shutil
 import subprocess
 import sys
 import time
+import uuid
+
+import pydantic
 
 from agent6 import budget as agent6_budget
+from agent6 import errors, event_log, review_records, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import _setup, finalize, providers
 from agent6.config import (
@@ -23,14 +28,15 @@ from agent6.config import (
     ReviewScope,
     layer,
 )
-from agent6.harness import _context, _panel, _reviewer, _toolset, code_review
+from agent6.harness import _context, _panel, _review_history, _reviewer, _toolset, code_review
 from agent6.providers import (
     ProviderError,
     TranscriptSink,
 )
 from agent6.tools import dispatch as tools_dispatch
 from agent6.ui.cli import _common
-from agent6.vcs import git_policy, git_read
+from agent6.vcs import git_policy, git_read, review
+from agent6.viewmodel import review as viewmodel_review
 
 
 def _reviewed_head(base: str, head: str) -> str:
@@ -61,70 +67,6 @@ def _review_range(base: str, head: str) -> str:
     if ".." in base:
         return base
     return f"{base}...{head}"
-
-
-def _collect_review_diff(
-    git: str,
-    root: pathlib.Path,
-    *,
-    base: str,
-    head: str,
-    paths: tuple[str, ...],
-) -> subprocess.CompletedProcess[str]:
-    """Collect the diff `agent6 review` reviews, leaving the index as it was.
-
-    With refs, a read-only `git diff base...head`; explicit ranges pass through.
-    Without a base, diff the working tree against HEAD including untracked files.
-    Git shows those only through intent-to-add
-    entries, so the currently untracked paths are registered and `git reset` afterwards, in
-    a `finally`; staged and tracked changes are never touched. Every invocation carries
-    git_ops' hardening flags plus `--no-ext-diff --no-textconv`, so a poisoned `.git/config`
-    (`diff.external`, a textconv, `core.fsmonitor`) cannot run its payload on the host.
-
-    Args:
-        git: The git binary.
-        root: The repo root.
-        base: The base rev, or "" for the working tree.
-        head: The head rev.
-        paths: The pathspecs, or empty for everything.
-
-    Returns:
-        The completed `git diff`, decoded with replacement so a non-UTF-8 file cannot crash it.
-    """
-    hardening = git_policy.git_hardening_flags(root)
-    untracked: list[str] = []
-    if not base:
-        status = subprocess.run(
-            [git, *hardening, "status", "--porcelain", "-z"],
-            cwd=root,
-            capture_output=True,
-            errors="replace",
-            check=False,
-        )
-        untracked = [entry[3:] for entry in status.stdout.split("\0") if entry.startswith("?? ")]
-        if untracked:
-            subprocess.run([git, *hardening, "add", "-N", "--", *untracked], cwd=root, check=False)
-    try:
-        rev = _review_range(base, head)
-        # `--end-of-options` and `--` keep a rev that is also a path a rev.
-        diff_args = [
-            git,
-            *hardening,
-            "diff",
-            *git_policy.DIFF_SAFETY_FLAGS,
-            "--end-of-options",
-            rev,
-        ]
-        diff_args.extend(["--", *paths])
-        # git diff emits raw file bytes; a non-UTF-8 file must not crash the review.
-        return subprocess.run(
-            diff_args, cwd=root, capture_output=True, errors="replace", check=False
-        )
-    finally:
-        if untracked:
-            subprocess.run(
-                [git, *hardening, "reset", "-q", "--", *untracked], cwd=root, check=False
-            )
 
 
 def save_review(reviews_dir: pathlib.Path, *, label: str, body: str) -> pathlib.Path:
@@ -200,7 +142,10 @@ def _run_review_panel(
     head: str,
     label: str,
     diff: str,
-    agents_md: str,
+    rules: review_records.ReviewRules,
+    target: review_records.ReviewTarget,
+    journal: event_log.EventSink,
+    panel_id: str,
     reviewers: int,
     focus: str,
     transcript_sink: TranscriptSink,
@@ -215,12 +160,15 @@ def _run_review_panel(
     Args:
         cfg: The effective config.
         git: The git binary.
-        root: The repo root.
+        root: The review's working directory.
         base: The base rev.
         head: The head rev.
         label: What is reviewed, for the saved file.
         diff: The diff text.
-        agents_md: The repo's AGENTS.md text.
+        rules: The complete base-tree rule set.
+        target: The immutable comparison.
+        journal: The saved review journal.
+        panel_id: The review identity.
         reviewers: The number of seats.
         focus: The panel's comma-separated focus list.
         transcript_sink: Where the seats' transcripts go.
@@ -249,7 +197,7 @@ def _run_review_panel(
     if err is not None:
         _common.error(f"{err}")
         return 2
-    ctx = _panel.ReviewContext(task=f"code review: {label}", agents_md=agents_md, diff=diff)
+    ctx = _panel.ReviewContext(task=f"code review: {label}", rules=rules, diff=diff)
     # repo-scope seats need a read-only tool surface over the repo.
     tools = None
     dispatch = None
@@ -271,21 +219,58 @@ def _run_review_panel(
         f" | scope={cfg.review.scope} | range={label}",
         file=sys.stderr,
     )
+    _start_review(journal, panel_id, target, rules, seats)
     try:
         result = _reviewer.run_panel(
             seats,
             ctx,
             block_on=cfg.review.block_on,
             min_blocking_models=cfg.review.min_blocking_models,
-            panel_id="cli",
+            panel_id=panel_id,
             repo_max_turns=cfg.review.repo_max_turns,
             concurrency=len(seats),  # one-shot CLI: run all seats in parallel
             tools=tools,
             dispatch=dispatch,
         )
     except agent6_budget.BudgetExceededError as exc:
+        journal.emit(
+            "loop.review.skipped", panel_id=panel_id, execution_id=panel_id, reason=str(exc)
+        )
         print(str(exc), file=sys.stderr)  # the reason names the ledger that ran out
         return 3
+    for verdict_record in result.per_seat:
+        journal.emit(
+            "loop.review.seat",
+            panel_id=panel_id,
+            execution_id=panel_id,
+            **pydantic.TypeAdapter(review_records.ReviewVerdict).dump_python(
+                verdict_record, mode="json"
+            ),
+        )
+    record = review_records.ReviewPanel(
+        panel_id=panel_id,
+        execution_id=panel_id,
+        turn=0,
+        trigger="standalone",
+        target=target,
+        findings=_review_history.observations(
+            panel_id,
+            result.per_seat,
+            {},
+            root=git_read.toplevel(root) or root,
+            target=target,
+            hide=cfg.sandbox.hide_paths,
+        ),
+        injected_finding_ids=(),
+        block_on=result.block_on,
+        raw_blocked=result.blocked,
+        blocked=result.blocked,
+        disarmed=False,
+        n_block=result.n_block,
+        n_abstain=result.n_abstain,
+        completion="inconclusive" if _panel.panel_is_inconclusive(result) else "complete",
+    )
+    journal.emit("loop.review.panel", **record.model_dump(mode="json"))
     # One all-abstain owner, shared with the in-loop panel: nothing reviewed is never a pass.
     inconclusive = _panel.panel_is_inconclusive(result)
     if inconclusive:
@@ -323,17 +308,18 @@ def _run_review_panel(
 
 
 def _reviewed_diff(
-    base: str, head: str, paths: tuple[str, ...]
-) -> tuple[str, pathlib.Path, str, str] | int:
-    """Resolve the git binary, the repo root, the diff a review reads and its label.
+    base: str, head: str, paths: tuple[str, ...], hide: tuple[str, ...] = ()
+) -> tuple[str, pathlib.Path, str, str, review_records.ReviewTarget] | int:
+    """Resolve the git binary, working directory, reviewed diff and label.
 
     Args:
         base: The base rev, or "" for the working tree.
         head: The head rev.
         paths: The pathspecs.
+        hide: `[sandbox].hide_paths`, excluded from the review.
 
     Returns:
-        `(git, root, diff, label)`, else the exit code: 2 when git is missing or failed,
+        `(git, root, diff, label, target)`, else the exit code: 2 when git is missing or failed,
         0 when there is nothing to review (said on stderr, naming the range).
     """
     root = pathlib.Path.cwd()
@@ -343,35 +329,55 @@ def _reviewed_diff(
         return 2
     rev = _review_range(base, head)
     label = ("working tree vs HEAD" if not base else rev) + (
-        f" -- {' '.join(paths)}" if paths else ""
+        f" -- {' '.join(terminal.printable_name(path) for path in paths)}" if paths else ""
     )
-    diff_proc = _collect_review_diff(git, root, base=base, head=head, paths=paths)
-    if diff_proc.returncode != 0:
-        _common.error(f"git diff failed: {diff_proc.stderr.strip()}")
+    try:
+        compared = review.comparison(root, base=base, head=head, paths=paths, hide=hide)
+    except (errors.GitError, OSError) as exc:
+        _common.error(f"git diff failed: {terminal.printable_name(str(exc))}")
         return 2
-    diff = diff_proc.stdout
-    if not diff.strip():
+    if compared.hidden_paths:
+        print("note: review excludes hidden paths (sandbox.hide_paths).", file=sys.stderr)
+    if compared.dirty_submodules:
+        names = ", ".join(terminal.printable_name(name) for name in compared.dirty_submodules)
+        print(f"note: submodule working-tree contents are not reviewed: {names}", file=sys.stderr)
+    if not compared.diff.strip():
         print(f"(no diff to review: {label})", file=sys.stderr)
         return 0
     if base:
-        if "..." in rev:
-            left, right = rev.split("...", 1)
-            start_args = ["merge-base", "--end-of-options", left or "HEAD", right or "HEAD"]
-        else:
-            left = rev.split("..", 1)[0] or "HEAD"
-            start_args = ["rev-parse", "--verify", "--end-of-options", f"{left}^{{commit}}"]
-        start = subprocess.run(
-            [git, *git_policy.git_hardening_flags(root), *start_args],
-            cwd=root,
-            capture_output=True,
-            errors="replace",
-            check=False,
-        )
-        if start.returncode != 0:
-            _common.error(f"git diff start resolution failed: {start.stderr.strip()}")
-            return 2
-        label += f" (from {start.stdout.strip()})"
-    return git, root, diff, label
+        label += f" (from {compared.target.base_commit})"
+    return git, root, compared.diff, label, compared.target
+
+
+def _start_review(
+    journal: event_log.EventSink,
+    panel_id: str,
+    target: review_records.ReviewTarget,
+    rules: review_records.ReviewRules,
+    seats: list[_reviewer.ReviewSeat],
+) -> None:
+    fields = dict(
+        panel_id=panel_id,
+        execution_id=panel_id,
+        turn=0,
+        trigger="standalone",
+        target=pydantic.TypeAdapter(review_records.ReviewTarget).dump_python(target, mode="json"),
+        rule_sources=[dataclasses.asdict(source) for source in rules.sources],
+        rules_complete=rules.complete,
+        rules_reason=rules.reason,
+        seats=[
+            dict(
+                seat_index=i,
+                focus=s.focus,
+                model_route=s.model,
+                scope=s.scope,
+                temperature=s.temperature,
+            )
+            for i, s in enumerate(seats)
+        ],
+    )
+    journal.emit("loop.review.start", **fields)
+    print(viewmodel_review.rules_notice(fields), file=sys.stderr)
 
 
 def _reviewer_config(
@@ -451,10 +457,10 @@ def _cmd_review(  # noqa: PLR0911
     if focus.strip() and reviewers >= 1 and cfg.review.reviewers:
         print("note: --focus ignored ([review].reviewers names the roster).", file=sys.stderr)
 
-    reviewed = _reviewed_diff(base, head, paths)
+    reviewed = _reviewed_diff(base, head, paths, cfg.sandbox.hide_paths)
     if isinstance(reviewed, int):
         return reviewed
-    git, root, diff, label = reviewed
+    git, root, diff, label, target = reviewed
 
     if reviewers < 1:
         cfg.require_runnable("reviewer")
@@ -482,12 +488,21 @@ def _cmd_review(  # noqa: PLR0911
     )
     recent_log = log_proc.stdout if log_proc.returncode == 0 else ""
 
-    agents_md = _context.agents_md_text(root, cfg.sandbox.hide_paths)
+    rules = _context.review_rules(root, target.base_tree, cfg.sandbox.hide_paths)
 
     # The reviewer route; the budget is per invocation, a one-shot.
     budget = _setup.budget_tracker(cfg)
     layout_root = agent6_paths.state_dir(root) / "reviews"
     transcript_sink = TranscriptSink(layout_root)
+    panel_id = uuid.uuid4().hex
+    journal = event_log.EventSink(layout_root / f"{panel_id}.jsonl")
+    if not rules.complete:
+        _start_review(journal, panel_id, target, rules, [])
+        journal.emit(
+            "loop.review.skipped", panel_id=panel_id, execution_id=panel_id, reason=rules.reason
+        )
+        _common.error(terminal.printable_name(rules.reason or "review rules incomplete"))
+        return 2
 
     print(f"[agent6] reviewing: {label}", file=sys.stderr)
     if reviewers >= 1:
@@ -499,7 +514,10 @@ def _cmd_review(  # noqa: PLR0911
             head=head,
             label=label,
             diff=diff,
-            agents_md=agents_md,
+            rules=rules,
+            target=target,
+            journal=journal,
+            panel_id=panel_id,
             reviewers=reviewers,
             focus=focus,
             transcript_sink=transcript_sink,
@@ -507,6 +525,53 @@ def _cmd_review(  # noqa: PLR0911
             budget=budget,
         )
 
+    return _freeform_review(
+        cfg,
+        diff=diff,
+        rules=rules,
+        target=target,
+        label=label,
+        recent_log=recent_log,
+        transcript_sink=transcript_sink,
+        budget=budget,
+        journal=journal,
+        panel_id=panel_id,
+        layout_root=layout_root,
+    )
+
+
+def _freeform_review(
+    cfg: Config,
+    *,
+    diff: str,
+    rules: review_records.ReviewRules,
+    target: review_records.ReviewTarget,
+    label: str,
+    recent_log: str,
+    transcript_sink: TranscriptSink,
+    budget: agent6_budget.BudgetTracker,
+    journal: event_log.EventSink,
+    panel_id: str,
+    layout_root: pathlib.Path,
+) -> int:
+    """Run and save the freeform review with its rule-source journal.
+
+    Args:
+        cfg: The effective config.
+        diff: The reviewed diff.
+        rules: The complete base-tree rule set.
+        target: The immutable comparison.
+        label: The saved review's label.
+        recent_log: Recent commit summaries for context.
+        transcript_sink: Where the provider transcript goes.
+        budget: The invocation's budget.
+        journal: The saved review journal.
+        panel_id: The review identity.
+        layout_root: The reviews directory.
+
+    Returns:
+        Zero on success, 2 on refusal, or 3 when the budget is spent.
+    """
     try:
         reviewer = providers.build_role_provider(
             cfg,
@@ -518,20 +583,28 @@ def _cmd_review(  # noqa: PLR0911
         _common.error(f"provider init failed: {exc}")
         return 2
 
+    _start_review(journal, panel_id, target, rules, [])
     try:
         text = code_review.review_diff(
             reviewer,
             diff=diff,
-            agents_md=agents_md,
+            rules=rules,
             recent_log=recent_log,
         )
     except code_review.CodeReviewError as exc:
+        journal.emit(
+            "loop.review.skipped", panel_id=panel_id, execution_id=panel_id, reason=str(exc)
+        )
         print(f"REVIEW FAILED: {exc}", file=sys.stderr)
         return 2
     except agent6_budget.BudgetExceededError as exc:
+        journal.emit(
+            "loop.review.skipped", panel_id=panel_id, execution_id=panel_id, reason=str(exc)
+        )
         print(str(exc), file=sys.stderr)  # the reason names the ledger that ran out
         return 3
 
+    journal.emit("loop.review.freeform", panel_id=panel_id, execution_id=panel_id)
     print(text, flush=True)
     print(
         f"[agent6] review saved: {save_review(layout_root, label=label, body=text)}",

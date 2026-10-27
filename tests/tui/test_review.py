@@ -80,6 +80,57 @@ def test_open_select_and_preview_recorded_trees(
     assert git("status", "--porcelain") == before
 
 
+@pytest.mark.parametrize("recorded", [True, False], ids=["recorded", "legacy"])
+def test_selected_finding_shows_its_own_panels_rules(
+    tmp_path: pathlib.Path, recorded: bool
+) -> None:
+    """Show the selected panel's sources, not a later panel's rules or an invented empty set."""
+    saved = review_helpers.reviewed_repo(tmp_path)
+    rows = [json.loads(line) for line in saved.logs_path.read_text().splitlines()]
+    start = next(row for row in rows if row["type"] == "loop.review.start")
+    blob = start["rule_sources"][0]["blob_id"]
+    base_tree = start["target"]["base_tree"]
+    if not recorded:
+        for field in ("rule_sources", "rules_complete", "rules_reason"):
+            start.pop(field)
+    saved.logs_path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    sink = event_log.EventSink(saved.logs_path)
+    sink.emit(
+        "loop.review.start",
+        panel_id="later",
+        execution_id="execution",
+        target=start["target"],
+        seats=[],
+        rule_sources=[],
+        rules_complete=False,
+        rules_reason="Later rule set is hidden",
+    )
+    sink.emit(
+        "loop.review.skipped",
+        panel_id="later",
+        execution_id="execution",
+        reason="Later rule set is hidden",
+    )
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(saved.state_dir, tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("v")
+            await pilot.pause()
+            detail = _shown(app.screen.query_one("#finding-detail", widgets.Static))
+            assert f"base tree {base_tree}" in detail
+            assert "Panel panel:" in detail and "Panel later:" not in detail
+            assert "Later rule set is hidden" not in detail
+            if recorded:
+                assert "rules complete" in detail
+                assert f"REVIEW.md: blob {blob}, 35 bytes" in detail
+            else:
+                assert "rule sources not recorded" in detail
+                assert "No base rules exist." not in detail
+
+    asyncio.run(scenario())
+
+
 def test_resolve_and_reopen_record_the_reason_and_tui_source(
     tmp_path: pathlib.Path,
 ) -> None:

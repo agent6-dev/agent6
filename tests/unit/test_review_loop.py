@@ -16,7 +16,7 @@ from unittest import mock
 import pytest
 
 from agent6 import event_log, review_records
-from agent6.harness import _chain, _conversation, _panel, _reviewer, loop
+from agent6.harness import _chain, _context, _conversation, _panel, _reviewer, loop
 from agent6.tools import results
 from agent6.vcs import git_read
 from tests.unit import test_review_diff_collect
@@ -71,6 +71,9 @@ def immutable_target(monkeypatch: pytest.MonkeyPatch) -> None:
     """Give scheduling tests a fixed diff and blob without masking the real-repository test."""
     target = review_records.ReviewTarget(
         "base", "base-tree", "tip", "head-tree", "tip", (), "revisions"
+    )
+    monkeypatch.setattr(
+        _context, "review_rules", mock.Mock(return_value=review_records.ReviewRules())
     )
     monkeypatch.setattr(_chain.RunChain, "review_target", mock.Mock(return_value=target))
     monkeypatch.setattr(_chain.RunChain, "diff_since_base", mock.Mock(return_value=_DIFF))

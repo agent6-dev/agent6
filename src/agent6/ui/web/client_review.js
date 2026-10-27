@@ -13,6 +13,25 @@ function reviewFileLink(entry) {
   return '#/files/' + (loc.side === 'base' ? t.base_tree : t.head_tree) + '/'
     + loc.path.split('/').map(encodeURIComponent).join('/') + '?' + reviewQuery(entry);
 }
+function reviewRules(panel) {
+  const box = el('div', 'review-rules');
+  const status = panel.rules_complete == null ? 'Rule sources not recorded'
+    : panel.rules_complete ? 'Rules complete' : 'Rules incomplete';
+  box.appendChild(el('div', panel.rules_complete === false ? 'err' : 'muted', status));
+  if (panel.rules_reason) box.appendChild(el('div', 'err', panel.rules_reason));
+  const sources = panel.rule_sources || [];
+  if (panel.rules_complete && !sources.length) box.appendChild(el('div', 'muted', 'No base rules exist.'));
+  for (const source of sources) {
+    const row = el('div', 'row wrap'); box.appendChild(row);
+    const link = el('a', null, source.path);
+    link.href = '#/files/' + panel.target.base_tree + '/'
+      + source.path.split('/').map(encodeURIComponent).join('/') + '?'
+      + new URLSearchParams({panel: panel.panel_id, side: 'base', path: source.path});
+    row.appendChild(link);
+    row.appendChild(el('span', 'muted', 'blob ' + source.blob_id + ' · ' + source.supplied_bytes + ' bytes'));
+  }
+  return box;
+}
 function findingCard(entry) {
   const f = entry.observation.finding, loc = f.location;
   const card = el('span', 'finding'); card.dataset.finding = entry.finding.finding_id;
@@ -146,6 +165,7 @@ function paintFindings(cards, state) {
   if (review.legacy_notice) host.appendChild(el('div', 'muted', review.legacy_notice));
   for (const panel of review.panels || []) {
     const result = panel.result;
+    host.appendChild(reviewRules(panel));
     host.appendChild(el('div', 'muted', 'Panel ' + panel.panel_id + ': ' + panel.completion
       + (result ? ' · worker finish ' + (result.blocked ? 'rejected' : 'not rejected') + ' (review.block_on=' + result.block_on + (result.disarmed ? ', rejection cap reached' : '') + ')' : '')));
   }
@@ -181,6 +201,7 @@ async function renderReviewedFile(gen, path, query) {
   view.innerHTML = '';
   const app = el('div', 'files-app page-pad'); view.appendChild(app);
   app.appendChild(el('h3', null, side + ' · ' + path));
+  app.appendChild(reviewRules(panel.panel));
   const box = el('div', 'files-text'); app.appendChild(box);
   const load = async whole => {
     const t = await getJSON(root + '/file?' + new URLSearchParams({path, side, ...(whole ? {whole: '1'} : {})}));

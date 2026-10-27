@@ -456,6 +456,8 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
     class _Seat:
         focus = "security"
         scope = "diff"
+        model = "test"
+        temperature = 0.0
 
     abstain = review_records.ReviewVerdict(
         seat_index=0,
@@ -490,7 +492,10 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
         head="topic",
         label="main..topic",
         diff="d",
-        agents_md="",
+        rules=review_records.ReviewRules(),
+        target=review_records.ReviewTarget("b", "bt", "h", "ht", "h", (), "revisions"),
+        journal=mock.MagicMock(),
+        panel_id="cli",
         reviewers=3,
         focus="security,correctness,tests",
         transcript_sink=TranscriptSink(tmp_path),
@@ -522,6 +527,8 @@ def test_review_exit_code_is_consistent_across_verdicts(
     class _Seat:
         focus = "security"
         scope = "diff"
+        model = "test"
+        temperature = 0.0
 
     block = _seat("m1", _block("security", _location("foo.py", 11)))  # a real gating verdict
     passing = _seat("m2", seat="s2")
@@ -558,7 +565,10 @@ def test_review_exit_code_is_consistent_across_verdicts(
             head="HEAD",
             label="working tree vs HEAD",
             diff="d",
-            agents_md="",
+            rules=review_records.ReviewRules(),
+            target=review_records.ReviewTarget("b", "bt", "h", "ht", "h", (), "revisions"),
+            journal=mock.MagicMock(),
+            panel_id="cli",
             reviewers=1,
             focus="security",
             transcript_sink=mock.MagicMock(),
@@ -634,56 +644,30 @@ def test_panel_is_inconclusive_owner() -> None:
     assert harness__panel.panel_is_inconclusive(empty) is False  # nothing to be inconclusive about
 
 
-def test_review_degrades_on_an_unreadable_agents_md(
-    monkeypatch: Any, tmp_path: Any, capsys: Any
+def test_the_panel_refuses_unreadable_base_rules(
+    monkeypatch: Any, tmp_path: pathlib.Path, capsys: Any
 ) -> None:
-    """An unreadable AGENTS.md degrades the review instead of crashing it.
-
-    AGENTS.md is optional review context, read tolerantly on the run path; `agent6 review` reviews
-    without it rather than raising through the bug reporter.
-    """
-    import types
-
+    from agent6 import errors
     from agent6.config import Config
     from agent6.ui.cli import review_cmds
+    from agent6.vcs import git_files
+    from tests.unit import test_review_saved
 
+    test_review_saved._repo_with_a_change(tmp_path)
+    (tmp_path / "REVIEW.md").write_text("rule")
+    test_review_diff_collect._git(tmp_path, "add", "REVIEW.md")
+    test_review_diff_collect._git(tmp_path, "commit", "-qm", "rules")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    agents = tmp_path / "AGENTS.md"
-    agents.write_text("# rules\n", encoding="utf-8")
-    agents.chmod(0o000)
-
-    seen: dict[str, str] = {}
-
-    def _fake_panel(_cfg: Config, **kwargs: Any) -> int:
-        seen["agents_md"] = kwargs["agents_md"]
-        return 0
-
-    def _fake_effective(*_a: object, **_k: object) -> types.SimpleNamespace:
-        return types.SimpleNamespace(config=Config())
-
-    def _runnable(_self: Config, _role: str) -> None:
-        return None
-
-    def _no_key_error(_cfg: Config) -> None:
-        return None
-
-    def _fake_diff(*_a: object, **_k: object) -> types.SimpleNamespace:
-        return types.SimpleNamespace(returncode=0, stdout="diff --git a/x\n+1\n", stderr="")
-
-    monkeypatch.setattr(layer, "load_effective", _fake_effective)
-    monkeypatch.setattr(Config, "require_runnable", _runnable)
-    monkeypatch.setattr(_setup, "check_provider_keys", _no_key_error)
-    monkeypatch.setattr(review_cmds, "_collect_review_diff", _fake_diff)
-    monkeypatch.setattr(review_cmds, "_run_review_panel", _fake_panel)
-    try:
-        rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-            (), base="", head="", paths=(), reviewers=1
-        )
-    finally:
-        agents.chmod(0o600)
-    assert rc == 0
-    assert seen["agents_md"] == ""  # reviewed without the unreadable context
+    monkeypatch.setattr(layer, "load_effective", mock.Mock(return_value=mock.Mock(config=Config())))
+    monkeypatch.setattr(
+        git_files, "blob_at", mock.Mock(side_effect=errors.GitError("unreadable object"))
+    )
+    panel = mock.Mock()
+    monkeypatch.setattr(review_cmds, "_run_review_panel", panel)
+    assert review_cmds._cmd_review((), base="", head="HEAD", paths=(), reviewers=1) == 2
+    assert "REVIEW.md: unreadable object" in capsys.readouterr().err
+    panel.assert_not_called()
 
 
 def test_the_panel_reviews_under_the_freeform_reviews_label(
@@ -716,19 +700,20 @@ def test_the_panel_reviews_under_the_freeform_reviews_label(
     def _no_key_error(_cfg: Config) -> None:
         return None
 
-    def _fake_diff(*_a: object, **_k: object) -> types.SimpleNamespace:
-        return types.SimpleNamespace(returncode=0, stdout="diff --git a/x\n+1\n", stderr="")
-
     monkeypatch.setattr(layer, "load_effective", _fake_effective)
     monkeypatch.setattr(Config, "require_runnable", _runnable)
     monkeypatch.setattr(_setup, "check_provider_keys", _no_key_error)
-    monkeypatch.setattr(review_cmds, "_collect_review_diff", _fake_diff)
     monkeypatch.setattr(review_cmds, "_run_review_panel", _fake_panel)
     test_review_diff_collect._git(tmp_path, "init", "-q", "-b", "main")
     test_review_diff_collect._git(tmp_path, "config", "user.name", "t")
     test_review_diff_collect._git(tmp_path, "config", "user.email", "t@t")
     test_review_diff_collect._git(tmp_path, "commit", "--allow-empty", "-qm", "init")
     start = test_review_diff_collect._git(tmp_path, "rev-parse", "HEAD").strip()
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src/x.py").write_text("x = 1\n")
+    test_review_diff_collect._git(tmp_path, "checkout", "-qb", "topic")
+    test_review_diff_collect._git(tmp_path, "add", "src/x.py")
+    test_review_diff_collect._git(tmp_path, "commit", "-qm", "change")
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         (), base="main", head="HEAD", paths=("src/x.py",), reviewers=1
     )
@@ -736,6 +721,7 @@ def test_the_panel_reviews_under_the_freeform_reviews_label(
     assert seen["label"] == f"main...HEAD -- src/x.py (from {start})"
     captured = capsys.readouterr()
     assert f"[agent6] reviewing: main...HEAD -- src/x.py (from {start})\n" in captured.err
+    (tmp_path / "src/x.py").write_text("x = 2\n")
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         (), base="", head="HEAD", paths=("src/x.py",), reviewers=1
     )

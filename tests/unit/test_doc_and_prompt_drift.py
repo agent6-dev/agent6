@@ -8,6 +8,7 @@ bench config key that did not match the Config field, a dependency count written
 
 from __future__ import annotations
 
+import ast
 import os
 import pathlib
 import re
@@ -76,6 +77,21 @@ def _registered_tool_names() -> set[str]:
         mt = tool_schema.mode_tools(mode)
         names |= {cls.TOOL_NAME for cls in (*mt.base, *mt.extras)}
     return names
+
+
+def test_prompt_templates_remain_an_engine_independent_leaf() -> None:
+    """Typed prompt assembly belongs outside the template package."""
+    imports = [
+        f"{path.name}: {ast.unparse(node)}"
+        for path in (REPO / "src/agent6/prompts").glob("*.py")
+        for node in ast.walk(ast.parse(path.read_text()))
+        if (isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "agent6")
+        or (
+            isinstance(node, ast.Import)
+            and any(alias.name.split(".")[0] == "agent6" for alias in node.names)
+        )
+    ]
+    assert not imports, "\n".join(imports)
 
 
 def test_apply_edit_prompt_contract_mentions_its_indent_heal() -> None:

@@ -7,6 +7,9 @@
 
 from __future__ import annotations
 
+from agent6 import review_records
+from agent6.harness import _panel
+from agent6.prompts import review
 from agent6.providers import Provider, ProviderError, ProviderResponse
 
 
@@ -14,9 +17,12 @@ class CodeReviewError(Exception):
     """The code-review sub-agent failed to produce a response."""
 
 
-_SYSTEM = """You are a senior code reviewer.
+_SYSTEM = (
+    review.RULES_AUTHORITY
+    + "\n"
+    + """You are a senior code reviewer.
 
-You are given a diff and (optionally) AGENTS.md plus recent commit log for
+You are given a diff and (optionally) base-tree rules plus recent commit log for
 context. Produce a markdown review.
 
 Cover, in this priority order, and only if relevant:
@@ -39,13 +45,14 @@ Format:
 - Reference files as `path:line` where possible.
 - If there is nothing to say in a category, omit it. Do not pad.
 """
+)
 
 
 def review_diff(
     provider: Provider,
     *,
     diff: str,
-    agents_md: str = "",
+    rules: review_records.ReviewRules | None = None,
     recent_log: str = "",
     extra_context: str = "",
     max_tokens: int = 2048,
@@ -55,7 +62,7 @@ def review_diff(
     Args:
         provider: The reviewer's provider.
         diff: The diff under review.
-        agents_md: The repo's AGENTS.md, given whole so no rule under review is clipped.
+        rules: The complete base-tree rules and their sources.
         recent_log: The recent commit log.
         extra_context: Extra text for the reviewer.
         max_tokens: The output cap of the call.
@@ -66,9 +73,10 @@ def review_diff(
     Raises:
         CodeReviewError: When the call fails or returns nothing.
     """
-    parts: list[str] = []
-    if agents_md.strip():
-        parts.append(f"AGENTS.md:\n{agents_md.strip()}")
+    rules = rules or review_records.ReviewRules()
+    if not rules.complete:
+        raise CodeReviewError(rules.reason or "review rules incomplete")
+    parts: list[str] = [_panel.rules_message(rules)]
     if recent_log.strip():
         parts.append(f"RECENT COMMITS:\n{recent_log.strip()[:2000]}")
     if extra_context.strip():

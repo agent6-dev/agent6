@@ -190,18 +190,17 @@ def test_blame_and_the_other_diff_family_verbs_do_not_run_a_repo_textconv(
 def test_the_review_diff_does_not_run_a_repo_clean_filter(tmp_path: pathlib.Path) -> None:
     """`agent6 review`'s working-tree diff carries the per-name driver overrides.
 
-    It shells out to git directly; the fixed `-c` set alone would let `git diff HEAD` run the
-    repo's clean filter on the host.
+    Its temporary index and diff reads keep repository clean filters disabled.
     """
-    from agent6.ui.cli import review_cmds
+    from agent6.vcs import review
 
     marker = tmp_path / "pwned"
     root = _repo(tmp_path / "r")
     _poison_clean_filter(root, marker)
     git_policy.set_repo_driver_policy(False)
 
-    proc = review_cmds._collect_review_diff("git", root, base="", head="HEAD", paths=())
-    assert "f.txt" in proc.stdout, proc.stdout
+    proc = review.comparison(root, base="", head="HEAD", paths=())
+    assert "f.txt" in proc.diff, proc.diff
     assert not marker.exists(), "the repo's clean filter ran a host command"
 
 

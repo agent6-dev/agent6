@@ -84,6 +84,7 @@ def observations(
     *,
     root: pathlib.Path,
     target: review_records.ReviewTarget,
+    hide: tuple[str, ...],
 ) -> tuple[review_records.FindingObservation, ...]:
     """Return every grounded finding, including repeats omitted from feedback."""
     grouped: dict[str, tuple[review_records.Finding, list[int]]] = {}
@@ -98,7 +99,7 @@ def observations(
             panel_id=panel_id,
             finding=finding,
             seat_indexes=tuple(seats),
-            line_origin=review.classify_line_origin(root, target, finding.location),
+            line_origin=review.classify_line_origin(root, target, finding.location, hide=hide),
         )
         for key, (finding, seats) in grouped.items()
     )

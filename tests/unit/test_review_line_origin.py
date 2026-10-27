@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 from typing import Literal
+from unittest import mock
 
 import pytest
 
@@ -49,7 +50,9 @@ def _observe(
         ),
     )
     verdict = review_records.ReviewVerdict(0, "security", "model", "block", (finding,))
-    return _review_history.observations("panel", (verdict,), {}, root=root, target=target)[0]
+    return _review_history.observations("panel", (verdict,), {}, root=root, target=target, hide=())[
+        0
+    ]
 
 
 @pytest.mark.parametrize(
@@ -146,6 +149,33 @@ def test_unavailable_or_unsupported_evidence_is_unknown(
     start = None if evidence == "file-only" else 99 if evidence == "range" else 2
     origin = _observe(tmp_path, target, start).line_origin
     assert origin.kind == "unknown" and origin.reason
+
+
+@pytest.mark.parametrize("limit", ["blob", "patch"])
+def test_oversized_evidence_is_unknown_without_blame(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, limit: str
+) -> None:
+    """Real oversized blobs and patches stop classification before attribution."""
+    _git(tmp_path, "init", "-q")
+    size = 4 * 1024 * 1024
+    if limit == "blob":
+        before = b"context\n" + b"a" * size + b"\n"
+        after = b"context\nchanged\n"
+        expected = "The file exceeds the 4 MiB line-origin evidence limit."
+    else:
+        before = b"context\n" + b"a" * (size // 2) + b"\n"
+        after = b"context\n" + b"b" * (size // 2) + b"\n"
+        assert len(before) < size and len(after) < size
+        expected = "The patch exceeds the 4 MiB line-origin evidence limit."
+    base = _commit(tmp_path, before)
+    head = _commit(tmp_path, after)
+    if limit == "patch":
+        assert len(_git(tmp_path, "diff", base, head, "--").encode()) > size
+    blame = mock.Mock(side_effect=AssertionError("oversized evidence reached blame"))
+    monkeypatch.setattr(git_files, "blame_lines", blame)
+    origin = _observe(tmp_path, _target(tmp_path, base, head), 1).line_origin
+    assert origin.kind == "unknown" and origin.reason == expected
+    blame.assert_not_called()
 
 
 def test_root_commit_additions_are_changed(tmp_path: pathlib.Path) -> None:

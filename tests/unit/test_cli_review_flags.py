@@ -147,7 +147,9 @@ def test_focus_under_configured_reviewers_is_said_to_be_ignored(
     monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
     rc = cli_main(["review", "--focus", "tests", "--reviewers", "2"])
     err = capsys.readouterr().err
-    assert rc == 2 and "note: --focus ignored ([review].reviewers names the roster)." in err
+    assert rc == 0
+    assert "no diff to review: working tree vs HEAD" in err
+    assert "note: --focus ignored ([review].reviewers names the roster)." in err
 
 
 def _panel_config(*, with_reviewer: bool, reviewers: tuple[dict[str, str], ...] = ()) -> Any:

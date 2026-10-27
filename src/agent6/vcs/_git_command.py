@@ -89,8 +89,8 @@ def spawn(
     return full_argv, proc.returncode, out, err
 
 
-def failure(args: tuple[str, ...], returncode: int, stdout: str, stderr: str) -> str:
-    """Return the message for a failed git command, with its own explanation.
+def failure(args: tuple[str, ...], returncode: int, stdout: str, stderr: str) -> errors.GitError:
+    """Return a Git failure with its diagnostic and an output-free review reason.
 
     Args:
         args: The git subcommand and its arguments.
@@ -99,8 +99,7 @@ def failure(args: tuple[str, ...], returncode: int, stdout: str, stderr: str) ->
         stderr: The command's stderr.
 
     Returns:
-        `git <args> failed:` and git's explanation, stderr before stdout; the exit code
-        when both are empty.
+        The full diagnostic and a safe reason naming only the command and exit status.
     """
     # `git commit` explains most failures on stdout, not stderr.
     stderr_msg = stderr.strip()
@@ -109,7 +108,13 @@ def failure(args: tuple[str, ...], returncode: int, stdout: str, stderr: str) ->
         detail = f"{stderr_msg} | stdout: {stdout_msg}"
     else:
         detail = stderr_msg or stdout_msg or f"exit {returncode}"
-    return f"git {' '.join(args)} failed: {detail}"
+    return errors.GitError(
+        f"git {' '.join(args)} failed: {detail}",
+        safe_message=(
+            f"git {args[0]} failed (exit {returncode}); its diagnostic is withheld"
+            " because it may quote hidden file content."
+        ),
+    )
 
 
 def run(
@@ -145,7 +150,8 @@ def run(
         duration_s=0.0,
     )
     if check and not result.ok:
-        raise errors.GitError(failure(args, returncode, result.stdout, result.stderr))
+        error = failure(args, returncode, result.stdout, result.stderr)
+        raise error
     return result
 
 
@@ -176,7 +182,8 @@ def nul_fields(
     """
     _, returncode, out, err = spawn(cwd, args, env_extra, stdin_text)
     if check and returncode != 0:
-        raise errors.GitError(
-            failure(args, returncode, out.decode(errors="replace"), err.decode(errors="replace"))
+        error = failure(
+            args, returncode, out.decode(errors="replace"), err.decode(errors="replace")
         )
+        raise error
     return os.fsdecode(out).split("\0")
