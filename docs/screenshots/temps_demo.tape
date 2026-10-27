@@ -1,5 +1,5 @@
-# CLI demo for the docs: a real agent6 bug-fix run from the terminal, for people
-# who live in the Claude-Code CLI. Not faked logs -- a real `agent6 run` whose
+# CLI demo for the docs: a real agent6 run from the terminal fixing a temperature-conversion module's failing test.
+# Not faked logs -- a real `agent6 run` whose
 # LLM calls are served from a recorded cassette by llm_proxy.py (replay mode, no
 # key), so the run is real (loop, tools, verify, commit) and deterministic.
 # temps_demo.sh starts the proxy, seeds the buggy temps repo, and records this.

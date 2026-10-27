@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# CLI demo video: a real agent6 bug-fix run from the terminal, for people who
-# live in the Claude-Code CLI. Not faked logs -- a real `agent6 run` (real loop,
-# tools, verify, commit) whose LLM calls are served deterministically by the
-# record/replay proxy (llm_proxy.py), so it reproduces exactly with no key.
+# CLI demo video: a real agent6 run from the terminal fixing a temperature-conversion module's failing test.
+# Not faked logs -- a real `agent6 run` (real loop, tools, verify, commit) whose
+# LLM calls are served deterministically by the record/replay proxy
+# (llm_proxy.py), so it reproduces exactly with no key.
 #
 #   bash docs/screenshots/temps_demo.sh            # replay (default): no key, renders the video
 #   bash docs/screenshots/temps_demo.sh replay

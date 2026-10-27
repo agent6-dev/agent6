@@ -66,7 +66,7 @@ GIF encoding uses its own palette filter.
 
 ## Demo videos (record/replay)
 
-The demo videos (`temps-demo.webm`, `rename-demo.webm`, `machine-demo.webm`) are **real agent6 runs**,
+The demo videos (`cli-demo.webm`, `temps-demo.webm`, `rename-demo.webm`, `machine-demo.webm`) are **real agent6 runs**,
 not seeded fixtures: a real loop, real tools, real verify + commit. Determinism
 comes from `llm_proxy.py`, a tiny stdlib HTTP server agent6 talks to as a local
 model (no agent6 changes, no monkey-patching):
@@ -82,7 +82,14 @@ the model's reasoning streams live in the recording, the same as a real terminal
 - `cli_demo.sh` (`record`|`replay`) + `cli_demo.tape`: a terminal bug-fix run for
   the CLI audience. `agent6 run` (headless) fixes a failing test, then `sessions diff`,
   `watch`, `sessions show`. Pure typing, so it renders straight with no toast overlay.
-  Seed: `seed/cli-repo/` (the buggy stats repo) + `seed/cli-cassette.jsonl`.
+  Seed: `seed/cli-repo/` (the buggy stats repo) + `seed/cli-cassette.jsonl`; the two
+  hero sources replay this cassette.
+- `temps_demo.sh` (`record`|`replay`) + `temps_demo.tape`: the same shape over
+  `seed/temps-repo/` (a temperature-conversion module with one failing test) +
+  `seed/temps-cassette.jsonl`; `temps-demo.webm` is the run the Terminal UI page embeds.
+- `rename_demo.sh` (`record`|`replay`) + `rename_demo.tape`: a rename task from a
+  `TASK.md` (`Cart` to `ShoppingCart` across `shop/`) over `seed/rename-repo/` +
+  `seed/rename-cassette.jsonl`; rendered on demand, not in CI.
 - `machine_demo.sh` (`record`|`replay`) + `machine_demo.tape`: the code-fixer
   state machine in the TUI. The Machines page runs the fix-loop (agent edits ->
   tool verifies -> branch loops) and the watch view streams the agent's reasoning.
@@ -105,6 +112,8 @@ screen. The PNGs are captured separately at 1920x1080.
 # needs vhs + ttyd + ffmpeg + ffprobe + agent6 on PATH
 bash docs/screenshots/generate.sh        # -> 01-hub.png … tour.webm
 bash docs/screenshots/cli_demo.sh        # -> cli-demo.webm (replay, no key)
+bash docs/screenshots/temps_demo.sh      # -> temps-demo.webm (replay, no key)
+bash docs/screenshots/rename_demo.sh     # -> rename-demo.webm (replay, no key)
 bash docs/screenshots/machine_demo.sh    # -> machine-demo.webm (replay, no key)
 bash docs/screenshots/hero_run.sh        # -> hero-src-tui.webm (replay, no key)
 bash docs/screenshots/hero_cli.sh        # -> hero-src-cli.webm (replay, no key)
@@ -117,8 +126,9 @@ vhs renders through a headless Chromium; on Ubuntu set
 
 ## In CI
 
-The [`pages`](../../.github/workflows/pages.yml) workflow runs `generate.sh`, the
-two demo scripts (replay mode, no key), the web tours, and `hero.sh` before
+The [`pages`](../../.github/workflows/pages.yml) workflow runs `generate.sh`,
+`machine_demo.sh` and `temps_demo.sh` (replay mode, no key), the two hero sources,
+the web tours, and `hero.sh` before
 `mkdocs build` on every release (or manual dispatch), so the published site's
 images -- and the hero the README embeds from it -- always match the current UI.
 The media ships inside the site artifact (not release assets, not committed), so
