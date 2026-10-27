@@ -34,6 +34,8 @@ def granular_timeout(timeout: float) -> httpx2.Timeout:
 
 # A full-window reply is a few MiB; the cap stops a hostile endpoint from being buffered whole.
 MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+# A token, device or exchange answer is a small JSON object; a larger one is refused.
+CREDENTIAL_BODY_BYTES = 1024 * 1024
 
 
 def trust_env_for(url: str) -> bool:
@@ -59,7 +61,7 @@ def redirect_host(resp: httpx2.Response) -> str:
 def http_post(
     url: str, *, headers: dict[str, str], content: bytes, timeout: float
 ) -> httpx2.Response:
-    """Make one POST and read the body under the size cap; the seam tests stub.
+    """Make one model-call POST and read the body under the size cap; the seam tests stub.
 
     Args:
         url: The URL.
@@ -73,11 +75,49 @@ def http_post(
     Raises:
         ProviderError: The body exceeded `MAX_RESPONSE_BYTES` (retryable).
     """
+    return http_request("POST", url, headers=headers, content=content, timeout=timeout)
+
+
+def http_request(
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str],
+    timeout: float,
+    content: bytes | None = None,
+    json: dict[str, Any] | None = None,
+    params: dict[str, str] | None = None,
+    cap: int | None = None,
+) -> httpx2.Response:
+    """Make one request that follows no redirect and read its body under a cap.
+
+    A credential request (a token endpoint, an exchange) passes `CREDENTIAL_BODY_BYTES`:
+    an issuer that streams an endless body cannot grow the process. The seam tests stub.
+
+    Args:
+        method: The HTTP method.
+        url: The URL.
+        headers: The request headers.
+        timeout: The read budget in seconds.
+        content: A raw request body.
+        json: A JSON request body.
+        params: Query parameters.
+        cap: The most bytes the body may hold; None takes `MAX_RESPONSE_BYTES`.
+
+    Returns:
+        The response with its body read.
+
+    Raises:
+        ProviderError: The body exceeded the cap (retryable).
+    """
+    cap = MAX_RESPONSE_BYTES if cap is None else cap
     with httpx2.stream(
-        "POST",
+        method,
         url,
         headers=headers,
         content=content,
+        json=json,
+        params=params,
         timeout=granular_timeout(timeout),
         follow_redirects=False,
         trust_env=trust_env_for(url),
@@ -85,9 +125,9 @@ def http_post(
         body = bytearray()
         for chunk in resp.iter_bytes():
             body.extend(chunk)
-            if len(body) > MAX_RESPONSE_BYTES:
+            if len(body) > cap:
                 raise types.ProviderError(
-                    f"provider response exceeded {MAX_RESPONSE_BYTES} bytes; refusing to buffer it"
+                    f"provider response exceeded {cap} bytes; refusing to buffer it"
                 )
         # The body is decoded, so the wire's representation headers no longer describe it.
         response_headers = [

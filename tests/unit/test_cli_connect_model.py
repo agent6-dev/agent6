@@ -1011,13 +1011,13 @@ def test_connect_logout_revokes_and_removes_tokens(
         status_code = 200
         text = ""
 
-    def fake_post(
-        url: str, *, json: dict[str, object], timeout: float, **_kw: object
+    def fake_request(
+        method: str, url: str, *, json: dict[str, object] | None = None, **_kw: object
     ) -> _RevokeResp:
-        revoked.append({"url": url, **json})
+        revoked.append({"url": url, **(json or {})})
         return _RevokeResp()
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth.httpx2.post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_request", fake_request)
     rc = main(["connect", "chatgpt", "--logout"])
     assert rc == 0
     assert revoked[0]["url"] == "https://auth.openai.com/oauth/revoke"
@@ -1122,7 +1122,9 @@ def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.start_device_auth", disabled)
     monkeypatch.setattr("agent6.ui.cli.connect.secrets.token_urlsafe", lambda n=24: "STATE1")
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _TokenResp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _TokenResp:
         return _TokenResp()
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)

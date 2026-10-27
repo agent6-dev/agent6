@@ -106,11 +106,23 @@ def test_credential_requests_follow_no_redirect(monkeypatch: pytest.MonkeyPatch)
         def json(self) -> dict[str, Any]:
             return {"access_token": "AT", "expires_in": 60}
 
-    def fake_post(url: str, **kwargs: Any) -> _Resp:
-        seen.append({"url": url, **kwargs})
-        return _Resp()
+    class _Stream(_Resp):
+        request = None
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+        def __enter__(self) -> _Stream:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+        def iter_bytes(self) -> Any:
+            yield b'{"access_token": "AT", "expires_in": 60}'
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _Stream:
+        seen.append({"url": url, "method": method, **kwargs})
+        return _Stream()
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
     _oauth_protocol.post_form("https://login.example/token", {"a": "b"}, 5.0)
     _oauth_protocol.post_json("https://login.example/device", {"a": "b"}, 5.0)
     _oauth_protocol.revoke_tokens(
@@ -138,7 +150,9 @@ def test_a_redirecting_token_endpoint_is_refused_without_a_second_request(
         def json(self) -> dict[str, Any]:
             raise ValueError("no body")
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Redirect:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Redirect:
         calls.append(url)
         return _Redirect()
 

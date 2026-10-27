@@ -15,7 +15,7 @@ from urllib import parse
 import pytest
 
 from agent6 import secret_store
-from agent6.providers import _oauth_protocol, chatgpt_oauth, types
+from agent6.providers import _oauth_protocol, _transport, chatgpt_oauth, types
 
 
 @pytest.fixture
@@ -114,7 +114,9 @@ def test_account_id_prefers_access_token_claim() -> None:
 def test_exchange_and_refresh_post_the_right_grants(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, dict[str, str]]] = []
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         calls.append((url, data))
         return _Resp(
             200,
@@ -145,7 +147,9 @@ def test_exchange_and_refresh_post_the_right_grants(monkeypatch: pytest.MonkeyPa
 def test_initial_exchange_requires_a_refresh_token(monkeypatch: pytest.MonkeyPatch) -> None:
     """Connect must not report success for a grant that cannot be loaded later."""
 
-    def incomplete(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def incomplete(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(200, {"access_token": "AT", "expires_in": 3600})
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", incomplete)
@@ -159,7 +163,9 @@ def test_initial_exchange_requires_a_refresh_token(monkeypatch: pytest.MonkeyPat
 def test_grant_rejects_non_string_token_fields(
     monkeypatch: pytest.MonkeyPatch, field: str, value: object
 ) -> None:
-    def malformed(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def malformed(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         body: dict[str, object] = {
             "access_token": "AT",
             "refresh_token": "RT",
@@ -185,7 +191,9 @@ def test_dead_refresh_token_names_connect(monkeypatch: pytest.MonkeyPatch) -> No
     It is never retried.
     """
 
-    def dead(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def dead(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(400, {"error": {"code": "refresh_token_expired"}})
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", dead)
@@ -199,7 +207,9 @@ def test_dead_refresh_token_names_connect(monkeypatch: pytest.MonkeyPatch) -> No
         )
     assert "agent6 connect chatgpt" in str(exc.value) and exc.value.status_code == 401
 
-    def down(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def down(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(503, "upstream down")
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", down)
@@ -222,7 +232,9 @@ def test_every_remedy_names_the_provider_it_diagnosed(
     `chatgpt` for a provider under another name.
     """
 
-    def dead(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def dead(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(400, {"error": {"code": "refresh_token_expired"}})
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", dead)
@@ -266,7 +278,9 @@ def test_credential_caches_refreshes_and_persists(
 ) -> None:
     refreshes: list[str] = []
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         refreshes.append(data["refresh_token"])
         return _Resp(
             200, {"access_token": f"AT{len(refreshes)}", "refresh_token": "RT2", "expires_in": 3600}
@@ -308,7 +322,9 @@ def test_credential_adopts_a_sibling_process_rotation(
     Replaying the old refresh token would hit a `refresh_token_reused` dead end.
     """
 
-    def never(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def never(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         pytest.fail("refresh must not run")
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", never)
@@ -345,13 +361,17 @@ def test_device_auth_start_and_poll(monkeypatch: pytest.MonkeyPatch) -> None:
         _Resp(200, {"authorization_code": "AC", "code_verifier": "SERVER-V"}),
     ]
 
-    def fake_json(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_json(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         posts.append((url, data))
         return replies.pop(0)
 
     exchanges: list[dict[str, str]] = []
 
-    def fake_form(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_form(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         exchanges.append(data)
         return _Resp(200, {"access_token": "AT", "refresh_token": "RT", "expires_in": 60})
 
@@ -376,7 +396,9 @@ def test_device_auth_start_and_poll(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_device_auth_disabled_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    def gone(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def gone(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(404, "not enabled")
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_json", gone)
@@ -390,7 +412,9 @@ def test_refresh_error_scrubs_an_echoed_refresh_token(monkeypatch: pytest.Monkey
     """
     secret = "rt-veryverysecretvalue123"
 
-    def echoing_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def echoing_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(500, {"error": "boom", "received": secret})
 
     monkeypatch.setattr(_oauth_protocol, "post_form", echoing_post)
@@ -413,7 +437,9 @@ def test_device_poll_failure_scrubs_a_device_id_split_across_the_clip(
     device_id = "da-longenoughtomatterandbeused"
     body = "x" * 190 + device_id
 
-    def fake_json(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_json(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(500, body)
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_json", fake_json)
@@ -429,7 +455,7 @@ def test_revoke_warning_scrubs_the_token(monkeypatch: pytest.MonkeyPatch) -> Non
     def echoing_post(*args: object, **kwargs: object) -> _Resp:
         return _Resp(500, {"error": "boom", "received": tok})
 
-    monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
+    monkeypatch.setattr(_transport, "http_request", echoing_post)
     warn = _oauth_protocol.revoke_tokens(
         chatgpt_oauth.revocation_endpoint("https://auth.openai.com"),
         "cid",
@@ -450,7 +476,7 @@ def test_revoke_warning_scrubs_a_token_split_across_the_clip(
     def echoing_post(*args: object, **kwargs: object) -> _Resp:
         return _Resp(500, body)
 
-    monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
+    monkeypatch.setattr(_transport, "http_request", echoing_post)
     warn = _oauth_protocol.revoke_tokens(
         chatgpt_oauth.revocation_endpoint("https://auth.openai.com"),
         "cid",
@@ -527,7 +553,9 @@ def test_post_401_recovery_adopts_a_sibling_grant_first(
 ) -> None:
     """After a 401 the credential adopts a newer stored grant first and rotates only without one."""
 
-    def never(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def never(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         pytest.fail("refresh must not run when a fresh sibling grant exists")
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", never)
@@ -554,7 +582,9 @@ def test_403_does_not_arm_a_refresh(gcfg: pathlib.Path, monkeypatch: pytest.Monk
     The bearer stays cached.
     """
 
-    def never(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def never(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         pytest.fail("a 403 must not trigger a refresh")
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", never)
@@ -577,7 +607,9 @@ def test_invalid_grant_is_a_dead_signin(
 ) -> None:
     """`invalid_grant` is a dead sign-in whose error names connect, not a retryable HTTP 400."""
 
-    def dead(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def dead(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(400, {"error": "invalid_grant"})
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", dead)
@@ -597,7 +629,9 @@ def test_invalid_grant_is_a_dead_signin(
 def test_reused_rotation_rereads_once(gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`refresh_token_reused` with a fresher grant on disk adopts that grant instead of dying."""
 
-    def reused(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def reused(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         # A sibling's rotation lands between our read and the endpoint's answer.
         secret_store.save_oauth_tokens(
             "chatgpt", secret_store.OAuthTokens("winner", "RT9", 9000.0, "acct")
@@ -630,7 +664,9 @@ def test_reused_rotation_does_not_adopt_an_expired_sibling(
 ) -> None:
     """A changed access token is not a rescue when it is already stale."""
 
-    def reused(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def reused(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         secret_store.save_oauth_tokens(
             "chatgpt", secret_store.OAuthTokens("stale-sibling", "RT9", 6200.0, "acct")
         )
@@ -753,7 +789,9 @@ def test_an_unusable_expires_in_is_a_provider_error(
 ) -> None:
     """A non-numeric, non-finite, boolean or non-positive expires_in is a provider error."""
 
-    def odd(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def odd(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(200, {"access_token": "AT", "refresh_token": "RT", "expires_in": expires_in})
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", odd)

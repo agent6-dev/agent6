@@ -449,7 +449,9 @@ def test_401_refreshes_the_credential_once_and_retries(
 ) -> None:
     """A 401 refreshes the credential once and re-sends with the fresh bearer."""
 
-    def fake_refresh(url: str, data: dict[str, str], timeout_s: float) -> Any:
+    def fake_refresh(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> Any:
         class R:
             status_code = 200
             text = ""

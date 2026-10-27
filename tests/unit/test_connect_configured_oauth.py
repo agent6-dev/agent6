@@ -18,7 +18,7 @@ from agent6 import paths, secret_store
 from agent6.app import _setup
 from agent6.config import Config, OpenAIProviderEntry, load_config
 from agent6.models import cache
-from agent6.providers import oauth
+from agent6.providers import _transport, oauth
 from agent6.ui.cli import main
 
 _CONFIG = """
@@ -90,7 +90,9 @@ def test_the_device_flow_signs_in_headless_and_binds_the_grant(
         _Resp(200, {"access_token": "AT1", "refresh_token": "RT1", "expires_in": 3600}),
     ]
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         posts.append((url, data))
         return answers.pop(0)
 
@@ -130,7 +132,9 @@ def test_the_paste_flow_sends_the_fixed_redirect_and_exchanges_the_code(
     )
     exchanges: list[dict[str, str]] = []
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         exchanges.append({"url": url, **data})
         return _Resp(200, {"access_token": "AT1", "refresh_token": "RT1", "expires_in": 3600})
 
@@ -191,7 +195,9 @@ def test_the_browser_flow_names_the_bound_port_in_the_redirect(
     monkeypatch.setattr("agent6.ui.cli._oauth.open_browser", fake_open)
     exchanges: list[dict[str, str]] = []
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         exchanges.append(data)
         return _Resp(200, {"access_token": "AT1", "refresh_token": "RT1", "expires_in": 3600})
 
@@ -261,16 +267,16 @@ def test_logout_revokes_at_the_configured_endpoint_and_removes_the_grant(
     )
     revoked: list[dict[str, Any]] = []
 
-    def fake_post(url: str, **kwargs: Any) -> _Resp:
-        revoked.append({"url": url, **kwargs})
+    def fake_request(method: str, url: str, **kwargs: Any) -> _Resp:
+        revoked.append({"url": url, "method": method, **kwargs})
         return _Resp(200, {})
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr(_transport, "http_request", fake_request)
     assert main(["connect", "work", "--logout"]) == 0
     assert revoked[0]["url"] == "https://login.example/revoke"
     body = dict(parse.parse_qsl(revoked[0]["content"].decode("ascii")))
     assert body == {"token": "RT1", "token_type_hint": "refresh_token", "client_id": "client-1"}
-    assert revoked[0]["follow_redirects"] is False
+    assert revoked[0]["method"] == "POST"
     assert secret_store.load_oauth_grant("work") is None
     out = capsys.readouterr().out
     assert "Revoked the sign-in for 'work' at https://login.example/revoke" in out
@@ -384,7 +390,7 @@ def test_logout_does_not_revoke_a_grant_made_under_other_settings(
     def never(*_a: object, **_k: object) -> None:
         raise AssertionError("no token may leave")
 
-    monkeypatch.setattr(httpx2, "post", never)
+    monkeypatch.setattr(_transport, "http_request", never)
     assert main(["connect", "work", "--logout"]) == 0
     err = capsys.readouterr().err
     assert "other provider settings" in err and "removed locally" in err

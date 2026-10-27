@@ -163,35 +163,22 @@ def run_exchange(
         "authorization": f"Bearer {issuer_token}",
         "accept": "application/json",
     }
-    trust_env = _transport.trust_env_for(exchange.endpoint)
+    is_get = exchange.method == "GET"
+    as_json = not is_get and exchange.request_encoding == "json"
+    form = None if is_get or as_json else parse.urlencode(exchange.parameters).encode("ascii")
+    if form is not None:
+        sent["content-type"] = "application/x-www-form-urlencoded"
     try:
-        if exchange.method == "GET":
-            resp = httpx2.get(
-                exchange.endpoint,
-                params=exchange.parameters or None,
-                headers=sent,
-                timeout=timeout_s,
-                follow_redirects=False,
-                trust_env=trust_env,
-            )
-        elif exchange.request_encoding == "json":
-            resp = httpx2.post(
-                exchange.endpoint,
-                json=exchange.parameters,
-                headers=sent,
-                timeout=timeout_s,
-                follow_redirects=False,
-                trust_env=trust_env,
-            )
-        else:
-            resp = httpx2.post(
-                exchange.endpoint,
-                content=parse.urlencode(exchange.parameters).encode("ascii"),
-                headers={**sent, "content-type": "application/x-www-form-urlencoded"},
-                timeout=timeout_s,
-                follow_redirects=False,
-                trust_env=trust_env,
-            )
+        resp = _transport.http_request(
+            exchange.method,
+            exchange.endpoint,
+            headers=sent,
+            params=(exchange.parameters or None) if is_get else None,
+            json=exchange.parameters if as_json else None,
+            content=form,
+            timeout=timeout_s,
+            cap=_transport.CREDENTIAL_BODY_BYTES,
+        )
     except httpx2.HTTPError as exc:
         raise types.ProviderError(
             f"could not reach {exchange.endpoint}:"
@@ -462,25 +449,6 @@ class OAuthCredential:
         with self._lock:
             self._force = True
         return True
-
-
-def listing_bearer(provider_name: str, entry: _OAuthEntry) -> str:
-    """Return the bearer a model listing sends for a configured-OAuth entry.
-
-    The listing goes through the credential, so the binding check and the refresh apply
-    to it as they do to a model call.
-
-    Args:
-        provider_name: The provider's config name.
-        entry: Its entry, whose `oauth` is set.
-
-    Returns:
-        The bearer.
-
-    Raises:
-        ProviderError: As `OAuthCredential.token` raises.
-    """
-    return OAuthCredential(provider_name, entry).token()
 
 
 def stored_grant_for(

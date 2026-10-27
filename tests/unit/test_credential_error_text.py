@@ -113,7 +113,9 @@ def test_issuer_text_reaches_the_terminal_printable_only() -> None:
 def test_a_device_grant_with_a_control_character_in_its_uri_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(
             200,
             {
@@ -139,7 +141,7 @@ def test_an_exchange_transport_error_scrubs_the_issuer_token(
     def failing_post(*_a: Any, **_k: Any) -> Any:
         raise httpx2.LocalProtocolError(f"Illegal header value b'Bearer {token}'")
 
-    monkeypatch.setattr(httpx2, "post", failing_post)
+    monkeypatch.setattr(_transport, "http_request", failing_post)
     with pytest.raises(ProviderError, match="could not reach") as refused:
         oauth.run_exchange(OAuthExchangeConfig(endpoint="https://credentials.example/token"), token)
     assert token not in str(refused.value) and "<REDACTED>" in str(refused.value)

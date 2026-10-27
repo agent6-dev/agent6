@@ -321,7 +321,7 @@ def _fetch(
         ids, context = _chatgpt_listing(resp.json())
         return ids, {}, context  # a subscription prices nothing
     if entry.oauth is not None:
-        api_key = oauth.listing_bearer(provider_name, entry)
+        api_key = oauth.OAuthCredential(provider_name, entry).token()  # bound, refreshed
     url, headers = _models_endpoint(entry, api_key)
     resp = httpx2.get(
         url,

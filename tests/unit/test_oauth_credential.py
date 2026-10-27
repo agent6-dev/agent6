@@ -14,7 +14,7 @@ import pytest
 
 from agent6 import secret_store
 from agent6.config import Config, OpenAIProviderEntry
-from agent6.providers import _oauth_protocol, oauth, types
+from agent6.providers import _oauth_protocol, _transport, oauth, types
 
 _ENTRY: dict[str, Any] = {
     "api_format": "openai",
@@ -121,7 +121,9 @@ def test_a_fresh_grant_is_sent_as_it_is_and_refreshed_inside_its_skew(
     clock = {"now": 2_000.0}
     refreshes: list[dict[str, str]] = []
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         refreshes.append(data)
         return _Resp(200, {"access_token": "AT2", "expires_in": 3600})  # no rotated refresh token
 
@@ -173,20 +175,22 @@ def test_the_second_exchange_runs_first_and_refreshes_the_issuer_once_on_its_401
         _Resp(200, {"token": "EX2", "expires_at": 9_000.0}),
     ]
 
-    def fake_get(url: str, **kwargs: Any) -> _Resp:
-        seen.append({"url": url, **kwargs})
+    def fake_request(method: str, url: str, **kwargs: Any) -> _Resp:
+        seen.append({"url": url, "method": method, **kwargs})
         return answers.pop(0)
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         seen.append({"url": url, "data": data})
         return _Resp(200, {"access_token": "AT2", "refresh_token": "RT2", "expires_in": 7200})
 
-    monkeypatch.setattr(httpx2, "get", fake_get)
+    monkeypatch.setattr(_transport, "http_request", fake_request)
     monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
     cred = oauth.OAuthCredential("work", entry, now=lambda: clock["now"])
     assert cred.token() == "EX1"
     assert seen[0]["headers"]["authorization"] == "Bearer AT1"
-    assert seen[0]["follow_redirects"] is False
+    assert seen[0]["method"] == "GET" and seen[0]["cap"] == _transport.CREDENTIAL_BODY_BYTES
     stored = secret_store.load_oauth_grant("work")
     assert stored is not None and stored.exchange_access_token == "EX1"
     clock["now"] = 2_590.0  # inside the exchanged token's skew: re-exchange, which answers 401
@@ -214,12 +218,12 @@ def test_an_exchange_error_never_echoes_the_issuer_token(
     entry = _entry(oauth={"exchange": {"endpoint": "https://credentials.example/token"}})
     _store(entry, access_token="AT-SECRET-VALUE-1")
 
-    def fake_post(url: str, **_kw: Any) -> _Resp:
+    def fake_request(method: str, url: str, **_kw: Any) -> _Resp:
         return _Resp(
             500, {"error": "boom AT-SECRET-VALUE-1"}, text='{"error": "boom AT-SECRET-VALUE-1"}'
         )
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr(_transport, "http_request", fake_request)
     with pytest.raises(types.ProviderError) as failed:
         oauth.OAuthCredential("work", entry, now=lambda: 2_000.0).token()
     assert "AT-SECRET-VALUE-1" not in str(failed.value) and "REDACTED" in str(failed.value)
@@ -248,7 +252,9 @@ def test_the_device_grant_waits_through_pending_and_slow_down(
     ]
     sleeps: list[float] = []
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         posts.append((url, data))
         return answers.pop(0)
 
@@ -282,7 +288,9 @@ def test_the_device_grant_waits_through_pending_and_slow_down(
 def test_a_denied_or_expired_device_grant_ends_by_name(
     monkeypatch: pytest.MonkeyPatch, code: str, word: str
 ) -> None:
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(400, {"error": code})
 
     monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
@@ -332,7 +340,9 @@ def test_a_device_poll_never_sleeps_past_the_grant_expiry(monkeypatch: pytest.Mo
         sleeps.append(seconds)
         clock["t"] += seconds
 
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(400, {"error": "slow_down"})
 
     monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
@@ -351,7 +361,9 @@ def test_a_device_poll_never_sleeps_past_the_grant_expiry(monkeypatch: pytest.Mo
 
 
 def test_a_device_start_caps_the_issuers_interval(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
         return _Resp(
             200,
             {

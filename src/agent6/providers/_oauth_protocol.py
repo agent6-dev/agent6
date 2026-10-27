@@ -121,7 +121,8 @@ def post_form(
     url: str, data: dict[str, str], timeout_s: float, headers: Mapping[str, str] | None = None
 ) -> httpx2.Response:
     """Return a token endpoint's response to a form POST; the seam tests stub."""
-    return httpx2.post(
+    return _transport.http_request(
+        "POST",
         url,
         headers={
             **(headers or {}),
@@ -130,8 +131,7 @@ def post_form(
         },
         content=parse.urlencode(data).encode("ascii"),
         timeout=timeout_s,
-        follow_redirects=False,
-        trust_env=_transport.trust_env_for(url),
+        cap=_transport.CREDENTIAL_BODY_BYTES,
     )
 
 
@@ -139,13 +139,13 @@ def post_json(
     url: str, data: dict[str, str], timeout_s: float, headers: Mapping[str, str] | None = None
 ) -> httpx2.Response:
     """Return an endpoint's response to a JSON POST; the seam tests stub."""
-    return httpx2.post(
+    return _transport.http_request(
+        "POST",
         url,
-        json=data,
         headers={**(headers or {}), "accept": "application/json"},
+        json=dict(data),
         timeout=timeout_s,
-        follow_redirects=False,
-        trust_env=_transport.trust_env_for(url),
+        cap=_transport.CREDENTIAL_BODY_BYTES,
     )
 
 
@@ -173,10 +173,7 @@ def _post(
         The response.
     """
     poster = post_json if encoding == "json" else post_form
-    extra = dict(headers()) if headers is not None else {}
-    if not extra:
-        return poster(url, data, timeout_s)  # the seam's stubs take three arguments
-    return poster(url, data, timeout_s, extra)
+    return poster(url, data, timeout_s, headers=dict(headers()) if headers is not None else {})
 
 
 def authorization_url(
