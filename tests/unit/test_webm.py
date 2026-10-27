@@ -180,7 +180,7 @@ def test_hero_checks_each_encode_before_building_gifs(tmp_path: pathlib.Path, sp
     for args in encodes:
         if args[-1].endswith(".gif"):
             assert args[args.index("-vf") + 1] == (
-                "fps=14,split[a][b];[a]palettegen=max_colors=96[p];"
+                "fps=12,split[a][b];[a]palettegen=max_colors=96[p];"
                 "[b][p]paletteuse=dither=bayer:bayer_scale=5"
             )
             assert "-colorspace" not in args
