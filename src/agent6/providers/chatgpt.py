@@ -16,7 +16,6 @@ import dataclasses
 import math
 import re
 import time
-import uuid
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -200,8 +199,6 @@ class ChatGPTProvider:
         budget: The run's tracker; None skips metering and the preflight.
         reasoning_effort: The role's effort; unset takes the model's default, and
             "off" sends the wire's explicit "none".
-        session_id: The `prompt_cache_key` and `session-id` header, so caching
-            keys to this run's conversation.
     """
 
     model: str
@@ -215,7 +212,6 @@ class ChatGPTProvider:
     transcript_sink: types.TranscriptRecorder | None = None
     budget: agent6_budget.BudgetTracker | None = None
     reasoning_effort: str | None = None
-    session_id: str = dataclasses.field(default_factory=lambda: str(uuid.uuid4()))
     # One usage preflight per provider; a list, since the dataclass is frozen.
     _preflighted: list[bool] = dataclasses.field(default_factory=lambda: [False])
     # The effort levels the served model accepts, learned from its 400; empty until then.
@@ -278,8 +274,9 @@ class ChatGPTProvider:
             "chatgpt-account-id": self.account_id,
             "openai-beta": "responses=experimental",
             "originator": "agent6",
-            "session-id": self.session_id,
         }
+        if facts.context is not None and facts.context.session_id:
+            headers["session-id"] = facts.context.session_id
         headers.update(self.extra_headers.render(facts))
         return headers
 
@@ -348,8 +345,9 @@ class ChatGPTProvider:
             "stream": True,
             # The encrypted reasoning items replayed for continuity across tool calls.
             "include": ["reasoning.encrypted_content"],
-            "prompt_cache_key": self.session_id,
         }
+        if context is not None and context.session_id:
+            body["prompt_cache_key"] = context.session_id
         if tools:
             body["tools"] = _responses.tools_to_responses(tools)
         effort = reasoning_effort if reasoning_effort is not None else self.reasoning_effort

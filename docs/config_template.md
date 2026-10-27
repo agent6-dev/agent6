@@ -169,6 +169,8 @@ model = "reasoning-model"
 ### ChatGPT subscription (`api_format = "chatgpt"`)
 
 Uses a ChatGPT plan (Plus/Pro/Business) instead of an API key, over the Codex Responses backend.
+The `session-id` header and `prompt_cache_key` carry the [shared conversation id](#request-headers).
+Calls outside a conversation omit both.
 
 ```bash
 agent6 connect chatgpt      # browser sign-in (paste fallback when headless)

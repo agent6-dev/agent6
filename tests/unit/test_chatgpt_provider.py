@@ -17,7 +17,16 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import secret_store
-from agent6.providers import ProviderError, _responses, _transport, chatgpt, chatgpt_oauth, types
+from agent6.app import _conversations
+from agent6.providers import (
+    ProviderError,
+    _headers,
+    _responses,
+    _transport,
+    chatgpt,
+    chatgpt_oauth,
+    types,
+)
 
 # The route the fixture provider replays reasoning on.
 _ROUTE = _responses.replay_route("chatgpt", "https://chatgpt.com/backend-api/codex", "gpt-5-codex")
@@ -166,8 +175,7 @@ def test_request_body_and_headers_speak_the_codex_dialect(
     assert body["model"] == "gpt-5-codex" and body["instructions"] == "SYS"
     assert body["store"] is False and body["stream"] is True
     assert body["include"] == ["reasoning.encrypted_content"]
-    assert body["prompt_cache_key"] == provider.session_id
-    assert len(provider.session_id) <= 64
+    assert "prompt_cache_key" not in body
     assert body["reasoning"] == {"effort": "medium", "summary": "auto"}
     assert "max_output_tokens" not in body and "temperature" not in body
     assert body["tools"] == [
@@ -200,8 +208,77 @@ def test_request_body_and_headers_speak_the_codex_dialect(
     assert headers["originator"] == "agent6"
     assert headers["openai-beta"] == "responses=experimental"
     assert headers["accept"] == "text/event-stream"
-    assert headers["session-id"] == provider.session_id
+    assert "session-id" not in headers
     assert resp.text == "hello"
+
+
+def test_calls_use_the_context_conversation_id(
+    signed_in: chatgpt_oauth.ChatGPTCredential,
+) -> None:
+    """Both wire fields follow the call's context, not the adapter instance."""
+    provider = _provider(signed_in, extra_body={"prompt_cache_key": "operator-key"})
+    context = _headers.RequestContext(
+        session_id="conversation-1", is_first_turn=True, is_subagent=False, initiator="user"
+    )
+    other = _headers.RequestContext(
+        session_id="conversation-2", is_first_turn=True, is_subagent=False, initiator="user"
+    )
+    with mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())) as stream:
+        for ctx in (context, context, other):
+            provider.call(system="s", messages=[{"role": "user", "content": "x"}], context=ctx)
+
+    assert [
+        (
+            call.kwargs["headers"].get("session-id"),
+            json.loads(call.kwargs["content"]).get("prompt_cache_key"),
+        )
+        for call in stream.call_args_list
+    ] == [
+        ("conversation-1", "conversation-1"),
+        ("conversation-1", "conversation-1"),
+        ("conversation-2", "conversation-2"),
+    ]
+
+
+def test_resumed_conversation_keeps_both_wire_ids(
+    signed_in: chatgpt_oauth.ChatGPTCredential, tmp_path: pathlib.Path
+) -> None:
+    """A fresh adapter sends the persisted conversation id in both wire fields."""
+    path = tmp_path / _conversations.FILE_NAME
+    conversations = _conversations.Conversations(path=path)
+    context = conversations.context("worker", "chatgpt", initiator="user")
+    with mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())) as stream:
+        _provider(signed_in).call(
+            system="s", messages=[{"role": "user", "content": "x"}], context=context
+        )
+        conversations.completed("worker", "chatgpt")
+        resumed = _conversations.Conversations(path=path)
+        _provider(signed_in).call(
+            system="s",
+            messages=[{"role": "user", "content": "continue"}],
+            context=resumed.context("worker", "chatgpt", initiator="user"),
+        )
+
+    assert [
+        (
+            call.kwargs["headers"].get("session-id"),
+            json.loads(call.kwargs["content"]).get("prompt_cache_key"),
+        )
+        for call in stream.call_args_list
+    ] == [(context.session_id, context.session_id)] * 2
+
+
+@pytest.mark.parametrize("context", [None, _headers.RequestContext.initiated_by("user")])
+def test_a_call_without_a_conversation_sends_neither_wire_id(
+    signed_in: chatgpt_oauth.ChatGPTCredential, context: _headers.RequestContext | None
+) -> None:
+    """Missing and initiator-only contexts send no session header or cache key."""
+    provider = _provider(signed_in, extra_body={"prompt_cache_key": "operator-key"})
+    with mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())) as stream:
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}], context=context)
+
+    assert "session-id" not in stream.call_args.kwargs["headers"]
+    assert "prompt_cache_key" not in json.loads(stream.call_args.kwargs["content"])
 
 
 def test_stream_deltas_feed_callbacks_and_usage_normalises(
@@ -1174,7 +1251,6 @@ def test_usage_reading_uses_the_capped_request(
             "chatgpt-account-id": "acct-1",
             "openai-beta": "responses=experimental",
             "originator": "agent6",
-            "session-id": provider.session_id,
         },
         timeout=20.0,
     )
