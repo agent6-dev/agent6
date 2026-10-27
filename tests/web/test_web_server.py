@@ -2551,7 +2551,7 @@ def test_the_config_entry_tables_serve_the_form_schema(
             "provider",
             ["api_format", "deployment", "base_url", "api_key_env"],
             {
-                "api_format": ["anthropic", "openai", "chatgpt", "claude_code"],
+                "api_format": ["anthropic", "openai", "chatgpt", "responses", "claude_code"],
                 "deployment": ["direct", "vertex", "azure"],
             },
             "base_url",

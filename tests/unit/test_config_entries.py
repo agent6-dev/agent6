@@ -288,7 +288,7 @@ def test_bad_entry_input_leaves_config_untouched(tmp_path: pathlib.Path) -> None
         (
             "providers",
             {
-                "api_format": ["anthropic", "openai", "chatgpt", "claude_code"],
+                "api_format": ["anthropic", "openai", "chatgpt", "responses", "claude_code"],
                 "deployment": ["direct", "vertex", "azure"],
             },
             "base_url",
