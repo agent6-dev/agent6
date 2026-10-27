@@ -316,6 +316,65 @@ def test_a_pass_verdict_cannot_contribute_a_blocking_vote() -> None:
 # --- diff-parsing edge cases (regressions fixed in the pre-squash review) ------
 
 
+def test_quoted_paths_ground_by_their_name() -> None:
+    """Git quotes a non-ASCII name in octal; the quoted form never matched a citation."""
+    from agent6.harness import _review_seat
+
+    diff = (
+        'diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"\n'
+        '--- "a/caf\\303\\251.py"\n+++ "b/caf\\303\\251.py"\n'
+        "@@ -1,1 +1,2 @@\n keep\n+added\n"
+        'diff --git "a/we\\"ird.py" "b/we\\"ird.py"\n'
+        '--- "a/we\\"ird.py"\n+++ "b/we\\"ird.py"\n'
+        "@@ -1,1 +1,2 @@\n keep\n+added\n"
+    )
+    assert set(review.diff_hunks(diff)) == {
+        ("café.py", "base"),
+        ("café.py", "head"),
+        ('we"ird.py', "base"),
+        ('we"ird.py', "head"),
+    }
+    cited = _review_seat.coerce_findings(
+        [
+            {
+                "category": "other",
+                "severity": "nit",
+                "title": "t",
+                "location": {
+                    "path": '"caf\\303\\251.py"',
+                    "side": "head",
+                    "start_line": 2,
+                    "end_line": 2,
+                },
+            }
+        ]
+    )
+    assert cited[0].location.path == "café.py"
+    assert harness__panel.is_grounded(cited[0].location, review.diff_hunks(diff))
+
+
+def test_a_lone_surrogate_in_a_quoted_citation_grounds_nothing() -> None:
+    """A seat's quoted path holding a lone surrogate raised out of the decoder; the panel died."""
+    from agent6.harness import _review_seat
+
+    cited = _review_seat.coerce_findings(
+        [
+            {
+                "category": "other",
+                "severity": "nit",
+                "title": "t",
+                "location": {
+                    "path": '"\\101\ud800"',
+                    "side": "head",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+            }
+        ]
+    )
+    assert not harness__panel.is_grounded(cited[0].location, review.diff_hunks(SAMPLE_DIFF))
+
+
 def test_added_line_starting_like_a_header_is_not_a_file_header() -> None:
     # An added line whose CONTENT begins with "++ b/evil.py" renders as
     # "+++ b/evil.py"; it must not be mistaken for a +++ header (only a +++ that

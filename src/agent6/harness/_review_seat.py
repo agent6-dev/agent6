@@ -21,6 +21,7 @@ from agent6.providers import (
     output_cap_truncated,
 )
 from agent6.tools import results
+from agent6.vcs import review as vcs_review
 
 # A read-only dispatch callable for repo-scope seats: (tool_name, input) -> result.
 ReviewDispatch = Callable[[str, dict[str, Any]], results.ToolResult]
@@ -57,11 +58,18 @@ def coerce_findings(raw: object) -> tuple[review_records.Finding, ...]:
         severity = str(item.get("severity", "warn"))
         if severity not in ("block", "warn", "nit"):
             severity = "warn"
+        location = item.get("location")
+        if isinstance(location, dict) and isinstance(location.get("path"), str):
+            # A seat may cite the path as the diff prints it, in git's quoting; a name that
+            # merely starts and ends with a quote holds no escape and stays as cited.
+            cited = location["path"]
+            if "\\" in cited:
+                location = {**location, "path": vcs_review.unquote_git_path(cited)}
         out.append(
             review_records.Finding(
                 category=category,
                 severity=severity,  # type: ignore[arg-type]
-                location=review_records.ReviewLocation.model_validate(item.get("location")),
+                location=review_records.ReviewLocation.model_validate(location),
                 title=" ".join(str(item.get("title", "")).split())[:200],
                 detail=" ".join(str(item.get("detail", "")).split())[:1000],
             )

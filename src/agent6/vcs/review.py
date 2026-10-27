@@ -28,17 +28,49 @@ _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _GIT_HDR_RE = re.compile(r"^diff --git a/(.*?) b/(.*)$")
 
 
-def _unquote_git_path(p: str) -> str:
-    """Return the path with git's C-string quoting stripped, so it matches a citation."""
+_C_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, '"': 34, "\\": 92}
+
+
+def unquote_git_path(p: str) -> str:
+    """Return a path as git prints it with its C-string quoting decoded.
+
+    Git quotes a path holding a byte outside printable ASCII (`core.quotePath`), a quote or a
+    backslash, each such byte as three octal digits. A non-UTF-8 byte decodes as the listings
+    do (`os.fsdecode`), so the name matches theirs.
+
+    Args:
+        p: The path text, quoted or bare.
+
+    Returns:
+        The decoded path, or the text unchanged when it is not quoted.
+    """
     p = p.strip()
-    if len(p) >= 2 and p.startswith('"') and p.endswith('"'):
-        p = p[1:-1].replace('\\"', '"').replace("\\\\", "\\")
-    return p
+    if len(p) < 2 or not (p.startswith('"') and p.endswith('"')):
+        return p
+    body, out, i = p[1:-1], bytearray(), 0
+    while i < len(body):
+        char = body[i]
+        i += 1
+        if char != "\\" or i >= len(body):
+            # surrogatepass: a lone surrogate in a seat's reply becomes a name that grounds nothing.
+            out += char.encode("utf-8", "surrogatepass")
+            continue
+        char = body[i]
+        if char in "01234567":
+            digits = body[i : i + 3]
+            while digits and not all(d in "01234567" for d in digits):
+                digits = digits[:-1]
+            out.append(int(digits, 8) & 0xFF)
+            i += len(digits)
+        else:
+            out.append(_C_ESCAPES.get(char, ord(char)))
+            i += 1
+    return os.fsdecode(bytes(out))
 
 
 def _hdr_path(raw: str) -> str:
     """Return the path of a `--- ` or `+++ ` header line, or "" for /dev/null."""
-    target = _unquote_git_path(raw[4:].split("\t", 1)[0])
+    target = unquote_git_path(raw[4:].split("\t", 1)[0])
     return "" if target == "/dev/null" else re.sub(r"^[ab]/", "", target)
 
 
@@ -93,8 +125,8 @@ def diff_hunks(diff: str) -> Hunks:
                 hunks.setdefault((oldpath, "base"), [])
             if newpath:
                 hunks.setdefault((newpath, "head"), [])
-            oldpath = _unquote_git_path(g.group(1))
-            newpath = _unquote_git_path(g.group(2))
+            oldpath = unquote_git_path(g.group(1))
+            newpath = unquote_git_path(g.group(2))
             continue
         if raw.startswith("new file mode "):
             oldpath = ""
