@@ -21,7 +21,7 @@ from typing import Any
 import httpx2
 
 from agent6 import paths, portable, secret_store
-from agent6.providers import _oauth_protocol, types
+from agent6.providers import _oauth_profile, _oauth_protocol, types
 
 CHATGPT_ISSUER = "https://auth.openai.com"
 # The Codex CLI's public client registration; its redirect is pinned to localhost:1455.
@@ -153,8 +153,8 @@ def start_device_auth(issuer: str, client_id: str) -> DeviceAuth | None:
         back to the pasted callback).
 
     Raises:
-        ProviderError: The issuer was unreachable, refused, or answered malformed.
-    """
+        ProviderError: The issuer was unreachable, redirected, refused, or answered malformed.
+    """  # noqa: DOC501  # `redirect_refusal` builds the ProviderError named above
     url = f"{issuer.rstrip('/')}{_DEVICE_USERCODE_PATH}"
     try:
         resp = _oauth_protocol.post_json(
@@ -162,6 +162,8 @@ def start_device_auth(issuer: str, client_id: str) -> DeviceAuth | None:
         )
     except httpx2.HTTPError as exc:
         raise types.ProviderError(f"could not reach {url}: {exc}") from exc
+    if 300 <= resp.status_code < 400:
+        raise _oauth_protocol.redirect_refusal(resp, operation="device start", label=_LABEL)
     if resp.status_code == 404:
         return None
     if resp.status_code >= 400:
@@ -170,13 +172,20 @@ def start_device_auth(issuer: str, client_id: str) -> DeviceAuth | None:
         )
     try:
         data: Any = resp.json()
-        return DeviceAuth(
-            device_auth_id=str(data["device_auth_id"]),
-            user_code=str(data["user_code"]),
-            interval_s=max(5.0, float(data.get("interval") or 5.0)),
-        )
+        device_id = data["device_auth_id"]
+        user_code = data["user_code"]
+        interval = max(5.0, float(data.get("interval") or 5.0))
     except (ValueError, KeyError, TypeError) as exc:
-        raise types.ProviderError(f"device sign-in response was malformed: {exc!r}") from exc
+        raise types.ProviderError("device sign-in response was malformed") from exc
+    if not isinstance(device_id, str) or not _oauth_protocol.header_safe(device_id):
+        raise types.ProviderError("device sign-in response carried an unusable device id")
+    if (
+        not isinstance(user_code, str)
+        or not _oauth_protocol.header_safe(user_code)
+        or len(user_code) > 64
+    ):
+        raise types.ProviderError("device sign-in response carried an unusable user code")
+    return DeviceAuth(device_id, user_code, interval)
 
 
 def poll_device_auth(
@@ -205,9 +214,9 @@ def poll_device_auth(
         The grant.
 
     Raises:
-        ProviderError: The issuer was unreachable or refused, the code expired
+        ProviderError: The issuer was unreachable, redirected or refused, the code expired
             unentered, or the exchange failed.
-    """
+    """  # noqa: DOC501  # `redirect_refusal` builds the ProviderError named above
     url = f"{issuer.rstrip('/')}{_DEVICE_TOKEN_PATH}"
     deadline = time.monotonic() + timeout_s
     interval = device.interval_s
@@ -219,16 +228,22 @@ def poll_device_auth(
                 _oauth_protocol.TOKEN_TIMEOUT_S,
             )
         except httpx2.HTTPError as exc:
-            raise types.ProviderError(f"could not reach {url}: {exc}") from exc
+            detail = _oauth_protocol.scrub(str(exc), (device.device_auth_id, device.user_code))
+            raise types.ProviderError(f"could not reach {url}: {detail}") from exc
+        if 300 <= resp.status_code < 400:
+            raise _oauth_protocol.redirect_refusal(resp, operation="device poll", label=_LABEL)
         if resp.status_code < 400:
             try:
                 data: Any = resp.json()
-                code = str(data["authorization_code"])
-                verifier = str(data["code_verifier"])
+                code = data["authorization_code"]
+                verifier = data["code_verifier"]
             except (ValueError, KeyError, TypeError) as exc:
-                raise types.ProviderError(
-                    f"device sign-in response was malformed: {exc!r}"
-                ) from exc
+                raise types.ProviderError("device sign-in response was malformed") from exc
+            if any(
+                not isinstance(value, str) or not _oauth_protocol.header_safe(value)
+                for value in (code, verifier)
+            ):
+                raise types.ProviderError("device sign-in response was malformed")
             return exchange_code(
                 issuer,
                 client_id,
@@ -248,7 +263,7 @@ def poll_device_auth(
         raise types.ProviderError(
             "device sign-in failed: "
             f"HTTP {resp.status_code}:"
-            f" {_oauth_protocol.scrub(resp.text, (device.device_auth_id,))[:200]}"
+            f" {_oauth_protocol.scrub(resp.text, (device.device_auth_id, device.user_code))[:200]}"
         )
     raise types.ProviderError(
         "device sign-in expired before the code was entered; run connect again"
@@ -274,6 +289,35 @@ def account_id_of(grant: _oauth_protocol.TokenGrant) -> str:
             if isinstance(account, str) and account:
                 return account
     return ""
+
+
+PROFILE = _oauth_profile.OAuthProfile(
+    issuer=CHATGPT_ISSUER,
+    client_id=CHATGPT_CLIENT_ID,
+    scopes=tuple(OAUTH_SCOPE.split()),
+    authorization_endpoint=f"{CHATGPT_ISSUER}/oauth/authorize",
+    device_authorization_endpoint=f"{CHATGPT_ISSUER}{_DEVICE_USERCODE_PATH}",
+    token_endpoint=token_endpoint(CHATGPT_ISSUER),
+    revocation_endpoint=revocation_endpoint(CHATGPT_ISSUER),
+    redirect_uri=REDIRECT_URI,
+    callback_host="127.0.0.1",
+    authorization_params=(
+        ("codex_cli_simplified_flow", "true"),
+        ("id_token_add_organizations", "true"),
+        ("originator", "agent6"),
+    ),
+    request_encoding="form",
+    revocation_encoding="json",
+    device_flow="chatgpt",
+    device_poll_endpoint=f"{CHATGPT_ISSUER}{_DEVICE_TOKEN_PATH}",
+    device_redirect_uri=f"{CHATGPT_ISSUER}{_DEVICE_REDIRECT_PATH}",
+    refresh_skew_s=_REFRESH_SKEW_S,
+    label=_LABEL,
+    account_id_of=account_id_of,
+    require_refresh_token=True,
+    default_expires_in=3600.0,
+    cap_refresh_skew=False,
+)
 
 
 def plan_type_of(grant: _oauth_protocol.TokenGrant) -> str:

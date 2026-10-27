@@ -8,7 +8,6 @@ import base64
 import json
 import pathlib
 import time
-from collections.abc import Generator
 from typing import Any
 from urllib import parse
 
@@ -439,8 +438,15 @@ def test_device_auth_start_and_poll(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert posts[1][1] == {"device_auth_id": "da_1", "user_code": "AB-12"}
     assert naps == [5.0, 5.0, 10.0]  # two pendings, then slow_down backs off
-    assert exchanges[0]["code_verifier"] == "SERVER-V"
-    assert exchanges[0]["redirect_uri"] == "https://auth.example/deviceauth/callback"
+    assert exchanges == [
+        {
+            "grant_type": "authorization_code",
+            "client_id": "app_X",
+            "code": "AC",
+            "code_verifier": "SERVER-V",
+            "redirect_uri": "https://auth.example/deviceauth/callback",
+        }
+    ]
 
 
 def test_device_auth_disabled_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -780,16 +786,11 @@ def test_unheld_refresh_lock_refuses_the_rotation(
     gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With the interprocess refresh lock not held, the rotation is refused retryably."""
-    import contextlib
-
-    @contextlib.contextmanager
-    def unheld(_path: pathlib.Path) -> Generator[bool]:
-        yield False
-
     secret_store.save_oauth_tokens(
         "chatgpt", secret_store.OAuthTokens("old", "RT1", 5000.0, "acct")
-    )  # stored under the real lock; the refusal under test is the credential's own
-    monkeypatch.setattr("agent6.portable.locked_file", unheld)
+    )
+    path = secret_store.paths.secrets_path()
+    path.with_name(path.name + ".lock").mkdir()
     clock = {"now": 6000.0}
     fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)

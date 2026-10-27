@@ -12,7 +12,13 @@ import httpx2
 import pytest
 
 from agent6.config import OAuthExchangeConfig
-from agent6.providers import ProviderError, _oauth_protocol, _transport, oauth
+from agent6.providers import (
+    ProviderError,
+    _oauth_exchange,
+    _oauth_protocol,
+    _transport,
+    chatgpt_oauth,
+)
 
 
 class _Resp:
@@ -144,8 +150,123 @@ def test_an_exchange_transport_error_scrubs_the_issuer_token(
 
     monkeypatch.setattr(_transport, "http_request", failing_post)
     with pytest.raises(ProviderError, match="could not reach") as refused:
-        oauth.run_exchange(OAuthExchangeConfig(endpoint="https://credentials.example/token"), token)
+        _oauth_exchange.run_exchange(
+            OAuthExchangeConfig(endpoint="https://credentials.example/token"), token
+        )
     assert token not in str(refused.value) and "<REDACTED>" in str(refused.value)
+
+
+@pytest.mark.parametrize("poll", [False, True])
+def test_chatgpt_device_redirect_refuses_without_reading_the_body(
+    monkeypatch: pytest.MonkeyPatch, poll: bool
+) -> None:
+    """A redirect cannot supply device codes or authorization codes."""
+    response = _Resp(
+        307,
+        {
+            "device_auth_id": "device-secret",
+            "user_code": "AB-12",
+            "authorization_code": "authorization-secret",
+            "code_verifier": "verifier-secret",
+        },
+        location="https://secret.example/?code=AB-12",
+    )
+
+    def post_json(*_a: object, **_kw: object) -> _Resp:
+        return response
+
+    monkeypatch.setattr(_oauth_protocol, "post_json", post_json)
+
+    def post_form(*_a: object, **_kw: object) -> _Resp:
+        return _Resp(200, {"access_token": "AT", "refresh_token": "RT"})
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", post_form)
+    with pytest.raises(ProviderError, match="redirected") as refused:
+        if poll:
+            chatgpt_oauth.poll_device_auth(
+                "https://auth.example",
+                "c",
+                chatgpt_oauth.DeviceAuth("device-secret", "AB-12", 5),
+                provider="alias",
+            )
+        else:
+            chatgpt_oauth.start_device_auth("https://auth.example", "c")
+    assert refused.value.status_code == 307
+    assert "secret" not in str(refused.value) and "AB-12" not in str(refused.value)
+
+
+@pytest.mark.parametrize("transport_error", [False, True])
+def test_chatgpt_device_poll_scrubs_both_codes(
+    monkeypatch: pytest.MonkeyPatch, transport_error: bool
+) -> None:
+    """Short user codes and JSON-escaped device ids stay out of poll errors."""
+    device = chatgpt_oauth.DeviceAuth('device-"secret', "AB-12", 5)
+    text = 'echo device-\\"secret and AB-12'
+
+    def fail(*_a: object, **_kw: object) -> _Resp:
+        if transport_error:
+            raise httpx2.ConnectError(text)
+        return _Resp(500, {}, text=text)
+
+    monkeypatch.setattr(_oauth_protocol, "post_json", fail)
+    with pytest.raises(ProviderError) as refused:
+        chatgpt_oauth.poll_device_auth("https://auth.example", "c", device, provider="alias")
+    assert "secret" not in str(refused.value)
+    assert "AB-12" not in str(refused.value)
+    assert "<REDACTED>" in str(refused.value)
+
+
+@pytest.mark.parametrize("code", [None, 123, "", " ", "AB\n12", "AB\x1b[31m", "X" * 65])
+def test_chatgpt_device_start_refuses_unsafe_displayed_codes(
+    monkeypatch: pytest.MonkeyPatch, code: object
+) -> None:
+    """Only bounded, visible codes reach the terminal."""
+    response = _Resp(200, {"device_auth_id": "D", "user_code": code})
+
+    def post_json(*_a: object, **_kw: object) -> _Resp:
+        return response
+
+    monkeypatch.setattr(_oauth_protocol, "post_json", post_json)
+    with pytest.raises(ProviderError, match="user code"):
+        chatgpt_oauth.start_device_auth("https://auth.example", "c")
+
+
+def test_chatgpt_device_malformed_interval_does_not_echo_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = _Resp(
+        200, {"device_auth_id": "D", "user_code": "AB-12", "interval": "echoed-secret"}
+    )
+
+    def post_json(*_a: object, **_kw: object) -> _Resp:
+        return response
+
+    monkeypatch.setattr(_oauth_protocol, "post_json", post_json)
+    with pytest.raises(ProviderError, match="malformed") as refused:
+        chatgpt_oauth.start_device_auth("https://auth.example", "c")
+    assert "echoed-secret" not in str(refused.value)
+
+
+@pytest.mark.parametrize("field", ["authorization_code", "code_verifier"])
+@pytest.mark.parametrize("value", [None, 123, "", "\n"])
+def test_chatgpt_device_poll_requires_usable_exchange_fields(
+    monkeypatch: pytest.MonkeyPatch, field: str, value: object
+) -> None:
+    response = _Resp(200, {"authorization_code": "AC", "code_verifier": "CV", field: value})
+
+    def post_json(*_a: object, **_kw: object) -> _Resp:
+        return response
+
+    monkeypatch.setattr(_oauth_protocol, "post_json", post_json)
+
+    def post_form(*_a: object, **_kw: object) -> _Resp:
+        return _Resp(200, {"access_token": "AT", "refresh_token": "RT"})
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", post_form)
+    with pytest.raises(ProviderError, match="malformed"):
+        chatgpt_oauth.poll_device_auth(
+            "https://auth.example", "c", chatgpt_oauth.DeviceAuth("D", "AB-12", 5), provider="alias"
+        )
 
 
 def test_a_fifo_at_the_secrets_path_is_refused_without_blocking(tmp_path: pathlib.Path) -> None:

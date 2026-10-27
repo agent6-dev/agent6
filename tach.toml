@@ -192,6 +192,10 @@ depends_on = [
 # claude_code uses _claude_code_protocol for control and continuation reads.
 # The protocol uses _claude_code_session, _claude_code_stream and _claude_code_wire.
 # The _claude_code_* helpers never import claude_code.
+# oauth -> _oauth_exchange -> _oauth_protocol, _transport, types stays inside providers.
+# _oauth_exchange reads the exchange settings from config._oauth.
+# oauth -> chatgpt_oauth -> _oauth_profile -> _oauth_protocol stays inside providers.
+# _oauth_profile reads the exchange settings from config._oauth.
 path = "agent6.providers"
 depends_on = [
   "agent6",  # serverInfo.version on the claude_code MCP handshake

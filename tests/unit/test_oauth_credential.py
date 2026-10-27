@@ -4,17 +4,22 @@
 
 from __future__ import annotations
 
+import base64
 import dataclasses
+import json
 import pathlib
 import stat
+import threading
+import time
+from concurrent import futures
 from typing import Any
 
 import httpx2
 import pytest
 
 from agent6 import secret_store
-from agent6.config import Config, OpenAIProviderEntry
-from agent6.providers import _oauth_protocol, _transport, oauth, types
+from agent6.config import ChatGPTProviderEntry, Config, OpenAIProviderEntry
+from agent6.providers import _oauth_protocol, _transport, chatgpt_oauth, oauth, types
 
 _ENTRY: dict[str, Any] = {
     "api_format": "openai",
@@ -56,7 +61,9 @@ class _Resp:
         return self._body
 
 
-def _store(entry: OpenAIProviderEntry, **fields: Any) -> secret_store.StoredGrant:
+def _store(
+    entry: OpenAIProviderEntry | ChatGPTProviderEntry, **fields: Any
+) -> secret_store.StoredGrant:
     grant = secret_store.StoredGrant(
         binding=oauth.binding_fingerprint(entry),
         access_token="AT1",
@@ -83,6 +90,79 @@ def test_a_grant_round_trips_the_store_at_0600(gcfg: pathlib.Path) -> None:
     assert secret_store.load_oauth_tokens("work") is None  # a refresh token changes nothing
     text = path.read_text(encoding="utf-8")
     assert "oauth_version" in text and "oauth_binding" in text
+
+
+def test_shared_holder_accepts_a_bound_chatgpt_profile(gcfg: pathlib.Path) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    _store(entry)
+    assert oauth.OAuthCredential("work", entry, now=lambda: 2_000.0).token() == "AT1"
+
+
+def test_a_configured_grant_keeps_its_original_binding(gcfg: pathlib.Path) -> None:
+    """Profile resolution must not invalidate an existing configured sign-in."""
+    fingerprint = "e7efc70de66a76e1f169a28681e239b3"
+    entry = _entry()
+    assert oauth.binding_fingerprint(entry) == fingerprint
+    stored = _store(entry, binding=fingerprint)
+    assert oauth.OAuthCredential("work", entry, now=lambda: 2_000.0).token() == stored.access_token
+
+
+def test_configured_profile_preserves_settings_without_chatgpt_policies() -> None:
+    entry = _entry(oauth={"request_encoding": "json"})
+    profile = oauth.profile_for(entry)
+    assert profile.token_endpoint == "https://login.example/token"
+    assert profile.request_encoding == profile.revocation_encoding == "json"
+    assert profile.device_flow == "rfc8628"
+    assert profile.default_expires_in is None
+    assert profile.cap_refresh_skew is True
+    assert profile.require_refresh_token is False
+    assert profile.account_id_of is None
+    assert profile.refresh_skew_s == 60.0
+
+
+def test_chatgpt_profile_keeps_registration_and_mixed_encodings() -> None:
+    profile = oauth.profile_for(ChatGPTProviderEntry(api_format="chatgpt"))
+    assert profile is chatgpt_oauth.PROFILE
+    assert profile.redirect_uri == "http://localhost:1455/auth/callback"
+    assert profile.callback_host == "127.0.0.1"
+    assert profile.request_encoding == "form" and profile.revocation_encoding == "json"
+    assert profile.device_flow == "chatgpt"
+    assert (
+        profile.device_authorization_endpoint
+        == "https://auth.openai.com/api/accounts/deviceauth/usercode"
+    )
+    assert profile.device_poll_endpoint == "https://auth.openai.com/api/accounts/deviceauth/token"
+    assert profile.device_redirect_uri == "https://auth.openai.com/deviceauth/callback"
+    assert dict(profile.authorization_params) == {
+        "id_token_add_organizations": "true",
+        "codex_cli_simplified_flow": "true",
+        "originator": "agent6",
+    }
+    assert profile.label == "ChatGPT"
+    assert profile.account_id_of is chatgpt_oauth.account_id_of
+    assert profile.require_refresh_token is True
+    assert profile.default_expires_in == 3600.0
+    assert profile.refresh_skew_s == 300.0 and profile.cap_refresh_skew is False
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("token_endpoint", "https://other.example/token"),
+        ("device_poll_endpoint", "https://other.example/poll"),
+        ("redirect_uri", "http://localhost:1455/other"),
+        ("revocation_encoding", "form"),
+    ],
+)
+def test_chatgpt_binding_covers_effective_profile_settings(
+    monkeypatch: pytest.MonkeyPatch, field: str, value: str
+) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    fingerprint = oauth.binding_fingerprint(entry)
+    monkeypatch.setattr(
+        chatgpt_oauth, "PROFILE", dataclasses.replace(chatgpt_oauth.PROFILE, **{field: value})
+    )
+    assert oauth.binding_fingerprint(entry) != fingerprint
 
 
 def test_the_binding_follows_every_destination_setting() -> None:
@@ -425,3 +505,296 @@ def test_a_device_start_caps_the_issuers_interval(monkeypatch: pytest.MonkeyPatc
         "https://l.example/device", "c", scopes=(), encoding="form", label="work"
     )
     assert started.interval_s == _oauth_protocol.POLL_INTERVAL_CEILING_S
+
+
+def _account_token(account: str) -> str:
+    payload = json.dumps({"https://api.openai.com/auth": {"chatgpt_account_id": account}})
+    return "e30." + base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=") + ".sig"
+
+
+def test_id_token_only_account_is_persisted_without_identity_token(gcfg: pathlib.Path) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    identity = _account_token("account-a")
+    grant = oauth.stored_grant_for(
+        _oauth_protocol.TokenGrant("opaque", "RT", 3600, identity), entry, now=1000
+    )
+    assert grant.account_id == "account-a"
+    path = secret_store.save_oauth_grant("work", grant)
+    assert identity not in path.read_text() and "id_token" not in path.read_text()
+    holder = oauth.OAuthCredential("work", entry, now=lambda: 2000)
+    assert holder.account_id() == "account-a"
+    assert holder.token() == "opaque"
+
+
+@pytest.mark.parametrize("refresh", ["", " "])
+def test_initial_chatgpt_grant_requires_nonblank_refresh_token(refresh: str) -> None:
+    grant = _oauth_protocol.TokenGrant("AT", refresh, None)
+    with pytest.raises(types.ProviderError, match=r"ChatGPT.*no refresh_token"):
+        oauth.stored_grant_for(grant, ChatGPTProviderEntry(api_format="chatgpt"), now=1000)
+    assert oauth.stored_grant_for(grant, _entry(), now=1000).refresh_token == refresh
+
+
+def test_chatgpt_omitted_expiry_uses_an_hour_but_configured_expiry_is_indefinite() -> None:
+    grant = _oauth_protocol.TokenGrant("AT", "RT", None)
+    assert (
+        oauth.stored_grant_for(
+            grant, ChatGPTProviderEntry(api_format="chatgpt"), now=1000
+        ).expires_at
+        == 4600
+    )
+    assert oauth.stored_grant_for(grant, _entry(), now=1000).expires_at is None
+
+
+def test_chatgpt_uses_full_skew_and_keeps_account_on_partial_refresh(
+    gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    _store(entry, account_id="account-a", expires_at=1400)
+    calls: list[dict[str, str]] = []
+
+    def refresh(url: str, data: dict[str, str], *_a: object, **_kw: object) -> _Resp:
+        calls.append(data)
+        return _Resp(200, {"access_token": "AT2"})
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", refresh)
+    holder = oauth.OAuthCredential("work", entry, now=lambda: 1100)
+    assert holder.token() == "AT2"
+    stored = secret_store.load_oauth_grant("work")
+    assert stored is not None
+    assert (stored.account_id, stored.refresh_token, stored.expires_at) == (
+        "account-a",
+        "RT1",
+        4700,
+    )
+    assert calls == [
+        {
+            "grant_type": "refresh_token",
+            "refresh_token": "RT1",
+            "client_id": chatgpt_oauth.CHATGPT_CLIENT_ID,
+        }
+    ]
+
+
+def test_shared_holder_refuses_stored_account_contradiction(gcfg: pathlib.Path) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    _store(entry, access_token=_account_token("claimed"), account_id="stored")
+    with pytest.raises(
+        types.ProviderError, match=r"ChatGPT.*does not match its own token.*agent6 connect work"
+    ):
+        oauth.OAuthCredential("work", entry, now=lambda: 2000).token()
+
+
+@pytest.mark.parametrize("source", ["refresh", "sibling"])
+@pytest.mark.parametrize("stored_account", [None, "account-a"])
+def test_shared_holder_pins_first_account_before_refresh_or_adoption(
+    gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str, stored_account: str | None
+) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    first = _account_token("account-a")
+    _store(entry, access_token=first, account_id=stored_account)
+    holder = oauth.OAuthCredential("work", entry, now=lambda: 2000)
+    assert holder.token() == first
+    second = _account_token("account-b")
+
+    def refresh(*_a: object, **_kw: object) -> _Resp:
+        return _Resp(200, {"access_token": second, "refresh_token": "RT2", "expires_in": 3600})
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", refresh)
+    if source == "sibling":
+        _store(entry, access_token=second, account_id=None)
+    before = secret_store.paths.secrets_path().read_bytes()
+    holder.invalidate(401, first)
+    with pytest.raises(types.ProviderError, match=r"different account.*agent6 connect work"):
+        holder.token()
+    assert secret_store.paths.secrets_path().read_bytes() == before
+
+
+@pytest.mark.parametrize("kind", ["missing", "legacy", "rebound", "contradiction", "valid"])
+def test_read_only_bound_grant_validation(gcfg: pathlib.Path, kind: str) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    if kind == "legacy":
+        secret_store.save_oauth_tokens("work", secret_store.OAuthTokens("AT", "RT", 4600, "a"))
+    elif kind != "missing":
+        _store(
+            entry,
+            binding="other" if kind == "rebound" else oauth.binding_fingerprint(entry),
+            access_token=_account_token("a"),
+            account_id="b" if kind == "contradiction" else None,
+        )
+    secrets = secret_store.load_secrets()
+    path = secret_store.paths.secrets_path()
+    before = path.read_bytes() if path.exists() else None
+    if kind == "valid":
+        assert oauth.load_bound_grant("work", entry, secrets=secrets).account_id == "a"
+    else:
+        message = {
+            "missing": "No ChatGPT sign-in",
+            "legacy": "predates credential binding",
+            "rebound": "other provider settings",
+            "contradiction": "does not match its own token",
+        }[kind]
+        with pytest.raises(types.ProviderError, match=message) as refused:
+            oauth.load_bound_grant("work", entry, secrets=secrets)
+        assert refused.value.status_code == 401 and "agent6 connect work" in str(refused.value)
+    assert (path.read_bytes() if path.exists() else None) == before
+
+
+@pytest.mark.parametrize(
+    "code",
+    ["refresh_token_reused", "refresh_token_expired", "refresh_token_invalidated", "invalid_grant"],
+)
+def test_refresh_errors_have_classified_codes(code: str) -> None:
+    response = httpx2.Response(400, json={"error": {"code": code}})
+    error = _oauth_protocol.token_error(
+        response, operation="refresh", provider="work", label="ChatGPT", secrets=("r",)
+    )
+    assert isinstance(error, _oauth_protocol.OAuthError)
+    assert error.code == code and error.status_code == 401
+
+
+@pytest.mark.parametrize("replacement", ["fresh", "stale", "same", "rebound", "other-account"])
+def test_shared_holder_rereads_once_after_reused_refresh(
+    gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch, replacement: str
+) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    original = _store(entry, account_id="account-a")
+    sleeps: list[float] = []
+    calls: list[str] = []
+
+    def reused(*_a: object, **_kw: object) -> httpx2.Response:
+        calls.append("refresh")
+        return httpx2.Response(400, json={"error": {"code": "refresh_token_reused"}})
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        sibling = dataclasses.replace(
+            original,
+            binding="other" if replacement == "rebound" else original.binding,
+            access_token=original.access_token if replacement == "same" else "winner",
+            refresh_token="RT2",
+            issued_at=6000,
+            expires_at=6200 if replacement == "stale" else 9600,
+            account_id="account-b" if replacement == "other-account" else "account-a",
+        )
+        secret_store.save_oauth_grant("work", sibling)
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", reused)
+    monkeypatch.setattr(oauth.time, "sleep", sleep)
+    holder = oauth.OAuthCredential("work", entry, now=lambda: 6000)
+    if replacement == "fresh":
+        assert holder.token() == "winner"
+        assert holder.account_id() == "account-a"
+    else:
+        match = {
+            "stale": "refresh_token_reused",
+            "same": "refresh_token_reused",
+            "rebound": "other provider settings",
+            "other-account": "different account",
+        }[replacement]
+        with pytest.raises(types.ProviderError, match=match):
+            holder.token()
+    assert sleeps == [1.0] and calls == ["refresh"]
+
+
+def test_refresh_rescue_ignores_reused_token_words_in_prose(
+    gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    _store(entry)
+    sleeps: list[float] = []
+
+    def refused(*_a: object, **_kw: object) -> httpx2.Response:
+        return httpx2.Response(
+            500, json={"error": "server_error", "description": "refresh_token_reused"}
+        )
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", refused)
+    monkeypatch.setattr(oauth.time, "sleep", sleeps.append)
+    with pytest.raises(types.ProviderError):
+        oauth.OAuthCredential("work", entry, now=lambda: 6000).token()
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_concurrent_holders_rotate_once_under_real_locks(
+    gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch, shared: bool
+) -> None:
+    """Concurrent calls and independent holders consume a single-use token only once."""
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    _store(entry, account_id="account-a")
+    first = oauth.OAuthCredential("work", entry, now=lambda: 6000)
+    second = first if shared else oauth.OAuthCredential("work", entry, now=lambda: 6000)
+    calls: list[str] = []
+    start = threading.Barrier(2)
+
+    def refresh(url: str, data: dict[str, str], *_a: object, **_kw: object) -> _Resp:
+        calls.append(data["refresh_token"])
+        time.sleep(0.1)
+        return _Resp(200, {"access_token": "AT2", "refresh_token": "RT2", "expires_in": 3600})
+
+    def token(holder: oauth.OAuthCredential) -> str:
+        start.wait(timeout=5)
+        return holder.token()
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", refresh)
+    with futures.ThreadPoolExecutor(max_workers=2) as pool:
+        pending = [pool.submit(token, holder) for holder in (first, second)]
+        assert [result.result(timeout=10) for result in pending] == ["AT2", "AT2"]
+    assert calls == ["RT1"]
+    stored = secret_store.load_oauth_grant("work")
+    assert stored is not None and stored.refresh_token == "RT2" and stored.account_id == "account-a"
+
+
+def test_shared_holder_refuses_an_unopenable_real_lock(
+    gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    _store(entry)
+    path = secret_store.paths.secrets_path()
+    path.with_name(path.name + ".lock").mkdir()
+
+    def never(*_a: object, **_kw: object) -> _Resp:
+        pytest.fail("no request may leave without the refresh lock")
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", never)
+    with pytest.raises(types.ProviderError, match="credential-refresh lock"):
+        oauth.OAuthCredential("work", entry, now=lambda: 6000).token()
+
+
+def test_shared_holder_adopts_same_account_sibling_after_401_without_rotation(
+    gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    _store(entry, account_id="account-a")
+    holder = oauth.OAuthCredential("work", entry, now=lambda: 2000)
+    assert holder.token() == "AT1"
+    _store(entry, access_token="AT2", refresh_token="RT2", account_id="account-a")
+
+    def never(*_a: object, **_kw: object) -> _Resp:
+        pytest.fail("a fresh sibling avoids rotation")
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", never)
+    assert holder.invalidate(403, "AT1") is False
+    assert holder.token() == "AT1"
+    assert holder.invalidate(401, "AT1") is True
+    assert holder.token() == "AT2"
+
+
+def test_partial_refresh_preserves_the_pinned_account(
+    gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    _store(entry, account_id="account-a")
+    holder = oauth.OAuthCredential("work", entry, now=lambda: 2000)
+    assert holder.account_id() == "account-a"
+    assert holder.token() == "AT1"
+
+    def refresh(*_a: object, **_kw: object) -> _Resp:
+        return _Resp(200, {"access_token": "AT2", "expires_in": 3600})
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", refresh)
+    holder.invalidate(401, "AT1")
+    assert holder.token() == "AT2"
+    stored = secret_store.load_oauth_grant("work")
+    assert stored is not None and stored.account_id == "account-a"
+    assert stored.refresh_token == "RT1"

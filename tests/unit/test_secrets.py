@@ -19,6 +19,28 @@ def gcfg(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Pat
     return tmp_path / "g"
 
 
+@pytest.mark.parametrize("account", [None, "account-9"])
+def test_bound_grant_round_trips_optional_account(gcfg: pathlib.Path, account: str | None) -> None:
+    """Bound records retain account metadata without requiring it in older records."""
+    grant = secret_store.StoredGrant(
+        binding="binding",
+        access_token="access",
+        refresh_token="refresh",
+        issued_at=1.0,
+        expires_at=3601.0,
+        exchange_access_token="",
+        exchange_issued_at=0.0,
+        exchange_expires_at=None,
+        account_id=account,
+    )
+    path = secret_store.save_oauth_grant("alias", grant)
+    assert secret_store.load_oauth_grant("alias") == grant
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    text = path.read_text()
+    assert ("oauth_account_id" in text) is (account is not None)
+    assert "id_token" not in text and "plan" not in text
+
+
 def test_save_secret_is_0600(gcfg: pathlib.Path) -> None:
     p = secret_store.save_secret("anthropic", "sk-ant-xyz")
     assert p.is_file()

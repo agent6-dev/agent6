@@ -300,6 +300,8 @@ banned-from = [
     "agent6.providers._claude_code_stream",
     "agent6.providers._claude_code_wire",
     "agent6.providers._headers",
+    "agent6.providers._oauth_exchange",
+    "agent6.providers._oauth_profile",
     "agent6.providers._oauth_protocol",
     "agent6.providers._openai_messages",
     "agent6.providers._openai_parse",

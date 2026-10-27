@@ -355,7 +355,7 @@ def load_oauth_tokens(
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class StoredGrant:
-    """One provider's configured-OAuth grant as stored, bound to its settings.
+    """One provider's OAuth grant as stored, bound to its settings.
 
     Attributes:
         binding: The fingerprint of the settings the grant was made under.
@@ -366,6 +366,7 @@ class StoredGrant:
         exchange_access_token: The second exchange's token; "" when none is configured or made.
         exchange_issued_at: When that token was issued; 0.0 when none.
         exchange_expires_at: When it expires; None when none.
+        account_id: The account extracted from the grant; None when unknown.
     """
 
     binding: str
@@ -376,6 +377,7 @@ class StoredGrant:
     exchange_access_token: str
     exchange_issued_at: float
     exchange_expires_at: float | None
+    account_id: str | None = None
 
 
 GRANT_VERSION = "1"
@@ -384,7 +386,7 @@ GRANT_VERSION = "1"
 def save_oauth_grant(
     provider_name: str, grant: StoredGrant, *, user: paths.RealUser | None = None
 ) -> pathlib.Path:
-    """Write a provider's configured-OAuth grant, replacing its entry.
+    """Write a provider's bound OAuth grant, replacing its entry.
 
     Args:
         provider_name: The provider's name under `[providers]`.
@@ -400,6 +402,8 @@ def save_oauth_grant(
         "oauth_access_token": grant.access_token,
         "oauth_issued_at": repr(grant.issued_at),
     }
+    if grant.account_id is not None:
+        entry["oauth_account_id"] = grant.account_id
     if grant.refresh_token:
         entry["oauth_refresh_token"] = grant.refresh_token
     if grant.expires_at is not None:
@@ -424,7 +428,7 @@ def load_oauth_grant(
     secrets: dict[str, Any] | None = None,
     user: paths.RealUser | None = None,
 ) -> StoredGrant | None:
-    """Return one provider's stored configured-OAuth grant, or None when absent or mangled.
+    """Return one provider's stored bound OAuth grant, or None when absent or mangled.
 
     Args:
         provider_name: The provider's name under `[providers]`.
@@ -444,6 +448,9 @@ def load_oauth_grant(
     binding = entry.get("oauth_binding")
     if not (isinstance(access, str) and access and isinstance(binding, str) and binding):
         return None
+    account = entry.get("oauth_account_id")
+    if account is not None and not isinstance(account, str):
+        return None
     try:
         return StoredGrant(
             binding=binding,
@@ -454,6 +461,7 @@ def load_oauth_grant(
             exchange_access_token=str(entry.get("oauth_exchange_access_token", "") or ""),
             exchange_issued_at=float(str(entry.get("oauth_exchange_issued_at", "0") or "0")),
             exchange_expires_at=_optional_time(entry, "oauth_exchange_expires_at"),
+            account_id=account,
         )
     except ValueError:
         return None

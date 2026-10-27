@@ -31,6 +31,18 @@ PERMANENT_REFRESH_CODES = frozenset(
 )
 
 
+class OAuthError(types.ProviderError):
+    """A token endpoint refusal with an allowlisted refresh-error code.
+
+    Attributes:
+        code: One of PERMANENT_REFRESH_CODES, or None for an unclassified refusal.
+    """
+
+    def __init__(self, message: str, *, status_code: int, code: str | None = None) -> None:
+        super().__init__(message, status_code=status_code)
+        self.code = code
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class TokenGrant:
     """One token-endpoint response, from an exchange or a refresh.
@@ -276,7 +288,7 @@ def header_safe(token: str) -> bool:
 def scrub(text: str, secrets: tuple[str, ...]) -> str:
     """Return the text with every echoed credential value replaced.
 
-    Raw and JSON-escaped spellings are covered; values under 8 characters are skipped.
+    Raw and JSON-escaped spellings are covered, including short device codes.
 
     Args:
         text: A response body.
@@ -286,7 +298,7 @@ def scrub(text: str, secrets: tuple[str, ...]) -> str:
         The text, each value replaced by `<REDACTED>`.
     """
     for value in secrets:
-        if len(value) < 8:
+        if not value:
             continue
         for spelling in {value, json.dumps(value)[1:-1]}:
             text = text.replace(spelling, "<REDACTED>")
@@ -314,7 +326,7 @@ def token_error(
     provider: str,
     label: str,
     secrets: tuple[str, ...] = (),
-) -> types.ProviderError:
+) -> OAuthError:
     """Classify a non-2xx token response.
 
     Args:
@@ -329,19 +341,17 @@ def token_error(
         carrying the response's status for the retry policy.
     """
     body = scrub(resp.text, secrets)[:2000]
-    code = ""
-    try:
-        err = json.loads(body).get("error")
-        code = printable(str(err.get("code") if isinstance(err, dict) else err or ""), 80)
-    except (ValueError, AttributeError):
-        pass
-    if resp.status_code == 401 or code in PERMANENT_REFRESH_CODES:
-        return types.ProviderError(
-            f"{label} sign-in is no longer valid ({code or f'HTTP {resp.status_code}'});"
+    raw_code = error_code_of(resp)
+    code = raw_code if raw_code in PERMANENT_REFRESH_CODES else None
+    detail = printable(scrub(raw_code, secrets), 80)
+    if resp.status_code == 401 or code is not None:
+        return OAuthError(
+            f"{label} sign-in is no longer valid ({detail or f'HTTP {resp.status_code}'});"
             f" run `agent6 connect {provider}` to sign in again.",
             status_code=401,
+            code=code,
         )
-    return types.ProviderError(
+    return OAuthError(
         f"{label} token {operation} failed: HTTP {resp.status_code}: {body[:300]}",
         status_code=resp.status_code,
     )

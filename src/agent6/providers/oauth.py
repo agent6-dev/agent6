@@ -1,32 +1,34 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The configured-OAuth credential: a bound, refreshing bearer over a stored grant.
+"""Bound OAuth grants, profile resolution and the shared refreshing bearer.
 
-`OAuthCredential` is the `BearerCredential` a provider with `[providers.<name>.oauth]`
-holds. It reads the grant `agent6 connect <name>` stored, refuses it when the binding no
-longer matches the configuration, refreshes the issuer grant before its expiry under the
-interprocess lock, runs the configured second exchange when the model endpoint takes
-another token, and recovers once from a 401. Nothing a remote returns is executed; token
-values never reach an error text.
+`OAuthCredential` validates the stored binding and pins the first account it reads.
+Rotations hold both locks and persist before returning a bearer. Profile policies set the
+expiry margin and initial refresh-token requirement. Nothing a remote returns is executed.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
-import math
 import threading
 import time
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 from urllib import parse
 
-import httpx2
-
 from agent6 import paths, portable, secret_store
 from agent6.config import _headers as header_config
 from agent6.config import _oauth as oauth_config
-from agent6.providers import _headers, _oauth_protocol, _transport, types
+from agent6.providers import (
+    _headers,
+    _oauth_exchange,
+    _oauth_profile,
+    _oauth_protocol,
+    chatgpt_oauth,
+    types,
+)
 
 # A rotation refused for want of the lock: the message names the file to clear.
 _LOCK_HINT = "remove a stale .lock sibling if one is left over"
@@ -51,21 +53,80 @@ class _OAuthEntry(Protocol):
     def oauth(self) -> oauth_config.OAuthConfig | None: ...
 
 
+def profile_for(entry: _OAuthEntry) -> _oauth_profile.OAuthProfile:
+    """Resolve a configured issuer or the fixed ChatGPT registration.
+
+    Args:
+        entry: A provider entry with configured OAuth or the ChatGPT format.
+
+    Returns:
+        The effective settings and sign-in policies.
+
+    Raises:
+        ProviderError: The entry has no OAuth sign-in.
+    """
+    if entry.api_format == "chatgpt":
+        return chatgpt_oauth.PROFILE
+    config = entry.oauth
+    if config is None:
+        raise types.ProviderError("this provider has no OAuth sign-in")
+    return _oauth_profile.OAuthProfile(
+        issuer=config.issuer,
+        client_id=config.client_id,
+        scopes=config.scopes,
+        authorization_endpoint=config.authorization_endpoint,
+        device_authorization_endpoint=config.device_authorization_endpoint,
+        token_endpoint=config.token_endpoint,
+        revocation_endpoint=config.revocation_endpoint,
+        redirect_uri=config.redirect_uri,
+        callback_host=parse.urlsplit(config.redirect_uri).hostname or "127.0.0.1",
+        authorization_params=tuple(sorted(config.authorization_params.items())),
+        request_encoding=config.request_encoding,
+        revocation_encoding=config.request_encoding,
+        device_flow="rfc8628",
+        device_poll_endpoint=config.token_endpoint
+        if config.device_authorization_endpoint
+        else None,
+        device_redirect_uri=None,
+        refresh_skew_s=config.refresh_skew_s,
+        exchange=config.exchange,
+    )
+
+
 def binding_fingerprint(entry: _OAuthEntry) -> str:
     """Return the fingerprint a stored grant is bound to.
 
-    It covers the effective transport (format, deployment, the resolved URL and query, the
-    auth style, the extra headers) and every OAuth setting but the refresh margin, so a
-    changed overlay cannot send a stored grant somewhere its sign-in never agreed to.
+    It covers the transport and configured OAuth settings except the refresh margin.
+    Built-in profiles bind their endpoints, registration and encodings, never callable hooks.
 
     Args:
-        entry: The provider entry, whose `oauth` is set.
+        entry: The provider entry with configured OAuth or the ChatGPT format.
 
     Returns:
         A hex digest.
     """
-    oauth = entry.oauth
-    assert oauth is not None
+    if entry.api_format == "chatgpt":
+        profile = profile_for(entry)
+        settings: dict[str, Any] = {
+            "issuer": profile.issuer,
+            "client_id": profile.client_id,
+            "scopes": profile.scopes,
+            "authorization_endpoint": profile.authorization_endpoint,
+            "device_authorization_endpoint": profile.device_authorization_endpoint,
+            "token_endpoint": profile.token_endpoint,
+            "revocation_endpoint": profile.revocation_endpoint,
+            "redirect_uri": profile.redirect_uri,
+            "authorization_params": dict(profile.authorization_params),
+            "request_encoding": profile.request_encoding,
+            "revocation_encoding": profile.revocation_encoding,
+            "device_flow": profile.device_flow,
+            "device_poll_endpoint": profile.device_poll_endpoint,
+            "device_redirect_uri": profile.device_redirect_uri,
+        }
+    else:
+        config = entry.oauth
+        assert config is not None
+        settings = config.model_dump(mode="json", exclude={"refresh_skew_s"})
     facts: dict[str, Any] = {
         "api_format": entry.api_format,
         "deployment": entry.deployment,
@@ -76,140 +137,92 @@ def binding_fingerprint(entry: _OAuthEntry) -> str:
             name: value if isinstance(value, str) else value.model_dump(mode="json")
             for name, value in sorted(entry.extra_headers.items())
         },
-        "oauth": oauth.model_dump(mode="json", exclude={"refresh_skew_s"}),
+        "oauth": settings,
     }
     canonical = json.dumps(facts, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
 
 
-def needs_refresh(*, issued_at: float, expires_at: float | None, skew_s: float, now: float) -> bool:
+def _reconnect(provider: str, why: str) -> types.ProviderError:
+    return types.ProviderError(
+        f"{why}; run `agent6 connect {provider}` to sign in again.", status_code=401
+    )
+
+
+def load_bound_grant(
+    provider_name: str, entry: _OAuthEntry, *, secrets: dict[str, Any] | None = None
+) -> secret_store.StoredGrant:
+    """Read a bound grant without refreshing or writing it.
+
+    Args:
+        provider_name: The provider key used to store the grant and name its reconnect.
+        entry: The effective provider entry.
+        secrets: Loaded secrets; None reads the operator's secrets file.
+
+    Returns:
+        The grant, with its account claim filled in when metadata omitted it.
+
+    Raises:
+        ProviderError: The grant is absent, legacy, rebound or contradicts its account claim.
+    """  # noqa: DOC501  # `_reconnect` builds the ProviderError named above
+    profile = profile_for(entry)
+    label = f"{profile.label} " if profile.label else ""
+    data = secrets if secrets is not None else secret_store.load_secrets()
+    grant = secret_store.load_oauth_grant(provider_name, secrets=data)
+    if grant is None:
+        providers = data.get("providers")
+        raw = providers.get(provider_name) if isinstance(providers, dict) else None
+        if (
+            entry.api_format == "chatgpt"
+            and isinstance(raw, dict)
+            and raw.get("oauth_access_token")
+            and not raw.get("oauth_version")
+        ):
+            raise _reconnect(provider_name, "This ChatGPT sign-in predates credential binding")
+        raise _reconnect(provider_name, f"No {label}sign-in stored for provider {provider_name!r}")
+    if grant.binding != binding_fingerprint(entry):
+        raise _reconnect(
+            provider_name,
+            f"The stored {label}sign-in for {provider_name!r} was made under other provider"
+            " settings (its issuer, endpoints or base_url changed since)",
+        )
+    claimed = (
+        profile.account_id_of(_oauth_protocol.TokenGrant(grant.access_token, "", None))
+        if profile.account_id_of
+        else None
+    )
+    if claimed and grant.account_id and claimed != grant.account_id:
+        raise _reconnect(
+            provider_name,
+            f"The stored {label}sign-in for {provider_name!r} carries an account id"
+            " that does not match its own token",
+        )
+    return dataclasses.replace(grant, account_id=claimed or grant.account_id)
+
+
+def needs_refresh(
+    *, issued_at: float, expires_at: float | None, skew_s: float, now: float, cap_skew: bool = True
+) -> bool:
     """Return whether a token with this expiry should be replaced before use.
 
     Args:
         issued_at: When the token was issued, as Unix time.
         expires_at: When it expires; None means the issuer named no expiry.
-        skew_s: The configured margin, capped at half the token's lifetime.
+        skew_s: The requested margin before expiry.
         now: The clock.
+        cap_skew: Whether the margin is capped at half the lifetime.
 
     Returns:
         True inside the margin before the expiry; False for a token with no expiry.
     """
     if expires_at is None:
         return False
-    margin = min(skew_s, max(expires_at - issued_at, 0.0) / 2)
+    margin = min(skew_s, max(expires_at - issued_at, 0.0) / 2) if cap_skew else skew_s
     return now >= expires_at - margin
 
 
-def _expiry_of(
-    data: dict[str, Any], exchange: oauth_config.OAuthExchangeConfig, *, now: float
-) -> float:
-    """Return the exchanged token's expiry as Unix time.
-
-    Args:
-        data: The exchange's JSON answer.
-        exchange: The configured exchange, naming the field and its format.
-        now: The current Unix time.
-
-    Returns:
-        The expiry.
-
-    Raises:
-        ProviderError: The field is missing, not a number, or already past.
-    """
-    raw = data.get(exchange.expires_field)
-    value = None
-    if isinstance(raw, (int, float, str)) and not isinstance(raw, bool):
-        try:
-            value = float(raw)
-        except (ValueError, OverflowError):
-            value = None
-    if value is None or not math.isfinite(value):
-        raise types.ProviderError(
-            f"credential exchange answered without a usable `{exchange.expires_field}`"
-        )
-    expires_at = value if exchange.expires_format == "unix_seconds" else now + value
-    if not (expires_at > now):
-        raise types.ProviderError("credential exchange answered with a token already expired")
-    return expires_at
-
-
-def run_exchange(
-    exchange: oauth_config.OAuthExchangeConfig,
-    issuer_token: str,
-    *,
-    headers: dict[str, str] | None = None,
-    timeout_s: float = _oauth_protocol.TOKEN_TIMEOUT_S,
-    now: Callable[[], float] = time.time,
-) -> tuple[str, float]:
-    """Trade the issuer's bearer for the model endpoint's token.
-
-    Args:
-        exchange: The configured exchange.
-        issuer_token: The issuer's access token, sent as the bearer.
-        headers: Extra headers addressed to the exchange.
-        timeout_s: The request timeout.
-        now: The clock.
-
-    Returns:
-        The exchanged token and its expiry as Unix time.
-
-    Raises:
-        ProviderError: The endpoint was unreachable, redirected, refused (a 401 keeps its
-            status so the caller can refresh the issuer grant once), or answered without a
-            usable token or expiry.
-    """
-    sent = {
-        **(headers or {}),
-        "authorization": f"Bearer {issuer_token}",
-        "accept": "application/json",
-    }
-    is_get = exchange.method == "GET"
-    as_json = not is_get and exchange.request_encoding == "json"
-    form = None if is_get or as_json else parse.urlencode(exchange.parameters).encode("ascii")
-    if form is not None:
-        sent["content-type"] = "application/x-www-form-urlencoded"
-    try:
-        resp = _transport.http_request(
-            exchange.method,
-            exchange.endpoint,
-            headers=sent,
-            params=(exchange.parameters or None) if is_get else None,
-            json=exchange.parameters if as_json else None,
-            content=form,
-            timeout=timeout_s,
-            cap=_transport.CREDENTIAL_BODY_BYTES,
-        )
-    except httpx2.HTTPError as exc:
-        raise types.ProviderError(
-            f"could not reach {exchange.endpoint}:"
-            f" {_oauth_protocol.scrub(str(exc), (issuer_token,))}"
-        ) from exc
-    if 300 <= resp.status_code < 400:
-        raise types.ProviderError(
-            f"credential exchange redirected (HTTP {resp.status_code}); refusing to follow"
-            " with credentials",
-            status_code=resp.status_code,
-        )
-    if resp.status_code >= 400:
-        raise types.ProviderError(
-            f"credential exchange failed: HTTP {resp.status_code}: "
-            f"{_oauth_protocol.scrub(resp.text, (issuer_token,))[:200]}",
-            status_code=resp.status_code,
-        )
-    try:
-        data: Any = resp.json()
-    except ValueError as exc:
-        raise types.ProviderError("credential exchange returned a non-JSON body") from exc
-    token = data.get(exchange.access_token_field) if isinstance(data, dict) else None
-    if not isinstance(token, str) or not _oauth_protocol.header_safe(token):
-        raise types.ProviderError(
-            f"credential exchange answered without a usable `{exchange.access_token_field}`"
-        )
-    return token, _expiry_of(data, exchange, now=now())
-
-
 class OAuthCredential:
-    """A cached, refreshing bearer over a provider's stored configured-OAuth grant.
+    """A cached, refreshing bearer over a provider's bound OAuth grant.
 
     Thread-safe in process; the reload-refresh-save transaction holds the interprocess
     lock beside `secrets.toml`, since a rotating refresh token is single-use. A stored
@@ -220,14 +233,15 @@ class OAuthCredential:
     """
 
     __slots__ = (
+        "_account",
         "_entry",
-        "_fingerprint",
         "_force",
         "_grant",
         "_header_set",
         "_last_returned",
         "_lock",
         "_now",
+        "_profile",
         "_provider",
     )
 
@@ -235,10 +249,10 @@ class OAuthCredential:
         self, provider_name: str, entry: _OAuthEntry, *, now: Callable[[], float] = time.time
     ) -> None:
         """Bind the credential to a provider's stored sign-in; nothing is read yet."""
-        assert entry.oauth is not None
+        self._profile = profile_for(entry)
         self._provider = provider_name
         self._entry = entry
-        self._fingerprint = binding_fingerprint(entry)
+        self._account: str | None = None
         self._header_set = _headers.HeaderSet.from_config(entry.extra_headers)
         self._lock = threading.Lock()
         self._grant: secret_store.StoredGrant | None = None
@@ -246,39 +260,42 @@ class OAuthCredential:
         self._last_returned = ""
         self._now = now
 
-    @property
-    def _oauth(self) -> oauth_config.OAuthConfig:
-        oauth = self._entry.oauth
-        assert oauth is not None
-        return oauth
-
-    def _reconnect(self, why: str) -> types.ProviderError:
-        return types.ProviderError(
-            f"{why}; run `agent6 connect {self._provider}` to sign in again.", status_code=401
-        )
-
     def _stored(self) -> secret_store.StoredGrant:
-        """Load the stored grant and check its binding.
+        return self._same_account(load_bound_grant(self._provider, self._entry))
+
+    def _same_account(self, grant: secret_store.StoredGrant) -> secret_store.StoredGrant:
+        """Pin the first account and keep it when a later grant omits the claim.
+
+        Args:
+            grant: A grant whose metadata agrees with its access-token claim.
 
         Returns:
-            The grant.
+            The grant with the pinned account.
 
         Raises:
-            ProviderError: No grant is stored, or its binding differs from the configuration.
-        """
-        grant = secret_store.load_oauth_grant(self._provider)
-        if grant is None:
-            raise self._reconnect(f"No sign-in stored for provider {self._provider!r}")
-        if grant.binding != self._fingerprint:
-            raise self._reconnect(
-                f"The stored sign-in for {self._provider!r} was made under other provider"
-                " settings (its issuer, endpoints or base_url changed since)"
+            ProviderError: The grant names another account.
+        """  # noqa: DOC501  # `_reconnect` builds the ProviderError named above
+        account = grant.account_id
+        if not self._account:
+            self._account = account
+        elif account and account != self._account:
+            label = f"{self._profile.label} " if self._profile.label else ""
+            raise _reconnect(
+                self._provider,
+                f"The stored {label}sign-in for {self._provider!r} belongs to a different"
+                " account than this run started under",
             )
-        return grant
+        return dataclasses.replace(grant, account_id=self._account)
+
+    def account_id(self) -> str:
+        """Return the pinned account id, or an empty string when none is known."""
+        with self._lock:
+            self._grant = self._grant or self._stored()
+            return self._grant.account_id or ""
 
     def _bearer(self, grant: secret_store.StoredGrant) -> str:
         """Return the token the model endpoint takes from a grant."""
-        return grant.exchange_access_token if self._oauth.exchange else grant.access_token
+        return grant.exchange_access_token if self._profile.exchange else grant.access_token
 
     def _adopt(self, grant: secret_store.StoredGrant) -> str:
         self._grant = grant
@@ -289,8 +306,8 @@ class OAuthCredential:
     def _fresh(self, grant: secret_store.StoredGrant) -> bool:
         """Return whether the grant's bearer can be sent as it is."""
         now = self._now()
-        skew = self._oauth.refresh_skew_s
-        if self._oauth.exchange:
+        skew = self._profile.refresh_skew_s
+        if self._profile.exchange:
             if not grant.exchange_access_token:
                 return False
             return not needs_refresh(
@@ -299,8 +316,18 @@ class OAuthCredential:
                 skew_s=skew,
                 now=now,
             )
-        return not needs_refresh(
-            issued_at=grant.issued_at, expires_at=grant.expires_at, skew_s=skew, now=now
+        return not self._issuer_stale(grant)
+
+    def _issuer_stale(self, grant: secret_store.StoredGrant) -> bool:
+        expires_at = grant.expires_at
+        if expires_at is None and self._profile.default_expires_in is not None:
+            expires_at = grant.issued_at + self._profile.default_expires_in
+        return needs_refresh(
+            issued_at=grant.issued_at,
+            expires_at=expires_at,
+            skew_s=self._profile.refresh_skew_s,
+            now=self._now(),
+            cap_skew=self._profile.cap_refresh_skew,
         )
 
     def token(self) -> str:
@@ -342,14 +369,8 @@ class OAuthCredential:
             ProviderError: A refresh or an exchange failed, or an expired grant has no
                 refresh token.
         """
-        oauth = self._oauth
-        now = self._now()
-        issuer_stale = needs_refresh(
-            issued_at=grant.issued_at,
-            expires_at=grant.expires_at,
-            skew_s=oauth.refresh_skew_s,
-            now=now,
-        )
+        oauth = self._profile
+        issuer_stale = self._issuer_stale(grant)
         if issuer_stale or (self._force and not oauth.exchange):
             grant = self._refresh_issuer(grant)
         if not oauth.exchange:
@@ -373,32 +394,35 @@ class OAuthCredential:
 
         Raises:
             ProviderError: The grant has no refresh token, or the issuer refused.
-        """
+            OAuthError: The issuer refused and no usable sibling grant rescued the rotation.
+        """  # noqa: DOC501  # `_reconnect` builds the ProviderError named above
         if not grant.refresh_token:
-            raise self._reconnect(
-                f"The sign-in for {self._provider!r} has expired and carries no refresh token"
+            raise _reconnect(
+                self._provider,
+                f"The sign-in for {self._provider!r} has expired and carries no refresh token",
             )
-        oauth = self._oauth
-        fresh = _oauth_protocol.refresh_grant(
-            oauth.token_endpoint,
-            oauth.client_id,
-            grant.refresh_token,
-            provider=self._provider,
-            label=self._provider,
-            encoding=oauth.request_encoding,
-            headers=self._header_set.renderer("oauth"),
-        )
-        now = self._now()
-        renewed = secret_store.StoredGrant(
-            binding=grant.binding,
-            access_token=fresh.access_token,
-            # A refresh that omits the rotated token keeps the previous one.
-            refresh_token=fresh.refresh_token or grant.refresh_token,
-            issued_at=now,
-            expires_at=now + fresh.expires_in if fresh.expires_in is not None else None,
-            exchange_access_token="",
-            exchange_issued_at=0.0,
-            exchange_expires_at=None,
+        oauth = self._profile
+        try:
+            fresh = _oauth_protocol.refresh_grant(
+                oauth.token_endpoint,
+                oauth.client_id,
+                grant.refresh_token,
+                provider=self._provider,
+                label=oauth.label or self._provider,
+                encoding=oauth.request_encoding,
+                headers=self._header_set.renderer("oauth"),
+            )
+        except _oauth_protocol.OAuthError as exc:
+            if exc.code != "refresh_token_reused":
+                raise
+            # A rotation on another host can reach the secrets file after this host's refusal.
+            time.sleep(1.0)
+            rescued = self._stored()
+            if rescued.access_token == grant.access_token or self._issuer_stale(rescued):
+                raise
+            return rescued
+        renewed = self._same_account(
+            stored_grant_for(fresh, self._entry, now=self._now(), previous=grant)
         )
         secret_store.save_oauth_grant(self._provider, renewed)
         return renewed
@@ -415,18 +439,14 @@ class OAuthCredential:
         Returns:
             The grant with the exchanged token.
         """
-        token, expires_at = run_exchange(
+        token, expires_at = _oauth_exchange.run_exchange(
             exchange,
             grant.access_token,
             headers=self._header_set.render(_headers.plain_facts("exchange")),
             now=self._now,
         )
-        renewed = secret_store.StoredGrant(
-            binding=grant.binding,
-            access_token=grant.access_token,
-            refresh_token=grant.refresh_token,
-            issued_at=grant.issued_at,
-            expires_at=grant.expires_at,
+        renewed = dataclasses.replace(
+            grant,
             exchange_access_token=token,
             exchange_issued_at=self._now(),
             exchange_expires_at=expires_at,
@@ -446,25 +466,41 @@ class OAuthCredential:
 
 
 def stored_grant_for(
-    grant: _oauth_protocol.TokenGrant, entry: _OAuthEntry, *, now: float
+    grant: _oauth_protocol.TokenGrant,
+    entry: _OAuthEntry,
+    *,
+    now: float,
+    previous: secret_store.StoredGrant | None = None,
 ) -> secret_store.StoredGrant:
     """Return the grant `agent6 connect` stores after a sign-in, bound to the entry.
 
     Args:
         grant: The issuer's grant.
-        entry: The provider entry, whose `oauth` is set.
-        now: The Unix time of the sign-in.
+        entry: The provider entry with configured OAuth or the ChatGPT format.
+        now: The Unix time of the sign-in or refresh.
+        previous: The grant being refreshed; omitted tokens and account claims carry over.
 
     Returns:
         The grant to store, its exchange fields empty.
+
+    Raises:
+        ProviderError: The profile requires an initial refresh token and the grant has none.
     """
+    profile = profile_for(entry)
+    if previous is None and profile.require_refresh_token and not grant.refresh_token.strip():
+        raise types.ProviderError(
+            f"{profile.label or 'OAuth'} token exchange response carried no refresh_token"
+        )
+    lifetime = grant.expires_in if grant.expires_in is not None else profile.default_expires_in
+    account = profile.account_id_of(grant) if profile.account_id_of else None
     return secret_store.StoredGrant(
         binding=binding_fingerprint(entry),
         access_token=grant.access_token,
-        refresh_token=grant.refresh_token,
+        refresh_token=grant.refresh_token or (previous.refresh_token if previous else ""),
         issued_at=now,
-        expires_at=now + grant.expires_in if grant.expires_in is not None else None,
+        expires_at=now + lifetime if lifetime is not None else None,
         exchange_access_token="",
         exchange_issued_at=0.0,
         exchange_expires_at=None,
+        account_id=account or (previous.account_id if previous else None),
     )

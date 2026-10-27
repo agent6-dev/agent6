@@ -530,6 +530,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 ### 8. Secrets and `connect`
 
 - Provider keys live in `$XDG_CONFIG_HOME/agent6/secrets.toml`, `0600` and owner-only (refused if group- or other-readable, or foreign-owned; opened without following a link and judged by the descriptor it opened; rewritten only under its sibling lock), or come from `[providers.<name>].api_key_env` (env wins).
+- Bound `StoredGrant` records may carry an `account_id`; records without it remain readable.
+  Raw id tokens and plan labels are not stored.
 - A configured issuer (`[providers.<name>].oauth`) names the only other hosts a sign-in dials: its endpoints are https, or plain http on a literal loopback address, carry no userinfo or fragment, and are never discovered; the stored grant is bound to those settings and to the entry's transport settings (`base_url`, `deployment`, `auth_style`, `extra_query`, `extra_headers`).
     - the grant is sent only while its binding matches the entry's transport and issuer settings; a mismatch refuses before any request, naming `agent6 connect <name>`
     - a refresh or a second exchange runs under the secrets file's lock, follows no redirect, and scrubs the tokens it sent from any error
@@ -551,6 +553,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - `agent6 connect chatgpt` is a PKCE OAuth sign-in
     - a browser hits the authorize page of OpenAI's fixed OAuth authority (a constant, not config); the code returns on `localhost:1455` (or is pasted), state-checked either way
     - token exchange and refreshes `POST` only to the authority's `/oauth/token`
+    - the device flow posts JSON to `/api/accounts/deviceauth/usercode` and `/api/accounts/deviceauth/token`, then exchanges the returned code and verifier as a form with `/deviceauth/callback` as its redirect.
+    - device requests refuse redirects, validate displayed codes as visible ASCII of at most 64 characters, and scrub both submitted codes from errors.
     - tokens live in `secrets.toml` under the same `0600` and executes-nothing rules
     - agent6 never sends a rating or feedback on a response and has no rating surface.
       The backend may use rated turns for training, and that choice is never made on the operator's behalf

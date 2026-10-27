@@ -209,6 +209,23 @@ A finish-time check reports any ruling missing from the file.
 **The terminal tool** is `finish_session(summary)` in run mode and `finish_planning` in plan mode; ask mode has neither and ends on its final prose.
 Either call emits a `session.end` event and returns control to the CLI.
 
+## OAuth credentials
+
+`providers/oauth.py` resolves configured issuers and the fixed ChatGPT registration through `profile_for(entry)` into a frozen `OAuthProfile`.
+The profile holds endpoints, encodings, callback settings, an account extractor and grant policies.
+The registered ChatGPT redirect is `http://localhost:1455/auth/callback`; its listener host is `127.0.0.1`.
+Configured redirect validation accepts only loopback literals.
+
+`load_bound_grant(provider_name, entry, secrets=...)` validates a stored binding and account claim without refreshing or writing.
+`OAuthCredential` pins the first account, preserves an omitted account on refresh, and refuses a different account on refresh, sibling adoption or rescue.
+A classified `OAuthError.code` of `refresh_token_reused` permits one reread after one second, accepting only a different, fresh, binding-valid, same-account grant.
+The other classified codes are `refresh_token_expired`, `refresh_token_invalidated` and `invalid_grant`; unclassified refusals have `code=None`.
+`_oauth_exchange.py` owns the optional second exchange and its expiry parser.
+
+Configured issuers use `OAuthCredential` and `StoredGrant`.
+The shared holder also accepts the fixed ChatGPT profile, but ChatGPT consumers and connect use `ChatGPTCredential` and `OAuthTokens`.
+The bound store's security rules are in [Security](security.md#8-secrets-and-connect).
+
 ## Tool dispatch
 
 Every LLM tool call passes the same gates: audit events wrap it, the mode backstop refuses an out-of-surface name, MCP calls take an approval, and the handler table routes the rest by name.
@@ -563,7 +580,7 @@ A `run_command` approval publishes as `approval.prompt`.
 | Run-dir single-writer lock | [sessions/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lock.py) |
 | Compare judge | [harness/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py) |
 | Fan-out orchestrator | [app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) (pipeline), [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) (lanes), [app/_parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_parallel_results.py) (import and comparison reporting), [app/_workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_workdirs.py) (working directories), [ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
-| Provider clients | [providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers) (`claude_code.py` orchestrates rounds; `_claude_code_protocol.py` handles control messages and tool continuations; `_claude_code_session.py` owns session state and pipe I/O; `_claude_code_stream.py` folds stream events and scrubs email; `_claude_code_wire.py` holds wire shapes) |
+| Provider clients | [providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers) (`oauth.py` holds bound grants; `_oauth_profile.py` holds resolved settings and identity and expiry policies; `_oauth_exchange.py` exchanges issuer bearers for model tokens; `claude_code.py` orchestrates rounds; `_claude_code_protocol.py` handles control messages and tool continuations; `_claude_code_session.py` owns session state and pipe I/O; `_claude_code_stream.py` folds stream events and scrubs email; `_claude_code_wire.py` holds wire shapes) |
 | Task graph | [graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph) |
 | Event log and fold | [event_log.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/event_log.py) (writer), [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (fold) |
 | Front-end write bridge | [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py), [ui/notify.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/notify.py), [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) |
