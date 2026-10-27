@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import pathlib
 import re
+import tomllib
 from collections.abc import Iterator
 
 _SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6"
@@ -89,6 +90,14 @@ def test_a_multi_line_docstring_has_the_sections_its_function_needs() -> None:
                 where = path.relative_to(_SRC.parents[1])
                 missing.append(f"{where}:{fn.lineno} {fn.name}: {', '.join(sorted(absent))}")
     assert not missing, f"{len(missing)} docstrings miss a section:\n" + "\n".join(missing)
+
+
+def test_ruff_requires_imperative_summaries() -> None:
+    """The Google convention disables D401 unless its exact code is selected."""
+    config = tomllib.loads((_SRC.parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+    lint = config["tool"]["ruff"]["lint"]
+    assert "D401" in lint["select"]
+    assert "D401" not in lint["ignore"]
 
 
 def _parsed(source: str) -> ast.FunctionDef:

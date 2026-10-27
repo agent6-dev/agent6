@@ -108,6 +108,7 @@ select = [
     "B",      # bugbear
     "C90",    # complexity: the hard bound
     "D",      # docstrings in the Google shape
+    "D401",   # imperative summaries; the Google convention leaves this rule off
     "DOC201", # a Returns section where a value is returned
     "DOC402", # a Yields section where a value is yielded
     "DOC501", # a Raises section for what is raised
@@ -539,8 +540,8 @@ banned-from = [
 "hatch_build.py" = ["ANN", "D", "DOC", "ICN003"]
 # page.py composes embedded HTML asset strings; line length is meaningless there.
 "src/agent6/ui/web/page.py" = ["E501"]
-# A test module, class or function needs no docstring; one that has one names the regression.
-"tests/**" = ["ANN", "B017", "D1", "DOC", "PLC0415", "PLR0915", "PLR2004", "S"]
+# A test docstring names the regression in the declarative mood; docstrings are optional.
+"tests/**" = ["ANN", "B017", "D1", "D401", "DOC", "PLC0415", "PLR0915", "PLR2004", "S"]
 
 [tool.pyright]
 include = ["docs/gen_contracts.py", "src", "tests"]

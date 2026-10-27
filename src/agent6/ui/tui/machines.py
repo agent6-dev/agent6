@@ -237,7 +237,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         return None
 
     def on_key(self, event: events.Key) -> None:
-        """A dimmed verb's key shows its refusal; a stop's is the CLI's note."""
+        """Show a dimmed verb's refusal on keypress, using the CLI's note for a stop."""
         verb = self._verb_for_key(event.key)
         if verb is None or not self._refusals[verb]:
             return
