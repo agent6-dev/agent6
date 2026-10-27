@@ -365,6 +365,15 @@ Every browser [signs in](web.md#sign-in) with the server's secret.
 
 <!-- config-table: web -->
 
+## `[telemetry]`
+
+What `agent6 telemetry export` sends, and where ([Telemetry export](usage.md#telemetry-export)).
+Off by default: no signal is selected, nothing is dialled, no socket is opened.
+The exporter is a separate process the operator starts; a run never exports its own events.
+Header values live in `secrets.toml` under `[telemetry.headers]`, never in config.
+
+<!-- config-table: telemetry -->
+
 ## `[parallel]`
 
 Lane limit for `run --parallel N|[provider/]model,...`.

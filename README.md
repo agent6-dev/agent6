@@ -9,7 +9,7 @@
 - Runs [parallel attempts][parallel-runs] in isolated clones with `--parallel N` or a list of models, then ranks the results for you to choose which to merge.
 - Defines long-running workflows in editable [TOML state machines][state-machines], combining agent runs, tool calls, waits, and branches with offline tests, crash recovery, and replay from recorded results.
 - Supports repository `AGENTS.md` instructions, [SKILL.md packs][skills], [MCP servers][mcp], and background commands for development servers and watchers.
-- Eight runtime dependencies, no telemetry, and no automatic updates.
+- Eight runtime dependencies, no telemetry unless you configure an export, and no automatic updates.
 <!-- --8<-- [end:overview] -->
 
 <table>

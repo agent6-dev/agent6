@@ -14,11 +14,18 @@ from __future__ import annotations
 import dataclasses
 import os
 import pathlib
+import re
 import stat
 import tomllib
+from collections.abc import Iterable
 from typing import Any
 
 from agent6 import paths, portable
+
+# A TOML bare key; any other header name is written quoted.
+_BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
+# What a header value may hold on the wire: visible ASCII and spaces.
+_HEADER_VALUE = re.compile(r"[\x20-\x7e]+")
 
 
 class SecretsError(Exception):
@@ -105,6 +112,45 @@ def resolve_api_key(
             if isinstance(key, str) and key.strip():
                 return key.strip()
     return None
+
+
+def telemetry_headers(
+    names: Iterable[str],
+    *,
+    secrets: dict[str, Any] | None = None,
+    user: paths.RealUser | None = None,
+) -> dict[str, str]:
+    """Return the telemetry export's headers, each value from `[telemetry.headers]`.
+
+    Args:
+        names: The header names `[telemetry].headers` configures.
+        secrets: The loaded secrets; None loads the file.
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        The headers, name to value.
+
+    Raises:
+        SecretsError: A named header has no value in the secrets file.
+    """
+    data = secrets if secrets is not None else load_secrets(user)
+    table = data.get("telemetry")
+    values = table.get("headers") if isinstance(table, dict) else None
+    out: dict[str, str] = {}
+    for name in names:
+        value = values.get(name) if isinstance(values, dict) else None
+        if not isinstance(value, str) or not value.strip():
+            raise SecretsError(
+                f'telemetry header {name!r} has no value: add `{name} = "..."` under'
+                f" [telemetry.headers] in {paths.secrets_path(user)}"
+            )
+        if not _HEADER_VALUE.fullmatch(value.strip()):
+            raise SecretsError(
+                f"telemetry header {name!r} has a value outside visible ASCII; a header value"
+                " carries no control character and no non-ASCII text"
+            )
+        out[name] = value.strip()
+    return out
 
 
 def save_secret(
@@ -297,4 +343,14 @@ def _render_secrets_toml(data: dict[str, Any]) -> str:
                 if isinstance(value, str):
                     lines.append(f"{field} = {portable.toml_basic_string(value)}")
             lines.append("")
+    telemetry = data.get("telemetry")
+    headers = telemetry.get("headers") if isinstance(telemetry, dict) else None
+    if isinstance(headers, dict) and headers:
+        lines.append("[telemetry.headers]")
+        for name in sorted(headers):
+            value = headers[name]
+            if isinstance(value, str):
+                key = name if _BARE_KEY.fullmatch(name) else portable.toml_basic_string(name)
+                lines.append(f"{key} = {portable.toml_basic_string(value)}")
+        lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"

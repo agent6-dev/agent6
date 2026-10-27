@@ -152,6 +152,7 @@ class Config(pydantic.BaseModel):
     notify: _surfaces.NotifyConfig = pydantic.Field(default_factory=_surfaces.NotifyConfig)
     mcp: _sandbox.MCPConfig = pydantic.Field(default_factory=_sandbox.MCPConfig)
     web: _surfaces.WebConfig = pydantic.Field(default_factory=_surfaces.WebConfig)
+    telemetry: _surfaces.TelemetryConfig = pydantic.Field(default_factory=_surfaces.TelemetryConfig)
     parallel: _surfaces.ParallelConfig = pydantic.Field(default_factory=_surfaces.ParallelConfig)
     workspace: _surfaces.WorkspaceConfig = pydantic.Field(default_factory=_surfaces.WorkspaceConfig)
     # The injection order and stacking rules live in config._presets.apply_preset.

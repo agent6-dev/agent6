@@ -937,6 +937,13 @@ def _dispatch_ps(args: argparse.Namespace) -> int:
     return ps_cmd.cmd_ps(as_json=args.json, lanes=args.lanes)
 
 
+def _dispatch_telemetry(args: argparse.Namespace) -> int:
+    """Return the exit code of `agent6 telemetry export`."""
+    from agent6.ui.cli import telemetry_cmds
+
+    return telemetry_cmds.cmd_export(args.config, args.session, follow=args.follow)
+
+
 def _dispatch_history(args: argparse.Namespace) -> int:
     """Return the exit code of a `agent6 history` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.ui.cli import history_cmds
@@ -1092,6 +1099,7 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "memory": _dispatch_memory,
     "skills": _dispatch_skills,
     "history": _dispatch_history,
+    "telemetry": _dispatch_telemetry,
     "ps": _dispatch_ps,
     "init": _dispatch_init,
     "review": _dispatch_review,

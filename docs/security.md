@@ -346,6 +346,11 @@ Do not grant all of your host `~/.cargo` just for its cache: it can contain regi
 The agent process's own egress is unbounded.
 Everything below bounds a child of it.
 
+`agent6 telemetry export` is host egress too: it dials `[telemetry].endpoint` from the agent6 process with the header values `secrets.toml` holds, outside `sandbox.network`, and only when the operator selected a signal.
+The default capture carries outcomes, counts, timings and the journal's ids; `capture = "content"` adds the capped excerpts `telemetry.capture` lists ([config](config.md#telemetry)), which can hold anything a run saw.
+The export dials the endpoint directly: no proxy is taken from the environment, so a plaintext loopback endpoint stays on loopback.
+A plaintext endpoint is accepted on loopback only; the Prometheus textfile is written atomically to the operator's path, and nothing serves it.
+
 A `claude_code` provider's child dials `api.anthropic.com` and `claude.ai` (login refresh) from the agent process; telemetry, crash reporting, and update hosts are disabled by its environment.
 While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, reachable from a jailed command only under `partial` `sandbox.isolation`, whose `/tmp` is the host's.
 
@@ -440,7 +445,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Finding text and resolution reasons enter the browser as text, not HTML.
   This excludes a concurrent resume or offline disposition without a separate journal lock.
 - PWA assets are static and the service worker is a no-op passthrough (no Web Push, no VAPID).
-  No telemetry, no auto-update, no remote control plane.
+  No telemetry unless the operator runs `agent6 telemetry export` against a configured `[telemetry]` destination ([Telemetry export](usage.md#telemetry-export)); no auto-update, no remote control plane.
 
 ### 6. Approvals
 

@@ -126,6 +126,7 @@ depends_on = [
   "agent6.ui.notify",
   "agent6.ui.spawn",
   "agent6.ui.steer",
+  "agent6.ui.telemetry",
   "agent6.ui.tui",
   "agent6.ui.web",
   "agent6.vcs.commit_message",
@@ -281,6 +282,11 @@ depends_on = []
 path = "agent6.ui.telemetry"
 depends_on = [
   "agent6",
+  "agent6.config",
+  "agent6.paths",
+  "agent6.portable",
+  "agent6.sessions.layout",
+  "agent6.sessions.process",
   "agent6.viewmodel",
 ]
 

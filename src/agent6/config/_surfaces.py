@@ -8,6 +8,9 @@
 from __future__ import annotations
 
 import ipaddress
+import pathlib
+import re
+import urllib.parse
 from typing import Literal
 
 import pydantic
@@ -191,6 +194,125 @@ class WebConfig(pydantic.BaseModel):
                 " allow_non_loopback = true to opt in (and prefer `tailscale serve`"
                 " in front of a 127.0.0.1 bind instead)."
             )
+        return self
+
+
+# A header name is an RFC 9110 token; the transport owns the framing headers.
+_HEADER_TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+_TRANSPORT_HEADERS = frozenset(
+    {
+        "connection",
+        "content-encoding",
+        "content-length",
+        "content-type",
+        "host",
+        "transfer-encoding",
+    }
+)
+
+
+class TelemetryConfig(pydantic.BaseModel):
+    """The `[telemetry]` table: what `agent6 telemetry export` sends, and where.
+
+    Off by default: no signal is selected, no endpoint is dialled, no socket is opened. The
+    exporter is a separate operator-started process that reads session journals; a run never
+    exports its own events. Header values live in `secrets.toml` under `[telemetry.headers]`.
+    """
+
+    model_config = _base.MODEL_CONFIG
+
+    traces: Literal["none", "otlp"] = pydantic.Field(
+        default="none",
+        description="Where spans go: `otlp` posts them to `endpoint`.",
+    )
+    metrics: Literal["none", "otlp", "prometheus"] = pydantic.Field(
+        default="none",
+        description=(
+            "Where metrics go: `otlp` posts them to `endpoint`; `prometheus` writes "
+            "`prometheus_file` for node_exporter's textfile collector."
+        ),
+    )
+    logs: Literal["none", "otlp"] = pydantic.Field(
+        default="none",
+        description=(
+            "Where the significant events go as log records: `otlp` posts them to `endpoint`."
+        ),
+    )
+    endpoint: str = pydantic.Field(
+        default="",
+        description=(
+            "The OTLP/HTTP base URL; `/v1/traces`, `/v1/metrics` and `/v1/logs` are appended; "
+            "`https://`, or `http://` to a loopback host"
+        ),
+    )
+    headers: _base.StrTuple = pydantic.Field(
+        default=(),
+        description=(
+            "Header names sent with every export; each value comes from `[telemetry.headers]` "
+            "in `secrets.toml`."
+        ),
+    )
+    capture: Literal["metadata", "content"] = pydantic.Field(
+        default="metadata",
+        description=(
+            "`metadata` exports outcomes, counts, timings and ids; `content` adds capped "
+            "excerpts of the task, steers, tool arguments, the gate command, model errors, "
+            "finding titles and degradation details."
+        ),
+    )
+    prometheus_file: str = pydantic.Field(
+        default="",
+        description=(
+            'The absolute path `metrics = "prometheus"` writes atomically, in a directory '
+            "node_exporter's textfile collector reads."
+        ),
+    )
+
+    @property
+    def otlp(self) -> bool:
+        """Return whether any signal goes to the OTLP endpoint."""
+        return "otlp" in (self.traces, self.metrics, self.logs)
+
+    @pydantic.model_validator(mode="after")
+    def _destinations(self) -> TelemetryConfig:
+        """Refuse a selected signal without its destination, and a destination that would leak.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: An OTLP signal without an endpoint, an endpoint that is not an
+                http(s) URL, a plaintext endpoint off loopback, a Prometheus textfile that is
+                not an absolute path, or a header name the transport owns.
+        """
+        if self.otlp:
+            parts = urllib.parse.urlsplit(self.endpoint)
+            host = parts.hostname or ""
+            if not self.endpoint:
+                raise ValueError(
+                    "[telemetry] selects otlp without an endpoint; set telemetry.endpoint"
+                )
+            if parts.scheme not in ("http", "https") or not host:
+                raise ValueError(
+                    f"[telemetry].endpoint = {self.endpoint!r} is not an http(s) URL with a host"
+                )
+            if parts.scheme == "http" and not is_loopback_host(host):
+                raise ValueError(
+                    f"[telemetry].endpoint = {self.endpoint!r} is plaintext to a non-loopback"
+                    " host; use https://"
+                )
+        if (
+            self.metrics == "prometheus"
+            and not pathlib.PurePosixPath(self.prometheus_file).is_absolute()
+        ):
+            raise ValueError(
+                '[telemetry].metrics = "prometheus" needs an absolute telemetry.prometheus_file'
+            )
+        for name in self.headers:
+            if not _HEADER_TOKEN.fullmatch(name) or name.lower() in _TRANSPORT_HEADERS:
+                raise ValueError(
+                    f"[telemetry].headers names {name!r}, which is not a header the export may set"
+                )
         return self
 
 

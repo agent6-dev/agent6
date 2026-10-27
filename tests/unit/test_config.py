@@ -103,6 +103,35 @@ def test_workspace_base_dir_replaces_parallel_workdir() -> None:
     assert Config.model_validate({"workspace": {"base_dir": "/x"}}).workspace.base_dir == "/x"
 
 
+def test_telemetry_is_off_by_default_and_a_selected_signal_needs_its_destination() -> None:
+    """Nothing is exported unless a signal is selected; a selection names a safe destination."""
+    telemetry = Config().telemetry
+    assert (telemetry.traces, telemetry.metrics, telemetry.logs) == ("none", "none", "none")
+    assert telemetry.capture == "metadata" and telemetry.otlp is False
+    with pytest.raises(pydantic.ValidationError, match="without an endpoint"):
+        Config.model_validate({"telemetry": {"traces": "otlp"}})
+    with pytest.raises(pydantic.ValidationError, match="plaintext to a non-loopback"):
+        Config.model_validate({"telemetry": {"logs": "otlp", "endpoint": "http://collector:4318"}})
+    with pytest.raises(pydantic.ValidationError, match=r"not an http\(s\) URL"):
+        Config.model_validate({"telemetry": {"metrics": "otlp", "endpoint": "collector:4318"}})
+    with pytest.raises(pydantic.ValidationError, match=r"absolute telemetry\.prometheus_file"):
+        Config.model_validate({"telemetry": {"metrics": "prometheus", "prometheus_file": "x.prom"}})
+    with pytest.raises(pydantic.ValidationError, match="not a header the export may set"):
+        Config.model_validate(
+            {"telemetry": {"traces": "otlp", "endpoint": "https://c", "headers": ["Host"]}}
+        )
+    loopback = Config.model_validate(
+        {
+            "telemetry": {
+                "traces": "otlp",
+                "endpoint": "http://127.0.0.1:4318",
+                "headers": ["Authorization", "X-Scope-OrgID"],
+            }
+        }
+    ).telemetry
+    assert loopback.otlp and loopback.headers == ("Authorization", "X-Scope-OrgID")
+
+
 def test_security_field_defaults_to_safe_value(tmp_path: pathlib.Path) -> None:
     # protect_git is a security field: omitted, it defaults to the safe value.
     body = _VALID_TOML.replace('protect_git = "on"\n', "")

@@ -179,25 +179,27 @@ def fsync_dir(path: pathlib.Path) -> None:
         os.close(fd)
 
 
-def atomic_write(path: pathlib.Path, data: str | bytes) -> None:
+def atomic_write(path: pathlib.Path, data: str | bytes, *, mode: int | None = None) -> None:
     """Write a file through a temp file beside it and a durable rename.
 
     The temp file is fsynced before the rename and the parent after it, so a crash
-    cannot lose the new entry. An existing target keeps its mode; a new file keeps
-    mkstemp's owner-only 0600.
+    cannot lose the new entry. The mode is set on the temp file before the rename, never
+    on the destination path: `mode` when given, else an existing target's, else mkstemp's
+    owner-only 0600.
 
     Args:
         path: The file.
         data: Its content.
+        mode: The file mode the rename lands with; None keeps the rule above.
     """
     _ensure_parent_dirs(path.parent)
     fd = -1
     tmp_name = ""
     try:
         fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-        mode = _existing_mode(path)
-        if sys.platform != "win32" and mode is not None:
-            os.fchmod(fd, mode)
+        wanted = mode if mode is not None else _existing_mode(path)
+        if sys.platform != "win32" and wanted is not None:
+            os.fchmod(fd, wanted)
         if isinstance(data, bytes):
             with os.fdopen(fd, "wb") as fh:
                 fd = -1

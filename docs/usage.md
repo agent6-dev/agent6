@@ -448,6 +448,34 @@ The reversal needs its own checks; the original receipt does not certify a merge
 - The verify gate is settled in your checkout and carried into the workspace: a gate inferred as `.venv/bin/python -m pytest -q` stays that.
 - A gate whose first word is a path git does not track, with no setup command, refuses `run --worktree`, `fork` and `run --parallel` before anything is created; the refusal names the path, the config line and the AGENTS.md block.
 
+## Telemetry export
+
+`agent6 telemetry export` reads this repository's session journals and delivers what `[telemetry]` selects: spans for each execution, turn, model call, tool call, verification, review panel and operator wait; cumulative metrics (tokens, cost, plan points, tool calls, verification outcomes and durations, findings, approvals, waits); and log records for the significant events.
+Nothing is exported until a signal is selected; a run never exports its own events.
+
+```toml
+[telemetry]
+traces = "otlp"               # spans to the endpoint
+metrics = "prometheus"        # or "otlp"; the textfile below for node_exporter
+logs = "otlp"                 # the significant events as log records
+endpoint = "https://collector.example:4318"
+headers = ["Authorization"]   # values in secrets.toml under [telemetry.headers]
+prometheus_file = "/var/lib/node_exporter/textfile/agent6.prom"
+```
+
+```sh
+agent6 telemetry export                 # every session with a journal, once
+agent6 telemetry export <id> --follow   # one session, as its journal grows
+agent6 config show telemetry            # every key with its origin
+```
+
+- A cursor per endpoint and session keeps a re-run from re-sending delivered spans and log records; the metrics reading is always the whole cumulative snapshot, and the Prometheus file is rewritten whole.
+- The default `capture = "metadata"` exports outcomes, counts, timings and the journal's ids, never the task, arguments, outputs or diffs; `capture = "content"` adds the capped excerpts `telemetry.capture` lists ([config](config.md#telemetry)).
+- `--follow` posts what it holds every five seconds while events arrive and once more on Ctrl-C; a live run's unfinished work is sent when the run finishes it, not at the export's end.
+  A crashed run's unfinished work is sent once, marked incomplete; a resume of that run sends it again with the resume as its end.
+- A request the collector answers with 429, 502, 503 or 504 is tried three times with backoff; any other refusal turns the endpoint off for that export, and the command exits 1 naming it.
+- `agent6_plan_observed_points_total` counts the plan-window movement a run observed, which is the account's whole window; it is not this run's billing.
+
 ## Other commands
 
 ```sh

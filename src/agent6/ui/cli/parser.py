@@ -28,6 +28,7 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
     "plan": ("run", frozenset({"run", "show", "edit"})),
     "ask": ("query", frozenset({"query"})),
     "history": ("search", frozenset({"search"})),
+    "telemetry": ("export", frozenset({"export"})),
     "skills": ("list", frozenset({"install", "update", "list", "enable", "disable", "remove"})),
     "memory": ("list", frozenset({"add", "list", "show", "rm", "decisions"})),
     "mcp": ("list", frozenset({"add", "list", "remove", "serve"})),
@@ -202,7 +203,7 @@ COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("work", ("run", "plan", "ask", "resume", "fork", "review", "machine")),
     ("control", ("attach", "steer", "stop", "answer", "exec", "forward")),
     ("front-ends", ("tui", "web", "acp")),
-    ("sessions", ("sessions", "ps", "history")),
+    ("sessions", ("sessions", "ps", "history", "telemetry")),
     ("context", ("prompt", "skills", "memory")),
     ("tools", ("mcp",)),
     ("setup", ("init", "connect", "model", "config", "check", "completions", "system")),
@@ -334,6 +335,36 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Restrict to a single session id (default: every session of this repository).",
     )
     hist_search_session.completer = completers._complete_session_ids  # type: ignore[attr-defined]
+
+    tele_p = _common._sub(
+        sub,
+        "telemetry",
+        help=(
+            "Export this repository's session journals as OpenTelemetry signals or a"
+            " Prometheus textfile, as `[telemetry]` selects."
+        ),
+    )
+    tele_sub = tele_p.add_subparsers(
+        dest="telemetry_command", required=True, metavar="<subcommand>"
+    )
+    tele_export = _common._sub(
+        tele_sub,
+        "export",
+        help="Read the journals once and deliver their spans, metrics and log records.",
+    )
+    tele_session = tele_export.add_argument(
+        "session",
+        nargs="?",
+        default="",
+        metavar="SESSION_ID",
+        help="One session to export (default: every session with a journal).",
+    )
+    tele_session.completer = completers._complete_session_ids  # type: ignore[attr-defined]
+    tele_export.add_argument(
+        "--follow",
+        action="store_true",
+        help="Keep reading the named session's journal as it grows, until interrupted.",
+    )
 
     _watch_args._add_tui_parser(sub)
 

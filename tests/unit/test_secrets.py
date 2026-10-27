@@ -42,6 +42,30 @@ def test_an_unreadable_secrets_file_is_a_named_refusal(gcfg: pathlib.Path) -> No
         path.chmod(0o600)
 
 
+def test_telemetry_headers_resolve_from_their_table_and_survive_a_provider_save(
+    gcfg: pathlib.Path,
+) -> None:
+    """Header values live under `[telemetry.headers]`; a missing one is named; a save keeps them."""
+    path = secret_store.save_secret("anthropic", "sk-ant-xyz")
+    with pytest.raises(secret_store.SecretsError, match=r"\[telemetry.headers\]"):
+        secret_store.telemetry_headers(("Authorization",))
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + '\n[telemetry.headers]\nAuthorization = "Bearer t"\n"X-Scope-OrgID" = "team"\n',
+        encoding="utf-8",
+    )
+    assert secret_store.telemetry_headers(("Authorization", "X-Scope-OrgID")) == {
+        "Authorization": "Bearer t",
+        "X-Scope-OrgID": "team",
+    }
+    secret_store.save_secret("openai", "sk-oai")
+    assert secret_store.telemetry_headers(("X-Scope-OrgID",)) == {"X-Scope-OrgID": "team"}
+    assert secret_store.resolve_api_key("anthropic", None) == "sk-ant-xyz"
+    smuggled = {"telemetry": {"headers": {"Authorization": "a\r\nX-Evil: 1"}}}
+    with pytest.raises(secret_store.SecretsError, match="outside visible ASCII"):
+        secret_store.telemetry_headers(("Authorization",), secrets=smuggled)
+
+
 def test_save_secret_preserves_other_providers(gcfg: pathlib.Path) -> None:
     secret_store.save_secret("anthropic", "sk-ant-1")
     secret_store.save_secret("openrouter", "sk-or-2")

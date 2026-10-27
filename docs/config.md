@@ -493,6 +493,23 @@ Every browser [signs in](web.md#sign-in) with the server's secret.
 | `port` | `7658` | Port `agent6 web` listens on. |
 | `allow_non_loopback` | `false` | Allow `host` to be a non-loopback address, so a typo can never silently expose the write surface (approvals, steers, config writes) beyond this machine. |
 
+## `[telemetry]`
+
+What `agent6 telemetry export` sends, and where ([Telemetry export](usage.md#telemetry-export)).
+Off by default: no signal is selected, nothing is dialled, no socket is opened.
+The exporter is a separate process the operator starts; a run never exports its own events.
+Header values live in `secrets.toml` under `[telemetry.headers]`, never in config.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `traces` | `"none"` | Where spans go: `otlp` posts them to `endpoint`. |
+| `metrics` | `"none"` | Where metrics go: `otlp` posts them to `endpoint`; `prometheus` writes `prometheus_file` for node_exporter's textfile collector. |
+| `logs` | `"none"` | Where the significant events go as log records: `otlp` posts them to `endpoint`. |
+| `endpoint` | `""` | The OTLP/HTTP base URL; `/v1/traces`, `/v1/metrics` and `/v1/logs` are appended; `https://`, or `http://` to a loopback host |
+| `headers` | `[]` | Header names sent with every export; each value comes from `[telemetry.headers]` in `secrets.toml`. |
+| `capture` | `"metadata"` | `metadata` exports outcomes, counts, timings and ids; `content` adds capped excerpts of the task, steers, tool arguments, the gate command, model errors, finding titles and degradation details. |
+| `prometheus_file` | `""` | The absolute path `metrics = "prometheus"` writes atomically, in a directory node_exporter's textfile collector reads. |
+
 ## `[parallel]`
 
 Lane limit for `run --parallel N|[provider/]model,...`.
