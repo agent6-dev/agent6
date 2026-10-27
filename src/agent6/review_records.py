@@ -169,9 +169,12 @@ class FindingObservation:
 
 
 class ReviewPanel(pydantic.BaseModel):
-    """Validate a completed panel's durable evidence, including its worker feedback."""
+    """Validate a completed panel's durable evidence, including its worker feedback.
 
-    model_config = pydantic.ConfigDict(frozen=True)
+    A journal row validates with its envelope stripped (`event_log.payload`).
+    """
+
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     panel_id: Identifier
     execution_id: Identifier

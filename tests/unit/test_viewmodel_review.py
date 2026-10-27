@@ -214,6 +214,23 @@ def test_unreadable_journal_tail_cannot_certify_a_review(tmp_path: pathlib.Path)
     assert view.for_comparison(_target()).freshness == "unknown"
 
 
+def test_a_panel_row_with_an_unknown_field_is_unreadable_evidence(tmp_path: pathlib.Path) -> None:
+    """Unknown fields on a panel row were ignored; the row is refused and both readers say so."""
+    from agent6.harness import _review_history
+
+    enveloped = {**_panel(), "ts": "2026-10-25T00:00:00+00:00"}
+    assert not state.fold_session([enveloped]).review.read_failure
+    unknown = {**enveloped, "unexpected": 1}
+    failure = state.fold_session([unknown]).review.read_failure
+    assert failure and "unexpected" in failure
+    log = tmp_path / "logs.jsonl"
+    log.write_text(json.dumps(enveloped) + "\n")
+    assert len(_review_history.load_panels(log)) == 1
+    log.write_text(json.dumps(unknown) + "\n")
+    with pytest.raises(_review_history.ReviewHistoryError, match="unexpected"):
+        _review_history.load_panels(log)
+
+
 def test_wire_contains_structured_findings_and_counts() -> None:
     result = state.fold_session([_panel()])
     wire = json.loads(json.dumps(_state_view.session_state_as_dict(result)))

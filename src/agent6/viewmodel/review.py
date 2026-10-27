@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 import pydantic
 
-from agent6 import review_records, terminal
+from agent6 import event_log, review_records, terminal
 
 Completion = Literal["unknown", "running", "complete", "inconclusive", "skipped"]
 Freshness = Literal["unknown", "current", "stale"]
@@ -280,7 +280,7 @@ def _panel_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
             raise ReviewReadError("panel repeats a seat index")
         panel = dataclasses.replace(old, seats=(*old.seats, verdict))
     else:
-        record = review_records.ReviewPanel.model_validate(event)
+        record = review_records.ReviewPanel.model_validate(event_log.payload(event))
         if old is not None and old.result is not None:
             raise ReviewReadError("panel has more than one completion record")
         view = _observe(view, record)
@@ -415,7 +415,7 @@ def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
         if kind == "loop.review.panel":
             if "target" not in event:
                 return ("Review has legacy count-only evidence; findings are unavailable.",)
-            panel = review_records.ReviewPanel.model_validate(event)
+            panel = review_records.ReviewPanel.model_validate(event_log.payload(event))
             lines = [
                 f"Review {panel.panel_id}: {panel.completion}; "
                 f"block_on={panel.block_on}, rejected={panel.blocked}, disarmed={panel.disarmed}"

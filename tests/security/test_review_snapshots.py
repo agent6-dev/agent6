@@ -387,7 +387,7 @@ def test_in_loop_subdirectory_panel_uses_repository_relative_evidence(
     assert result is not None and not result.satisfied
     rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
     panels = [
-        review_records.ReviewPanel.model_validate(row)
+        review_records.ReviewPanel.model_validate(event_log.payload(row))
         for row in rows
         if row["type"] == "loop.review.panel"
     ]

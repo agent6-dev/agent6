@@ -6,7 +6,7 @@ import uuid
 
 import pydantic
 
-from agent6 import review_records
+from agent6 import event_log, review_records
 from agent6.vcs import git_read, review
 
 
@@ -39,7 +39,7 @@ def load_panels(path: pathlib.Path) -> tuple[review_records.ReviewPanel, ...]:
                     and row.get("type") == "loop.review.panel"
                     and "target" in row
                 ):
-                    panels.append(review_records.ReviewPanel.model_validate(row))
+                    panels.append(review_records.ReviewPanel.model_validate(event_log.payload(row)))
     except FileNotFoundError:
         return ()
     except (OSError, pydantic.ValidationError) as exc:

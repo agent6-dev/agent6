@@ -55,7 +55,9 @@ def run(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> layout.Sessi
         (),
         "revisions",
     )
-    panel = review_records.ReviewPanel.model_validate_json(saved.logs_path.read_text())
+    panel = review_records.ReviewPanel.model_validate(
+        event_log.payload(json.loads(saved.logs_path.read_text()))
+    )
     panel = panel.model_copy(
         update={
             "target": target,

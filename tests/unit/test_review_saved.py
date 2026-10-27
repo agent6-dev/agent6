@@ -16,7 +16,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import paths, review_records
+from agent6 import event_log, paths, review_records
 from agent6.app import _setup, providers
 from agent6.config import Config, layer
 from agent6.harness import _reviewer, code_review
@@ -210,7 +210,7 @@ def test_standalone_panel_records_line_origins_against_its_base(
     assert "SECRET-ENV-LINE-4242" not in journal.read_text()
     rows = [json.loads(line) for line in journal.read_text().splitlines()]
     (record,) = [
-        review_records.ReviewPanel.model_validate(row)
+        review_records.ReviewPanel.model_validate(event_log.payload(row))
         for row in rows
         if row["type"] == "loop.review.panel"
     ]

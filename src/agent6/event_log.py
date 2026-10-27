@@ -19,13 +19,20 @@ import os
 import pathlib
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from agent6 import paths
 
 # Flushed but never fsynced: a reasoning model emits tens of thousands per run.
 _EPHEMERAL_EVENTS = frozenset({"role.text_delta", "role.thinking_delta"})
+# The fields `emit` adds around a payload; a reader validating a payload strips them.
+ENVELOPE_KEYS = frozenset({"ts", "type", "event_id"})
+
+
+def payload(event: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the event's own fields, the envelope left out."""
+    return {key: value for key, value in event.items() if key not in ENVELOPE_KEYS}
 
 
 class EventWriteError(Exception):
@@ -60,7 +67,7 @@ class EventSink:
         self._listeners.append(listener)
 
     def emit(self, event_type: str, /, **fields: Any) -> None:
-        """Append one event, then notify the listeners.
+        """Append one event under its envelope (`ENVELOPE_KEYS`), then notify the listeners.
 
         Args:
             event_type: The event's `type`.
