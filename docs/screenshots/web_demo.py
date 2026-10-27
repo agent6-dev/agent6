@@ -132,7 +132,10 @@ def toast(page: Page, msg: str, ms: int = 2400, after: int = 450) -> None:
 
 def move_to(page: Page, selector: str, *, settle: int = 760) -> tuple[float, float] | None:
     loc = page.locator(selector).first
-    loc.scroll_into_view_if_needed()
+    # Centre the target: a row scrolled to the nearest edge sits under the phone's docked
+    # composer and tab bar, where the click would land on them.
+    loc.evaluate("el => el.scrollIntoView({block: 'center', inline: 'nearest'})")
+    page.wait_for_timeout(250)
     box = loc.bounding_box()
     if box is None:
         return None
@@ -204,7 +207,7 @@ def drive(page: Page, base: str, mode: str, t0: float, shot: Path | None = None)
 
     # The conversation IS the page: cycle the detail level, then (desktop) fold
     # the details drawer away to show the focus mode.
-    click(page, "button.mini", label="Cycle the detail level", settle=900)
+    click(page, "button.mini:has-text('detail:')", label="Cycle the detail level", settle=900)
     scroll_card(page, ".card-conv .conv-box", 0, wait=1400)
     scroll_card(page, ".card-conv .conv-box", 4000, wait=1600)
     if mode == "desktop":
