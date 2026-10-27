@@ -80,6 +80,43 @@ def test_open_select_and_preview_recorded_trees(
     assert git("status", "--porcelain") == before
 
 
+@pytest.mark.parametrize("kind", ["pre_existing", "changed", "unknown"])
+def test_selected_finding_shows_only_pre_existing_line_origin(
+    tmp_path: pathlib.Path, kind: str
+) -> None:
+    """Only pre-existing lines show their base range, reason and blame in the detail pane."""
+    saved = review_helpers.reviewed_session(tmp_path)
+    panel = json.loads(saved.logs_path.read_text())
+    origin: dict[str, Any] = dict(kind=kind, reason="The cited bytes match the reviewed base.")
+    if kind == "pre_existing":
+        origin.update(
+            base_location=dict(path="old_parser.py", side="base", start_line=7, end_line=8),
+            commits=["a" * 40, "b" * 40],
+        )
+    panel["findings"][0]["line_origin"] = origin
+    saved.logs_path.write_text(json.dumps(panel) + "\n")
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(saved.state_dir, tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("v")
+            await pilot.pause()
+            detail = _shown(app.screen.query_one("#finding-detail", widgets.Static))
+            assert "Defect f1" in detail
+            if kind == "pre_existing":
+                assert (
+                    "  Pre-existing line: old_parser.py:7-8 (base). "
+                    "The cited bytes match the reviewed base.\n"
+                    f"  Blame: {'a' * 40}, {'b' * 40}"
+                ) in detail
+            else:
+                assert "Pre-existing line" not in detail
+                assert "Blame:" not in detail
+                assert "The cited bytes match the reviewed base." not in detail
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("recorded", [True, False], ids=["recorded", "legacy"])
 def test_selected_finding_shows_its_own_panels_rules(
     tmp_path: pathlib.Path, recorded: bool

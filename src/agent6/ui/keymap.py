@@ -99,6 +99,7 @@ REVIEW_TEXT = {
     "detail": (
         "{finding_id} · {status} · {severity}\n{location}\n{title}\n{detail}\nFix: {fix_state}"
     ),
+    "pre_existing": "  Pre-existing line: {base_location}. {reason}\n  Blame: {commits}",
     "history": "{action}: {reason}",
     "result": "{message} (request {request_id})",
     "preview": "Reviewed diff: {location}",

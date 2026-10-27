@@ -245,6 +245,13 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             detail=report.detail,
             fix_state=finding.fix_state,
         )
+        origin = finding.line_origin
+        if origin.kind == "pre_existing":
+            body += "\n" + keymap.REVIEW_TEXT["pre_existing"].format(
+                base_location=origin.base_location,
+                reason=origin.reason,
+                commits=", ".join(origin.commits),
+            )
         for action in finding.actions:
             reason = (
                 action.resolution.reason

@@ -94,6 +94,37 @@ def test_findings_resolve_and_reopen_never_reach_the_model(tmp_path: pathlib.Pat
     assert not ran
 
 
+@pytest.mark.parametrize("kind", ["pre_existing", "changed", "unknown"])
+def test_findings_show_only_pre_existing_line_origin(tmp_path: pathlib.Path, kind: str) -> None:
+    """Only pre-existing lines show their base range, reason and blame in findings text."""
+    connection, current, out = _connection(tmp_path, lambda _current, _text: "end_turn")
+    saved = current.layout(paths.state_dir(tmp_path))
+    panel = json.loads(saved.logs_path.read_text())
+    origin: dict[str, Any] = dict(kind=kind, reason="The cited bytes match the reviewed base.")
+    if kind == "pre_existing":
+        origin.update(
+            base_location=dict(path="old_parser.py", side="base", start_line=7, end_line=8),
+            commits=["a" * 40, "b" * 40],
+        )
+    panel["findings"][0]["line_origin"] = origin
+    saved.logs_path.write_text(json.dumps(panel) + "\n")
+
+    _prompt(connection, current, "/findings")
+    prose = _notices(out)
+    assert "Defect f1" in prose
+    if kind == "pre_existing":
+        assert (
+            "  Pre-existing line: old_parser.py:7-8 (base). "
+            "The cited bytes match the reviewed base.\n"
+            f"  Blame: {'a' * 40}, {'b' * 40}"
+        ) in prose
+        assert prose.count("Pre-existing line:") == 1
+    else:
+        assert "Pre-existing line" not in prose
+        assert "Blame:" not in prose
+        assert "The cited bytes match the reviewed base." not in prose
+
+
 @pytest.mark.parametrize(
     "command",
     [

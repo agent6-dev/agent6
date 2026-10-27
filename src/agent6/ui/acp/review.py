@@ -47,6 +47,12 @@ def _findings_text(view: review.ReviewView, *, include_resolved: bool) -> str:
             f"{finding.finding_id} · {finding.status} · {report.severity} · {report.location}\n"
             f"{report.title}\n{report.detail}\nFix: {finding.fix_state}"
         )
+        origin = finding.line_origin
+        if origin.kind == "pre_existing":
+            body += (
+                f"\n  Pre-existing line: {origin.base_location}. {origin.reason}"
+                f"\n  Blame: {', '.join(origin.commits)}"
+            )
         if finding.resolution is not None:
             body += f"\n{finding.resolution.disposition}: {finding.resolution.reason}"
         lines.append(body)
