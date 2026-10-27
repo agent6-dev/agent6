@@ -324,3 +324,21 @@ def test_the_printed_answer_form_parses() -> None:
     assert (ns.target, ns.question, ns.answers) == ("curious-fox", "question-2", ["yes", "pg"])
     bare = cli_parser.build_parser().parse_args(["answer", "curious-fox"])
     assert (bare.question, bare.answers) == (None, [])
+
+
+def test_answer_reaches_a_detached_resumes_start_gate(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A resume's own start question takes an answer while the resume waits, not after."""
+    layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
+    events: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "question.prompt", "id": "question-1", "questions": [{"question": "stash?"}]},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("stash",)) == 0
+    assert ipc.read_question_answers(layout.session_dir, "question-1", timeout_s=1.0) == ("stash",)
+    capsys.readouterr()
+    process.write_worker_pid(layout.session_dir, 999_999_999)
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("stash",)) != 0

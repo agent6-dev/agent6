@@ -157,6 +157,8 @@ def test_a_queued_question_is_answered_on_disk_and_delivered_once_across_resumes
 
     third = _Scripted([_finish()])
     monkeypatch.setattr(providers, "build_role_provider", _use(third))
+    assert cli_main(["resume", session_id]) == 2  # the answer is consumed: finished, no new work
+    assert third.seen == []
     assert cli_main(["resume", session_id, "--steer", "carry on"]) == 0
     again = _dump(third.seen[0])
     assert again.count("OPERATOR ANSWERS") == 1  # the history's copy, no second delivery

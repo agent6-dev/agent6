@@ -1270,8 +1270,11 @@ def test_a_questions_kind_is_one_word_on_every_surface() -> None:
 
 
 def test_a_question_outside_an_execution_is_nobodys_to_answer_later(tmp_path: pathlib.Path) -> None:
-    """agent6's own start gate, abandoned, counts as no pending question: nothing delivers it."""
+    """agent6's own start gate is pending while its asker lives and nobody's once it is gone."""
+    import os
+
     from agent6.app import _carried_questions
+    from agent6.sessions import process
     from agent6.viewmodel import _session_log, _state_view
 
     gate = {"type": "question.prompt", "id": "question-1", "questions": [{"question": "stash?"}]}
@@ -1284,3 +1287,27 @@ def test_a_question_outside_an_execution_is_nobodys_to_answer_later(tmp_path: pa
     assert viewmodel_state.pending_questions(tmp_path) == ()
     carried = _carried_questions.carried_questions(log)
     assert (carried.pending, carried.next_number) == ((), 1)
+    process.write_worker_pid(tmp_path, os.getpid())
+    assert [q.id for q in viewmodel_state.pending_questions(tmp_path)] == ["question-1"]
+    assert _carried_questions.carried_questions(log).pending == ()
+
+
+def test_a_reused_question_id_names_the_latest_question(tmp_path: pathlib.Path) -> None:
+    """A journal from before ids ran across executions holds one pending question per id."""
+    from agent6.app import _carried_questions
+
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "question.prompt", "id": "question-1", "questions": [{"question": "old?"}]},
+        {"type": "loop.resume.start"},
+        {"type": "question.prompt", "id": "question-1", "questions": [{"question": "new?"}]},
+    ]
+    log = tmp_path / "logs.jsonl"
+    log.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    state = viewmodel_state.fold_session(rows)
+    assert [(q.id, q.questions[0].question) for q in state.pending_questions] == [
+        ("question-1", "new?")
+    ]
+    carried = _carried_questions.carried_questions(log)
+    assert [(q.id, q.questions[0].question) for q in carried.pending] == [("question-1", "new?")]
+    assert carried.next_number == 2

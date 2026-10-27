@@ -15,7 +15,7 @@ from typing import Any
 
 from agent6 import terminal
 from agent6.graph import models
-from agent6.sessions import layout
+from agent6.sessions import layout, process
 from agent6.viewmodel import _session_status, _state_types, events, format, log_line, review
 
 
@@ -362,7 +362,9 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 wait=wait,
                 blocking=wait,
             )
-            return dataclasses.replace(state, pending_questions=(*state.pending_questions, qp))
+            # A journal from before ids ran across executions reuses one: the latest is the one.
+            kept = tuple(q for q in state.pending_questions if q.id != qid)
+            return dataclasses.replace(state, pending_questions=(*kept, qp))
 
         case events.QuestionAnswer(id=wanted, answers=answers, unseen=unseen, source=source):
             new_q = tuple(
@@ -542,8 +544,8 @@ def pending_questions(session_dir: pathlib.Path) -> tuple[_state_types.QuestionP
 
     Every surface that writes an answer file checks against them, so an answer list of
     the wrong length is refused rather than thrown away by the asking side. A question
-    agent6 itself asked outside an execution (the start gate) is not among them: nothing
-    delivers its answer later.
+    agent6 itself asked outside an execution (the start gate) is among them while the
+    worker that asked it lives; once it is gone, nothing delivers that answer.
 
     Args:
         session_dir: The session's state dir.
@@ -554,7 +556,10 @@ def pending_questions(session_dir: pathlib.Path) -> tuple[_state_types.QuestionP
     from agent6.viewmodel import tail  # noqa: PLC0415  # cycle at import time
 
     state = fold_session(tail.tail_events(session_dir / layout.LOGS_NAME, follow=False))
-    return tuple(q for q in state.pending_questions if not q.answered and not q.from_harness)
+    alive = process.worker_is_alive(session_dir)
+    return tuple(
+        q for q in state.pending_questions if not q.answered and (alive or not q.from_harness)
+    )
 
 
 def fold_until_commit(
