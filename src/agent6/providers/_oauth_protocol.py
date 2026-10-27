@@ -22,7 +22,6 @@ from urllib import parse
 
 import httpx2
 
-from agent6 import secret_store
 from agent6.providers import _transport, types
 
 TOKEN_TIMEOUT_S = 30.0
@@ -143,6 +142,56 @@ def post_json(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Respon
         follow_redirects=False,
         trust_env=_transport.trust_env_for(url),
     )
+
+
+def _post(url: str, data: dict[str, str], *, encoding: str, timeout_s: float) -> httpx2.Response:
+    """Send a device or token request in the configured encoding.
+
+    Args:
+        url: The endpoint.
+        data: The parameters.
+        encoding: "form" or "json".
+        timeout_s: The request timeout.
+
+    Returns:
+        The response.
+    """
+    return (
+        post_json(url, data, timeout_s) if encoding == "json" else post_form(url, data, timeout_s)
+    )
+
+
+def authorization_url(
+    endpoint: str,
+    client_id: str,
+    *,
+    redirect_uri: str,
+    scopes: tuple[str, ...],
+    state: str,
+    challenge: str,
+    extra: dict[str, str] | None = None,
+) -> str:
+    """Build the browser URL that starts an authorization-code sign-in with PKCE.
+
+    Args:
+        endpoint: The authorization endpoint.
+        client_id: The client registration.
+        redirect_uri: The loopback redirect the code returns to.
+        scopes: The scopes requested; empty sends no `scope`.
+        state: The state the callback must echo.
+        challenge: The PKCE challenge.
+        extra: Static parameters sent after the protocol's own.
+
+    Returns:
+        The URL, the endpoint's own query kept ahead of the sign-in's.
+    """
+    params = [("response_type", "code"), ("client_id", client_id), ("redirect_uri", redirect_uri)]
+    if scopes:
+        params.append(("scope", " ".join(scopes)))
+    params += [("code_challenge", challenge), ("code_challenge_method", "S256"), ("state", state)]
+    params += list((extra or {}).items())
+    joiner = "&" if parse.urlsplit(endpoint).query else "?"
+    return f"{endpoint}{joiner}{parse.urlencode(params)}"
 
 
 def grant_from_response(resp: httpx2.Response, *, operation: str, label: str) -> TokenGrant:
@@ -277,6 +326,7 @@ def exchange_code(
     redirect_uri: str,
     provider: str,
     label: str,
+    encoding: str = "form",
     timeout_s: float = TOKEN_TIMEOUT_S,
 ) -> TokenGrant:
     """Exchange an authorization code for a token grant.
@@ -289,6 +339,7 @@ def exchange_code(
         redirect_uri: The redirect of the flow that minted the code.
         provider: The provider name, for the reconnect hint.
         label: The sign-in the errors name.
+        encoding: "form" or "json".
         timeout_s: The request timeout.
 
     Returns:
@@ -298,7 +349,7 @@ def exchange_code(
         ProviderError: The endpoint was unreachable or refused the exchange.
     """  # noqa: DOC501  # `token_error` builds the ProviderError named above
     try:
-        resp = post_form(
+        resp = _post(
             token_endpoint,
             {
                 "grant_type": "authorization_code",
@@ -307,7 +358,8 @@ def exchange_code(
                 "client_id": client_id,
                 "code_verifier": verifier,
             },
-            timeout_s,
+            encoding=encoding,
+            timeout_s=timeout_s,
         )
     except httpx2.HTTPError as exc:
         raise types.ProviderError(f"could not reach {token_endpoint}: {exc}") from exc
@@ -327,6 +379,7 @@ def refresh_grant(
     *,
     provider: str,
     label: str,
+    encoding: str = "form",
     timeout_s: float = TOKEN_TIMEOUT_S,
 ) -> TokenGrant:
     """Trade a refresh token for a fresh grant; tokens may rotate.
@@ -337,6 +390,7 @@ def refresh_grant(
         refresh_token: The refresh token.
         provider: The provider name, for the reconnect hint.
         label: The sign-in the errors name.
+        encoding: "form" or "json".
         timeout_s: The request timeout.
 
     Returns:
@@ -346,14 +400,15 @@ def refresh_grant(
         ProviderError: The endpoint was unreachable or refused.
     """  # noqa: DOC501  # `token_error` builds the ProviderError named above
     try:
-        resp = post_form(
+        resp = _post(
             token_endpoint,
             {
                 "grant_type": "refresh_token",
                 "refresh_token": refresh_token,
                 "client_id": client_id,
             },
-            timeout_s,
+            encoding=encoding,
+            timeout_s=timeout_s,
         )
     except httpx2.HTTPError as exc:
         raise types.ProviderError(f"could not reach {token_endpoint}: {exc}") from exc
@@ -369,8 +424,10 @@ def refresh_grant(
 def revoke_tokens(
     revocation_endpoint: str,
     client_id: str,
-    tokens: secret_store.OAuthTokens,
     *,
+    access_token: str,
+    refresh_token: str,
+    encoding: str,
     timeout_s: float = TOKEN_TIMEOUT_S,
 ) -> str | None:
     """Revoke the grant at sign-out, best effort.
@@ -380,7 +437,9 @@ def revoke_tokens(
     Args:
         revocation_endpoint: The revocation endpoint.
         client_id: The client registration.
-        tokens: The stored tokens.
+        access_token: The stored access token.
+        refresh_token: The stored refresh token; "" when the grant has none.
+        encoding: "form" (RFC 7009) or "json".
         timeout_s: The request timeout.
 
     Returns:
@@ -388,21 +447,13 @@ def revoke_tokens(
         local tokens either way.
     """
     token, hint = (
-        (tokens.refresh_token, "refresh_token")
-        if tokens.refresh_token
-        else (tokens.access_token, "access_token")
+        (refresh_token, "refresh_token") if refresh_token else (access_token, "access_token")
     )
     body: dict[str, str] = {"token": token, "token_type_hint": hint}
     if hint == "refresh_token":
         body["client_id"] = client_id
     try:
-        resp = httpx2.post(
-            revocation_endpoint,
-            json=body,
-            timeout=timeout_s,
-            follow_redirects=False,
-            trust_env=_transport.trust_env_for(revocation_endpoint),
-        )
+        resp = _post(revocation_endpoint, body, encoding=encoding, timeout_s=timeout_s)
     except httpx2.HTTPError as exc:
         return f"could not reach {revocation_endpoint}: {exc}"
     if resp.status_code >= 400:
@@ -433,23 +484,6 @@ class DeviceGrant:
     verification_uri_complete: str
     interval_s: float
     expires_at: float
-
-
-def _post(url: str, data: dict[str, str], *, encoding: str, timeout_s: float) -> httpx2.Response:
-    """Send a device or token request in the configured encoding.
-
-    Args:
-        url: The endpoint.
-        data: The parameters.
-        encoding: "form" or "json".
-        timeout_s: The request timeout.
-
-    Returns:
-        The response.
-    """
-    return (
-        post_json(url, data, timeout_s) if encoding == "json" else post_form(url, data, timeout_s)
-    )
 
 
 def start_device_grant(

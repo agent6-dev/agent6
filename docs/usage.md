@@ -13,6 +13,9 @@ agent6 model                         # the role assignments
 The key lands in `~/.config/agent6/secrets.toml` (mode `0600`), shared across every repository.
 `connect` prompts locally and executes nothing a remote returns.
 
+A provider whose sign-in is not built in takes a hand-written [`[providers.<name>].oauth`](config.md#configured-oauth) table; `agent6 connect <name>` then signs in at that issuer and stores the grant, bound to the entry's settings.
+`--flow browser|device|paste` picks the way in (default `auto`); `--logout` revokes the grant at `oauth.revocation_endpoint` when one is set and removes it locally either way.
+
 agent6 routes three model roles; `reviewer` and `planner` fall back to `worker` when unset.
 
 | Role       | Set with            | Used by                                                                                              |

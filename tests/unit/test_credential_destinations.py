@@ -116,7 +116,9 @@ def test_credential_requests_follow_no_redirect(monkeypatch: pytest.MonkeyPatch)
     _oauth_protocol.revoke_tokens(
         "https://login.example/revoke",
         "client",
-        __import__("agent6.secret_store", fromlist=["x"]).OAuthTokens("a", "r", 1.0),
+        access_token="a",
+        refresh_token="r",
+        encoding="json",
     )
     assert len(seen) == 3
     assert all(call["follow_redirects"] is False for call in seen)

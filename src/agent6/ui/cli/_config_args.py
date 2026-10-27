@@ -180,8 +180,8 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         "--logout",
         action="store_true",
         help=(
-            "Remove the provider's saved credentials instead. agent6 tries to revoke a ChatGPT"
-            " sign-in. The provider settings stay in the config file."
+            "Remove the provider's saved credentials instead. agent6 tries to revoke an OAuth"
+            " sign-in at its issuer. The provider settings stay in the config file."
         ),
     )
     connect_p.add_argument(
@@ -189,8 +189,20 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         dest="verify",
         action="store_false",
         help=(
-            "Do not test a newly saved API key against the provider. Use this for a local or"
-            " offline provider that does not offer a model list."
+            "Do not test a newly saved key or sign-in against the provider. Use this for a local"
+            " or offline provider that does not offer a model list."
+        ),
+    )
+    connect_p.add_argument(
+        "--flow",
+        choices=("auto", "browser", "device", "paste"),
+        default="auto",
+        help=(
+            "How a provider with a [providers.<name>.oauth] table signs in. browser: open the"
+            " sign-in page and take the redirect on a local listener. device: show a code to enter"
+            " on any device. paste: paste the callback URL by hand (needs a fixed port in"
+            " oauth.redirect_uri). Default: auto, which is browser when a GUI browser is"
+            " available, else device when the issuer offers it, else paste."
         ),
     )
     connect_p.add_argument(

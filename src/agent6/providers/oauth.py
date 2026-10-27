@@ -391,6 +391,7 @@ class OAuthCredential:
             grant.refresh_token,
             provider=self._provider,
             label=self._provider,
+            encoding=oauth.request_encoding,
         )
         now = self._now()
         renewed = secret_store.StoredGrant(

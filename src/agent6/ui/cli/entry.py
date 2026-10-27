@@ -875,7 +875,11 @@ def _dispatch_connect(args: argparse.Namespace) -> int:
     from agent6.ui.cli import connect
 
     return connect._cmd_connect(
-        provider=args.provider, to_repo=args.repo, verify=args.verify, logout=args.logout
+        provider=args.provider,
+        to_repo=args.repo,
+        verify=args.verify,
+        logout=args.logout,
+        flow=args.flow,
     )
 
 

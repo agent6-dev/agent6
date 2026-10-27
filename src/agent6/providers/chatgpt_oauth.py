@@ -17,7 +17,6 @@ import threading
 import time
 from collections.abc import Callable
 from typing import Any
-from urllib import parse
 
 import httpx2
 
@@ -69,21 +68,19 @@ def authorize_url(issuer: str, client_id: str, *, challenge: str, state: str) ->
     Returns:
         The authorize URL.
     """
-    query = parse.urlencode(
-        [
-            ("response_type", "code"),
-            ("client_id", client_id),
-            ("redirect_uri", REDIRECT_URI),
-            ("scope", OAUTH_SCOPE),
-            ("code_challenge", challenge),
-            ("code_challenge_method", "S256"),
-            ("state", state),
-            ("id_token_add_organizations", "true"),
-            ("codex_cli_simplified_flow", "true"),
-            ("originator", "agent6"),
-        ]
+    return _oauth_protocol.authorization_url(
+        f"{issuer.rstrip('/')}/oauth/authorize",
+        client_id,
+        redirect_uri=REDIRECT_URI,
+        scopes=tuple(OAUTH_SCOPE.split()),
+        state=state,
+        challenge=challenge,
+        extra={
+            "id_token_add_organizations": "true",
+            "codex_cli_simplified_flow": "true",
+            "originator": "agent6",
+        },
     )
-    return f"{issuer.rstrip('/')}/oauth/authorize?{query}"
 
 
 def exchange_code(

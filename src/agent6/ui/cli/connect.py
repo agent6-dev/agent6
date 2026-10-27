@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 connect`: add a provider and its API key."""
+"""`agent6 connect`: add a provider and its key or sign-in."""
 
 from __future__ import annotations
 
@@ -9,10 +9,14 @@ import getpass
 import pathlib
 import secrets
 import sys
+import time
+from urllib import parse
 
 from agent6 import paths, secret_store
 from agent6.config import (
+    AnthropicProviderEntry,
     ConfigError,
+    OAuthConfig,
     OpenAIProviderEntry,
     ProviderEntry,
     _layer_data,
@@ -23,7 +27,7 @@ from agent6.config import (
     write,
 )
 from agent6.models import cache
-from agent6.providers import _oauth_protocol, chatgpt_oauth, claude_code, types
+from agent6.providers import _oauth_protocol, chatgpt_oauth, claude_code, oauth, types
 from agent6.ui.cli import _common, _oauth
 
 
@@ -385,6 +389,227 @@ def _chatgpt_sign_in(name: str) -> int:
     return 0
 
 
+def _configured_issuer(entry: ProviderEntry | None) -> OAuthConfig | None:
+    """Return the entry's `oauth` table; None for an entry without one."""
+    if isinstance(entry, (AnthropicProviderEntry, OpenAIProviderEntry)):
+        return entry.oauth
+    return None
+
+
+def _pick_flow(flow: str, issuer: OAuthConfig) -> str | None:
+    """Return the configured issuer's way in: browser, device or paste.
+
+    Args:
+        flow: The `--flow` value.
+        issuer: The `[providers.<name>].oauth` table.
+
+    Returns:
+        The flow, or None after printing why the issuer's settings cannot run it.
+    """
+    has_code = issuer.authorization_endpoint is not None
+    fixed_port = bool(parse.urlsplit(issuer.redirect_uri).port)
+    if flow == "auto":
+        if has_code and sys.stdin.isatty() and _oauth.gui_browser_available():
+            return "browser"
+        if issuer.device_authorization_endpoint is not None:
+            return "device"
+        flow = "paste"
+    if flow == "device" and issuer.device_authorization_endpoint is None:
+        _common.error("--flow device needs oauth.device_authorization_endpoint in the provider.")
+        return None
+    if flow in ("browser", "paste") and not has_code:
+        _common.error(f"--flow {flow} needs oauth.authorization_endpoint in the provider.")
+        return None
+    if flow == "paste" and not fixed_port:
+        _common.error(
+            "pasting the callback needs a fixed port in oauth.redirect_uri (port 0 serves the"
+            " local listener only); set one, or add oauth.device_authorization_endpoint."
+        )
+        return None
+    return flow
+
+
+def _with_port(uri: str, port: int) -> str:
+    """Return the redirect with the listener's bound port in place of port 0."""
+    parts = parse.urlsplit(uri)
+    host = parts.hostname or ""
+    netloc = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+    return parse.urlunsplit(parts._replace(netloc=netloc))
+
+
+def _code_grant(
+    name: str, issuer: OAuthConfig, *, browser: bool
+) -> _oauth_protocol.TokenGrant | None:
+    """Run authorization code with PKCE: the loopback redirect, else the pasted callback.
+
+    Args:
+        name: The provider name.
+        issuer: The `[providers.<name>].oauth` table.
+        browser: Open the browser and listen for the redirect first.
+
+    Returns:
+        The grant, or None after printing why none was taken.
+
+    Raises:
+        ProviderError: The token endpoint was unreachable or refused the code.
+    """
+    assert issuer.authorization_endpoint is not None
+    verifier, challenge = _oauth_protocol.pkce_pair()
+    state = secrets.token_urlsafe(24)
+    parts = parse.urlsplit(issuer.redirect_uri)
+    server: _oauth.CallbackServer | None = None
+    if browser:
+        try:
+            server = _oauth.CallbackServer(
+                state, port=parts.port or 0, path=parts.path, host=parts.hostname or "127.0.0.1"
+            )
+        except OSError as exc:
+            print(f"(no local callback: {exc}; paste the callback URL instead)")
+    if server is None and not parts.port:
+        _common.error(
+            "pasting the callback needs a fixed port in oauth.redirect_uri; set one and retry."
+        )
+        return None
+    redirect = (
+        issuer.redirect_uri if server is None else _with_port(issuer.redirect_uri, server.port)
+    )
+    url = _oauth_protocol.authorization_url(
+        issuer.authorization_endpoint,
+        issuer.client_id,
+        redirect_uri=redirect,
+        scopes=issuer.scopes,
+        state=state,
+        challenge=challenge,
+        extra=issuer.authorization_params,
+    )
+    print(f"Open this URL to sign in at {issuer.issuer}:\n\n  {url}\n")
+    code = _oauth.wait_for_redirect(server, url) if server is not None else None
+    if code is None:
+        code = _oauth.paste_callback(state, redirect_uri=redirect)
+        if code is None:
+            return None
+    return _oauth_protocol.exchange_code(
+        issuer.token_endpoint,
+        issuer.client_id,
+        code=code,
+        verifier=verifier,
+        redirect_uri=redirect,
+        provider=name,
+        label=name,
+        encoding=issuer.request_encoding,
+    )
+
+
+def _device_grant(name: str, issuer: OAuthConfig) -> _oauth_protocol.TokenGrant | None:
+    """Show the issuer's user code and poll while the person enters it on any device.
+
+    Args:
+        name: The provider name.
+        issuer: The `[providers.<name>].oauth` table.
+
+    Returns:
+        The grant, or None on Ctrl-C.
+
+    Raises:
+        ProviderError: The issuer was unreachable, refused, or the code expired.
+    """
+    assert issuer.device_authorization_endpoint is not None
+    started = _oauth_protocol.start_device_grant(
+        issuer.device_authorization_endpoint,
+        issuer.client_id,
+        scopes=issuer.scopes,
+        encoding=issuer.request_encoding,
+        label=name,
+    )
+    print(f"On any device, open  {started.verification_uri}")
+    print(f"and enter the code:  {started.user_code}")
+    if started.verification_uri_complete:
+        print(f"(or open {started.verification_uri_complete}, which carries the code)")
+    print("(waiting; Ctrl-C to stop)")
+    try:
+        return _oauth_protocol.poll_device_grant(
+            issuer.token_endpoint,
+            issuer.client_id,
+            started,
+            encoding=issuer.request_encoding,
+            label=name,
+        )
+    except KeyboardInterrupt:
+        print()
+        return None
+
+
+def _verify_sign_in(name: str, entry: AnthropicProviderEntry | OpenAIProviderEntry) -> None:
+    """Use the stored grant once: the configured exchange, then a read-only model listing.
+
+    Prints the outcome and never raises: the grant is already saved.
+
+    Args:
+        name: The provider name.
+        entry: The provider as the config holds it.
+    """
+    print("Checking the sign-in against the provider...")
+    try:
+        oauth.OAuthCredential(name, entry).token()
+    except types.ProviderError as exc:
+        _common.warn(f"the sign-in is saved but not usable yet: {exc}")
+        return
+    listed = cache.fetch_models_live(name, entry, None, timeout_s=10.0)
+    if listed:
+        print(f"  Sign-in validated: {len(listed)} models listed.")
+    else:
+        print("  (could not list models with the sign-in; saved anyway)")
+
+
+def _configured_sign_in(
+    name: str,
+    entry: AnthropicProviderEntry | OpenAIProviderEntry,
+    issuer: OAuthConfig,
+    flow: str,
+    verify: bool,
+) -> int:
+    """Sign in at the provider's configured issuer and store the grant bound to the entry.
+
+    Nothing the issuer returns is executed; the inputs read back are the state-checked
+    authorization code, the device poll's answer and the token JSON.
+
+    Args:
+        name: The provider name.
+        entry: The provider as the config holds it.
+        issuer: Its `oauth` table.
+        flow: The `--flow` value.
+        verify: Use the grant once after storing it.
+
+    Returns:
+        The exit code.
+    """
+    chosen = _pick_flow(flow, issuer)
+    if chosen is None:
+        return 2
+    try:
+        grant = (
+            _device_grant(name, issuer)
+            if chosen == "device"
+            else _code_grant(name, issuer, browser=chosen == "browser")
+        )
+    except types.ProviderError as exc:
+        _common.error(f"{exc}")
+        return 2
+    if grant is None:
+        return 2
+    try:
+        saved = secret_store.save_oauth_grant(
+            name, oauth.stored_grant_for(grant, entry, now=time.time())
+        )
+    except secret_store.SecretsError as exc:
+        _common.error(f"{exc}")
+        return 2
+    print(f"Signed in; the grant is saved to {saved} (0600), bound to [providers.{name}].")
+    if verify:
+        _verify_sign_in(name, entry)
+    return 0
+
+
 def _claude_code_check(name: str) -> None:
     """Name a signed-out `claude` install now rather than at the first run.
 
@@ -437,15 +662,54 @@ def _prompt_api_format(name: str, preset_format: str, current_format: str) -> st
     return api_format
 
 
-def _cmd_logout(name: str, api_format: str) -> int:
-    """Remove a provider's stored credentials (`connect --logout`).
-
-    For a chatgpt-format provider the OAuth grant is revoked at the issuer first, best
-    effort: local removal proceeds regardless, and revoking a dead token is a success. The
-    `[providers.<name>]` block stays. A claude_code provider holds no credentials here.
+def _revoke(name: str, entry: ProviderEntry | None) -> None:
+    """Revoke a stored OAuth grant at its issuer, best effort; a dead token revokes fine.
 
     Args:
         name: The provider name.
+        entry: The provider as the config holds it; None when the config does not load.
+    """
+    issuer = _configured_issuer(entry)
+    if issuer is not None:
+        grant = secret_store.load_oauth_grant(name)
+        if grant is None or issuer.revocation_endpoint is None:
+            return
+        where = issuer.revocation_endpoint
+        err = _oauth_protocol.revoke_tokens(
+            where,
+            issuer.client_id,
+            access_token=grant.access_token,
+            refresh_token=grant.refresh_token,
+            encoding=issuer.request_encoding,
+        )
+    else:
+        tokens = secret_store.load_oauth_tokens(name)
+        if tokens is None:
+            return
+        where = chatgpt_oauth.CHATGPT_ISSUER
+        err = _oauth_protocol.revoke_tokens(
+            chatgpt_oauth.revocation_endpoint(where),
+            chatgpt_oauth.CHATGPT_CLIENT_ID,
+            access_token=tokens.access_token,
+            refresh_token=tokens.refresh_token,
+            encoding="json",
+        )
+    if err is None:
+        print(f"Revoked the sign-in for {name!r} at {where}.")
+    else:
+        _common.warn(f"revocation failed ({err}); removing the local grant anyway.")
+
+
+def _cmd_logout(name: str, entry: ProviderEntry | None, api_format: str) -> int:
+    """Remove a provider's stored credentials (`connect --logout`).
+
+    An OAuth grant is revoked at its issuer first, best effort: local removal proceeds
+    regardless. The `[providers.<name>]` block stays. A claude_code provider holds no
+    credentials here.
+
+    Args:
+        name: The provider name.
+        entry: The provider as the config holds it; None when the config does not load.
         api_format: Its API format.
 
     Returns:
@@ -458,17 +722,7 @@ def _cmd_logout(name: str, api_format: str) -> int:
             file=sys.stderr,
         )
         return 2
-    tokens = secret_store.load_oauth_tokens(name)
-    if tokens is not None:
-        err = _oauth_protocol.revoke_tokens(
-            chatgpt_oauth.revocation_endpoint(chatgpt_oauth.CHATGPT_ISSUER),
-            chatgpt_oauth.CHATGPT_CLIENT_ID,
-            tokens,
-        )
-        if err is None:
-            print(f"Revoked the ChatGPT sign-in for {name!r} at {chatgpt_oauth.CHATGPT_ISSUER}.")
-        else:
-            _common.warn(f"revocation failed ({err}); removing local tokens anyway.")
+    _revoke(name, entry)
     try:
         removed = secret_store.delete_provider_secrets(name)
     except secret_store.SecretsError as exc:
@@ -529,19 +783,74 @@ def _write_shown_values(
     return 0
 
 
-def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: bool = False) -> int:  # noqa: PLR0911, PLR0912
-    """Interactively add a provider and its API key.
+def _credential_step(name: str, api_format: str, flow: str, verify: bool) -> int:
+    """Store what the provider signs requests with: a sign-in, a key, or nothing.
+
+    Args:
+        name: The provider name.
+        api_format: The format the prompt settled.
+        flow: The `--flow` value for a configured issuer.
+        verify: Use the key or grant once after storing it.
+
+    Returns:
+        The exit code.
+    """
+    entry = _current_entry(name)
+    if api_format == "claude_code":
+        _claude_code_check(name)
+        return 0
+    if api_format == "chatgpt":
+        return _chatgpt_sign_in(name)
+    issuer = _configured_issuer(entry)
+    if issuer is not None:
+        assert isinstance(entry, (AnthropicProviderEntry, OpenAIProviderEntry))
+        return _configured_sign_in(name, entry, issuer, flow, verify)
+    try:
+        api_key = _prompt_api_key(name)
+    except EOFError:
+        api_key = ""
+    if api_key:
+        try:
+            saved = secret_store.save_secret(name, api_key)
+        except secret_store.SecretsError as exc:
+            _common.error(f"{exc}")
+            return 2
+        print(f"Saved key to {saved} (0600).")
+        if verify:
+            _verify_key(entry, api_key)
+    elif api_format == "anthropic":
+        # The Anthropic api_format always sends a key, so a keyless block fails at the first run.
+        _common.warn(
+            f"no key entered, but the Anthropic API format requires one.\n"
+            f"  [providers.{name}] is written but not usable yet; rerun"
+            " `agent6 connect`\n  (or set the api_key_env var) before `agent6 run`."
+        )
+    else:
+        print("No key entered; assuming an unauthenticated/local endpoint.")
+    return 0
+
+
+def _cmd_connect(
+    *,
+    provider: str,
+    to_repo: bool,
+    verify: bool = True,
+    logout: bool = False,
+    flow: str = "auto",
+) -> int:
+    """Interactively add a provider and its key or sign-in.
 
     Nothing a remote supplies is executed. The command prompts locally (the key hidden or
-    masked), writes a minimal `[providers.<name>]` block, stores the key in the 0600 secrets
-    file, and checks the key with a read-only GET when `verify` is on and the provider
-    supports a key check.
+    masked), writes a minimal `[providers.<name>]` block, stores the key or grant in the
+    0600 secrets file, and uses it once with a read-only GET when `verify` is on and the
+    provider supports the check.
 
     Args:
         provider: The provider name or preset.
         to_repo: Write the block to the repo config instead of the global one.
-        verify: Probe the key after storing it.
+        verify: Use the key or grant once after storing it.
         logout: Remove the credentials instead.
+        flow: How a configured issuer signs in: auto, browser, device or paste.
 
     Returns:
         The exit code; 2 on a refused name, format or config edit.
@@ -560,49 +869,21 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
             return 2
         current = _Current(_Leaves("", ""), _Leaves("", ""), {})
     if logout:
-        return _cmd_logout(name, current.effective.api_format or preset_format)
+        return _cmd_logout(
+            name, _current_entry(name), current.effective.api_format or preset_format
+        )
     print("agent6 connect: set up a model provider.\n")
     api_format = _prompt_api_format(name, preset_format, current.effective.api_format)
     if api_format is None:
         return 2
     _shadow_notice(current, "api_format", to_repo, api_format)
     preset_url = (preset or {}).get("base_url", "")
-    if (rc := _write_shown_values(name, api_format, current, preset_url, target, to_repo)) != 0:
-        return rc
-
-    api_key = ""
-    if api_format == "claude_code":
-        _claude_code_check(name)
-    elif api_format == "chatgpt":
-        rc = _chatgpt_sign_in(name)
-        if rc != 0:
-            return rc
-    else:
-        try:
-            api_key = _prompt_api_key(name)
-        except EOFError:
-            api_key = ""
-    if api_key:
-        try:
-            saved = secret_store.save_secret(name, api_key)
-        except secret_store.SecretsError as exc:
-            _common.error(f"{exc}")
-            return 2
-        print(f"Saved key to {saved} (0600).")
-        if verify:
-            _verify_key(_current_entry(name), api_key)
-    elif api_format == "anthropic":
-        # The Anthropic api_format always sends a key, so a keyless block fails at the first run.
-        _common.warn(
-            f"no key entered, but the Anthropic API format requires one.\n"
-            f"  [providers.{name}] is written but not usable yet; rerun"
-            " `agent6 connect`\n  (or set the api_key_env var) before `agent6 run`."
+    rc = _write_shown_values(name, api_format, current, preset_url, target, to_repo)
+    if rc == 0:
+        rc = _credential_step(name, api_format, flow, verify)
+    if rc == 0:
+        print(
+            "\nNext: `agent6 model worker "
+            f"{name} <model>` to route a role here, then `agent6 config show`."
         )
-    elif api_format == "openai":
-        print("No key entered; assuming an unauthenticated/local endpoint.")
-
-    print(
-        "\nNext: `agent6 model worker "
-        f"{name} <model>` to route a role here, then `agent6 config show`."
-    )
-    return 0
+    return rc

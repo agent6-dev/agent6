@@ -14,6 +14,7 @@ import html
 import http.server
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -30,17 +31,31 @@ _CONNECTION_TIMEOUT_S = 10.0
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
 
 
+class _Server(http.server.ThreadingHTTPServer):
+    """The receiver over IPv4."""
+
+    daemon_threads = True
+
+
+class _Server6(_Server):
+    """The receiver over IPv6, for a `[::1]` redirect."""
+
+    address_family = socket.AF_INET6
+
+
 class CallbackServer:
     """A one-shot loopback receiver for the OAuth redirect.
 
-    Binds 127.0.0.1 on the given port (0 picks a free one) and serves, one thread per
-    connection, until the callback path answers this sign-in: a code completes it, a
-    state-matching refusal ends it with the refusal. Every other path 404s, a request
+    Binds the loopback address on the given port (0 picks a free one) and serves, one
+    thread per connection, until the callback path answers this sign-in: a code completes
+    it, a state-matching refusal ends it with the refusal. Every other path 404s, a request
     for another host 400s, and neither completes anything. The authorization code is
     held in memory only, never logged.
     """
 
-    def __init__(self, state: str, *, port: int, path: str = "/auth/callback") -> None:
+    def __init__(
+        self, state: str, *, port: int, path: str = "/auth/callback", host: str = "127.0.0.1"
+    ) -> None:
         self._code: str | None = None
         self._refusal: str | None = None
         self._got = threading.Event()
@@ -90,8 +105,7 @@ class CallbackServer:
                 """Log nothing: the code must not reach the terminal."""
                 del format, args  # silent: the code must not reach the terminal
 
-        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
-        self._server.daemon_threads = True
+        self._server = (_Server6 if ":" in host else _Server)((host, port), Handler)
         self._thread = threading.Thread(
             target=self._server.serve_forever, name="agent6-oauth-callback", daemon=True
         )
@@ -205,6 +219,19 @@ def code_via_callback_server(
     except OSError as exc:
         print(f"(no local callback: port {port} unavailable: {exc})")
         return None
+    return wait_for_redirect(server, url)
+
+
+def wait_for_redirect(server: CallbackServer, url: str) -> str | None:
+    """Open the browser and wait on a bound receiver for the redirect, then close it.
+
+    Args:
+        server: The bound receiver the redirect names.
+        url: The authorize URL the browser opens.
+
+    Returns:
+        The code, or None on timeout, Ctrl-C or a refusal; the caller falls back.
+    """
     if not open_browser(url):
         print("(no URL opener found; open the URL above by hand)")
     print(f"Waiting for the sign-in redirect on localhost:{server.port}")

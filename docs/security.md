@@ -530,6 +530,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - A configured issuer (`[providers.<name>].oauth`) names the only other hosts a sign-in dials: its endpoints are https, or plain http on a literal loopback address, carry no userinfo or fragment, and are never discovered; the stored grant is bound to those settings and to `base_url`.
     - the grant is sent only while its binding matches the entry's transport and issuer settings; a mismatch refuses before any request, naming `agent6 connect <name>`
     - a refresh or a second exchange runs under the secrets file's lock, follows no redirect, and scrubs the tokens it sent from any error; a 401 rotates once per call, a 403 never rotates
+    - `agent6 connect <name>` dials only those endpoints: the browser opens `authorization_endpoint`, the code returns on the configured loopback redirect (or is pasted, state-checked either way), tokens come from `token_endpoint`; `--logout` revokes at `revocation_endpoint` when set and removes the grant regardless
 - They are absent from transcripts, redacted in `config show`, and masked from the jail.
   The config dir stays masked even under an explicit grant, and a grant naming it directly is refused at config load.
 - `config show` and `config get` mask mapping values unless the config model marks the field display-safe (`skills.state`); other mappings expose only their keys, including in JSON output.

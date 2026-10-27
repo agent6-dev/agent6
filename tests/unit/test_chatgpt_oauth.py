@@ -430,9 +430,12 @@ def test_revoke_warning_scrubs_the_token(monkeypatch: pytest.MonkeyPatch) -> Non
         return _Resp(500, {"error": "boom", "received": tok})
 
     monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
-    tokens = secret_store.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
     warn = _oauth_protocol.revoke_tokens(
-        chatgpt_oauth.revocation_endpoint("https://auth.openai.com"), "cid", tokens
+        chatgpt_oauth.revocation_endpoint("https://auth.openai.com"),
+        "cid",
+        access_token=tok,
+        refresh_token="",
+        encoding="json",
     )
     assert warn is not None and tok not in warn and "<REDACTED>" in warn
 
@@ -448,9 +451,12 @@ def test_revoke_warning_scrubs_a_token_split_across_the_clip(
         return _Resp(500, body)
 
     monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
-    tokens = secret_store.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
     warn = _oauth_protocol.revoke_tokens(
-        chatgpt_oauth.revocation_endpoint("https://auth.openai.com"), "cid", tokens
+        chatgpt_oauth.revocation_endpoint("https://auth.openai.com"),
+        "cid",
+        access_token=tok,
+        refresh_token="",
+        encoding="json",
     )
     assert warn is not None
     assert tok[:10] not in warn
