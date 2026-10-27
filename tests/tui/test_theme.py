@@ -171,6 +171,40 @@ def test_dark_ansi_text_uses_its_own_palette(cfg: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
+def test_light_ansi_text_uses_its_own_palette(cfg: pathlib.Path) -> None:
+    """Keep light ANSI text colours independent of the agent6-light theme colours."""
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.theme = "agent6-light"
+            await pilot.pause()
+            ansi = app.ansi_theme
+            assert ansi.background_color == (247, 247, 247)
+            assert ansi.foreground_color == (0, 0, 0)
+            assert [ansi.ansi_colors[n] for n in range(16)] == [
+                (0, 0, 0),
+                (170, 55, 49),
+                (48, 120, 10),
+                (140, 98, 5),
+                (50, 92, 192),
+                (122, 62, 157),
+                (4, 116, 131),
+                (105, 105, 105),
+                (105, 105, 105),
+                (202, 40, 49),
+                (54, 120, 1),
+                (145, 95, 3),
+                (4, 108, 181),
+                (186, 13, 187),
+                (8, 115, 138),
+                (105, 105, 105),
+            ]
+
+    asyncio.run(scenario())
+
+
 def test_setup_registers_applies_saved_and_persists(cfg: pathlib.Path) -> None:
     settings.save_theme("nord")
 

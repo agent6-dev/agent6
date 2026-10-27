@@ -177,19 +177,19 @@ GRIMM = Theme(
     },
 )
 
-# ANSI defaults and status colours match agent6-light, at 4.5:1 on its background and surface.
+# The light ANSI theme: each colour at 4.5:1 or more on agent6's light backgrounds and surfaces.
 ANSI_THEME_LIGHT = TerminalTheme(
-    (244, 245, 248),
-    (42, 46, 63),
+    (247, 247, 247),
+    (0, 0, 0),
     [
-        (42, 46, 63),  # black
-        (192, 57, 43),  # red
-        (69, 111, 43),  # green
-        (131, 94, 0),  # yellow
-        (46, 91, 168),  # blue
+        (0, 0, 0),  # black
+        (170, 55, 49),  # red
+        (48, 120, 10),  # green
+        (140, 98, 5),  # yellow
+        (50, 92, 192),  # blue
         (122, 62, 157),  # magenta
-        (30, 111, 168),  # cyan
-        (42, 46, 63),  # white
+        (4, 116, 131),  # cyan
+        (105, 105, 105),  # white
     ],
     [
         (105, 105, 105),  # bright black
