@@ -352,16 +352,25 @@ class _ProviderBase(pydantic.BaseModel):
 
     @pydantic.model_validator(mode="after")
     def _oauth_is_the_one_credential_source(self) -> _ProviderBase:
-        """Refuse a key source or a non-bearer auth style beside a configured issuer.
+        """Refuse credentials or header targets that conflict with the `oauth` setting.
 
         Returns:
             The model unchanged.
 
         Raises:
-            ValueError: `oauth` is set with `api_key_env`, `token_command` or an `auth_style`
+            ValueError: A template targets `oauth` or `exchange` without an `oauth` setting,
+                or `oauth` is set with `api_key_env`, `token_command` or an `auth_style`
                 other than `bearer`.
         """
         if self.oauth is None:
+            for name, value in self.extra_headers.items():
+                if isinstance(value, _headers.HeaderTemplate):
+                    for target in value.targets:
+                        if target in ("exchange", "oauth"):
+                            raise ValueError(
+                                f"extra_headers.{name} targets {target!r}, but the entry has"
+                                " no oauth setting"
+                            )
             return self
         if refusal := _oauth.credential_url_refusal(self.base_url, field="base_url"):
             raise ValueError(f"with oauth set, the grant rides every request: {refusal}")

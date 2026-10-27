@@ -72,7 +72,8 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 
 `[providers.<name>.extra_headers]` is the one place extra HTTP headers come from.
 A literal string (`"x-title" = "agent6"`) rides every API request: model calls, the model listing and the plan reading.
-A template table renders from request facts for the request classes it names, and only a template whose `targets` name `oauth` or `exchange` reaches a credential endpoint.
+A template table renders from request facts for the request classes it names.
+Only a template whose `targets` name `oauth` or `exchange` reaches a configured issuer's credential endpoint.
 The facts: `request_id` (fresh per HTTP attempt) and `agent6_version` on every request; `model`, `session_id` (an opaque id per role and provider, kept across a resume), `initiator` (`user` or `agent`), `is_first_turn`, `is_subagent`, `has_tool_results` and `has_images` on a model call.
 `{{` and `}}` are literal braces; a placeholder holds a fact name and nothing else.
 The transport owns `authorization`, `x-api-key`, `api-key`, `cookie`, `host`, `connection`, `content-length`, `transfer-encoding`, `content-type` and `accept`; naming one refuses at config load, as does a control character, two spellings of one header, or a template its target cannot render.

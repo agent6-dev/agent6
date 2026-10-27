@@ -146,7 +146,8 @@ class HeaderTemplate(pydantic.BaseModel):
         description=(
             "the request classes the header reaches: `inference` (model calls), `models` (the"
             " listing), `usage` (the plan reading), `oauth` (device, token and revocation"
-            " requests), `exchange` (the configured second exchange)"
+            " requests), `exchange` (the configured second exchange). The `oauth` and `exchange`"
+            " targets require an `oauth` setting on the entry"
         ),
     )
     when: BooleanFact | None = pydantic.Field(

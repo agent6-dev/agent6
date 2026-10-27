@@ -80,6 +80,73 @@ def test_an_unsendable_header_map_refuses_at_load(headers: dict[str, Any], word:
         _entry(headers)
 
 
+@pytest.mark.parametrize("api_format", ["anthropic", "chatgpt", "openai", "responses"])
+@pytest.mark.parametrize("target", ["exchange", "oauth"])
+def test_a_credential_header_target_requires_an_oauth_setting(api_format: str, target: str) -> None:
+    """An API key or ChatGPT's fixed sign-in cannot render configured-issuer headers."""
+    with pytest.raises(pydantic.ValidationError) as exc:
+        Config.model_validate(
+            {
+                "providers": {
+                    "work": {
+                        "api_format": api_format,
+                        "base_url": "https://m.example/v1",
+                        "api_key_env": None if api_format == "chatgpt" else "WORK_KEY",
+                        "extra_headers": {
+                            "x-static": "literal",
+                            "X-Trace": {
+                                "template": "{request_id}",
+                                "targets": ["inference", target],
+                            },
+                        },
+                    }
+                }
+            }
+        )
+    assert exc.value.errors()[0]["msg"] == (
+        f"Value error, extra_headers.X-Trace targets {target!r}, but the entry has no oauth setting"
+    )
+
+
+@pytest.mark.parametrize("target", ["exchange", "oauth"])
+def test_a_configured_issuer_accepts_a_credential_header_target(target: str) -> None:
+    """The issuer setting permits credential targets alongside API targets."""
+    entry = _entry(
+        {
+            "x-static": "literal",
+            "X-Trace": {"template": "{request_id}", "targets": ["inference", target]},
+        },
+        oauth={
+            "issuer": "https://login.example",
+            "client_id": "c",
+            "device_authorization_endpoint": "https://login.example/device",
+            "token_endpoint": "https://login.example/token",
+        },
+    )
+    hs = _headers.HeaderSet.from_config(entry.extra_headers)
+    facts = _headers.plain_facts(target)
+    assert hs.render(facts) == {"x-trace": facts.request_id}
+
+
+@pytest.mark.parametrize("name", ["chatgpt-account-id", "originator", "session-id"])
+@pytest.mark.parametrize("target", ["exchange", "oauth"])
+def test_chatgpt_reserved_headers_stay_reserved_for_credential_targets(
+    name: str, target: str
+) -> None:
+    """A credential target cannot bypass ChatGPT's reserved-header refusal."""
+    with pytest.raises(pydantic.ValidationError, match=f"may not set {name}: the transport owns"):
+        Config.model_validate(
+            {
+                "providers": {
+                    "work": {
+                        "api_format": "chatgpt",
+                        "extra_headers": {name: {"template": "{request_id}", "targets": [target]}},
+                    }
+                }
+            }
+        )
+
+
 def test_every_fact_renders_for_the_class_that_has_it() -> None:
     entry = _entry(
         {
