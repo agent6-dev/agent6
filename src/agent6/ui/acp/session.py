@@ -200,7 +200,7 @@ class Sessions:
             raise rpc.RpcError(rpc.INVALID_PARAMS, f"cannot resume {session_id}: {blocker}")
         known = self._by_id.get(session_id)
         if known is not None and not known.closed:
-            if known.cwd != cwd:
+            if known.cwd.resolve() != cwd.resolve():
                 raise rpc.RpcError(
                     rpc.INVALID_PARAMS,
                     f"{session_id} is open for {known.cwd}; close it before resuming it here",

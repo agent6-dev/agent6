@@ -182,6 +182,14 @@ def test_resume_opens_a_recorded_run_under_its_own_id(tmp_path: pathlib.Path) ->
         sessions,
     )
     assert f"quiet-run-AAAAAA is open for {cwd}; close it" in elsewhere["error"]["message"]
+    alias = tmp_path / "alias"
+    alias.symlink_to(cwd)
+    (same,) = _drive(
+        _msg(10, "session/resume", cwd=str(alias), sessionId="quiet-run-AAAAAA", mcpServers=[])
+        + b"\n",
+        sessions,
+    )
+    assert same["result"] == {}
     (editor_servers,) = _drive(
         _msg(
             9,
