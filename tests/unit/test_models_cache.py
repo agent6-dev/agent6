@@ -4,16 +4,20 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import pathlib
 import time
+from unittest import mock
 
 import httpx2
 import pytest
 
-from agent6.config import AnthropicProviderEntry, OpenAIProviderEntry
+from agent6 import secret_store
+from agent6.config import AnthropicProviderEntry, ChatGPTProviderEntry, OpenAIProviderEntry
 from agent6.models import cache as models_cache
 from agent6.models import registry as models_registry
+from agent6.providers import _transport, types
 
 
 @pytest.fixture
@@ -23,7 +27,9 @@ def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathl
 
 
 def _ok_response(ids: list[str]) -> object:
-    def _get(url: str, headers: dict[str, str], timeout: float, **_kw: object) -> httpx2.Response:
+    def _get(
+        method: str, url: str, headers: dict[str, str], timeout: float, **_kw: object
+    ) -> httpx2.Response:
         return httpx2.Response(
             200, json={"data": [{"id": i} for i in ids]}, request=httpx2.Request("GET", url)
         )
@@ -34,12 +40,61 @@ def _ok_response(ids: list[str]) -> object:
 def test_fetches_and_caches_openai(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(httpx2, "get", _ok_response(["gpt-x", "gpt-y"]))
+    monkeypatch.setattr(_transport, "http_request", _ok_response(["gpt-x", "gpt-y"]))
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://api.openai.com/v1")
     out = models_cache.list_models("openai", entry, "sk-test")
     assert out == ["gpt-x", "gpt-y"]
     cached = json.loads((cache_home / "models" / "openai.json").read_text())
     assert cached["models"] == ["gpt-x", "gpt-y"]
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        OpenAIProviderEntry(api_format="openai", base_url="https://models.example/v1"),
+        ChatGPTProviderEntry(api_format="chatgpt", base_url="https://models.example/v1"),
+    ],
+)
+@pytest.mark.parametrize("cap", [16, 1024])
+def test_model_listings_use_the_capped_request(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    entry: OpenAIProviderEntry | ChatGPTProviderEntry,
+    cap: int,
+) -> None:
+    """Both listing formats use the default cap and propagate its retryable refusal."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    secret_store.save_oauth_tokens(
+        "p", secret_store.OAuthTokens("AT", "RT", time.time() + 3600, "acct-1")
+    )
+    url = "https://models.example/v1/models"
+    if isinstance(entry, ChatGPTProviderEntry):
+        url += "?client_version=1.0.0"
+    response = httpx2.Response(
+        200,
+        json={"data": [{"id": "m1"}], "models": [{"slug": "m1"}]},
+        request=httpx2.Request("GET", url),
+    )
+    monkeypatch.setattr(_transport, "MAX_RESPONSE_BYTES", cap)
+    with (
+        mock.patch.object(httpx2, "get", return_value=response),
+        mock.patch.object(httpx2, "stream", return_value=contextlib.nullcontext(response)),
+        mock.patch.object(_transport, "http_request", wraps=_transport.http_request) as request,
+    ):
+        if cap == 16:
+            with pytest.raises(types.ProviderError) as refused:
+                models_cache._fetch("p", entry, "AT", 7.0)
+            assert str(refused.value) == (
+                "provider response exceeded 16 bytes; refusing to buffer it"
+            )
+            assert refused.value.status_code is None and not refused.value.fatal
+        else:
+            assert models_cache._fetch("p", entry, "AT", 7.0) == (["m1"], {}, {})
+    request.assert_called_once()
+    assert request.call_args.args == ("GET", url)
+    assert request.call_args.kwargs["headers"]["authorization"] == "Bearer AT"
+    assert request.call_args.kwargs["timeout"] == 7.0
+    assert request.call_args.kwargs.get("cap") is None
 
 
 def test_fresh_cache_skips_network(
@@ -52,7 +107,7 @@ def test_fresh_cache_skips_network(
     def _boom(*a: object, **k: object) -> httpx2.Response:
         raise AssertionError("network must not be hit when cache is fresh")
 
-    monkeypatch.setattr(httpx2, "get", _boom)
+    monkeypatch.setattr(_transport, "http_request", _boom)
     entry = AnthropicProviderEntry(api_format="anthropic")
     assert models_cache.list_models("anthropic", entry, "sk-test") == ["claude-cached"]
 
@@ -72,7 +127,7 @@ def test_stale_cache_used_on_network_error(
     def _fail(*a: object, **k: object) -> httpx2.Response:
         raise httpx2.ConnectError("no route")
 
-    monkeypatch.setattr(httpx2, "get", _fail)
+    monkeypatch.setattr(_transport, "http_request", _fail)
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://openrouter.ai/api/v1")
     assert models_cache.list_models("openrouter", entry, None) == ["stale-1"]
 
@@ -83,7 +138,7 @@ def test_no_cache_network_error_returns_empty(
     def _fail(*a: object, **k: object) -> httpx2.Response:
         raise httpx2.ConnectTimeout("slow")
 
-    monkeypatch.setattr(httpx2, "get", _fail)
+    monkeypatch.setattr(_transport, "http_request", _fail)
     entry = OpenAIProviderEntry(api_format="openai")
     assert models_cache.list_models("openai", entry, "sk") == []
 
@@ -96,7 +151,7 @@ def test_never_raises_on_bad_payload(
             200, text="not json", request=httpx2.Request("GET", "http://x/models")
         )
 
-    monkeypatch.setattr(httpx2, "get", _garbage)
+    monkeypatch.setattr(_transport, "http_request", _garbage)
     entry = OpenAIProviderEntry(api_format="openai")
     assert models_cache.list_models("openai", entry, "sk") == []
 
@@ -115,7 +170,7 @@ def test_unsafe_provider_name_still_fetches(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An unsafe name skips the cache but still fetches live (never raises).
-    monkeypatch.setattr(httpx2, "get", _ok_response(["m1"]))
+    monkeypatch.setattr(_transport, "http_request", _ok_response(["m1"]))
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://api.openai.com/v1")
     assert models_cache.list_models("../evil", entry, "sk") == ["m1"]
     assert not (cache_home / "models").exists()  # nothing written outside
@@ -125,7 +180,9 @@ def test_unsafe_provider_name_still_fetches(
 
 
 def _ok_full(models: list[dict[str, object]]) -> object:
-    def _get(url: str, headers: dict[str, str], timeout: float, **_kw: object) -> httpx2.Response:
+    def _get(
+        method: str, url: str, headers: dict[str, str], timeout: float, **_kw: object
+    ) -> httpx2.Response:
         return httpx2.Response(200, json={"data": models}, request=httpx2.Request("GET", url))
 
     return _get
@@ -135,8 +192,8 @@ def test_caches_context_length_and_reads_it_back(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        httpx2,
-        "get",
+        _transport,
+        "http_request",
         _ok_full(
             [
                 {"id": "vendor/big", "context_length": 200000},
@@ -165,14 +222,14 @@ def test_fetch_models_live_bypasses_ttl_and_signals_failure(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"models": ["stale-1"]}), encoding="utf-8")
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://x/v1")
-    monkeypatch.setattr(httpx2, "get", _ok_response(["fresh-1"]))
+    monkeypatch.setattr(_transport, "http_request", _ok_response(["fresh-1"]))
     assert models_cache.fetch_models_live("o", entry, None) == ["fresh-1"]
     assert json.loads(path.read_text())["models"] == ["fresh-1"]
 
     def _fail(*a: object, **k: object) -> httpx2.Response:
         raise httpx2.ConnectError("down")
 
-    monkeypatch.setattr(httpx2, "get", _fail)
+    monkeypatch.setattr(_transport, "http_request", _fail)
     assert models_cache.fetch_models_live("o", entry, None) is None
 
 
@@ -216,7 +273,9 @@ def test_pricing_catalog_refresh_prices_a_bare_claude_id(
     """
     from agent6.models import pricing as models_pricing
 
-    def _get(url: str, headers: dict[str, str], timeout: float, **_kw: object) -> httpx2.Response:
+    def _get(
+        method: str, url: str, headers: dict[str, str], timeout: float, **_kw: object
+    ) -> httpx2.Response:
         assert "openrouter.ai" in url
         assert "Authorization" not in headers, "catalog fetch must be keyless"
         return httpx2.Response(
@@ -232,7 +291,7 @@ def test_pricing_catalog_refresh_prices_a_bare_claude_id(
             request=httpx2.Request("GET", url),
         )
 
-    monkeypatch.setattr(httpx2, "get", _get)
+    monkeypatch.setattr(_transport, "http_request", _get)
     assert models_pricing.lookup_price("claude-opus-5") is None
     models_cache.refresh_pricing_catalog()
     price = models_pricing.lookup_price("claude-opus-5")
@@ -257,7 +316,9 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
     )
     seen: dict[str, object] = {}
 
-    def _get(url: str, headers: dict[str, str], timeout: float, **_kw: object) -> httpx2.Response:
+    def _get(
+        method: str, url: str, headers: dict[str, str], timeout: float, **_kw: object
+    ) -> httpx2.Response:
         seen["url"] = url
         seen["headers"] = headers
         body = {
@@ -268,7 +329,7 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
         }
         return httpx2.Response(200, json=body, request=httpx2.Request("GET", url))
 
-    monkeypatch.setattr(httpx2, "get", _get)
+    monkeypatch.setattr(_transport, "http_request", _get)
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     ids = models_cache.list_models("chatgpt", entry, None, ttl_s=0)
     assert ids == ["gpt-5.6-sol"]
@@ -287,9 +348,9 @@ def test_chatgpt_listing_without_sign_in_fails_soft(
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
 
-    def _never(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
+    def _never(method: str, url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
         pytest.fail("no sign-in: nothing to fetch with")
 
-    monkeypatch.setattr(httpx2, "get", _never)
+    monkeypatch.setattr(_transport, "http_request", _never)
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     assert models_cache.list_models("chatgpt", entry, None, ttl_s=0) == []

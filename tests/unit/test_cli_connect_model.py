@@ -15,6 +15,7 @@ import pytest
 from agent6 import paths, secret_store
 from agent6.config import OpenAIProviderEntry
 from agent6.models import cache
+from agent6.providers import _transport
 from agent6.ui.cli import _common, _oauth, main
 from agent6.ui.cli import model as modelmod
 
@@ -215,11 +216,11 @@ def test_connect_checks_effective_host_after_target_layer_edit(
     monkeypatch.setattr(cache, "probe_provider_key", _REAL_PROBE)
     requested: list[str] = []
 
-    def get(url: str, **kwargs: object) -> httpx2.Response:
+    def get(method: str, url: str, **kwargs: object) -> httpx2.Response:
         requested.append(url)
         return httpx2.Response(200, json={"data": [{"id": "model"}]})
 
-    monkeypatch.setattr(cache.httpx2, "get", get)
+    monkeypatch.setattr(_transport, "http_request", get)
     assert main(["connect", "custom", *(["--repo"] if to_repo else [])]) == 0
     out = capsys.readouterr().out
     assert prompts[-1] == "Base URL [https://repo.example/v1]: "
@@ -349,11 +350,11 @@ def test_connect_auth_none_skips_key_check(
     monkeypatch.setattr(cache, "probe_provider_key", _REAL_PROBE)
     requested: list[str] = []
 
-    def get(url: str, **kwargs: object) -> httpx2.Response:
+    def get(method: str, url: str, **kwargs: object) -> httpx2.Response:
         requested.append(url)
         return httpx2.Response(200, json={"data": [{"id": "model"}]})
 
-    monkeypatch.setattr(cache.httpx2, "get", get)
+    monkeypatch.setattr(_transport, "http_request", get)
     assert main(["connect", "local"]) == 0
     out = capsys.readouterr().out
     assert requested == []

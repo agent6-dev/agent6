@@ -319,14 +319,16 @@ def test_the_listing_goes_through_the_credential(
     _store(entry, expires_at=None)  # the listing runs on the real clock
     seen: dict[str, Any] = {}
 
-    def fake_get(url: str, headers: dict[str, str], timeout: float, **_kw: Any) -> httpx2.Response:
+    def fake_get(
+        method: str, url: str, headers: dict[str, str], timeout: float, **_kw: Any
+    ) -> httpx2.Response:
         seen["url"] = url
         seen["headers"] = headers
         return httpx2.Response(
             200, json={"data": [{"id": "m1"}]}, request=httpx2.Request("GET", url)
         )
 
-    monkeypatch.setattr(httpx2, "get", fake_get)
+    monkeypatch.setattr(_transport, "http_request", fake_get)
     assert cache.fetch_models_live("work", entry, None, timeout_s=5.0) == ["m1"]
     assert seen["headers"]["authorization"] == "Bearer AT1"
 

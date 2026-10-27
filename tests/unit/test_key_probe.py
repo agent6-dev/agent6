@@ -4,13 +4,16 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
+from unittest import mock
 
 import httpx2
 import pytest
 
 from agent6.config import AnthropicProviderEntry, OpenAIProviderEntry
 from agent6.models import cache
+from agent6.providers import _transport
 
 
 class _FakeResp:
@@ -23,16 +26,16 @@ class _FakeResp:
 
 
 def _patch_get(monkeypatch: pytest.MonkeyPatch, resp_or_exc: Any) -> list[str]:
-    """Patch httpx2.get; return a list that records the URL(s) hit."""
+    """Stub the request seam and record each URL."""
     urls: list[str] = []
 
-    def _get(url: str, **_kw: Any) -> _FakeResp:
+    def _get(method: str, url: str, **_kw: Any) -> _FakeResp:
         urls.append(url)
         if isinstance(resp_or_exc, Exception):
             raise resp_or_exc
         return resp_or_exc
 
-    monkeypatch.setattr("agent6.models.cache.httpx2.get", _get)
+    monkeypatch.setattr(_transport, "http_request", _get)
     return urls
 
 
@@ -41,6 +44,34 @@ def test_probe_ok_with_models(monkeypatch: pytest.MonkeyPatch) -> None:
     r = cache.probe_provider_key(AnthropicProviderEntry(api_format="anthropic"), "sk-ant-real")
     assert r.ok and r.status == "ok"
     assert "2 models" in r.detail
+
+
+@pytest.mark.parametrize("cap", [16, 1024])
+def test_key_probe_uses_the_capped_request(monkeypatch: pytest.MonkeyPatch, cap: int) -> None:
+    """A probe uses the default cap and reports an oversized reply as unreachable."""
+    entry = OpenAIProviderEntry(api_format="openai", base_url="https://models.example/v1")
+    url = "https://models.example/v1/models"
+    response = httpx2.Response(
+        200, json={"data": [{"id": "m1"}]}, request=httpx2.Request("GET", url)
+    )
+    monkeypatch.setattr(_transport, "MAX_RESPONSE_BYTES", cap)
+    with (
+        mock.patch.object(httpx2, "get", return_value=response),
+        mock.patch.object(httpx2, "stream", return_value=contextlib.nullcontext(response)),
+        mock.patch.object(_transport, "http_request", wraps=_transport.http_request) as request,
+    ):
+        result = cache.probe_provider_key(entry, "AT", timeout_s=7.0)
+    if cap == 16:
+        assert result == cache.KeyProbeResult(
+            ok=False,
+            status="unreachable",
+            detail="provider response exceeded 16 bytes; refusing to buffer it",
+        )
+    else:
+        assert result == cache.KeyProbeResult(
+            ok=True, status="ok", detail="provider returned 1 models"
+        )
+    request.assert_called_once_with("GET", url, headers={"authorization": "Bearer AT"}, timeout=7.0)
 
 
 def test_probe_ok_empty_list(monkeypatch: pytest.MonkeyPatch) -> None:

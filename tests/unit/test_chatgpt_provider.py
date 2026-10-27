@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import pathlib
 import time
@@ -11,11 +12,12 @@ from collections.abc import Iterator
 from typing import Any
 from unittest import mock
 
+import httpx2
 import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import secret_store
-from agent6.providers import ProviderError, _responses, chatgpt, chatgpt_oauth, types
+from agent6.providers import ProviderError, _responses, _transport, chatgpt, chatgpt_oauth, types
 
 # The route the fixture provider replays reasoning on.
 _ROUTE = _responses.replay_route("chatgpt", "https://chatgpt.com/backend-api/codex", "gpt-5-codex")
@@ -351,7 +353,7 @@ def test_response_done_raises_and_bills_a_failed_response(
     provider = _provider(signed_in, budget=budget)
     no_preflight, _ = _usage_get({}, status=503)
     with (
-        mock.patch("httpx2.get", side_effect=no_preflight),
+        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
         pytest.raises(ProviderError, match="failed after generation"),
     ):
@@ -368,7 +370,7 @@ def test_response_done_raises_and_bills_a_cancelled_response(
     provider = _provider(signed_in, budget=budget)
     no_preflight, _ = _usage_get({}, status=503)
     with (
-        mock.patch("httpx2.get", side_effect=no_preflight),
+        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
         pytest.raises(ProviderError, match="cancelled"),
     ):
@@ -419,7 +421,7 @@ def test_failed_event_usage_is_recorded(signed_in: chatgpt_oauth.ChatGPTCredenti
     no_preflight, _ = _usage_get({}, status=503)
 
     with (
-        mock.patch("httpx2.get", side_effect=no_preflight),
+        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
         pytest.raises(ProviderError, match="failed after generation"),
     ):
@@ -486,7 +488,9 @@ def test_budgeted_call_requires_usage(signed_in: chatgpt_oauth.ChatGPTCredential
             max_usd=-1, max_tokens_fallback=1_000_000, max_plan_points=-1
         ),
     )
+    no_preflight, _ = _usage_get({}, status=503)
     with (
+        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
         mock.patch(
             "httpx2.stream",
             side_effect=_serve(lines),
@@ -634,7 +638,11 @@ def test_plan_usage_headers_feed_the_percent_budget(
         }
         return resp
 
-    with mock.patch("httpx2.stream", side_effect=stream):
+    no_preflight, _ = _usage_get({}, status=503)
+    with (
+        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
+        mock.patch("httpx2.stream", side_effect=stream),
+    ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert provider.budget is not None
     snap = provider.budget.snapshot()
@@ -663,7 +671,7 @@ def test_http_error_plan_headers_reach_the_budget(
         return response
 
     with (
-        mock.patch("httpx2.get", side_effect=no_preflight),
+        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=stream),
         pytest.raises(ProviderError) as error,
     ):
@@ -1063,7 +1071,7 @@ def _usage_get(body: dict[str, Any], status: int = 200):
 
     calls: list[str] = []
 
-    def get(url: str, **kwargs: Any) -> _Resp:
+    def get(method: str, url: str, **kwargs: Any) -> _Resp:
         calls.append(url)
         return _Resp()
 
@@ -1095,7 +1103,7 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
         ),
     )
     with (
-        mock.patch("httpx2.get", side_effect=get),
+        mock.patch.object(_transport, "http_request", side_effect=get),
         mock.patch("httpx2.stream", side_effect=stream),
         pytest.raises(agent6_budget.BudgetExceededError, match="purchased"),
     ):
@@ -1109,7 +1117,10 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
             max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1, allow_plan_overage=True
         ),
     )
-    with mock.patch("httpx2.get", side_effect=get), mock.patch("httpx2.stream", side_effect=stream):
+    with (
+        mock.patch.object(_transport, "http_request", side_effect=get),
+        mock.patch("httpx2.stream", side_effect=stream),
+    ):
         allowed.call(system="s", messages=[{"role": "user", "content": "x"}])
         allowed.call(system="s", messages=[{"role": "user", "content": "y"}])
     assert len(streamed) == 2 and len(urls) == 2  # one preflight per provider
@@ -1126,10 +1137,47 @@ def test_the_budget_reads_the_plan_once_more_after_the_run(
 
     tracker = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1)
     provider = _provider(signed_in, budget=tracker)
-    with mock.patch("httpx2.get", side_effect=get), mock.patch("httpx2.stream", side_effect=stream):
+    with (
+        mock.patch.object(_transport, "http_request", side_effect=get),
+        mock.patch("httpx2.stream", side_effect=stream),
+    ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
         tracker.settle()
     assert urls == ["https://chatgpt.com/backend-api/codex/usage"] * 2
+
+
+@pytest.mark.parametrize("cap", [16, 1024])
+def test_usage_reading_uses_the_capped_request(
+    signed_in: chatgpt_oauth.ChatGPTCredential, monkeypatch: pytest.MonkeyPatch, cap: int
+) -> None:
+    """The plan read uses the default cap and treats an oversized reply as no reading."""
+    provider = _provider(signed_in)
+    url = "https://chatgpt.com/backend-api/codex/usage"
+    response = httpx2.Response(200, json=_USAGE_BODY, request=httpx2.Request("GET", url))
+    monkeypatch.setattr(_transport, "MAX_RESPONSE_BYTES", cap)
+    with (
+        mock.patch.object(httpx2, "get", return_value=response),
+        mock.patch.object(httpx2, "stream", return_value=contextlib.nullcontext(response)),
+        mock.patch.object(_transport, "http_request", wraps=_transport.http_request) as request,
+    ):
+        plan = provider.preflight()
+    if cap == 16:
+        assert plan is None
+    else:
+        assert plan is not None and plan.used_percent == 38.0
+    request.assert_called_once_with(
+        "GET",
+        url,
+        headers={
+            "content-type": "application/json",
+            "authorization": "Bearer AT0",
+            "chatgpt-account-id": "acct-1",
+            "openai-beta": "responses=experimental",
+            "originator": "agent6",
+            "session-id": provider.session_id,
+        },
+        timeout=20.0,
+    )
 
 
 def test_preflight_failure_never_blocks(signed_in: chatgpt_oauth.ChatGPTCredential) -> None:
@@ -1142,13 +1190,13 @@ def test_preflight_failure_never_blocks(signed_in: chatgpt_oauth.ChatGPTCredenti
         ),
     )
     with (
-        mock.patch("httpx2.get", side_effect=get),
+        mock.patch.object(_transport, "http_request", side_effect=get),
         mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())),
     ):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "hello"
     with (
-        mock.patch("httpx2.get", side_effect=OSError("down")),
+        mock.patch.object(_transport, "http_request", side_effect=OSError("down")),
         mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())),
     ):
         fresh = _provider(
@@ -1190,7 +1238,7 @@ def test_a_credential_fault_in_the_preflight_is_no_reading(
         ),
     )
     with (
-        mock.patch("httpx2.get", side_effect=get),
+        mock.patch.object(_transport, "http_request", side_effect=get),
         mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())),
     ):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
@@ -1219,7 +1267,9 @@ def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
 
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider = _provider(signed_in, budget=budget)
+    no_preflight, _ = _usage_get({}, status=503)
     with (
+        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=stream),
         pytest.raises(types.ProviderError, match="no usage input tokens"),
     ):

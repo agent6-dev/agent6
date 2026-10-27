@@ -310,26 +310,14 @@ def _fetch(
         return [], {}, {}  # no endpoint: the binary resolves model names itself
     if isinstance(entry, ChatGPTProviderEntry):
         url, headers = _chatgpt_models_endpoint(provider_name, entry)
-        resp = httpx2.get(
-            url,
-            headers=headers,
-            timeout=timeout_s,
-            follow_redirects=False,
-            trust_env=_transport.trust_env_for(url),
-        )
+        resp = _transport.http_request("GET", url, headers=headers, timeout=timeout_s)
         resp.raise_for_status()
         ids, context = _chatgpt_listing(resp.json())
         return ids, {}, context  # a subscription prices nothing
     if entry.oauth is not None:
         api_key = oauth.OAuthCredential(provider_name, entry).token()  # bound, refreshed
     url, headers = _models_endpoint(entry, api_key)
-    resp = httpx2.get(
-        url,
-        headers=headers,
-        timeout=timeout_s,
-        follow_redirects=False,
-        trust_env=_transport.trust_env_for(url),
-    )
+    resp = _transport.http_request("GET", url, headers=headers, timeout=timeout_s)
     resp.raise_for_status()
     payload = resp.json()
     return _parse_models(payload), _parse_pricing(payload), _parse_context(payload)
@@ -394,14 +382,8 @@ def probe_provider_key(
     if host == "openrouter.ai" or host.endswith(".openrouter.ai"):
         url = entry.base_url.rstrip("/") + "/key"
     try:
-        resp = httpx2.get(
-            url,
-            headers=headers,
-            timeout=timeout_s,
-            follow_redirects=False,
-            trust_env=_transport.trust_env_for(url),
-        )
-    except (httpx2.HTTPError, OSError) as exc:
+        resp = _transport.http_request("GET", url, headers=headers, timeout=timeout_s)
+    except (httpx2.HTTPError, OSError, types.ProviderError) as exc:
         return KeyProbeResult(ok=False, status="unreachable", detail=str(exc)[:200])
     if resp.status_code in (401, 403):
         return KeyProbeResult(ok=False, status="auth_failed", detail=f"HTTP {resp.status_code}")
@@ -469,7 +451,7 @@ def fetch_models_live(
     try:
         models, pricing, context = _fetch(provider_name, entry, api_key, timeout_s)
     except (httpx2.HTTPError, ValueError, OSError, types.ProviderError):
-        return None  # ProviderError: a malformed credential, or no ChatGPT sign-in
+        return None
     if not models:
         return None
     _write_cache(_cache_path(provider_name), models, pricing, context)

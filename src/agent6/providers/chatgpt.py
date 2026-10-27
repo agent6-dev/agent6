@@ -233,12 +233,11 @@ class ChatGPTProvider:
         try:
             token = self.credential.token()
             url = f"{self.base_url.rstrip('/')}/usage"
-            resp = httpx2.get(
+            resp = _transport.http_request(
+                "GET",
                 url,
                 headers=self._build_headers(token, _headers.plain_facts("usage")),
                 timeout=20.0,
-                follow_redirects=False,
-                trust_env=_transport.trust_env_for(url),
             )
             if resp.status_code != 200:
                 return None

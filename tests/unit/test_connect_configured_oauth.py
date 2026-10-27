@@ -96,14 +96,14 @@ def test_the_device_flow_signs_in_headless_and_binds_the_grant(
         posts.append((url, data))
         return answers.pop(0)
 
-    def fake_get(url: str, headers: dict[str, str], **_kw: Any) -> httpx2.Response:
+    def fake_get(method: str, url: str, headers: dict[str, str], **_kw: Any) -> httpx2.Response:
         assert headers["authorization"] == "Bearer AT1"
         return httpx2.Response(
             200, json={"data": [{"id": "m1"}, {"id": "m2"}]}, request=httpx2.Request("GET", url)
         )
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
-    monkeypatch.setattr(httpx2, "get", fake_get)
+    monkeypatch.setattr(_transport, "http_request", fake_get)
     assert main(["connect", "work"]) == 0
     out = capsys.readouterr().out
     assert "open  https://login.example/activate" in out and "enter the code:  ABCD-EFGH" in out
