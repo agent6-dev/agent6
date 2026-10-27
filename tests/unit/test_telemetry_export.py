@@ -23,6 +23,7 @@ from agent6.ui.cli import main
 from agent6.ui.telemetry import export
 from agent6.viewmodel import telemetry_records
 from tests.unit import test_telemetry_fold as fold_tests
+from tests.unit import test_telemetry_machine as machine_tests
 
 
 @dataclasses.dataclass
@@ -310,6 +311,172 @@ def test_a_live_runs_unfinished_work_is_not_sent_as_incomplete(repo: pathlib.Pat
     spans = dead.requests[0][2]["resourceSpans"][0]["scopeSpans"][0]["spans"]
     incomplete = {"key": "agent6.incomplete", "value": {"boolValue": True}}
     assert all(incomplete in s["attributes"] for s in spans)
+
+
+def _spans(collector: _Collector) -> list[dict[str, Any]]:
+    return [
+        span
+        for url, _, body in collector.requests
+        if url.endswith("/traces")
+        for span in body["resourceSpans"][0]["scopeSpans"][0]["spans"]
+    ]
+
+
+@pytest.mark.parametrize("batch", [1, export.BATCH])
+@pytest.mark.parametrize("accepted", [True, False])
+def test_a_resumed_crash_delivers_each_span_once_per_endpoint(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, batch: int, accepted: bool
+) -> None:
+    """A delivered close is not replayed at resume; a refused close gets the journaled end."""
+    monkeypatch.setattr(export, "BATCH", batch)
+    ts = fold_tests._ts  # pyright: ignore[reportPrivateUsage]
+    crashed = fold_tests._journal()[:3]  # pyright: ignore[reportPrivateUsage]
+    _write_session(repo, "run-a", crashed)
+    config = _config(logs="none", metrics="none")
+    first = _Collector(statuses=[] if accepted else [401])
+    report = export.export(repo, config, post=first.post)
+    assert report.spans == (3 if accepted else 0)
+    delivered = _spans(first) if accepted else []
+    if accepted:
+        unchanged = _Collector()
+        assert export.export(repo, config, post=unchanged.post).spans == 0
+    journal = paths.state_dir(repo) / "sessions" / "runs" / "run-a" / "logs.jsonl"
+    with journal.open("a") as fh:
+        fh.write(
+            json.dumps(
+                {"type": "loop.resume.start", "ts": ts(100), "execution_id": "e2", "turn": 2}
+            )
+            + "\n"
+        )
+        fh.write(
+            json.dumps(
+                {
+                    "type": "session.end",
+                    "ts": ts(120),
+                    "reason": "finish_session",
+                    "verified": "passed",
+                }
+            )
+            + "\n"
+        )
+    resumed = _Collector()
+    export.export(repo, config, post=resumed.post)
+    delivered.extend(_spans(resumed))
+    ids = [s["spanId"] for s in delivered]
+    assert len(ids) == len(set(ids)) == 5
+    interrupted = [
+        s for s in delivered if s["startTimeUnixNano"] == str(telemetry_records.event_ns(ts(0)))
+    ]
+    assert len(interrupted) == 1
+    end = ts(1) if accepted else ts(100)
+    assert interrupted[0]["endTimeUnixNano"] == str(telemetry_records.event_ns(end))
+    again = _Collector()
+    assert export.export(repo, config, post=again.post).spans == 0
+    elsewhere = _Collector()
+    other = config.model_copy(update={"endpoint": "http://127.0.0.1:4319"})
+    assert export.export(repo, other, post=elsewhere.post).spans == 5
+    assert len({s["spanId"] for s in _spans(elsewhere)}) == 5
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_legacy_cursors_keep_their_offset_and_close_marker(
+    repo: pathlib.Path, closed: bool
+) -> None:
+    """An offset with an optional closed word needs no additional cursor fields."""
+    import hashlib
+
+    rows = fold_tests._journal()[:3]  # pyright: ignore[reportPrivateUsage]
+    size = _write_session(repo, "run-a", rows)
+    config = _config(logs="none", metrics="none")
+    key = hashlib.sha256(config.endpoint.encode()).hexdigest()[:16]
+    cursor = paths.state_dir(repo) / "telemetry" / key / "run-a.traces.offset"
+    cursor.parent.mkdir(parents=True)
+    cursor.write_text(f"{size}{' closed' if closed else ''}\n")
+    collector = _Collector()
+    assert export.export(repo, config, post=collector.post).spans == (0 if closed else 3)
+    assert cursor.read_text().split()[:2] == [str(size), "closed"]
+
+
+@pytest.mark.parametrize("selected", ["", "demo"])
+def test_machine_exports_parent_workers_and_do_not_double_count_spend(
+    repo: pathlib.Path, selected: str
+) -> None:
+    """Machine discovery includes worker journals under their state, with separate cursors."""
+    root = paths.state_dir(repo) / "machines" / "demo"
+    state = root / "states" / "0003-review"
+    state.mkdir(parents=True)
+    (root / "journal.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in machine_tests.journal())
+    )
+    (state / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in machine_tests.worker()))
+    collector = _Collector()
+    report = export.export(repo, _config(), session_id=selected, post=collector.post)
+    assert report.spans == 7
+    spans = [
+        s
+        for url, _, body in collector.requests
+        if url.endswith("/traces")
+        for s in body["resourceSpans"][0]["scopeSpans"][0]["spans"]
+    ]
+    review = next(
+        s
+        for s in spans
+        if {"key": "agent6.machine.state", "value": {"stringValue": "review"}} in s["attributes"]
+    )
+    execution = next(s for s in spans if s["name"] == "agent6.execution")
+    call = next(s for s in spans if s["name"] == "agent6.model_call")
+    assert execution["parentSpanId"] == review["spanId"]
+    assert call["parentSpanId"] == execution["spanId"]
+    assert execution["traceId"] == call["traceId"] == review["traceId"]
+    metrics = collector.requests[-1][2]["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    cost = next(m for m in metrics if m["name"] == "agent6_cost_usd_total")
+    assert sum(p["asDouble"] for p in cost["sum"]["dataPoints"]) == 0.25
+    tokens = next(m for m in metrics if m["name"] == "agent6_tokens_total")
+    assert sum(p["asDouble"] for p in tokens["sum"]["dataPoints"]) == 1200
+    again = _Collector()
+    report = export.export(repo, _config(), session_id=selected, post=again.post)
+    assert (report.spans, report.logs) == (0, 0)
+    assert again.paths() == ["metrics"]
+
+
+def test_machine_follow_discovers_workers_before_the_next_transition(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worker's records go out while the supervisor journal is idle."""
+    monkeypatch.setattr(export, "FLUSH_S", 0.0)
+    monkeypatch.setattr(export, "POLL_S", 0.0)
+    root = paths.state_dir(repo) / "machines" / "demo"
+    root.mkdir(parents=True)
+    journal = root / "journal.jsonl"
+    rows = machine_tests.journal()
+    journal.write_text("".join(json.dumps(e) + "\n" for e in rows[:4]))
+    collector = _Collector()
+    polls = 0
+
+    def stop() -> bool:
+        nonlocal polls
+        polls += 1
+        if polls == 2:
+            state = root / "states" / "0003-review"
+            state.mkdir(parents=True)
+            (state / "logs.jsonl").write_text(
+                "".join(json.dumps(e) + "\n" for e in machine_tests.worker())
+            )
+        if polls == 3:
+            assert "agent6.model_call" in json.dumps(collector.requests)
+            with journal.open("a") as fh:
+                fh.write("".join(json.dumps(e) + "\n" for e in rows[4:]))
+            return True
+        return False
+
+    process.write_worker_pid(root, os.getpid())
+    try:
+        report = export.export(
+            repo, _config(), session_id="demo", follow=True, post=collector.post, should_stop=stop
+        )
+    finally:
+        process.clear_worker_pid(root)
+    assert report.spans == 7
 
 
 def test_retry_after_reads_seconds_and_http_dates() -> None:

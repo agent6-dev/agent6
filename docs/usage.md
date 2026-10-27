@@ -458,7 +458,8 @@ The reversal needs its own checks; the original receipt does not certify a merge
 
 ## Telemetry export
 
-`agent6 telemetry export` reads this repository's session journals and delivers what `[telemetry]` selects: spans for each execution, turn, model call, tool call, verification, review panel and operator wait; cumulative metrics (tokens, cost, plan points, tool calls, verification outcomes and durations, findings, approvals, waits); and log records for the significant events.
+`agent6 telemetry export` reads this repository's run and machine journals and delivers what `[telemetry]` selects: spans for each execution, turn, model call, tool call, verification, review panel, operator wait and completed machine state; cumulative metrics (tokens, cost, plan points, tool calls, verification outcomes and durations, findings, approvals, waits); and log records for the significant events.
+Machine worker executions are children of their state spans, and machine waits produce log records.
 Nothing is exported until a signal is selected; a run never exports its own events.
 
 ```toml
@@ -480,7 +481,7 @@ agent6 config show telemetry            # every key with its origin
 - A cursor per endpoint and session keeps a re-run from re-sending delivered spans and log records; the metrics reading is always the whole cumulative snapshot, and the Prometheus file is rewritten whole.
 - The default `capture = "metadata"` exports outcomes, counts, timings and the journal's ids, never the task, arguments, outputs or diffs; `capture = "content"` adds the capped excerpts `telemetry.capture` lists ([config](config.md#telemetry)).
 - `--follow` posts what it holds every five seconds while events arrive and once more on Ctrl-C; a live run's unfinished work is sent when the run finishes it, not at the export's end.
-  A crashed run's unfinished work is sent once, marked incomplete; a resume of that run sends it again with the resume as its end.
+  A crashed run's unfinished work is sent once, marked incomplete.
 - A request the collector answers with 429, 502, 503 or 504 is tried three times with backoff; any other refusal turns the endpoint off for that export, and the command exits 1 naming it.
 - `agent6_plan_observed_points_total` counts the plan-window movement a run observed, which is the account's whole window; it is not this run's billing.
 

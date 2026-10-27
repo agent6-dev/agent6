@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The OTLP/HTTP JSON and Prometheus text encodings of the telemetry records.
 
-The wire golden pins the three OTLP bodies for one journal, so a drift in the encoding or
-the projection is a deliberate edit here; the scope version is normalized, so a release
-bump is not.
+The wire golden pins the three OTLP bodies for run and machine journals.
+The scope version is normalized, so a release bump does not change the golden.
 """
 
 from __future__ import annotations
@@ -17,8 +16,9 @@ import pytest
 
 from agent6 import __version__
 from agent6.ui.telemetry import _otlp, _prometheus  # pyright: ignore[reportPrivateUsage]
-from agent6.viewmodel import telemetry_metrics, telemetry_records
+from agent6.viewmodel import telemetry, telemetry_metrics, telemetry_records
 from tests.unit import test_telemetry_fold as fold_tests
+from tests.unit import test_telemetry_machine as machine_tests
 
 _GOLDEN = pathlib.Path(__file__).parent / "data" / "golden_telemetry_wire.json"
 _RESOURCE: telemetry_records.Attributes = (("service.name", "agent6"), ("agent6.repo", "0123abcd"))
@@ -28,11 +28,31 @@ _NOW = telemetry_records.event_ns(fold_tests._ts(60))  # pyright: ignore[reportP
 
 def _bodies() -> dict[str, object]:
     fold, spans, logs = fold_tests._run(fold_tests._journal())  # pyright: ignore[reportPrivateUsage]
-    assert _START is not None and _NOW is not None
+    machine, machine_spans, machine_logs = machine_tests.folded()
+    state = machine_spans[3]
+    worker = telemetry.TelemetryFold(
+        "machine:demo:0003-review",
+        parent=telemetry_records.SpanContext(state.trace_id, state.span_id),
+    )
+    for event in machine_tests.worker():
+        emitted = worker.feed(event)
+        machine_spans.extend(emitted.spans)
+        machine_logs.extend(emitted.logs)
+    assert _START is not None and _NOW is not None and machine.first_ns is not None
     return {
         "traces": _otlp.traces_body(spans, _RESOURCE),
         "metrics": _otlp.metrics_body(fold.metrics(), _RESOURCE, start_ns=_START, now_ns=_NOW),
         "logs": _otlp.logs_body(logs, _RESOURCE),
+        "machine": {
+            "traces": _otlp.traces_body(machine_spans, _RESOURCE),
+            "logs": _otlp.logs_body(machine_logs, _RESOURCE),
+            "metrics": _otlp.metrics_body(
+                machine.metrics(workers={3: worker.metrics()}),
+                _RESOURCE,
+                start_ns=machine.first_ns,
+                now_ns=_NOW,
+            ),
+        },
     }
 
 
@@ -42,7 +62,7 @@ def _golden_text() -> str:
 
 
 def test_the_otlp_bodies_match_the_golden() -> None:
-    """The three request bodies for one journal are pinned byte for byte, the version aside."""
+    """Run and machine request bodies are pinned byte for byte, the version aside."""
     assert _golden_text() == _GOLDEN.read_text(encoding="utf-8"), (
         "the OTLP wire drifted; if intended, regenerate: python -c "
         '"import tests.unit.test_telemetry_wire as t; '

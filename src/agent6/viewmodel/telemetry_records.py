@@ -26,6 +26,7 @@ SpanKind = Literal["internal", "client"]
 
 # The span names, one per unit of work the journal records.
 SPAN_EXECUTION = "agent6.execution"
+SPAN_MACHINE_STATE = "agent6.machine.state"
 SPAN_TURN = "agent6.turn"
 SPAN_MODEL_CALL = "agent6.model_call"
 SPAN_TOOL = "agent6.tool"
@@ -38,11 +39,19 @@ _EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class SpanContext:
+    """The trace and parent span a worker execution belongs to."""
+
+    trace_id: str
+    span_id: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class Span:
     """One finished span.
 
     Attributes:
-        trace_id: 32 hex characters, one trace per execution.
+        trace_id: 32 hex characters, one trace per standalone execution or machine.
         span_id: 16 hex characters, derived from the journal id of the work.
         parent_span_id: The parent's span id; "" for a root.
         name: One of the `SPAN_*` names.
@@ -82,6 +91,20 @@ class Emitted:
 
     spans: tuple[Span, ...] = ()
     logs: tuple[LogRecord, ...] = ()
+
+    def under(self, parent: SpanContext | None) -> Emitted:
+        """Return records under a parent's trace, preserving every span's own id."""
+        if parent is None:
+            return self
+        return Emitted(
+            tuple(
+                dataclasses.replace(
+                    s, trace_id=parent.trace_id, parent_span_id=s.parent_span_id or parent.span_id
+                )
+                for s in self.spans
+            ),
+            tuple(dataclasses.replace(log, trace_id=parent.trace_id) for log in self.logs),
+        )
 
 
 def event_ns(value: object) -> int | None:

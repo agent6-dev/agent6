@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, ClassVar, Literal
 
 from agent6 import evidence
-from agent6.viewmodel import review, telemetry_metrics, telemetry_records
+from agent6.viewmodel import review, telemetry_machine, telemetry_metrics, telemetry_records
 
 Capture = Literal["metadata", "content"]
 _TOKEN_TYPES = (
@@ -46,11 +46,20 @@ class TelemetryFold:
     Args:
         session_id: The session the journal belongs to.
         capture: `metadata`, or `content` for the capped excerpts.
+        parent: The machine state a worker belongs to, None for a standalone run.
     """
 
-    def __init__(self, session_id: str, *, capture: Capture = "metadata") -> None:
+    def __init__(
+        self,
+        session_id: str,
+        *,
+        capture: Capture = "metadata",
+        parent: telemetry_records.SpanContext | None = None,
+    ) -> None:
         self.session_id = session_id
         self.capture = capture
+        self._parent = parent
+        self._machine: telemetry_machine.MachineFold | None = None
         self.meter = telemetry_metrics.Meter()
         self.first_ns: int | None = None
         self._execution: telemetry_records.Execution | None = None
@@ -84,6 +93,10 @@ class TelemetryFold:
             if self.first_ns is None or ns < self.first_ns:
                 self.first_ns = ns
         now = self._last_ns
+        if kind == "machine.begin":
+            self._machine = telemetry_machine.MachineFold(self.session_id)
+        if self._machine is not None:
+            return self._machine.feed(event, now)
         spans: list[telemetry_records.Span] = []
         logs: list[telemetry_records.LogRecord] = []
         if kind in ("session.start", "loop.resume.start"):
@@ -92,7 +105,7 @@ class TelemetryFold:
             logs.extend(self._findings_update(event, now))
         execution = self._execution
         if execution is None or (execution.ended and kind not in _AFTER_END):
-            return telemetry_records.Emitted(tuple(spans), tuple(logs))
+            return telemetry_records.Emitted(tuple(spans), tuple(logs)).under(self._parent)
         turn = telemetry_records.as_int(event.get("turn", event.get("iteration")))
         # A turn only advances; turn 0 is the harness's own work before the first turn.
         if turn is not None and turn >= 1 and turn > (execution.turn_number or 0):
@@ -100,7 +113,7 @@ class TelemetryFold:
         handler = self._HANDLERS.get(kind)
         if handler is not None:
             handler(self, telemetry_records.Step(execution, event, now, spans, logs))
-        return telemetry_records.Emitted(tuple(spans), tuple(logs))
+        return telemetry_records.Emitted(tuple(spans), tuple(logs)).under(self._parent)
 
     def close(self, at_ns: int | None = None) -> telemetry_records.Emitted:
         """End every open span as incomplete, at the given time or the last event's.
@@ -117,10 +130,14 @@ class TelemetryFold:
             return telemetry_records.Emitted()
         now = at_ns if at_ns is not None else self._last_ns
         spans = [execution.end(s, now, "unset", incomplete=True) for s in execution.open_spans()]
-        return telemetry_records.Emitted(tuple(spans), ())
+        return telemetry_records.Emitted(tuple(spans), ()).under(self._parent)
 
-    def metrics(self) -> telemetry_metrics.MetricsSnapshot:
-        """Return the cumulative metrics as of the last event fed."""
+    def metrics(
+        self, *, workers: Mapping[int, telemetry_metrics.MetricsSnapshot] | None = None
+    ) -> telemetry_metrics.MetricsSnapshot:
+        """Return cumulative metrics, including a machine's retained worker readings."""
+        if self._machine is not None:
+            return self._machine.metrics(workers or {})
         return self.meter.snapshot()
 
     # --- executions and turns -------------------------------------------------

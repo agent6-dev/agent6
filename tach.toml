@@ -296,6 +296,9 @@ depends_on = [
   "agent6.sessions.layout",
   "agent6.sessions.process",
   "agent6.viewmodel",
+  "agent6.viewmodel.telemetry_machine",
+  "agent6.viewmodel.telemetry_metrics",
+  "agent6.viewmodel.telemetry_records",
 ]
 
 [[modules]]
@@ -424,7 +427,23 @@ depends_on = [
   "agent6.terminal",
   "agent6.tools",
   "agent6.vcs.git_read",
+  "agent6.viewmodel.telemetry_machine",
+  "agent6.viewmodel.telemetry_metrics",
+  "agent6.viewmodel.telemetry_records",
 ]
+
+[[modules]]
+# Machine transitions share telemetry records and metrics with the run fold.
+path = "agent6.viewmodel.telemetry_machine"
+depends_on = ["agent6.viewmodel.telemetry_metrics", "agent6.viewmodel.telemetry_records"]
+
+[[modules]]
+path = "agent6.viewmodel.telemetry_metrics"
+depends_on = []
+
+[[modules]]
+path = "agent6.viewmodel.telemetry_records"
+depends_on = ["agent6.viewmodel.telemetry_metrics"]
 
 [[modules]]
 # tools: a manifest is read through the workspace containment the file tools use.
