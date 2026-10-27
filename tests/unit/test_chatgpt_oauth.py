@@ -696,15 +696,15 @@ def test_unheld_refresh_lock_refuses_the_rotation(
     def unheld(_path: pathlib.Path) -> Generator[bool]:
         yield False
 
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("old", "RT1", 5000.0, "acct")
+    )  # stored under the real lock; the refusal under test is the credential's own
     monkeypatch.setattr("agent6.portable.locked_file", unheld)
     clock = {"now": 6000.0}
     fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
-    )
-    secret_store.save_oauth_tokens(
-        "chatgpt", secret_store.OAuthTokens("old", "RT1", 5000.0, "acct")
     )
     with pytest.raises(types.ProviderError, match="refresh lock"):
         cred.token()

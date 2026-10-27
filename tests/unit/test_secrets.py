@@ -226,3 +226,32 @@ def test_a_logout_on_a_fresh_machine_creates_no_open_config_dir(gcfg: pathlib.Pa
     finally:
         os.umask(old)
     assert stat.S_IMODE((gcfg / "agent6").stat().st_mode) == 0o700
+
+
+def test_a_write_refuses_when_the_lock_cannot_be_taken(gcfg: pathlib.Path) -> None:
+    """A rewrite of the secrets file never runs unserialized: an untakeable lock refuses it."""
+    first = secret_store.save_secret("anthropic", "sk-first")
+    (first.with_name(first.name + ".lock")).mkdir()  # a lock path no process can open as a file
+    with pytest.raises(secret_store.SecretsError, match="lock"):
+        secret_store.save_secret("openrouter", "sk-second")
+    with pytest.raises(secret_store.SecretsError, match="lock"):
+        secret_store.delete_provider_secrets("anthropic")
+    assert secret_store.resolve_api_key("anthropic", None) == "sk-first"
+    assert secret_store.resolve_api_key("openrouter", None) is None
+
+
+def test_a_symlinked_secrets_file_is_refused_at_the_open(
+    gcfg: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
+    """The file is opened without following links and judged by the descriptor it opened."""
+    real = tmp_path / "elsewhere.toml"
+    real.write_text('[providers.anthropic]\napi_key = "sk-planted"\n', encoding="utf-8")
+    real.chmod(0o600)
+    path = secret_store.paths.secrets_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.symlink_to(real)
+    with pytest.raises(secret_store.SecretsError, match="symlink"):
+        secret_store.load_secrets()
+    with pytest.raises(secret_store.SecretsError, match="symlink"):
+        secret_store.save_secret("anthropic", "sk-new")
+    assert real.read_text(encoding="utf-8").count("sk-planted") == 1

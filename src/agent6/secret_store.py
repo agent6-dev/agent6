@@ -12,6 +12,7 @@ Secrets never reach transcripts, `config show` or the jail.
 from __future__ import annotations
 
 import dataclasses
+import errno
 import os
 import pathlib
 import re
@@ -32,63 +33,77 @@ class SecretsError(Exception):
     """The secrets file is malformed, unreadable or unsafely permitted."""
 
 
-def _require_safe_perms(path: pathlib.Path, user: paths.RealUser) -> None:
-    """Refuse a secrets file that others can read or that the operator does not own.
+def _read_secrets_toml(path: pathlib.Path, user: paths.RealUser) -> dict[str, Any]:
+    """Parse the secrets file, the one reader; the file is judged by the descriptor read.
+
+    The open follows no link and the checks run on the opened descriptor, so a path
+    swapped between a check and a read cannot hand the reader another file.
 
     Args:
         path: The secrets file.
         user: The operator, who must own the file unless agent6 runs as root.
 
-    Raises:
-        SecretsError: The file is not regular, has group or other bits, or has another owner.
-    """
-    st = path.lstat()
-    if not stat.S_ISREG(st.st_mode):
-        raise SecretsError(f"{path} is not a regular file; refusing to read secrets from it.")
-    if st.st_mode & 0o077:
-        raise SecretsError(
-            f"{path} has unsafe permissions {stat.S_IMODE(st.st_mode):#o}"
-            f" (group/other accessible). Run: chmod 600 {path}"
-        )
-    # Under sudo the read takes the real user's file as root.
-    if os.geteuid() != 0 and st.st_uid != user.uid:
-        raise SecretsError(
-            f"{path} is owned by uid {st.st_uid}, not you (uid {user.uid});"
-            " refusing to read secrets you do not own."
-        )
-
-
-def _read_secrets_toml(path: pathlib.Path) -> dict[str, Any]:
-    """Parse the secrets file, the one reader.
-
-    Args:
-        path: The secrets file.
-
     Returns:
         The parsed TOML.
 
     Raises:
-        SecretsError: The file cannot be read or is not valid TOML; an unreadable file
-            is the operator's environment, never a crash.
+        FileNotFoundError: There is no secrets file.
+        SecretsError: The path is a link or not a regular file, has group or other bits,
+            has another owner, cannot be read, or is not valid TOML.
     """
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
-        text = path.read_text(encoding="utf-8")
+        fd = os.open(path, flags)
+    except FileNotFoundError:
+        raise
     except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise SecretsError(
+                f"{path} is a symlink; refusing to read secrets through it."
+            ) from exc
         raise SecretsError(f"could not read {path}: {exc}") from exc
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise SecretsError(f"{path} is not a regular file; refusing to read secrets from it.")
+        if st.st_mode & 0o077:
+            raise SecretsError(
+                f"{path} has unsafe permissions {stat.S_IMODE(st.st_mode):#o}"
+                f" (group/other accessible). Run: chmod 600 {path}"
+            )
+        # Under sudo the read takes the real user's file as root.
+        if os.geteuid() != 0 and st.st_uid != user.uid:
+            raise SecretsError(
+                f"{path} is owned by uid {st.st_uid}, not you (uid {user.uid});"
+                " refusing to read secrets you do not own."
+            )
+        try:
+            text = os.read(fd, st.st_size + 1).decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise SecretsError(f"could not read {path}: {exc}") from exc
+    finally:
+        os.close(fd)
     try:
         return tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise SecretsError(f"{path} is not valid TOML: {exc}") from exc
 
 
+def _lock_refusal(path: pathlib.Path) -> str:
+    """Return the refusal text for a rewrite whose lock could not be taken."""
+    return (
+        f"could not take the lock beside {path}; refusing to rewrite the secrets file"
+        " unserialized (remove a stale .lock sibling if one is left over)"
+    )
+
+
 def load_secrets(user: paths.RealUser | None = None) -> dict[str, Any]:
     """Return the validated secrets; empty when the file is absent."""
     user = user or paths.effective_user()
-    path = paths.secrets_path(user)
-    if not path.exists():
+    try:
+        return _read_secrets_toml(paths.secrets_path(user), user)
+    except FileNotFoundError:
         return {}
-    _require_safe_perms(path, user)
-    return _read_secrets_toml(path)
 
 
 def resolve_api_key(
@@ -190,17 +205,22 @@ def _save_provider_entry(
 
     Returns:
         The secrets file's path.
+
+    Raises:
+        SecretsError: The lock beside the file could not be taken, or the file refuses to be read.
     """
     user = user or paths.effective_user()
     path = paths.secrets_path(user)
     # Created 0700 and handed back here, before the lock's parent walk creates it at the umask.
     paths.mkdir_for_real_user(path.parent, user)
     path.parent.chmod(0o700)
-    with portable.locked_file(path):
-        data: dict[str, Any] = {}
-        if path.exists():
-            _require_safe_perms(path, user)
-            data = _read_secrets_toml(path)
+    with portable.locked_file(path) as held:
+        if not held:
+            raise SecretsError(_lock_refusal(path))
+        try:
+            data: dict[str, Any] = _read_secrets_toml(path, user)
+        except FileNotFoundError:
+            data = {}
         providers = data.get("providers")
         if not isinstance(providers, dict):
             providers = {}
@@ -225,16 +245,21 @@ def delete_provider_secrets(provider_name: str, *, user: paths.RealUser | None =
 
     Returns:
         True when it existed.
+
+    Raises:
+        SecretsError: The lock beside the file could not be taken, or the file refuses to be read.
     """
     user = user or paths.effective_user()
     path = paths.secrets_path(user)
     if not path.exists():
         return False  # before the lock, whose parent walk would create the config dir
-    with portable.locked_file(path):
-        if not path.exists():
+    with portable.locked_file(path) as held:
+        if not held:
+            raise SecretsError(_lock_refusal(path))
+        try:
+            data: dict[str, Any] = _read_secrets_toml(path, user)
+        except FileNotFoundError:
             return False
-        _require_safe_perms(path, user)
-        data: dict[str, Any] = _read_secrets_toml(path)
         providers = data.get("providers")
         if not isinstance(providers, dict) or provider_name not in providers:
             return False
