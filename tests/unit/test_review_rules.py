@@ -164,12 +164,12 @@ def test_in_loop_records_base_rules_and_sends_exact_text(repo: pathlib.Path) -> 
     rows: list[dict[str, Any]] = []
     sink.subscribe(rows.append)
     reviewer = _reviewer_for(repo, provider, sink)
-    reviewer.critique(
-        _loop_state.LoopState(original_task="t", tool_calls=0), trigger="periodic", turn=1
-    )
     target = reviewer.chain.review_target()
     assert target is not None
     diff = git_read.diff_range(repo, target.base_tree, target.head_tree)
+    reviewer.critique(
+        _loop_state.LoopState(original_task="t", tool_calls=0), trigger="periodic", turn=1
+    )
     assert provider.call.call_args.kwargs["messages"] == [
         {
             "role": "user",
@@ -389,3 +389,26 @@ def test_both_prompt_builders_supply_whole_rule_text(repo: pathlib.Path) -> None
         {"role": "user", "content": (f"{expected}\n\nRECENT COMMITS:\nlog\n\nextra\n\nDIFF:\nd")}
     ]
     assert "tools" not in provider.call.call_args.kwargs
+
+
+def test_the_review_target_is_the_worktree_while_edits_sit_uncommitted(repo: pathlib.Path) -> None:
+    """A turn the gate failed is not checkpointed: the head is the worktree until a commit."""
+    (repo / "foo.py").write_text("x = 1\n")
+    _commit(repo)
+    base = _git(repo, "rev-parse", "HEAD")
+    chain = _chain.RunChain(repo, ref="refs/agent6/test/head", fallback_parent=base, base_sha=base)
+    (repo / "foo.py").write_text("x = 2\n")
+    tip = chain.commit("edit")
+    committed = chain.review_target()
+    assert committed is not None
+    assert (committed.head_commit, committed.source) == (tip, "revisions")
+    (repo / "foo.py").write_text("x = 3\n")
+    dirty = chain.review_target()
+    assert dirty is not None
+    assert (dirty.head_commit, dirty.source, dirty.snapshot_commit) == (None, "worktree", tip)
+    assert dirty.head_tree == chain.tree_sha() != committed.head_tree
+    assert "+x = 3" in git_read.diff_range(repo, dirty.base_tree, dirty.head_tree)
+    chain.commit("again")
+    settled = chain.review_target()
+    assert settled is not None and settled.source == "revisions"
+    assert settled.head_tree == dirty.head_tree

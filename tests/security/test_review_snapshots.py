@@ -12,7 +12,7 @@ from agent6.app import _setup, providers
 from agent6.config import layer
 from agent6.harness import _chain, _context, _loop_state, _reviewer, code_review
 from agent6.ui.cli import review_cmds
-from agent6.vcs import git_files, review
+from agent6.vcs import git_files, git_read, review
 from tests.unit import test_review_gate, test_review_line_origin, test_review_saved
 from tests.unit.test_review_diff_collect import _git
 
@@ -591,12 +591,17 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
 ) -> None:
     _git(tmp_path, "init", "-q")
     base = test_review_line_origin._commit(tmp_path, b"old\ncontext\n")
+    secret = tmp_path / "secret.env"
+    hide = (str(secret),) if refusal != "ordinary" else ()
     chain = _chain.RunChain(
-        tmp_path, ref="refs/agent6/test/head", fallback_parent=base, base_sha=base
+        tmp_path,
+        ref="refs/agent6/test/head",
+        fallback_parent=base,
+        base_sha=base,
+        hidden=git_read.hidden_in_repo(tmp_path, hide),
     )
     (tmp_path / "code.py").write_text("new\ncontext\n")
     tip = chain.commit("edit")
-    secret = tmp_path / "secret.env"
     if refusal == "hidden":
         secret.write_text("SECRET-ENV-LINE-4242\n")
         _git(tmp_path, "config", "blame.ignoreRevsFile", "secret.env")
@@ -651,7 +656,7 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
             reviewers=[_reviewer.ReviewSeat("security", "model", provider)], block_on="any"
         ),
         chain=chain,
-        hide=(str(secret),) if refusal != "ordinary" else (),
+        hide=hide,
         review_tools=lambda: ([], mock.MagicMock()),
         budget_remaining=lambda: None,
         log=lambda _s: None,

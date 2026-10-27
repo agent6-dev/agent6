@@ -242,10 +242,20 @@ class RunChain:
         return git_read.diff_since(self.root, self.base_sha, exclude=self.untracked_at_start)
 
     def review_target(self) -> review_records.ReviewTarget | None:
-        """Return the base and chain tip a panel reviews, without capturing the workspace."""
+        """Return the base and head a panel reviews.
+
+        The head is the chain tip, or the worktree's tree while edits sit uncommitted (a
+        turn the gate failed is not checkpointed), so the panel reads what the model wrote.
+
+        Returns:
+            The target; None without a chain tip.
+        """
         tip = self.tip()
         if not tip:
             return None
+        committed = git_read.tree_sha(self.root, tip)
+        worktree = self.tree_sha()
+        uncommitted = bool(worktree) and worktree != committed
         return review_records.ReviewTarget(
             base_commit=self.base_sha or None,
             base_tree=(
@@ -253,9 +263,9 @@ class RunChain:
                 if self.base_sha
                 else git_read.EMPTY_TREE
             ),
-            head_commit=tip,
-            head_tree=git_read.tree_sha(self.root, tip),
+            head_commit=None if uncommitted else tip,
+            head_tree=worktree if uncommitted else committed,
             snapshot_commit=tip,
             paths=(),
-            source="revisions",
+            source="worktree" if uncommitted else "revisions",
         )
