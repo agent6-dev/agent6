@@ -104,6 +104,9 @@ def test_runs_list_json_carries_the_row_facts(
         "lane",
         "coordinator",
         "worktree",
+        "review_queue",
+        "queue_group",
+        "lane_groups",
     }
 
 
@@ -396,6 +399,73 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
     assert sessions_cmds._cmd_list() == 0
     row = next(line for line in capsys.readouterr().out.splitlines() if session_id in line)
     assert "passed · unmerged" in row
+
+
+def test_a_clean_run_awaits_a_merge_until_one_of_its_refs_moves(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A commit on the run branch after the run reads as commits after the run, chain or not."""
+    from agent6.vcs import git_ops, git_read
+    from tests.unit import test_review_queue as queue_tests
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    base = git("rev-parse", "HEAD")
+    session_id = "clean-run-AAAAAA"
+    branch = f"agent6/{session_id}"
+    (repo / "b.txt").write_text("b\n", encoding="utf-8")
+    sha = git_ops.chain_commit(
+        repo,
+        "agent6 turn 1: work",
+        ref=git_read.chain_ref_for(session_id),
+        fallback_parent=base,
+        also_branch=branch,
+    )
+    assert sha
+    d = _common._runs_dir(repo) / session_id
+    d.mkdir(parents=True)
+    manifest = {
+        "version": 2,
+        "session_id": session_id,
+        "mode": "run",
+        "user_task": "t",
+        "base_sha": base,
+        "run_branch": branch,
+    }
+    (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    rows = [
+        queue_tests._START,
+        *queue_tests._verify_rows(),
+        {"type": "diff.updated", "sha": sha},
+        *queue_tests._panel_rows(),
+        queue_tests._END,
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+
+    def queue() -> tuple[str, str]:
+        assert sessions_cmds._cmd_list(as_json=True, sort="review") == 0
+        (row,) = json.loads(capsys.readouterr().out)
+        return row["queue_group"], row["review_queue"]["reason"]
+
+    assert queue() == ("awaiting_merge", "verified and reviewed, unmerged")
+    tree = git("rev-parse", f"{branch}^{{tree}}")
+    more = git("commit-tree", tree, "-p", branch, "-m", "the operator's own commit")
+    git("update-ref", f"refs/heads/{branch}", more)
+    assert queue() == ("other", "commits after the run")
 
 
 def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(

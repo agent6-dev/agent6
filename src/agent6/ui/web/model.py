@@ -38,7 +38,6 @@ from agent6.viewmodel import (
     session_state_as_dict,
     summarize_machine_dir,
     summarize_session_dir,
-    summary_row,
     tail_events,
     transcript_style,
 )
@@ -217,14 +216,11 @@ def _list_machines(cwd: pathlib.Path) -> list[dict[str, Any]]:
 
 
 def _list_drafts(cwd: pathlib.Path) -> list[dict[str, Any]]:
-    """Return the `machine create` drafts summarized like runs, newest first."""
-    summaries: list[dict[str, Any]] = [
-        summary_row(summarize_session_dir(p, branch_tips={}), winner=is_winner(p))
-        for p in draft_dir_paths(cwd)
-        if not is_session_husk(p)
-    ]
-    summaries.sort(key=lambda s: s["mtime"], reverse=True)
-    return summaries
+    """Return the `machine create` drafts as listing rows, newest first."""
+    dirs = [p for p in draft_dir_paths(cwd) if not is_session_husk(p)]
+    rows = listing.nested_rows(summarize_session_dir(p, branch_tips={}) for p in dirs)
+    winners = {p.name for p in dirs if is_winner(p)}
+    return [listing.row_json(r, winners=winners) for r in rows]
 
 
 def list_machine_files(cwd: pathlib.Path) -> list[dict[str, str]]:

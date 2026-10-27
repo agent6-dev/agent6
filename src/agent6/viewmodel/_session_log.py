@@ -75,6 +75,7 @@ class LogScan:
         left_out: The (path, reason) of each edit the commits left out, across every
             execution; the reason is `ignored` or `untracked` (`loop.edit.left_out`).
         review: The shared fold of panel evidence and finding history.
+        end_ep: The latest execution's end time as epoch seconds; None while it runs.
         execution_id: The current execution's recorded id, if present.
         source_tip: The most recent diff checkpoint's commit.
         verifications: Every recorded verification, including baseline observations.
@@ -131,6 +132,7 @@ class LogScan:
     source_tip: str | None = None
     verifications: tuple[evidence.VerificationEvidence, ...] = ()
     final_verify_id: str | None = None
+    end_ep: float | None = None
     evidence_notes: tuple[str, ...] = ()
 
     def verify_verdict(self) -> bool | None:
@@ -302,6 +304,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     execution_id: str | None = None
     source_tip: str | None = None
     final_verify_id: str | None = None
+    end_ep: float | None = None
     verifications: list[evidence.VerificationEvidence] = []
     pending_verifications: set[str] = set()
     evidence_notes: list[str] = []
@@ -353,6 +356,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     task = task.start(str(ev.get("user_task", "")))
                     saw_start = True
                     finished, stranded, verified = False, False, ""
+                    end_ep = None
                     end_summary = ""
                     end_tree = ""
                     mode = str(ev.get("mode", mode))
@@ -378,6 +382,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     verified = str(ev.get("verified") or "")
                     end_tree = str(ev.get("tree") or "")
                     final_verify_id = ev.get("final_verify_id")
+                    end_ep = ep
                 elif etype == "loop.resume.start":
                     task = task.resume(str(ev.get("user_task", "")), str(ev.get("steer", "")))
                     if saw_start:
@@ -396,6 +401,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     saw_start = True
                     mode = str(ev.get("mode", mode))
                     finished, stranded, verified = False, False, ""
+                    end_ep = None
                     end_summary = ""
                     end_tree = ""
                     pending_prompts.clear()
@@ -480,6 +486,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         source_tip=source_tip,
         verifications=tuple(verifications),
         final_verify_id=None if evidence_notes else final_verify_id,
+        end_ep=end_ep,
         evidence_notes=tuple(evidence_notes)
         + tuple(f"Verification {v} has no recorded result." for v in sorted(pending_verifications)),
         mode=mode,

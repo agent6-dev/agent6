@@ -29,9 +29,10 @@ Fold review evidence and operator history for every session reader.
 | `actions` | `tuple[ActionRecord, ...]` | `()` |
 | `anchor_state` | `Literal['unknown', 'current', 'outdated']` | `'unknown'` |
 | `fix_state` | `Literal['none', 'delivery_unknown', 'submitted', 'failed']` | `'none'` |
+| `opened_at` | `float | None` | `None` |
 
 - **Written by:** viewmodel/{_session_log, state}
-- **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{_state_types, _state_view, _transcript_text, log_line, receipt, transcript}
+- **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{_state_types, _state_view, _transcript_text, log_line, receipt, review_queue, transcript}
 - **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (2 test files exercise it)
 
 ## Review records
@@ -72,7 +73,7 @@ Define immutable review evidence and validate review boundary payloads.
 
 - **Written by:** app/review_actions, harness/{_panel, _review_history, _review_seat, _reviewer}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
 - **Read by:** harness/{_chain, _context, _loop_state, code_review}, ui/acp/review, ui/cli/review_cmds, ui/tui/{_diff_pane, review}, viewmodel/review
-- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (17 test files exercise it)
+- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (18 test files exercise it)
 
 ## Conversation
 
@@ -133,7 +134,7 @@ Type the logs.jsonl event families the session fold consumes.
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommit`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionStranded`, `SessionUndone`, `RawEvent`
 
 - **Written by:** viewmodel/events
-- **Read by:** harness/run_review, ui/cli/{_console_view, _repl, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, _session_log, _state_view, _transcript_text, log_line, state, transcript}
+- **Read by:** harness/run_review, ui/cli/{_console_view, _repl, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, _session_log, _state_view, _transcript_text, log_line, review, state, transcript}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (6 test files exercise it)
 
 ## MachineSpec

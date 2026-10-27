@@ -12,11 +12,13 @@ import contextlib
 import dataclasses
 import pathlib
 from collections.abc import Container, Iterable, Mapping, Sequence
+from typing import Literal
 
+from agent6 import paths
 from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
-from agent6.viewmodel import _session_log, _session_status, format
+from agent6.viewmodel import _session_log, _session_status, format, review_queue
 
 
 def session_mtime(session_dir: pathlib.Path) -> float:
@@ -154,6 +156,7 @@ class SessionSummary:
         model: The manifest's provider/model route for this execution.
         model_from_flag: The route came from a `--model` flag rather than config.
         worktree: The linked worktree the run works in, "" for a run in the checkout.
+        review_queue: Where the session sits in the review queue, derived from its journal.
     """
 
     session_id: str
@@ -175,6 +178,9 @@ class SessionSummary:
     model: str = ""
     model_from_flag: bool = False
     worktree: str = ""
+    review_queue: review_queue.ReviewQueueEntry = dataclasses.field(
+        default_factory=review_queue.ReviewQueueEntry
+    )
 
     @property
     def cost_cell(self) -> str:
@@ -205,15 +211,23 @@ class ListingRow:
         return max((self.summary.mtime, *(lane.mtime for lane in self.lanes)))
 
 
-def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
+# A listing's order: last activity, or the review queue (pending review work first).
+Sort = Literal["activity", "review"]
+
+
+def nested_rows(
+    summaries: Iterable[SessionSummary], *, sort: Sort = "activity"
+) -> list[ListingRow]:
     """Nest each lane under the listed session that dispatched it.
 
     Args:
         summaries: The sessions to list.
+        sort: Newest activity first, or the review queue's groups with the oldest pending
+            work first inside each; rows with nothing pending keep their activity order.
 
     Returns:
-        The rows, newest first, every session appearing once: a lane whose coordinator
-        is not listed stays a row of its own.
+        The rows, every session appearing once: a lane whose coordinator is not listed
+        stays a row of its own; lanes keep lane order under their coordinator.
     """
     items = list(summaries)
     by_id = {s.session_id: s for s in items}
@@ -233,7 +247,76 @@ def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
     # A coordinator chain that loops reaches no root: its sessions are rows.
     rows.extend(row(s) for s in items if s.session_id not in placed)
     rows.sort(key=lambda r: r.mtime, reverse=True)
+    if sort == "review":
+        rows.sort(key=review_sort_key)
     return rows
+
+
+def row_group(row: ListingRow) -> review_queue.Group:
+    """Return the row's queue group: its own or a lane's, whichever comes first in the queue.
+
+    A fan-out container sits in the other group itself, so its lanes' work places it; a
+    coordinator never inherits a lane's verification, only its place in the queue.
+
+    Args:
+        row: The listing row.
+
+    Returns:
+        The earliest group among the row and its lanes.
+    """
+    groups: list[review_queue.Group] = [row.summary.review_queue.group]
+    groups.extend(row_group(lane) for lane in row.lanes)
+    return min(groups, key=review_queue.GROUPS.index)
+
+
+def pending_since(row: ListingRow) -> float | None:
+    """Return when the row's oldest pending work in its queue group began, as epoch seconds."""
+    return _pending_in(row, row_group(row))
+
+
+def _pending_in(row: ListingRow, group: review_queue.Group) -> float | None:
+    """Return the earliest pending time among the row and its lanes that sit in the group."""
+    own = row.summary.review_queue
+    times = [own.oldest_open_at] if own.group == group and own.oldest_open_at is not None else []
+    times.extend(t for lane in row.lanes if (t := _pending_in(lane, group)) is not None)
+    return min(times, default=None)
+
+
+def review_sort_key(row: ListingRow) -> tuple[int, int, float, str]:
+    """Return the review queue's sort key: group, pending work oldest first, then the id."""
+    since = pending_since(row)
+    if since is None:
+        return (review_queue.GROUPS.index(row_group(row)), 1, 0.0, "")
+    return (review_queue.GROUPS.index(row_group(row)), 0, since, row.summary.session_id)
+
+
+def lane_groups(row: ListingRow) -> dict[str, int]:
+    """Return how many of the row's lanes sit in each queue group, the empty groups left out."""
+    counts: dict[str, int] = {}
+    for lane in row.lanes:
+        group = row_group(lane)
+        counts[group] = counts.get(group, 0) + 1
+    return {group: counts[group] for group in review_queue.GROUPS if group in counts}
+
+
+def rows_for(
+    cwd: pathlib.Path, *, buckets: Iterable[str] = layout.HUB_BUCKETS, sort: Sort = "activity"
+) -> tuple[list[ListingRow], set[str]]:
+    """Return a repository's listing rows and its fan-out winners' ids.
+
+    Args:
+        cwd: The repository.
+        buckets: The session buckets to list; the hub's by default.
+        sort: The rows' order.
+
+    Returns:
+        The nested rows in that order, and the ids of the compare winners.
+    """
+    tips = git_read.run_ref_tips(cwd)
+    dirs = session_dirs(paths.state_dir(cwd), buckets)
+    winners = {d.name for d in dirs if is_winner(d)}
+    rows = nested_rows((summarize_session_dir(d, branch_tips=tips) for d in dirs), sort=sort)
+    return rows, winners
 
 
 def _lane_order(lane: SessionSummary) -> tuple[int, str]:
@@ -271,7 +354,8 @@ def row_json(row: ListingRow, *, winners: Container[str]) -> dict[str, object]:
         winners: The ids of the fan-out compare winners.
 
     Returns:
-        The `summary_row` dict with `mtime` and `when` set to the group's latest activity.
+        The `summary_row` dict with `mtime` and `when` set to the group's latest activity,
+        `queue_group` the row's place in the review queue and `lane_groups` its lanes' places.
     """
     out = summary_row(
         row.summary,
@@ -280,6 +364,8 @@ def row_json(row: ListingRow, *, winners: Container[str]) -> dict[str, object]:
     )
     out["mtime"] = row.mtime
     out["when"] = format.format_when(row.mtime) if row.mtime else ""
+    out["queue_group"] = row_group(row)
+    out["lane_groups"] = lane_groups(row)
     return out
 
 
@@ -327,6 +413,7 @@ def summary_row(
         "lane": s.lane,
         "coordinator": s.coordinator,
         "worktree": s.worktree or None,
+        "review_queue": dataclasses.asdict(s.review_queue),
         "lanes": list(lanes),
     }
 
@@ -482,7 +569,18 @@ def unmerged(
     """
     if word == "undone":
         return False
-    tips = {
+    tips = _run_tips(manifest, branch_tips)
+    # The branch may carry the operator's own commits; a merge stamps whichever tip it merged.
+    return bool(tips - {manifest.base_sha}) and (
+        manifest.merged is None or manifest.merged.tip not in tips
+    )
+
+
+def _run_tips(
+    manifest: sessions_manifest.SessionManifest, branch_tips: Mapping[str, str]
+) -> set[str]:
+    """Return the tips of the refs holding the run's work, its chain and its branch."""
+    return {
         tip
         for tip in (
             branch_tips.get(git_read.chain_ref_for(manifest.session_id)),
@@ -490,10 +588,6 @@ def unmerged(
         )
         if tip
     }
-    # The branch may carry the operator's own commits; a merge stamps whichever tip it merged.
-    return bool(tips - {manifest.base_sha}) and (
-        manifest.merged is None or manifest.merged.tip not in tips
-    )
 
 
 def summarize_session_dir(
@@ -535,6 +629,22 @@ def summarize_session_dir(
         if branch_tips is not None and manifest is not None
         else False
     )
+    tip_matches: bool | None = None
+    if branch_tips is not None and manifest is not None and scan.source_tip:
+        tips = _run_tips(manifest, branch_tips)
+        tip_matches = tips == {scan.source_tip} if tips else None
+    queue = review_queue.classify(
+        scan,
+        review_queue.QueueFacts(
+            status=word,
+            mode=mode,
+            unmerged=has_unmerged,
+            merged=manifest is not None and manifest.merged is not None,
+            alive=process.worker_is_alive(session_dir),
+            fanout=manifest is not None and manifest.fanout is not None,
+            tip_matches=tip_matches,
+        ),
+    )
     return SessionSummary(
         session_id=session_dir.name,
         mode=mode,
@@ -555,4 +665,5 @@ def summarize_session_dir(
         model=format.format_model_route(manifest.models.driver) if manifest is not None else "",
         model_from_flag=manifest.models.driver_from_flag if manifest is not None else False,
         worktree=str(manifest.worktree) if manifest is not None and manifest.worktree else "",
+        review_queue=queue,
     )

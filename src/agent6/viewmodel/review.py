@@ -12,6 +12,7 @@ from typing import Any, Literal
 import pydantic
 
 from agent6 import event_log, review_records, terminal
+from agent6.viewmodel import events
 
 Completion = Literal["unknown", "running", "complete", "inconclusive", "skipped"]
 Freshness = Literal["unknown", "current", "stale"]
@@ -50,6 +51,8 @@ class FindingView:
     actions: tuple[ActionRecord, ...] = ()
     anchor_state: Literal["unknown", "current", "outdated"] = "unknown"
     fix_state: Literal["none", "delivery_unknown", "submitted", "failed"] = "none"
+    # When the first panel recorded it, as epoch seconds; None for a row without a time.
+    opened_at: float | None = None
 
     @property
     def line_origin(self) -> review_records.LineOrigin:
@@ -226,7 +229,9 @@ def _replace_panel(view: ReviewView, panel: PanelView) -> ReviewView:
     return dataclasses.replace(view, panels=panels, completion=panel.completion)
 
 
-def _observe(view: ReviewView, record: review_records.ReviewPanel) -> ReviewView:
+def _observe(
+    view: ReviewView, record: review_records.ReviewPanel, seen_at: float | None
+) -> ReviewView:
     findings = {f.finding_id: f for f in view.findings}
     ids: set[str] = set()
     for observation in record.findings:
@@ -235,7 +240,9 @@ def _observe(view: ReviewView, record: review_records.ReviewPanel) -> ReviewView
         ids.add(observation.finding_id)
         prior = findings.get(observation.finding_id)
         if prior is None:
-            findings[observation.finding_id] = FindingView(observation.finding_id, (observation,))
+            findings[observation.finding_id] = FindingView(
+                observation.finding_id, (observation,), opened_at=seen_at
+            )
         else:
             if review_records.finding_key(
                 prior.observations[-1].finding
@@ -283,7 +290,7 @@ def _panel_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
         record = review_records.ReviewPanel.model_validate(event_log.payload(event))
         if old is not None and old.result is not None:
             raise ReviewReadError("panel has more than one completion record")
-        view = _observe(view, record)
+        view = _observe(view, record, events.event_epoch(event.get("ts")))
         panel = dataclasses.replace(
             old or PanelView(record.panel_id, record.execution_id, record.target),
             result=record,

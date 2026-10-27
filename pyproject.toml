@@ -490,6 +490,7 @@ banned-from = [
     "agent6.viewmodel.policy",
     "agent6.viewmodel.receipt",
     "agent6.viewmodel.review",
+    "agent6.viewmodel.review_queue",
     "agent6.viewmodel.state",
     "agent6.viewmodel.tail",
     "agent6.viewmodel.transcript",
