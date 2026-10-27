@@ -136,7 +136,7 @@ Skill states have individual rows, so Remove drops only the selected skill's sta
 `agent6 run` executes in the foreground; Ctrl-C opens its pause menu to steer it.
 
 - the menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages; a steer sent from another surface while it is open is taken as the answer
-    - the [steer directives](usage.md#follow-and-steer-a-run) plus `/status`, `/tasks`, `/shells`, `/restate`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
+    - the [steer directives](usage.md#follow-and-steer-a-run) plus `/status`, `/tasks`, `/answer`, `/shells`, `/restate`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
 - `/detach` hands the run to the background after its current step (`agent6 attach` reattaches); Ctrl-Z prints the run's state and never suspends it (a suspended agent would lose its provider stream)
 - `/exit` leaves the run resumable; `/stop`, or Ctrl-C at the pause prompt, stops it now, as `agent6 stop ID` does
 - `run -i` prompts after every commit: `/continue` (bare Enter), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`

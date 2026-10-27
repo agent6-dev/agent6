@@ -79,9 +79,12 @@ class ConsoleView:
         *,
         color: bool | None = None,
         policy: Callable[[], str] | None = None,
+        session_id: str = "",
     ) -> None:
         # The policy line, read when the task prints: the gate is pinned between then and now.
         self._policy = policy
+        # Names the run in the command that answers a queued question.
+        self._session_id = session_id
         # Finished /btw answers, printed whole at the next turn boundary.
         self._btw: list[str] = []
         self._out = out if out is not None else sys.stderr
@@ -159,6 +162,10 @@ class ConsoleView:
                 self._text_streamed = False
                 self._fold.feed(event)
                 return
+            if etype == "question.prompt" and event.get("wait") is False:
+                self._end_block()
+                self._line(self._queued_question(event))
+                return
             if etype == "role.result":
                 self._end_block()
                 self._drain_btw()
@@ -199,6 +206,28 @@ class ConsoleView:
                     policy = self._policy()
                     if policy:
                         self._line(self._c("dim", f"  {policy}") + "\n")
+
+    def _queued_question(self, event: dict[str, Any]) -> str:
+        """Return the line for a question the model queued: its text and the ways to answer it."""
+        qid = str(event.get("id", ""))
+        raw = event.get("questions") or []
+        asked = "; ".join(
+            str(q.get("question", ""))
+            + (f" (options: {', '.join(str(o) for o in q['options'])})" if q.get("options") else "")
+            for q in raw
+            if isinstance(q, dict)
+        )
+        run = self._session_id or "<run>"
+        return (
+            self._c("dim", f"[agent6] {qid} queued: {asked}")
+            + "\n"
+            + self._c(
+                "dim",
+                f"  answer it: Ctrl-C then /answer {qid}, or"
+                f" `agent6 answer {run} --question {qid} TEXT`",
+            )
+            + "\n"
+        )
 
     def _stream(self, piece: str, *, thinking: bool) -> None:
         """Write a delta inline, opening the prose block it belongs to."""

@@ -23,7 +23,7 @@ from agent6 import skills as agent6_skills
 from agent6.config import layer
 from agent6.graph import order
 from agent6.sessions import ipc, layout, manifest
-from agent6.tools import background
+from agent6.tools import background, schema
 from agent6.ui import directives
 from agent6.ui.cli import _common, _menu_input
 from agent6.viewmodel import (
@@ -32,6 +32,7 @@ from agent6.viewmodel import (
     fold_session,
     format,
     operator_inputs,
+    pending_questions,
     restate,
     status_facts,
     status_for_session_dir,
@@ -45,6 +46,7 @@ MENU_ONLY_HELP: dict[str, str] = {
     "/status": "run status: tasks, tools, cost, context, preset",
     "/tasks": "the task graph with statuses",
     "/pin": "list pinned instructions (pin one with `/pin <text>`)",
+    "/answer": "list the pending questions (`/answer ID` asks one here)",
     "/continue": "resume the run unchanged (same as Enter)",
     "/exit": "stop the run and leave (no follow-up prompt; resume later)",
     "/detach": "keep the run going in the background",
@@ -56,6 +58,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/status": MENU_ONLY_HELP["/status"],
     "/tasks": MENU_ONLY_HELP["/tasks"],
     "/pin": MENU_ONLY_HELP["/pin"],
+    "/answer": MENU_ONLY_HELP["/answer"],
     "/compact": directive.STEER_COMMANDS["/compact"],
     "/parallel": directive.STEER_COMMANDS["/parallel"],
     "/btw": directive.STEER_COMMANDS["/btw"],
@@ -177,6 +180,42 @@ def _print_pins(session_dir: pathlib.Path) -> None:
         print(f"  {i}. {pin}")
 
 
+def _answer_pending(session_dir: pathlib.Path, question_id: str = "") -> str:
+    """Ask one pending question set on this terminal and write its answers; bare, list them.
+
+    Args:
+        session_dir: The run's dir.
+        question_id: The set to ask; "" lists the pending sets.
+
+    Returns:
+        The line to print.
+    """
+    from agent6.ui.cli import _interact  # noqa: PLC0415  # `_steer` imports this module through it
+
+    prompts = pending_questions(session_dir)
+    if not prompts:
+        return "[agent6] no pending question"
+    if not question_id:
+        lines = [f"[agent6] {len(prompts)} pending; `/answer ID` asks one here:"]
+        for prompt in prompts:
+            asked = " | ".join(q.question for q in prompt.questions)
+            lines.append(f"  {prompt.id} ({prompt.kind()}): {asked}")
+        return "\n".join(lines)
+    prompt = next((p for p in prompts if p.id == question_id), None)
+    if prompt is None:
+        pending = ", ".join(p.id for p in prompts)
+        return f"[agent6] no pending question {question_id!r}; pending: {pending}"
+    questions = tuple(
+        schema.UserQuestion(question=q.question, options=q.options) for q in prompt.questions
+    )
+    answers = _interact.default_stdin_questioner(questions)
+    if answers is None:
+        return f"[agent6] {prompt.id} left unanswered"
+    if not ipc.write_question_answers(session_dir, prompt.id, answers):
+        return f"[agent6] {prompt.id}: {ipc.ANSWERED_ELSEWHERE}"
+    return f"[agent6] answered {prompt.id}: {', '.join(answers)}; the run reads it at its next turn"
+
+
 def _print_tasks(session_dir: pathlib.Path) -> None:
     """Print the task tree with statuses."""
     s = _fold(session_dir)
@@ -248,6 +287,8 @@ def _run_info_command(
         _print_tasks(session_dir)
     elif cmd == "/pin":
         _print_pins(session_dir)
+    elif cmd == "/answer":
+        print(_answer_pending(session_dir))
     elif cmd == "/parallel":
         print("[agent6] fan out needs a task: `/parallel [SPEC --] TASK`")
     elif cmd == "/shells":
@@ -350,6 +391,9 @@ def _answer_line(  # noqa: PLR0911, PLR0912
         # `/btw` is the menu's own; every other directive belongs to the owner composers share.
         if word == "/btw":
             print(_start_btw(stripped, session_dir, btw_runner))
+            return AGAIN
+        if word == "/answer":
+            print(_answer_pending(session_dir, args.strip()))
             return AGAIN
         acted = directives.act_on_directive(session_dir, stripped)
         if acted is not None:

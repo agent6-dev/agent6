@@ -23,9 +23,9 @@ from agent6.config import (
     write,
 )
 from agent6.models import choices as models_choices
-from agent6.sessions import id, process
+from agent6.sessions import id, layout, process
 from agent6.ui.cli import _common
-from agent6.viewmodel import listing, machine_state
+from agent6.viewmodel import _session_log, listing, machine_state
 
 
 def complete_finding_ids(prefix: str, **kw: Any) -> list[str]:
@@ -398,6 +398,17 @@ def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
             continue
         out += [d.name for d in bucket.iterdir() if d.is_dir() and d.name.startswith(prefix)]
     return sorted(out)
+
+
+@_never_raises
+def _complete_answerable_ids(prefix: str, **_kw: object) -> list[str]:
+    """Return the sessions holding a question nobody has answered, live or ended."""
+    return sorted(
+        d.name
+        for d in _common.all_session_dirs(pathlib.Path.cwd())
+        if d.name.startswith(prefix)
+        and _session_log.scan_session_log(d / layout.LOGS_NAME).pending_questions > 0
+    )
 
 
 @_never_raises

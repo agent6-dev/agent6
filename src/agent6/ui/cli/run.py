@@ -102,7 +102,9 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
         """Create the console view on the run's event sink."""
         # The sink's path is the handle to the run dir, so the layout need not cross the protocol.
         view = _console_view.ConsoleView(
-            sys.stderr, policy=lambda: session_policy(events.path.parent).line()
+            sys.stderr,
+            policy=lambda: session_policy(events.path.parent).line(),
+            session_id=events.path.parent.name,
         )
         console_cell[0] = view
         events.subscribe(view)

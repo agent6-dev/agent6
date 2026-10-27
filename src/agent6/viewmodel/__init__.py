@@ -100,7 +100,7 @@ from agent6.viewmodel.state import (  # noqa: ICN003  # re-export
     initial_state,
     open_approval,
     open_approval_of,
-    open_question,
+    pending_questions,
     task_tree_views,
 )
 from agent6.viewmodel.tail import LogTail, tail_events  # noqa: ICN003  # re-export
@@ -172,8 +172,8 @@ __all__ = [
     "newest_session_dir",
     "open_approval",
     "open_approval_of",
-    "open_question",
     "operator_inputs",
+    "pending_questions",
     "probe_instance",
     "produced_result",
     "restate",

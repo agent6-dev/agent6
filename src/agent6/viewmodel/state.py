@@ -537,22 +537,24 @@ def open_approval(session_dir: pathlib.Path) -> _state_types.ApprovalPrompt | No
     )
 
 
-def open_question(session_dir: pathlib.Path) -> _state_types.QuestionPrompt | None:
-    """Return the run's oldest unanswered `ask_user` prompt, or None when none is open.
+def pending_questions(session_dir: pathlib.Path) -> tuple[_state_types.QuestionPrompt, ...]:
+    """Return the run's unanswered `ask_user` prompts, oldest first, from its journal.
 
-    Every surface that writes an answer file checks against it, so an answer list of
-    the wrong length is refused rather than thrown away by the asking side.
+    Every surface that writes an answer file checks against them, so an answer list of
+    the wrong length is refused rather than thrown away by the asking side. A question
+    agent6 itself asked outside an execution (the start gate) is not among them: nothing
+    delivers its answer later.
 
     Args:
         session_dir: The session's state dir.
 
     Returns:
-        The prompt, None when none is open.
+        The pending prompts; empty when none is open.
     """
-    from agent6.viewmodel import tail  # noqa: PLC0415  # cycle at import time  # noqa: PLC0415  # cycle at import time
+    from agent6.viewmodel import tail  # noqa: PLC0415  # cycle at import time
 
     state = fold_session(tail.tail_events(session_dir / layout.LOGS_NAME, follow=False))
-    return next((q for q in state.pending_questions if not q.answered), None)
+    return tuple(q for q in state.pending_questions if not q.answered and not q.from_harness)
 
 
 def fold_until_commit(

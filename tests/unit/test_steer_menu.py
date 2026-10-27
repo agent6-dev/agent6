@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -706,3 +708,44 @@ def test_pause_menu_continuation_aligns_with_task(
     original = next(line for line in lines if "task: original task" in line)
     continued = next(line for line in lines if "continued: write docs" in line)
     assert original.index("original task") == continued.index("continued:")
+
+
+def test_pause_menu_answer_asks_a_pending_question_on_the_terminal(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`/answer` lists the pending questions; `/answer ID` asks that set and writes the answer."""
+    from agent6.sessions import ipc
+    from agent6.ui.cli import _interact
+
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                {"type": "session.start", "mode": "run", "user_task": "t"},
+                {
+                    "type": "question.prompt",
+                    "id": "question-2",
+                    "questions": [{"question": "Which DB?", "options": ["pg", "sqlite"]}],
+                    "wait": False,
+                },
+            )
+        ),
+        encoding="utf-8",
+    )
+    asked: list[tuple[str, ...]] = []
+
+    def _pick(questions: tuple[Any, ...], **_kw: Any) -> tuple[str, ...]:
+        asked.append(tuple(q.question for q in questions))
+        return ("pg",)
+
+    monkeypatch.setattr(_interact, "default_stdin_questioner", _pick)
+    out = cli__steer_menu.pause_menu(
+        tmp_path, input_fn=_feed(["/answer", "/answer question-9", "/answer question-2", ""])
+    )
+    assert out == ""
+    printed = capsys.readouterr().out
+    assert "question-2" in printed and "Which DB?" in printed
+    assert "no pending question 'question-9'" in printed
+    assert asked == [("Which DB?",)]
+    assert ipc.read_question_answers(tmp_path, "question-2", timeout_s=1.0) == ("pg",)
+    assert "answered question-2" in printed

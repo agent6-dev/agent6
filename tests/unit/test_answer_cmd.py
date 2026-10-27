@@ -119,19 +119,21 @@ def test_answer_refuses_a_run_that_is_not_waiting(
 
     assert cli_answer_cmd._cmd_answer("curious-fox", ("yes",)) == 2
 
-    assert "not waiting on a question" in capsys.readouterr().err
+    assert "no pending question" in capsys.readouterr().err
 
 
-def test_answer_refuses_a_dead_run(
+def test_answer_on_an_ended_run_saves_it_for_the_resume(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Only a live run holds a question open; a dead one's answer file would sit unread forever."""
+    """An ended run's question stays answerable; the answer waits for the resume that reads it."""
     layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
     process.write_worker_pid(layout.session_dir, 999_999_999)
 
-    assert cli_answer_cmd._cmd_answer("curious-fox", ("9090",)) == 2
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("9090",)) == 0
 
-    assert "not running" in capsys.readouterr().err
+    assert ipc.read_question_answers(layout.session_dir, "question-1", timeout_s=1.0) == ("9090",)
+    out = capsys.readouterr().out
+    assert "saved" in out and "agent6 resume curious-fox-AAAA11" in out
 
 
 def test_answer_refuses_a_question_another_surface_answered(
@@ -203,16 +205,16 @@ def test_a_live_run_with_no_question_says_so(
 
     assert cli_answer_cmd._cmd_answer("curious-fox", ("yes",)) == 2
 
-    assert "is not waiting on a question" in capsys.readouterr().err
+    assert "has no pending question" in capsys.readouterr().err
 
 
 def test_answer_asks_the_affordance_question_the_other_verbs_ask(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Whether anything will read an answer has one predicate.
+    """The command words the run's state through the one liveness predicate the verbs share.
 
-    `answer`, `steer` and the web's approve read the same status word, so a run is answerable on
-    every surface or none.
+    `answer`, `steer` and the web's approve read the same status word; a run with nothing
+    pending is refused for that, whether it runs or not.
     """
     import inspect
 
@@ -229,6 +231,96 @@ def test_answer_asks_the_affordance_question_the_other_verbs_ask(
 
     assert cli_answer_cmd._cmd_answer("gone-run", ("yes",)) == 2
 
-    err = capsys.readouterr().err
-    assert "is not running" in err
-    assert 'agent6 resume gone-run-AAAA11 --steer "<answer>"' in err
+    assert "gone-run-AAAA11 has no pending question" in capsys.readouterr().err
+
+
+def _run_with_events(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, events: list[dict[str, object]]
+) -> sessions_layout.SessionLayout:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id="curious-fox-AAAA11"
+    )
+    layout.ensure()
+    layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    process.write_worker_pid(layout.session_dir, os.getpid())
+    return layout
+
+
+def test_answer_lists_every_pending_set_and_picks_one_by_id(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With several sets pending, a bare call lists them and an answer names its set."""
+    layout = _run_with_events(
+        tmp_path,
+        monkeypatch,
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {
+                "type": "question.prompt",
+                "id": "question-1",
+                "questions": [{"question": "Which port?"}],
+                "wait": False,
+            },
+            {
+                "type": "question.prompt",
+                "id": "question-2",
+                "questions": [{"question": "Keep the cache?"}, {"question": "Which DB?"}],
+                "wait": False,
+            },
+        ],
+    )
+    assert cli_answer_cmd._cmd_answer("curious-fox", ()) == 0
+    listed = capsys.readouterr().out
+    assert "question-1" in listed and "question-2" in listed and "Which DB?" in listed
+    assert "--question question-2 TEXT TEXT" in listed
+
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("yes", "pg")) == 2
+    assert "--question" in capsys.readouterr().err
+
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("yes", "pg"), question_id="question-2") == 0
+    assert ipc.read_question_answers(layout.session_dir, "question-2", timeout_s=1.0) == (
+        "yes",
+        "pg",
+    )
+    assert "question-2" in capsys.readouterr().out
+    assert not ipc.question_answers_written(layout.session_dir, "question-1")
+
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("x",), question_id="question-9") == 2
+    assert "no pending question 'question-9'" in capsys.readouterr().err
+
+
+def test_an_answer_to_a_queued_question_names_the_next_turn(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A live run reads a queued question's answer at its next turn, and the command says so."""
+    _run_with_events(
+        tmp_path,
+        monkeypatch,
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {
+                "type": "question.prompt",
+                "id": "question-1",
+                "questions": [{"question": "Which port?"}],
+                "wait": False,
+            },
+        ],
+    )
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("9090",)) == 0
+    assert "next turn" in capsys.readouterr().out
+
+
+def test_the_printed_answer_form_parses() -> None:
+    """`agent6 answer RUN --question ID TEXT...`, the form the listing prints, parses as printed."""
+    from agent6.ui.cli import parser as cli_parser
+
+    ns = cli_parser.build_parser().parse_args(
+        ["answer", "curious-fox", "--question", "question-2", "yes", "pg"]
+    )
+    assert (ns.target, ns.question, ns.answers) == ("curious-fox", "question-2", ["yes", "pg"])
+    bare = cli_parser.build_parser().parse_args(["answer", "curious-fox"])
+    assert (bare.question, bare.answers) == (None, [])

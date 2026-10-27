@@ -143,7 +143,7 @@ def test_enum_value_completion_is_derived_from_the_schema(
 def test_live_only_verbs_offer_only_live_sessions(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """steer, stop, answer, exec and forward offer only live sessions."""
+    """steer, stop, exec and forward offer only live sessions."""
     import argparse
     import os
 
@@ -162,7 +162,7 @@ def test_live_only_verbs_offer_only_live_sessions(
         for a in parser._actions  # pyright: ignore[reportPrivateUsage]
         if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
     )
-    for verb in ("steer", "answer", "forward"):
+    for verb in ("steer", "forward"):
         target = next(
             a
             for a in subs.choices[verb]._actions  # pyright: ignore[reportPrivateUsage]
@@ -554,3 +554,43 @@ def test_finding_steer_completion_includes_stopped_resumable_sessions(
         "planny-two-BBBBB",
         "runny-one-AAAAAA",
     ]
+
+
+def test_answer_offers_the_sessions_holding_a_pending_question(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`answer` completes to the runs with a question nobody answered, ended or live."""
+    import argparse
+
+    from agent6.ui.cli import parser as cli_parser
+
+    monkeypatch.chdir(tmp_path)
+    _seed(tmp_path)
+    ended = layout.bucket_dir(paths.state_dir(tmp_path), "runs") / "asked-five-EEEEEE"
+    ended.mkdir(parents=True)
+    (ended / "logs.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                {"type": "session.start", "mode": "run"},
+                {"type": "question.prompt", "id": "question-1", "questions": [], "wait": False},
+                {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            )
+        ),
+        encoding="utf-8",
+    )
+    offered = completers._complete_answerable_ids("")  # pyright: ignore[reportPrivateUsage]
+    assert offered == ["asked-five-EEEEEE"]
+    parser = cli_parser.build_parser()
+    subs = next(
+        a
+        for a in parser._actions  # pyright: ignore[reportPrivateUsage]
+        if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
+    )
+    target = next(
+        a
+        for a in subs.choices["answer"]._actions  # pyright: ignore[reportPrivateUsage]
+        if a.dest == "target"
+    )
+    completer = getattr(target, "completer", None)
+    assert callable(completer) and completer("") == offered

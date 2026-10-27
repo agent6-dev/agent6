@@ -389,8 +389,9 @@ class _CliFrontEnd:
             pid = str(ev.get("id", ""))
             if etype in events.SESSION_START_EVENTS:
                 self._new_session()
+                # A prompt from an earlier execution pauses nothing; `agent6 answer` takes it.
                 open_prompts.clear()
-            if etype in ("approval.prompt", "question.prompt"):
+            if etype in ("approval.prompt", "question.prompt") and not _queued(ev):
                 open_prompts[pid] = ev
             elif etype in ("approval.answer", "question.answer"):
                 self._answered.add(pid)
@@ -474,8 +475,13 @@ class _CliFrontEnd:
             return
         if pid in self._handled or pid in self._answered:
             return
-        if etype in ("approval.prompt", "question.prompt"):
+        if etype in ("approval.prompt", "question.prompt") and not _queued(event):
             self.handle(event)
+
+
+def _queued(event: dict[str, object]) -> bool:
+    """Return whether the prompt is a queued question: the run went on, nothing waits for it."""
+    return event.get("type") == "question.prompt" and event.get("wait") is False
 
 
 def _print_crashed_line(target: pathlib.Path) -> None:
@@ -503,7 +509,9 @@ def _render_over_session(target: pathlib.Path, events_path: pathlib.Path, *, fin
     Returns:
         The exit code, 0.
     """
-    view = _console_view.ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
+    view = _console_view.ConsoleView(
+        sys.stdout, policy=lambda: session_policy(target).line(), session_id=target.name
+    )
     try:
         for event in tail_events(events_path, follow=False):
             view.feed(event)
@@ -540,7 +548,8 @@ def _install_front_end(
     front_end = _CliFrontEnd(target, view)
     process.register_frontend(target, os.getpid())
     print(
-        f"[agent6] attached to {target.name}: approvals and questions prompt here."
+        f"[agent6] attached to {target.name}: approvals and waiting questions prompt here;"
+        f" a queued question is announced with the command that answers it."
         f" Ctrl-C detaches; agent6 stop {target.name} stops it.",
         file=sys.stderr,
     )
@@ -583,7 +592,9 @@ def _watch_transcript(target: pathlib.Path) -> int:
         # Per poll, O(1): once following, the worker pid is the liveness evidence.
         return not process.worker_is_alive(target)
 
-    view = _console_view.ConsoleView(sys.stdout, policy=lambda: session_policy(target).line())
+    view = _console_view.ConsoleView(
+        sys.stdout, policy=lambda: session_policy(target).line(), session_id=target.name
+    )
     front_end = _install_front_end(target, view)
     interrupted = False
     try:

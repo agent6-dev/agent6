@@ -617,3 +617,33 @@ def test_attach_follows_on_after_a_prompt_answered_elsewhere(tmp_path: pathlib.P
         assert _reap(pid) == 0
     finally:
         os.close(master)
+
+
+def test_attach_prompts_for_no_queued_or_carried_question(tmp_path: pathlib.Path) -> None:
+    """A queued question, or one from an earlier execution, never takes the attach terminal.
+
+    Nothing waits on them: `agent6 answer` takes their answers, and the console names them.
+    """
+    log = tmp_path / "logs.jsonl"
+    queued: dict[str, object] = {
+        "type": "question.prompt",
+        "id": "question-2",
+        "questions": [{"question": "Which DB?"}],
+        "wait": False,
+    }
+    history: list[dict[str, object]] = [
+        {"type": "session.start"},
+        {"type": "question.prompt", "id": "question-1", "questions": [{"question": "a?"}]},
+        {"type": "loop.resume.start"},
+        queued,
+    ]
+    _write_log(log, history)
+    fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
+    assert fe.open_prompts_at_attach(log) == []
+    handled: list[str] = []
+    fe.handle = lambda event: handled.append(str(event.get("id")))  # type: ignore[method-assign]
+    for ev in history:  # the follow loop replays the scanned prefix first
+        fe.react(ev)
+    fe.react({**queued, "id": "question-3"})
+    fe.react({"type": "question.prompt", "id": "question-4", "questions": [{"question": "b?"}]})
+    assert handled == ["question-4"]

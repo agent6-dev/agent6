@@ -460,3 +460,24 @@ def test_a_streamed_answer_is_not_repeated_on_the_answered_line() -> None:
         ]
     )
     assert out.count("CoreTest") == 1
+
+
+def test_a_queued_question_prints_its_text_and_how_to_answer() -> None:
+    """A question the model queued is announced on the console with the ways to answer it."""
+    buf = io.StringIO()
+    view = _console_view.ConsoleView(buf, color=False, session_id="brave-oak-AAAAAA")
+    view.feed({"type": "session.start", "user_task": "t"})
+    view.feed(
+        {
+            "type": "question.prompt",
+            "id": "question-2",
+            "questions": [{"question": "Which DB?", "options": ["pg", "sqlite"]}],
+            "wait": False,
+        }
+    )
+    out = buf.getvalue()
+    assert "question-2 queued" in out and "Which DB? (options: pg, sqlite)" in out
+    assert "agent6 answer brave-oak-AAAAAA --question question-2 TEXT" in out and "/answer" in out
+    buf.truncate(0)
+    view.feed({"type": "question.prompt", "id": "question-3", "questions": [{"question": "a?"}]})
+    assert "queued" not in buf.getvalue()

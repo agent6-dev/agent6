@@ -519,7 +519,7 @@ def _dispatch_answer(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 answer`."""
     from agent6.ui.cli import answer_cmd
 
-    return answer_cmd._cmd_answer(args.target, tuple(args.answers))
+    return answer_cmd._cmd_answer(args.target, tuple(args.answers), question_id=args.question)
 
 
 def _dispatch_exec_new(args: argparse.Namespace) -> int:

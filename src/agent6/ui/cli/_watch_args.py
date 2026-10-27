@@ -211,13 +211,21 @@ def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         sub,
         "answer",
         help=(
-            "Answer a live run's ask_user question without a terminal: the same"
-            " answer file the TUI, web and attach write. With no TEXT it prints"
-            " the open question and its options; one TEXT per question, in order."
+            "Answer a run's ask_user question without a terminal: the same answer"
+            " file the TUI, web and attach write. With no TEXT it lists the pending"
+            " questions and their options; one TEXT per question, in order. A queued"
+            " question's answer reaches the run at its next turn; an ended run's at"
+            " its resume."
         ),
     )
     answer_target = answer_p.add_argument("target", help=f"{_common.SESSION_ID}.")
-    answer_target.completer = completers._complete_live_session_ids  # type: ignore[attr-defined]
+    answer_target.completer = completers._complete_answerable_ids  # type: ignore[attr-defined]
+    answer_p.add_argument(
+        "--question",
+        metavar="ID",
+        default=None,
+        help="The question set to answer when several are pending; a bare call lists them.",
+    )
     answer_p.add_argument(
         "answers",
         nargs="*",
