@@ -28,6 +28,7 @@ from agent6.app import fork as app_fork
 from agent6.app import resume as app_resume
 from agent6.graph import storage
 from agent6.harness import _chain, _loop_resume, _loop_state, _snapshot, loop
+from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import (
     fork,  # pyright: ignore[reportPrivateUsage]
@@ -1071,6 +1072,9 @@ def test_forking_a_finished_run_with_no_new_work_is_refused(
 
     monkeypatch.setattr(app_fork, "create_fork", _must_not_fork)
 
+    assert fork_cli._cmd_fork((), "done-run") == 2  # pyright: ignore[reportPrivateUsage]
+    # The source's saved answer is its own resume's new work, not a fork's: the child has none.
+    assert ipc.write_question_answers(layout.session_dir, "question-1", ["yes"])
     assert fork_cli._cmd_fork((), "done-run") == 2  # pyright: ignore[reportPrivateUsage]
 
     err = capsys.readouterr().err

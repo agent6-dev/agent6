@@ -17,7 +17,7 @@ from agent6.app import _setup, fork, preflight, resume
 from agent6.config import Config
 from agent6.sessions import id
 from agent6.ui.cli import _common, run
-from agent6.viewmodel import listing
+from agent6.viewmodel import _session_log, listing
 
 
 def _cmd_fork(
@@ -64,7 +64,12 @@ def _cmd_fork(
             source = _common.resolve_or_newest_layout(pathlib.Path.cwd(), source_session_id)
         except id.SessionIdError:
             source = None
-        source_finished = source is not None and listing.finished_needs_new_work(source.session_dir)
+        if source is not None:
+            # The child has no saved answer of its own, so one on the source is no new work here.
+            scan = _session_log.scan_session_log(source.logs_path)
+            source_finished = listing.needs_new_work(
+                finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
+            )
         if source is not None and source_finished and not no_run and not steer.strip():
             _common.error(
                 f"run {source.session_id!r} already finished (the agent called"
