@@ -663,9 +663,10 @@ class BudgetConfig(pydantic.BaseModel):
             "used-percent, summed across window resets (values above 100 meaningful), largest "
             "movement across multiple windows; a window counts as reset when its reported reset "
             "time moves later by more than a minute; a lower reading whose reset time has not "
-            "moved counts nothing; whole-percent readings, each tick counted as a full point; "
-            "early stop at the cap, never late; in-flight call still completed; account-global "
-            "readings include other runs' spend; `budget.max_plan_points = -1`: unlimited; "
+            "moved counts nothing; one more reading at the end of the run; whole-percent "
+            "readings, each tick counted as a full point; early stop at the cap, never late; "
+            "in-flight call still completed; account-global readings include other runs' "
+            "spend; `budget.max_plan_points = -1`: unlimited; "
             "`budget.max_plan_points = 0`: plan-metered calls refused; per-run override: "
             "`--max-plan-points`"
         ),

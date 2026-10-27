@@ -583,6 +583,7 @@ class ChatGPTProvider:
         if self.budget is not None:
             if not self._preflighted[0]:
                 self._preflighted[0] = True
+                self.budget.register_plan_reader(self.model, self.preflight)
                 plan = self.preflight()
                 if plan is not None:
                     self.budget.record_plan_preflight(self.model, plan)

@@ -95,5 +95,6 @@ def _cmd_sessions_review(  # noqa: PLR0911
     print(text, flush=True)
     saved = review_cmds.save_review(reviews_dir, label=f"run {layout.session_id}", body=text)
     print(f"[agent6] review saved: {saved}", file=sys.stderr)
+    budget.settle()
     print(budget.format_summary(), file=sys.stderr)
     return 0

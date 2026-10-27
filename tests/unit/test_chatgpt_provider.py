@@ -1082,6 +1082,23 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
     assert len(streamed) == 2 and len(urls) == 2  # one preflight per provider
 
 
+def test_the_budget_reads_the_plan_once_more_after_the_run(
+    signed_in: chatgpt_oauth.ChatGPTCredential,
+) -> None:
+    """The preflight was the only `/usage` read, so a run's last calls never moved its figure."""
+    get, urls = _usage_get(json.loads(json.dumps(_USAGE_BODY)))
+
+    def stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=_happy_stream())
+
+    tracker = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1)
+    provider = _provider(signed_in, budget=tracker)
+    with mock.patch("httpx2.get", side_effect=get), mock.patch("httpx2.stream", side_effect=stream):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+        tracker.settle()
+    assert urls == ["https://chatgpt.com/backend-api/codex/usage"] * 2
+
+
 def test_preflight_failure_never_blocks(signed_in: chatgpt_oauth.ChatGPTCredential) -> None:
     """A preflight transport error or non-200 reads as no reading, and the call proceeds."""
     get, _urls = _usage_get({}, status=503)

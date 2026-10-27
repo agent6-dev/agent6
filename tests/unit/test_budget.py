@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+from unittest import mock
 
 import pytest
 
@@ -746,3 +747,17 @@ def test_an_unanchored_window_slides_with_the_clock_and_counts_nothing(anchored_
     tracker.record_plan_preflight("m", _window(0.0, 2e9 + 120))
     tracker.record_plan_preflight("m", _window(1.0, anchored_at))
     assert tracker.snapshot().plan_consumed == 1.0
+
+
+def test_settle_reads_each_metered_plan_once_more() -> None:
+    """A reading came from a header or the preflight, so a run's last calls never counted."""
+    tracker = _t()
+    metered = mock.Mock(side_effect=[_window(25.0, 2e9)])
+    idle = mock.Mock(return_value=_window(99.0, 2e9))
+    tracker.register_plan_reader("m", metered)
+    tracker.register_plan_reader("idle", idle)
+    tracker.record_plan_preflight("m", _window(20.0, 2e9))
+    tracker.settle()
+    tracker.settle()
+    assert tracker.snapshot().plan_consumed == 5.0
+    assert metered.call_count == 1 and idle.call_count == 0

@@ -418,40 +418,43 @@ class InstrumentedProvider:
         events are the only path spend takes to the cost meters and the machine's
         spend ledger.
         """
-        if self.events is None:
-            return
-        snap = self.budget.snapshot()
-        usd_total, usd_partial = self.budget.estimate_usd()
-        plan = snap.plan_latest
-        self.events.emit(
-            "budget.update",
-            input_total=snap.input_total,
-            output_total=snap.output_total,
-            cache_read_total=snap.cache_read_total,
-            cache_creation_total=snap.cache_creation_total,
-            usd_total=usd_total,
-            usd_partial=usd_partial,
-            usd_cap=snap.max_usd,
-            tokens_unmetered=snap.unmetered_tokens,
-            tokens_fallback_cap=snap.max_tokens_fallback,
-            plan_used_percent=plan.used_percent if plan else 0.0,
-            plan_consumed=snap.plan_consumed,
-            plan_cap=snap.max_plan_points,
-            plan_resets_at=plan.resets_at if plan else 0.0,
-            # Every reported window, raw: the derived fields cannot show a second window.
-            plan_windows=[
-                {
-                    "name": w.name,
-                    "used_percent": w.used_percent,
-                    "window_minutes": w.window_minutes,
-                    "resets_at": w.resets_at,
-                }
-                for w in (plan.windows if plan else ())
-            ],
-            credits_has=plan.has_credits if plan else False,
-            credits_unlimited=plan.credits_unlimited if plan else False,
-            credits_balance=plan.credits_balance if plan else "",
-        )
+        if self.events is not None:
+            self.events.emit("budget.update", **budget_update_fields(self.budget))
+
+
+def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
+    """Return a `budget.update` event's fields: the tracker's cumulative spend and plan reading."""
+    snap = budget.snapshot()
+    usd_total, usd_partial = budget.estimate_usd()
+    plan = snap.plan_latest
+    return dict(
+        input_total=snap.input_total,
+        output_total=snap.output_total,
+        cache_read_total=snap.cache_read_total,
+        cache_creation_total=snap.cache_creation_total,
+        usd_total=usd_total,
+        usd_partial=usd_partial,
+        usd_cap=snap.max_usd,
+        tokens_unmetered=snap.unmetered_tokens,
+        tokens_fallback_cap=snap.max_tokens_fallback,
+        plan_used_percent=plan.used_percent if plan else 0.0,
+        plan_consumed=snap.plan_consumed,
+        plan_cap=snap.max_plan_points,
+        plan_resets_at=plan.resets_at if plan else 0.0,
+        # Every reported window, raw: the derived fields cannot show a second window.
+        plan_windows=[
+            {
+                "name": w.name,
+                "used_percent": w.used_percent,
+                "window_minutes": w.window_minutes,
+                "resets_at": w.resets_at,
+            }
+            for w in (plan.windows if plan else ())
+        ],
+        credits_has=plan.has_credits if plan else False,
+        credits_unlimited=plan.credits_unlimited if plan else False,
+        credits_balance=plan.credits_balance if plan else "",
+    )
 
 
 def reviewer_seat_provider(

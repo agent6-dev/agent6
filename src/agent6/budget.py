@@ -21,6 +21,7 @@ import dataclasses
 import math
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 from agent6.models import pricing
@@ -349,7 +350,8 @@ class BudgetTracker:
     across this run's readings, accumulated across window resets; a window counts as reset
     when its reported reset time moves later by more than `RESET_SLACK_S`, and a lower
     reading whose reset time has not moved is out of order and counts nothing. The reading
-    is account-global, so it includes other runs' spend.
+    is account-global, so it includes other runs' spend. `settle` reads each metered plan
+    once more, so the run's last calls count.
 
     Attributes:
         max_usd: The USD cap; required, so the tracker never carries its own default.
@@ -376,6 +378,11 @@ class BudgetTracker:
     # Per (provider entry, window): the high-water reading, and this run's consumption.
     _plan_last_window: dict[tuple[str, str], PlanWindow] = dataclasses.field(default_factory=dict)
     _plan_consumed_by_window: dict[tuple[str, str], float] = dataclasses.field(default_factory=dict)
+    # Model id to the provider's plan reader, the request the preflight makes.
+    _plan_readers: dict[str, Callable[[], PlanUsage | None]] = dataclasses.field(
+        default_factory=dict
+    )
+    _settled: bool = False
     # Purchased credits seen leaving each account this run, in dollars; folds into the USD meter.
     _credits_last_usd: dict[str, float] = dataclasses.field(default_factory=dict)
     _credits_spent_usd: float = 0.0
@@ -571,6 +578,45 @@ class BudgetTracker:
                 f"USD budget exhausted: ~{format_usd(self._credits_spent_usd)} of purchased"
                 f" credits spent >= {format_usd(self.max_usd)}"
             )
+
+    def register_plan_reader(self, model: str, reader: Callable[[], PlanUsage | None]) -> None:
+        """Keep the request that reads a model's plan, for `settle`.
+
+        Args:
+            model: The model id.
+            reader: Returns a fresh reading, or None when the plan cannot be read.
+        """
+        with self._lock:
+            self._plan_readers[model] = reader
+
+    def settle(self) -> bool:
+        """Read each metered plan once more, so the run's last calls count.
+
+        A reading otherwise comes from a response header or the preflight, before the
+        calls it meters finish. One read per plan per tracker; a plan with no metered
+        call is not read. The requests run outside the lock.
+
+        Returns:
+            Whether a reading landed.
+        """
+        with self._lock:
+            if self._settled:
+                return False
+            self._settled = True
+            metered = {route for route, _window in self._plan_last_window}
+            readers = [
+                (model, reader)
+                for model, reader in self._plan_readers.items()
+                if self._routes.get(model, model) in metered
+            ]
+        landed = False
+        for model, reader in readers:
+            plan = reader()
+            if plan is not None:
+                landed = True
+                with self._lock:
+                    self._note_plan_usage(self._routes.get(model, model), plan)
+        return landed
 
     def record_plan_preflight(self, model: str, plan: PlanUsage) -> None:
         """Record a reading taken before the first plan-metered call.

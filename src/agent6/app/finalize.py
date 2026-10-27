@@ -18,6 +18,7 @@ from collections.abc import Callable, Collection, Sequence
 from agent6 import budget as agent6_budget
 from agent6 import child_env, errors, event_log, terminal
 from agent6.app import merge
+from agent6.app import providers as app_providers
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, NotifyConfig
 from agent6.harness import _advice, _snapshot
@@ -317,6 +318,17 @@ def _print_settled(
         " when the tree stopped changing."
     )
     reporter.out(f"  if the task is unfinished:  agent6 resume {layout.session_id}")
+
+
+def settle_budget(budget: agent6_budget.BudgetTracker, events: event_log.EventSink) -> None:
+    """Read each metered plan once more and journal the figure every end block and listing shows.
+
+    Args:
+        budget: The execution's tracker.
+        events: The session journal.
+    """
+    if budget.settle():
+        events.emit("budget.update", **app_providers.budget_update_fields(budget))
 
 
 def print_session_end(

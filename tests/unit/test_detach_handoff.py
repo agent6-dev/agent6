@@ -219,7 +219,9 @@ def _stub_execution_internals(
 
     session = types.SimpleNamespace(
         budget=types.SimpleNamespace(
-            format_summary=cost_summary, estimate_usd=lambda: (0.01, False)
+            format_summary=cost_summary,
+            estimate_usd=lambda: (0.01, False),
+            settle=lambda: False,
         ),
         rm_role=types.SimpleNamespace(model="fake/model"),
         provider=None,

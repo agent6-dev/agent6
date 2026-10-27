@@ -303,6 +303,7 @@ def _run_review_panel(
     for v in result.per_seat:
         status = f"abstain: {v.error}" if v.error else f"{v.verdict} ({len(v.findings)} findings)"
         print(f"  - {v.focus} [{v.model_route}]: {status}", file=sys.stderr)
+    budget.settle()
     print(budget.format_summary(), file=sys.stderr)
     return rc
 
@@ -610,5 +611,6 @@ def _freeform_review(
         f"[agent6] review saved: {save_review(layout_root, label=label, body=text)}",
         file=sys.stderr,
     )
+    budget.settle()
     print(budget.format_summary(), file=sys.stderr)
     return 0

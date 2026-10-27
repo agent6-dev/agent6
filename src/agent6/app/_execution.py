@@ -623,6 +623,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             # Never leave root-owned run state in the user's repo (the sudo case).
             paths.chown_to_real_user(state_dir)
 
+    finalize.settle_budget(budget, events)
     if interrupted:
         finalize.print_interrupt_end(layout=layout, cwd=cwd, budget=budget, reporter=reporter)
         return ExecutionEnd(finalize.EXIT_OPERATOR_STOP)

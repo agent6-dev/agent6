@@ -29,6 +29,43 @@ def _layout(
     return sessions_layout.SessionLayout(state_dir=tmp_path, session_id=session_id)
 
 
+def test_the_settled_reading_reaches_the_journal_and_the_end_block(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The end block printed the settled movement; `sessions show` kept the earlier figure."""
+    from agent6 import event_log
+    from agent6.viewmodel import _session_log
+
+    layout = _layout(
+        tmp_path,
+        "r2",
+        [
+            {"type": "session.start", "session_id": "r2", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
+    tracker.register_plan_reader(
+        "m", lambda: budget.PlanUsage.single(used_percent=30.0, window_minutes=10080, resets_at=2e9)
+    )
+    tracker.record_plan_preflight(
+        "m", budget.PlanUsage.single(used_percent=20.0, window_minutes=10080, resets_at=2e9)
+    )
+    _finalize.settle_budget(tracker, event_log.EventSink(layout.logs_path))
+    _finalize.print_session_end(
+        _snapshot.SessionResult(
+            completed=True, reason="finish_session", summary="done", turns=1, tool_calls=0
+        ),
+        layout=layout,
+        cwd=tmp_path,
+        budget=tracker,
+        console_stream=False,
+        reporter=reporter.STDIO_REPORTER,
+    )
+    assert "window moved ~10 points" in capsys.readouterr().out
+    assert _session_log.scan_session_log(layout.logs_path).plan_consumed == 10.0
+
+
 def test_finish_session_over_red_verify_is_not_headlined_passed(
     tmp_path: pathlib.Path, capsys: object
 ) -> None:
