@@ -191,7 +191,7 @@ An `agent` state spins up a normal agent6 run: its own snapshot dir, transcript,
 `mode` chooses the tool surface.
 
 - `"agent"` (default): a read-only, structured-output loop: the read and navigation tools plus `finish_session`
-    - withheld: `apply_edit`, `apply_patch`, `run_command`, `run_verify_command`, `run_metric_command`, `read_session`, `fetch`, `read_background` and `stop_background`
+    - withheld: `apply_edit`, `apply_patch`, `run_command`, `run_verify_command`, `run_metric_command`, `read_session`, `list_findings`, `fetch`, `read_background` and `stop_background`
 - `"run"`: real coding work (edit + verify + commit tools), as `agent6 run` has
 
 Where a run state's work lands:

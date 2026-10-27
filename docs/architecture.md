@@ -275,11 +275,11 @@ graph TD
     n_dispatch_inner --> n_approve_mcp_call
     n_dispatch_inner --> n_run_handler
     n_dispatch --> n_dispatch_inner
-    n_table["handler table: 22 tools"]
+    n_table["handler table: 23 tools"]
     n_run_handler -.->|by name| n_table
 ```
 
-The table routes `agent6_docs`, `read_file`, `list_dir`, `outline`, `find_definition`, `find_references`, `apply_edit`, `apply_patch`, `run_verify_command`, `run_command`, `read_session`, `fetch`, `read_background`, `stop_background`, `run_metric_command`, `finish_session`, `finish_planning`, `ask_user`, `add_task`, `update_task`, `list_tasks`, `use_skill`.
+The table routes `agent6_docs`, `read_file`, `list_dir`, `outline`, `find_definition`, `find_references`, `apply_edit`, `apply_patch`, `run_verify_command`, `run_command`, `read_session`, `fetch`, `read_background`, `stop_background`, `run_metric_command`, `finish_session`, `finish_planning`, `ask_user`, `list_findings`, `add_task`, `update_task`, `list_tasks`, `use_skill`.
 
 ## A review
 

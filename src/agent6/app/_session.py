@@ -9,13 +9,14 @@ their own workspace steps and their Harness wiring.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import pathlib
 from collections.abc import Callable
 
 import agent6
 from agent6 import budget as agent6_budget
 from agent6 import event_log, kinds
-from agent6.app import _setup, confine, frontend, preflight, providers
+from agent6.app import _setup, confine, frontend, preflight, providers, review_actions
 from agent6.app import reporter as app_reporter
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.graph import curator as graph_curator
@@ -309,6 +310,7 @@ def build_session_tools(
         mode=mode,
         state_dir=state_dir,
         session_dir=layout.session_dir,
+        findings=functools.partial(review_actions.findings_result, layout.session_dir),
         use_jail_session=True,
         session_net=session_net,
     )

@@ -13,6 +13,8 @@ import pydantic
 
 from agent6 import event_log, review_records
 from agent6.sessions import ipc, layout, lock, process
+from agent6.tools import errors as tools_errors
+from agent6.tools import results
 from agent6.viewmodel import _session_log, review
 
 Source = Literal["cli", "tui", "web", "acp"]
@@ -75,6 +77,61 @@ def read_review(session_dir: pathlib.Path) -> review.ReviewView:
     if view.read_failure:
         raise ReviewActionError(f"cannot read review evidence: {view.read_failure}")
     return view
+
+
+def findings_result(session_dir: pathlib.Path) -> results.FindingsResult:
+    """Return the session's findings as `list_findings` reports them to the worker.
+
+    Args:
+        session_dir: The session's directory.
+
+    Returns:
+        Every finding, open and resolved; the note says when no panel has run, or that the
+        journal holds legacy counts without finding evidence.
+
+    Raises:
+        ToolError: The journal is missing or its review evidence is unreadable.
+    """
+    try:
+        view = read_review(session_dir)
+    except ReviewActionError as exc:
+        raise tools_errors.ToolError(str(exc)) from exc
+    note = view.legacy_notice or ("No review panel has run." if not view.panels else "")
+    return results.FindingsResult(
+        findings=tuple(finding_brief(f) for f in view.findings), note=note
+    )
+
+
+def finding_brief(finding: review.FindingView) -> results.FindingBrief:
+    """Return the finding's facts as every text surface states them, from its latest observation.
+
+    Args:
+        finding: The finding's fold.
+
+    Returns:
+        The brief the `list_findings` tool, `sessions findings` and ACP's `/findings` print.
+    """
+    report = finding.observations[-1].finding
+    origin = finding.line_origin
+    resolution = finding.resolution
+    disposition = ""
+    if resolution is not None:
+        target = f" of {resolution.duplicate_of}" if resolution.duplicate_of else ""
+        disposition = f"{resolution.disposition}{target}: {resolution.reason}"
+    return results.FindingBrief(
+        id=finding.finding_id,
+        status=finding.status,
+        severity=report.severity,
+        category=report.category,
+        location=str(report.location),
+        title=report.title,
+        detail=report.detail,
+        pre_existing=(
+            f"{origin.base_location}. {origin.reason}" if origin.kind == "pre_existing" else ""
+        ),
+        resolution=disposition,
+        fix_state=finding.fix_state.replace("_", " ") if finding.fix_state != "none" else "",
+    )
 
 
 def _recorded(view: review.ReviewView, request: ActionRequest) -> ActionResult | None:

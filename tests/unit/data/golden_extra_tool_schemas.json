@@ -59,6 +59,13 @@
     }
   },
   {
+    "name": "list_findings",
+    "required": [],
+    "properties": {
+      "all": "boolean"
+    }
+  },
+  {
     "name": "list_tasks",
     "required": [],
     "properties": {

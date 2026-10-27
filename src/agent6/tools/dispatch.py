@@ -99,6 +99,7 @@ class ToolDispatcher:
         state_dir: The per-repo state dir, for the sessions roster and the memory grant.
         session_dir: The run's dir, for background commands, the file bridge and the
             effective command policy; None leaves them unwired.
+        findings: The session's findings reader behind `list_findings`; None refuses the tool.
         use_jail_session: Whether one jail process serves every command of the run.
         session_net: The run's session network; None makes the dispatcher's own.
     """
@@ -119,6 +120,7 @@ class ToolDispatcher:
         mode: Literal["run", "plan", "ask", "machine"] = "run",
         state_dir: pathlib.Path | None = None,
         session_dir: pathlib.Path | None = None,
+        findings: Callable[[], results.FindingsResult] | None = None,
         use_jail_session: bool = False,
         session_net: jail.SessionNetwork | None = None,
         shared_writes: tuple[pathlib.Path, ...] = (),
@@ -159,6 +161,7 @@ class ToolDispatcher:
         self._run_root_node_id = run_root_node_id
         self._mcp_manager = mcp_manager
         self._state_dir = state_dir
+        self._findings = findings
         # Background commands live under the run dir so they die with the run.
         self._shells = (
             background.BackgroundShells(session_dir / background.SHELLS_DIR)
@@ -206,6 +209,7 @@ class ToolDispatcher:
             schema.FinishSessionInput.TOOL_NAME: _control_tools.finish_session,
             schema.FinishPlanningInput.TOOL_NAME: _control_tools.finish_planning,
             schema.AskUserInput.TOOL_NAME: self._ask_user,
+            schema.ListFindingsInput.TOOL_NAME: self._list_findings,
             schema.DagAddTaskInput.TOOL_NAME: lambda raw: _dag_tools.add_task(
                 self._curator, self._run_root_node_id, raw
             ),
@@ -882,6 +886,30 @@ class ToolDispatcher:
             raise tools_errors.ToolError(f"no session {args.id!r} in this project")
         return results.SessionsResult(
             sessions=lines, conversation=sessions.conversation(layout, max_chars=args.max_chars)
+        )
+
+    def _list_findings(self, raw: dict[str, Any]) -> results.FindingsResult:
+        """List the session's findings: the open ones, or every one with `all`.
+
+        Args:
+            raw: The tool call's arguments.
+
+        Returns:
+            The findings.
+
+        Raises:
+            ToolError: No reader was wired, or the journal is unreadable.
+        """
+        args = schema.ListFindingsInput.model_validate(raw)
+        if self._findings is None:
+            raise tools_errors.ToolError(
+                "list_findings needs the session's journal; none was wired"
+            )
+        listed = self._findings()
+        if args.all:
+            return listed
+        return dataclasses.replace(
+            listed, findings=tuple(f for f in listed.findings if f.status == "open")
         )
 
     def _ask_user(self, raw: dict[str, Any]) -> results.ToolResult:

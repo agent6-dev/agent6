@@ -91,7 +91,7 @@ The model reaches the machine through two surfaces:
 
 The model sees the fixed tool set in `src/agent6/tools/schema.py`.
 
-- structured edits, read-only navigation, `read_session`, fixed-argv verify and metric commands, `finish_session`, `ask_user`, a curator task notepad, `use_skill` ([Skills](#skills)), approval-gated `fetch` ([Network](#5-network)), capability-gated `run_command` with `read_background` / `stop_background`, and `agent6_docs` under `agent6 ask` only
+- structured edits, read-only navigation, `read_session`, `list_findings` (the run's own review findings), fixed-argv verify and metric commands, `finish_session`, `ask_user`, a curator task notepad, `use_skill` ([Skills](#skills)), approval-gated `fetch` ([Network](#5-network)), capability-gated `run_command` with `read_background` / `stop_background`, and `agent6_docs` under `agent6 ask` only
 - no `shell`, no `write_file`, no `eval`
 - adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md))
 

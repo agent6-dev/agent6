@@ -301,6 +301,22 @@ class ReadSessionInput(_ToolInput):
     max_chars: int = pydantic.Field(default=20_000, ge=500, le=200_000)
 
 
+class ListFindingsInput(_ToolInput):
+    """The `list_findings` tool's arguments."""
+
+    TOOL_NAME: ClassVar[str] = "list_findings"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "List this session's review findings: id, status, severity, category,"
+        " location, title, detail, and a pre-existing tag when the cited lines"
+        " exist at the reviewed base; `all` adds resolved findings with their"
+        " disposition. Read-only: the operator resolves, reopens or fixes a"
+        " finding with `agent6 sessions resolve`, `agent6 sessions reopen` and"
+        " `agent6 steer --finding`; propose what to do and name the command."
+    )
+
+    all: bool = False
+
+
 class ReadBackgroundInput(_ToolInput):
     """The `read_background` tool's arguments."""
 
@@ -588,6 +604,7 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     RunMetricInput,
     FinishSessionInput,
     AskUserInput,
+    ListFindingsInput,
     DagAddTaskInput,
     DagUpdateTaskInput,
     DagListTasksInput,

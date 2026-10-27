@@ -44,19 +44,18 @@ def _findings_text(view: review.ReviewView, *, include_resolved: bool) -> str:
     for finding in view.findings:
         if finding.status != "open" and not include_resolved:
             continue
-        report = finding.observations[-1].finding
+        brief = review_actions.finding_brief(finding)
         body = (
-            f"{finding.finding_id} · {finding.status} · {report.severity} · {report.location}\n"
-            f"{report.title}\n{report.detail}\nFix: {finding.fix_state}"
+            f"{brief.id} · {brief.status} · {brief.severity} · {brief.location}\n"
+            f"{brief.title}\n{brief.detail}\nFix: {finding.fix_state}"
         )
-        origin = finding.line_origin
-        if origin.kind == "pre_existing":
+        if brief.pre_existing:
             body += (
-                f"\n  Pre-existing line: {origin.base_location}. {origin.reason}"
-                f"\n  Blame: {', '.join(origin.commits)}"
+                f"\n  Pre-existing line: {brief.pre_existing}"
+                f"\n  Blame: {', '.join(finding.line_origin.commits)}"
             )
-        if finding.resolution is not None:
-            body += f"\n{finding.resolution.disposition}: {finding.resolution.reason}"
+        if brief.resolution:
+            body += f"\n{brief.resolution}"
         lines.append(body)
     return "\n\n".join(lines) or "No recorded findings."
 

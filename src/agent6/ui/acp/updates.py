@@ -29,6 +29,7 @@ _TOOL_KINDS = {
     "list_dir": "read",
     "agent6_docs": "read",
     "read_session": "read",
+    "list_findings": "read",
     "read_background": "read",
     "use_skill": "read",
     "outline": "search",

@@ -676,3 +676,62 @@ class SessionsResult(ToolResult):
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{len(self.sessions)} session{'' if len(self.sessions) == 1 else 's'}"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class FindingBrief:
+    """One finding as `list_findings` reports it.
+
+    Attributes:
+        id: The id the operator's commands take.
+        status: open or resolved.
+        severity: block, warn or nit.
+        category: The reviewer's category.
+        location: The cited path and lines, with the side when it is the base.
+        title: The finding's title.
+        detail: The finding's detail.
+        pre_existing: The base location and reason when the cited line bytes predate the run.
+        resolution: A resolved finding's disposition and reason.
+        fix_state: A requested fix's delivery state; "" when none was requested.
+    """
+
+    id: str
+    status: str
+    severity: str
+    category: str
+    location: str
+    title: str
+    detail: str
+    pre_existing: str = ""
+    resolution: str = ""
+    fix_state: str = ""
+
+    def to_wire(self) -> dict[str, str]:
+        """Return the wire dict, the empty fields left out."""
+        return {key: value for key, value in dataclasses.asdict(self).items() if value}
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class FindingsResult(ToolResult):
+    """list_findings: the session's findings.
+
+    Attributes:
+        findings: The findings listed, in journal order.
+        note: The journal's legacy notice, when its review counts predate structured findings.
+    """
+
+    findings: tuple[FindingBrief, ...]
+    note: str = ""
+
+    def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
+        wire: dict[str, Any] = {"findings": [f.to_wire() for f in self.findings]}
+        if self.note:
+            wire["note"] = self.note
+        return wire
+
+    def summary(self) -> str:
+        """Return the one-line summary."""
+        open_count = sum(1 for f in self.findings if f.status == "open")
+        resolved = len(self.findings) - open_count
+        return f"{open_count} open" + (f", {resolved} resolved" if resolved else "")

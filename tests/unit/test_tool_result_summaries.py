@@ -31,6 +31,19 @@ _LOC: dict[str, Any] = {"path": "a.py", "line": 1, "col": 0}
 _TASK: dict[str, Any] = {"id": "01A", "title": "t", "status": "pending"}
 _LONG_TITLE = "audit the provider transport layer for retry storms and dedupe them all"
 
+
+def _brief(finding_id: str, status: str) -> results_mod.FindingBrief:
+    return results_mod.FindingBrief(
+        id=finding_id,
+        status=status,
+        severity="block",
+        category="correctness",
+        location="a.py:1",
+        title="t",
+        detail="",
+    )
+
+
 # (case id, result, exact expected summary). One row per concrete type, plus a
 # second row wherever summary() has a conditional branch (truncated suffix,
 # blank-answer counting, title clipping).
@@ -214,6 +227,12 @@ CASES: list[tuple[str, results_mod.ToolResult, str]] = [
     ("finish_session", results_mod.FinishSessionResult(summary_text="done", result=None), "ok"),
     ("finish_planning", results_mod.FinishPlanningResult(summary_text="s", plan_bytes=7), "ok"),
     ("ask_user", results_mod.AnswersResult(answers=("yes", "", " ", "no")), "2/4 answered"),
+    ("findings_none", results_mod.FindingsResult(findings=()), "0 open"),
+    (
+        "findings_mixed",
+        results_mod.FindingsResult(findings=(_brief("f1", "resolved"), _brief("f2", "open"))),
+        "1 open, 1 resolved",
+    ),
     # DAG
     (
         "add_task",

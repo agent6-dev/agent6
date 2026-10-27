@@ -98,20 +98,16 @@ def cmd_findings(session_id: str, *, all_findings: bool, as_json: bool) -> int:
     print(f"Review version {view.version}")
     for finding in view.findings:
         if all_findings or finding.status == "open":
-            report = finding.observations[-1].finding
-            print(
-                f"{finding.finding_id}  {finding.status}  {report.severity}  "
-                f"{report.location} ({report.location.side}): {report.title}"
-            )
-            print(f"  {report.detail}")
-            origin = finding.line_origin
-            if origin.kind == "pre_existing":
-                print(f"  Pre-existing line: {origin.base_location}. {origin.reason}")
-                print(f"  Blame: {', '.join(origin.commits)}")
-            if finding.resolution:
-                print(f"  {finding.resolution.disposition}: {finding.resolution.reason}")
-            if finding.fix_state != "none":
-                print(f"  Fix: {finding.fix_state.replace('_', ' ')}")
+            brief = review_actions.finding_brief(finding)
+            print(f"{brief.id}  {brief.status}  {brief.severity}  {brief.location}: {brief.title}")
+            print(f"  {brief.detail}")
+            if brief.pre_existing:
+                print(f"  Pre-existing line: {brief.pre_existing}")
+                print(f"  Blame: {', '.join(finding.line_origin.commits)}")
+            if brief.resolution:
+                print(f"  {brief.resolution}")
+            if brief.fix_state:
+                print(f"  Fix: {brief.fix_state}")
     if view.legacy_notice:
         print(view.legacy_notice)
     return 0

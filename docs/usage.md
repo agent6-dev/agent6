@@ -328,6 +328,7 @@ Resolve each blocking finding with a reason before merging, including findings y
 This rule is separate from `review.block_on`, which decides whether a panel rejects the worker's finish.
 A missing or stale review does not prevent a merge; legacy counts are not reconstructed findings.
 The web [Findings card](web.md#finding-actions-api) offers the same actions and links each finding to its reviewed diff and file version.
+In a run, the worker lists its own findings with the read-only `list_findings` tool; recording a response stays with the commands below.
 
 **Pre-existing line** means the cited line bytes exist at the reviewed base.
 It does not prove that the defect predates the change: a changed caller can break an unchanged callee.
